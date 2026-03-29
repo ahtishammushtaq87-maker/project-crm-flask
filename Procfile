@@ -1,1 +1,1 @@
-web: gunicorn erp_portal.run:app
+web: gunicorn run:app
