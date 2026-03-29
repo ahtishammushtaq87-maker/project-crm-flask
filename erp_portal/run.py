@@ -345,12 +345,21 @@ def health_check():
             'timestamp': datetime.utcnow().isoformat()
         }), 500
 
+# Run the application (only when running locally)
 if __name__ == "__main__":
     with app.app_context():
         try:
-            init_db()
+            init_db()  # Initialize database and sample data locally
         except Exception as e:
             print(f"Database initialization error: {e}")
 
+    # Get port from environment variable or default to 5000
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
+
+    # Run Flask app
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False,
+        threaded=True
+    )
