@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block title %}Sales Invoices{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Sales Invoices</h2>
+        <a href="{{ url_for('sales.create_invoice') }}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Create Invoice
+        </a>
+    </div>
+    
+    <div class="card">
+        <div class="card-header">
+            <!-- Date Filter Form -->
+            <form method="GET" class="row g-3 mb-3">
+                <div class="col-md-3">
+                    <label for="from_date" class="form-label">From Date</label>
+                    <input type="date" class="form-control" id="from_date" name="from_date" 
+                           value="{{ from_date }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="to_date" class="form-label">To Date</label>
+                    <input type="date" class="form-control" id="to_date" name="to_date" 
+                           value="{{ to_date }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">&nbsp;</label>
+                    <button type="submit" class="btn btn-primary d-block">Filter</button>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">&nbsp;</label>
+                    <a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary d-block">Clear</a>
+                </div>
+                <input type="hidden" name="status" value="{{ current_status }}">
+            </form>
+            
+            {% if from_date or to_date %}
+            <div class="alert alert-info mt-2 mb-2">
+                <small>
+                    <i class="fas fa-filter"></i>
+                    <strong>Active Filters:</strong>
+                    {% if from_date %}From: {{ from_date }}{% endif %}
+                    {% if from_date and to_date %} | {% endif %}
+                    {% if to_date %}To: {{ to_date }}{% endif %}
+                    {% if current_status != 'all' %} | Status: {{ current_status|title }}{% endif %}
+                </small>
+            </div>
+            {% endif %}
+            
+            <ul class="nav nav-tabs card-header-tabs">
+                <li class="nav-item">
+                    <a class="nav-link {% if current_status == 'all' %}active{% endif %}" 
+                       href="{{ url_for('sales.invoices', status='all', from_date=from_date, to_date=to_date) }}">
+                        All
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if current_status == 'paid' %}active{% endif %}" 
+                       href="{{ url_for('sales.invoices', status='paid', from_date=from_date, to_date=to_date) }}">
+                        Paid
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if current_status == 'unpaid' %}active{% endif %}" 
+                       href="{{ url_for('sales.invoices', status='unpaid', from_date=from_date, to_date=to_date) }}">
+                        Unpaid
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if current_status == 'partial' %}active{% endif %}" 
+                       href="{{ url_for('sales.invoices', status='partial', from_date=from_date, to_date=to_date) }}">
+                        Partial
+                    </a>
+                </li>
+            </ul>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Invoice #</th>
+                            <th>Date</th>
+                            <th>Customer</th>
+                            <th>Vendor</th>
+                            <th>Subtotal</th>
+                            <th>Tax</th>
+                            <th>Total</th>
+                            <th>Paid</th>
+                            <th>Balance</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sale in sales %}
+                        <tr>
+                            <td>{{ sale.invoice_number }}</td>
+                            <td>{{ sale.date.strftime('%Y-%m-%d') }}</td>
+                            <td>{{ sale.customer.name if sale.customer else 'Walk-in Customer' }}</td>
+                            <td>{{ sale.vendor.name if sale.vendor else '-' }}</td>
+                            <td>${{ "%.2f"|format(sale.subtotal) }}</td>
+                            <td>${{ "%.2f"|format(sale.tax) }}</td>
+                            <td><strong>${{ "%.2f"|format(sale.total) }}</strong></td>
+                            <td>${{ "%.2f"|format(sale.paid_amount) }}</td>
+                            <td>${{ "%.2f"|format(sale.total - sale.paid_amount) }}</td>
+                            <td>
+                                {% if sale.status == 'paid' %}
+                                <span class="badge bg-success">Paid</span>
+                                {% elif sale.status == 'partial' %}
+                                <span class="badge bg-warning">Partial</span>
+                                {% else %}
+                                <span class="badge bg-danger">Unpaid</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{{ url_for('sales.invoice_detail', id=sale.id) }}" 
+                                   class="btn btn-sm btn-info">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <form method="POST" action="{{ url_for('sales.delete_invoice', id=sale.id) }}" style="display:inline;" onsubmit="return confirm('Delete this invoice?');">
+                                    <button class="btn btn-sm btn-danger" type="submit">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if sales %}
+                    <tfoot>
+                        <tr class="table-dark">
+                            <th colspan="4" class="text-end">Total:</th>
+                            <th>${{ "%.2f"|format(total_subtotal) }}</th>
+                            <th>${{ "%.2f"|format(total_tax) }}</th>
+                            <th><strong>${{ "%.2f"|format(total_amount) }}</strong></th>
+                            <th>${{ "%.2f"|format(total_paid) }}</th>
+                            <th>${{ "%.2f"|format(total_balance) }}</th>
+                            <th colspan="2"></th>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Date validation for filter form
+document.getElementById('from_date').addEventListener('change', function() {
+    const fromDate = this.value;
+    const toDateInput = document.getElementById('to_date');
+    
+    if (fromDate && toDateInput.value && fromDate > toDateInput.value) {
+        toDateInput.value = fromDate;
+    }
+    
+    toDateInput.min = fromDate;
+});
+
+document.getElementById('to_date').addEventListener('change', function() {
+    const toDate = this.value;
+    const fromDateInput = document.getElementById('from_date');
+    
+    if (toDate && fromDateInput.value && toDate < fromDateInput.value) {
+        alert('To date cannot be before from date');
+        this.value = fromDateInput.value;
+    }
+});
+</script>
+{% endblock %}

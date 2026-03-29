@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Expense Category{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h4>Edit Expense Category</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        {{ form.hidden_tag() }}
+                        <div class="mb-3">
+                            <label class="form-label">Category Name</label>
+                            {{ form.name(class="form-control", placeholder="e.g. Office Supplies, Travel, Utilities") }}
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            {{ form.description(class="form-control", rows=3, placeholder="Optional description for this category") }}
+                        </div>
+                        <button type="submit" class="btn btn-success">Update Category</button>
+                        <a href="{{ url_for('accounting.expense_categories') }}" class="btn btn-secondary">Cancel</a>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

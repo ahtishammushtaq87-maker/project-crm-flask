@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}Accounting Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h2 class="mb-4">Accounting Dashboard</h2>
+
+    <!-- Date Filter Form -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label for="date_from" class="form-label">From Date</label>
+                    <input type="date" class="form-control" id="date_from" name="date_from"
+                           value="{{ date_from }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="date_to" class="form-label">To Date</label>
+                    <input type="date" class="form-control" id="date_to" name="date_to"
+                           value="{{ date_to }}">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary">Filter</button>
+                </div>
+                <div class="col-md-2">
+                    <a href="{{ url_for('accounting.dashboard') }}" class="btn btn-secondary">Reset</a>
+                </div>
+                <div class="col-md-2">
+                    <small class="text-muted">Showing data from {{ date_from }} to {{ date_to }}</small>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-3">
+            <div class="card p-3 mb-3 border-primary">
+                <h5>Total Sales</h5>
+                <h3>${{ '%.2f'|format(total_sales) }}</h3>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-3 mb-3 border-warning">
+                <h5>Total Purchases</h5>
+                <h3>${{ '%.2f'|format(total_purchases) }}</h3>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-3 mb-3 border-danger">
+                <h5>Total Expenses</h5>
+                <h3>${{ '%.2f'|format(total_expenses) }}</h3>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-3 mb-3 border-dark">
+                <h5>COGS</h5>
+                <h3>${{ '%.2f'|format(total_cogs) }}</h3>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card p-3 mb-3 border-info">
+                <h5>Gross Profit (Sales - COGS)</h5>
+                <h2 class="{% if gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                    ${{ '%.2f'|format(gross_profit) }}
+                </h2>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card p-3 mb-3 border-success">
+                <h5>Net Profit (Gross - Expenses)</h5>
+                <h2 class="{% if net_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                    ${{ '%.2f'|format(net_profit) }}
+                </h2>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card p-3 mb-3">
+                <h5>Monthly Sales vs Expenses</h5>
+                <canvas id="monthlyChart" height="160"></canvas>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card p-3 mb-3">
+                <h5>Yearly Sales vs Expenses</h5>
+                <canvas id="yearlyChart" height="160"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card p-3 mb-3 border-success">
+                <h5>Net Profit</h5>
+                <h2 class="{% if net_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                    ${{ '%.2f'|format(net_profit) }}
+                </h2>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card p-3 mb-3 border-success">
+                <h6>Outstanding Invoices</h6>
+                <h4>${{ '%.2f'|format(outstanding_invoices) }}</h4>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card p-3 mb-3 border-info">
+                <h6>Paid Invoices</h6>
+                <h4>{{ paid_invoices }}</h4>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card p-3 mb-3 border-secondary">
+                <h6>Unpaid/Partial</h6>
+                <h4>{{ unpaid_or_partial_invoices }}</h4>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <h5>Account Balances</h5>
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped">
+                    <thead>
+                        <tr>
+                            <th>Account</th>
+                            <th>Debit</th>
+                            <th>Credit</th>
+                            <th>Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for account, totals in account_summary.items() %}
+                        <tr>
+                            <td>{{ account }}</td>
+                            <td>${{ '%.2f'|format(totals.debit) }}</td>
+                            <td>${{ '%.2f'|format(totals.credit) }}</td>
+                            <td>${{ '%.2f'|format(totals.debit - totals.credit) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const monthlyData = {
+        labels: {{ monthly_labels|tojson }},
+        datasets: [
+            { label: 'Sales', backgroundColor: 'rgba(54, 162, 235, 0.5)', borderColor: '#36a2eb', fill: true, data: {{ monthly_sales|tojson }} },
+            { label: 'Expenses', backgroundColor: 'rgba(255, 99, 132, 0.5)', borderColor: '#ff6384', fill: true, data: {{ monthly_expenses|tojson }} }
+        ]
+    };
+
+    const yearlyData = {
+        labels: {{ yearly|map(attribute='year')|list|tojson }},
+        datasets: [
+            { label: 'Sales', backgroundColor: 'rgba(54, 162, 235, 0.5)', borderColor: '#36a2eb', fill: true, data: {{ yearly|map(attribute='sales')|list|tojson }} },
+            { label: 'Expenses', backgroundColor: 'rgba(255, 99, 132, 0.5)', borderColor: '#ff6384', fill: true, data: {{ yearly|map(attribute='expenses')|list|tojson }} }
+        ]
+    };
+
+    new Chart(document.getElementById('monthlyChart').getContext('2d'), { type: 'line', data: monthlyData, options: { responsive: true }});
+    new Chart(document.getElementById('yearlyChart').getContext('2d'), { type: 'bar', data: yearlyData, options: { responsive: true }});
+</script>
+{% endblock %}

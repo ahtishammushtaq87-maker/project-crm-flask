@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Balance Sheet{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <h2>Balance Sheet</h2>
+  <table class="table table-bordered">
+    <tr><th>Assets</th><td>${{ '%.2f'|format(asset) }}</td></tr>
+    <tr><th>Liabilities</th><td>${{ '%.2f'|format(liability) }}</td></tr>
+    <tr><th>Equity</th><td>${{ '%.2f'|format(equity) }}</td></tr>
+    <tr><th>Income</th><td>${{ '%.2f'|format(income) }}</td></tr>
+    <tr><th>Expense</th><td>${{ '%.2f'|format(expense) }}</td></tr>
+  </table>
+</div>
+{% endblock %}

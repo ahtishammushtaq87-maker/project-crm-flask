@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Tax Summary{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <h2>Tax Summary</h2>
+  <div class="table-responsive">
+    <table class="table table-bordered">
+      <thead><tr><th>Tax Name</th><th>Rate</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for t in taxes %}
+      <tr>
+        <td>{{ t.name }}</td>
+        <td>{{ t.rate }}%</td>
+        <td>{{ 'Active' if t.is_active else 'Inactive' }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

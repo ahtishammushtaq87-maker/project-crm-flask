@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Chart of Accounts{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h2 class="mb-4">Chart of Accounts</h2>
+    <p>This page lists all accounts used in transaction entries with debit/credit totals.</p>
+
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped">
+                    <thead>
+                        <tr>
+                            <th>Account</th>
+                            <th>Debit Total</th>
+                            <th>Credit Total</th>
+                            <th>Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for account, t in account_balances.items() %}
+                        <tr>
+                            <td>{{ account }}</td>
+                            <td>${{ '%.2f'|format(t.debit) }}</td>
+                            <td>${{ '%.2f'|format(t.credit) }}</td>
+                            <td>${{ '%.2f'|format(t.debit - t.credit) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}Expenses{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Expenses</h2>
+        <a href="{{ url_for('accounting.add_expense') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Add Expense</a>
+    </div>
+    <div class="card">
+        <div class="card-body">
+            <!-- Filter Form -->
+            <form method="GET" class="row g-3 mb-4">
+                <div class="col-md-3">
+                    <label for="vendor_id" class="form-label">Vendor</label>
+                    <select name="vendor_id" id="vendor_id" class="form-select">
+                        <option value="">All Vendors</option>
+                        {% for vendor in vendors %}
+                        <option value="{{ vendor.id }}" {% if selected_vendor == vendor.id %}selected{% endif %}>{{ vendor.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="category_id" class="form-label">Category</label>
+                    <select name="category_id" id="category_id" class="form-select">
+                        <option value="">All Categories</option>
+                        {% for category in categories %}
+                        <option value="{{ category.id }}" {% if selected_category == category.id %}selected{% endif %}>{{ category.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="start_date" class="form-label">From Date</label>
+                    <input type="date" name="start_date" id="start_date" class="form-control" value="{{ selected_start_date or '' }}">
+                </div>
+                <div class="col-md-2">
+                    <label for="end_date" class="form-label">To Date</label>
+                    <input type="date" name="end_date" id="end_date" class="form-control" value="{{ selected_end_date or '' }}">
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary me-2"><i class="fas fa-filter"></i> Filter</button>
+                    <a href="{{ url_for('accounting.expenses') }}" class="btn btn-secondary"><i class="fas fa-times"></i> Clear</a>
+                </div>
+            </form>
+            
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Expense #</th>
+                            <th>Date</th>
+                            <th>Category</th>
+                            <th>Vendor</th>
+                            <th>Description</th>
+                            <th>Amount</th>
+                            <th>Bill</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for exp in expenses %}
+                        <tr>
+                            <td>{{ exp.expense_number }}</td>
+                            <td>{{ exp.date.strftime('%Y-%m-%d') }}</td>
+                            <td>{{ exp.expense_category.name if exp.expense_category else 'N/A' }}</td>
+                            <td>{{ exp.vendor.name if exp.vendor else '-' }}</td>
+                            <td>{{ exp.description or '-' }}</td>
+                            <td>${{ '%.2f'|format(exp.amount) }}</td>
+                            <td>
+                                {% if exp.bill_image_path %}
+                                <div class="btn-group" role="group">
+                                    <button type="button" class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#billModal{{ exp.id }}" title="Preview Bill">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                    <a href="{{ url_for('static', filename=exp.bill_image_path.replace('app/static/', '')) }}" 
+                                       target="_blank" class="btn btn-sm btn-secondary" title="View Full Bill">
+                                        <i class="fas fa-external-link-alt"></i>
+                                    </a>
+                                </div>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    <a href="{{ url_for('accounting.edit_expense', id=exp.id) }}" class="btn btn-sm btn-warning" title="Edit">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    <form method="POST" action="{{ url_for('accounting.delete_expense', id=exp.id) }}" style="display:inline;" onsubmit="return confirm('Delete this expense?');">
+                                        <button type="submit" class="btn btn-sm btn-danger" title="Delete">Delete</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="mt-3">
+                <div class="row">
+                    <div class="col-md-6">
+                        <strong>Showing {{ expenses|length }} expense{{ 's' if expenses|length != 1 else '' }}</strong>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <strong>Total Expense: ${{ '%.2f'|format(total_expense) }}</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bill Preview Modals -->
+{% for exp in expenses %}
+{% if exp.bill_image_path %}
+<div class="modal fade" id="billModal{{ exp.id }}" tabindex="-1" aria-labelledby="billModalLabel{{ exp.id }}" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="billModalLabel{{ exp.id }}">Bill Preview - {{ exp.expense_number }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img src="{{ url_for('static', filename=exp.bill_image_path.replace('app/static/', '')) }}" 
+                     class="img-fluid" alt="Bill Image" style="max-height: 70vh;">
+            </div>
+            <div class="modal-footer">
+                <a href="{{ url_for('static', filename=exp.bill_image_path.replace('app/static/', '')) }}" 
+                   target="_blank" class="btn btn-primary">View Full Size</a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+
+{% endblock %}

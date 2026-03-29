@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}Expense Report{% endblock %}
+
+{% block extra_css %}
+<style>
+    .report-card {
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        transition: transform 0.3s ease;
+        background: white;
+    }
+    .report-card:hover {
+        transform: translateY(-5px);
+    }
+    .status-badge {
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .bg-gradient-danger {
+        background: linear-gradient(135deg, #f5365c 0%, #f56036 100%);
+    }
+    .bg-gradient-info {
+        background: linear-gradient(135deg, #11cdef 0%, #1171ef 100%);
+    }
+    .filter-section {
+        background: white;
+        padding: 25px;
+        border-radius: 15px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        margin-bottom: 30px;
+    }
+    .table thead th {
+        background-color: #f8f9fe;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 1px;
+        border-bottom: 1px solid #e9ecef;
+    }
+    .download-btn {
+        border-radius: 10px;
+        padding: 8px 15px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="font-weight-bold">Expense Report</h2>
+        <div class="dropdown">
+            <button class="btn btn-primary dropdown-toggle download-btn" type="button" id="downloadDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="fas fa-download"></i> Download Report
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="downloadDropdown">
+                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='pdf', report_type='expense', **request.args) }}"><i class="fas fa-file-pdf text-danger me-2"></i> PDF Format</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='excel', report_type='expense', **request.args) }}"><i class="fas fa-file-excel text-success me-2"></i> Excel Format</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='csv', report_type='expense', **request.args) }}"><i class="fas fa-file-csv text-info me-2"></i> CSV Format</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-6 col-md-6 mb-4">
+            <div class="card report-card bg-gradient-danger text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <p class="text-white-50 small mb-1">Total Expenses</p>
+                            <h3 class="mb-0">${{ "%.2f"|format(total_expenses) }}</h3>
+                        </div>
+                        <div class="icon icon-shape bg-white text-danger rounded-circle shadow">
+                            <i class="fas fa-receipt p-3"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-6 col-md-6 mb-4">
+            <div class="card report-card bg-gradient-info text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <p class="text-white-50 small mb-1">Total Transactions</p>
+                            <h3 class="mb-0">{{ total_count }}</h3>
+                        </div>
+                        <div class="icon icon-shape bg-white text-info rounded-circle shadow">
+                            <i class="fas fa-list-ul p-3"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-section">
+        <form method="GET" action="{{ url_for('reports.expense_report') }}" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label small font-weight-bold">Search Expense / Description</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-light border-0"><i class="fas fa-search"></i></span>
+                    <input type="text" name="search" class="form-control bg-light border-0" placeholder="Number or description..." value="{{ search }}">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small font-weight-bold">Category</label>
+                <select name="category_id" class="form-select bg-light border-0">
+                    <option value="all">All Categories</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.id }}" {% if current_category_id|string == cat.id|string %}selected{% endif %}>{{ cat.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small font-weight-bold">Vendor</label>
+                <select name="vendor_id" class="form-select bg-light border-0">
+                    <option value="all">All Vendors</option>
+                    {% for vendor in vendors %}
+                    <option value="{{ vendor.id }}" {% if current_vendor_id|string == vendor.id|string %}selected{% endif %}>{{ vendor.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small font-weight-bold">From Date</label>
+                <input type="date" name="start_date" class="form-control bg-light border-0" value="{{ start_date }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small font-weight-bold">To Date</label>
+                <input type="date" name="end_date" class="form-control bg-light border-0" value="{{ end_date }}">
+            </div>
+            <div class="col-md-1 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100 shadow-sm">Filter</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Expense Table -->
+    <div class="card report-card">
+        <div class="card-header bg-transparent border-0 pt-4 px-4">
+            <h5 class="mb-0">Expense Details</h5>
+        </div>
+        <div class="card-body px-0">
+            <div class="table-responsive">
+                <table class="table align-items-center table-flush">
+                    <thead>
+                        <tr>
+                            <th class="px-4">Expense #</th>
+                            <th>Date</th>
+                            <th>Category</th>
+                            <th>Vendor</th>
+                            <th>Description</th>
+                            <th>Method</th>
+                            <th>Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for expense in expenses %}
+                        <tr>
+                            <td class="px-4 font-weight-bold">{{ expense.expense_number }}</td>
+                            <td>{{ expense.date.strftime('%Y-%m-%d') }}</td>
+                            <td><span class="badge bg-light text-dark">{{ expense.expense_category.name if expense.expense_category else 'N/A' }}</span></td>
+                            <td>{{ expense.vendor.name if expense.vendor else 'N/A' }}</td>
+                            <td><small>{{ expense.description }}</small></td>
+                            <td>{{ expense.payment_method }}</td>
+                            <td><strong class="text-danger">${{ "%.2f"|format(expense.amount) }}</strong></td>
+                        </tr>
+                        {% endfor %}
+                        {% if not expenses %}
+                        <tr>
+                            <td colspan="7" class="text-center py-5 text-muted">No expense records found.</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

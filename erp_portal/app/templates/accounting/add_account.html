@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Add Account{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h2 class="mb-4">Add Account</h2>
+    <form method="POST">
+        <div class="mb-3">
+            <label class="form-label">Account Name</label>
+            <input type="text" name="name" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Code</label>
+            <input type="text" name="code" class="form-control">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Type</label>
+            <select name="type" class="form-control" required>
+                <option value="Asset">Asset</option>
+                <option value="Liability">Liability</option>
+                <option value="Equity">Equity</option>
+                <option value="Income">Income</option>
+                <option value="Expense">Expense</option>
+            </select>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Parent Account (optional)</label>
+            <select name="parent_id" class="form-control">
+                <option value="">None</option>
+                {% for parent in parents %}
+                <option value="{{ parent.id }}">{{ parent.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Description</label>
+            <textarea name="description" class="form-control"></textarea>
+        </div>
+        <button class="btn btn-primary">Create</button>
+        <a class="btn btn-secondary" href="{{ url_for('accounting.accounts') }}">Cancel</a>
+    </form>
+</div>
+{% endblock %}

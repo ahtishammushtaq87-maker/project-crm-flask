@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h2 class="mb-4">Dashboard</h2>
+    
+    <div class="row">
+        <div class="col-md-3">
+            <div class="card-stats">
+                <div class="stats-icon float-end">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <h5>Total Sales</h5>
+                <h3>${{ "%.2f"|format(total_sales) }}</h3>
+                <small>This Month</small>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card-stats" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <div class="stats-icon float-end">
+                    <i class="fas fa-shopping-cart"></i>
+                </div>
+                <h5>Total Purchases</h5>
+                <h3>${{ "%.2f"|format(total_purchases) }}</h3>
+                <small>Inventory Added</small>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card-stats" style="background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);">
+                <div class="stats-icon float-end">
+                    <i class="fas fa-boxes"></i>
+                </div>
+                <h5>COGS</h5>
+                <h3>${{ "%.2f"|format(total_cogs) }}</h3>
+                <small>Cost of Goods Sold</small>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card-stats" style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);">
+                <div class="stats-icon float-end">
+                    <i class="fas fa-money-bill-wave"></i>
+                </div>
+                <h5>Total Expenses</h5>
+                <h3>${{ "%.2f"|format(total_expenses) }}</h3>
+                <small>This Month</small>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card-stats" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);">
+                <div class="stats-icon float-end">
+                    <i class="fas fa-chart-pie"></i>
+                </div>
+                <h5>Gross Profit</h5>
+                <h3 class="{% if gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                    ${{ "%.2f"|format(gross_profit) }}
+                </h3>
+                <small>This Month</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-3">
+        <div class="col-md-3">
+            <div class="card-stats" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                <div class="stats-icon float-end">
+                    <i class="fas fa-trophy"></i>
+                </div>
+                <h5>Net Profit</h5>
+                <h3 class="{% if net_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                    ${{ "%.2f"|format(net_profit) }}
+                </h3>
+                <small>This Month</small>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card-stats" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+                <div class="stats-icon float-end">
+                    <i class="fas fa-clock"></i>
+                </div>
+                <h5>Outstanding</h5>
+                <h3>${{ "%.2f"|format(outstanding) }}</h3>
+                <small>Unpaid Invoices</small>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mt-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Sales Overview (Last 7 Days)</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="salesChart" height="300"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Quick Stats</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <strong>Low Stock Products:</strong>
+                        <span class="badge bg-warning float-end">{{ low_stock }}</span>
+                    </div>
+                    <div class="mb-3">
+                        <strong>Active Vendors:</strong>
+                        <span class="badge bg-info float-end">{{ vendors_count }}</span>
+                    </div>
+                    <div class="mb-3">
+                        <strong>Total Products:</strong>
+                        <span class="badge bg-success float-end">{{ products_count }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Recent Sales</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Invoice #</th>
+                                    <th>Date</th>
+                                    <th>Customer</th>
+                                    <th>Total</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for sale in recent_sales %}
+                                <tr>
+                                    <td>{{ sale.invoice_number }}</td>
+                                    <td>{{ sale.date.strftime('%Y-%m-%d') }}</td>
+                                    <td>{{ sale.customer.name if sale.customer else 'Walk-in Customer' }}</td>
+                                    <td>${{ "%.2f"|format(sale.total) }}</td>
+                                    <td>
+                                        {% if sale.status == 'paid' %}
+                                        <span class="badge bg-success">Paid</span>
+                                        {% elif sale.status == 'partial' %}
+                                        <span class="badge bg-warning">Partial</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">Unpaid</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const ctx = document.getElementById('salesChart').getContext('2d');
+    const salesChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: {{ sales_chart|map(attribute='date')|list|tojson }},
+            datasets: [{
+                label: 'Sales Amount',
+                data: {{ sales_chart|map(attribute='amount')|list|tojson }},
+                borderColor: 'rgb(75, 192, 192)',
+                tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+</script>
+{% endblock %}

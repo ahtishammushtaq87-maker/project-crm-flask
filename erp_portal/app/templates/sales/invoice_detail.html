@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Invoice {{ sale.invoice_number }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+	<div class="d-flex justify-content-between align-items-center mb-4">
+		<h2>Invoice {{ sale.invoice_number }}</h2>
+		<div>
+			<a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" class="btn btn-primary" target="_blank">
+				<i class="fas fa-download"></i> Download PDF
+			</a>
+			<a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary">Back</a>
+			<form method="POST" action="{{ url_for('sales.delete_invoice', id=sale.id) }}" style="display:inline;" onsubmit="return confirm('Delete this invoice?');">
+				<button type="submit" class="btn btn-danger">Delete</button>
+			</form>
+		</div>
+	</div>
+
+	<div class="row mb-3">
+		<div class="col-md-4">
+			<div class="card p-3 mb-3">
+				<strong>Customer:</strong> {{ sale.customer.name if sale.customer else 'Walk-in Customer' }}<br>
+				<strong>Vendor:</strong> {{ sale.vendor.name if sale.vendor else '-' }}<br>
+				<strong>Date:</strong> {{ sale.date.strftime('%Y-%m-%d') }}<br>
+				<strong>Status:</strong>
+				{% if sale.status == 'paid' %}
+					<span class="badge bg-success">Paid</span>
+				{% elif sale.status == 'partial' %}
+					<span class="badge bg-warning">Partial</span>
+				{% else %}
+					<span class="badge bg-danger">Unpaid</span>
+				{% endif %}
+			</div>
+		</div>
+		<div class="col-md-8">
+			<div class="card p-3">
+				<h5>Items</h5>
+				<div class="table-responsive">
+					<table class="table table-bordered">
+						<thead>
+							<tr>
+								<th>Product</th>
+								<th>Qty</th>
+								<th>Unit Price</th>
+								<th>Total</th>
+							</tr>
+						</thead>
+						<tbody>
+							{% for item in sale.items %}
+							<tr>
+								<td>{{ item.product.name }}</td>
+								<td>{{ item.quantity }}</td>
+								<td>${{ '%.2f'|format(item.unit_price) }}</td>
+								<td>${{ '%.2f'|format(item.total) }}</td>
+							</tr>
+							{% endfor %}
+						</tbody>
+					</table>
+				</div>
+				<div class="text-end mt-3">
+					<p>Subtotal: ${{ '%.2f'|format(sale.subtotal) }}</p>
+					<p>Tax: ${{ '%.2f'|format(sale.tax) }}</p>
+					<p>Discount: ${{ '%.2f'|format(sale.discount) }}</p>
+					<h4>Total: ${{ '%.2f'|format(sale.total) }}</h4>
+					<p>Paid: ${{ '%.2f'|format(sale.paid_amount) }}</p>
+					<p>Balance: ${{ '%.2f'|format(sale.total - sale.paid_amount) }}</p>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="card mb-3">
+		<div class="card-body">
+			<h5>Make Payment</h5>
+			<form method="POST" action="{{ url_for('sales.pay_invoice', id=sale.id) }}">
+				<div class="row g-3 align-items-end">
+					<div class="col-md-4">
+						<input type="number" name="amount" class="form-control" step="0.01" placeholder="Payment amount" required>
+					</div>
+					<div class="col-md-2">
+						<button class="btn btn-success" type="submit">Pay</button>
+					</div>
+				</div>
+			</form>
+		</div>
+	</div>
+</div>
+{% endblock %}

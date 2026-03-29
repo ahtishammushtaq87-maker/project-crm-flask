@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Invoice Settings{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Invoice Settings</h2>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Default Invoice Settings</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        {{ form.hidden_tag() }}
+
+                        <div class="mb-3">
+                            <label for="default_notes" class="form-label">Default Invoice Notes</label>
+                            {{ form.default_notes(class="form-control", rows="3") }}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="default_terms" class="form-label">Default Terms & Conditions</label>
+                            {{ form.default_terms(class="form-control", rows="4") }}
+                        </div>
+
+                        <hr>
+                        <h6>Banking Details</h6>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="bank_name" class="form-label">Bank Name</label>
+                                    {{ form.bank_name(class="form-control") }}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="account_holder_name" class="form-label">Account Holder Name</label>
+                                    {{ form.account_holder_name(class="form-control") }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="account_number" class="form-label">Account Number</label>
+                                    {{ form.account_number(class="form-control") }}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="ifsc_code" class="form-label">IFSC Code</label>
+                                    {{ form.ifsc_code(class="form-control") }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="swift_code" class="form-label">SWIFT Code</label>
+                                    {{ form.swift_code(class="form-control") }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="bank_address" class="form-label">Bank Address</label>
+                            {{ form.bank_address(class="form-control", rows="3") }}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="payment_instructions" class="form-label">Payment Instructions</label>
+                            {{ form.payment_instructions(class="form-control", rows="3") }}
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">Save Settings</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Help</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>Default Notes:</strong> These notes will appear on all new invoices.</p>
+                    <p><strong>Terms & Conditions:</strong> Standard terms that apply to all invoices.</p>
+                    <p><strong>Banking Details:</strong> Your bank information will be included in invoice PDFs.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

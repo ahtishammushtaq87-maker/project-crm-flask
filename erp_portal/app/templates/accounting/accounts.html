@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Accounting Accounts{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h2 class="mb-4">Chart of Accounts</h2>
+    <div class="mb-3">
+        <a href="{{ url_for('accounting.add_account') }}" class="btn btn-primary">Add New Account</a>
+    </div>
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped">
+                    <thead>
+                        <tr>
+                            <th>Account Name</th>
+                            <th>Account Code</th>
+                            <th>Type</th>
+                            <th>Parent Account</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for account in accounts %}
+                        <tr>
+                            <td>{{ account.name }}</td>
+                            <td>{{ account.code or '-' }}</td>
+                            <td>{{ account.type.title() }}</td>
+                            <td>{{ account.parent.name if account.parent else '-' }}</td>
+                            <td>
+                                <span class="badge {% if account.is_active %}badge-success{% else %}badge-secondary{% endif %}">
+                                    {{ 'Active' if account.is_active else 'Inactive' }}
+                                </span>
+                            </td>
+                            <td>
+                                <a href="{{ url_for('accounting.edit_account', id=account.id) }}" class="btn btn-sm btn-secondary">Edit</a>
+                                <form method="POST" action="{{ url_for('accounting.delete_account', id=account.id) }}" style="display:inline;">
+                                    <button class="btn btn-sm btn-danger" onclick="return confirm('Delete this account?');">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

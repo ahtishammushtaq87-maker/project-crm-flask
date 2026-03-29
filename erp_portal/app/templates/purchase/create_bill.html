@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="container mt-4">
+    <h2>Create Purchase Bill</h2>
+
+    <form method="POST">
+        {{ form.hidden_tag() }}
+
+        <!-- Vendor + Date -->
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <label>Vendor</label>
+                <select name="vendor_id" class="form-control" required>
+                    <option value="">Select Vendor</option>
+                    {% for v in vendors %}
+                        <option value="{{ v.id }}">{{ v.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-4">
+                <label>Date</label>
+                <input type="date" name="date" class="form-control" required>
+            </div>
+
+            <div class="col-md-4">
+                <label>Currency</label>
+                <select name="currency_id" class="form-control">
+                    {% for cur in currencies %}
+                    <option value="{{ cur.id }}">{{ cur.name }} ({{ cur.code }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-4">
+                <label>Exchange Rate</label>
+                <input type="number" name="exchange_rate" class="form-control" step="0.0001" value="1">
+            </div>
+
+            <div class="col-md-4">
+                <label>Advance Paid</label>
+                <input type="number" name="advance" id="advance" value="0" class="form-control" oninput="calculateTotal()">
+            </div>
+        </div>
+
+        <!-- Items -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between">
+                <strong>Items</strong>
+                <button type="button" class="btn btn-primary btn-sm" onclick="addRow()">+ Add Item</button>
+            </div>
+
+            <div class="card-body p-0">
+                <table class="table table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Product</th>
+                            <th width="100">Qty</th>
+                            <th width="120">Price</th>
+                            <th width="100">Tax %</th>
+                            <th width="150">Amount</th>
+                            <th width="50"></th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="itemsBody">
+                        <tr>
+                            <td>
+                                <select name="product_id[]" class="form-control product-select" onchange="onProductChange(this)">
+                                    <option value="">Select Product</option>
+                                    {% for p in products %}
+                                        <option value="{{ p.id }}" data-cost-price="{{ p.cost_price }}">{{ p.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+
+                            <td>
+                                <input type="number" name="quantity[]" class="form-control qty" value="1" oninput="calcRow(this)">
+                            </td>
+
+                            <td>
+                                <input type="number" name="price[]" class="form-control price" value="0" oninput="calcRow(this)">
+                            </td>
+
+                            <td>
+                                <input type="number" class="form-control item-tax" value="0" oninput="calcRow(this)">
+                            </td>
+
+                            <td>
+                                <input type="text" class="form-control amount" readonly>
+                            </td>
+
+                            <td>
+                                <button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)">X</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Summary -->
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <label>Notes</label>
+                <textarea name="notes" class="form-control"></textarea>
+            </div>
+
+            <div class="col-md-6">
+                <table class="table">
+                    <tr>
+                        <th>Subtotal</th>
+                        <td><input type="text" id="subtotal" class="form-control" readonly></td>
+                    </tr>
+
+                    <tr>
+                        <th>Total Tax</th>
+                        <td><input type="text" id="total_tax" class="form-control" readonly></td>
+                    </tr>
+
+                    <tr>
+                        <th>Discount</th>
+                        <td><input type="number" id="discount" name="discount" value="0" class="form-control" oninput="calculateTotal()"></td>
+                    </tr>
+
+                    <tr>
+                        <th>Shipping</th>
+                        <td><input type="number" id="shipping" name="shipping_charge" value="0" class="form-control" oninput="calculateTotal()"></td>
+                    </tr>
+
+                    <tr>
+                        <th><strong>Grand Total</strong></th>
+                        <td><input type="text" id="grand_total" class="form-control" readonly></td>
+                    </tr>
+
+                    <tr>
+                        <th>Advance Paid</th>
+                        <td><input type="text" id="advance_display" class="form-control" readonly></td>
+                    </tr>
+
+                    <tr>
+                        <th><strong>Balance Due</strong></th>
+                        <td><input type="text" id="balance" class="form-control" readonly></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-success mt-3">Save Bill</button>
+    </form>
+</div>
+
+<!-- JS -->
+<script>
+function addRow() {
+    let row = document.querySelector("#itemsBody tr").cloneNode(true);
+
+    row.querySelectorAll("input").forEach(i => i.value = "");
+    let select = row.querySelector("select");
+    select.selectedIndex = 0;
+    select.className = "form-control product-select";
+    select.setAttribute("onchange", "onProductChange(this)");
+
+    document.getElementById("itemsBody").appendChild(row);
+}
+
+function removeRow(btn) {
+    let rows = document.querySelectorAll("#itemsBody tr");
+    if (rows.length > 1) {
+        btn.closest("tr").remove();
+        calculateTotal();
+    }
+}
+
+function onProductChange(select) {
+    let selectedOption = select.options[select.selectedIndex];
+    let costPrice = selectedOption.getAttribute('data-cost-price');
+    
+    if (costPrice && costPrice !== 'None' && costPrice !== '0' && costPrice !== '') {
+        let priceInput = select.closest("tr").querySelector(".price");
+        priceInput.value = parseFloat(costPrice).toFixed(2);
+        calcRow(priceInput);
+    }
+}
+
+function calcRow(el) {
+    let row = el.closest("tr");
+
+    let qty = parseFloat(row.querySelector(".qty").value) || 0;
+    let price = parseFloat(row.querySelector(".price").value) || 0;
+    let tax = parseFloat(row.querySelector(".item-tax").value) || 0;
+
+    let subtotal = qty * price;
+    let taxAmount = subtotal * (tax / 100);
+    let total = subtotal + taxAmount;
+
+    row.querySelector(".amount").value = total.toFixed(2);
+
+    calculateTotal();
+}
+
+function calculateTotal() {
+    let subtotal = 0;
+    let totalTax = 0;
+
+    document.querySelectorAll("#itemsBody tr").forEach(row => {
+        let qty = parseFloat(row.querySelector(".qty").value) || 0;
+        let price = parseFloat(row.querySelector(".price").value) || 0;
+        let tax = parseFloat(row.querySelector(".item-tax").value) || 0;
+
+        let sub = qty * price;
+        let taxAmount = sub * (tax / 100);
+
+        subtotal += sub;
+        totalTax += taxAmount;
+    });
+
+    let discount = parseFloat(document.getElementById("discount").value) || 0;
+    let shipping = parseFloat(document.getElementById("shipping").value) || 0;
+    let advance = parseFloat(document.getElementById("advance").value) || 0;
+
+    let grandTotal = subtotal + totalTax + shipping - discount;
+    let balance = grandTotal - advance;
+
+    document.getElementById("subtotal").value = subtotal.toFixed(2);
+    document.getElementById("total_tax").value = totalTax.toFixed(2);
+    document.getElementById("grand_total").value = grandTotal.toFixed(2);
+    document.getElementById("advance_display").value = advance.toFixed(2);
+    document.getElementById("balance").value = balance.toFixed(2);
+}
+</script>
+
+{% endblock %}

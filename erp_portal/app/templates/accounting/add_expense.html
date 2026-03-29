@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Add Expense{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4>Add New Expense</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST" enctype="multipart/form-data">
+                        {{ form.hidden_tag() }}
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Date</label>
+                                {{ form.date(class="form-control") }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Category</label>
+                                {{ form.category_id(class="form-control") }}
+                                <small class="text-muted">
+                                    <a href="{{ url_for('accounting.expense_categories') }}" target="_blank">Manage Categories</a>
+                                </small>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Vendor (Optional)</label>
+                            {{ form.vendor_id(class="form-control") }}
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            {{ form.description(class="form-control", rows=3) }}
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Amount</label>
+                                {{ form.amount(class="form-control") }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Payment Method</label>
+                                {{ form.payment_method(class="form-control") }}
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Reference</label>
+                            {{ form.reference(class="form-control") }}
+                        </div>
+                        <div class="mb-3">
+                            <label for="bill_image" class="form-label">Bill Image</label>
+                            {{ form.bill_image(class="form-control", accept="image/*", id="billImageInput") }}
+                            <div class="form-text">Upload a bill/receipt image (JPG, PNG, GIF) - Optional</div>
+                            <div id="billImagePreview" class="mt-2"></div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Notes</label>
+                            {{ form.notes(class="form-control", rows=2) }}
+                        </div>
+                        <button type="submit" class="btn btn-success">Save Expense</button>
+                        <a href="{{ url_for('accounting.expenses') }}" class="btn btn-secondary">Cancel</a>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('billImageInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    const preview = document.getElementById('billImagePreview');
+    
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = `
+                <img src="${e.target.result}" class="img-thumbnail" style="max-width: 200px; max-height: 200px;">
+                <p class="text-muted small mt-1">${file.name}</p>
+            `;
+        };
+        reader.readAsDataURL(file);
+    } else {
+        preview.innerHTML = '';
+    }
+});
+</script>
+{% endblock %}

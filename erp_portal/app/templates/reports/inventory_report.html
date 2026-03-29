@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+
+{% block title %}Inventory Report{% endblock %}
+
+{% block extra_css %}
+<style>
+    .report-card {
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        transition: transform 0.3s ease;
+        background: white;
+    }
+    .report-card:hover {
+        transform: translateY(-5px);
+    }
+    .status-badge {
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .bg-gradient-success {
+        background: linear-gradient(135deg, #2dce89 0%, #2dcecc 100%);
+    }
+    .bg-gradient-info {
+        background: linear-gradient(135deg, #11cdef 0%, #1171ef 100%);
+    }
+    .bg-gradient-warning {
+        background: linear-gradient(135deg, #fb6340 0%, #fbb140 100%);
+    }
+    .filter-section {
+        background: white;
+        padding: 25px;
+        border-radius: 15px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        margin-bottom: 30px;
+    }
+    .table thead th {
+        background-color: #f8f9fe;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 1px;
+        border-bottom: 1px solid #e9ecef;
+    }
+    .download-btn {
+        border-radius: 10px;
+        padding: 8px 15px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="font-weight-bold">Inventory Report</h2>
+        <div class="dropdown">
+            <button class="btn btn-primary dropdown-toggle download-btn" type="button" id="downloadDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="fas fa-download"></i> Download Report
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="downloadDropdown">
+                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='pdf', report_type='inventory', **request.args) }}"><i class="fas fa-file-pdf text-danger me-2"></i> PDF Format</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='excel', report_type='inventory', **request.args) }}"><i class="fas fa-file-excel text-success me-2"></i> Excel Format</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='csv', report_type='inventory', **request.args) }}"><i class="fas fa-file-csv text-info me-2"></i> CSV Format</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-4 col-md-6 mb-4">
+            <div class="card report-card bg-gradient-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <p class="text-white-50 small mb-1">Total Stock Value (Cost)</p>
+                            <h3 class="mb-0">${{ "%.2f"|format(total_value) }}</h3>
+                        </div>
+                        <div class="icon icon-shape bg-white text-primary rounded-circle shadow">
+                            <i class="fas fa-warehouse p-3"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-4 col-md-6 mb-4">
+            <div class="card report-card bg-gradient-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <p class="text-white-50 small mb-1">Total Quantity</p>
+                            <h3 class="mb-0">{{ total_items }} Units</h3>
+                        </div>
+                        <div class="icon icon-shape bg-white text-success rounded-circle shadow">
+                            <i class="fas fa-cubes p-3"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-4 col-md-6 mb-4">
+            <div class="card report-card bg-gradient-warning text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <p class="text-white-50 small mb-1">Total Products</p>
+                            <h3 class="mb-0">{{ products|length }}</h3>
+                        </div>
+                        <div class="icon icon-shape bg-white text-warning rounded-circle shadow">
+                            <i class="fas fa-box p-3"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-section">
+        <form method="GET" action="{{ url_for('reports.inventory_report') }}" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label small font-weight-bold">Search Product / SKU</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-light border-0"><i class="fas fa-search"></i></span>
+                    <input type="text" name="search" class="form-control bg-light border-0" placeholder="Product name or SKU..." value="{{ search }}">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small font-weight-bold">Category</label>
+                <select name="category" class="form-select bg-light border-0">
+                    <option value="all">All Categories</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat }}" {% if current_category == cat %}selected{% endif %}>{{ cat }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small font-weight-bold">Stock Level</label>
+                <select name="stock_filter" class="form-select bg-light border-0">
+                    <option value="all" {% if stock_filter == 'all' %}selected{% endif %}>All Stocks</option>
+                    <option value="min" {% if stock_filter == 'min' %}selected{% endif %}>Below Minimum</option>
+                    <option value="high" {% if stock_filter == 'high' %}selected{% endif %}>Above Maximum</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100 shadow-sm">Filter</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Inventory Table -->
+    <div class="card report-card">
+        <div class="card-header bg-transparent border-0 pt-4 px-4">
+            <h5 class="mb-0">Inventory Details</h5>
+        </div>
+        <div class="card-body px-0">
+            <div class="table-responsive">
+                <table class="table align-items-center table-flush">
+                    <thead>
+                        <tr>
+                            <th class="px-4">SKU</th>
+                            <th>Product Name</th>
+                            <th>Category</th>
+                            <th>Quantity</th>
+                            <th>Reorder Level</th>
+                            <th>Cost Price</th>
+                            <th>Sale Price</th>
+                            <th>Stock Value</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for product in products %}
+                        <tr>
+                            <td class="px-4 font-weight-bold">{{ product.sku }}</td>
+                            <td>{{ product.name }}</td>
+                            <td><span class="badge bg-light text-dark">{{ product.category }}</span></td>
+                            <td>{{ product.quantity }} {{ product.unit }}</td>
+                            <td>{{ product.reorder_level }}</td>
+                            <td>${{ "%.2f"|format(product.cost_price) }}</td>
+                            <td>${{ "%.2f"|format(product.unit_price) }}</td>
+                            <td><strong>${{ "%.2f"|format(product.stock_value) }}</strong></td>
+                            <td>
+                                {% if product.quantity <= 0 %}
+                                <span class="status-badge bg-danger text-white">Out of Stock</span>
+                                {% elif product.is_low_stock %}
+                                <span class="status-badge bg-warning text-white">Low Stock</span>
+                                {% else %}
+                                <span class="status-badge bg-success text-white">In Stock</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% if not products %}
+                        <tr>
+                            <td colspan="9" class="text-center py-5 text-muted">No products found in inventory.</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}General Ledger{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h2 class="mb-4">General Ledger</h2>
+    
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Start Date</label>
+                    <input type="date" name="start_date" class="form-control" value="{{ start_date or '' }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">End Date</label>
+                    <input type="date" name="end_date" class="form-control" value="{{ end_date or '' }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Account</label>
+                    <select name="account" class="form-control">
+                        <option value="all" {% if current_account == 'all' %}selected{% endif %}>All Accounts</option>
+                        {% for account in accounts %}
+                        <option value="{{ account }}" {% if current_account == account %}selected{% endif %}>{{ account }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">&nbsp;</label>
+                    <button type="submit" class="btn btn-primary d-block">Filter</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Reference</th>
+                            <th>Description</th>
+                            <th>Account</th>
+                            <th>Debit</th>
+                            <th>Credit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for transaction in transactions %}
+                        <tr>
+                            <td>{{ transaction.date.strftime('%Y-%m-%d') }}</td>
+                            <td>{{ transaction.reference_type|title }} #{{ transaction.reference_id }}</td>
+                            <td>{{ transaction.description }}</td>
+                            <td>{{ transaction.account }}</td>
+                            <td class="text-danger">${{ "%.2f"|format(transaction.debit) }}</td>
+                            <td class="text-success">${{ "%.2f"|format(transaction.credit) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center">No transactions found</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-dark">
+                            <td colspan="4"><strong>Totals</strong></td>
+                            <td><strong>${{ "%.2f"|format(total_debit) }}</strong></td>
+                            <td><strong>${{ "%.2f"|format(total_credit) }}</strong></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

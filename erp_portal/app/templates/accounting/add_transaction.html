@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}Add Transaction{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h2 class="mb-4">Add Transaction</h2>
+    <form method="POST">
+        <div class="mb-3">
+            <label class="form-label">Transaction Number</label>
+            <input type="text" name="transaction_number" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Date</label>
+            <input type="date" name="date" class="form-control" value="{{ now }}" required>
+        </div>
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Debit Account</label>
+                <select name="debit_account" class="form-control" required>
+                    {% for account in accounts %}
+                    <option value="{{ account.name }}">{{ account.name }} ({{ account.type }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Credit Account</label>
+                <select name="credit_account" class="form-control" required>
+                    {% for account in accounts %}
+                    <option value="{{ account.name }}">{{ account.name }} ({{ account.type }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Reference Type</label>
+            <select name="reference_type" class="form-control">
+                <option value="sale" {% if prefill and prefill.reference_type == 'sale' %}selected{% endif %}>Sale</option>
+                <option value="purchase" {% if prefill and prefill.reference_type == 'purchase' %}selected{% endif %}>Purchase</option>
+                <option value="expense" {% if prefill and prefill.reference_type == 'expense' %}selected{% endif %}>Expense</option>
+                <option value="payment" {% if prefill and prefill.reference_type == 'payment' %}selected{% endif %}>Payment</option>
+                <option value="other">Other</option>
+            </select>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Reference ID</label>
+            <input type="number" name="reference_id" class="form-control" value="{% if prefill %}{{ prefill.reference_id or '' }}{% endif %}">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Amount</label>
+            <input type="number" name="amount" step="0.01" class="form-control" value="{% if prefill %}{{ prefill.amount or '' }}{% endif %}" required>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Payment Mode</label>
+            <select name="payment_mode" class="form-control" required>
+                <option value="Cash" {% if prefill and prefill.payment_mode == 'Cash' %}selected{% endif %}>Cash</option>
+                <option value="Bank" {% if prefill and prefill.payment_mode == 'Bank' %}selected{% endif %}>Bank</option>
+                <option value="Card" {% if prefill and prefill.payment_mode == 'Card' %}selected{% endif %}>Card</option>
+                <option value="JazzCash" {% if prefill and prefill.payment_mode == 'JazzCash' %}selected{% endif %}>JazzCash</option>
+                <option value="Other" {% if prefill and prefill.payment_mode == 'Other' %}selected{% endif %}>Other</option>
+            </select>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Status</label>
+            <select name="status" class="form-control" required>
+                <option value="Pending">Pending</option>
+                <option value="Completed">Completed</option>
+                <option value="Failed">Failed</option>
+            </select>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Debit</label>
+            <input type="number" name="debit" step="0.01" class="form-control" value="0">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Credit</label>
+            <input type="number" name="credit" step="0.01" class="form-control" value="0">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Description</label>
+            <textarea name="description" class="form-control">{% if prefill %}{{ prefill.description or '' }}{% endif %}</textarea>
+        </div>
+        <button class="btn btn-primary">Create</button>
+        <a class="btn btn-secondary" href="{{ url_for('accounting.transactions') }}">Cancel</a>
+    </form>
+</div>
+{% endblock %}

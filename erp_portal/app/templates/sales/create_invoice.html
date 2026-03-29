@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}Create Invoice{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h2 class="mb-4">Create New Invoice</h2>
+    
+    <form method="POST" id="invoiceForm">
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h5>Invoice Details</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Customer</label>
+                            <select name="customer_id" class="form-control">
+                                <option value="0">Walk-in Customer</option>
+                                {% for customer in form.customer_id.choices[1:] %}
+                                <option value="{{ customer[0] }}">{{ customer[1] }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Vendor (Optional)</label>
+                            <select name="vendor_id" class="form-control">
+                                <option value="0">None</option>
+                                {% for vendor in vendors %}
+                                <option value="{{ vendor.id }}">{{ vendor.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Date</label>
+                            <input type="date" name="date" class="form-control" value="{{ now.strftime('%Y-%m-%d') }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Currency</label>
+                            <select name="currency_id" class="form-control">
+                                {% for cur in currencies %}
+                                <option value="{{ cur.id }}">{{ cur.name }} ({{ cur.code }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Exchange Rate</label>
+                            <input type="number" step="0.0001" name="exchange_rate" class="form-control" value="1.0">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Status</label>
+                            <select name="status" class="form-control">
+                                <option value="draft">Draft</option>
+                                <option value="unpaid" selected>Unpaid</option>
+                                <option value="paid">Paid</option>
+                                <option value="partial">Partial</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Due Date</label>
+                            <input type="date" name="due_date" class="form-control" value="{{ now.strftime('%Y-%m-%d') }}">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h5>Summary</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Discount</label>
+                            <input type="number" name="discount" class="form-control" step="0.01" value="0">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Tax Rate (%)</label>
+                            <input type="number" name="tax_rate" class="form-control" step="0.01" value="0">
+                        </div>
+                        <hr>
+                        <div class="mb-2">
+                            <strong>Subtotal:</strong> <span id="subtotal">$0.00</span>
+                        </div>
+                        <div class="mb-2">
+                            <strong>Tax:</strong> <span id="tax">$0.00</span>
+                        </div>
+                        <div class="mb-2">
+                            <strong>Discount:</strong> <span id="discountDisplay">$0.00</span>
+                        </div>
+                        <hr>
+                        <div class="mb-2">
+                            <h4>Total: <span id="total">$0.00</span></h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5>Items</h5>
+                <button type="button" class="btn btn-sm btn-primary" onclick="addItem()">
+                    <i class="fas fa-plus"></i> Add Item
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table" id="itemsTable">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th>Quantity</th>
+                                <th>Unit Price</th>
+                                <th>Total</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="itemsBody">
+                            <tr class="item-row">
+                                <td>
+                                    <select name="product_id[]" class="form-control product-select" required>
+                                        <option value="">Select Product</option>
+                                        {% for product in products %}
+                                        <option value="{{ product.id }}" data-price="{{ product.unit_price }}">
+                                            {{ product.name }} (Stock: {{ product.quantity }})
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="number" name="quantity[]" class="form-control quantity" step="0.01" required>
+                                </td>
+                                <td>
+                                    <input type="number" name="price[]" class="form-control price" step="0.01" readonly>
+                                </td>
+                                <td>
+                                    <span class="item-total">$0.00</span>
+                                </td>
+                                <td>
+                                    <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <div class="mt-3">
+            <button type="submit" class="btn btn-primary">Create Invoice</button>
+            <a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+    function addItem() {
+        const newRow = document.querySelector('.item-row').cloneNode(true);
+        newRow.querySelectorAll('input, select').forEach(input => input.value = '');
+        newRow.querySelector('.item-total').textContent = '$0.00';
+        document.getElementById('itemsBody').appendChild(newRow);
+        attachItemEvents(newRow);
+    }
+    
+    function removeItem(btn) {
+        if (document.querySelectorAll('.item-row').length > 1) {
+            btn.closest('.item-row').remove();
+            calculateTotals();
+        }
+    }
+    
+    function attachItemEvents(row) {
+        const productSelect = row.querySelector('.product-select');
+        const quantityInput = row.querySelector('.quantity');
+        const priceInput = row.querySelector('.price');
+        
+        productSelect.addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            const price = selectedOption.getAttribute('data-price');
+            priceInput.value = price;
+            calculateItemTotal(row);
+        });
+        
+        quantityInput.addEventListener('input', () => calculateItemTotal(row));
+        priceInput.addEventListener('input', () => calculateItemTotal(row));
+    }
+    
+    function calculateItemTotal(row) {
+        const quantity = parseFloat(row.querySelector('.quantity').value) || 0;
+        const price = parseFloat(row.querySelector('.price').value) || 0;
+        const total = quantity * price;
+        row.querySelector('.item-total').textContent = `$${total.toFixed(2)}`;
+        calculateTotals();
+    }
+    
+    function calculateTotals() {
+        let subtotal = 0;
+        document.querySelectorAll('.item-total').forEach(totalSpan => {
+            const total = parseFloat(totalSpan.textContent.replace('$', '')) || 0;
+            subtotal += total;
+        });
+        
+        const taxRate = parseFloat(document.querySelector('input[name="tax_rate"]').value) || 0;
+        const tax = subtotal * (taxRate / 100);
+        const discount = parseFloat(document.querySelector('input[name="discount"]').value) || 0;
+        const total = subtotal + tax - discount;
+        
+        document.getElementById('subtotal').textContent = `$${subtotal.toFixed(2)}`;
+        document.getElementById('tax').textContent = `$${tax.toFixed(2)}`;
+        document.getElementById('discountDisplay').textContent = `$${discount.toFixed(2)}`;
+        document.getElementById('total').textContent = `$${total.toFixed(2)}`;
+    }
+    
+    // Attach events to existing items
+    document.querySelectorAll('.item-row').forEach(attachItemEvents);
+    document.querySelector('input[name="discount"]').addEventListener('input', calculateTotals);
+    document.querySelector('input[name="tax_rate"]').addEventListener('input', calculateTotals);
+</script>
+{% endblock %}

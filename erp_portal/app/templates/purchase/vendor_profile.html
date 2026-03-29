@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Vendor Profile{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2>{{ vendor.name }} Profile</h2>
+            <p>{{ vendor.email or 'No email' }} | {{ vendor.phone or 'No phone' }}</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('purchase.vendors') }}" class="btn btn-secondary">Back to Vendors</a>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <div class="card p-3 mb-3">
+                <h5>Total Purchases</h5>
+                <p class="fs-4">${{ '%.2f'|format(vendor.total_purchases) }}</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card p-3 mb-3">
+                <h5>Outstanding Balance</h5>
+                <p class="fs-4">${{ '%.2f'|format(vendor.outstanding_balance) }}</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card p-3 mb-3">
+                <h5>Active</h5>
+                <span class="badge bg-{{ 'success' if vendor.is_active else 'danger' }}">{{ 'Yes' if vendor.is_active else 'No' }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <h5 class="mb-3">Purchase Bills</h5>
+            <div class="table-responsive">
+                <table class="table table-bordered">
+                    <thead>
+                        <tr>
+                            <th>Bill #</th>
+                            <th>Date</th>
+                            <th>Total</th>
+                            <th>Paid</th>
+                            <th>Balance</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for bill in vendor.bills %}
+                        <tr>
+                            <td>{{ bill.bill_number }}</td>
+                            <td>{{ bill.date.strftime('%Y-%m-%d') }}</td>
+                            <td>${{ '%.2f'|format(bill.total) }}</td>
+                            <td>${{ '%.2f'|format(bill.paid_amount) }}</td>
+                            <td>${{ '%.2f'|format(bill.balance_due) }}</td>
+                            <td>{{ bill.status.title() }}</td>
+                            <td><a href="{{ url_for('purchase.bill_detail', id=bill.id) }}" class="btn btn-sm btn-outline-primary">View</a></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
