@@ -345,21 +345,12 @@ def health_check():
             'timestamp': datetime.utcnow().isoformat()
         }), 500
 
-if __name__ == '__main__':
-    # Initialize database
+if __name__ == "__main__":
     with app.app_context():
         try:
             init_db()
         except Exception as e:
             print(f"Database initialization error: {e}")
-    
-    # Get port from environment variable or use default
-    port = int(os.environ.get('PORT', 5000))
-    
-    # Run the application
-    app.run(
-        debug=False,
-        host='0.0.0.0',
-        port=port,
-        threaded=True
-    )
+
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
