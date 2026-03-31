@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, send_file, jsonify, flash, redirect, url_for
 from flask_login import login_required
 from app import db
-from app.models import Sale, PurchaseBill, Product, Vendor, Customer, Company, Expense, ExpenseCategory
+from app.models import Sale, SaleItem, PurchaseBill, Product, Vendor, Customer, Company, Expense, ExpenseCategory
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_, or_
 import pandas as pd
@@ -148,6 +148,76 @@ def inventory_report():
                          stock_filter=stock_filter,
                          total_value=total_value,
                          total_items=total_items)
+
+
+@bp.route('/cogs-report')
+@login_required
+def cogs_report():
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    category = request.args.get('category', 'all')
+    search = request.args.get('search', '')
+
+    query = SaleItem.query.join(Sale).join(Product)
+    if start_date:
+        query = query.filter(Sale.date >= datetime.strptime(start_date, '%Y-%m-%d'))
+    if end_date:
+        query = query.filter(Sale.date <= datetime.strptime(end_date, '%Y-%m-%d'))
+    if category != 'all':
+        query = query.filter(Product.category == category)
+    if search:
+        query = query.filter(or_(Product.name.ilike(f'%{search}%'), Product.sku.ilike(f'%{search}%')))
+
+    sale_items = query.order_by(Sale.date.desc()).all()
+
+    product_stats = {}
+    total_cogs = 0
+    total_revenue = 0
+    total_quantity = 0
+
+    for item in sale_items:
+        prod = item.product
+        if not prod:
+            continue
+
+        cogs = (prod.cost_price or 0) * item.quantity
+        revenue = item.total
+
+        if prod.id not in product_stats:
+            product_stats[prod.id] = {
+                'product_name': prod.name,
+                'sku': prod.sku,
+                'category': prod.category or 'Uncategorized',
+                'cost_price': prod.cost_price or 0,
+                'quantity_sold': 0,
+                'cogs': 0,
+                'revenue': 0,
+                'profit': 0
+            }
+
+        product_stats[prod.id]['quantity_sold'] += item.quantity
+        product_stats[prod.id]['cogs'] += cogs
+        product_stats[prod.id]['revenue'] += revenue
+        product_stats[prod.id]['profit'] = product_stats[prod.id]['revenue'] - product_stats[prod.id]['cogs']
+
+        total_cogs += cogs
+        total_revenue += revenue
+        total_quantity += item.quantity
+
+    products = sorted(product_stats.values(), key=lambda x: x['product_name'])
+    categories = [c[0] for c in db.session.query(Product.category).distinct().filter(Product.category.isnot(None)).all()]
+
+    return render_template('reports/cogs_report.html',
+                         products=products,
+                         categories=categories,
+                         current_category=category,
+                         start_date=start_date,
+                         end_date=end_date,
+                         search=search,
+                         total_cogs=total_cogs,
+                         total_revenue=total_revenue,
+                         total_quantity=total_quantity,
+                         total_profit=total_revenue - total_cogs)
 
 @bp.route('/expense-report')
 @login_required

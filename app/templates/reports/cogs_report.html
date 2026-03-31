@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}COGS Report{% endblock %}
+
+{% block extra_css %}
+<style>
+    .report-card { border: none; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); background: white; }
+    .filter-section { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); margin-bottom: 24px; }
+    .table thead th { background-color: #f8f9fe; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 1px; border-bottom: 1px solid #e9ecef; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="font-weight-bold">Cost of Goods Sold (COGS)</h2>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-3"><div class="card report-card p-3"><h6>Total Quantity</h6><h3>{{ total_quantity }}</h3></div></div>
+        <div class="col-md-3"><div class="card report-card p-3"><h6>Total COGS</h6><h3>${{ "%.2f"|format(total_cogs) }}</h3></div></div>
+        <div class="col-md-3"><div class="card report-card p-3"><h6>Total Revenue</h6><h3>${{ "%.2f"|format(total_revenue) }}</h3></div></div>
+        <div class="col-md-3"><div class="card report-card p-3"><h6>Total Profit</h6><h3>${{ "%.2f"|format(total_profit) }}</h3></div></div>
+    </div>
+
+    <div class="filter-section mb-4">
+        <form method="GET" action="{{ url_for('reports.cogs_report') }}" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">From Date</label>
+                <input type="date" name="start_date" class="form-control" value="{{ start_date or '' }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">To Date</label>
+                <input type="date" name="end_date" class="form-control" value="{{ end_date or '' }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Category</label>
+                <select name="category" class="form-select">
+                    <option value="all" {% if current_category == 'all' %}selected{% endif %}>All Categories</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat }}" {% if current_category == cat %}selected{% endif %}>{{ cat }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Product Search</label>
+                <input type="text" name="search" class="form-control" value="{{ search }}" placeholder="Product name or SKU">
+            </div>
+            <div class="col-md-1 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">Filter</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card report-card">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>SKU</th>
+                        <th>Category</th>
+                        <th>Qty Sold</th>
+                        <th>Cost Price</th>
+                        <th>COGS</th>
+                        <th>Revenue</th>
+                        <th>Profit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in products %}
+                    <tr>
+                        <td>{{ p.product_name }}</td>
+                        <td>{{ p.sku }}</td>
+                        <td>{{ p.category }}</td>
+                        <td>{{ p.quantity_sold }}</td>
+                        <td>${{ "%.2f"|format(p.cost_price) }}</td>
+                        <td>${{ "%.2f"|format(p.cogs) }}</td>
+                        <td>${{ "%.2f"|format(p.revenue) }}</td>
+                        <td>${{ "%.2f"|format(p.profit) }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not products %}
+                    <tr><td colspan="8" class="text-center py-4 text-muted">No COGS data found for selected filters.</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
