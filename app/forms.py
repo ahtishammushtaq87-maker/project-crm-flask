@@ -1,6 +1,6 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, FloatField, IntegerField, SelectField, TextAreaField, DateField, FileField
-from wtforms.validators import DataRequired, Email, Optional, NumberRange
+from wtforms import StringField, FloatField, IntegerField, SelectField, TextAreaField, DateField, FileField, BooleanField
+from wtforms.validators import DataRequired, Email, Optional, NumberRange, EqualTo, InputRequired
 from wtforms.fields import DateTimeField
 
 class ProductForm(FlaskForm):
@@ -66,3 +66,35 @@ class SaleForm(FlaskForm):
 class PurchaseForm(FlaskForm):
     vendor_id = SelectField('Vendor', coerce=int, validators=[DataRequired()])
     date = DateField('Date', validators=[DataRequired()])
+
+class UserForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired()])
+    email = StringField('Email', validators=[DataRequired(), Email()])
+    password = StringField('Password', validators=[DataRequired(message='Password is required')])  # Required for new users
+    role = SelectField('Role', choices=[('admin', 'Admin'), ('manager', 'Manager'), ('user', 'Staff')], validators=[DataRequired()])
+    is_active = SelectField('Status', choices=[(True, 'Active'), (False, 'Inactive')], coerce=lambda x: x == 'True', validators=[InputRequired()])
+    
+    # Permissions
+    can_view_sales = BooleanField('Sales Access', default=True)
+    can_view_purchases = BooleanField('Purchases Access', default=True)
+    can_view_inventory = BooleanField('Inventory Access', default=True)
+    can_view_expenses = BooleanField('Expenses Access', default=True)
+    can_view_vendors = BooleanField('Vendors Access', default=True)
+    can_view_customers = BooleanField('Customers Access', default=True)
+    can_view_reports = BooleanField('Reports Access', default=True)
+    can_view_settings = BooleanField('Settings Access', default=True)
+
+class UserEditForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired()])
+    email = StringField('Email', validators=[DataRequired(), Email()])
+    password = StringField('Password', validators=[Optional()])  # Optional for edit
+    role = SelectField('Role', choices=[('admin', 'Admin'), ('manager', 'Manager'), ('user', 'Staff')], validators=[DataRequired()])
+    is_active = SelectField('Status', choices=[(True, 'Active'), (False, 'Inactive')], coerce=lambda x: x == 'True', validators=[InputRequired()])
+
+class TaskForm(FlaskForm):
+    title = StringField('Task Title', validators=[DataRequired()])
+    description = TextAreaField('Description')
+    priority = SelectField('Priority', choices=[('Low', 'Low'), ('Medium', 'Medium'), ('High', 'High'), ('Critical', 'Critical')], default='Medium')
+    status = SelectField('Status', choices=[('Pending', 'Pending'), ('In Progress', 'In Progress'), ('Completed', 'Completed'), ('Cancelled', 'Cancelled')], default='Pending')
+    due_date = DateField('Due Date', validators=[Optional()])
+    assigned_to_id = SelectField('Assign To', coerce=int, validators=[DataRequired()])

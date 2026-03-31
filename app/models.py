@@ -14,12 +14,25 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     role = db.Column(db.String(20), default='user')  # admin, manager, user
     is_active = db.Column(db.Boolean, default=True)
+    
+    # Permissions
+    can_view_sales = db.Column(db.Boolean, default=True)
+    can_view_purchases = db.Column(db.Boolean, default=True)
+    can_view_inventory = db.Column(db.Boolean, default=True)
+    can_view_expenses = db.Column(db.Boolean, default=True)
+    can_view_vendors = db.Column(db.Boolean, default=True)
+    can_view_customers = db.Column(db.Boolean, default=True)
+    can_view_reports = db.Column(db.Boolean, default=True)
+    can_view_settings = db.Column(db.Boolean, default=True)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
     created_sales = db.relationship('Sale', backref='created_by_user', foreign_keys='Sale.created_by', lazy=True)
     created_purchases = db.relationship('PurchaseBill', backref='created_by_user', foreign_keys='PurchaseBill.created_by', lazy=True)
+    assigned_tasks = db.relationship('Task', backref='assigned_to', foreign_keys='Task.assigned_to_id', lazy=True)
+    tasks_created = db.relationship('Task', backref='created_by', foreign_keys='Task.created_by_id', lazy=True)
     
     def set_password(self, password):
         """Set password hash"""
@@ -581,3 +594,21 @@ class InvoiceSettings(db.Model):
     
     def __repr__(self):
         return f'<InvoiceSettings {self.id}>'
+
+class Task(db.Model):
+    """Task assignment model"""
+    __tablename__ = 'tasks'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+    status = db.Column(db.Enum('Pending', 'In Progress', 'Completed', 'Cancelled', name='task_status'), default='Pending')
+    priority = db.Column(db.Enum('Low', 'Medium', 'High', 'Critical', name='task_priority'), default='Medium')
+    due_date = db.Column(db.DateTime)
+    assigned_to_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<Task {self.title}>'

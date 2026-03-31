@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+
+{% block title %}Edit User{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0"><i class="fas fa-user-edit me-2"></i>Edit User: {{ user.username }}</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="" id="userForm">
+                        {{ form.csrf_token }}
+                        <div class="alert alert-info mb-3">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>User:</strong> {{ user.username }} (Created: {{ user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else 'N/A' }})
+                        </div>
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
+                            {{ form.username(class="form-control" + (" is-invalid" if form.username.errors else ""), disabled=True) }}
+                            <small class="text-muted">Cannot be changed after creation</small>
+                            {% if form.username.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.username.errors %}<i class="fas fa-exclamation-circle me-1"></i>{{ error }}<br>{% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email <span class="text-danger">*</span></label>
+                            {{ form.email(class="form-control" + (" is-invalid" if form.email.errors else "")) }}
+                            {% if form.email.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.email.errors %}<i class="fas fa-exclamation-circle me-1"></i>{{ error }}<br>{% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            {{ form.password(class="form-control" + (" is-invalid" if form.password.errors else ""), placeholder="Leave blank to keep current password") }}
+                            {% if form.password.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.password.errors %}<i class="fas fa-exclamation-circle me-1"></i>{{ error }}<br>{% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="role" class="form-label">Role <span class="text-danger">*</span></label>
+                                {{ form.role(class="form-select" + (" is-invalid" if form.role.errors else "")) }}
+                                {% if form.role.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in form.role.errors %}<i class="fas fa-exclamation-circle me-1"></i>{{ error }}<br>{% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="is_active" class="form-label">Status <span class="text-danger">*</span></label>
+                                {{ form.is_active(class="form-select" + (" is-invalid" if form.is_active.errors else "")) }}
+                                {% if form.is_active.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in form.is_active.errors %}<i class="fas fa-exclamation-circle me-1"></i>{{ error }}<br>{% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+                        <h5 class="mb-3"><i class="fas fa-lock me-2"></i>Module Permissions</h5>
+                        <p class="text-muted small mb-3">Check boxes to grant access to specific modules. Admin role has full access regardless of settings.</p>
+                        <div class="row">
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check">
+                                    {{ form.can_view_sales(class="form-check-input") }}
+                                    <label class="form-check-label" for="can_view_sales">{{ form.can_view_sales.label.text }}</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check">
+                                    {{ form.can_view_purchases(class="form-check-input") }}
+                                    <label class="form-check-label" for="can_view_purchases">{{ form.can_view_purchases.label.text }}</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check">
+                                    {{ form.can_view_inventory(class="form-check-input") }}
+                                    <label class="form-check-label" for="can_view_inventory">{{ form.can_view_inventory.label.text }}</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check">
+                                    {{ form.can_view_expenses(class="form-check-input") }}
+                                    <label class="form-check-label" for="can_view_expenses">{{ form.can_view_expenses.label.text }}</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check">
+                                    {{ form.can_view_vendors(class="form-check-input") }}
+                                    <label class="form-check-label" for="can_view_vendors">{{ form.can_view_vendors.label.text }}</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check">
+                                    {{ form.can_view_customers(class="form-check-input") }}
+                                    <label class="form-check-label" for="can_view_customers">{{ form.can_view_customers.label.text }}</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check">
+                                    {{ form.can_view_reports(class="form-check-input") }}
+                                    <label class="form-check-label" for="can_view_reports">{{ form.can_view_reports.label.text }}</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check">
+                                    {{ form.can_view_settings(class="form-check-input") }}
+                                    <label class="form-check-label" for="can_view_settings">{{ form.can_view_settings.label.text }}</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-grid gap-2 mt-4">
+                            <button type="submit" class="btn btn-primary">Update User</button>
+                            <a href="{{ url_for('users.list_users') }}" class="btn btn-outline-secondary">Back to List</a>
+                        </div>
+                    </form>
+                    <script>
+                        document.getElementById('userForm').addEventListener('change', function() {
+                            const roleSelect = document.querySelector('#role');
+                            if (roleSelect && roleSelect.value === 'admin') {
+                                document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+                                    checkbox.checked = true;
+                                    checkbox.disabled = true;
+                                });
+                            } else if (roleSelect) {
+                                document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+                                    checkbox.disabled = false;
+                                });
+                            }
+                        });
+                        document.getElementById('userForm').dispatchEvent(new Event('change'));
+                    </script>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Tasks{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-tasks me-2"></i>Tasks</h2>
+    {% if current_user.role == 'admin' %}
+    <a href="{{ url_for('users.create_task') }}" class="btn btn-primary">
+        <i class="fas fa-plus me-2"></i>Assign New Task
+    </a>
+    {% endif %}
+</div>
+
+<div class="row">
+    {% for task in tasks %}
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card h-100 shadow-sm border-left-{{ 'danger' if task.priority == 'Critical' else 'warning' if task.priority == 'High' else 'primary' }}">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="badge {% if task.status == 'Completed' %}bg-success{% elif task.status == 'In Progress' %}bg-info{% elif task.status == 'Cancelled' %}bg-secondary{% else %}bg-warning{% endif %}">
+                    {{ task.status }}
+                </span>
+                <span class="badge bg-{{ 'danger' if task.priority == 'Critical' else 'warning' if task.priority == 'High' else 'primary' if task.priority == 'Medium' else 'info' }}">
+                    {{ task.priority }}
+                </span>
+            </div>
+            <div class="card-body">
+                <h5 class="card-title">{{ task.title }}</h5>
+                <p class="card-text text-muted small">{{ task.description or 'No description provided.' }}</p>
+                <hr>
+                <div class="d-flex flex-column small">
+                    <span><strong>Assigned To:</strong> {{ task.assigned_to.username }}</span>
+                    <span><strong>Due Date:</strong> {{ task.due_date.strftime('%Y-%m-%d') if task.due_date else 'No due date' }}</span>
+                </div>
+            </div>
+            <div class="card-footer bg-transparent">
+                <form action="{{ url_for('users.update_task_status', id=task.id) }}" method="POST" class="d-flex gap-2">
+                    <select name="status" class="form-select form-select-sm">
+                        <option value="Pending" {% if task.status == 'Pending' %}selected{% endif %}>Pending</option>
+                        <option value="In Progress" {% if task.status == 'In Progress' %}selected{% endif %}>In Progress</option>
+                        <option value="Completed" {% if task.status == 'Completed' %}selected{% endif %}>Completed</option>
+                        <option value="Cancelled" {% if task.status == 'Cancelled' %}selected{% endif %}>Cancelled</option>
+                    </select>
+                    <button type="submit" class="btn btn-sm btn-primary">Update</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12 text-center py-5">
+        <i class="fas fa-clipboard-check fa-4x text-muted mb-3"></i>
+        <p class="text-muted">No tasks found.</p>
+    </div>
+    {% endfor %}
+</div>
+
+<style>
+    .border-left-danger { border-left: 5px solid #dc3545 !important; }
+    .border-left-warning { border-left: 5px solid #ffc107 !important; }
+    .border-left-primary { border-left: 5px solid #0d6efd !important; }
+</style>
+{% endblock %}
