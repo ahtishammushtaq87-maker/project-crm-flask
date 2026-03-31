@@ -70,7 +70,7 @@ def edit_user(id):
     user = User.query.get_or_404(id)
     form = UserEditForm()
     if form.validate_on_submit():
-        user.username = form.username.data
+        # Username is not editable, keep original
         user.email = form.email.data
         user.role = form.role.data
         user.is_active = form.is_active.data
@@ -88,7 +88,6 @@ def edit_user(id):
         flash('User updated successfully.', 'success')
         return redirect(url_for('users.list_users'))
     elif request.method == 'GET':
-        form.username.data = user.username
         form.email.data = user.email
         form.role.data = user.role
         form.is_active.data = str(user.is_active)
@@ -136,7 +135,40 @@ def create_task():
         return redirect(url_for('users.list_tasks'))
     return render_template('tasks/create.html', form=form)
 
-@bp.route('/tasks/update/<int:id>', methods=['POST'])
+@bp.route('/delete/<int:id>', methods=['POST'])
+@login_required
+@admin_required
+def delete_user(id):
+    user = User.query.get_or_404(id)
+    
+    # Prevent deleting the current logged-in user
+    if user.id == current_user.id:
+        flash('You cannot delete your own account.', 'danger')
+        return redirect(url_for('users.list_users'))
+    
+    # Prevent deleting users that don't meet deletion criteria
+    if user.role != 'user' and user.is_active:
+        flash(f'Cannot delete active {user.role} users. Please mark them as inactive first.', 'danger')
+        return redirect(url_for('users.list_users'))
+    
+    username = user.username
+    db.session.delete(user)
+    db.session.commit()
+    flash(f'User "{username}" has been deleted successfully.', 'success')
+    return redirect(url_for('users.list_users'))
+
+@bp.route('/tasks/delete/<int:id>', methods=['POST'])
+@login_required
+@admin_required
+def delete_task(id):
+    task = Task.query.get_or_404(id)
+    task_title = task.title
+    db.session.delete(task)
+    db.session.commit()
+    flash(f'Task "{task_title}" has been deleted successfully.', 'success')
+    return redirect(url_for('users.list_tasks'))
+
+@bp.route('/update-task-status/<int:id>', methods=['POST'])
 @login_required
 def update_task_status(id):
     task = Task.query.get_or_404(id)

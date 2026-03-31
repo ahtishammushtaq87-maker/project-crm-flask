@@ -18,14 +18,10 @@
                             <strong>User:</strong> {{ user.username }} (Created: {{ user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else 'N/A' }})
                         </div>
                         <div class="mb-3">
-                            <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
-                            {{ form.username(class="form-control" + (" is-invalid" if form.username.errors else ""), disabled=True) }}
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" value="{{ user.username }}" disabled readonly>
                             <small class="text-muted">Cannot be changed after creation</small>
-                            {% if form.username.errors %}
-                            <div class="invalid-feedback d-block">
-                                {% for error in form.username.errors %}<i class="fas fa-exclamation-circle me-1"></i>{{ error }}<br>{% endfor %}
-                            </div>
-                            {% endif %}
+                            <input type="hidden" name="username" value="{{ user.username }}">
                         </div>
                         <div class="mb-3">
                             <label for="email" class="form-label">Email <span class="text-danger">*</span></label>

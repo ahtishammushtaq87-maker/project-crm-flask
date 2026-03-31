@@ -85,11 +85,21 @@ class UserForm(FlaskForm):
     can_view_settings = BooleanField('Settings Access', default=True)
 
 class UserEditForm(FlaskForm):
-    username = StringField('Username', validators=[DataRequired()])
+    username = StringField('Username', validators=[Optional()])  # Not editable, so optional
     email = StringField('Email', validators=[DataRequired(), Email()])
     password = StringField('Password', validators=[Optional()])  # Optional for edit
     role = SelectField('Role', choices=[('admin', 'Admin'), ('manager', 'Manager'), ('user', 'Staff')], validators=[DataRequired()])
     is_active = SelectField('Status', choices=[(True, 'Active'), (False, 'Inactive')], coerce=lambda x: x == 'True', validators=[InputRequired()])
+    
+    # Permissions
+    can_view_sales = BooleanField('Sales Access', default=True)
+    can_view_purchases = BooleanField('Purchases Access', default=True)
+    can_view_inventory = BooleanField('Inventory Access', default=True)
+    can_view_expenses = BooleanField('Expenses Access', default=True)
+    can_view_vendors = BooleanField('Vendors Access', default=True)
+    can_view_customers = BooleanField('Customers Access', default=True)
+    can_view_reports = BooleanField('Reports Access', default=True)
+    can_view_settings = BooleanField('Settings Access', default=True)
 
 class TaskForm(FlaskForm):
     title = StringField('Task Title', validators=[DataRequired()])
