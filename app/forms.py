@@ -72,7 +72,7 @@ class UserForm(FlaskForm):
     email = StringField('Email', validators=[DataRequired(), Email()])
     password = StringField('Password', validators=[DataRequired(message='Password is required')])  # Required for new users
     role = SelectField('Role', choices=[('admin', 'Admin'), ('manager', 'Manager'), ('user', 'Staff')], validators=[DataRequired()])
-    is_active = SelectField('Status', choices=[(True, 'Active'), (False, 'Inactive')], coerce=lambda x: x == 'True', validators=[InputRequired()])
+    is_active = SelectField('Status', choices=[('True', 'Active'), ('False', 'Inactive')], default='True', coerce=lambda x: x == 'True', validators=[InputRequired()])
     
     # Permissions
     can_view_sales = BooleanField('Sales Access', default=True)
@@ -89,7 +89,7 @@ class UserEditForm(FlaskForm):
     email = StringField('Email', validators=[DataRequired(), Email()])
     password = StringField('Password', validators=[Optional()])  # Optional for edit
     role = SelectField('Role', choices=[('admin', 'Admin'), ('manager', 'Manager'), ('user', 'Staff')], validators=[DataRequired()])
-    is_active = SelectField('Status', choices=[(True, 'Active'), (False, 'Inactive')], coerce=lambda x: x == 'True', validators=[InputRequired()])
+    is_active = SelectField('Status', choices=[('True', 'Active'), ('False', 'Inactive')], default='True', coerce=lambda x: x == 'True', validators=[InputRequired()])
     
     # Permissions
     can_view_sales = BooleanField('Sales Access', default=True)

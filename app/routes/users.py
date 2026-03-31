@@ -42,7 +42,7 @@ def create_user():
             username=form.username.data,
             email=form.email.data,
             role=form.role.data,
-            is_active=form.is_active.data,
+            is_active=(form.is_active.data if form.is_active.data is not None else True),
             can_view_sales=form.can_view_sales.data,
             can_view_purchases=form.can_view_purchases.data,
             can_view_inventory=form.can_view_inventory.data,
@@ -90,7 +90,7 @@ def edit_user(id):
     elif request.method == 'GET':
         form.email.data = user.email
         form.role.data = user.role
-        form.is_active.data = str(user.is_active)
+        form.is_active.data = 'True' if user.is_active else 'False'
         form.can_view_sales.data = user.can_view_sales
         form.can_view_purchases.data = user.can_view_purchases
         form.can_view_inventory.data = user.can_view_inventory

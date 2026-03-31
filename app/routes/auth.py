@@ -15,11 +15,15 @@ def login():
     form = LoginForm()
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.username.data).first()
-        if user and user.check_password(form.password.data) and user.is_active:
-            login_user(user)
-            next_page = request.args.get('next')
-            return redirect(next_page) if next_page else redirect(url_for('dashboard.index'))
-        flash('Invalid username or password', 'error')
+        if user and user.check_password(form.password.data):
+            if not user.is_active:
+                flash('Your account is inactive. Please contact admin to activate your account.', 'warning')
+            else:
+                login_user(user)
+                next_page = request.args.get('next')
+                return redirect(next_page) if next_page else redirect(url_for('dashboard.index'))
+        else:
+            flash('Invalid username or password', 'error')
     
     return render_template('auth/login.html', form=form)
 
