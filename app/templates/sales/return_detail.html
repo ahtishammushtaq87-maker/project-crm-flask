@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}Return {{ sale_return.return_number }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Return {{ sale_return.return_number }}</h2>
+        <div>
+            <a href="{{ url_for('returns.return_list') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Returns
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5>Return Information</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-borderless">
+                        <tr>
+                            <td><strong>Return Number:</strong></td>
+                            <td>{{ sale_return.return_number }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Date:</strong></td>
+                            <td>{{ sale_return.date.strftime('%Y-%m-%d') }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Invoice:</strong></td>
+                            <td>
+                                <a href="{{ url_for('sales.invoice_detail', id=sale_return.sale_id) }}">
+                                    {{ sale_return.sale.invoice_number if sale_return.sale else '-' }}
+                                </a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>Customer:</strong></td>
+                            <td>{{ sale_return.customer.name if sale_return.customer else 'Walk-in Customer' }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Status:</strong></td>
+                            <td>
+                                {% if sale_return.status == 'completed' %}
+                                <span class="badge bg-success">Completed</span>
+                                {% elif sale_return.status == 'approved' %}
+                                <span class="badge bg-info">Approved</span>
+                                {% else %}
+                                <span class="badge bg-warning">Pending</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% if sale_return.reason %}
+                        <tr>
+                            <td><strong>Reason:</strong></td>
+                            <td>{{ sale_return.reason }}</td>
+                        </tr>
+                        {% endif %}
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5>Financial Summary</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-borderless">
+                        <tr>
+                            <td><strong>Subtotal:</strong></td>
+                            <td>Rs{{ "%.2f"|format(sale_return.subtotal) }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Tax ({{ sale_return.tax_rate }}%):</strong></td>
+                            <td>Rs{{ "%.2f"|format(sale_return.tax) }}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Discount:</strong></td>
+                            <td>Rs{{ "%.2f"|format(sale_return.discount) }}</td>
+                        </tr>
+                        <tr class="table-active">
+                            <td><strong>Total Return:</strong></td>
+                            <td><strong>Rs{{ "%.2f"|format(sale_return.total) }}</strong></td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h5>Return Items</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Quantity</th>
+                            <th>Unit Price</th>
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in sale_return.items %}
+                        <tr>
+                            <td>{{ item.product.name if item.product else 'Unknown' }}</td>
+                            <td>{{ item.quantity }}</td>
+                            <td>Rs{{ "%.2f"|format(item.unit_price) }}</td>
+                            <td>Rs{{ "%.2f"|format(item.total) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-dark">
+                            <th colspan="3" class="text-end">Total:</th>
+                            <th>Rs{{ "%.2f"|format(sale_return.total) }}</th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

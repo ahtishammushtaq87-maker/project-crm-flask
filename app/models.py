@@ -595,6 +595,60 @@ class InvoiceSettings(db.Model):
     def __repr__(self):
         return f'<InvoiceSettings {self.id}>'
 
+class SaleReturn(db.Model):
+    """Sales return model"""
+    __tablename__ = 'sale_returns'
+
+    id = db.Column(db.Integer, primary_key=True)
+    return_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    sale_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=False, index=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), index=True)
+    date = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    subtotal = db.Column(db.Float, default=0)
+    tax_rate = db.Column(db.Float, default=0)
+    tax = db.Column(db.Float, default=0)
+    discount = db.Column(db.Float, default=0)
+    total = db.Column(db.Float, default=0)
+    reason = db.Column(db.Text)
+    status = db.Column(Enum('pending', 'approved', 'completed', name='return_status'), default='pending', index=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    sale = db.relationship('Sale', backref='returns', lazy=True)
+    customer = db.relationship('Customer', backref='sale_returns', lazy=True)
+    items = db.relationship('SaleReturnItem', backref='sale_return', lazy=True, cascade='all, delete-orphan')
+
+    def calculate_totals(self):
+        """Calculate return totals"""
+        self.subtotal = sum(item.total for item in self.items)
+        self.tax = self.subtotal * (self.tax_rate / 100)
+        self.total = self.subtotal + self.tax - self.discount
+        if self.total < 0:
+            self.total = 0
+
+    def __repr__(self):
+        return f'<SaleReturn {self.return_number}>'
+
+
+class SaleReturnItem(db.Model):
+    """Sales return item details"""
+    __tablename__ = 'sale_return_items'
+
+    id = db.Column(db.Integer, primary_key=True)
+    return_id = db.Column(db.Integer, db.ForeignKey('sale_returns.id'), nullable=False, index=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    quantity = db.Column(db.Float, nullable=False)
+    unit_price = db.Column(db.Float, nullable=False)
+    total = db.Column(db.Float, nullable=False)
+
+    product = db.relationship('Product', backref='return_items', lazy=True)
+
+    def __repr__(self):
+        return f'<SaleReturnItem {self.return_id} - {self.product_id}>'
+
+
 class Task(db.Model):
     """Task assignment model"""
     __tablename__ = 'tasks'

@@ -10,6 +10,9 @@
 			<a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" class="btn btn-primary" target="_blank">
 				<i class="fas fa-download"></i> Download PDF
 			</a>
+			<a href="{{ url_for('returns.create_return', sale_id=sale.id) }}" class="btn btn-warning">
+				<i class="fas fa-undo"></i> Create Return
+			</a>
 			<a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary">Back</a>
 			<form method="POST" action="{{ url_for('sales.delete_invoice', id=sale.id) }}" style="display:inline;" onsubmit="return confirm('Delete this invoice?');">
 				<button type="submit" class="btn btn-danger">Delete</button>

@@ -145,6 +145,9 @@
                 <a class="nav-link" href="{{ url_for('sales.invoices') }}">
                     <i class="fas fa-shopping-cart me-2"></i> Sales
                 </a>
+                <a class="nav-link" href="{{ url_for('returns.return_list') }}">
+                    <i class="fas fa-undo me-2"></i> Sales Returns
+                </a>
                 {% endif %}
                 {% if current_user.is_admin or current_user.can_view_purchases %}
                 <a class="nav-link" href="{{ url_for('purchase.bills') }}">
@@ -194,6 +197,9 @@
                 <a class="nav-link" href="{{ url_for('reports.expense_report') }}">
                     <i class="fas fa-chart-bar me-2"></i> Expense Report
                 </a>
+                <a class="nav-link" href="{{ url_for('reports.return_report') }}">
+                    <i class="fas fa-undo me-2"></i> Return Report
+                </a>
                 <hr class="bg-white">
                 {% endif %}
                 {% if current_user.is_admin or current_user.can_view_settings %}
@@ -239,6 +245,9 @@
                         <a class="nav-link" href="{{ url_for('sales.invoices') }}">
                             <i class="fas fa-shopping-cart me-2"></i> Sales
                         </a>
+                        <a class="nav-link" href="{{ url_for('returns.return_list') }}">
+                            <i class="fas fa-undo me-2"></i> Sales Returns
+                        </a>
                         {% endif %}
                         {% if current_user.is_admin or current_user.can_view_purchases %}
                         <a class="nav-link" href="{{ url_for('purchase.bills') }}">
@@ -280,6 +289,7 @@
                             <a class="nav-link ps-4" href="{{ url_for('reports.vendor_report') }}">Vendor Report</a>
                             <a class="nav-link ps-4" href="{{ url_for('reports.customer_report') }}">Customer Report</a>
                             <a class="nav-link ps-4" href="{{ url_for('reports.expense_report') }}">Expense Report</a>
+                            <a class="nav-link ps-4" href="{{ url_for('reports.return_report') }}">Return Report</a>
                         </div>
                         {% endif %}
                         {% if current_user.is_admin or current_user.can_view_settings %}

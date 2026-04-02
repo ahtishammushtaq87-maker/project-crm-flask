@@ -39,7 +39,8 @@ def create_app(config_class=Config):
     from app.routes.reports import bp as reports_bp
     from app.routes.auth import bp as auth_bp
     from app.routes.users import bp as users_bp
-    
+    from app.routes.returns import bp as returns_bp
+
     app.register_blueprint(dashboard_bp, url_prefix='/')
     app.register_blueprint(accounting_bp, url_prefix='/accounting')
     app.register_blueprint(sales_bp, url_prefix='/sales')
@@ -48,5 +49,6 @@ def create_app(config_class=Config):
     app.register_blueprint(reports_bp, url_prefix='/reports')
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(users_bp, url_prefix='/users')
+    app.register_blueprint(returns_bp, url_prefix='/returns')
     
     return app

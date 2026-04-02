@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, send_file, jsonify, flash, redirect, url_for
 from flask_login import login_required
 from app import db
-from app.models import Sale, SaleItem, PurchaseBill, Product, Vendor, Customer, Company, Expense, ExpenseCategory
+from app.models import Sale, SaleItem, PurchaseBill, Product, Vendor, Customer, Company, Expense, ExpenseCategory, SaleReturn, SaleReturnItem
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_, or_
 import pandas as pd
@@ -261,6 +261,47 @@ def expense_report():
                          current_category_id=category_id,
                          current_vendor_id=vendor_id)
 
+@bp.route('/return-report')
+@login_required
+def return_report():
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    status = request.args.get('status', 'all')
+    search = request.args.get('search', '')
+    customer_id = request.args.get('customer_id')
+
+    query = SaleReturn.query
+
+    if start_date:
+        query = query.filter(SaleReturn.date >= datetime.strptime(start_date, '%Y-%m-%d'))
+    if end_date:
+        query = query.filter(SaleReturn.date <= datetime.strptime(end_date, '%Y-%m-%d'))
+    if status != 'all':
+        query = query.filter(SaleReturn.status == status)
+    if search:
+        query = query.filter(SaleReturn.return_number.ilike(f'%{search}%'))
+    if customer_id and customer_id != 'all':
+        query = query.filter(SaleReturn.customer_id == int(customer_id))
+
+    returns = query.order_by(SaleReturn.date.desc()).all()
+
+    total_returns = sum(r.total for r in returns)
+    total_count = len(returns)
+
+    customers = Customer.query.order_by(Customer.name).all()
+
+    return render_template('reports/return_report.html',
+                           returns=returns,
+                           total_returns=total_returns,
+                           total_count=total_count,
+                           start_date=start_date,
+                           end_date=end_date,
+                           status=status,
+                           search=search,
+                           customers=customers,
+                           current_customer_id=customer_id)
+
+
 @bp.route('/vendor-report')
 @login_required
 def vendor_report():
@@ -475,6 +516,27 @@ def download_report(format, report_type):
             'Total Sales': f"{c.total_sales:.2f}",
             'Outstanding': f"{c.outstanding_balance:.2f}"
         } for c in customers]
+
+    elif report_type == 'return':
+        query = SaleReturn.query
+        if start_date: query = query.filter(SaleReturn.date >= datetime.strptime(start_date, '%Y-%m-%d'))
+        if end_date: query = query.filter(SaleReturn.date <= datetime.strptime(end_date, '%Y-%m-%d'))
+        if status != 'all': query = query.filter(SaleReturn.status == status)
+        if search: query = query.filter(SaleReturn.return_number.ilike(f'%{search}%'))
+        
+        returns = query.order_by(SaleReturn.date.desc()).all()
+        title = "Sales Return Report"
+        headers = ['Return Number', 'Date', 'Invoice', 'Customer', 'Subtotal', 'Tax', 'Total', 'Status']
+        data = [{
+            'Return Number': r.return_number,
+            'Date': r.date.strftime('%Y-%m-%d'),
+            'Invoice': r.sale.invoice_number if r.sale else '-',
+            'Customer': r.customer.name if r.customer else 'Walk-in',
+            'Subtotal': f"{r.subtotal:.2f}",
+            'Tax': f"{r.tax:.2f}",
+            'Total': f"{r.total:.2f}",
+            'Status': r.status.capitalize()
+        } for r in returns]
 
     if not data:
         flash('No data available for the selected filters.', 'warning')
