@@ -12,6 +12,24 @@ def create_app(config_class=Config):
     
     db.init_app(app)
     
+    # Auto-migrate missing columns
+    with app.app_context():
+        from sqlalchemy import inspect, text
+        try:
+            inspector = inspect(db.engine)
+            existing_columns = [c['name'] for c in inspector.get_columns('users')]
+            required_columns = ['can_view_sales', 'can_view_purchases', 'can_view_inventory',
+                'can_view_expenses', 'can_view_returns', 'can_view_vendors',
+                'can_view_customers', 'can_view_reports', 'can_view_settings']
+            with db.engine.connect() as conn:
+                for col in required_columns:
+                    if col not in existing_columns:
+                        conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} BOOLEAN DEFAULT true"))
+                        conn.commit()
+                        print(f"Added column: {col}")
+        except Exception as e:
+            print(f"Migration check: {e}")
+    
     # Enable SQLite foreign key constraints
     if app.config.get('SQLALCHEMY_DATABASE_URI', '').startswith('sqlite'):
         with app.app_context():

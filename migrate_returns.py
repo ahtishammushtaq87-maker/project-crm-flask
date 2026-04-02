@@ -1,17 +1,36 @@
 from app import create_app, db
-from sqlalchemy import text
+from sqlalchemy import text, inspect
 
 app = create_app()
 
-def add_returns_column():
+def migrate():
     with app.app_context():
+        inspector = inspect(db.engine)
+        
+        # Get actual columns from database
+        existing_columns = [c['name'] for c in inspector.get_columns('users')]
+        print(f"Existing columns: {existing_columns}")
+        
+        # Required columns based on model
+        required_columns = [
+            'can_view_sales', 'can_view_purchases', 'can_view_inventory',
+            'can_view_expenses', 'can_view_returns', 'can_view_vendors',
+            'can_view_customers', 'can_view_reports', 'can_view_settings'
+        ]
+        
         with db.engine.connect() as conn:
-            try:
-                conn.execute(text("ALTER TABLE users ADD COLUMN can_view_returns BOOLEAN DEFAULT 1"))
-                conn.commit()
-                print("Successfully added can_view_returns column!")
-            except Exception as e:
-                print(f"Column may already exist or error: {e}")
+            for col in required_columns:
+                if col not in existing_columns:
+                    try:
+                        conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} BOOLEAN DEFAULT true"))
+                        conn.commit()
+                        print(f"Added column: {col}")
+                    except Exception as e:
+                        print(f"Error adding {col}: {e}")
+                else:
+                    print(f"Column exists: {col}")
+        
+        print("Migration complete!")
 
 if __name__ == "__main__":
-    add_returns_column()
+    migrate()
