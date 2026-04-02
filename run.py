@@ -11,7 +11,13 @@ import random
 
 app = create_app()
 
-@app.shell_context_processor
+with app.app_context():
+    try:
+        db.create_all()
+    except Exception as e:
+        print(f"Database create_all: {e}")
+
+@ app.shell_context_processor
 def make_shell_context():
     """Add database models to Flask shell context"""
     return {
