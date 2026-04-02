@@ -14,6 +14,17 @@ app = create_app()
 with app.app_context():
     try:
         db.create_all()
+        if not User.query.filter_by(username='admin').first():
+            admin = User(
+                username='admin',
+                email='admin@erp.com',
+                role='admin',
+                is_active=True
+            )
+            admin.set_password('admin123')
+            db.session.add(admin)
+            db.session.commit()
+            print("Admin user created")
     except Exception as e:
         print(f"Database create_all: {e}")
 
