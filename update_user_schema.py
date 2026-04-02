@@ -10,6 +10,7 @@ def update_schema():
             ('can_view_purchases', 'BOOLEAN DEFAULT 1'),
             ('can_view_inventory', 'BOOLEAN DEFAULT 1'),
             ('can_view_expenses', 'BOOLEAN DEFAULT 1'),
+            ('can_view_returns', 'BOOLEAN DEFAULT 1'),
             ('can_view_vendors', 'BOOLEAN DEFAULT 1'),
             ('can_view_customers', 'BOOLEAN DEFAULT 1'),
             ('can_view_reports', 'BOOLEAN DEFAULT 1'),

@@ -47,6 +47,7 @@ def create_user():
             can_view_purchases=form.can_view_purchases.data,
             can_view_inventory=form.can_view_inventory.data,
             can_view_expenses=form.can_view_expenses.data,
+            can_view_returns=form.can_view_returns.data,
             can_view_vendors=form.can_view_vendors.data,
             can_view_customers=form.can_view_customers.data,
             can_view_reports=form.can_view_reports.data,
@@ -78,6 +79,7 @@ def edit_user(id):
         user.can_view_purchases = form.can_view_purchases.data
         user.can_view_inventory = form.can_view_inventory.data
         user.can_view_expenses = form.can_view_expenses.data
+        user.can_view_returns = form.can_view_returns.data
         user.can_view_vendors = form.can_view_vendors.data
         user.can_view_customers = form.can_view_customers.data
         user.can_view_reports = form.can_view_reports.data
@@ -95,6 +97,7 @@ def edit_user(id):
         form.can_view_purchases.data = user.can_view_purchases
         form.can_view_inventory.data = user.can_view_inventory
         form.can_view_expenses.data = user.can_view_expenses
+        form.can_view_returns.data = user.can_view_returns
         form.can_view_vendors.data = user.can_view_vendors
         form.can_view_customers.data = user.can_view_customers
         form.can_view_reports.data = user.can_view_reports

@@ -20,6 +20,7 @@ class User(UserMixin, db.Model):
     can_view_purchases = db.Column(db.Boolean, default=True)
     can_view_inventory = db.Column(db.Boolean, default=True)
     can_view_expenses = db.Column(db.Boolean, default=True)
+    can_view_returns = db.Column(db.Boolean, default=True)
     can_view_vendors = db.Column(db.Boolean, default=True)
     can_view_customers = db.Column(db.Boolean, default=True)
     can_view_reports = db.Column(db.Boolean, default=True)

@@ -14,6 +14,21 @@ app = create_app()
 with app.app_context():
     try:
         db.create_all()
+        
+        # Add missing user permission columns
+        inspector = inspect(db.engine)
+        existing_columns = [c['name'] for c in inspector.get_columns('users')]
+        permission_columns = [
+            'can_view_sales', 'can_view_purchases', 'can_view_inventory',
+            'can_view_expenses', 'can_view_returns', 'can_view_vendors',
+            'can_view_customers', 'can_view_reports', 'can_view_settings'
+        ]
+        for col_name in permission_columns:
+            if col_name not in existing_columns:
+                with db.engine.connect() as conn:
+                    conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} BOOLEAN DEFAULT 1"))
+                    conn.commit()
+        
         if not User.query.filter_by(username='admin').first():
             admin = User(
                 username='admin',

@@ -92,6 +92,12 @@
                             </div>
                             <div class="col-md-6 mb-2">
                                 <div class="form-check">
+                                    {{ form.can_view_returns(class="form-check-input") }}
+                                    <label class="form-check-label" for="can_view_returns">{{ form.can_view_returns.label.text }}</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check">
                                     {{ form.can_view_vendors(class="form-check-input") }}
                                     <label class="form-check-label" for="can_view_vendors">{{ form.can_view_vendors.label.text }}</label>
                                 </div>

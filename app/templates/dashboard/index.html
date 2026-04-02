@@ -30,21 +30,21 @@
 
 {% block content %}
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Dashboard</h2>
-        <div class="filter-group" style="min-width: 400px;">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap">
+        <h2 class="me-2">Dashboard</h2>
+        <div class="filter-group flex-grow-1" style="min-width: 200px; max-width: 400px;">
             <form method="GET" action="{{ url_for('dashboard.index') }}" class="row g-2">
-                <div class="col-md-5">
+                <div class="col-5">
                     <label class="form-label">From Date</label>
                     <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date or '' }}">
                 </div>
-                <div class="col-md-5">
+                <div class="col-5">
                     <label class="form-label">To Date</label>
                     <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date or '' }}">
                 </div>
-                <div class="col-md-2 d-flex align-items-end">
+                <div class="col-2 d-flex align-items-end">
                     <button type="submit" class="btn btn-primary btn-sm w-100">
-                        <i class="fas fa-filter"></i> Filter
+                        <i class="fas fa-filter"></i>
                     </button>
                 </div>
             </form>
@@ -52,7 +52,7 @@
     </div>
 
     <div class="row">
-        <div class="col-md-3">
+        <div class="col-sm-6 col-lg-3 mb-3">
             <div class="card-stats">
                 <div class="stats-icon float-end">
                     <i class="fas fa-chart-line"></i>
@@ -63,7 +63,7 @@
             </div>
         </div>
 
-        <div class="col-md-3">
+        <div class="col-sm-6 col-lg-3 mb-3">
             <div class="card-stats" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
                 <div class="stats-icon float-end">
                     <i class="fas fa-shopping-cart"></i>
@@ -74,7 +74,7 @@
             </div>
         </div>
 
-        <div class="col-md-3">
+        <div class="col-sm-6 col-lg-3 mb-3">
             <div class="card-stats" style="background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);">
                 <div class="stats-icon float-end">
                     <i class="fas fa-boxes"></i>
@@ -85,7 +85,7 @@
             </div>
         </div>
 
-        <div class="col-md-3">
+        <div class="col-sm-6 col-lg-3 mb-3">
             <div class="card-stats" style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);">
                 <div class="stats-icon float-end">
                     <i class="fas fa-money-bill-wave"></i>
@@ -96,7 +96,7 @@
             </div>
         </div>
 
-        <div class="col-md-3">
+        <div class="col-sm-6 col-lg-3 mb-3">
             <div class="card-stats" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);">
                 <div class="stats-icon float-end">
                     <i class="fas fa-chart-pie"></i>
@@ -111,7 +111,7 @@
     </div>
 
     <div class="row mt-3">
-        <div class="col-md-3">
+        <div class="col-sm-6 col-lg-3 mb-3">
             <div class="card-stats" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
                 <div class="stats-icon float-end">
                     <i class="fas fa-trophy"></i>
@@ -124,7 +124,7 @@
             </div>
         </div>
 
-        <div class="col-md-3">
+        <div class="col-sm-6 col-lg-3 mb-3">
             <div class="card-stats" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
                 <div class="stats-icon float-end">
                     <i class="fas fa-clock"></i>
@@ -137,7 +137,7 @@
     </div>
 
     <div class="row mt-4">
-        <div class="col-md-8">
+        <div class="col-md-8 mb-4">
             <div class="card">
                 <div class="card-header">
                     <h5>Sales Overview (Last 7 Days)</h5>

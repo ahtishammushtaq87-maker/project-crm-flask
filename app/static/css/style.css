@@ -71,3 +71,36 @@
 ::-webkit-scrollbar-thumb:hover {
     background: #555;
 }
+
+/* Mobile responsive styles */
+@media (max-width: 576px) {
+    .card-stats {
+        padding: 12px !important;
+    }
+    
+    .card-stats h5 {
+        font-size: 0.75rem;
+        margin-bottom: 4px;
+    }
+    
+    .card-stats h3 {
+        font-size: 1rem;
+    }
+    
+    .card-stats small {
+        font-size: 0.65rem;
+    }
+    
+    .btn-group-sm .btn {
+        padding: 0.2rem 0.4rem;
+        font-size: 0.75rem;
+    }
+    
+    .table {
+        font-size: 0.85rem;
+    }
+    
+    .filter-group .form-label {
+        font-size: 0.75rem;
+    }
+}
