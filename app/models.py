@@ -436,7 +436,7 @@ class Currency(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     code = db.Column(db.String(10), nullable=False, unique=True)
     name = db.Column(db.String(100), nullable=False)
-    symbol = db.Column(db.String(10), default='$')
+    symbol = db.Column(db.String(10), default='Rs')
     rate_to_base = db.Column(db.Float, nullable=False, default=1)
     is_active = db.Column(db.Boolean, default=True)
 

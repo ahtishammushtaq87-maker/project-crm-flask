@@ -81,7 +81,7 @@
                     <div class="d-flex justify-content-between">
                         <div>
                             <p class="text-white-50 small mb-1">Total Purchases</p>
-                            <h3 class="mb-0">${{ "%.2f"|format(total_purchases) }}</h3>
+                            <h3 class="mb-0">Rs{{ "%.2f"|format(total_purchases) }}</h3>
                         </div>
                         <div class="icon icon-shape bg-white text-primary rounded-circle shadow">
                             <i class="fas fa-shopping-bag p-3"></i>
@@ -96,7 +96,7 @@
                     <div class="d-flex justify-content-between">
                         <div>
                             <p class="text-white-50 small mb-1">Total Paid</p>
-                            <h3 class="mb-0">${{ "%.2f"|format(total_paid) }}</h3>
+                            <h3 class="mb-0">Rs{{ "%.2f"|format(total_paid) }}</h3>
                         </div>
                         <div class="icon icon-shape bg-white text-success rounded-circle shadow">
                             <i class="fas fa-money-bill-wave p-3"></i>
@@ -111,7 +111,7 @@
                     <div class="d-flex justify-content-between">
                         <div>
                             <p class="text-white-50 small mb-1">Outstanding</p>
-                            <h3 class="mb-0">${{ "%.2f"|format(total_balance) }}</h3>
+                            <h3 class="mb-0">Rs{{ "%.2f"|format(total_balance) }}</h3>
                         </div>
                         <div class="icon icon-shape bg-white text-warning rounded-circle shadow">
                             <i class="fas fa-clock p-3"></i>
@@ -205,9 +205,9 @@
                             <td class="px-4 font-weight-bold">{{ purchase.bill_number }}</td>
                             <td>{{ purchase.date.strftime('%Y-%m-%d') }}</td>
                             <td>{{ purchase.vendor.name if purchase.vendor else 'Unknown' }}</td>
-                            <td>${{ "%.2f"|format(purchase.total) }}</td>
-                            <td>${{ "%.2f"|format(purchase.paid_amount) }}</td>
-                            <td><span class="text-danger font-weight-bold">${{ "%.2f"|format(purchase.balance_due) }}</span></td>
+                            <td>Rs{{ "%.2f"|format(purchase.total) }}</td>
+                            <td>Rs{{ "%.2f"|format(purchase.paid_amount) }}</td>
+                            <td><span class="text-danger font-weight-bold">Rs{{ "%.2f"|format(purchase.balance_due) }}</span></td>
                             <td>
                                 {% if purchase.status == 'paid' %}
                                 <span class="status-badge bg-success text-white">Paid</span>

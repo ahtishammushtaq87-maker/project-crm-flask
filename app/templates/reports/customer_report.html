@@ -72,7 +72,7 @@
                     <div class="d-flex justify-content-between">
                         <div>
                             <p class="text-white-50 small mb-1">Total Sales</p>
-                            <h3 class="mb-0">${{ "%.2f"|format(total_sales) }}</h3>
+                            <h3 class="mb-0">Rs{{ "%.2f"|format(total_sales) }}</h3>
                         </div>
                         <div class="icon icon-shape bg-white text-primary rounded-circle shadow">
                             <i class="fas fa-shopping-bag p-3"></i>
@@ -87,7 +87,7 @@
                     <div class="d-flex justify-content-between">
                         <div>
                             <p class="text-white-50 small mb-1">Outstanding Balance</p>
-                            <h3 class="mb-0">${{ "%.2f"|format(total_outstanding) }}</h3>
+                            <h3 class="mb-0">Rs{{ "%.2f"|format(total_outstanding) }}</h3>
                         </div>
                         <div class="icon icon-shape bg-white text-warning rounded-circle shadow">
                             <i class="fas fa-dollar-sign p-3"></i>
@@ -154,8 +154,8 @@
                             <td class="px-4 font-weight-bold">{{ customer.name }}</td>
                             <td>{{ customer.gst_number or 'N/A' }}</td>
                             <td>{{ customer.phone or 'N/A' }}</td>
-                            <td>${{ "%.2f"|format(customer.total_sales) }}</td>
-                            <td><span class="text-danger font-weight-bold">${{ "%.2f"|format(customer.outstanding_balance) }}</span></td>
+                            <td>Rs{{ "%.2f"|format(customer.total_sales) }}</td>
+                            <td><span class="text-danger font-weight-bold">Rs{{ "%.2f"|format(customer.outstanding_balance) }}</span></td>
                             <td>
                                 {% if customer.sales %}
                                 {{ (customer.sales|sort(attribute='date', reverse=True))[0].date.strftime('%Y-%m-%d') }}

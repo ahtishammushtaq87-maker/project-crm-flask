@@ -22,7 +22,7 @@
             <div class="card border-left-success shadow h-100 py-2">
                 <div class="card-body">
                     <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Total Stock Value (Cost)</div>
-                    <div class="h5 mb-0 font-weight-bold text-gray-800">${{ "{:,.2f}".format(total_value) }}</div>
+                    <div class="h5 mb-0 font-weight-bold text-gray-800">Rs{{ "{:,.2f}".format(total_value) }}</div>
                 </div>
             </div>
         </div>
@@ -68,9 +68,9 @@
                             <td>{{ product.name }}</td>
                             <td>{{ product.category or '-' }}</td>
                             <td class="text-end">{{ "{:,.0f}".format(product.quantity) }}</td>
-                            <td class="text-end">${{ "{:,.2f}".format(product.cost_price) }}</td>
-                            <td class="text-end">${{ "{:,.2f}".format(product.unit_price) }}</td>
-                            <td class="text-end">${{ "{:,.2f}".format(product.stock_value) }}</td>
+                            <td class="text-end">Rs{{ "{:,.2f}".format(product.cost_price) }}</td>
+                            <td class="text-end">Rs{{ "{:,.2f}".format(product.unit_price) }}</td>
+                            <td class="text-end">Rs{{ "{:,.2f}".format(product.stock_value) }}</td>
                             <td class="text-center">
                                 {% if product.is_out_of_stock %}
                                 <span class="badge bg-danger">Out of Stock</span>

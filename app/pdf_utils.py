@@ -348,17 +348,17 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             {
                 'description': item.product.name if item.product else "Unknown Product",
                 'quantity': int(item.quantity) if item.quantity.is_integer() else item.quantity,
-                'rate': f"${item.unit_price:,.2f}",
-                'amount': f"${item.total:,.2f}"
+                'rate': f"Rs{item.unit_price:,.2f}",
+                'amount': f"Rs{item.total:,.2f}"
             } for item in obj.items
         ]
         totals = [
-            ("Subtotal:", f"${obj.subtotal:,.2f}"),
-            ("Tax:", f"${obj.tax:,.2f}"),
-            ("Discount:", f"-${obj.discount:,.2f}"),
-            ("Total:", f"${obj.total:,.2f}"),
-            ("Paid:", f"${obj.paid_amount:,.2f}"),
-            ("Balance Due:", f"${obj.balance_due:,.2f}"),
+            ("Subtotal:", f"Rs{obj.subtotal:,.2f}"),
+            ("Tax:", f"Rs{obj.tax:,.2f}"),
+            ("Discount:", f"-Rs{obj.discount:,.2f}"),
+            ("Total:", f"Rs{obj.total:,.2f}"),
+            ("Paid:", f"Rs{obj.paid_amount:,.2f}"),
+            ("Balance Due:", f"Rs{obj.balance_due:,.2f}"),
         ]
         
         # Extract payment info
@@ -406,18 +406,18 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             {
                 'description': item.product.name if item.product else "Unknown Product",
                 'quantity': int(item.quantity) if item.quantity.is_integer() else item.quantity,
-                'rate': f"${item.unit_price:,.2f}",
-                'amount': f"${item.total:,.2f}"
+                'rate': f"Rs{item.unit_price:,.2f}",
+                'amount': f"Rs{item.total:,.2f}"
             } for item in obj.items
         ]
         totals = [
-            ("Subtotal:", f"${obj.subtotal:,.2f}"),
-            ("Tax:", f"${obj.tax:,.2f}"),
-            ("Discount:", f"-${obj.discount:,.2f}"),
-            ("Shipping:", f"${obj.shipping_charge:,.2f}"),
-            ("Total:", f"${obj.total:,.2f}"),
-            ("Paid:", f"${obj.paid_amount:,.2f}"),
-            ("Balance Due:", f"${obj.balance_due:,.2f}"),
+            ("Subtotal:", f"Rs{obj.subtotal:,.2f}"),
+            ("Tax:", f"Rs{obj.tax:,.2f}"),
+            ("Discount:", f"-Rs{obj.discount:,.2f}"),
+            ("Shipping:", f"Rs{obj.shipping_charge:,.2f}"),
+            ("Total:", f"Rs{obj.total:,.2f}"),
+            ("Paid:", f"Rs{obj.paid_amount:,.2f}"),
+            ("Balance Due:", f"Rs{obj.balance_due:,.2f}"),
         ]
         
         generator.generate_document(

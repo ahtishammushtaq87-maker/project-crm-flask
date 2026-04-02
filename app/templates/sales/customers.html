@@ -34,8 +34,8 @@
                             <td>{{ customer.email or '-' }}</td>
                             <td>{{ customer.phone or '-' }}</td>
                             <td>{{ customer.gst_number or '-' }}</td>
-                            <td>${{ "%.2f"|format(customer.total_sales) }}</td>
-                            <td>${{ "%.2f"|format(customer.outstanding_balance) }}</td>
+                            <td>Rs{{ "%.2f"|format(customer.total_sales) }}</td>
+                            <td>Rs{{ "%.2f"|format(customer.outstanding_balance) }}</td>
                             <td>
                                 <span class="badge bg-{{ 'success' if customer.is_active else 'danger' }}">
                                     {{ 'Active' if customer.is_active else 'Inactive' }}

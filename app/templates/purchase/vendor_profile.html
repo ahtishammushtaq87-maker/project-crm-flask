@@ -18,13 +18,13 @@
         <div class="col-md-4">
             <div class="card p-3 mb-3">
                 <h5>Total Purchases</h5>
-                <p class="fs-4">${{ '%.2f'|format(vendor.total_purchases) }}</p>
+                <p class="fs-4">Rs{{ '%.2f'|format(vendor.total_purchases) }}</p>
             </div>
         </div>
         <div class="col-md-4">
             <div class="card p-3 mb-3">
                 <h5>Outstanding Balance</h5>
-                <p class="fs-4">${{ '%.2f'|format(vendor.outstanding_balance) }}</p>
+                <p class="fs-4">Rs{{ '%.2f'|format(vendor.outstanding_balance) }}</p>
             </div>
         </div>
         <div class="col-md-4">
@@ -56,9 +56,9 @@
                         <tr>
                             <td>{{ bill.bill_number }}</td>
                             <td>{{ bill.date.strftime('%Y-%m-%d') }}</td>
-                            <td>${{ '%.2f'|format(bill.total) }}</td>
-                            <td>${{ '%.2f'|format(bill.paid_amount) }}</td>
-                            <td>${{ '%.2f'|format(bill.balance_due) }}</td>
+                            <td>Rs{{ '%.2f'|format(bill.total) }}</td>
+                            <td>Rs{{ '%.2f'|format(bill.paid_amount) }}</td>
+                            <td>Rs{{ '%.2f'|format(bill.balance_due) }}</td>
                             <td>{{ bill.status.title() }}</td>
                             <td><a href="{{ url_for('purchase.bill_detail', id=bill.id) }}" class="btn btn-sm btn-outline-primary">View</a></td>
                         </tr>

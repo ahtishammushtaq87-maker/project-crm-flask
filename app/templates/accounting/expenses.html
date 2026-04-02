@@ -66,7 +66,7 @@
                             <td>{{ exp.expense_category.name if exp.expense_category else 'N/A' }}</td>
                             <td>{{ exp.vendor.name if exp.vendor else '-' }}</td>
                             <td>{{ exp.description or '-' }}</td>
-                            <td>${{ '%.2f'|format(exp.amount) }}</td>
+                            <td>Rs{{ '%.2f'|format(exp.amount) }}</td>
                             <td>
                                 {% if exp.bill_image_path %}
                                 <div class="btn-group" role="group">
@@ -103,7 +103,7 @@
                         <strong>Showing {{ expenses|length }} expense{{ 's' if expenses|length != 1 else '' }}</strong>
                     </div>
                     <div class="col-md-6 text-end">
-                        <strong>Total Expense: ${{ '%.2f'|format(total_expense) }}</strong>
+                        <strong>Total Expense: Rs{{ '%.2f'|format(total_expense) }}</strong>
                     </div>
                 </div>
             </div>

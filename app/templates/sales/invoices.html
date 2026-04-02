@@ -101,11 +101,11 @@
                             <td>{{ sale.date.strftime('%Y-%m-%d') }}</td>
                             <td>{{ sale.customer.name if sale.customer else 'Walk-in Customer' }}</td>
                             <td>{{ sale.vendor.name if sale.vendor else '-' }}</td>
-                            <td>${{ "%.2f"|format(sale.subtotal) }}</td>
-                            <td>${{ "%.2f"|format(sale.tax) }}</td>
-                            <td><strong>${{ "%.2f"|format(sale.total) }}</strong></td>
-                            <td>${{ "%.2f"|format(sale.paid_amount) }}</td>
-                            <td>${{ "%.2f"|format(sale.total - sale.paid_amount) }}</td>
+                            <td>Rs{{ "%.2f"|format(sale.subtotal) }}</td>
+                            <td>Rs{{ "%.2f"|format(sale.tax) }}</td>
+                            <td><strong>Rs{{ "%.2f"|format(sale.total) }}</strong></td>
+                            <td>Rs{{ "%.2f"|format(sale.paid_amount) }}</td>
+                            <td>Rs{{ "%.2f"|format(sale.total - sale.paid_amount) }}</td>
                             <td>
                                 {% if sale.status == 'paid' %}
                                 <span class="badge bg-success">Paid</span>
@@ -133,11 +133,11 @@
                     <tfoot>
                         <tr class="table-dark">
                             <th colspan="4" class="text-end">Total:</th>
-                            <th>${{ "%.2f"|format(total_subtotal) }}</th>
-                            <th>${{ "%.2f"|format(total_tax) }}</th>
-                            <th><strong>${{ "%.2f"|format(total_amount) }}</strong></th>
-                            <th>${{ "%.2f"|format(total_paid) }}</th>
-                            <th>${{ "%.2f"|format(total_balance) }}</th>
+                            <th>Rs{{ "%.2f"|format(total_subtotal) }}</th>
+                            <th>Rs{{ "%.2f"|format(total_tax) }}</th>
+                            <th><strong>Rs{{ "%.2f"|format(total_amount) }}</strong></th>
+                            <th>Rs{{ "%.2f"|format(total_paid) }}</th>
+                            <th>Rs{{ "%.2f"|format(total_balance) }}</th>
                             <th colspan="2"></th>
                         </tr>
                     </tfoot>

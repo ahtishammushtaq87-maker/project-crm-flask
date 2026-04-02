@@ -55,8 +55,8 @@
                             <td>{{ transaction.reference_type|title }} #{{ transaction.reference_id }}</td>
                             <td>{{ transaction.description }}</td>
                             <td>{{ transaction.account }}</td>
-                            <td class="text-danger">${{ "%.2f"|format(transaction.debit) }}</td>
-                            <td class="text-success">${{ "%.2f"|format(transaction.credit) }}</td>
+                            <td class="text-danger">Rs{{ "%.2f"|format(transaction.debit) }}</td>
+                            <td class="text-success">Rs{{ "%.2f"|format(transaction.credit) }}</td>
                         </tr>
                         {% else %}
                         <tr>
@@ -67,8 +67,8 @@
                     <tfoot>
                         <tr class="table-dark">
                             <td colspan="4"><strong>Totals</strong></td>
-                            <td><strong>${{ "%.2f"|format(total_debit) }}</strong></td>
-                            <td><strong>${{ "%.2f"|format(total_credit) }}</strong></td>
+                            <td><strong>Rs{{ "%.2f"|format(total_debit) }}</strong></td>
+                            <td><strong>Rs{{ "%.2f"|format(total_credit) }}</strong></td>
                         </tr>
                     </tfoot>
                 </table>

@@ -37,25 +37,25 @@
         <div class="col-md-3">
             <div class="card p-3 mb-3 border-primary">
                 <h5>Total Sales</h5>
-                <h3>${{ '%.2f'|format(total_sales) }}</h3>
+                <h3>Rs{{ '%.2f'|format(total_sales) }}</h3>
             </div>
         </div>
         <div class="col-md-3">
             <div class="card p-3 mb-3 border-warning">
                 <h5>Total Purchases</h5>
-                <h3>${{ '%.2f'|format(total_purchases) }}</h3>
+                <h3>Rs{{ '%.2f'|format(total_purchases) }}</h3>
             </div>
         </div>
         <div class="col-md-3">
             <div class="card p-3 mb-3 border-danger">
                 <h5>Total Expenses</h5>
-                <h3>${{ '%.2f'|format(total_expenses) }}</h3>
+                <h3>Rs{{ '%.2f'|format(total_expenses) }}</h3>
             </div>
         </div>
         <div class="col-md-3">
             <div class="card p-3 mb-3 border-dark">
                 <h5>COGS</h5>
-                <h3>${{ '%.2f'|format(total_cogs) }}</h3>
+                <h3>Rs{{ '%.2f'|format(total_cogs) }}</h3>
             </div>
         </div>
     </div>
@@ -65,7 +65,7 @@
             <div class="card p-3 mb-3 border-info">
                 <h5>Gross Profit (Sales - COGS)</h5>
                 <h2 class="{% if gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-                    ${{ '%.2f'|format(gross_profit) }}
+                    Rs{{ '%.2f'|format(gross_profit) }}
                 </h2>
             </div>
         </div>
@@ -73,7 +73,7 @@
             <div class="card p-3 mb-3 border-success">
                 <h5>Net Profit (Gross - Expenses)</h5>
                 <h2 class="{% if net_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-                    ${{ '%.2f'|format(net_profit) }}
+                    Rs{{ '%.2f'|format(net_profit) }}
                 </h2>
             </div>
         </div>
@@ -99,7 +99,7 @@
             <div class="card p-3 mb-3 border-success">
                 <h5>Net Profit</h5>
                 <h2 class="{% if net_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-                    ${{ '%.2f'|format(net_profit) }}
+                    Rs{{ '%.2f'|format(net_profit) }}
                 </h2>
             </div>
         </div>
@@ -109,7 +109,7 @@
         <div class="col-md-4">
             <div class="card p-3 mb-3 border-success">
                 <h6>Outstanding Invoices</h6>
-                <h4>${{ '%.2f'|format(outstanding_invoices) }}</h4>
+                <h4>Rs{{ '%.2f'|format(outstanding_invoices) }}</h4>
             </div>
         </div>
         <div class="col-md-4">
@@ -143,9 +143,9 @@
                         {% for account, totals in account_summary.items() %}
                         <tr>
                             <td>{{ account }}</td>
-                            <td>${{ '%.2f'|format(totals.debit) }}</td>
-                            <td>${{ '%.2f'|format(totals.credit) }}</td>
-                            <td>${{ '%.2f'|format(totals.debit - totals.credit) }}</td>
+                            <td>Rs{{ '%.2f'|format(totals.debit) }}</td>
+                            <td>Rs{{ '%.2f'|format(totals.credit) }}</td>
+                            <td>Rs{{ '%.2f'|format(totals.debit - totals.credit) }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>

@@ -31,7 +31,7 @@
                             <td>{{ p.date.strftime('%Y-%m-%d') }}</td>
                             <td>{{ p.payment_number }}</td>
                             <td>{% if p.invoice %}{{ p.invoice.invoice_number }}{% else %}-{% endif %}</td>
-                            <td>${{ '%.2f'|format(p.amount) }}</td>
+                            <td>Rs{{ '%.2f'|format(p.amount) }}</td>
                             <td>{{ p.method or '-' }}</td>
                             <td>{{ p.reference_number or '-' }}</td>
                             <td>{{ p.notes or '-' }}</td>

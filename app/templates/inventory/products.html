@@ -95,9 +95,9 @@
                                 <span class="badge bg-warning">Low Stock</span>
                                 {% endif %}
                             </td>
-                            <td>${{ "%.2f"|format(product.cost_price) }}</td>
-                            <td>${{ "%.2f"|format(product.unit_price) }}</td>
-                            <td>${{ "%.2f"|format(product.quantity * product.cost_price) }}</td>
+                            <td>Rs{{ "%.2f"|format(product.cost_price) }}</td>
+                            <td>Rs{{ "%.2f"|format(product.unit_price) }}</td>
+                            <td>Rs{{ "%.2f"|format(product.quantity * product.cost_price) }}</td>
                             <td>
                                 {% if product.quantity == 0 %}
                                 <span class="badge bg-danger">Out of Stock</span>

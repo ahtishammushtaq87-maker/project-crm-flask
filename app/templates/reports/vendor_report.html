@@ -72,7 +72,7 @@
                     <div class="d-flex justify-content-between">
                         <div>
                             <p class="text-white-50 small mb-1">Total Purchases</p>
-                            <h3 class="mb-0">${{ "%.2f"|format(total_purchases) }}</h3>
+                            <h3 class="mb-0">Rs{{ "%.2f"|format(total_purchases) }}</h3>
                         </div>
                         <div class="icon icon-shape bg-white text-primary rounded-circle shadow">
                             <i class="fas fa-shopping-cart p-3"></i>
@@ -87,7 +87,7 @@
                     <div class="d-flex justify-content-between">
                         <div>
                             <p class="text-white-50 small mb-1">Outstanding Balance</p>
-                            <h3 class="mb-0">${{ "%.2f"|format(total_outstanding) }}</h3>
+                            <h3 class="mb-0">Rs{{ "%.2f"|format(total_outstanding) }}</h3>
                         </div>
                         <div class="icon icon-shape bg-white text-warning rounded-circle shadow">
                             <i class="fas fa-hand-holding-usd p-3"></i>
@@ -154,8 +154,8 @@
                             <td class="px-4 font-weight-bold">{{ vendor.name }}</td>
                             <td>{{ vendor.gst_number or 'N/A' }}</td>
                             <td>{{ vendor.phone or 'N/A' }}</td>
-                            <td>${{ "%.2f"|format(vendor.total_purchases) }}</td>
-                            <td><span class="text-danger font-weight-bold">${{ "%.2f"|format(vendor.outstanding_balance) }}</span></td>
+                            <td>Rs{{ "%.2f"|format(vendor.total_purchases) }}</td>
+                            <td><span class="text-danger font-weight-bold">Rs{{ "%.2f"|format(vendor.outstanding_balance) }}</span></td>
                             <td>
                                 {% if vendor.bills %}
                                 {{ (vendor.bills|sort(attribute='date', reverse=True))[0].date.strftime('%Y-%m-%d') }}

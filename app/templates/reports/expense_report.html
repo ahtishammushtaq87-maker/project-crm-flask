@@ -78,7 +78,7 @@
                     <div class="d-flex justify-content-between">
                         <div>
                             <p class="text-white-50 small mb-1">Total Expenses</p>
-                            <h3 class="mb-0">${{ "%.2f"|format(total_expenses) }}</h3>
+                            <h3 class="mb-0">Rs{{ "%.2f"|format(total_expenses) }}</h3>
                         </div>
                         <div class="icon icon-shape bg-white text-danger rounded-circle shadow">
                             <i class="fas fa-receipt p-3"></i>
@@ -174,7 +174,7 @@
                             <td>{{ expense.vendor.name if expense.vendor else 'N/A' }}</td>
                             <td><small>{{ expense.description }}</small></td>
                             <td>{{ expense.payment_method }}</td>
-                            <td><strong class="text-danger">${{ "%.2f"|format(expense.amount) }}</strong></td>
+                            <td><strong class="text-danger">Rs{{ "%.2f"|format(expense.amount) }}</strong></td>
                         </tr>
                         {% endfor %}
                         {% if not expenses %}

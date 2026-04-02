@@ -15,7 +15,7 @@
             <div class="card border-left-primary shadow h-100 py-2">
                 <div class="card-body">
                     <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Total Purchases</div>
-                    <div class="h5 mb-0 font-weight-bold text-gray-800">${{ "{:,.2f}".format(total_amount) }}</div>
+                    <div class="h5 mb-0 font-weight-bold text-gray-800">Rs{{ "{:,.2f}".format(total_amount) }}</div>
                 </div>
             </div>
         </div>
@@ -23,7 +23,7 @@
             <div class="card border-left-success shadow h-100 py-2">
                 <div class="card-body">
                     <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Total Paid</div>
-                    <div class="h5 mb-0 font-weight-bold text-gray-800">${{ "{:,.2f}".format(total_paid) }}</div>
+                    <div class="h5 mb-0 font-weight-bold text-gray-800">Rs{{ "{:,.2f}".format(total_paid) }}</div>
                 </div>
             </div>
         </div>
@@ -31,7 +31,7 @@
             <div class="card border-left-warning shadow h-100 py-2">
                 <div class="card-body">
                     <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">Outstanding Balance</div>
-                    <div class="h5 mb-0 font-weight-bold text-gray-800 text-danger">${{ "{:,.2f}".format(total_balance) }}</div>
+                    <div class="h5 mb-0 font-weight-bold text-gray-800 text-danger">Rs{{ "{:,.2f}".format(total_balance) }}</div>
                 </div>
             </div>
         </div>
@@ -87,9 +87,9 @@
                         <td class="fw-bold">{{ bill.bill_number }}</td>
                         <td>{{ bill.date.strftime('%Y-%m-%d') }}</td>
                         <td>{{ bill.vendor.name }}</td>
-                        <td class="text-end">${{ "{:,.2f}".format(bill.total) }}</td>
-                        <td class="text-end">${{ "{:,.2f}".format(bill.paid_amount) }}</td>
-                        <td class="text-end text-danger fw-bold">${{ "{:,.2f}".format(bill.balance_due) }}</td>
+                        <td class="text-end">Rs{{ "{:,.2f}".format(bill.total) }}</td>
+                        <td class="text-end">Rs{{ "{:,.2f}".format(bill.paid_amount) }}</td>
+                        <td class="text-end text-danger fw-bold">Rs{{ "{:,.2f}".format(bill.balance_due) }}</td>
                         <td class="text-center">
                             <span class="badge {% if bill.status == 'paid' %}bg-success{% elif bill.status == 'unpaid' %}bg-danger{% else %}bg-warning{% endif %}">
                                 {{ bill.status|capitalize }}
@@ -123,7 +123,7 @@
                                         <div class="modal-body">
                                             <div class="mb-3">
                                                 <label class="form-label">Balance Due</label>
-                                                <input type="text" class="form-control" value="${{ "{:,.2f}".format(bill.balance_due) }}" readonly>
+                                                <input type="text" class="form-control" value="Rs{{ "{:,.2f}".format(bill.balance_due) }}" readonly>
                                             </div>
                                             <div class="mb-3">
                                                 <label class="form-label">Amount to Pay</label>

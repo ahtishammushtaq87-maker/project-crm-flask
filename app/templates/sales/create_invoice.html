@@ -80,17 +80,17 @@
                         </div>
                         <hr>
                         <div class="mb-2">
-                            <strong>Subtotal:</strong> <span id="subtotal">$0.00</span>
+                            <strong>Subtotal:</strong> <span id="subtotal">Rs0.00</span>
                         </div>
                         <div class="mb-2">
-                            <strong>Tax:</strong> <span id="tax">$0.00</span>
+                            <strong>Tax:</strong> <span id="tax">Rs0.00</span>
                         </div>
                         <div class="mb-2">
-                            <strong>Discount:</strong> <span id="discountDisplay">$0.00</span>
+                            <strong>Discount:</strong> <span id="discountDisplay">Rs0.00</span>
                         </div>
                         <hr>
                         <div class="mb-2">
-                            <h4>Total: <span id="total">$0.00</span></h4>
+                            <h4>Total: <span id="total">Rs0.00</span></h4>
                         </div>
                     </div>
                 </div>
@@ -135,7 +135,7 @@
                                     <input type="number" name="price[]" class="form-control price" step="0.01" readonly>
                                 </td>
                                 <td>
-                                    <span class="item-total">$0.00</span>
+                                    <span class="item-total">Rs0.00</span>
                                 </td>
                                 <td>
                                     <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)">
@@ -160,7 +160,7 @@
     function addItem() {
         const newRow = document.querySelector('.item-row').cloneNode(true);
         newRow.querySelectorAll('input, select').forEach(input => input.value = '');
-        newRow.querySelector('.item-total').textContent = '$0.00';
+        newRow.querySelector('.item-total').textContent = 'Rs0.00';
         document.getElementById('itemsBody').appendChild(newRow);
         attachItemEvents(newRow);
     }
@@ -192,14 +192,14 @@
         const quantity = parseFloat(row.querySelector('.quantity').value) || 0;
         const price = parseFloat(row.querySelector('.price').value) || 0;
         const total = quantity * price;
-        row.querySelector('.item-total').textContent = `$${total.toFixed(2)}`;
+        row.querySelector('.item-total').textContent = `Rs${total.toFixed(2)}`;
         calculateTotals();
     }
     
     function calculateTotals() {
         let subtotal = 0;
         document.querySelectorAll('.item-total').forEach(totalSpan => {
-            const total = parseFloat(totalSpan.textContent.replace('$', '')) || 0;
+            const total = parseFloat(totalSpan.textContent.replace('Rs', '')) || 0;
             subtotal += total;
         });
         
@@ -208,10 +208,10 @@
         const discount = parseFloat(document.querySelector('input[name="discount"]').value) || 0;
         const total = subtotal + tax - discount;
         
-        document.getElementById('subtotal').textContent = `$${subtotal.toFixed(2)}`;
-        document.getElementById('tax').textContent = `$${tax.toFixed(2)}`;
-        document.getElementById('discountDisplay').textContent = `$${discount.toFixed(2)}`;
-        document.getElementById('total').textContent = `$${total.toFixed(2)}`;
+        document.getElementById('subtotal').textContent = `Rs${subtotal.toFixed(2)}`;
+        document.getElementById('tax').textContent = `Rs${tax.toFixed(2)}`;
+        document.getElementById('discountDisplay').textContent = `Rs${discount.toFixed(2)}`;
+        document.getElementById('total').textContent = `Rs${total.toFixed(2)}`;
     }
     
     // Attach events to existing items
