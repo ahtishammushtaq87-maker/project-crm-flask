@@ -1,6 +1,6 @@
-from flask import Blueprint, render_template
+from flask import Blueprint, render_template, request
 from flask_login import login_required
-from app.models import Sale, Product, PurchaseBill, Expense, db, SaleItem
+from app.models import Sale, Product, PurchaseBill, Expense, db, SaleItem, Vendor, Customer
 from datetime import datetime, timedelta
 from sqlalchemy import func
 
@@ -9,29 +9,50 @@ bp = Blueprint('dashboard', __name__)
 @bp.route('/')
 @login_required
 def index():
-    # Get current month's data
-    current_month = datetime.now().replace(day=1)
+    # Get date filters from request
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    # If no dates provided, use current month
+    if not start_date or not end_date:
+        current_month = datetime.now().replace(day=1)
+        if not start_date:
+            start_date = current_month.strftime('%Y-%m-%d')
+        if not end_date:
+            end_date = datetime.now().strftime('%Y-%m-%d')
+    
+    # Convert string dates to datetime objects
+    try:
+        start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
+        end_datetime = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+    except:
+        current_month = datetime.now().replace(day=1)
+        start_datetime = current_month
+        end_datetime = datetime.now().replace(hour=23, minute=59, second=59)
 
     # Total Sales
     total_sales = db.session.query(func.sum(Sale.total)).filter(
-        Sale.date >= current_month
+        Sale.date >= start_datetime,
+        Sale.date <= end_datetime
     ).scalar() or 0
 
     # Total COGS
     total_cogs = db.session.query(func.sum(SaleItem.quantity * Product.cost_price))\
         .join(Sale, SaleItem.sale_id == Sale.id)\
         .join(Product, SaleItem.product_id == Product.id)\
-        .filter(Sale.date >= current_month)\
+        .filter(Sale.date >= start_datetime, Sale.date <= end_datetime)\
         .scalar() or 0
 
     # Total Purchases (Inventory Addition)
     total_purchases = db.session.query(func.sum(PurchaseBill.total)).filter(
-        PurchaseBill.date >= current_month
+        PurchaseBill.date >= start_datetime,
+        PurchaseBill.date <= end_datetime
     ).scalar() or 0
 
     # Total Expenses
     total_expenses = db.session.query(func.sum(Expense.amount)).filter(
-        Expense.date >= current_month
+        Expense.date >= start_datetime,
+        Expense.date <= end_datetime
     ).scalar() or 0
 
     # Gross Profit = Sales - COGS
@@ -42,19 +63,34 @@ def index():
 
     # Outstanding Payments
     outstanding = db.session.query(func.sum(Sale.total - Sale.paid_amount)).filter(
-        Sale.status != 'paid'
+        Sale.status != 'paid',
+        Sale.date >= start_datetime,
+        Sale.date <= end_datetime
     ).scalar() or 0
     
     # Low Stock Products
     low_stock = Product.query.filter(Product.quantity <= Product.reorder_level).count()
     
-    # Recent Sales
-    recent_sales = Sale.query.order_by(Sale.date.desc()).limit(10).all()
+    # Total Products
+    products_count = Product.query.count()
     
-    # Sales Chart Data (Last 7 days)
+    # Active Vendors
+    vendors_count = Vendor.query.filter(Vendor.is_active == True).count()
+    
+    # Active Customers
+    customers_count = Customer.query.filter(Customer.is_active == True).count()
+    
+    # Recent Sales
+    recent_sales = Sale.query.filter(
+        Sale.date >= start_datetime,
+        Sale.date <= end_datetime
+    ).order_by(Sale.date.desc()).limit(10).all()
+    
+    # Sales Chart Data (Last 7 days from end_date)
     sales_chart = []
+    chart_end = end_datetime if end_datetime.date() <= datetime.now().date() else datetime.now()
     for i in range(6, -1, -1):
-        date = datetime.now() - timedelta(days=i)
+        date = chart_end - timedelta(days=i)
         day_sales = db.session.query(func.sum(Sale.total)).filter(
             func.date(Sale.date) == date.date()
         ).scalar() or 0
@@ -72,5 +108,10 @@ def index():
                          net_profit=net_profit,
                          outstanding=outstanding,
                          low_stock=low_stock,
+                         products_count=products_count,
+                         vendors_count=vendors_count,
+                         customers_count=customers_count,
                          recent_sales=recent_sales,
-                         sales_chart=sales_chart)
+                         sales_chart=sales_chart,
+                         start_date=start_date,
+                         end_date=end_date)

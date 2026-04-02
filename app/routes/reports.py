@@ -376,6 +376,53 @@ def download_report(format, report_type):
             'Stock Value': f"{p.stock_value:.2f}"
         } for p in products]
 
+    elif report_type == 'cogs':
+        category = request.args.get('category', 'all')
+        search = request.args.get('search', '')
+        query = SaleItem.query.join(Sale).join(Product)
+        if start_date: query = query.filter(Sale.date >= datetime.strptime(start_date, '%Y-%m-%d'))
+        if end_date: query = query.filter(Sale.date <= datetime.strptime(end_date, '%Y-%m-%d'))
+        if category != 'all': query = query.filter(Product.category == category)
+        if search: query = query.filter(or_(Product.name.ilike(f'%{search}%'), Product.sku.ilike(f'%{search}%')))
+        
+        sale_items = query.order_by(Sale.date.desc()).all()
+        product_stats = {}
+        for item in sale_items:
+            prod = item.product
+            if not prod:
+                continue
+            cogs = (prod.cost_price or 0) * item.quantity
+            revenue = item.total
+            if prod.id not in product_stats:
+                product_stats[prod.id] = {
+                    'Product': prod.name,
+                    'SKU': prod.sku,
+                    'Category': prod.category or 'Uncategorized',
+                    'Qty Sold': 0,
+                    'Cost Price': f"{prod.cost_price or 0:.2f}",
+                    'COGS': 0,
+                    'Revenue': 0,
+                    'Profit': 0
+                }
+            product_stats[prod.id]['Qty Sold'] += item.quantity
+            product_stats[prod.id]['COGS'] = float(product_stats[prod.id]['COGS']) + cogs if isinstance(product_stats[prod.id]['COGS'], (int, float)) else cogs
+            product_stats[prod.id]['Revenue'] = float(product_stats[prod.id]['Revenue']) + revenue if isinstance(product_stats[prod.id]['Revenue'], (int, float)) else revenue
+            product_stats[prod.id]['Profit'] = float(product_stats[prod.id]['Profit']) + (revenue - cogs) if isinstance(product_stats[prod.id]['Profit'], (int, float)) else (revenue - cogs)
+        
+        products = sorted(product_stats.values(), key=lambda x: x['Product'])
+        title = "COGS Report"
+        headers = ['Product', 'SKU', 'Category', 'Qty Sold', 'Cost Price', 'COGS', 'Revenue', 'Profit']
+        data = [{
+            'Product': p['Product'],
+            'SKU': p['SKU'],
+            'Category': p['Category'],
+            'Qty Sold': p['Qty Sold'],
+            'Cost Price': p['Cost Price'],
+            'COGS': f"{p['COGS']:.2f}",
+            'Revenue': f"{p['Revenue']:.2f}",
+            'Profit': f"{p['Profit']:.2f}"
+        } for p in products]
+
     elif report_type == 'expense':
         category_id = request.args.get('category_id')
         vendor_id = request.args.get('vendor_id')
