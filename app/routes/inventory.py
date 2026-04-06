@@ -3,11 +3,18 @@ from flask_login import login_required
 from app import db
 from app.models import Product
 from app.forms import ProductForm
-from sqlalchemy import func
+from sqlalchemy import func, inspect
 import os
 from werkzeug.utils import secure_filename
 
 bp = Blueprint('inventory', __name__)
+
+def has_column(table_name, column_name):
+    try:
+        inspector = inspect(db.engine)
+        return column_name in [c['name'] for c in inspector.get_columns(table_name)]
+    except:
+        return False
 
 @bp.route('/products')
 @login_required
@@ -60,9 +67,12 @@ def add_product():
             cost_price=form.cost_price.data if form.cost_price.data is not None else 0.0,
             quantity=form.quantity.data,
             reorder_level=form.reorder_level.data,
-            category=form.category.data,
-            is_manufactured=form.is_manufactured.data
+            category=form.category.data
         )
+        
+        # Only set is_manufactured if column exists
+        if has_column('products', 'is_manufactured'):
+            product.is_manufactured = form.is_manufactured.data
         
         # Handle image upload
         if 'image' in request.files:
@@ -112,7 +122,10 @@ def edit_product(id):
         product.cost_price = form.cost_price.data if form.cost_price.data is not None else 0.0
         product.reorder_level = form.reorder_level.data
         product.category = form.category.data
-        product.is_manufactured = form.is_manufactured.data
+        
+        # Only set is_manufactured if column exists
+        if has_column('products', 'is_manufactured'):
+            product.is_manufactured = form.is_manufactured.data
         
         # Handle image upload
         if 'image' in request.files:

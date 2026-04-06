@@ -25,8 +25,11 @@ def boms():
 @login_required
 def add_bom():
     form = BOMForm()
-    # Only show manufactured products in the "Finished Product" dropdown
-    manufactured_products = Product.query.filter_by(is_manufactured=True).all()
+    # Only show manufactured products in the "Finished Product" dropdown (if column exists)
+    if has_column('products', 'is_manufactured'):
+        manufactured_products = Product.query.filter_by(is_manufactured=True).all()
+    else:
+        manufactured_products = []
     form.product_id.choices = [(p.id, p.name) for p in manufactured_products]
     
     # All products can be components (except maybe the finished product itself)

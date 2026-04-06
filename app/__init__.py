@@ -41,6 +41,18 @@ def create_app(config_class=Config):
                     print("Added column: is_bom_overhead to expenses")
         except Exception as e:
             print(f"Expenses migration check: {e}")
+        
+        # Migrate products table for is_manufactured column
+        try:
+            inspector = inspect(db.engine)
+            product_columns = [c['name'] for c in inspector.get_columns('products')]
+            if 'is_manufactured' not in product_columns:
+                with db.engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE products ADD COLUMN is_manufactured BOOLEAN DEFAULT false"))
+                    conn.commit()
+                    print("Added column: is_manufactured to products")
+        except Exception as e:
+            print(f"Products migration check: {e}")
     
     # Enable SQLite foreign key constraints
     if app.config.get('SQLALCHEMY_DATABASE_URI', '').startswith('sqlite'):

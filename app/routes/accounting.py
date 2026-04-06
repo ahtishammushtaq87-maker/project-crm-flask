@@ -811,9 +811,12 @@ def add_expense():
     vendors = Vendor.query.filter_by(is_active=True).order_by(Vendor.name).all()
     form.vendor_id.choices = [(0, 'Select Vendor (Optional)')] + [(v.id, v.name) for v in vendors]
     
-    # Populate manufactured product choices
+    # Populate manufactured product choices (if column exists)
     from app.models import Product
-    manufactured_products = Product.query.filter_by(is_manufactured=True, is_active=True).order_by(Product.name).all()
+    if has_column('products', 'is_manufactured'):
+        manufactured_products = Product.query.filter_by(is_manufactured=True, is_active=True).order_by(Product.name).all()
+    else:
+        manufactured_products = []
     form.product_id.choices = [(0, 'Select Finished Product (Optional)')] + [(p.id, p.name) for p in manufactured_products]
     
     if form.validate_on_submit():
@@ -877,9 +880,12 @@ def edit_expense(id):
     vendors = Vendor.query.filter_by(is_active=True).order_by(Vendor.name).all()
     form.vendor_id.choices = [(0, 'Select Vendor (Optional)')] + [(v.id, v.name) for v in vendors]
     
-    # Populate manufactured product choices
+    # Populate manufactured product choices (if column exists)
     from app.models import Product
-    manufactured_products = Product.query.filter_by(is_manufactured=True, is_active=True).order_by(Product.name).all()
+    if has_column('products', 'is_manufactured'):
+        manufactured_products = Product.query.filter_by(is_manufactured=True, is_active=True).order_by(Product.name).all()
+    else:
+        manufactured_products = []
     form.product_id.choices = [(0, 'Select Finished Product (Optional)')] + [(p.id, p.name) for p in manufactured_products]
     
     # Set current vendor selection
