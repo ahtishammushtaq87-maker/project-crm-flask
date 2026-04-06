@@ -2,9 +2,16 @@ from flask import Blueprint, render_template, request
 from flask_login import login_required
 from app.models import Sale, Product, PurchaseBill, Expense, db, SaleItem, Vendor, Customer, SalaryPayment, SalaryAdvance
 from datetime import datetime, timedelta
-from sqlalchemy import func
+from sqlalchemy import func, inspect
 
 bp = Blueprint('dashboard', __name__)
+
+def has_column(table_name, column_name):
+    try:
+        inspector = inspect(db.engine)
+        return column_name in [c['name'] for c in inspector.get_columns(table_name)]
+    except:
+        return False
 
 @bp.route('/')
 @login_required
@@ -49,19 +56,28 @@ def index():
         PurchaseBill.date <= end_datetime
     ).scalar() or 0
 
-    # Total Operating Expenses (Non-BOM)
-    operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
-        Expense.is_bom_overhead == False,
-        Expense.date >= start_datetime,
-        Expense.date <= end_datetime
-    ).scalar() or 0
+    # Total Operating Expenses (Non-BOM) - handle missing column gracefully
+    if has_column('expenses', 'is_bom_overhead'):
+        operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
+            Expense.is_bom_overhead == False,
+            Expense.date >= start_datetime,
+            Expense.date <= end_datetime
+        ).scalar() or 0
 
-    # Total Manufacturing Overhead (BOM linked)
-    manufacturing_overhead = db.session.query(func.sum(Expense.amount)).filter(
-        Expense.is_bom_overhead == True,
-        Expense.date >= start_datetime,
-        Expense.date <= end_datetime
-    ).scalar() or 0
+        # Total Manufacturing Overhead (BOM linked)
+        manufacturing_overhead = db.session.query(func.sum(Expense.amount)).filter(
+            Expense.is_bom_overhead == True,
+            Expense.date >= start_datetime,
+            Expense.date <= end_datetime
+        ).scalar() or 0
+    else:
+        # Fallback: include all expenses
+        operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
+            Expense.date >= start_datetime,
+            Expense.date <= end_datetime
+        ).scalar() or 0
+        manufacturing_overhead = 0
+    
     # Total Payroll (Payments + Advances given in period)
     total_payments = db.session.query(func.sum(SalaryPayment.net_salary)).filter(
         SalaryPayment.status == 'paid',

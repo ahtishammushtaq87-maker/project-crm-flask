@@ -4,9 +4,16 @@ from app import db
 from app.models import Sale, PurchaseBill, Transaction, Expense, ExpenseCategory, Vendor, Account, Payment, TaxRate, Currency, RecurringExpense
 from app.forms import ExpenseForm, ExpenseCategoryForm
 from datetime import datetime, timedelta
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, inspect
 
 bp = Blueprint('accounting', __name__)
+
+def has_column(table_name, column_name):
+    try:
+        inspector = inspect(db.engine)
+        return column_name in [c['name'] for c in inspector.get_columns(table_name)]
+    except:
+        return False
 
 @bp.route('/ledger')
 def ledger():
@@ -82,20 +89,28 @@ def dashboard():
         
     total_purchases = db.session.query(func.sum(PurchaseBill.total)).filter(PurchaseBill.date >= date_from, PurchaseBill.date <= date_to).scalar() or 0
     
-    # Total Operating Expenses (Non-BOM)
-    operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
-        Expense.is_bom_overhead == False,
-        Expense.date >= date_from,
-        Expense.date <= date_to
-    ).scalar() or 0
+    # Total Operating Expenses (Non-BOM) - handle missing column gracefully
+    if has_column('expenses', 'is_bom_overhead'):
+        operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
+            Expense.is_bom_overhead == False,
+            Expense.date >= date_from,
+            Expense.date <= date_to
+        ).scalar() or 0
 
-    # Total Manufacturing Overhead (BOM linked)
-    manufacturing_overhead = db.session.query(func.sum(Expense.amount)).filter(
-        Expense.is_bom_overhead == True,
-        Expense.date >= date_from,
-        Expense.date <= date_to
-    ).scalar() or 0
-
+        # Total Manufacturing Overhead (BOM linked)
+        manufacturing_overhead = db.session.query(func.sum(Expense.amount)).filter(
+            Expense.is_bom_overhead == True,
+            Expense.date >= date_from,
+            Expense.date <= date_to
+        ).scalar() or 0
+    else:
+        # Fallback: include all expenses
+        operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
+            Expense.date >= date_from,
+            Expense.date <= date_to
+        ).scalar() or 0
+        manufacturing_overhead = 0
+    
     total_expenses = operating_expenses + manufacturing_overhead
 
     # Gross Profit = Sales - COGS

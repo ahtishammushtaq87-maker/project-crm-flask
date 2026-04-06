@@ -4,8 +4,16 @@ from app import db
 from app.models import Product, BOM, BOMItem, ManufacturingOrder, ManufacturingOrderItem, StockMovement
 from app.forms import BOMForm, ManufacturingOrderForm
 from datetime import datetime
+from sqlalchemy import inspect
 
 bp = Blueprint('manufacturing', __name__)
+
+def has_column(table_name, column_name):
+    try:
+        inspector = inspect(db.engine)
+        return column_name in [c['name'] for c in inspector.get_columns(table_name)]
+    except:
+        return False
 
 @bp.route('/boms')
 @login_required
@@ -56,11 +64,12 @@ def add_bom():
         
         # Link all available overhead expenses for this product to this BOM
         from app.models import Expense
-        db.session.query(Expense).filter(
-            Expense.product_id == bom.product_id,
-            Expense.is_bom_overhead == True,
-            Expense.bom_id == None
-        ).update({Expense.bom_id: bom.id}, synchronize_session=False)
+        if has_column('expenses', 'is_bom_overhead'):
+            db.session.query(Expense).filter(
+                Expense.product_id == bom.product_id,
+                Expense.is_bom_overhead == True,
+                Expense.bom_id == None
+            ).update({Expense.bom_id: bom.id}, synchronize_session=False)
 
         # Update the product's base cost price to reflect the BOM cost
         bom.product.cost_price = bom.total_cost
@@ -266,11 +275,13 @@ def get_bom_details(id):
 @login_required
 def get_actual_overhead(id):
     from app.models import Expense
-    total_overhead = db.session.query(db.func.sum(Expense.amount)).filter(
-        Expense.product_id == id,
-        Expense.is_bom_overhead == True,
-        Expense.bom_id == None
-    ).scalar() or 0
+    total_overhead = 0
+    if has_column('expenses', 'is_bom_overhead'):
+        total_overhead = db.session.query(db.func.sum(Expense.amount)).filter(
+            Expense.product_id == id,
+            Expense.is_bom_overhead == True,
+            Expense.bom_id == None
+        ).scalar() or 0
     return jsonify({
         'total_actual_overhead': total_overhead
     })
