@@ -79,6 +79,18 @@ def create_app(config_class=Config):
                 print("Created monthly_targets table")
         except Exception as e:
             print(f"Monthly targets table check: {e}")
+        
+        # Migrate sale_returns table for returned_to_inventory column
+        try:
+            inspector = inspect(db.engine)
+            returns_columns = [c['name'] for c in inspector.get_columns('sale_returns')]
+            if 'returned_to_inventory' not in returns_columns:
+                with db.engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE sale_returns ADD COLUMN returned_to_inventory BOOLEAN DEFAULT false"))
+                    conn.commit()
+                    print("Added column: returned_to_inventory to sale_returns")
+        except Exception as e:
+            print(f"Sale_returns migration check: {e}")
     
     # Enable SQLite foreign key constraints
     if app.config.get('SQLALCHEMY_DATABASE_URI', '').startswith('sqlite'):

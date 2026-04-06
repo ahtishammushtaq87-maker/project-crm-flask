@@ -30,6 +30,24 @@ def migrate():
                 else:
                     print(f"Column exists: {col}")
         
+        inspector = inspect(db.engine)
+        existing_returns_columns = [c['name'] for c in inspector.get_columns('sale_returns')]
+        print(f"Existing sale_returns columns: {existing_returns_columns}")
+        
+        returns_required_columns = ['returned_to_inventory']
+        
+        with db.engine.connect() as conn:
+            for col in returns_required_columns:
+                if col not in existing_returns_columns:
+                    try:
+                        conn.execute(text(f"ALTER TABLE sale_returns ADD COLUMN {col} BOOLEAN DEFAULT false"))
+                        conn.commit()
+                        print(f"Added column: {col}")
+                    except Exception as e:
+                        print(f"Error adding {col}: {e}")
+                else:
+                    print(f"Column exists: {col}")
+        
         print("Migration complete!")
 
 if __name__ == "__main__":
