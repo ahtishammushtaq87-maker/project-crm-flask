@@ -1,0 +1,9 @@
+--- Diagnostic Report ---
+Total Monthly Targets found: 1
+Target record for 1/2026: ProdQty=20.0, SalesRev=40000.0
+Total MOs: 1, Completed MOs: 1
+Most recent completed MO: MO-20260406-001, End Date: 2026-04-06, Status: Completed
+Total Sales: 1
+Most recent sale: INV-202604-0001, Date: 2026-04-06 00:00:00, Total: 5000.0
+Manual Test for April 2026: Revenue calculated as 5000.0
+--- End Diagnostic ---

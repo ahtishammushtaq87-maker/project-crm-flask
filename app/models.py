@@ -805,3 +805,22 @@ class ManufacturingOrderItem(db.Model):
     cost = db.Column(db.Float, default=0)
     
     component = db.relationship('Product', foreign_keys=[component_id])
+
+class MonthlyTarget(db.Model):
+    """Monthly target model for KPIs"""
+    __tablename__ = 'monthly_targets'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    month = db.Column(db.Integer, nullable=False) # 1-12
+    year = db.Column(db.Integer, nullable=False)
+    
+    target_production_qty = db.Column(db.Float, default=0)
+    target_production_cost = db.Column(db.Float, default=0)
+    target_sales_revenue = db.Column(db.Float, default=0)
+    target_sales_qty = db.Column(db.Float, default=0)
+    
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<MonthlyTarget {self.month}/{self.year}>'

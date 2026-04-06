@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block title %}Target Performance Report - {{ target.month }}/{{ target.year }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-chart-pie text-primary me-2"></i>Target Performance Report: {{ target.month }}/{{ target.year }}</h2>
+    <div class="d-flex gap-2">
+        <div class="dropdown">
+            <button class="btn btn-success dropdown-toggle" type="button" id="downloadDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="fas fa-download me-1"></i> Download
+            </button>
+            <ul class="dropdown-menu shadow" aria-labelledby="downloadDropdown">
+                <li><a class="dropdown-item" href="{{ url_for('targets.download_report', id=target.id, format='pdf', start_date=start_date, end_date=end_date) }}"><i class="fas fa-file-pdf text-danger me-2"></i>PDF Report</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('targets.download_report', id=target.id, format='excel', start_date=start_date, end_date=end_date) }}"><i class="fas fa-file-excel text-success me-2"></i>Excel Sheet</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('targets.download_report', id=target.id, format='csv', start_date=start_date, end_date=end_date) }}"><i class="fas fa-file-csv text-info me-2"></i>CSV File</a></li>
+            </ul>
+        </div>
+        <button class="btn btn-primary" onclick="window.print()">
+            <i class="fas fa-print"></i> Print
+        </button>
+        <a href="{{ url_for('targets.index') }}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+<!-- Filter Section -->
+<div class="card shadow-sm border-0 mb-4 bg-light">
+    <div class="card-body py-3">
+        <form class="row g-3 align-items-end" method="GET">
+            <div class="col-md-4">
+                <label for="start_date" class="form-label small fw-bold">From Date</label>
+                <input type="date" name="start_date" id="start_date" class="form-control form-control-sm" value="{{ start_date }}">
+            </div>
+            <div class="col-md-4">
+                <label for="end_date" class="form-label small fw-bold">To Date</label>
+                <input type="date" name="end_date" id="end_date" class="form-control form-control-sm" value="{{ end_date }}">
+            </div>
+            <div class="col-md-4 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-grow-1">
+                    <i class="fas fa-filter me-1"></i> Apply Filter
+                </button>
+                <a href="{{ url_for('targets.report', id=target.id) }}" class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-undo me-1"></i> Reset
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <!-- Production Quantity KPI -->
+    <div class="col-md-3">
+        <div class="card h-100 shadow-sm border-start border-4 border-{{ performance.prod_qty.status }}">
+            <div class="card-body">
+                <h6 class="text-muted small text-uppercase fw-bold">Production Quantity</h6>
+                <h3 class="mb-0">{{ performance.prod_qty.actual }} / {{ performance.prod_qty.target }}</h3>
+                <div class="mt-2">
+                    <span class="badge bg-{{ performance.prod_qty.status }}">
+                        {{ performance.prod_qty.pct }}% Achieved
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Production Cost KPI -->
+    <div class="col-md-3">
+        <div class="card h-100 shadow-sm border-start border-4 border-{{ performance.prod_cost.status }}">
+            <div class="card-body">
+                <h6 class="text-muted small text-uppercase fw-bold">Production Cost</h6>
+                <h3 class="mb-0">Rs. {{ "{:,.0f}".format(performance.prod_cost.actual) }}</h3>
+                <p class="text-muted small mb-0 mt-1">Target: Rs. {{ "{:,.0f}".format(performance.prod_cost.target) }}</p>
+                <div class="mt-2">
+                    <span class="badge bg-{{ performance.prod_cost.status }}">
+                        {{ performance.prod_cost.pct }}% Budget Used
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Sales Revenue KPI -->
+    <div class="col-md-3">
+        <div class="card h-100 shadow-sm border-start border-4 border-{{ performance.sales_revenue.status }}">
+            <div class="card-body">
+                <h6 class="text-muted small text-uppercase fw-bold">Sales Revenue</h6>
+                <h3 class="mb-0">Rs. {{ "{:,.0f}".format(performance.sales_revenue.actual) }}</h3>
+                <p class="text-muted small mb-0 mt-1">Target: Rs. {{ "{:,.0f}".format(performance.sales_revenue.target) }}</p>
+                <div class="mt-2">
+                    <span class="badge bg-{{ performance.sales_revenue.status }}">
+                        {{ performance.sales_revenue.pct }}% Achieved
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Sales Quantity KPI -->
+    <div class="col-md-3">
+        <div class="card h-100 shadow-sm border-start border-4 border-{{ performance.sales_qty.status }}">
+            <div class="card-body">
+                <h6 class="text-muted small text-uppercase fw-bold">Sales Quantity</h6>
+                <h3 class="mb-0">{{ performance.sales_qty.actual }} / {{ performance.sales_qty.target }}</h3>
+                <div class="mt-2">
+                    <span class="badge bg-{{ performance.sales_qty.status }}">
+                        {{ performance.sales_qty.pct }}% Achieved
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Detailed Comparison Charts and Progress Bars -->
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white py-3">
+                <h5 class="card-title mb-0 fw-bold"><i class="fas fa-industry text-info me-2"></i>Production Analysis</h5>
+            </div>
+            <div class="card-body p-4">
+                <div class="mb-5">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="fw-bold">Production Quantity Progress</span>
+                        <span class="fw-bold">{{ performance.prod_qty.pct }}%</span>
+                    </div>
+                    <div class="progress shadow-sm" style="height: 30px; border-radius: 15px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-{{ performance.prod_qty.status }}" 
+                             role="progressbar" style="width: {{ performance.prod_qty.pct }}%" 
+                             aria-valuenow="{{ performance.prod_qty.pct }}" aria-valuemin="0" aria-valuemax="100">
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between mt-2 text-muted small px-1">
+                        <span>0 Units</span>
+                        <span class="fw-bold text-dark">Target: {{ performance.prod_qty.target }} Units</span>
+                    </div>
+                </div>
+
+                <div class="mb-2">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="fw-bold">Production Cost vs Budget</span>
+                        <span class="fw-bold">{{ performance.prod_cost.pct }}%</span>
+                    </div>
+                    <div class="progress shadow-sm" style="height: 30px; border-radius: 15px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-{{ performance.prod_cost.status }}" 
+                             role="progressbar" style="width: {{ performance.prod_cost.pct }}%" 
+                             aria-valuenow="{{ performance.prod_cost.pct }}" aria-valuemin="0" aria-valuemax="100">
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between mt-2 text-muted small px-1">
+                        <span>Rs. 0</span>
+                        <span class="fw-bold text-dark">Budget: Rs. {{ "{:,.0f}".format(performance.prod_cost.target) }}</span>
+                    </div>
+                    {% if performance.prod_cost.actual > performance.prod_cost.target %}
+                    <div class="alert alert-danger p-2 mt-3 small mb-0">
+                        <i class="fas fa-exclamation-triangle me-1"></i> <strong>Critical:</strong> Over-budget by Rs. {{ "{:,.0f}".format(performance.prod_cost.actual - performance.prod_cost.target) }}.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white py-3">
+                <h5 class="card-title mb-0 fw-bold"><i class="fas fa-shopping-cart text-success me-2"></i>Sales Performance</h5>
+            </div>
+            <div class="card-body p-4">
+                <div class="mb-5">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="fw-bold">Revenue Achievement</span>
+                        <span class="fw-bold">{{ performance.sales_revenue.pct }}%</span>
+                    </div>
+                    <div class="progress shadow-sm" style="height: 30px; border-radius: 15px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-{{ performance.sales_revenue.status }}" 
+                             role="progressbar" style="width: {{ performance.sales_revenue.pct }}%" 
+                             aria-valuenow="{{ performance.sales_revenue.pct }}" aria-valuemin="0" aria-valuemax="100">
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between mt-2 text-muted small px-1">
+                        <span>Rs. 0</span>
+                        <span class="fw-bold text-dark">Target: Rs. {{ "{:,.0f}".format(performance.sales_revenue.target) }}</span>
+                    </div>
+                </div>
+
+                <div class="mb-2">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="fw-bold">Sales Quantity Progress</span>
+                        <span class="fw-bold">{{ performance.sales_qty.pct }}%</span>
+                    </div>
+                    <div class="progress shadow-sm" style="height: 30px; border-radius: 15px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-{{ performance.sales_qty.status }}" 
+                             role="progressbar" style="width: {{ performance.sales_qty.pct }}%" 
+                             aria-valuenow="{{ performance.sales_qty.pct }}" aria-valuemin="0" aria-valuemax="100">
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between mt-2 text-muted small px-1">
+                        <span>0 Units</span>
+                        <span class="fw-bold text-dark">Target: {{ performance.sales_qty.target }} Units</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .progress {
+        background-color: #f0f0f0;
+    }
+    @media print {
+        .btn, .sidebar, .hamburger-btn { display: none !important; }
+        .main-content { margin-left: 0 !important; width: 100% !important; padding: 0 !important; }
+        .card { border: 1px solid #ddd !important; box-shadow: none !important; margin-bottom: 20px !important; }
+        .progress-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+</style>
+{% endblock %}

@@ -1,0 +1,3 @@
+wheel - Mfg: True - Cost: 0.0 - BOMs: 0
+body - Mfg: True - Cost: 0.0 - BOMs: 0
+window - Mfg: False - Cost: 300.0 - BOMs: 0

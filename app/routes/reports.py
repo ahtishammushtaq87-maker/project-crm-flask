@@ -479,6 +479,137 @@ def salary_report():
                          all_staff=all_staff,
                          current_staff_id=staff_id)
 
+@bp.route('/profit-loss')
+@login_required
+def profit_loss_report():
+    """Comprehensive Profit and Loss Report"""
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+    
+    if start_date_str:
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+    else:
+        # Default to first day of current month
+        now = datetime.now()
+        start_date = datetime(now.year, now.month, 1)
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        
+    if end_date_str:
+        end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+    else:
+        # Default to today
+        end_date = datetime.now()
+        end_date_str = end_date.strftime('%Y-%m-%d')
+    
+    # 1. RevenueSection
+    sales = Sale.query.filter(Sale.date >= start_date, Sale.date <= end_date).all()
+    returns = SaleReturn.query.filter(SaleReturn.date >= start_date, SaleReturn.date <= end_date).all()
+    
+    total_revenue = sum(s.total for s in sales)
+    total_returns = sum(r.total for r in returns)
+    net_revenue = total_revenue - total_returns
+    
+    # 2. COGS Section: Sum(SaleItem.qty * Product.cost_price)
+    sale_items = SaleItem.query.join(Sale).filter(Sale.date >= start_date, Sale.date <= end_date).all()
+    total_cogs = sum((item.product.cost_price or 0) * item.quantity for item in sale_items)
+    
+    # 3. Gross Profit
+    gross_profit = net_revenue - total_cogs
+    
+    # 4. Operating Expenses (Deducted from Profit)
+    # Categorized Expenses - EXCLUDING BOM overheads as they are informational/inventory related
+    operating_expenses = Expense.query.filter(
+        Expense.date >= start_date, 
+        Expense.date <= end_date,
+        Expense.is_bom_overhead == False
+    ).all()
+    
+    expense_summary = {}
+    for e in operating_expenses:
+        cat_name = e.expense_category.name if e.expense_category else 'Other'
+        expense_summary[cat_name] = expense_summary.get(cat_name, 0) + e.amount
+    
+    # Payroll
+    salary_payments = SalaryPayment.query.filter(
+        SalaryPayment.status == 'paid',
+        SalaryPayment.payment_date >= start_date.date(),
+        SalaryPayment.payment_date <= end_date.date()
+    ).all()
+    total_salary = sum(p.net_salary for p in salary_payments)
+    
+    salary_advances = SalaryAdvance.query.filter(
+        SalaryAdvance.date >= start_date.date(),
+        SalaryAdvance.date <= end_date.date()
+    ).all()
+    total_advances = sum(a.amount for a in salary_advances)
+    total_payroll = total_salary + total_advances
+    
+    # Calculate Total Operating Expenses
+    total_operating_expenses = sum(expense_summary.values()) + total_payroll
+    net_profit = gross_profit - total_operating_expenses
+    
+    # 5. Inventory & Manufacturing Activity (Displayed but NOT deducted from Net Profit)
+    # Direct Purchases
+    purchases = PurchaseBill.query.filter(PurchaseBill.date >= start_date, PurchaseBill.date <= end_date).all()
+    total_purchases = sum(p.total for p in purchases)
+    
+    # BOM/Manufacturing Costs (Total actual cost of completed orders)
+    manufacturing_orders = ManufacturingOrder.query.filter(
+        ManufacturingOrder.status == 'Completed',
+        ManufacturingOrder.end_date >= start_date.date(),
+        ManufacturingOrder.end_date <= end_date.date()
+    ).all()
+    total_bom_costs = sum(o.total_cost for o in manufacturing_orders)
+    
+    # Include BOM overhead expenses that were excluded from operating list
+    bom_overhead_expenses = Expense.query.filter(
+        Expense.date >= start_date, 
+        Expense.date <= end_date,
+        Expense.is_bom_overhead == True
+    ).all()
+    total_bom_overhead = sum(e.amount for e in bom_overhead_expenses)
+    
+    total_informational_outflow = total_purchases + total_bom_costs + total_bom_overhead
+    
+    return render_template('reports/profit_loss.html',
+                          start_date=start_date_str,
+                          end_date=end_date_str,
+                          sales=sales,
+                          returns=returns,
+                          total_revenue=total_revenue,
+                          total_returns=total_returns,
+                          net_revenue=net_revenue,
+                          total_cogs=total_cogs,
+                          gross_profit=gross_profit,
+                          expense_categories=expense_summary,
+                          total_payroll=total_payroll,
+                          purchases=purchases,
+                          total_purchases=total_purchases,
+                          manufacturing_orders=manufacturing_orders,
+                          total_bom_costs=total_bom_costs + total_bom_overhead,
+                          total_expenses=total_operating_expenses,
+                          total_informational=total_informational_outflow,
+                          net_profit=net_profit)
+    
+    return render_template('reports/profit_loss.html',
+                          start_date=start_date_str,
+                          end_date=end_date_str,
+                          sales=sales,
+                          returns=returns,
+                          total_revenue=total_revenue,
+                          total_returns=total_returns,
+                          net_revenue=net_revenue,
+                          total_cogs=total_cogs,
+                          gross_profit=gross_profit,
+                          expense_categories=expense_summary,
+                          total_payroll=total_payroll,
+                          purchases=purchases,
+                          total_purchases=total_purchases,
+                          manufacturing_orders=manufacturing_orders,
+                          total_bom_costs=total_bom_costs,
+                          total_expenses=total_expenses,
+                          net_profit=net_profit)
+
 @bp.route('/download-report/<string:format>/<string:report_type>')
 @login_required
 def download_report(format, report_type):
@@ -773,6 +904,59 @@ def download_report(format, report_type):
             'Method': p.payment_method,
             'Status': p.status.capitalize()
         } for p in payments]
+
+    elif report_type == 'profit_loss':
+        start_date = datetime.strptime(start_date, '%Y-%m-%d') if start_date else datetime.now().replace(day=1)
+        end_date = datetime.strptime(end_date, '%Y-%m-%d') if end_date else datetime.now()
+        
+        # Aggregate data (summarized for Excel/PDF)
+        # Revenue
+        total_rev = db.session.query(func.sum(Sale.total)).filter(Sale.date >= start_date, Sale.date <= end_date).scalar() or 0
+        total_ret = db.session.query(func.sum(SaleReturn.total)).filter(SaleReturn.date >= start_date, SaleReturn.date <= end_date).scalar() or 0
+        net_rev = total_rev - total_ret
+        
+        # COGS
+        items = SaleItem.query.join(Sale).filter(Sale.date >= start_date, Sale.date <= end_date).all()
+        total_cogs = sum((i.product.cost_price or 0) * i.quantity for i in items)
+        
+        # Expenses
+        # Operating
+        total_exp = db.session.query(func.sum(Expense.amount)).filter(Expense.date >= start_date, Expense.date <= end_date, Expense.is_bom_overhead == False).scalar() or 0
+        salary_paid = db.session.query(func.sum(SalaryPayment.net_salary)).filter(SalaryPayment.status == 'paid', SalaryPayment.payment_date >= start_date.date(), SalaryPayment.payment_date <= end_date.date()).scalar() or 0
+        salary_adv = db.session.query(func.sum(SalaryAdvance.amount)).filter(SalaryAdvance.date >= start_date.date(), SalaryAdvance.date <= end_date.date()).scalar() or 0
+        
+        # Informational / Inventory
+        total_purchases = db.session.query(func.sum(PurchaseBill.total)).filter(PurchaseBill.date >= start_date, PurchaseBill.date <= end_date).scalar() or 0
+        total_bom = db.session.query(func.sum(ManufacturingOrder.total_cost)).filter(ManufacturingOrder.status == 'Completed', ManufacturingOrder.end_date >= start_date.date(), ManufacturingOrder.end_date <= end_date.date()).scalar() or 0
+        bom_overhead = db.session.query(func.sum(Expense.amount)).filter(Expense.date >= start_date, Expense.date <= end_date, Expense.is_bom_overhead == True).scalar() or 0
+        
+        total_operating_exp = total_exp + salary_paid + salary_adv
+        gross_profit = net_rev - total_cogs
+        net_profit = gross_profit - total_operating_exp
+        
+        title = f"Profit & Loss Statement ({start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')})"
+        headers = ['Account Description', 'Amount (Rs.)', 'Subtotal (Rs.)']
+        data = [
+            {'Account Description': 'REVENUE', 'Amount (Rs.)': '', 'Subtotal (Rs.)': f"{total_rev:.2f}"},
+            {'Account Description': '  Total Sales', 'Amount (Rs.)': f"{total_rev:.2f}", 'Subtotal (Rs.)': ''},
+            {'Account Description': '  Less: Sales Returns', 'Amount (Rs.)': f"({total_ret:.2f})", 'Subtotal (Rs.)': ''},
+            {'Account Description': 'TOTAL NET REVENUE', 'Amount (Rs.)': '', 'Subtotal (Rs.)': f"{net_rev:.2f}"},
+            {'Account Description': '', 'Amount (Rs.)': '', 'Subtotal (Rs.)': ''},
+            {'Account Description': 'COST OF GOODS SOLD', 'Amount (Rs.)': '', 'Subtotal (Rs.)': f"({total_cogs:.2f})"},
+            {'Account Description': 'GROSS PROFIT', 'Amount (Rs.)': '', 'Subtotal (Rs.)': f"{gross_profit:.2f}"},
+            {'Account Description': '', 'Amount (Rs.)': '', 'Subtotal (Rs.)': ''},
+            {'Account Description': 'OPERATING EXPENSES (Deducted from Profit)', 'Amount (Rs.)': '', 'Subtotal (Rs.)': ''},
+            {'Account Description': '  General Business Expenses', 'Amount (Rs.)': f"{total_exp:.2f}", 'Subtotal (Rs.)': ''},
+            {'Account Description': '  Payroll (Salaries & Advances)', 'Amount (Rs.)': f"{salary_paid + salary_adv:.2f}", 'Subtotal (Rs.)': ''},
+            {'Account Description': 'TOTAL OPERATING EXPENSES', 'Amount (Rs.)': '', 'Subtotal (Rs.)': f"({total_operating_exp:.2f})"},
+            {'Account Description': '', 'Amount (Rs.)': '', 'Subtotal (Rs.)': ''},
+            {'Account Description': 'NET PROFIT', 'Amount (Rs.)': '', 'Subtotal (Rs.)': f"{net_profit:.2f}"},
+            {'Account Description': '', 'Amount (Rs.)': '', 'Subtotal (Rs.)': ''},
+            {'Account Description': 'INVENTORY & MANUFACTURING ACTIVITY (Informational)', 'Amount (Rs.)': '', 'Subtotal (Rs.)': ''},
+            {'Account Description': '  Inventory Purchases', 'Amount (Rs.)': f"{total_purchases:.2f}", 'Subtotal (Rs.)': ''},
+            {'Account Description': '  Manufacturing Costs', 'Amount (Rs.)': f"{total_bom + bom_overhead:.2f}", 'Subtotal (Rs.)': ''},
+            {'Account Description': 'TOTAL SECONDARY OUTFLOW', 'Amount (Rs.)': '', 'Subtotal (Rs.)': f"{total_purchases + total_bom + bom_overhead:.2f}"}
+        ]
 
     if not data:
         flash('No data available for the selected filters.', 'warning')

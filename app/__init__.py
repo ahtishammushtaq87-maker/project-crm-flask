@@ -69,6 +69,16 @@ def create_app(config_class=Config):
                     print("Added column: bom_id to expenses")
         except Exception as e:
             print(f"Expenses product/bom migration check: {e}")
+            
+        # Migrate for monthly_targets table
+        try:
+            inspector = inspect(db.engine)
+            if 'monthly_targets' not in inspector.get_table_names():
+                from app.models import MonthlyTarget
+                MonthlyTarget.__table__.create(db.engine)
+                print("Created monthly_targets table")
+        except Exception as e:
+            print(f"Monthly targets table check: {e}")
     
     # Enable SQLite foreign key constraints
     if app.config.get('SQLALCHEMY_DATABASE_URI', '').startswith('sqlite'):
@@ -100,6 +110,7 @@ def create_app(config_class=Config):
     from app.routes.returns import bp as returns_bp
     from app.routes.manufacturing import bp as manufacturing_bp
     from app.routes.salary import bp as salary_bp
+    from app.routes.targets import bp as targets_bp
 
     app.register_blueprint(dashboard_bp, url_prefix='/')
     app.register_blueprint(accounting_bp, url_prefix='/accounting')
@@ -112,5 +123,22 @@ def create_app(config_class=Config):
     app.register_blueprint(returns_bp, url_prefix='/returns')
     app.register_blueprint(manufacturing_bp, url_prefix='/manufacturing')
     app.register_blueprint(salary_bp, url_prefix='/salary')
+    app.register_blueprint(targets_bp, url_prefix='/targets')
+    
+    @app.context_processor
+    def inject_company():
+        from app.models import Company
+        from flask import url_for
+        company = Company.query.first()
+        logo_url = None
+        if company and company.logo_path:
+            # Normalize path and extract static-relative part correctly
+            path = company.logo_path.replace('\\', '/')
+            if 'static/' in path:
+                # Get everything AFTER static/
+                logo_url = url_for('static', filename=path.split('static/')[-1])
+            else:
+                logo_url = url_for('static', filename=path)
+        return dict(company=company, company_logo_url=logo_url)
     
     return app

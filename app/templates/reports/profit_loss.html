@@ -1,0 +1,406 @@
+{% extends "base.html" %}
+
+{% block title %}Profit & Loss Report{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-file-invoice-dollar text-primary me-2"></i>Profit & Loss Statement</h2>
+    <div class="d-flex gap-2">
+        <div class="dropdown">
+            <button class="btn btn-success dropdown-toggle" type="button" id="downloadDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="fas fa-download me-1"></i> Download
+            </button>
+            <ul class="dropdown-menu shadow" aria-labelledby="downloadDropdown">
+                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='pdf', report_type='profit_loss', start_date=start_date, end_date=end_date) }}"><i class="fas fa-file-pdf text-danger me-2"></i>PDF Report</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='excel', report_type='profit_loss', start_date=start_date, end_date=end_date) }}"><i class="fas fa-file-excel text-success me-2"></i>Excel Sheet</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='csv', report_type='profit_loss', start_date=start_date, end_date=end_date) }}"><i class="fas fa-file-csv text-info me-2"></i>CSV File</a></li>
+            </ul>
+        </div>
+        <button class="btn btn-primary" onclick="window.print()">
+            <i class="fas fa-print"></i> Print
+        </button>
+    </div>
+</div>
+
+<!-- Filter Section -->
+<div class="card shadow-sm border-0 mb-4 bg-light">
+    <div class="card-body py-3">
+        <form class="row g-3 align-items-end" method="GET">
+            <div class="col-md-4">
+                <label for="start_date" class="form-label small fw-bold">From Date</label>
+                <input type="date" name="start_date" id="start_date" class="form-control" value="{{ start_date }}">
+            </div>
+            <div class="col-md-4">
+                <label for="end_date" class="form-label small fw-bold">To Date</label>
+                <input type="date" name="end_date" id="end_date" class="form-control" value="{{ end_date }}">
+            </div>
+            <div class="col-md-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">
+                    <i class="fas fa-filter me-1"></i> Apply Filter
+                </button>
+                <a href="{{ url_for('reports.profit_loss_report') }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-undo"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row">
+    <!-- P&L Summary Table -->
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3">
+                <h5 class="mb-0 fw-bold text-uppercase">Financial Summary</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Account Description</th>
+                                <th class="text-end">Amount (Rs.)</th>
+                                <th class="text-end">Total (Rs.)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Revenue Section -->
+                            <tr class="table-info bg-opacity-10 fw-bold">
+                                <td colspan="2">REVENUE</td>
+                                <td class="text-end">{{ "{:,.2f}".format(total_revenue) }}</td>
+                            </tr>
+                            <tr>
+                                <td class="ps-4">Total Sales Invoices</td>
+                                <td class="text-end text-success">{{ "{:,.2f}".format(total_revenue) }}</td>
+                                <td></td>
+                            </tr>
+                            <tr>
+                                <td class="ps-4">Less: Sales Returns</td>
+                                <td class="text-end text-danger">({{ "{:,.2f}".format(total_returns) }})</td>
+                                <td></td>
+                            </tr>
+                            <tr class="fw-bold border-bottom-2">
+                                <td colspan="2">TOTAL NET REVENUE</td>
+                                <td class="text-end text-primary border-top">{{ "{:,.2f}".format(net_revenue) }}</td>
+                            </tr>
+
+                            <!-- COGS Section -->
+                            <tr><td colspan="3" class="py-2"></td></tr>
+                            <tr class="fw-bold">
+                                <td colspan="2">COST OF GOODS SOLD (COGS)</td>
+                                <td class="text-end text-danger">({{ "{:,.2f}".format(total_cogs) }})</td>
+                            </tr>
+                            
+                            <tr class="table-primary fw-bold fs-5">
+                                <td colspan="2">GROSS PROFIT</td>
+                                <td class="text-end">{{ "{:,.2f}".format(gross_profit) }}</td>
+                            </tr>
+
+                            <!-- Operating Expenses Section -->
+                            <tr><td colspan="3" class="py-2"></td></tr>
+                            <tr class="table-light fw-bold text-uppercase">
+                                <td colspan="3">Operating Expenses (Deducted from Profit)</td>
+                            </tr>
+                            {% for cat, amt in expense_categories.items() %}
+                            <tr>
+                                <td class="ps-4">{{ cat }}</td>
+                                <td class="text-end">{{ "{:,.2f}".format(amt) }}</td>
+                                <td></td>
+                            </tr>
+                            {% endfor %}
+                            <tr>
+                                <td class="ps-4">Staff Payroll (Salaries & Advances)</td>
+                                <td class="text-end">{{ "{:,.2f}".format(total_payroll) }}</td>
+                                <td></td>
+                            </tr>
+                            <tr class="fw-bold border-top border-bottom">
+                                <td colspan="2">TOTAL OPERATING EXPENSES</td>
+                                <td class="text-end text-danger">({{ "{:,.2f}".format(total_expenses) }})</td>
+                            </tr>
+
+                            <!-- Net Profit -->
+                            <tr><td colspan="3" class="py-3"></td></tr>
+                            <tr class="table-dark fw-bold fs-4">
+                                <td colspan="2">NET PROFIT</td>
+                                <td class="text-end {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">
+                                    {{ "{:,.2f}".format(net_profit) }}
+                                </td>
+                            </tr>
+
+                            <!-- Informational Section -->
+                            <tr><td colspan="3" class="py-2"></td></tr>
+                            <tr class="table-light fw-bold text-uppercase">
+                                <td colspan="3">Inventory & Manufacturing Activity (Informational)</td>
+                            </tr>
+                            <tr>
+                                <td class="ps-4">Direct Inventory Purchases (Asset Investment)</td>
+                                <td class="text-end">{{ "{:,.2f}".format(total_purchases) }}</td>
+                                <td></td>
+                            </tr>
+                            <tr>
+                                <td class="ps-4">Manufacturing (BOM) Costs (In-process/Stock)</td>
+                                <td class="text-end">{{ "{:,.2f}".format(total_bom_costs) }}</td>
+                                <td></td>
+                            </tr>
+                            <tr class="fw-bold border-top">
+                                <td colspan="2">TOTAL SECONDARY OUTFLOW</td>
+                                <td class="text-end text-muted">{{ "{:,.2f}".format(total_informational) }}</td>
+                            </tr>
+                            <tr>
+                                <td colspan="3" class="small text-muted ps-4">
+                                    <i class="fas fa-info-circle me-1"></i> These costs are reflected in COGS at the time of sale and are not deducted again from Net Profit here.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column Metrics -->
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0 mb-4 bg-primary text-white">
+            <div class="card-body text-center py-4">
+                <h6 class="text-uppercase mb-2">Net Profit Margin</h6>
+                <h2 class="display-5 fw-bold mb-0">
+                    {% if net_revenue > 0 %}
+                    {{ "{:,.1f}%".format((net_profit / net_revenue) * 100) }}
+                    {% else %}
+                    0.0%
+                    {% endif %}
+                </h2>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3">
+                <h6 class="mb-0 fw-bold">Profit Breakdown</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1 small">
+                        <span>Gross Profit</span>
+                        <span>{{ "{:,.0f}".format(gross_profit) }}</span>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar bg-success" role="progressbar" style="width: 100%"></div>
+                    </div>
+                </div>
+                <div class="mb-0">
+                    <div class="d-flex justify-content-between mb-1 small">
+                        <span>Operating Expenses</span>
+                        <span>{{ "{:,.0f}".format(total_expenses) }}</span>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        {% set exp_pct = (total_expenses / gross_profit * 100) if gross_profit > 0 else 100 %}
+                        <div class="progress-bar bg-danger" role="progressbar" style="width: {{ [exp_pct, 100]|min }}%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Detailed Data Sections (Auditable) -->
+<div class="accordion mb-4" id="pnlDetails">
+    <!-- Invoices List -->
+    <div class="accordion-item shadow-sm border-0 mb-3 rounded overflow-hidden">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSales">
+                <i class="fas fa-file-invoice me-2 text-success"></i> Sales Invoices Details ({{ sales|length }})
+            </button>
+        </h2>
+        <div id="collapseSales" class="accordion-collapse collapse" data-bs-parent="#pnlDetails">
+            <div class="accordion-body p-0">
+                <table class="table table-sm table-striped mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Inv #</th>
+                            <th>Date</th>
+                            <th>Customer</th>
+                            <th class="text-end">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in sales %}
+                        <tr>
+                            <td>{{ s.invoice_number }}</td>
+                            <td>{{ s.date.strftime('%Y-%m-%d') }}</td>
+                            <td>{{ s.customer.name if s.customer else 'Walk-in' }}</td>
+                            <td class="text-end">{{ "{:,.2f}".format(s.total) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Returns Detail -->
+    <div class="accordion-item shadow-sm border-0 mb-3 rounded overflow-hidden">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseReturns">
+                <i class="fas fa-undo me-2 text-danger"></i> Sales Returns Details ({{ returns|length }})
+            </button>
+        </h2>
+        <div id="collapseReturns" class="accordion-collapse collapse" data-bs-parent="#pnlDetails">
+            <div class="accordion-body p-0">
+                <table class="table table-sm table-striped mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Return #</th>
+                            <th>Date</th>
+                            <th>Reason</th>
+                            <th class="text-end">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in returns %}
+                        <tr>
+                            <td>{{ r.return_number }}</td>
+                            <td>{{ r.date.strftime('%Y-%m-%d') }}</td>
+                            <td>{{ r.reason }}</td>
+                            <td class="text-end">{{ "{:,.2f}".format(r.total) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- COGS Detail -->
+    <div class="accordion-item shadow-sm border-0 mb-3 rounded overflow-hidden">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseCOGS">
+                <i class="fas fa-coins me-2 text-info"></i> Cost of Goods Sold (COGS) Details
+            </button>
+        </h2>
+        <div id="collapseCOGS" class="accordion-collapse collapse" data-bs-parent="#pnlDetails">
+            <div class="accordion-body p-0">
+                <table class="table table-sm table-striped mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Inv #</th>
+                            <th>Product</th>
+                            <th>Qty</th>
+                            <th class="text-end">Unit Cost</th>
+                            <th class="text-end">Total Cost</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in sales %}
+                            {% for item in s.items %}
+                            <tr>
+                                <td>{{ s.invoice_number }}</td>
+                                <td>{{ item.product.name }}</td>
+                                <td>{{ item.quantity }}</td>
+                                <td class="text-end">{{ "{:,.2f}".format(item.product.cost_price or 0) }}</td>
+                                <td class="text-end">{{ "{:,.2f}".format((item.product.cost_price or 0) * item.quantity) }}</td>
+                            </tr>
+                            {% endfor %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Purchases Detail -->
+    <div class="accordion-item shadow-sm border-0 mb-3 rounded overflow-hidden">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePurchases">
+                <i class="fas fa-shopping-cart me-2 text-primary"></i> Inventory Purchases Details ({{ purchases|length }})
+            </button>
+        </h2>
+        <div id="collapsePurchases" class="accordion-collapse collapse" data-bs-parent="#pnlDetails">
+            <div class="accordion-body p-0">
+                <table class="table table-sm table-striped mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Bill #</th>
+                            <th>Date</th>
+                            <th>Vendor</th>
+                            <th class="text-end">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in purchases %}
+                        <tr>
+                            <td>{{ p.bill_number }}</td>
+                            <td>{{ p.date.strftime('%Y-%m-%d') }}</td>
+                            <td>{{ p.vendor.name if p.vendor else 'N/A' }}</td>
+                            <td class="text-end">{{ "{:,.2f}".format(p.total) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manufacturing Detail -->
+    <div class="accordion-item shadow-sm border-0 rounded overflow-hidden">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseManufacturing">
+                <i class="fas fa-industry me-2 text-warning"></i> Manufacturing Orders Details ({{ manufacturing_orders|length }})
+            </button>
+        </h2>
+        <div id="collapseManufacturing" class="accordion-collapse collapse" data-bs-parent="#pnlDetails">
+            <div class="accordion-body p-0">
+                <table class="table table-sm table-striped mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>MO #</th>
+                            <th>Product</th>
+                            <th>Completed Date</th>
+                            <th class="text-end">Total Cost</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for o in manufacturing_orders %}
+                        <tr>
+                            <td>{{ o.order_number }}</td>
+                            <td>{{ o.bom.product.name }}</td>
+                            <td>{{ o.end_date.strftime('%Y-%m-%d') if o.end_date else '-' }}</td>
+                            <td class="text-end">{{ "{:,.2f}".format(o.total_cost) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block styles %}
+<style>
+    @media print {
+        .btn, .dropdown, form, .accordion-button::after {
+            display: none !important;
+        }
+        .accordion-collapse {
+            display: block !important;
+        }
+        .card {
+            box-shadow: none !important;
+            border: 1px solid #ddd !important;
+        }
+        .table-primary, .table-info, .table-dark {
+            background-color: #eee !important;
+            color: black !important;
+        }
+    }
+    .border-bottom-2 {
+        border-bottom: 3px double #333;
+    }
+    .ps-4 {
+        padding-left: 1.5rem !important;
+        font-size: 0.95rem;
+        color: #555;
+    }
+</style>
+{% endblock %}
