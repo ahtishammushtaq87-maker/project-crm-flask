@@ -821,19 +821,26 @@ def add_expense():
     
     if form.validate_on_submit():
         expense_number = f"EXP-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        expense = Expense(
-            expense_number=expense_number,
-            date=form.date.data,
-            category_id=form.category_id.data,
-            vendor_id=form.vendor_id.data if form.vendor_id.data != 0 else None,
-            description=form.description.data,
-            amount=form.amount.data,
-            payment_method=form.payment_method.data,
-            reference=form.reference.data,
-            notes=form.notes.data,
-            is_bom_overhead=form.is_bom_overhead.data,
-            product_id=form.product_id.data if form.product_id.data != 0 else None
-        )
+        
+        # Build expense kwargs based on column existence
+        expense_kwargs = {
+            'expense_number': expense_number,
+            'date': form.date.data,
+            'category_id': form.category_id.data,
+            'vendor_id': form.vendor_id.data if form.vendor_id.data != 0 else None,
+            'description': form.description.data,
+            'amount': form.amount.data,
+            'payment_method': form.payment_method.data,
+            'reference': form.reference.data,
+            'notes': form.notes.data,
+        }
+        
+        if has_column('expenses', 'is_bom_overhead'):
+            expense_kwargs['is_bom_overhead'] = form.is_bom_overhead.data
+        if has_column('expenses', 'product_id'):
+            expense_kwargs['product_id'] = form.product_id.data if form.product_id.data != 0 else None
+        
+        expense = Expense(**expense_kwargs)
         
         # Handle bill image upload
         if 'bill_image' in request.files:
@@ -894,8 +901,8 @@ def edit_expense(id):
     else:
         form.vendor_id.data = 0
         
-    # Set current product selection
-    if expense.product_id:
+    # Set current product selection (only if column exists)
+    if has_column('expenses', 'product_id') and expense.product_id:
         form.product_id.data = expense.product_id
     else:
         form.product_id.data = 0
@@ -909,8 +916,11 @@ def edit_expense(id):
         expense.payment_method = form.payment_method.data
         expense.reference = form.reference.data
         expense.notes = form.notes.data
-        expense.is_bom_overhead = form.is_bom_overhead.data
-        expense.product_id = form.product_id.data if form.product_id.data != 0 else None
+        
+        if has_column('expenses', 'is_bom_overhead'):
+            expense.is_bom_overhead = form.is_bom_overhead.data
+        if has_column('expenses', 'product_id'):
+            expense.product_id = form.product_id.data if form.product_id.data != 0 else None
         
         # Handle bill image upload
         if 'bill_image' in request.files:
