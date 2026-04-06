@@ -50,6 +50,10 @@
             <div class="card p-3 mb-3 border-danger">
                 <h5>Total Expenses</h5>
                 <h3>Rs{{ '%.2f'|format(total_expenses) }}</h3>
+                <div class="mt-1 small text-muted">
+                    <span>Op: Rs{{ '%.2f'|format(operating_expenses) }}</span> | 
+                    <span>BOM: Rs{{ '%.2f'|format(manufacturing_overhead) }}</span>
+                </div>
             </div>
         </div>
         <div class="col-md-3">

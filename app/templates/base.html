@@ -145,6 +145,9 @@
                 <a class="nav-link" href="{{ url_for('sales.invoices') }}">
                     <i class="fas fa-shopping-cart me-2"></i> Sales
                 </a>
+                <a class="nav-link" href="{{ url_for('returns.return_list') }}">
+                    <i class="fas fa-undo me-2"></i> Sales Returns
+                </a>
                 {% endif %}
                 {% if current_user.is_admin or current_user.can_view_returns %}
                 <a class="nav-link" href="{{ url_for('returns.return_list') }}">
@@ -160,10 +163,20 @@
                 <a class="nav-link" href="{{ url_for('inventory.products') }}">
                     <i class="fas fa-boxes me-2"></i> Inventory
                 </a>
+                <a class="nav-link" data-bs-toggle="collapse" href="#mobileMfgSubmenu" role="button" aria-expanded="false" aria-controls="mobileMfgSubmenu">
+                    <i class="fas fa-industry me-2"></i> Manufacturing ︾
+                </a>
+                <div class="collapse" id="mobileMfgSubmenu">
+                    <a class="nav-link ps-4" href="{{ url_for('manufacturing.boms') }}">Bills of Material</a>
+                    <a class="nav-link ps-4" href="{{ url_for('manufacturing.orders') }}">Production Orders</a>
+                </div>
                 {% endif %}
                 {% if current_user.is_admin or current_user.can_view_expenses %}
                 <a class="nav-link" href="{{ url_for('accounting.expenses') }}">
                     <i class="fas fa-money-bill-wave me-2"></i> Expenses
+                </a>
+                <a class="nav-link" href="{{ url_for('salary.staff_list') }}">
+                    <i class="fas fa-user-tie me-2"></i> Salary Module
                 </a>
                 {% endif %}
                 {% if current_user.is_admin or current_user.can_view_vendors %}
@@ -187,6 +200,9 @@
                 <a class="nav-link" href="{{ url_for('reports.inventory_report') }}">
                     <i class="fas fa-chart-bar me-2"></i> Inventory Report
                 </a>
+                <a class="nav-link" href="{{ url_for('reports.manufacturing_report') }}">
+                    <i class="fas fa-industry me-2"></i> Manufacturing Report
+                </a>
                 <a class="nav-link" href="{{ url_for('reports.cogs_report') }}">
                     <i class="fas fa-coins me-2"></i> COGS Report
                 </a>
@@ -198,6 +214,9 @@
                 </a>
                 <a class="nav-link" href="{{ url_for('reports.expense_report') }}">
                     <i class="fas fa-chart-bar me-2"></i> Expense Report
+                </a>
+                <a class="nav-link" href="{{ url_for('reports.salary_report') }}">
+                    <i class="fas fa-file-invoice-dollar me-2"></i> Salary Report
                 </a>
                 <a class="nav-link" href="{{ url_for('reports.return_report') }}">
                     <i class="fas fa-undo me-2"></i> Return Report
@@ -260,10 +279,20 @@
                         <a class="nav-link" href="{{ url_for('inventory.products') }}">
                             <i class="fas fa-boxes me-2"></i> Inventory
                         </a>
+                        <a class="nav-link" data-bs-toggle="collapse" href="#mfgSubmenu" role="button" aria-expanded="false" aria-controls="mfgSubmenu">
+                            <i class="fas fa-industry me-2"></i> Manufacturing ︾
+                        </a>
+                        <div class="collapse" id="mfgSubmenu">
+                            <a class="nav-link ps-4" href="{{ url_for('manufacturing.boms') }}">Bills of Material</a>
+                            <a class="nav-link ps-4" href="{{ url_for('manufacturing.orders') }}">Production Orders</a>
+                        </div>
                         {% endif %}
                         {% if current_user.is_admin or current_user.can_view_expenses %}
                         <a class="nav-link" href="{{ url_for('accounting.expenses') }}">
                             <i class="fas fa-money-bill-wave me-2"></i> Expenses
+                        </a>
+                        <a class="nav-link" href="{{ url_for('salary.staff_list') }}">
+                            <i class="fas fa-user-tie me-2"></i> Salary Module
                         </a>
                         {% endif %}
                         {% if current_user.is_admin or current_user.can_view_vendors %}
@@ -287,10 +316,12 @@
                             <a class="nav-link ps-4" href="{{ url_for('reports.purchase_report') }}">Purchase Report</a>
                             <a class="nav-link ps-4" href="{{ url_for('reports.inventory_report') }}">Inventory
                                 Report</a>
+                            <a class="nav-link ps-4" href="{{ url_for('reports.manufacturing_report') }}">Manufacturing Report</a>
                             <a class="nav-link ps-4" href="{{ url_for('reports.cogs_report') }}">COGS Report</a>
                             <a class="nav-link ps-4" href="{{ url_for('reports.vendor_report') }}">Vendor Report</a>
                             <a class="nav-link ps-4" href="{{ url_for('reports.customer_report') }}">Customer Report</a>
                             <a class="nav-link ps-4" href="{{ url_for('reports.expense_report') }}">Expense Report</a>
+                            <a class="nav-link ps-4" href="{{ url_for('reports.salary_report') }}">Salary Report</a>
                             <a class="nav-link ps-4" href="{{ url_for('reports.return_report') }}">Return Report</a>
                         </div>
                         {% endif %}

@@ -160,6 +160,8 @@
     function addItem() {
         const newRow = document.querySelector('.item-row').cloneNode(true);
         newRow.querySelectorAll('input, select').forEach(input => input.value = '');
+        newRow.querySelector('.quantity').value = '1';
+        newRow.querySelector('.price').value = '0';
         newRow.querySelector('.item-total').textContent = 'Rs0.00';
         document.getElementById('itemsBody').appendChild(newRow);
         attachItemEvents(newRow);

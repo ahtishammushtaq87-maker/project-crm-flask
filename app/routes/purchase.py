@@ -178,6 +178,22 @@ def pay_bill(id):
     
     return redirect(request.referrer or url_for('purchase.bill_detail', id=bill.id))
 
+@bp.route('/bill/<int:id>/discount', methods=['POST'])
+@login_required
+def apply_discount(id):
+    bill = PurchaseBill.query.get_or_404(id)
+    discount_amount = float(request.form.get('discount_amount', 0))
+    
+    if discount_amount > 0:
+        bill.discount += discount_amount
+        bill.calculate_totals()
+        bill.update_status()
+        
+        db.session.commit()
+        flash(f'Discount of Rs {discount_amount} applied successfully!', 'success')
+    
+    return redirect(request.referrer or url_for('purchase.bill_detail', id=bill.id))
+
 @bp.route('/bill/<int:id>/delete', methods=['POST'])
 @login_required
 def delete_bill(id):

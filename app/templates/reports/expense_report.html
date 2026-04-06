@@ -156,10 +156,11 @@
                 <table class="table align-items-center table-flush">
                     <thead>
                         <tr>
-                            <th class="px-4">Expense #</th>
+                            <th class="px-4">Type</th>
+                            <th>Number</th>
                             <th>Date</th>
                             <th>Category</th>
-                            <th>Vendor</th>
+                            <th>Vendor/Staff</th>
                             <th>Description</th>
                             <th>Method</th>
                             <th>Amount</th>
@@ -168,12 +169,17 @@
                     <tbody>
                         {% for expense in expenses %}
                         <tr>
-                            <td class="px-4 font-weight-bold">{{ expense.expense_number }}</td>
+                            <td class="px-4">
+                                <span class="badge {% if expense.type == 'Expense' %}bg-primary{% elif expense.type == 'Salary' %}bg-success{% else %}bg-info{% endif %}">
+                                    {{ expense.type }}
+                                </span>
+                            </td>
+                            <td class="font-weight-bold">{{ expense.number }}</td>
                             <td>{{ expense.date.strftime('%Y-%m-%d') }}</td>
-                            <td><span class="badge bg-light text-dark">{{ expense.expense_category.name if expense.expense_category else 'N/A' }}</span></td>
-                            <td>{{ expense.vendor.name if expense.vendor else 'N/A' }}</td>
+                            <td><span class="badge bg-light text-dark">{{ expense.category }}</span></td>
+                            <td>{{ expense.vendor }}</td>
                             <td><small>{{ expense.description }}</small></td>
-                            <td>{{ expense.payment_method }}</td>
+                            <td>{{ expense.method }}</td>
                             <td><strong class="text-danger">Rs{{ "%.2f"|format(expense.amount) }}</strong></td>
                         </tr>
                         {% endfor %}

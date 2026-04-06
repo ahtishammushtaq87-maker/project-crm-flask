@@ -2,16 +2,18 @@ from flask_wtf import FlaskForm
 from wtforms import StringField, FloatField, IntegerField, SelectField, TextAreaField, DateField, FileField, BooleanField
 from wtforms.validators import DataRequired, Email, Optional, NumberRange, EqualTo, InputRequired
 from wtforms.fields import DateTimeField
+from datetime import datetime
 
 class ProductForm(FlaskForm):
     name = StringField('Product Name', validators=[DataRequired()])
     sku = StringField('SKU', validators=[DataRequired()])
     description = TextAreaField('Description')
     unit_price = FloatField('Selling Price', validators=[DataRequired(), NumberRange(min=0)])
-    cost_price = FloatField('Cost Price', validators=[DataRequired(), NumberRange(min=0)])
+    cost_price = FloatField('Cost Price', validators=[Optional(), NumberRange(min=0)])
     quantity = FloatField('Initial Quantity', default=0)
     reorder_level = FloatField('Reorder Level', default=0)
     category = StringField('Category')
+    is_manufactured = BooleanField('Is Manufactured Item', default=False)
     image = FileField('Product Image')
 
 class VendorForm(FlaskForm):
@@ -42,6 +44,8 @@ class ExpenseForm(FlaskForm):
     reference = StringField('Reference')
     bill_image = FileField('Bill Image')
     notes = TextAreaField('Notes')
+    is_bom_overhead = BooleanField('BOM Overhead Expense', default=False)
+    product_id = SelectField('Linked Finished Product (Overhead)', coerce=int, validators=[Optional()])
 
 class ExpenseCategoryForm(FlaskForm):
     name = StringField('Category Name', validators=[DataRequired()])
@@ -110,3 +114,41 @@ class TaskForm(FlaskForm):
     status = SelectField('Status', choices=[('Pending', 'Pending'), ('In Progress', 'In Progress'), ('Completed', 'Completed'), ('Cancelled', 'Cancelled')], default='Pending')
     due_date = DateField('Due Date', validators=[Optional()])
     assigned_to_id = SelectField('Assign To', coerce=int, validators=[DataRequired()])
+
+class BOMForm(FlaskForm):
+    name = StringField('BOM Name', validators=[DataRequired()])
+    product_id = SelectField('Finished Product', coerce=int, validators=[DataRequired()])
+    labor_cost = FloatField('Total Labor Cost', default=0, validators=[Optional(), NumberRange(min=0)])
+    overhead_cost = FloatField('Overhead Cost', default=0, validators=[Optional(), NumberRange(min=0)])
+
+class ManufacturingOrderForm(FlaskForm):
+    bom_id = SelectField('Bill of Materials', coerce=int, validators=[DataRequired()])
+    quantity_to_produce = FloatField('Quantity to Produce', validators=[DataRequired(), NumberRange(min=0.1)])
+    start_date = DateField('Start Date', validators=[Optional()])
+    end_date = DateField('End Date', validators=[Optional()])
+
+class StaffForm(FlaskForm):
+    name = StringField('Staff Name', validators=[DataRequired()])
+    designation = StringField('Designation')
+    monthly_salary = FloatField('Monthly Salary', validators=[DataRequired(), NumberRange(min=0)])
+    joining_date = DateField('Joining Date', validators=[Optional()])
+    is_active = BooleanField('Active', default=True)
+
+class SalaryAdvanceForm(FlaskForm):
+    staff_id = SelectField('Staff', coerce=int, validators=[DataRequired()])
+    amount = FloatField('Advance Amount', validators=[DataRequired(), NumberRange(min=1)])
+    date = DateField('Date', validators=[DataRequired()])
+    description = TextAreaField('Description')
+
+class SalaryPaymentForm(FlaskForm):
+    staff_id = SelectField('Staff', coerce=int, validators=[DataRequired()])
+    month = SelectField('Month', coerce=int, choices=[(i, datetime(2000, i, 1).strftime('%B')) for i in range(1, 13)], validators=[DataRequired()])
+    year = IntegerField('Year', validators=[DataRequired()])
+    base_salary = FloatField('Base Salary', validators=[DataRequired(), NumberRange(min=0)])
+    advance_deduction = FloatField('Advance Deduction', default=0)
+    bonus = FloatField('Bonus', default=0)
+    other_deductions = FloatField('Other Deductions', default=0)
+    payment_date = DateField('Payment Date', validators=[DataRequired()])
+    payment_method = StringField('Payment Method', default='Cash')
+    status = SelectField('Status', choices=[('paid', 'Paid'), ('pending', 'Pending')], default='paid')
+    notes = TextAreaField('Notes')

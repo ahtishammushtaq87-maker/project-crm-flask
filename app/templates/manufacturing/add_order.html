@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Create Manufacturing Order{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-sm-flex align-items-center justify-content-between mb-4">
+        <h1 class="h3 mb-0 text-gray-800">Create Manufacturing Order</h1>
+        <a href="{{ url_for('manufacturing.orders') }}" class="btn btn-sm btn-secondary shadow-sm">
+            <i class="fas fa-arrow-left fa-sm text-white-50"></i> Back to Orders
+        </a>
+    </div>
+
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <div class="card shadow mb-4">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">Order Settings</h6>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('manufacturing.add_order') }}">
+                        {{ form.hidden_tag() }}
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Select Bill of Materials (BOM)</label>
+                            {{ form.bom_id(class="form-control" + (" is-invalid" if form.bom_id.errors else "")) }}
+                            {% for error in form.bom_id.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+                            
+                            {% set pre_bom = request.args.get('bom_id') %}
+                            {% if pre_bom %}
+                            <script>
+                                document.getElementById("bom_id").value = "{{ pre_bom }}";
+                            </script>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Quantity to Produce</label>
+                            {{ form.quantity_to_produce(class="form-control" + (" is-invalid" if form.quantity_to_produce.errors else ""), type="number", step="0.01") }}
+                            {% for error in form.quantity_to_produce.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Start Date</label>
+                                {{ form.start_date(class="form-control", type="date") }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">End Date (Estimated)</label>
+                                {{ form.end_date(class="form-control", type="date") }}
+                            </div>
+                        </div>
+
+                        <hr>
+                        
+                        <div class="mt-4 text-end">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-cogs me-1"></i> Generate Order
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

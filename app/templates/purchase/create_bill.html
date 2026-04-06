@@ -157,6 +157,9 @@ function addRow() {
     let row = document.querySelector("#itemsBody tr").cloneNode(true);
 
     row.querySelectorAll("input").forEach(i => i.value = "");
+    row.querySelector(".qty").value = "1";
+    row.querySelector(".price").value = "0";
+    row.querySelector(".item-tax").value = "0";
     let select = row.querySelector("select");
     select.selectedIndex = 0;
     select.className = "form-control product-select";
@@ -177,7 +180,7 @@ function onProductChange(select) {
     let selectedOption = select.options[select.selectedIndex];
     let costPrice = selectedOption.getAttribute('data-cost-price');
     
-    if (costPrice && costPrice !== 'None' && costPrice !== '0' && costPrice !== '') {
+    if (costPrice && costPrice !== 'None' && costPrice !== '') {
         let priceInput = select.closest("tr").querySelector(".price");
         priceInput.value = parseFloat(costPrice).toFixed(2);
         calcRow(priceInput);

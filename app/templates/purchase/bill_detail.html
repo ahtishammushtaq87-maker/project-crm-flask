@@ -5,9 +5,39 @@
         <h2 class="h3 mb-0 text-gray-800">Purchase Bill: {{ bill.bill_number }}</h2>
         <div class="btn-group">
             <a href="{{ url_for('purchase.bill_pdf', id=bill.id) }}" class="btn btn-info">
-                <i class="fas fa-file-pdf"></i> Download PDF
+                <i class="fas fa-file-pdf"></i> PDF
             </a>
-            <a href="{{ url_for('purchase.bills') }}" class="btn btn-secondary">Back to List</a>
+            {% if bill.status != 'paid' %}
+            <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#discountModal">
+                <i class="fas fa-tag"></i> Direct Discount
+            </button>
+            {% endif %}
+            <a href="{{ url_for('purchase.bills') }}" class="btn btn-secondary">Back</a>
+        </div>
+    </div>
+
+    <!-- Discount Modal -->
+    <div class="modal fade" id="discountModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form action="{{ url_for('purchase.apply_discount', id=bill.id) }}" method="POST">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Apply Direct Discount</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body text-start">
+                        <div class="mb-3">
+                            <label class="form-label">Discount Amount (Rs)</label>
+                            <input type="number" step="0.01" name="discount_amount" class="form-control" placeholder="0.00" required>
+                        </div>
+                        <p class="text-muted small">This will reduce the grand total of this bill.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-warning text-dark fw-bold">Apply Discount</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 

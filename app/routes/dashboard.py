@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request
 from flask_login import login_required
-from app.models import Sale, Product, PurchaseBill, Expense, db, SaleItem, Vendor, Customer
+from app.models import Sale, Product, PurchaseBill, Expense, db, SaleItem, Vendor, Customer, SalaryPayment, SalaryAdvance
 from datetime import datetime, timedelta
 from sqlalchemy import func
 
@@ -49,17 +49,41 @@ def index():
         PurchaseBill.date <= end_datetime
     ).scalar() or 0
 
-    # Total Expenses
-    total_expenses = db.session.query(func.sum(Expense.amount)).filter(
+    # Total Operating Expenses (Non-BOM)
+    operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
+        Expense.is_bom_overhead == False,
         Expense.date >= start_datetime,
         Expense.date <= end_datetime
     ).scalar() or 0
 
+    # Total Manufacturing Overhead (BOM linked)
+    manufacturing_overhead = db.session.query(func.sum(Expense.amount)).filter(
+        Expense.is_bom_overhead == True,
+        Expense.date >= start_datetime,
+        Expense.date <= end_datetime
+    ).scalar() or 0
+    # Total Payroll (Payments + Advances given in period)
+    total_payments = db.session.query(func.sum(SalaryPayment.net_salary)).filter(
+        SalaryPayment.status == 'paid',
+        SalaryPayment.payment_date >= start_datetime.date(),
+        SalaryPayment.payment_date <= end_datetime.date()
+    ).scalar() or 0
+    
+    total_advances = db.session.query(func.sum(SalaryAdvance.amount)).filter(
+        SalaryAdvance.date >= start_datetime.date(),
+        SalaryAdvance.date <= end_datetime.date()
+    ).scalar() or 0
+    
+    total_payroll = total_payments + total_advances
+    
+    total_expenses = operating_expenses + manufacturing_overhead + total_payroll
+
     # Gross Profit = Sales - COGS
     gross_profit = total_sales - total_cogs
 
-    # Net Profit = Gross Profit - Expenses
-    net_profit = gross_profit - total_expenses
+    # Net Profit = Gross Profit - operating_expenses - total_payroll
+    # (BOM overhead is already in COGS)
+    net_profit = gross_profit - operating_expenses - total_payroll
 
     # Outstanding Payments
     outstanding = db.session.query(func.sum(Sale.total - Sale.paid_amount)).filter(
@@ -104,6 +128,9 @@ def index():
                          total_purchases=total_purchases,
                          total_cogs=total_cogs,
                          total_expenses=total_expenses,
+                         operating_expenses=operating_expenses,
+                         manufacturing_overhead=manufacturing_overhead,
+                         total_payroll=total_payroll,
                          gross_profit=gross_profit,
                          net_profit=net_profit,
                          outstanding=outstanding,

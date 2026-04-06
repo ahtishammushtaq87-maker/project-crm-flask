@@ -57,10 +57,11 @@ def add_product():
             sku=form.sku.data,
             description=form.description.data,
             unit_price=form.unit_price.data,
-            cost_price=form.cost_price.data,
+            cost_price=form.cost_price.data if form.cost_price.data is not None else 0.0,
             quantity=form.quantity.data,
             reorder_level=form.reorder_level.data,
-            category=form.category.data
+            category=form.category.data,
+            is_manufactured=form.is_manufactured.data
         )
         
         # Handle image upload
@@ -108,9 +109,10 @@ def edit_product(id):
         product.sku = form.sku.data
         product.description = form.description.data
         product.unit_price = form.unit_price.data
-        product.cost_price = form.cost_price.data
+        product.cost_price = form.cost_price.data if form.cost_price.data is not None else 0.0
         product.reorder_level = form.reorder_level.data
         product.category = form.category.data
+        product.is_manufactured = form.is_manufactured.data
         
         # Handle image upload
         if 'image' in request.files:

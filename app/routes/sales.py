@@ -194,6 +194,24 @@ def pay_invoice(id):
     
     return redirect(url_for('sales.invoice_detail', id=sale.id))
 
+@bp.route('/invoice/<int:id>/discount', methods=['POST'])
+@login_required
+def apply_discount(id):
+    sale = Sale.query.get_or_404(id)
+    discount_amount = float(request.form.get('discount_amount', 0))
+    
+    if discount_amount > 0:
+        # Check if the discount is larger than the total
+        # Ensure we don't end up with a negative total
+        sale.discount += discount_amount
+        sale.calculate_totals()
+        sale.update_status()
+        
+        db.session.commit()
+        flash(f'Discount of Rs {discount_amount} applied successfully!', 'success')
+    
+    return redirect(request.referrer or url_for('sales.invoice_detail', id=sale.id))
+
 @bp.route('/customers')
 @login_required
 def customers():

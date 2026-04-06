@@ -67,6 +67,18 @@
                             <label class="form-label">Notes</label>
                             {{ form.notes(class="form-control", rows=2) }}
                         </div>
+                        <div class="mb-3">
+                            <div class="form-check form-switch px-4 py-2 border rounded bg-light">
+                                {{ form.is_bom_overhead(class="form-check-input ms-0 me-3", id="is_bom_overhead") }}
+                                <label class="form-check-label fw-bold" for="is_bom_overhead">BOM Overhead Expense</label>
+                                <div class="form-text mt-0 ms-4">Check this if this expense should be counted towards manufacturing/BOM overhead costs.</div>
+                            </div>
+                        </div>
+                        <div class="mb-3" id="product_id_container" style="display: none;">
+                            <label class="form-label">Linked Finished Product (Overhead)</label>
+                            {{ form.product_id(class="form-control") }}
+                            <div class="form-text">Select the manufactured product this overhead expense belongs to.</div>
+                        </div>
                         <button type="submit" class="btn btn-success">Update Expense</button>
                         <a href="{{ url_for('accounting.expenses') }}" class="btn btn-secondary">Cancel</a>
                     </form>
@@ -77,6 +89,22 @@
 </div>
 
 <script>
+document.addEventListener('DOMContentLoaded', function() {
+    const isBomOverheadCheckbox = document.getElementById('is_bom_overhead');
+    const productIdContainer = document.getElementById('product_id_container');
+
+    function toggleProductDropdown() {
+        if (isBomOverheadCheckbox.checked) {
+            productIdContainer.style.display = 'block';
+        } else {
+            productIdContainer.style.display = 'none';
+        }
+    }
+
+    isBomOverheadCheckbox.addEventListener('change', toggleProductDropdown);
+    toggleProductDropdown(); // Initialize on load
+});
+
 document.getElementById('billImageInput').addEventListener('change', function(e) {
     const file = e.target.files[0];
     const preview = document.getElementById('billImagePreview');

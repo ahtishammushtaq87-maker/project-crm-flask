@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Process Payroll{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-users-cog me-2 text-success"></i>Select Staff to Process Salary</h2>
+    <a href="{{ url_for('salary.payment_list') }}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left me-2"></i>Back to Payrolls
+    </a>
+</div>
+
+<div class="row row-cols-1 row-cols-md-3 g-4">
+    {% for staff in staff_members %}
+    <div class="col">
+        <div class="card h-100 shadow-sm border-0 rounded-4 hover-lift">
+            <div class="card-body text-center p-4">
+                <div class="avatar-lg bg-success-soft text-success rounded-circle mx-auto mb-3 p-3">
+                    <i class="fas fa-user-tie fa-3x"></i>
+                </div>
+                <h5 class="card-title fw-bold">{{ staff.name }}</h5>
+                <p class="text-muted small mb-3">{{ staff.designation or 'No Designation' }}</p>
+                <div class="d-flex justify-content-between px-3 mb-4">
+                    <div class="text-start">
+                        <small class="text-muted d-block small text-uppercase fw-bold">Salary</small>
+                        <span class="fw-bold">{{ staff.monthly_salary | round(2) }}</span>
+                    </div>
+                    <div class="text-end">
+                        <small class="text-muted d-block small text-uppercase fw-bold">Adv. Bal.</small>
+                        <span class="fw-bold text-danger">{{ staff.total_outstanding_advance | round(2) }}</span>
+                    </div>
+                </div>
+                <div class="d-grid">
+                    <a href="{{ url_for('salary.pay_salary', staff_id=staff.id) }}" class="btn btn-success rounded-pill shadow-sm">
+                        <i class="fas fa-money-bill-wave me-2"></i>Process Salary
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12 text-center py-5">
+        <div class="text-muted">
+            <i class="fas fa-user-slash fa-4x mb-3 opacity-25"></i>
+            <p>No active staff members found to process salary.</p>
+            <a href="{{ url_for('salary.add_staff') }}" class="btn btn-primary mt-3">Add New Staff</a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<style>
+    .bg-success-soft { background-color: rgba(72, 187, 120, 0.1); }
+    .hover-lift { transition: transform 0.2s; }
+    .hover-lift:hover { transform: translateY(-5px); }
+</style>
+{% endblock %}

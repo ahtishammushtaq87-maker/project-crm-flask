@@ -92,7 +92,12 @@
                 </div>
                 <h5>Total Expenses</h5>
                 <h3>Rs{{ "%.2f"|format(total_expenses) }}</h3>
-                <small>This Month</small>
+                <div class="mt-1" style="font-size: 0.75rem; opacity: 0.9;">
+                    <span>Op: Rs{{ "%.2f"|format(operating_expenses) }}</span> | 
+                    <span>BOM: Rs{{ "%.2f"|format(manufacturing_overhead) }}</span> |
+                    <span>Pay: Rs{{ "%.2f"|format(total_payroll) }}</span>
+                </div>
+                <small>Combined Total</small>
             </div>
         </div>
 

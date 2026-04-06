@@ -50,11 +50,20 @@
                 </div>
 
                 <div class="row mb-3">
-                    <div class="col-md-4">
+                    <div class="col-md-12 mb-3">
+                        <div class="form-check form-switch px-4 py-2 border rounded bg-light">
+                            {{ form.is_manufactured(class="form-check-input ms-0 me-3", id="is_manufactured") }}
+                            <label class="form-check-label fw-bold" for="is_manufactured">This is a Finished Good / Produced Item <br><small class="text-danger fw-normal">(Do NOT check this for raw materials! Cost is auto-calculated via BOMs)</small></label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-4" id="cost_price_container">
                         <label for="cost_price" class="form-label">Cost Price</label>
                         <div class="input-group">
                             <span class="input-group-text">Rs</span>
-                            {{ form.cost_price(class="form-control", type="number", step="0.01") }}
+                            {{ form.cost_price(class="form-control", type="number", step="0.01", id="cost_price") }}
                         </div>
                     </div>
                     <div class="col-md-4">
@@ -122,6 +131,25 @@ document.getElementById('imageInput').addEventListener('change', function(e) {
         reader.readAsDataURL(file);
     } else {
         preview.innerHTML = '';
+    }
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    const isManufacturedCheckbox = document.getElementById('is_manufactured');
+    const costPriceContainer = document.getElementById('cost_price_container');
+    const costPriceInput = document.getElementById('cost_price');
+
+    function toggleCostPrice() {
+        if (isManufacturedCheckbox.checked) {
+            costPriceContainer.style.display = 'none';
+        } else {
+            costPriceContainer.style.display = 'block';
+        }
+    }
+
+    if (isManufacturedCheckbox) {
+        isManufacturedCheckbox.addEventListener('change', toggleCostPrice);
+        toggleCostPrice(); // initial call
     }
 });
 </script>

@@ -81,13 +81,29 @@ def dashboard():
         .scalar() or 0
         
     total_purchases = db.session.query(func.sum(PurchaseBill.total)).filter(PurchaseBill.date >= date_from, PurchaseBill.date <= date_to).scalar() or 0
-    total_expenses = db.session.query(func.sum(Expense.amount)).filter(Expense.date >= date_from, Expense.date <= date_to).scalar() or 0
+    
+    # Total Operating Expenses (Non-BOM)
+    operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
+        Expense.is_bom_overhead == False,
+        Expense.date >= date_from,
+        Expense.date <= date_to
+    ).scalar() or 0
+
+    # Total Manufacturing Overhead (BOM linked)
+    manufacturing_overhead = db.session.query(func.sum(Expense.amount)).filter(
+        Expense.is_bom_overhead == True,
+        Expense.date >= date_from,
+        Expense.date <= date_to
+    ).scalar() or 0
+
+    total_expenses = operating_expenses + manufacturing_overhead
 
     # Gross Profit = Sales - COGS
     gross_profit = total_sales - total_cogs
 
-    # Net Profit = Gross Profit - Operating Expenses
-    net_profit = gross_profit - total_expenses
+    # Net Profit = Gross Profit - operating_expenses
+    # (BOM overhead is already in COGS, so we only subtract operating expenses here)
+    net_profit = gross_profit - operating_expenses
 
     outstanding_invoices = db.session.query(func.sum(Sale.total - Sale.paid_amount)).filter(Sale.status != 'paid', Sale.date >= date_from, Sale.date <= date_to).scalar() or 0
     paid_invoices = sales_query.filter(Sale.status == 'paid').count()
@@ -780,6 +796,11 @@ def add_expense():
     vendors = Vendor.query.filter_by(is_active=True).order_by(Vendor.name).all()
     form.vendor_id.choices = [(0, 'Select Vendor (Optional)')] + [(v.id, v.name) for v in vendors]
     
+    # Populate manufactured product choices
+    from app.models import Product
+    manufactured_products = Product.query.filter_by(is_manufactured=True, is_active=True).order_by(Product.name).all()
+    form.product_id.choices = [(0, 'Select Finished Product (Optional)')] + [(p.id, p.name) for p in manufactured_products]
+    
     if form.validate_on_submit():
         expense_number = f"EXP-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         expense = Expense(
@@ -791,7 +812,9 @@ def add_expense():
             amount=form.amount.data,
             payment_method=form.payment_method.data,
             reference=form.reference.data,
-            notes=form.notes.data
+            notes=form.notes.data,
+            is_bom_overhead=form.is_bom_overhead.data,
+            product_id=form.product_id.data if form.product_id.data != 0 else None
         )
         
         # Handle bill image upload
@@ -839,11 +862,22 @@ def edit_expense(id):
     vendors = Vendor.query.filter_by(is_active=True).order_by(Vendor.name).all()
     form.vendor_id.choices = [(0, 'Select Vendor (Optional)')] + [(v.id, v.name) for v in vendors]
     
+    # Populate manufactured product choices
+    from app.models import Product
+    manufactured_products = Product.query.filter_by(is_manufactured=True, is_active=True).order_by(Product.name).all()
+    form.product_id.choices = [(0, 'Select Finished Product (Optional)')] + [(p.id, p.name) for p in manufactured_products]
+    
     # Set current vendor selection
     if expense.vendor_id:
         form.vendor_id.data = expense.vendor_id
     else:
         form.vendor_id.data = 0
+        
+    # Set current product selection
+    if expense.product_id:
+        form.product_id.data = expense.product_id
+    else:
+        form.product_id.data = 0
     
     if form.validate_on_submit():
         expense.date = form.date.data
@@ -854,6 +888,8 @@ def edit_expense(id):
         expense.payment_method = form.payment_method.data
         expense.reference = form.reference.data
         expense.notes = form.notes.data
+        expense.is_bom_overhead = form.is_bom_overhead.data
+        expense.product_id = form.product_id.data if form.product_id.data != 0 else None
         
         # Handle bill image upload
         if 'bill_image' in request.files:

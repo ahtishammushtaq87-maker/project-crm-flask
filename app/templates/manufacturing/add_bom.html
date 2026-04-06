@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}Create BOM{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-sm-flex align-items-center justify-content-between mb-4">
+        <h1 class="h3 mb-0 text-gray-800">Create Bill of Materials</h1>
+        <a href="{{ url_for('manufacturing.boms') }}" class="btn btn-sm btn-secondary shadow-sm">
+            <i class="fas fa-arrow-left fa-sm text-white-50"></i> Back to BOMs
+        </a>
+    </div>
+
+    <form method="POST" action="{{ url_for('manufacturing.add_bom') }}">
+        {{ form.hidden_tag() }}
+        <div class="row">
+            <!-- Left Column: BOM Details -->
+            <div class="col-lg-5">
+                <div class="card shadow mb-4">
+                    <div class="card-header py-3">
+                        <h6 class="m-0 font-weight-bold text-primary">BOM Settings</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="name" class="form-label">BOM Name/Version</label>
+                            {{ form.name(class="form-control" + (" is-invalid" if form.name.errors else ""), placeholder="e.g. Standard V1") }}
+                        </div>
+                        <div class="mb-3">
+                            <label for="product_id" class="form-label">Finished Product</label>
+                            {{ form.product_id(class="form-control", id="product_id_select") }}
+                            <small class="text-muted">Only products marked as "Manufactured" appear here.</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="labor_cost" class="form-label">Estimated Labor Cost (per unit)</label>
+                            <div class="input-group">
+                                <span class="input-group-text">Rs</span>
+                                {{ form.labor_cost(class="form-control text-end", type="number", step="0.01") }}
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="overhead_cost" class="form-label">Estimated Overhead Cost (per unit)</label>
+                            <div class="input-group">
+                                <span class="input-group-text">Rs</span>
+                                {{ form.overhead_cost(class="form-control text-end", type="number", step="0.01", id="overhead_cost_input") }}
+                                <button type="button" class="btn btn-outline-info" id="syncOverheadBtn" title="Sync from Actual Expenses">
+                                    <i class="fas fa-sync"></i>
+                                </button>
+                            </div>
+                            <div id="overhead_sync_status" class="small mt-1" style="display: none;">
+                                <i class="fas fa-sync fa-spin"></i> Fetching actual overhead...
+                            </div>
+                            <small class="text-muted">Will sync actual expenses for the selected product.</small>
+                        </div>
+                        
+                        <div class="mt-4">
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="fas fa-save me-1"></i> Save BOM
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Components -->
+            <div class="col-lg-7">
+                <div class="card shadow mb-4">
+                    <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                        <h6 class="m-0 font-weight-bold text-primary">Raw Material Components</h6>
+                        <button type="button" class="btn btn-sm btn-success" id="addComponentBtn">
+                            <i class="fas fa-plus"></i> Add Item
+                        </button>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-bordered mb-0" id="componentsTable">
+                                <thead class="bg-light">
+                                    <tr>
+                                        <th style="width: 60%">Component</th>
+                                        <th style="width: 30%">Quantity Required</th>
+                                        <th style="width: 10%">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="componentsBody">
+                                    <tr class="component-row">
+                                        <td>
+                                            <select name="component_id[]" class="form-control component-select" required>
+                                                <option value="">Select product...</option>
+                                                {% for p in all_products %}
+                                                <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.name }} ({{ p.sku }}) - Rs {{ "%.2f"|format(p.cost_price) }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <input type="number" name="quantity[]" class="form-control text-end" step="0.001" min="0.001" required placeholder="0.0">
+                                        </td>
+                                        <td class="text-center">
+                                            <button type="button" class="btn btn-danger btn-sm remove-row" disabled>
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const componentsBody = document.getElementById('componentsBody');
+    const addBtn = document.getElementById('addComponentBtn');
+    
+    // Store template raw html
+    // Grab the first row's select html carefully
+    const firstRowTr = componentsBody.querySelector('tr');
+    
+    addBtn.addEventListener('click', function() {
+        const newRow = document.createElement('tr');
+        newRow.className = 'component-row';
+        newRow.innerHTML = `
+            <td>
+                <select name="component_id[]" class="form-control component-select" required>
+                    <option value="">Select product...</option>
+                    {% for p in all_products %}
+                    <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.name }} ({{ p.sku }}) - Rs {{ "%.2f"|format(p.cost_price) }}</option>
+                    {% endfor %}
+                </select>
+            </td>
+            <td>
+                <input type="number" name="quantity[]" class="form-control text-end" step="0.001" min="0.001" required placeholder="0.0">
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-danger btn-sm remove-row">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        `;
+        componentsBody.appendChild(newRow);
+        updateRemoveButtons();
+    });
+    
+    componentsBody.addEventListener('click', function(e) {
+        if(e.target.closest('.remove-row')) {
+            const rows = componentsBody.querySelectorAll('.component-row');
+            if(rows.length > 1) {
+                e.target.closest('tr').remove();
+                updateRemoveButtons();
+            }
+        }
+    });
+
+    function updateRemoveButtons() {
+        const rows = componentsBody.querySelectorAll('.component-row');
+        const buttons = componentsBody.querySelectorAll('.remove-row');
+        if (rows.length === 1) {
+            buttons[0].disabled = true;
+        } else {
+            buttons.forEach(btn => btn.disabled = false);
+        }
+    }
+
+    // Overhead Auto-Sync Logic
+    const productSelect = document.getElementById('product_id_select');
+    const overheadInput = document.getElementById('overhead_cost_input');
+    const syncStatus = document.getElementById('overhead_sync_status');
+    const syncBtn = document.getElementById('syncOverheadBtn');
+
+    function fetchActualOverhead() {
+        const productId = productSelect.value;
+        if (!productId) {
+            syncStatus.innerHTML = `<i class="fas fa-info-circle text-warning"></i> Select a product first.`;
+            syncStatus.style.display = 'block';
+            return;
+        }
+
+        syncStatus.style.display = 'block';
+        overheadInput.classList.add('bg-light');
+        syncStatus.innerHTML = `<i class="fas fa-sync fa-spin"></i> Fetching actual overhead...`;
+
+        // Using a relative path that works with the manufacturing blueprint
+        fetch(`/manufacturing/api/product/${productId}/actual-overhead`)
+            .then(response => {
+                if (!response.ok) throw new Error('API Error');
+                return response.json();
+            })
+            .then(data => {
+                const total = data.total_actual_overhead || 0;
+                overheadInput.value = total.toFixed(2);
+                syncStatus.innerHTML = `<i class="fas fa-check-circle text-success"></i> Actual overhead synced: <b>Rs ${total.toFixed(2)}</b>`;
+                
+                // Pulsate effect for feedback
+                overheadInput.style.transition = 'background-color 0.3s';
+                overheadInput.style.backgroundColor = '#d1e7dd';
+                setTimeout(() => {
+                    overheadInput.style.backgroundColor = '';
+                }, 1000);
+            })
+            .catch(error => {
+                console.error('Error fetching overhead:', error);
+                syncStatus.innerHTML = `<i class="fas fa-exclamation-triangle text-danger"></i> Failed to sync. Let's try again in a bit!`;
+            })
+            .finally(() => {
+                overheadInput.classList.remove('bg-light');
+            });
+    }
+
+    if (productSelect) {
+        productSelect.addEventListener('change', fetchActualOverhead);
+        syncBtn.addEventListener('click', fetchActualOverhead);
+        
+        // Trigger on load if a product is already selected
+        if (productSelect.value) {
+            fetchActualOverhead();
+        }
+    }
+});
+</script>
+{% endblock %}

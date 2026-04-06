@@ -58,6 +58,8 @@ def create_app(config_class=Config):
     from app.routes.auth import bp as auth_bp
     from app.routes.users import bp as users_bp
     from app.routes.returns import bp as returns_bp
+    from app.routes.manufacturing import bp as manufacturing_bp
+    from app.routes.salary import bp as salary_bp
 
     app.register_blueprint(dashboard_bp, url_prefix='/')
     app.register_blueprint(accounting_bp, url_prefix='/accounting')
@@ -68,5 +70,7 @@ def create_app(config_class=Config):
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(users_bp, url_prefix='/users')
     app.register_blueprint(returns_bp, url_prefix='/returns')
+    app.register_blueprint(manufacturing_bp, url_prefix='/manufacturing')
+    app.register_blueprint(salary_bp, url_prefix='/salary')
     
     return app

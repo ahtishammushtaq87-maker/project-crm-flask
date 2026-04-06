@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, send_file, jsonify, flash, redirect, url_for
 from flask_login import login_required
 from app import db
-from app.models import Sale, SaleItem, PurchaseBill, Product, Vendor, Customer, Company, Expense, ExpenseCategory, SaleReturn, SaleReturnItem
+from app.models import Sale, SaleItem, PurchaseBill, Product, Vendor, Customer, Company, Expense, ExpenseCategory, SaleReturn, SaleReturnItem, BOM, ManufacturingOrder, Staff, SalaryPayment, SalaryAdvance
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_, or_
 import pandas as pd
@@ -243,14 +243,70 @@ def expense_report():
         
     expenses = query.order_by(Expense.date.desc()).all()
     
-    total_expenses = sum(e.amount for e in expenses)
-    total_count = len(expenses)
+    # Unified Expenses (Regular + Payroll)
+    unified_expenses = []
+    # Add regular expenses
+    for e in expenses:
+        unified_expenses.append({
+            'date': e.date,
+            'number': e.expense_number,
+            'category': e.expense_category.name if e.expense_category else 'Other',
+            'vendor': e.vendor.name if e.vendor else 'N/A',
+            'description': e.description,
+            'method': e.payment_method,
+            'amount': e.amount,
+            'type': 'Expense'
+        })
+    
+    # Add payroll only if no category/vendor filters are active (unless payroll-specific)
+    if (not category_id or category_id == 'all') and (not vendor_id or vendor_id == 'all'):
+        # Add Salary Payments
+        pay_query = SalaryPayment.query.join(Staff).filter(SalaryPayment.status == 'paid')
+        if start_date: pay_query = pay_query.filter(SalaryPayment.payment_date >= datetime.strptime(start_date, '%Y-%m-%d').date())
+        if end_date: pay_query = pay_query.filter(SalaryPayment.payment_date <= datetime.strptime(end_date, '%Y-%m-%d').date())
+        if search: pay_query = pay_query.filter(Staff.name.ilike(f'%{search}%'))
+        
+        for p in pay_query.all():
+            unified_expenses.append({
+                'date': p.payment_date,
+                'number': f"PAY-{p.id}",
+                'category': 'Payroll',
+                'vendor': p.staff.name,
+                'description': f"Salary for {p.month}/{p.year}",
+                'method': p.payment_method,
+                'amount': p.net_salary,
+                'type': 'Salary'
+            })
+            
+        # Add Salary Advances
+        adv_query = SalaryAdvance.query.join(Staff)
+        if start_date: adv_query = adv_query.filter(SalaryAdvance.date >= datetime.strptime(start_date, '%Y-%m-%d').date())
+        if end_date: adv_query = adv_query.filter(SalaryAdvance.date <= datetime.strptime(end_date, '%Y-%m-%d').date())
+        if search: adv_query = adv_query.filter(Staff.name.ilike(f'%{search}%'))
+        
+        for a in adv_query.all():
+            unified_expenses.append({
+                'date': a.date,
+                'number': f"ADV-{a.id}",
+                'category': 'Payroll Advance',
+                'vendor': a.staff.name,
+                'description': a.description or "Staff Advance",
+                'method': 'Cash', # Assuming cash for advances as per generic practice
+                'amount': a.amount,
+                'type': 'Advance'
+            })
+            
+    # Re-sort unified list by date descending (normalize to date for comparison)
+    unified_expenses.sort(key=lambda x: x['date'].date() if hasattr(x['date'], 'date') else x['date'], reverse=True)
+    
+    total_expenses = sum(e['amount'] for e in unified_expenses)
+    total_count = len(unified_expenses)
     
     categories = ExpenseCategory.query.order_by(ExpenseCategory.name).all()
     vendors = Vendor.query.order_by(Vendor.name).all()
     
     return render_template('reports/expense_report.html',
-                         expenses=expenses,
+                         expenses=unified_expenses,
                          total_expenses=total_expenses,
                          total_count=total_count,
                          start_date=start_date,
@@ -341,6 +397,87 @@ def customer_report():
                          search=search,
                          total_sales=total_sales,
                          total_outstanding=total_outstanding)
+
+@bp.route('/manufacturing-report')
+@login_required
+def manufacturing_report():
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    status = request.args.get('status', 'all')
+    product_id = request.args.get('product_id')
+    
+    query = ManufacturingOrder.query.join(BOM)
+    
+    if start_date:
+        query = query.filter(ManufacturingOrder.start_date >= datetime.strptime(start_date, '%Y-%m-%d'))
+    if end_date:
+        query = query.filter(ManufacturingOrder.start_date <= datetime.strptime(end_date, '%Y-%m-%d'))
+    if status != 'all':
+        query = query.filter(ManufacturingOrder.status == status)
+    if product_id and product_id != 'all':
+        query = query.filter(BOM.product_id == int(product_id))
+        
+    orders = query.order_by(ManufacturingOrder.start_date.desc()).all()
+    
+    # Calculate stats
+    total_qty = sum(o.quantity_to_produce for o in orders)
+    total_cost = sum(o.total_cost for o in orders)
+    total_material = sum(o.actual_material_cost or 0 for o in orders)
+    total_labor = sum(o.actual_labor_cost or 0 for o in orders)
+    total_count = len(orders)
+    
+    products = Product.query.filter(Product.id.in_(db.session.query(BOM.product_id).distinct())).all()
+    
+    return render_template('reports/manufacturing_report.html',
+                         orders=orders,
+                         total_qty=total_qty,
+                         total_cost=total_cost,
+                         total_material=total_material,
+                         total_labor=total_labor,
+                         total_count=total_count,
+                         start_date=start_date,
+                         end_date=end_date,
+                         status=status,
+                         products=products,
+                         current_product_id=product_id)
+
+@bp.route('/salary-report')
+@login_required
+def salary_report():
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    staff_id = request.args.get('staff_id')
+    
+    query = SalaryPayment.query
+    
+    if start_date:
+        query = query.filter(SalaryPayment.payment_date >= datetime.strptime(start_date, '%Y-%m-%d').date())
+    if end_date:
+        query = query.filter(SalaryPayment.payment_date <= datetime.strptime(end_date, '%Y-%m-%d').date())
+    if staff_id and staff_id != 'all':
+        query = query.filter(SalaryPayment.staff_id == int(staff_id))
+        
+    payments = query.order_by(SalaryPayment.payment_date.desc()).all()
+    
+    total_base = sum(p.base_salary for p in payments)
+    total_bonus = sum(p.bonus for p in payments)
+    total_deductions = sum(p.advance_deduction + p.other_deductions for p in payments)
+    total_net = sum(p.net_salary for p in payments)
+    total_count = len(payments)
+    
+    all_staff = Staff.query.order_by(Staff.name).all()
+    
+    return render_template('reports/salary_report.html',
+                         payments=payments,
+                         total_base=total_base,
+                         total_bonus=total_bonus,
+                         total_deductions=total_deductions,
+                         total_net=total_net,
+                         total_count=total_count,
+                         start_date=start_date,
+                         end_date=end_date,
+                         all_staff=all_staff,
+                         current_staff_id=staff_id)
 
 @bp.route('/download-report/<string:format>/<string:report_type>')
 @login_required
@@ -473,19 +610,71 @@ def download_report(format, report_type):
         if search: query = query.filter(or_(Expense.expense_number.ilike(f'%{search}%'), Expense.description.ilike(f'%{search}%')))
         if category_id and category_id != 'all': query = query.filter(Expense.category_id == category_id)
         if vendor_id and vendor_id != 'all': query = query.filter(Expense.vendor_id == vendor_id)
-        
+
         expenses = query.order_by(Expense.date.desc()).all()
+        
+        # Unified list logic reproduced for download
+        unified_data = []
+        for e in expenses:
+            unified_data.append({
+                'Expense Number': e.expense_number,
+                'Date': e.date.strftime('%Y-%m-%d'),
+                'Category': e.expense_category.name if e.expense_category else 'Other',
+                'Vendor/Staff': e.vendor.name if e.vendor else 'N/A',
+                'Description': e.description,
+                'Amount': f"{e.amount:.2f}",
+                'Method': e.payment_method
+            })
+            
+        if (not category_id or category_id == 'all') and (not vendor_id or vendor_id == 'all'):
+            # Salary Payments
+            pay_query = SalaryPayment.query.join(Staff).filter(SalaryPayment.status == 'paid')
+            if start_date: pay_query = pay_query.filter(SalaryPayment.payment_date >= datetime.strptime(start_date, '%Y-%m-%d').date())
+            if end_date: pay_query = pay_query.filter(SalaryPayment.payment_date <= datetime.strptime(end_date, '%Y-%m-%d').date())
+            if search: pay_query = pay_query.filter(Staff.name.ilike(f'%{search}%'))
+            
+            for p in pay_query.all():
+                unified_data.append({
+                    'Expense Number': f"PAY-{p.id}",
+                    'Date': p.payment_date.strftime('%Y-%m-%d'),
+                    'sort_date': p.payment_date,
+                    'Category': 'Payroll',
+                    'Vendor/Staff': p.staff.name,
+                    'Description': f"Salary for {p.month}/{p.year}",
+                    'Amount': f"{p.net_salary:.2f}",
+                    'Method': p.payment_method
+                })
+            # Advances
+            adv_query = SalaryAdvance.query.join(Staff)
+            if start_date: adv_query = adv_query.filter(SalaryAdvance.date >= datetime.strptime(start_date, '%Y-%m-%d').date())
+            if end_date: adv_query = adv_query.filter(SalaryAdvance.date <= datetime.strptime(end_date, '%Y-%m-%d').date())
+            if search: adv_query = adv_query.filter(Staff.name.ilike(f'%{search}%'))
+            
+            for a in adv_query.all():
+                unified_data.append({
+                    'Expense Number': f"ADV-{a.id}",
+                    'Date': a.date.strftime('%Y-%m-%d'),
+                    'sort_date': a.date,
+                    'Category': 'Payroll Advance',
+                    'Vendor/Staff': a.staff.name,
+                    'Description': a.description or "Staff Advance",
+                    'Amount': f"{a.amount:.2f}",
+                    'Method': 'Cash'
+                })
+                
+        # To sort correctly, we need a date object, not a string
+        # Let's adjust unified_data formatting slightly
+        for item in unified_data:
+            if 'sort_date' not in item:
+                # Regular expense objects already have date
+                pass
+                
+        # Re-sort using Date strings (YYYY-MM-DD) which is safe for strings
+        unified_data.sort(key=lambda x: x['Date'], reverse=True)
+        
         title = "Expense Report"
-        headers = ['Expense Number', 'Date', 'Category', 'Vendor', 'Description', 'Amount', 'Method']
-        data = [{
-            'Expense Number': e.expense_number,
-            'Date': e.date.strftime('%Y-%m-%d'),
-            'Category': e.expense_category.name if e.expense_category else 'N/A',
-            'Vendor': e.vendor.name if e.vendor else 'N/A',
-            'Description': e.description,
-            'Amount': f"{e.amount:.2f}",
-            'Method': e.payment_method
-        } for e in expenses]
+        headers = ['Expense Number', 'Date', 'Category', 'Vendor/Staff', 'Description', 'Amount', 'Method']
+        data = unified_data
 
     elif report_type == 'vendor':
         query = Vendor.query
@@ -537,6 +726,53 @@ def download_report(format, report_type):
             'Total': f"{r.total:.2f}",
             'Status': r.status.capitalize()
         } for r in returns]
+
+    elif report_type == 'manufacturing':
+        product_id = request.args.get('product_id')
+        query = ManufacturingOrder.query.join(BOM)
+        if start_date: query = query.filter(ManufacturingOrder.start_date >= datetime.strptime(start_date, '%Y-%m-%d'))
+        if end_date: query = query.filter(ManufacturingOrder.start_date <= datetime.strptime(end_date, '%Y-%m-%d'))
+        if status != 'all': query = query.filter(ManufacturingOrder.status == status)
+        if product_id and product_id != 'all': query = query.filter(BOM.product_id == int(product_id))
+        
+        orders = query.order_by(ManufacturingOrder.start_date.desc()).all()
+        title = "Manufacturing Report"
+        headers = ['Order Number', 'Date', 'Product', 'Quantity', 'Material Cost', 'Labor Cost', 'Overhead', 'Total Cost', 'Status']
+        data = [{
+            'Order Number': o.order_number,
+            'Date': o.start_date.strftime('%Y-%m-%d') if o.start_date else 'N/A',
+            'Product': o.bom.product.name,
+            'Quantity': o.quantity_to_produce,
+            'Material Cost': f"{o.actual_material_cost or 0:.2f}",
+            'Labor Cost': f"{o.actual_labor_cost or 0:.2f}",
+            'Overhead': f"{o.total_cost - (o.actual_material_cost or 0) - (o.actual_labor_cost or 0):.2f}" if o.total_cost else "0.00",
+            'Total Cost': f"{o.total_cost or 0:.2f}",
+            'Status': o.status
+        } for o in orders]
+
+    elif report_type == 'salary':
+        staff_id = request.args.get('staff_id')
+        query = SalaryPayment.query
+        if start_date: query = query.filter(SalaryPayment.payment_date >= datetime.strptime(start_date, '%Y-%m-%d').date())
+        if end_date: query = query.filter(SalaryPayment.payment_date <= datetime.strptime(end_date, '%Y-%m-%d').date())
+        if staff_id and staff_id != 'all': query = query.filter(SalaryPayment.staff_id == int(staff_id))
+        
+        payments = query.order_by(SalaryPayment.payment_date.desc()).all()
+        title = "Salary Payment Report"
+        headers = ['Staff', 'Designation', 'Month/Year', 'Base Salary', 'Bonus', 'Adv. Deduction', 'Other Deductions', 'Net Paid', 'Date', 'Method', 'Status']
+        data = [{
+            'Staff': p.staff.name,
+            'Designation': p.staff.designation or 'N/A',
+            'Month/Year': f"{p.month}/{p.year}",
+            'Base Salary': f"{p.base_salary:.2f}",
+            'Bonus': f"{p.bonus:.2f}",
+            'Adv. Deduction': f"{p.advance_deduction:.2f}",
+            'Other Deductions': f"{p.other_deductions:.2f}",
+            'Net Paid': f"{p.net_salary:.2f}",
+            'Date': p.payment_date.strftime('%Y-%m-%d'),
+            'Method': p.payment_method,
+            'Status': p.status.capitalize()
+        } for p in payments]
 
     if not data:
         flash('No data available for the selected filters.', 'warning')

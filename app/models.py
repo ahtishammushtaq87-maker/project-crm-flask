@@ -134,6 +134,7 @@ class Product(db.Model):
     weight = db.Column(db.Float, default=0)
     image_path = db.Column(db.String(255))  # Path to product image
     is_active = db.Column(db.Boolean, default=True)
+    is_manufactured = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -515,11 +516,16 @@ class Expense(db.Model):
     reference = db.Column(db.String(100))
     bill_image_path = db.Column(db.String(255))  # Path to bill image
     notes = db.Column(db.Text)
+    is_bom_overhead = db.Column(db.Boolean, default=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True)
+    bom_id = db.Column(db.Integer, db.ForeignKey('boms.id'), nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Relationships
     vendor = db.relationship('Vendor', backref='expenses', lazy=True)
+    product = db.relationship('Product', backref='overhead_expenses', lazy=True)
+    bom = db.relationship('BOM', backref='overhead_expenses', lazy=True)
     
     def __repr__(self):
         return f'<Expense {self.expense_number}>'
@@ -667,3 +673,135 @@ class Task(db.Model):
     
     def __repr__(self):
         return f'<Task {self.title}>'
+
+class BOM(db.Model):
+    """Bill of Materials"""
+    __tablename__ = 'boms'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    labor_cost = db.Column(db.Float, default=0)
+    overhead_cost = db.Column(db.Float, default=0)
+    total_cost = db.Column(db.Float, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    product = db.relationship('Product', backref='boms', lazy=True)
+    items = db.relationship('BOMItem', backref='bom', lazy=True, cascade='all, delete-orphan')
+    
+    def calculate_total_cost(self):
+        components_cost = sum(item.cost for item in self.items)
+        self.total_cost = components_cost + self.labor_cost + self.overhead_cost
+
+class BOMItem(db.Model):
+    """Bill of Materials Component"""
+    __tablename__ = 'bom_items'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    bom_id = db.Column(db.Integer, db.ForeignKey('boms.id'), nullable=False, index=True)
+    component_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    quantity = db.Column(db.Float, nullable=False)
+    cost = db.Column(db.Float, default=0)
+    
+    component = db.relationship('Product', foreign_keys=[component_id])
+
+class Staff(db.Model):
+    """Staff/Employee model"""
+    __tablename__ = 'staff'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, index=True)
+    designation = db.Column(db.String(100))
+    monthly_salary = db.Column(db.Float, nullable=False, default=0)
+    joining_date = db.Column(db.Date, default=datetime.utcnow().date())
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    advances = db.relationship('SalaryAdvance', backref='staff', lazy=True, cascade='all, delete-orphan')
+    salary_payments = db.relationship('SalaryPayment', backref='staff', lazy=True, cascade='all, delete-orphan')
+
+    @property
+    def total_outstanding_advance(self):
+        """Calculate total non-deducted advances"""
+        return sum(advance.amount for advance in self.advances if not advance.is_deducted)
+    
+    def __repr__(self):
+        return f'<Staff {self.name}>'
+
+class SalaryAdvance(db.Model):
+    """Salary advance model"""
+    __tablename__ = 'salary_advances'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=False, index=True)
+    amount = db.Column(db.Float, nullable=False)
+    date = db.Column(db.Date, default=datetime.utcnow().date())
+    description = db.Column(db.String(255))
+    is_deducted = db.Column(db.Boolean, default=False)
+    salary_payment_id = db.Column(db.Integer, db.ForeignKey('salary_payments.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<SalaryAdvance {self.staff_id} - {self.amount}>'
+
+class SalaryPayment(db.Model):
+    """Monthly salary payment model"""
+    __tablename__ = 'salary_payments'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=False, index=True)
+    month = db.Column(db.Integer, nullable=False)
+    year = db.Column(db.Integer, nullable=False)
+    base_salary = db.Column(db.Float, nullable=False)
+    advance_deduction = db.Column(db.Float, default=0)
+    bonus = db.Column(db.Float, default=0)
+    other_deductions = db.Column(db.Float, default=0)
+    net_salary = db.Column(db.Float, nullable=False)
+    payment_date = db.Column(db.Date, default=datetime.utcnow().date())
+    payment_method = db.Column(db.String(50), default='Cash')
+    status = db.Column(Enum('paid', 'pending', name='salary_payment_status'), default='paid', index=True)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Back-relationship for advances deducted in this payment
+    deducted_advances = db.relationship('SalaryAdvance', backref='salary_payment', foreign_keys=[SalaryAdvance.salary_payment_id], lazy=True)
+    
+    def __repr__(self):
+        return f'<SalaryPayment {self.staff_id} - {self.month}/{self.year}>'
+
+class ManufacturingOrder(db.Model):
+    """Manufacturing Order"""
+    __tablename__ = 'manufacturing_orders'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    order_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    bom_id = db.Column(db.Integer, db.ForeignKey('boms.id'), nullable=False, index=True)
+    status = db.Column(Enum('Draft', 'In Progress', 'Completed', name='mo_status'), default='Draft', index=True)
+    quantity_to_produce = db.Column(db.Float, nullable=False)
+    start_date = db.Column(db.Date, nullable=True)
+    end_date = db.Column(db.Date, nullable=True)
+    actual_labor_cost = db.Column(db.Float, default=0)
+    actual_material_cost = db.Column(db.Float, default=0)
+    total_cost = db.Column(db.Float, default=0)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    bom = db.relationship('BOM', backref='manufacturing_orders', lazy=True)
+    items = db.relationship('ManufacturingOrderItem', backref='manufacturing_order', lazy=True, cascade='all, delete-orphan')
+
+class ManufacturingOrderItem(db.Model):
+    """Manufacturing Order Component"""
+    __tablename__ = 'manufacturing_order_items'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    mo_id = db.Column(db.Integer, db.ForeignKey('manufacturing_orders.id'), nullable=False, index=True)
+    component_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    quantity_required = db.Column(db.Float, nullable=False)
+    quantity_consumed = db.Column(db.Float, default=0)
+    cost = db.Column(db.Float, default=0)
+    
+    component = db.relationship('Product', foreign_keys=[component_id])

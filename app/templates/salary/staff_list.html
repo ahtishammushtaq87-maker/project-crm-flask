@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Staff Management{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-users-cog me-2"></i>Staff Management</h2>
+    <div class="btn-group">
+        <a href="{{ url_for('salary.add_staff') }}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Add Staff
+        </a>
+        <a href="{{ url_for('salary.advance_list') }}" class="btn btn-info text-white">
+            <i class="fas fa-hand-holding-usd me-2"></i>Advances
+        </a>
+        <a href="{{ url_for('salary.payment_list') }}" class="btn btn-success">
+            <i class="fas fa-money-check-alt me-2"></i>Payrolls
+        </a>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-3">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light text-muted small text-uppercase">
+                    <tr>
+                        <th class="px-4">Staff Name</th>
+                        <th>Designation</th>
+                        <th>Monthly Salary</th>
+                        <th>Pending Advance</th>
+                        <th>Status</th>
+                        <th class="text-end px-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for staff in staff_members %}
+                    <tr>
+                        <td class="px-4">
+                            <div class="d-flex align-items-center">
+                                <div class="avatar-sm bg-primary-soft text-primary rounded-circle me-3 p-2">
+                                    <i class="fas fa-user"></i>
+                                </div>
+                                <div>
+                                    <h6 class="mb-0">{{ staff.name }}</h6>
+                                    <small class="text-muted">Joined: {{ staff.joining_date }}</small>
+                                </div>
+                            </div>
+                        </td>
+                        <td>{{ staff.designation or '---' }}</td>
+                        <td><strong>{{ staff.monthly_salary | round(2) }}</strong></td>
+                        <td>
+                            {% set outstanding = staff.total_outstanding_advance %}
+                            <span class="badge {% if outstanding > 0 %}bg-warning text-dark{% else %}bg-light text-muted{% endif %} px-2 py-1">
+                                {{ outstanding | round(2) }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge {% if staff.is_active %}bg-success-soft text-success{% else %}bg-secondary-soft text-secondary{% endif %} px-2 py-1">
+                                {{ 'Active' if staff.is_active else 'Inactive' }}
+                            </span>
+                        </td>
+                        <td class="text-end px-4">
+                            <div class="btn-group">
+                                <a href="{{ url_for('salary.edit_staff', id=staff.id) }}" class="btn btn-sm btn-light" title="Edit Staff">
+                                    <i class="fas fa-edit text-primary"></i>
+                                </a>
+                                <a href="{{ url_for('salary.pay_salary', staff_id=staff.id) }}" class="btn btn-sm btn-light" title="Pay Salary">
+                                    <i class="fas fa-money-bill-wave text-success"></i>
+                                </a>
+                                <form method="POST" action="{{ url_for('salary.delete_staff', id=staff.id) }}" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-light" title="Delete Staff" onclick="return confirm('Are you sure you want to delete this staff member? This will delete all their salary history and advances.')">
+                                        <i class="fas fa-trash text-danger"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center py-4 text-muted">No staff members found. Add your first staff to get started.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-primary-soft { background-color: rgba(102, 126, 234, 0.1); }
+    .bg-success-soft { background-color: rgba(72, 187, 120, 0.1); }
+    .bg-warning-soft { background-color: rgba(236, 201, 75, 0.1); }
+    .bg-secondary-soft { background-color: rgba(160, 174, 192, 0.1); }
+    .text-success { color: #38a169 !important; }
+    .text-primary { color: #5a67d8 !important; }
+</style>
+{% endblock %}

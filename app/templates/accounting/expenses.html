@@ -61,7 +61,14 @@
                     <tbody>
                         {% for exp in expenses %}
                         <tr>
-                            <td>{{ exp.expense_number }}</td>
+                            <td>
+                                {{ exp.expense_number }}
+                                {% if exp.is_bom_overhead %}
+                                <span class="badge bg-info text-dark ms-1" style="font-size: 0.7rem;" title="Linked to: {{ exp.product.name if exp.product else 'None' }}">
+                                    BOM Overhead {% if exp.product %}({{ exp.product.name }}){% endif %}
+                                </span>
+                                {% endif %}
+                            </td>
                             <td>{{ exp.date.strftime('%Y-%m-%d') }}</td>
                             <td>{{ exp.expense_category.name if exp.expense_category else 'N/A' }}</td>
                             <td>{{ exp.vendor.name if exp.vendor else '-' }}</td>
