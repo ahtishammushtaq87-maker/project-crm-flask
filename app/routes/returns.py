@@ -117,7 +117,8 @@ def create_return():
         discount=discount,
         total=total,
         reason=request.form.get('reason', ''),
-        status='completed',
+        status='pending',
+        returned_to_inventory=False,
         created_by=current_user.id
     )
 
@@ -133,10 +134,6 @@ def create_return():
             total=item['total']
         )
         db.session.add(return_item)
-
-        # Restore inventory
-        product = Product.query.get(item['product_id'])
-        product.update_quantity(item['quantity'])
 
     # Update sale totals - reduce sale total by return amount
     sale.subtotal -= subtotal
@@ -164,17 +161,41 @@ def return_detail(id):
     return render_template('sales/return_detail.html', sale_return=sale_return)
 
 
+@bp.route('/<int:id>/return-to-inventory', methods=['POST'])
+@login_required
+def return_to_inventory(id):
+    sale_return = SaleReturn.query.get_or_404(id)
+    
+    if sale_return.returned_to_inventory:
+        flash('This return has already been added back to inventory.', 'warning')
+        return redirect(url_for('returns.return_detail', id=id))
+
+    # Update inventory for each item
+    for item in sale_return.items:
+        product = Product.query.get(item.product_id)
+        if product:
+            product.update_quantity(item.quantity)
+
+    sale_return.returned_to_inventory = True
+    sale_return.status = 'completed'
+    db.session.commit()
+
+    flash(f'Return {sale_return.return_number} items added back to inventory.', 'success')
+    return redirect(url_for('returns.return_detail', id=id))
+
+
 @bp.route('/<int:id>/delete', methods=['POST'])
 @login_required
 def delete_return(id):
     sale_return = SaleReturn.query.get_or_404(id)
     sale = sale_return.sale
 
-    # Reverse inventory changes
-    for item in sale_return.items:
-        product = Product.query.get(item.product_id)
-        if product:
-            product.update_quantity(-item.quantity)
+    # Reverse inventory changes only if it was already added back
+    if sale_return.returned_to_inventory:
+        for item in sale_return.items:
+            product = Product.query.get(item.product_id)
+            if product:
+                product.update_quantity(-item.quantity)
 
     # Restore sale totals
     sale.subtotal += sale_return.subtotal

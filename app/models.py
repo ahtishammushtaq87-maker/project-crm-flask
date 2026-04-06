@@ -618,6 +618,7 @@ class SaleReturn(db.Model):
     total = db.Column(db.Float, default=0)
     reason = db.Column(db.Text)
     status = db.Column(Enum('pending', 'approved', 'completed', name='return_status'), default='pending', index=True)
+    returned_to_inventory = db.Column(db.Boolean, default=False)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

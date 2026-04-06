@@ -53,6 +53,21 @@
                                 {% endif %}
                             </td>
                         </tr>
+                        <tr>
+                            <td><strong>Inventory Status:</strong></td>
+                            <td>
+                                {% if sale_return.returned_to_inventory %}
+                                <span class="badge bg-success"><i class="fas fa-check-circle"></i> Returned to Inventory</span>
+                                {% else %}
+                                <span class="badge bg-warning"><i class="fas fa-exclamation-triangle"></i> Not Returned</span>
+                                <form action="{{ url_for('returns.return_to_inventory', id=sale_return.id) }}" method="POST" style="display: inline;">
+                                    <button type="submit" class="btn btn-sm btn-primary ms-2">
+                                        <i class="fas fa-plus"></i> Return to Inventory
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </td>
+                        </tr>
                         {% if sale_return.reason %}
                         <tr>
                             <td><strong>Reason:</strong></td>

@@ -88,6 +88,7 @@
                             <th>Tax</th>
                             <th>Total</th>
                             <th>Status</th>
+                            <th>Inventory</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -112,6 +113,13 @@
                                 <span class="badge bg-info">Approved</span>
                                 {% else %}
                                 <span class="badge bg-warning">Pending</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if ret.returned_to_inventory %}
+                                <span class="text-success"><i class="fas fa-check-circle"></i> Yes</span>
+                                {% else %}
+                                <span class="text-warning"><i class="fas fa-clock"></i> No</span>
                                 {% endif %}
                             </td>
                             <td>
