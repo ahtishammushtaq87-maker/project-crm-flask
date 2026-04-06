@@ -304,13 +304,20 @@ def invoice_pdf(id):
 @login_required
 def company_settings():
     company = Company.query.first()
-    if not company:
-        company = Company()
-        db.session.add(company)
-        db.session.commit()
     
     if request.method == 'POST':
-        company.name = request.form.get('name')
+        # Get name from form - required field
+        company_name = request.form.get('name')
+        if not company_name:
+            flash('Company name is required.', 'error')
+            return redirect(url_for('sales.company_settings'))
+        
+        if not company:
+            company = Company(name=company_name)
+            db.session.add(company)
+        else:
+            company.name = company_name
+            
         company.address = request.form.get('address')
         company.phone = request.form.get('phone')
         company.email = request.form.get('email')
@@ -342,17 +349,24 @@ def company_settings():
 @login_required
 def invoice_settings():
     settings = InvoiceSettings.query.first()
-    if not settings:
-        settings = InvoiceSettings()
-        db.session.add(settings)
-        db.session.commit()
     
     form = InvoiceSettingsForm(obj=settings)
     
     if form.validate_on_submit():
-        form.populate_obj(settings)
+        if not settings:
+            settings = InvoiceSettings()
+            db.session.add(settings)
+        
+        settings.invoice_prefix = form.invoice_prefix.data
+        settings.invoice_suffix = form.invoice_suffix.data
+        settings.next_number = form.next_number.data
+        settings.tax_name = form.tax_name.data
+        settings.tax_rate = form.tax_rate.data
+        settings.payment_terms = form.payment_terms.data
+        settings.notes = form.notes.data
+        
         db.session.commit()
-        flash('Invoice settings updated successfully!', 'success')
+        flash('Invoice settings updated successfully.', 'success')
         return redirect(url_for('sales.invoice_settings'))
     
-    return render_template('sales/invoice_settings.html', form=form, settings=settings)
+    return render_template('sales/invoice_settings.html', settings=settings, form=form)
