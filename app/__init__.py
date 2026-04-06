@@ -29,6 +29,18 @@ def create_app(config_class=Config):
                         print(f"Added column: {col}")
         except Exception as e:
             print(f"Migration check: {e}")
+        
+        # Migrate expenses table for is_bom_overhead column
+        try:
+            inspector = inspect(db.engine)
+            expense_columns = [c['name'] for c in inspector.get_columns('expenses')]
+            if 'is_bom_overhead' not in expense_columns:
+                with db.engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE expenses ADD COLUMN is_bom_overhead BOOLEAN DEFAULT false"))
+                    conn.commit()
+                    print("Added column: is_bom_overhead to expenses")
+        except Exception as e:
+            print(f"Expenses migration check: {e}")
     
     # Enable SQLite foreign key constraints
     if app.config.get('SQLALCHEMY_DATABASE_URI', '').startswith('sqlite'):
