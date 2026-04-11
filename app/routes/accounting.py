@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash
-from flask_login import login_required
+from flask_login import login_required, current_user
 from app import db
-from app.models import Sale, PurchaseBill, Transaction, Expense, ExpenseCategory, Vendor, Account, Payment, TaxRate, Currency, RecurringExpense
+from app.models import Sale, PurchaseBill, Transaction, Expense, ExpenseCategory, Vendor, Account, Payment, TaxRate, Currency, RecurringExpense, Staff, Attendance
 from app.forms import ExpenseForm, ExpenseCategoryForm
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_, inspect
@@ -89,36 +89,79 @@ def dashboard():
         
     total_purchases = db.session.query(func.sum(PurchaseBill.total)).filter(PurchaseBill.date >= date_from, PurchaseBill.date <= date_to).scalar() or 0
     
-    # Total Operating Expenses (Non-BOM) - handle missing column gracefully
-    if has_column('expenses', 'is_bom_overhead'):
-        operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
-            Expense.is_bom_overhead == False,
-            Expense.date >= date_from,
-            Expense.date <= date_to
-        ).scalar() or 0
-
-        # Total Manufacturing Overhead (BOM linked)
-        manufacturing_overhead = db.session.query(func.sum(Expense.amount)).filter(
-            Expense.is_bom_overhead == True,
-            Expense.date >= date_from,
-            Expense.date <= date_to
-        ).scalar() or 0
-    else:
-        # Fallback: include all expenses
-        operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
-            Expense.date >= date_from,
-            Expense.date <= date_to
-        ).scalar() or 0
-        manufacturing_overhead = 0
+    # Calculate operating expenses - handle regular and divided expenses separately
+    # IMPORTANT: Always filter out monthly-divided expenses from regular operating totals
     
-    total_expenses = operating_expenses + manufacturing_overhead
+    # Build filters for operating expenses
+    operating_filter = [
+        Expense.is_bom_overhead == False,
+        Expense.date >= date_from,
+        Expense.date <= date_to
+    ]
+    # Only filter divided expenses if column exists
+    if has_column('expenses', 'is_monthly_divided'):
+        operating_filter.append(Expense.is_monthly_divided == False)
+    
+    operating_expenses = db.session.query(func.sum(Expense.amount)).filter(*operating_filter).scalar() or 0
+
+    # Build filters for manufacturing overhead
+    bom_filter = [
+        Expense.is_bom_overhead == True,
+        Expense.date >= date_from,
+        Expense.date <= date_to
+    ]
+    # Only filter divided expenses if column exists
+    if has_column('expenses', 'is_monthly_divided'):
+        bom_filter.append(Expense.is_monthly_divided == False)
+    
+    manufacturing_overhead = db.session.query(func.sum(Expense.amount)).filter(*bom_filter).scalar() or 0
+    
+    # Calculate today's daily expenses and handle monthly divided expenses for the period
+    today = datetime.utcnow().date()
+    today_daily_expenses = 0
+    daily_expense_breakdown = []
+    divided_expenses_for_period = 0  # Divided expenses applicable to the date range
+    
+    if has_column('expenses', 'is_monthly_divided'):
+        # Get all monthly divided expenses
+        all_monthly_expenses = Expense.query.filter(
+            Expense.is_monthly_divided == True
+        ).all()
+        
+        # Calculate today's divided expenses and period total
+        for exp in all_monthly_expenses:
+            daily_amount = exp.get_today_expense()
+            
+            # Add to today's total
+            today_daily_expenses += daily_amount
+            if daily_amount > 0:
+                daily_expense_breakdown.append({
+                    'description': exp.description or f"Expense {exp.expense_number}",
+                    'daily_amount': daily_amount,
+                    'category': exp.expense_category.name if exp.expense_category else 'Uncategorized'
+                })
+            
+            # Calculate divided expense applicable to the date range
+            if exp.monthly_start_date and exp.monthly_end_date:
+                # Find overlap between expense period and filter period
+                overlap_start = max(exp.monthly_start_date, date_from.date())
+                overlap_end = min(exp.monthly_end_date, date_to.date())
+                
+                if overlap_start <= overlap_end:
+                    # Calculate days in overlap
+                    overlap_days = (overlap_end - overlap_start).days + 1
+                    # Add proportional amount
+                    divided_expenses_for_period += exp.daily_amount * overlap_days
+    
+    # Total expenses for the period (non-divided + proportional divided)+ manufacturing_overhead
+    total_expenses = operating_expenses  + divided_expenses_for_period
 
     # Gross Profit = Sales - COGS
     gross_profit = total_sales - total_cogs
 
-    # Net Profit = Gross Profit - operating_expenses
+    # Net Profit = Gross Profit - operating_expenses (use divided amounts where applicable)
     # (BOM overhead is already in COGS, so we only subtract operating expenses here)
-    net_profit = gross_profit - operating_expenses
+    net_profit = gross_profit - total_expenses
 
     outstanding_invoices = db.session.query(func.sum(Sale.total - Sale.paid_amount)).filter(Sale.status != 'paid', Sale.date >= date_from, Sale.date <= date_to).scalar() or 0
     paid_invoices = sales_query.filter(Sale.status == 'paid').count()
@@ -178,6 +221,9 @@ def dashboard():
                          total_purchases=total_purchases,
                          total_cogs=total_cogs,
                          total_expenses=total_expenses,
+                         operating_expenses=operating_expenses,
+                         manufacturing_overhead=manufacturing_overhead,
+                         divided_expenses_for_period=divided_expenses_for_period,
                          gross_profit=gross_profit,
                          net_profit=net_profit,
                          outstanding_invoices=outstanding_invoices,
@@ -188,6 +234,8 @@ def dashboard():
                          monthly_expenses=monthly_expenses,
                          monthly_labels=monthly_labels,
                          yearly=yearly,
+                         today_daily_expenses=today_daily_expenses,
+                         daily_expense_breakdown=daily_expense_breakdown,
                          date_from=date_from.strftime('%Y-%m-%d'),
                          date_to=date_to.strftime('%Y-%m-%d'))
 
@@ -730,23 +778,116 @@ def profit_loss():
     # Gross profit
     gross_profit = total_sales - total_purchases
     
-    # Calculate operating expenses (you can add more expense accounts)
-    expenses = {
-        'Salaries': 0,
-        'Rent': 0,
-        'Utilities': 0,
-        'Marketing': 0,
-        'Other': 0
-    }
+    # Operating Expenses - Simple/Daily
+    operating_expenses = Expense.query.filter(
+        Expense.date >= start_datetime, 
+        Expense.date <= end_datetime,
+        Expense.is_bom_overhead == False,
+        Expense.is_monthly_divided == False
+    ).all()
     
-    total_expenses = sum(expenses.values())
+    expense_categories = {}
+    for e in operating_expenses:
+        cat_name = e.expense_category.name if e.expense_category else 'Other'
+        expense_categories[cat_name] = expense_categories.get(cat_name, 0) + e.amount
+    
+    # Divided Expenses
+    divided_expenses = Expense.query.filter(
+        Expense.date >= start_datetime, 
+        Expense.date <= end_datetime,
+        Expense.is_bom_overhead == False,
+        Expense.is_monthly_divided == True
+    ).all()
+    
+    divided_expense_categories = {}
+    for e in divided_expenses:
+        cat_name = e.expense_category.name if e.expense_category else 'Other'
+        if e.monthly_start_date and e.monthly_end_date:
+            exp_start = datetime.combine(e.monthly_start_date, datetime.min.time())
+            exp_end = datetime.combine(e.monthly_end_date, datetime.min.time())
+            period_start = max(start_datetime, exp_start)
+            period_end = min(end_datetime, exp_end)
+            if period_end >= period_start:
+                total_days = (e.monthly_end_date - e.monthly_start_date).days + 1
+                active_days = (period_end.date() - period_start.date()).days + 1
+                if total_days > 0:
+                    daily_amount = e.amount / total_days
+                    pro_rata_amount = daily_amount * active_days
+                    divided_expense_categories[cat_name] = divided_expense_categories.get(cat_name, 0) + pro_rata_amount
+        else:
+            divided_expense_categories[cat_name] = divided_expense_categories.get(cat_name, 0) + e.amount
+    
+    total_divided_expenses = sum(divided_expense_categories.values())
+    
+    # Calculate Daily Payroll (same as Dashboard)
+    from calendar import monthrange
+    from datetime import timedelta
+    
+    attendance_records_by_date = {}
+    attendance_records = Attendance.query.filter(
+        Attendance.date >= start_datetime.date(),
+        Attendance.date <= end_datetime.date()
+    ).all()
+    for record in attendance_records:
+        if record.date not in attendance_records_by_date:
+            attendance_records_by_date[record.date] = []
+        attendance_records_by_date[record.date].append(record)
+    
+    attendance_payroll = sum(record.earned_amount for record in attendance_records)
+    
+    active_staff = Staff.query.filter_by(is_active=True).all()
+    period_start = start_datetime.date()
+    period_end = end_datetime.date()
+    daily_payroll_for_period = attendance_payroll
+    
+    for staff in active_staff:
+        if period_start.month == period_end.month and period_start.year == period_end.year:
+            days_in_period = (period_end - period_start).days + 1
+            _, days_in_month = monthrange(period_start.year, period_start.month)
+            daily_rate = staff.monthly_salary / float(days_in_month)
+            days_without_attendance = 0
+            current_date = period_start
+            while current_date <= period_end:
+                if current_date not in attendance_records_by_date:
+                    days_without_attendance += 1
+                current_date += timedelta(days=1)
+            daily_payroll_for_period += daily_rate * days_without_attendance
+        else:
+            current_date = period_start
+            while current_date <= period_end:
+                _, days_in_month = monthrange(current_date.year, current_date.month)
+                month_end = datetime(current_date.year, current_date.month, days_in_month).date()
+                actual_end = min(month_end, period_end)
+                daily_rate = staff.monthly_salary / float(days_in_month)
+                days_without_attendance = 0
+                check_date = current_date
+                while check_date <= actual_end:
+                    if check_date not in attendance_records_by_date:
+                        days_without_attendance += 1
+                    check_date += timedelta(days=1)
+                daily_payroll_for_period += daily_rate * days_without_attendance
+                if actual_end == month_end:
+                    current_date = datetime(
+                        current_date.year if current_date.month < 12 else current_date.year + 1,
+                        (current_date.month % 12) + 1,
+                        1
+                    ).date()
+                else:
+                    break
+    
+    total_payroll = daily_payroll_for_period
+    
+    total_expenses = sum(expense_categories.values()) + total_divided_expenses + total_payroll
     net_profit = gross_profit - total_expenses
     
     return render_template('accounting/profit_loss.html',
                          total_sales=total_sales,
                          total_purchases=total_purchases,
                          gross_profit=gross_profit,
-                         expenses=expenses,
+                         expense_categories=expense_categories,
+                         divided_expense_categories=divided_expense_categories,
+                         total_divided_expenses=total_divided_expenses,
+                         total_payroll=total_payroll,
                          total_expenses=total_expenses,
                          net_profit=net_profit,
                          start_date=start_date,
@@ -797,7 +938,7 @@ def expenses():
 @bp.route('/expense/add', methods=['GET', 'POST'])
 @login_required
 def add_expense():
-    from app.models import ExpenseCategory, Vendor
+    from app.models import ExpenseCategory, Vendor, BOM
     from werkzeug.utils import secure_filename
     import os
     
@@ -819,6 +960,10 @@ def add_expense():
         manufactured_products = []
     form.product_id.choices = [(0, 'Select Finished Product (Optional)')] + [(p.id, p.name) for p in manufactured_products]
     
+    # Populate BOM choices
+    boms = BOM.query.filter_by(is_active=True).order_by(BOM.name).all()
+    form.bom_id.choices = [(0, 'Select BOM (Optional)')] + [(b.id, b.name) for b in boms]
+    
     if form.validate_on_submit():
         expense_number = f"EXP-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         
@@ -839,8 +984,21 @@ def add_expense():
             expense_kwargs['is_bom_overhead'] = form.is_bom_overhead.data
         if has_column('expenses', 'product_id'):
             expense_kwargs['product_id'] = form.product_id.data if form.product_id.data != 0 else None
+        if has_column('expenses', 'bom_id'):
+            expense_kwargs['bom_id'] = form.bom_id.data if form.bom_id.data != 0 else None
+        
+        # Handle monthly division
+        if has_column('expenses', 'is_monthly_divided'):
+            expense_kwargs['is_monthly_divided'] = form.is_monthly_divided.data
+            if form.is_monthly_divided.data:
+                expense_kwargs['monthly_start_date'] = form.monthly_start_date.data
+                expense_kwargs['monthly_end_date'] = form.monthly_end_date.data
         
         expense = Expense(**expense_kwargs)
+        
+        # Calculate daily amount if monthly divided
+        if expense.is_monthly_divided:
+            expense.calculate_daily_amount()
         
         # Handle bill image upload
         if 'bill_image' in request.files:
@@ -855,6 +1013,43 @@ def add_expense():
         
         db.session.add(expense)
         db.session.commit()
+        
+        # Trigger BOM versioning if expense is for a BOM or manufactured product
+        bom_to_update = None
+        if has_column('expenses', 'is_bom_overhead') and expense.is_bom_overhead:
+            # Check if BOM was directly selected
+            if has_column('expenses', 'bom_id') and expense.bom_id:
+                bom_to_update = BOM.query.get(expense.bom_id)
+            # Otherwise, find BOM from product
+            elif expense.product_id:
+                bom_to_update = BOM.query.filter_by(product_id=expense.product_id, is_active=True).first()
+        
+        if bom_to_update:
+            from app.services.bom_versioning import BOMVersioningService
+            from app.models import User as UserModel
+            try:
+                # Use current_user.id if available, fallback to admin user
+                user_id = None
+                try:
+                    if current_user and current_user.is_authenticated:
+                        user_id = current_user.id
+                except (AttributeError, TypeError):
+                    pass
+                
+                if user_id is None:
+                    admin_user = UserModel.query.filter_by(username='admin').first()
+                    user_id = admin_user.id if admin_user else 1
+                
+                BOMVersioningService.create_bom_version(
+                    bom=bom_to_update,
+                    change_reason=f"Overhead expense added: {expense.description}",
+                    change_type='overhead_added',
+                    created_by_id=user_id,
+                    recalculate_overhead=True
+                )
+            except Exception as e:
+                print(f"Error creating BOM version: {e}")
+        
         flash('Expense added successfully', 'success')
         return redirect(url_for('accounting.expenses'))
     
@@ -863,16 +1058,60 @@ def add_expense():
 @bp.route('/expense/<int:id>/delete', methods=['POST'])
 @login_required
 def delete_expense(id):
+    from app.models import BOM
+    from app.services.bom_versioning import BOMVersioningService
+    
     expense = Expense.query.get_or_404(id)
+    
+    # Store info before deletion for BOM update
+    was_overhead = expense.is_bom_overhead if has_column('expenses', 'is_bom_overhead') else False
+    bom_id = expense.bom_id if has_column('expenses', 'bom_id') else None
+    product_id = expense.product_id if has_column('expenses', 'product_id') else None
+    description = expense.description
+    
     db.session.delete(expense)
     db.session.commit()
+    
+    # If deleted expense was overhead, recalculate BOM
+    if was_overhead:
+        bom_to_update = None
+        if bom_id:
+            bom_to_update = BOM.query.get(bom_id)
+        elif product_id:
+            bom_to_update = BOM.query.filter_by(product_id=product_id, is_active=True).first()
+        
+        if bom_to_update:
+            try:
+                # Use current_user.id if available, fallback to admin user
+                user_id = None
+                try:
+                    if current_user and current_user.is_authenticated:
+                        user_id = current_user.id
+                except (AttributeError, TypeError):
+                    pass
+                
+                if user_id is None:
+                    from app.models import User as UserModel
+                    admin_user = UserModel.query.filter_by(username='admin').first()
+                    user_id = admin_user.id if admin_user else 1
+                
+                BOMVersioningService.create_bom_version(
+                    bom=bom_to_update,
+                    change_reason=f"Overhead expense deleted: {description}",
+                    change_type='overhead_added',
+                    created_by_id=user_id,
+                    recalculate_overhead=True
+                )
+            except Exception as e:
+                print(f"Error updating BOM after deleting expense: {e}")
+    
     flash('Expense removed', 'success')
     return redirect(url_for('accounting.expenses'))
 
 @bp.route('/expense/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_expense(id):
-    from app.models import ExpenseCategory, Vendor
+    from app.models import ExpenseCategory, Vendor, BOM
     from werkzeug.utils import secure_filename
     import os
     
@@ -895,6 +1134,10 @@ def edit_expense(id):
         manufactured_products = []
     form.product_id.choices = [(0, 'Select Finished Product (Optional)')] + [(p.id, p.name) for p in manufactured_products]
     
+    # Populate BOM choices
+    boms = BOM.query.filter_by(is_active=True).order_by(BOM.name).all()
+    form.bom_id.choices = [(0, 'Select BOM (Optional)')] + [(b.id, b.name) for b in boms]
+    
     # Set current vendor selection
     if expense.vendor_id:
         form.vendor_id.data = expense.vendor_id
@@ -907,7 +1150,18 @@ def edit_expense(id):
     else:
         form.product_id.data = 0
     
+    # Set current BOM selection (only if column exists)
+    if has_column('expenses', 'bom_id') and expense.bom_id:
+        form.bom_id.data = expense.bom_id
+    else:
+        form.bom_id.data = 0
+    
     if form.validate_on_submit():
+        # Store old overhead state to detect changes
+        old_is_overhead = expense.is_bom_overhead if has_column('expenses', 'is_bom_overhead') else False
+        old_bom_id = expense.bom_id if has_column('expenses', 'bom_id') else None
+        old_product_id = expense.product_id if has_column('expenses', 'product_id') else None
+        
         expense.date = form.date.data
         expense.category_id = form.category_id.data
         expense.vendor_id = form.vendor_id.data if form.vendor_id.data != 0 else None
@@ -921,6 +1175,8 @@ def edit_expense(id):
             expense.is_bom_overhead = form.is_bom_overhead.data
         if has_column('expenses', 'product_id'):
             expense.product_id = form.product_id.data if form.product_id.data != 0 else None
+        if has_column('expenses', 'bom_id'):
+            expense.bom_id = form.bom_id.data if form.bom_id.data != 0 else None
         
         # Handle bill image upload
         if 'bill_image' in request.files:
@@ -933,7 +1189,71 @@ def edit_expense(id):
                 # Normalize path to use forward slashes for consistency
                 expense.bill_image_path = bill_path.replace('\\', '/')
         
+        # Handle monthly division
+        if has_column('expenses', 'is_monthly_divided'):
+            expense.is_monthly_divided = form.is_monthly_divided.data
+            if form.is_monthly_divided.data:
+                expense.monthly_start_date = form.monthly_start_date.data
+                expense.monthly_end_date = form.monthly_end_date.data
+                # Recalculate daily amount
+                expense.calculate_daily_amount()
+            else:
+                expense.daily_amount = 0
+        
         db.session.commit()
+        
+        # Trigger BOM versioning if overhead status changed or if currently set as overhead
+        # This handles both cases: adding overhead and removing overhead
+        bom_to_update = None
+        new_is_overhead = expense.is_bom_overhead if has_column('expenses', 'is_bom_overhead') else False
+        overhead_status_changed = old_is_overhead != new_is_overhead
+        
+        if overhead_status_changed or new_is_overhead:
+            # Determine which BOM to update
+            if new_is_overhead:
+                # Expense is now overhead, find BOM to update
+                if has_column('expenses', 'bom_id') and expense.bom_id:
+                    bom_to_update = BOM.query.get(expense.bom_id)
+                elif has_column('expenses', 'product_id') and expense.product_id:
+                    bom_to_update = BOM.query.filter_by(product_id=expense.product_id, is_active=True).first()
+            else:
+                # Expense was overhead but now isn't, find old BOM to update
+                if old_bom_id:
+                    bom_to_update = BOM.query.get(old_bom_id)
+                elif old_product_id:
+                    bom_to_update = BOM.query.filter_by(product_id=old_product_id, is_active=True).first()
+        
+        if bom_to_update:
+            from app.services.bom_versioning import BOMVersioningService
+            from app.models import User as UserModel
+            try:
+                # Use current_user.id if available, fallback to admin user
+                user_id = None
+                try:
+                    if current_user and current_user.is_authenticated:
+                        user_id = current_user.id
+                except (AttributeError, TypeError):
+                    pass
+                
+                if user_id is None:
+                    admin_user = UserModel.query.filter_by(username='admin').first()
+                    user_id = admin_user.id if admin_user else 1
+                
+                if new_is_overhead:
+                    change_reason = f"Overhead expense updated: {expense.description}"
+                else:
+                    change_reason = f"Overhead expense removed: {expense.description}"
+                
+                BOMVersioningService.create_bom_version(
+                    bom=bom_to_update,
+                    change_reason=change_reason,
+                    change_type='overhead_added',
+                    created_by_id=user_id,
+                    recalculate_overhead=True
+                )
+            except Exception as e:
+                print(f"Error creating BOM version: {e}")
+        
         flash('Expense updated successfully', 'success')
         return redirect(url_for('accounting.expenses'))
     
@@ -998,3 +1318,61 @@ def delete_expense_category(id):
     db.session.commit()
     flash('Expense category deleted successfully', 'success')
     return redirect(url_for('accounting.expense_categories'))
+
+@bp.route('/bom/<int:bom_id>/reset-overhead', methods=['POST'])
+@login_required
+def reset_bom_overhead(bom_id):
+    """Reset BOM overhead by marking all overhead expenses as non-overhead"""
+    from app.models import BOM, Expense
+    from app.services.bom_versioning import BOMVersioningService
+    
+    bom = BOM.query.get_or_404(bom_id)
+    
+    # Find all overhead expenses linked to this BOM
+    overhead_expenses = Expense.query.filter(
+        Expense.bom_id == bom_id,
+        Expense.is_bom_overhead == True
+    ).all()
+    
+    if not overhead_expenses:
+        flash('No overhead expenses found for this BOM', 'info')
+        return redirect(url_for('accounting.expenses'))
+    
+    # Delete all overhead expenses (so they don't appear in dashboard totals)
+    expense_count = len(overhead_expenses)
+    total_amount = sum(expense.amount for expense in overhead_expenses)
+    
+    for expense in overhead_expenses:
+        db.session.delete(expense)
+    
+    db.session.commit()
+    
+    # Recalculate BOM overhead (should be 0 now)
+    try:
+        # Safe user_id resolution
+        user_id = None
+        try:
+            if current_user and current_user.is_authenticated:
+                user_id = current_user.id
+        except (AttributeError, TypeError):
+            pass
+        
+        if user_id is None:
+            from app.models import User
+            admin_user = User.query.filter_by(username='admin').first()
+            user_id = admin_user.id if admin_user else 1
+        
+        BOMVersioningService.create_bom_version(
+            bom=bom,
+            change_reason=f"BOM overhead reset: {expense_count} overhead expense(es) deleted (Rs {total_amount})",
+            change_type='overhead_removed',
+            created_by_id=user_id,
+            recalculate_overhead=True
+        )
+        
+        flash(f'BOM overhead reset successfully! Deleted {expense_count} overhead expense(es) totaling Rs {total_amount}. New overhead: Rs {bom.overhead_cost}', 'success')
+    except Exception as e:
+        flash(f'BOM overhead reset partially: {expense_count} expenses deleted but versioning failed: {str(e)}', 'warning')
+        print(f"Error resetting BOM overhead: {e}")
+    
+    return redirect(url_for('accounting.expenses'))

@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, send_file, jsonify, flash, redirect, url_for
 from flask_login import login_required
 from app import db
-from app.models import Sale, SaleItem, PurchaseBill, Product, Vendor, Customer, Company, Expense, ExpenseCategory, SaleReturn, SaleReturnItem, BOM, ManufacturingOrder, Staff, SalaryPayment, SalaryAdvance
+from app.models import Sale, SaleItem, PurchaseBill, PurchaseItem, Product, Vendor, Customer, Company, Expense, ExpenseCategory, SaleReturn, SaleReturnItem, BOM, BOMItem, BOMVersion, ManufacturingOrder, Staff, SalaryPayment, SalaryAdvance, Warehouse, Attendance
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_, or_
 import pandas as pd
@@ -116,6 +116,7 @@ def purchase_report():
 @login_required
 def inventory_report():
     category = request.args.get('category', 'all')
+    warehouse_id = request.args.get('warehouse_id', '')
     search = request.args.get('search', '')
     stock_filter = request.args.get('stock_filter', 'all')
     
@@ -123,6 +124,8 @@ def inventory_report():
     
     if category != 'all':
         query = query.filter(Product.category == category)
+    if warehouse_id and warehouse_id.isdigit():
+        query = query.filter(Product.warehouse_id == int(warehouse_id))
     if search:
         query = query.filter(or_(Product.name.ilike(f'%{search}%'), Product.sku.ilike(f'%{search}%')))
     
@@ -137,17 +140,107 @@ def inventory_report():
     categories = db.session.query(Product.category).distinct().all()
     categories = [c[0] for c in categories if c[0]]
     
+    # Get warehouses for filter
+    warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
+    
     total_value = sum(p.stock_value for p in products)
     total_items = sum(p.quantity for p in products)
     
     return render_template('reports/inventory_report.html',
                          products=products,
                          categories=categories,
+                         warehouses=warehouses,
                          current_category=category,
+                         current_warehouse_id=warehouse_id,
                          search=search,
                          stock_filter=stock_filter,
                          total_value=total_value,
                          total_items=total_items)
+
+
+@bp.route('/inventory-details-report')
+@login_required
+def inventory_details_report():
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+    warehouse_id = request.args.get('warehouse_id', '')
+    category = request.args.get('category', 'all')
+    search = request.args.get('search', '')
+    
+    query = Product.query
+    
+    if category != 'all':
+        query = query.filter(Product.category == category)
+    if warehouse_id and warehouse_id.isdigit():
+        query = query.filter(Product.warehouse_id == int(warehouse_id))
+    if search:
+        query = query.filter(or_(Product.name.ilike(f'%{search}%'), Product.sku.ilike(f'%{search}%')))
+    
+    products = query.order_by(Product.name).all()
+    
+    product_movements = []
+    
+    # Get sales and purchases in date range for each product
+    for product in products:
+        sold_qty = 0
+        purchased_qty = 0
+        
+        # Sales
+        sale_items = SaleItem.query.join(Sale).filter(
+            SaleItem.product_id == product.id
+        ).all()
+        for item in sale_items:
+            if from_date:
+                sale_date = item.sale.date if item.sale else None
+                if sale_date and sale_date >= datetime.strptime(from_date, '%Y-%m-%d'):
+                    if to_date:
+                        if sale_date <= datetime.strptime(to_date, '%Y-%m-%d'):
+                            sold_qty += item.quantity
+                    else:
+                        sold_qty += item.quantity
+            else:
+                sold_qty += item.quantity
+        
+        # Purchases
+        purchase_items = PurchaseItem.query.join(PurchaseBill).filter(
+            PurchaseItem.product_id == product.id
+        ).all()
+        for item in purchase_items:
+            if from_date:
+                purchase_date = item.bill.date if item.bill else None
+                if purchase_date and purchase_date >= datetime.strptime(from_date, '%Y-%m-%d'):
+                    if to_date:
+                        if purchase_date <= datetime.strptime(to_date, '%Y-%m-%d'):
+                            purchased_qty += item.quantity
+                    else:
+                        purchased_qty += item.quantity
+            else:
+                purchased_qty += item.quantity
+        
+        product_movements.append({
+            'product': product,
+            'sold': sold_qty,
+            'purchased': purchased_qty,
+            'current_stock': product.quantity,
+            'warehouse': product.warehouse.name if product.warehouse else 'No Warehouse'
+        })
+    
+    # Get warehouses for filter
+    warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
+    
+    # Get categories for filter
+    categories = db.session.query(Product.category).distinct().all()
+    categories = [c[0] for c in categories if c[0]]
+    
+    return render_template('reports/inventory_details_report.html',
+                         product_movements=product_movements,
+                         warehouses=warehouses,
+                         categories=categories,
+                         from_date=from_date,
+                         to_date=to_date,
+                         current_warehouse_id=warehouse_id,
+                         current_category=category,
+                         search=search)
 
 
 @bp.route('/cogs-report')
@@ -441,6 +534,62 @@ def manufacturing_report():
                          products=products,
                          current_product_id=product_id)
 
+@bp.route('/bom-report')
+@login_required
+def bom_report():
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    product_id = request.args.get('product_id')
+    version_filter = request.args.get('version', 'all')
+    view_mode = request.args.get('view_mode', 'boms')
+    
+    # Get BOMs
+    query = BOM.query
+    
+    if start_date:
+        query = query.filter(BOM.created_at >= datetime.strptime(start_date, '%Y-%m-%d'))
+    if end_date:
+        query = query.filter(BOM.created_at <= datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59))
+    if product_id and product_id != 'all':
+        query = query.filter(BOM.product_id == int(product_id))
+    if version_filter != 'all':
+        if version_filter == 'active':
+            query = query.filter(BOM.is_active == True)
+        else:
+            query = query.filter(BOM.is_active == False)
+    
+    boms = query.order_by(BOM.created_at.desc()).all()
+    
+    # Get BOM versions for all filtered BOMs
+    bom_ids = [b.id for b in boms]
+    all_versions = []
+    if bom_ids:
+        version_query = BOMVersion.query.filter(BOMVersion.bom_id.in_(bom_ids))
+        if start_date:
+            version_query = version_query.filter(BOMVersion.created_at >= datetime.strptime(start_date, '%Y-%m-%d'))
+        if end_date:
+            version_query = version_query.filter(BOMVersion.created_at <= datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59))
+        all_versions = version_query.order_by(BOMVersion.created_at.desc()).all()
+    
+    total_count = len(boms)
+    total_cost = sum(b.total_cost for b in boms)
+    total_versions = len(all_versions)
+    
+    products = Product.query.order_by(Product.name).all()
+    
+    return render_template('reports/bom_report.html',
+                         boms=boms,
+                         all_versions=all_versions,
+                         total_count=total_count,
+                         total_cost=total_cost,
+                         total_versions=total_versions,
+                         start_date=start_date,
+                         end_date=end_date,
+                         products=products,
+                         current_product_id=product_id,
+                         version_filter=version_filter,
+                         view_mode=view_mode)
+
 @bp.route('/salary-report')
 @login_required
 def salary_report():
@@ -525,27 +674,91 @@ def profit_loss_report():
     ).all()
     
     expense_summary = {}
+    divided_expense_summary = {}
     for e in operating_expenses:
         cat_name = e.expense_category.name if e.expense_category else 'Other'
-        expense_summary[cat_name] = expense_summary.get(cat_name, 0) + e.amount
+        if e.is_monthly_divided:
+            if e.monthly_start_date and e.monthly_end_date:
+                exp_start = datetime.combine(e.monthly_start_date, datetime.min.time())
+                exp_end = datetime.combine(e.monthly_end_date, datetime.min.time())
+                period_start = max(start_date, exp_start)
+                period_end = min(end_date, exp_end)
+                if period_end >= period_start:
+                    total_days = (e.monthly_end_date - e.monthly_start_date).days + 1
+                    active_days = (period_end.date() - period_start.date()).days + 1
+                    if total_days > 0:
+                        daily_amount = e.amount / total_days
+                        pro_rata_amount = daily_amount * active_days
+                        divided_expense_summary[cat_name] = divided_expense_summary.get(cat_name, 0) + pro_rata_amount
+            else:
+                divided_expense_summary[cat_name] = divided_expense_summary.get(cat_name, 0) + e.amount
+        else:
+            expense_summary[cat_name] = expense_summary.get(cat_name, 0) + e.amount
     
-    # Payroll
-    salary_payments = SalaryPayment.query.filter(
-        SalaryPayment.status == 'paid',
-        SalaryPayment.payment_date >= start_date.date(),
-        SalaryPayment.payment_date <= end_date.date()
-    ).all()
-    total_salary = sum(p.net_salary for p in salary_payments)
+    total_divided_expenses = sum(divided_expense_summary.values())
     
-    salary_advances = SalaryAdvance.query.filter(
-        SalaryAdvance.date >= start_date.date(),
-        SalaryAdvance.date <= end_date.date()
+    # Calculate Daily Payroll (same as Dashboard) - Active staff daily salary × days in period
+    from calendar import monthrange
+    from datetime import timedelta
+    
+    # Get attendance records for the period
+    attendance_records_by_date = {}
+    attendance_records = Attendance.query.filter(
+        Attendance.date >= start_date.date(),
+        Attendance.date <= end_date.date()
     ).all()
-    total_advances = sum(a.amount for a in salary_advances)
-    total_payroll = total_salary + total_advances
+    for record in attendance_records:
+        if record.date not in attendance_records_by_date:
+            attendance_records_by_date[record.date] = []
+        attendance_records_by_date[record.date].append(record)
+    
+    attendance_payroll = sum(record.earned_amount for record in attendance_records)
+    
+    # Active staff daily salary for days without attendance
+    active_staff = Staff.query.filter_by(is_active=True).all()
+    period_start = start_date.date()
+    period_end = end_date.date()
+    daily_payroll_for_period = attendance_payroll
+    
+    for staff in active_staff:
+        if period_start.month == period_end.month and period_start.year == period_end.year:
+            days_in_period = (period_end - period_start).days + 1
+            _, days_in_month = monthrange(period_start.year, period_start.month)
+            daily_rate = staff.monthly_salary / float(days_in_month)
+            days_without_attendance = 0
+            current_date = period_start
+            while current_date <= period_end:
+                if current_date not in attendance_records_by_date:
+                    days_without_attendance += 1
+                current_date += timedelta(days=1)
+            daily_payroll_for_period += daily_rate * days_without_attendance
+        else:
+            current_date = period_start
+            while current_date <= period_end:
+                _, days_in_month = monthrange(current_date.year, current_date.month)
+                month_end = datetime(current_date.year, current_date.month, days_in_month).date()
+                actual_end = min(month_end, period_end)
+                daily_rate = staff.monthly_salary / float(days_in_month)
+                days_without_attendance = 0
+                check_date = current_date
+                while check_date <= actual_end:
+                    if check_date not in attendance_records_by_date:
+                        days_without_attendance += 1
+                    check_date += timedelta(days=1)
+                daily_payroll_for_period += daily_rate * days_without_attendance
+                if actual_end == month_end:
+                    current_date = datetime(
+                        current_date.year if current_date.month < 12 else current_date.year + 1,
+                        (current_date.month % 12) + 1,
+                        1
+                    ).date()
+                else:
+                    break
+    
+    total_payroll = daily_payroll_for_period
     
     # Calculate Total Operating Expenses
-    total_operating_expenses = sum(expense_summary.values()) + total_payroll
+    total_operating_expenses = sum(expense_summary.values()) + total_divided_expenses + total_payroll
     net_profit = gross_profit - total_operating_expenses
     
     # 5. Inventory & Manufacturing Activity (Displayed but NOT deducted from Net Profit)
@@ -582,12 +795,14 @@ def profit_loss_report():
                           total_cogs=total_cogs,
                           gross_profit=gross_profit,
                           expense_categories=expense_summary,
+                          divided_expense_categories=divided_expense_summary,
+                          total_divided_expenses=total_divided_expenses,
                           total_payroll=total_payroll,
                           purchases=purchases,
                           total_purchases=total_purchases,
                           manufacturing_orders=manufacturing_orders,
                           total_bom_costs=total_bom_costs + total_bom_overhead,
-                          total_expenses=total_operating_expenses,
+                          total_expenses=total_operating_expenses + total_divided_expenses,
                           total_informational=total_informational_outflow,
                           net_profit=net_profit)
     
@@ -862,7 +1077,7 @@ def download_report(format, report_type):
         product_id = request.args.get('product_id')
         query = ManufacturingOrder.query.join(BOM)
         if start_date: query = query.filter(ManufacturingOrder.start_date >= datetime.strptime(start_date, '%Y-%m-%d'))
-        if end_date: query = query.filter(ManufacturingOrder.start_date <= datetime.strptime(end_date, '%Y-%m-%d'))
+        if end_date: query = query.filter(ManufacturingOrder.start_date <= datetime.strptime(start_date, '%Y-%m-%d'))
         if status != 'all': query = query.filter(ManufacturingOrder.status == status)
         if product_id and product_id != 'all': query = query.filter(BOM.product_id == int(product_id))
         
@@ -880,6 +1095,64 @@ def download_report(format, report_type):
             'Total Cost': f"{o.total_cost or 0:.2f}",
             'Status': o.status
         } for o in orders]
+
+    elif report_type == 'bom':
+        product_id = request.args.get('product_id')
+        version_filter = request.args.get('version', 'all')
+        view_mode = request.args.get('view_mode', 'boms')
+        
+        if view_mode == 'versions':
+            # Export version history
+            query = BOMVersion.query
+            if start_date: query = query.filter(BOMVersion.created_at >= datetime.strptime(start_date, '%Y-%m-%d'))
+            if end_date: query = query.filter(BOMVersion.created_at <= datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59))
+            
+            versions = query.order_by(BOMVersion.created_at.desc()).all()
+            
+            # Filter by product if specified
+            if product_id and product_id != 'all':
+                versions = [v for v in versions if v.bom.product_id == int(product_id)]
+            
+            title = "BOM Version History Report"
+            headers = ['BOM Name', 'Product', 'Version', 'Labor Cost', 'Overhead Cost', 'Total Cost', 'Change Reason', 'Change Type', 'Previous Version', 'Created Date']
+            data = [{
+                'BOM Name': v.bom.name if v.bom else 'N/A',
+                'Product': v.bom.product.name if v.bom and v.bom.product else 'N/A',
+                'Version': v.version_number,
+                'Labor Cost': f"{v.labor_cost:.2f}",
+                'Overhead Cost': f"{v.overhead_cost:.2f}",
+                'Total Cost': f"{v.total_cost:.2f}",
+                'Change Reason': v.change_reason or 'N/A',
+                'Change Type': v.change_type or 'N/A',
+                'Previous Version': v.previous_version or 'v1',
+                'Created Date': v.created_at.strftime('%Y-%m-%d %H:%M') if v.created_at else 'N/A'
+            } for v in versions]
+        else:
+            # Export current BOMs
+            query = BOM.query
+            if start_date: query = query.filter(BOM.created_at >= datetime.strptime(start_date, '%Y-%m-%d'))
+            if end_date: query = query.filter(BOM.created_at <= datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59))
+            if product_id and product_id != 'all': query = query.filter(BOM.product_id == int(product_id))
+            if version_filter != 'all':
+                if version_filter == 'active':
+                    query = query.filter(BOM.is_active == True)
+                else:
+                    query = query.filter(BOM.is_active == False)
+            
+            boms = query.order_by(BOM.created_at.desc()).all()
+            title = "BOM Report"
+            headers = ['BOM Name', 'Product', 'Version', 'Components', 'Labor Cost', 'Overhead Cost', 'Total Cost', 'Active', 'Created Date']
+            data = [{
+                'BOM Name': b.name,
+                'Product': b.product.name if b.product else 'N/A',
+                'Version': b.version,
+                'Components': len(b.items),
+                'Labor Cost': f"{b.labor_cost:.2f}",
+                'Overhead Cost': f"{b.overhead_cost:.2f}",
+                'Total Cost': f"{b.total_cost:.2f}",
+                'Active': 'Yes' if b.is_active else 'No',
+                'Created Date': b.created_at.strftime('%Y-%m-%d') if b.created_at else 'N/A'
+            } for b in boms]
 
     elif report_type == 'salary':
         staff_id = request.args.get('staff_id')

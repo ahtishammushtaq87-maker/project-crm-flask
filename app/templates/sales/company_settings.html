@@ -126,6 +126,23 @@
                         </div>
                         {% endif %}
                         
+                        <hr>
+                        <h5>Authorized Signature</h5>
+                        
+                        <div class="mb-3">
+                            <label for="signature" class="form-label">Upload Signature</label>
+                            <input type="file" class="form-control" id="signature" name="signature" accept="image/*">
+                            <div class="form-text">Supported formats: PNG, JPG. Recommended: transparent PNG with signature</div>
+                        </div>
+                        
+                        {% if company.signature_path %}
+                        <div class="mb-3">
+                            <label class="form-label">Current Signature:</label><br>
+                            <img src="{{ url_for('static', filename=company.signature_path.replace('app/static/', '')) }}" 
+                                 alt="Authorized Signature" style="max-height: 60px;">
+                        </div>
+                        {% endif %}
+                        
                         <button type="submit" class="btn btn-primary">Save Settings</button>
                     </form>
                 </div>

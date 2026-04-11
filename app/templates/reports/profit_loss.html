@@ -101,6 +101,12 @@
                             <tr class="table-light fw-bold text-uppercase">
                                 <td colspan="3">Operating Expenses (Deducted from Profit)</td>
                             </tr>
+                            
+                            <!-- Simple/Daily Expenses -->
+                            {% if expense_categories %}
+                            <tr class="text-secondary">
+                                <td colspan="3" class="ps-3"><em>Simple/Daily Expenses</em></td>
+                            </tr>
                             {% for cat, amt in expense_categories.items() %}
                             <tr>
                                 <td class="ps-4">{{ cat }}</td>
@@ -108,6 +114,22 @@
                                 <td></td>
                             </tr>
                             {% endfor %}
+                            {% endif %}
+                            
+                            <!-- Divided Expenses -->
+                            {% if divided_expense_categories %}
+                            <tr class="text-secondary">
+                                <td colspan="3" class="ps-3"><em>Salary/Divided Expenses (Prorated)</em></td>
+                            </tr>
+                            {% for cat, amt in divided_expense_categories.items() %}
+                            <tr>
+                                <td class="ps-4">{{ cat }}</td>
+                                <td class="text-end">{{ "{:,.2f}".format(amt) }}</td>
+                                <td></td>
+                            </tr>
+                            {% endfor %}
+                            {% endif %}
+                            
                             <tr>
                                 <td class="ps-4">Staff Payroll (Salaries & Advances)</td>
                                 <td class="text-end">{{ "{:,.2f}".format(total_payroll) }}</td>

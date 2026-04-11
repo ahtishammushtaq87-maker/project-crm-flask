@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-journal-plus"></i> {% if log %}Edit Production Log{% else %}Add Production Log{% endif %}</h2>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Daily Production Entry</h5>
+        </div>
+        <div class="card-body">
+            <form method="post" class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Date <span class="text-danger">*</span></label>
+                    <input type="date" name="date" class="form-control" 
+                           value="{{ log.date.strftime('%Y-%m-%d') if log else '' }}" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Product (SKU) <span class="text-danger">*</span></label>
+                    <select name="sku_id" class="form-select" required>
+                        <option value="">Select Product</option>
+                        {% for product in products %}
+                        <option value="{{ product.id }}" {% if log and log.sku_id == product.id %}selected{% endif %}>
+                            {{ product.sku }} - {{ product.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Shift</label>
+                    <select name="shift" class="form-select">
+                        <option value="">Select Shift</option>
+                        <option value="Morning" {% if log and log.shift == 'Morning' %}selected{% endif %}>Morning</option>
+                        <option value="Evening" {% if log and log.shift == 'Evening' %}selected{% endif %}>Evening</option>
+                        <option value="Night" {% if log and log.shift == 'Night' %}selected{% endif %}>Night</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Operator</label>
+                    <input type="text" name="operator" class="form-control" 
+                           value="{{ log.operator if log else '' }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Qty Produced <span class="text-danger">*</span></label>
+                    <input type="number" name="qty_produced" class="form-control" step="1" min="0" 
+                           value="{{ log.qty_produced if log else '0' }}" required>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Rejected Qty</label>
+                    <input type="number" name="rejected_qty" class="form-control" step="1" min="0" 
+                           value="{{ log.rejected_qty if log else '0' }}">
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label">Notes</label>
+                    <textarea name="notes" class="form-control" rows="2">{{ log.notes if log else '' }}</textarea>
+                </div>
+                
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save"></i> Save Log
+                    </button>
+                    <a href="{{ url_for('production.logs') }}" class="btn btn-secondary">
+                        Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

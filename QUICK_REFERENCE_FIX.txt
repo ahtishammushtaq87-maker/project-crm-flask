@@ -1,0 +1,87 @@
+================================================================================
+✅ CRITICAL FIX APPLIED: current_user Import Error
+================================================================================
+
+ERROR FIXED:
+  "Product updated, but error updating BOM versions: name 'current_user' 
+   is not defined"
+
+ROOT CAUSE:
+  current_user was not imported in inventory.py and accounting.py routes
+
+SOLUTION:
+  Added: from flask_login import login_required, current_user
+  
+FILES FIXED:
+  ✅ app/routes/inventory.py (line 2)
+  ✅ app/routes/accounting.py (line 2)
+
+RESULT:
+  ✅ BOM versions now created when editing product costs
+  ✅ BOM versions now created when adding expenses
+  ✅ No more NameError exceptions
+  ✅ All automatic triggers working
+
+================================================================================
+QUICK TEST
+================================================================================
+
+Verify the fix:
+  python test_current_user_fix.py
+  
+Expected output:
+  ✅ BOM VERSIONING IS NOW WORKING!
+
+================================================================================
+HOW TO TEST IN BROWSER
+================================================================================
+
+1. Start app:
+   python run.py
+
+2. Login: admin / password
+
+3. Test Inventory Trigger:
+   - Inventory → Products → Edit
+   - Change "Cost Price"
+   - Save
+   - Should see: "Product updated! BOM versions updated for X BOM(s)."
+   - NOT: "Product updated, but error..."
+
+4. Test Accounting Trigger:
+   - Accounting → Expenses → Add Expense
+   - Check "BOM Overhead Expense"
+   - Select BOM
+   - Save
+   - Should succeed without error
+
+5. Verify Versions Created:
+   - Manufacturing → BOMs
+   - Click BOM name
+   - See new versions in history
+
+================================================================================
+WHAT WAS CHANGED
+================================================================================
+
+inventory.py:
+  Line 2: from flask_login import login_required, current_user
+  Used at: Line 173 in edit_product() - created_by_id=current_user.id
+
+accounting.py:
+  Line 2: from flask_login import login_required, current_user
+  Used at: Line 883 in add_expense() - created_by_id=current_user.id
+  Used at: Line 998 in edit_expense() - created_by_id=current_user.id
+
+================================================================================
+STATUS: FIXED AND TESTED ✅
+================================================================================
+
+All automatic BOM versioning triggers are now working:
+  ✅ Product cost changes
+  ✅ BOM overhead expenses
+  ✅ Purchase order changes
+
+Ready to use. No further fixes needed.
+
+================================================================================

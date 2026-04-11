@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}BOM Report{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-list-alt text-primary me-2"></i>BOM Report</h2>
+        <div class="btn-group">
+            <button type="button" class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">
+                <i class="fas fa-download me-1"></i> Export Report
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='pdf', report_type='bom', start_date=start_date, end_date=end_date, product_id=current_product_id, version=version_filter, view_mode=view_mode) }}">PDF Document</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='excel', report_type='bom', start_date=start_date, end_date=end_date, product_id=current_product_id, version=version_filter, view_mode=view_mode) }}">Excel Spreadsheet</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='csv', report_type='bom', start_date=start_date, end_date=end_date, product_id=current_product_id, version=version_filter, view_mode=view_mode) }}">CSV File</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="GET" class="row g-3 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">From Date</label>
+                    <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">To Date</label>
+                    <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">Product</label>
+                    <select name="product_id" class="form-select">
+                        <option value="all">All Products</option>
+                        {% for p in products %}
+                        <option value="{{ p.id }}" {% if current_product_id == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">Version Status</label>
+                    <select name="version" class="form-select">
+                        <option value="all" {% if version_filter == 'all' %}selected{% endif %}>All Versions</option>
+                        <option value="active" {% if version_filter == 'active' %}selected{% endif %}>Active Only</option>
+                        <option value="inactive" {% if version_filter == 'inactive' %}selected{% endif %}>Inactive Only</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">View Mode</label>
+                    <select name="view_mode" class="form-select">
+                        <option value="boms" {% if view_mode == 'boms' %}selected{% endif %}>Current BOMs</option>
+                        <option value="versions" {% if view_mode == 'versions' %}selected{% endif %}>Version History</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-filter me-1"></i> Filter
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card shadow-sm border-start border-primary border-4">
+                <div class="card-body">
+                    <h6 class="text-muted mb-1">Total BOMs</h6>
+                    <h3 class="mb-0">{{ total_count }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-start border-success border-4">
+                <div class="card-body">
+                    <h6 class="text-muted mb-1">Total Cost Value</h6>
+                    <h3 class="mb-0">Rs {{ "%.2f"|format(total_cost) }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-start border-info border-4">
+                <div class="card-body">
+                    <h6 class="text-muted mb-1">Active Versions</h6>
+                    <h3 class="mb-0">{{ boms|selectattr('is_active')|list|length }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-start border-warning border-4">
+                <div class="card-body">
+                    <h6 class="text-muted mb-1">Version Changes</h6>
+                    <h3 class="mb-0">{{ total_versions }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if view_mode == 'versions' %}
+    <!-- Version History Table -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-warning bg-opacity-10">
+            <h5 class="mb-0"><i class="fas fa-history me-2"></i>BOM Version History</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>BOM Name</th>
+                            <th>Product</th>
+                            <th>Version</th>
+                            <th>Labor Cost</th>
+                            <th>Overhead Cost</th>
+                            <th>Total Cost</th>
+                            <th>Change Reason</th>
+                            <th>Change Type</th>
+                            <th>Previous Ver.</th>
+                            <th>Created Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for v in all_versions %}
+                        <tr>
+                            <td><span class="fw-bold">{{ v.bom.name }}</span></td>
+                            <td>{{ v.bom.product.name }}</td>
+                            <td><span class="badge bg-primary">{{ v.version_number }}</span></td>
+                            <td>Rs {{ "%.2f"|format(v.labor_cost) }}</td>
+                            <td>Rs {{ "%.2f"|format(v.overhead_cost) }}</td>
+                            <td><span class="text-primary fw-bold">Rs {{ "%.2f"|format(v.total_cost) }}</span></td>
+                            <td><small>{{ v.change_reason or 'N/A' }}</small></td>
+                            <td>
+                                {% if v.change_type == 'component_cost' %}
+                                <span class="badge bg-info">Component Cost</span>
+                                {% elif v.change_type == 'overhead_added' %}
+                                <span class="badge bg-warning">Overhead Change</span>
+                                {% elif v.change_type == 'manual' %}
+                                <span class="badge bg-secondary">Manual</span>
+                                {% else %}
+                                <span class="badge bg-light text-dark">{{ v.change_type or 'N/A' }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ v.previous_version or 'v1' }}</td>
+                            <td>{{ v.created_at.strftime('%Y-%m-%d %H:%M') if v.created_at else 'N/A' }}</td>
+                        </tr>
+                        {% endfor %}
+                        {% if not all_versions %}
+                        <tr>
+                            <td colspan="10" class="text-center py-5 text-muted">
+                                <i class="fas fa-history mb-3 d-block fa-2x"></i>
+                                No version history found for the selected criteria.
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <!-- Current BOMs Table -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>BOM Name</th>
+                            <th>Product</th>
+                            <th>Version</th>
+                            <th class="text-center">Components</th>
+                            <th>Labor Cost</th>
+                            <th>Overhead Cost</th>
+                            <th>Total Cost</th>
+                            <th class="text-center">Status</th>
+                            <th>Created Date</th>
+                            <th class="text-center">Versions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for b in boms %}
+                        <tr>
+                            <td><span class="fw-bold">{{ b.name }}</span></td>
+                            <td>{{ b.product.name }}</td>
+                            <td><span class="badge bg-secondary">{{ b.version }}</span></td>
+                            <td class="text-center">{{ b.items|length }}</td>
+                            <td>Rs {{ "%.2f"|format(b.labor_cost) }}</td>
+                            <td>Rs {{ "%.2f"|format(b.overhead_cost) }}</td>
+                            <td><span class="text-primary fw-bold">Rs {{ "%.2f"|format(b.total_cost) }}</span></td>
+                            <td class="text-center">
+                                {% if b.is_active %}
+                                <span class="badge bg-success">Active</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ b.created_at.strftime('%Y-%m-%d') if b.created_at else 'N/A' }}</td>
+                            <td class="text-center">
+                                {% set version_count = all_versions|selectattr('bom_id', 'equalto', b.id)|list|length %}
+                                <span class="badge bg-info">{{ version_count }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% if not boms %}
+                        <tr>
+                            <td colspan="10" class="text-center py-5 text-muted">
+                                <i class="fas fa-search mb-3 d-block fa-2x"></i>
+                                No BOM records found for the selected criteria.
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

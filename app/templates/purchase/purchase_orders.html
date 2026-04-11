@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Purchase Orders{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="h3 mb-0"><i class="fas fa-clipboard-list me-2 text-primary"></i>Purchase Orders</h2>
+            <small class="text-muted">Create & manage orders before converting to bills</small>
+        </div>
+        <a href="{{ url_for('purchase.create_po') }}" class="btn btn-primary">
+            <i class="fas fa-plus me-1"></i> New Purchase Order
+        </a>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="card shadow mb-4">
+        <div class="card-body py-2">
+            <form method="GET" class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <select name="status" class="form-select" onchange="this.form.submit()">
+                        <option value="all" {% if current_status=='all' %}selected{% endif %}>All Statuses</option>
+                        <option value="Draft" {% if current_status=='Draft' %}selected{% endif %}>Draft</option>
+                        <option value="Confirmed" {% if current_status=='Confirmed' %}selected{% endif %}>Confirmed</option>
+                        <option value="Converted" {% if current_status=='Converted' %}selected{% endif %}>Converted</option>
+                        <option value="Cancelled" {% if current_status=='Cancelled' %}selected{% endif %}>Cancelled</option>
+                    </select>
+                </div>
+                <div class="col-md-5">
+                    <div class="input-group">
+                        <input type="text" name="search" value="{{ search }}" class="form-control" placeholder="Search by PO# or Vendor name…">
+                        <button class="btn btn-outline-secondary" type="submit"><i class="fas fa-search"></i></button>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <a href="{{ url_for('purchase.purchase_orders') }}" class="btn btn-outline-secondary w-100">Clear</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- PO Table -->
+    <div class="card shadow">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>PO #</th>
+                            <th>Vendor</th>
+                            <th>Created</th>
+                            <th>Expected</th>
+                            <th class="text-end">Subtotal</th>
+                            <th class="text-end">Shipping</th>
+                            <th class="text-end">Total</th>
+                            <th class="text-center">Status</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for po in orders %}
+                        <tr>
+                            <td>
+                                <a href="{{ url_for('purchase.po_detail', id=po.id) }}" class="fw-bold text-primary">{{ po.po_number }}</a>
+                            </td>
+                            <td>{{ po.vendor.name }}</td>
+                            <td>{{ po.date.strftime('%d-%m-%Y') }}</td>
+                            <td>{{ po.expected_date.strftime('%d-%m-%Y') if po.expected_date else '—' }}</td>
+                            <td class="text-end">Rs {{ '{:,.0f}'.format(po.subtotal) }}</td>
+                            <td class="text-end {% if po.shipping_charge > 0 %}text-info{% endif %}">
+                                {% if po.shipping_charge > 0 %}Rs {{ '{:,.0f}'.format(po.shipping_charge) }}{% else %}—{% endif %}
+                            </td>
+                            <td class="text-end fw-bold">Rs {{ '{:,.0f}'.format(po.total) }}</td>
+                            <td class="text-center">
+                                <span class="badge
+                                    {% if po.status == 'Draft' %}bg-secondary
+                                    {% elif po.status == 'Confirmed' %}bg-primary
+                                    {% elif po.status == 'Converted' %}bg-success
+                                    {% else %}bg-danger{% endif %}">
+                                    {{ po.status }}
+                                </span>
+                            </td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{{ url_for('purchase.po_detail', id=po.id) }}" class="btn btn-outline-primary" title="View">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    {% if po.status == 'Draft' %}
+                                    <form action="{{ url_for('purchase.confirm_po', id=po.id) }}" method="POST" class="d-inline">
+                                        <button class="btn btn-outline-success" type="submit" title="Confirm"><i class="fas fa-check"></i></button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="9" class="text-center text-muted py-5">
+                                <i class="fas fa-clipboard-list fa-2x mb-2 d-block opacity-25"></i>
+                                No purchase orders found.
+                                <a href="{{ url_for('purchase.create_po') }}">Create one now</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

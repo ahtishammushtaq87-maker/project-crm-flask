@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block title %}Product Development - Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-flask me-2"></i>Product Development</h2>
+    <a href="{{ url_for('product_development.create') }}" class="btn btn-primary">
+        <i class="fas fa-plus me-1"></i> New Project
+    </a>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card-stats">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <h5 class="mb-0">{{ total_projects }}</h5>
+                    <small>Total Projects</small>
+                </div>
+                <i class="fas fa-project-diagram stats-icon"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card-stats" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <h5 class="mb-0">{{ active_projects }}</h5>
+                    <small>Active Projects</small>
+                </div>
+                <i class="fas fa-spinner stats-icon"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card-stats" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <h5 class="mb-0">{{ completed_projects }}</h5>
+                    <small>Completed</small>
+                </div>
+                <i class="fas fa-check-circle stats-icon"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card-stats" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <h5 class="mb-0">{{ delayed_projects }}</h5>
+                    <small>Delayed</small>
+                </div>
+                <i class="fas fa-exclamation-triangle stats-icon"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="fas fa-coins me-2"></i>Total Investment</h5>
+            </div>
+            <div class="card-body text-center">
+                <h2 class="text-success">PKR {{ "{:,.0f}".format(total_investment) }}</h2>
+                <small class="text-muted">Across all projects</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0"><i class="fas fa-clock me-2"></i>Near Deadline</h5>
+            </div>
+            <div class="card-body">
+                {% if near_deadline %}
+                <ul class="list-group list-group-flush">
+                    {% for p in near_deadline %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <a href="{{ url_for('product_development.view', project_id=p.id) }}">{{ p.pdv_code }}</a>
+                        <span class="badge bg-danger">{{ ((p.promise_date - today).days) }} days</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted mb-0">No projects near deadline</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">All Projects</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>PDV Code</th>
+                        <th>Product Name</th>
+                        <th>Phase</th>
+                        <th>Status</th>
+                        <th>Budget</th>
+                        <th>Investment</th>
+                        <th>Promise Date</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for project in projects %}
+                    <tr class="{{ 'table-danger' if project.is_delayed else '' }}">
+                        <td><strong>{{ project.pdv_code }}</strong></td>
+                        <td>{{ project.product_name }}</td>
+                        <td>
+                            <span class="badge bg-info">{{ project.phase_name }}</span>
+                        </td>
+                        <td>
+                            {% if project.status == 'Active' %}
+                            <span class="badge bg-success">Active</span>
+                            {% elif project.status == 'Completed' %}
+                            <span class="badge bg-primary">Completed</span>
+                            {% elif project.status == 'Draft' %}
+                            <span class="badge bg-secondary">Draft</span>
+                            {% else %}
+                            <span class="badge bg-warning">On Hold</span>
+                            {% endif %}
+                        </td>
+                        <td>PKR {{ "{:,.0f}".format(project.budget) }}</td>
+                        <td>PKR {{ "{:,.0f}".format(project.total_investment) }}</td>
+                        <td>{{ project.promise_date.strftime('%Y-%m-%d') if project.promise_date else '-' }}</td>
+                        <td>
+                            <a href="{{ url_for('product_development.view', project_id=project.id) }}" class="btn btn-sm btn-info">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                            <a href="{{ url_for('product_development.edit', project_id=project.id) }}" class="btn btn-sm btn-warning">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted">No projects found. Create your first project!</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

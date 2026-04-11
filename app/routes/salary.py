@@ -28,6 +28,7 @@ def add_staff():
             joining_date=form.joining_date.data or datetime.utcnow().date(),
             is_active=form.is_active.data
         )
+        staff.calculate_daily_salary()  # Calculate daily salary
         db.session.add(staff)
         db.session.commit()
         flash('Staff member added successfully!', 'success')
@@ -45,6 +46,7 @@ def edit_staff(id):
         staff.monthly_salary = form.monthly_salary.data
         staff.joining_date = form.joining_date.data
         staff.is_active = form.is_active.data
+        staff.calculate_daily_salary()  # Recalculate daily salary
         db.session.commit()
         flash('Staff details updated!', 'success')
         return redirect(url_for('salary.staff_list'))

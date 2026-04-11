@@ -83,8 +83,8 @@
                                     <td>{{ item.component.sku }}</td>
                                     <td>{{ item.component.name }}</td>
                                     <td class="text-end">{{ item.quantity }}</td>
-                                    <td class="text-end">Rs {{ "%.2f"|format(item.component.cost_price) }}</td>
-                                    <td class="text-end">Rs {{ "%.2f"|format(item.cost) }}</td>
+                                    <td class="text-end">Rs {{ "%.2f"|format(item.unit_cost) }}</td>
+                                    <td class="text-end">Rs {{ "%.2f"|format(item.total_cost) }}</td>
                                 </tr>
                                 {% else %}
                                 <tr>

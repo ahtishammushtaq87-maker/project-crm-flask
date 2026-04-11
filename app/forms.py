@@ -1,8 +1,14 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, FloatField, IntegerField, SelectField, TextAreaField, DateField, FileField, BooleanField
+from wtforms import StringField, FloatField, IntegerField, SelectField, TextAreaField, DateField, FileField, BooleanField, DecimalField
 from wtforms.validators import DataRequired, Email, Optional, NumberRange, EqualTo, InputRequired
 from wtforms.fields import DateTimeField
 from datetime import datetime
+from decimal import Decimal
+from datetime import datetime
+
+class LoginForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired()])
+    password = StringField('Password', validators=[DataRequired()])
 
 class ProductForm(FlaskForm):
     name = StringField('Product Name', validators=[DataRequired()])
@@ -13,43 +19,17 @@ class ProductForm(FlaskForm):
     quantity = FloatField('Initial Quantity', default=0)
     reorder_level = FloatField('Reorder Level', default=0)
     category = StringField('Category')
-    is_manufactured = BooleanField('Is Manufactured Item', default=False)
-    image = FileField('Product Image')
 
-class VendorForm(FlaskForm):
-    name = StringField('Vendor Name', validators=[DataRequired()])
-    email = StringField('Email', validators=[Optional(), Email()])
-    phone = StringField('Phone')
+class WarehouseForm(FlaskForm):
+    name = StringField('Warehouse Name', validators=[DataRequired()])
     address = TextAreaField('Address')
-    gst_number = StringField('GST Number')
+    manager = StringField('Manager')
+    capacity = FloatField('Capacity', validators=[Optional(), NumberRange(min=0)])
 
-class CustomerForm(FlaskForm):
-    name = StringField('Customer Name', validators=[DataRequired()])
-    email = StringField('Email', validators=[Optional(), Email()])
-    phone = StringField('Phone')
-    address = TextAreaField('Address')
-    gst_number = StringField('GST Number')
-
-class LoginForm(FlaskForm):
-    username = StringField('Username', validators=[DataRequired()])
-    password = StringField('Password', validators=[DataRequired()])
-
-class ExpenseForm(FlaskForm):
-    date = DateField('Date', validators=[DataRequired()])
-    category_id = SelectField('Category', coerce=int, validators=[DataRequired()])
-    vendor_id = SelectField('Vendor (Optional)', coerce=int, validators=[Optional()])
-    description = TextAreaField('Description')
-    amount = FloatField('Amount', validators=[DataRequired(), NumberRange(min=0)])
-    payment_method = StringField('Payment Method')
-    reference = StringField('Reference')
-    bill_image = FileField('Bill Image')
-    notes = TextAreaField('Notes')
-    is_bom_overhead = BooleanField('BOM Overhead Expense', default=False)
-    product_id = SelectField('Linked Finished Product (Overhead)', coerce=int, validators=[Optional()])
-
-class ExpenseCategoryForm(FlaskForm):
-    name = StringField('Category Name', validators=[DataRequired()])
-    description = TextAreaField('Description')
+def get_warehouse_choices(warehouses=None):
+    if warehouses is None:
+        return [(0, 'No Warehouse')]
+    return [(0, 'No Warehouse')] + [(w.id, w.name) for w in warehouses]
 
 class InvoiceSettingsForm(FlaskForm):
     default_notes = TextAreaField('Default Invoice Notes')
@@ -61,24 +41,47 @@ class InvoiceSettingsForm(FlaskForm):
     swift_code = StringField('SWIFT Code')
     bank_address = TextAreaField('Bank Address')
     payment_instructions = TextAreaField('Payment Instructions')
+    invoice_prefix = StringField('Invoice Prefix')
+    invoice_suffix = StringField('Invoice Suffix')
+    next_number = IntegerField('Next Invoice Number', default=1)
+    tax_name = StringField('Tax Name', default='GST')
+    tax_rate = DecimalField('Tax Rate (%)', default=lambda: Decimal('10'))
+    payment_terms = TextAreaField('Payment Terms')
+    notes = TextAreaField('Notes')
+
+class PurchaseSettingsForm(FlaskForm):
+    default_notes = TextAreaField('Default Purchase Bill Notes')
+    default_terms = TextAreaField('Default Terms & Conditions (Policy)')
 
 class SaleForm(FlaskForm):
     customer_id = SelectField('Customer', coerce=int, validators=[DataRequired()])
     date = DateField('Date', validators=[DataRequired()])
-    # Items will be handled dynamically
+
+class CustomerForm(FlaskForm):
+    name = StringField('Customer Name', validators=[DataRequired()])
+    email = StringField('Email', validators=[Optional(), Email()])
+    phone = StringField('Phone')
+    address = TextAreaField('Address')
+    gst_number = StringField('GST Number')
 
 class PurchaseForm(FlaskForm):
     vendor_id = SelectField('Vendor', coerce=int, validators=[DataRequired()])
     date = DateField('Date', validators=[DataRequired()])
 
+class VendorForm(FlaskForm):
+    name = StringField('Vendor Name', validators=[DataRequired()])
+    email = StringField('Email', validators=[Optional(), Email()])
+    phone = StringField('Phone')
+    address = TextAreaField('Address')
+    shipping_address = TextAreaField(' Shipping Address')
+    gst_number = StringField('GST Number')
+
 class UserForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired()])
     email = StringField('Email', validators=[DataRequired(), Email()])
-    password = StringField('Password', validators=[DataRequired(message='Password is required')])  # Required for new users
+    password = StringField('Password', validators=[DataRequired(message='Password is required')])
     role = SelectField('Role', choices=[('admin', 'Admin'), ('manager', 'Manager'), ('user', 'Staff')], validators=[DataRequired()])
     is_active = SelectField('Status', choices=[('True', 'Active'), ('False', 'Inactive')], default='True', coerce=lambda x: x == 'True', validators=[InputRequired()])
-    
-    # Permissions
     can_view_sales = BooleanField('Sales Access', default=True)
     can_view_purchases = BooleanField('Purchases Access', default=True)
     can_view_inventory = BooleanField('Inventory Access', default=True)
@@ -88,15 +91,21 @@ class UserForm(FlaskForm):
     can_view_customers = BooleanField('Customers Access', default=True)
     can_view_reports = BooleanField('Reports Access', default=True)
     can_view_settings = BooleanField('Settings Access', default=True)
+    can_view_manufacturing = BooleanField('Manufacturing Access', default=True)
+    can_view_production = BooleanField('Production Access', default=True)
+    can_view_warehouse = BooleanField('Warehouse Access', default=True)
+    can_view_attendance = BooleanField('Attendance Access', default=True)
+    can_view_salary = BooleanField('Salary Access', default=True)
+    can_view_targets = BooleanField('Targets Access', default=True)
+    can_view_dashboard = BooleanField('Dashboard Access', default=True)
+    can_view_accounting = BooleanField('Accounting Access', default=True)
 
 class UserEditForm(FlaskForm):
-    username = StringField('Username', validators=[Optional()])  # Not editable, so optional
+    username = StringField('Username', validators=[Optional()])
     email = StringField('Email', validators=[DataRequired(), Email()])
-    password = StringField('Password', validators=[Optional()])  # Optional for edit
+    password = StringField('Password', validators=[Optional()])
     role = SelectField('Role', choices=[('admin', 'Admin'), ('manager', 'Manager'), ('user', 'Staff')], validators=[DataRequired()])
     is_active = SelectField('Status', choices=[('True', 'Active'), ('False', 'Inactive')], default='True', coerce=lambda x: x == 'True', validators=[InputRequired()])
-    
-    # Permissions
     can_view_sales = BooleanField('Sales Access', default=True)
     can_view_purchases = BooleanField('Purchases Access', default=True)
     can_view_inventory = BooleanField('Inventory Access', default=True)
@@ -106,6 +115,14 @@ class UserEditForm(FlaskForm):
     can_view_customers = BooleanField('Customers Access', default=True)
     can_view_reports = BooleanField('Reports Access', default=True)
     can_view_settings = BooleanField('Settings Access', default=True)
+    can_view_manufacturing = BooleanField('Manufacturing Access', default=True)
+    can_view_production = BooleanField('Production Access', default=True)
+    can_view_warehouse = BooleanField('Warehouse Access', default=True)
+    can_view_attendance = BooleanField('Attendance Access', default=True)
+    can_view_salary = BooleanField('Salary Access', default=True)
+    can_view_targets = BooleanField('Targets Access', default=True)
+    can_view_dashboard = BooleanField('Dashboard Access', default=True)
+    can_view_accounting = BooleanField('Accounting Access', default=True)
 
 class TaskForm(FlaskForm):
     title = StringField('Task Title', validators=[DataRequired()])
@@ -151,4 +168,49 @@ class SalaryPaymentForm(FlaskForm):
     payment_date = DateField('Payment Date', validators=[DataRequired()])
     payment_method = StringField('Payment Method', default='Cash')
     status = SelectField('Status', choices=[('paid', 'Paid'), ('pending', 'Pending')], default='paid')
+    notes = TextAreaField('Notes')
+
+class AttendanceForm(FlaskForm):
+    staff_id = SelectField('Staff', coerce=int, validators=[DataRequired()])
+    date = DateField('Date', validators=[DataRequired()])
+    status = SelectField('Status', choices=[('Present', 'Present'), ('Absent', 'Absent'), ('Leave', 'Leave')], validators=[DataRequired()])
+
+class ExpenseForm(FlaskForm):
+    reference = StringField('Reference')
+    description = StringField('Description', validators=[DataRequired()])
+    amount = FloatField('Amount', validators=[DataRequired(), NumberRange(min=0.01)])
+    date = DateField('Date', validators=[DataRequired()])
+    category_id = SelectField('Category', coerce=int, validators=[DataRequired()])
+    vendor_id = SelectField('Vendor (Optional)', coerce=int, validators=[Optional()])
+    payment_method = StringField('Payment Method')
+    notes = TextAreaField('Notes')
+    product_id = SelectField('Product (Optional)', coerce=int, validators=[Optional()])
+    bom_id = SelectField('BOM (Optional)', coerce=int, validators=[Optional()])
+    bill_image = FileField('Bill Image', validators=[Optional()])
+    is_monthly_divided = BooleanField('Is Monthly Divided', default=False)
+    monthly_start_date = DateField('Monthly Start Date', validators=[Optional()])
+    monthly_end_date = DateField('Monthly End Date', validators=[Optional()])
+    is_bom_overhead = BooleanField('Is BOM Overhead', default=False)
+
+class ExpenseCategoryForm(FlaskForm):
+    name = StringField('Category Name', validators=[DataRequired()])
+    description = TextAreaField('Description')
+    expense_type = SelectField('Type', choices=[('operational', 'Operational'), ('capital', 'Capital'), ('maintenance', 'Maintenance')], default='operational')
+
+class AccountForm(FlaskForm):
+    name = StringField('Account Name', validators=[DataRequired()])
+    account_type = SelectField('Type', choices=[('asset', 'Asset'), ('liability', 'Liability'), ('equity', 'Equity'), ('revenue', 'Revenue'), ('expense', 'Expense')], validators=[DataRequired()])
+    description = TextAreaField('Description')
+
+class TransactionForm(FlaskForm):
+    date = DateField('Date', validators=[DataRequired()])
+    description = StringField('Description', validators=[DataRequired()])
+    amount = FloatField('Amount', validators=[DataRequired(), NumberRange(min=0.01)])
+    debit_account_id = SelectField('Debit Account', coerce=int, validators=[DataRequired()])
+    credit_account_id = SelectField('Credit Account', coerce=int, validators=[DataRequired()])
+
+class PaymentForm(FlaskForm):
+    amount = FloatField('Amount', validators=[DataRequired(), NumberRange(min=0.01)])
+    date = DateField('Date', validators=[DataRequired()])
+    payment_method = StringField('Payment Method')
     notes = TextAreaField('Notes')

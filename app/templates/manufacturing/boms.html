@@ -23,6 +23,7 @@
                         <tr>
                             <th>BOM Name</th>
                             <th>Finished Product</th>
+                            <th>Version</th>
                             <th>Components</th>
                             <th>Labor Cost</th>
                             <th>Total Cost</th>
@@ -36,6 +37,9 @@
                             <td>
                                 <strong>{{ bom.product.name }}</strong><br>
                                 <small class="text-muted">{{ bom.product.sku }}</small>
+                            </td>
+                            <td>
+                                <span class="badge badge-primary">{{ bom.version }}</span>
                             </td>
                             <td>{{ bom.items|length }} items</td>
                             <td>Rs {{ "%.2f"|format(bom.labor_cost) }}</td>

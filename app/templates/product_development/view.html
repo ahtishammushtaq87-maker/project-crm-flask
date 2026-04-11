@@ -1,0 +1,736 @@
+{% extends "base.html" %}
+
+{% block title %}{{ project.pdv_code }} - {{ project.product_name }}{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="{{ url_for('product_development.index') }}" class="btn btn-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
+    </a>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h4 class="mb-0">{{ project.pdv_code }} - {{ project.product_name }}</h4>
+                        <small>Phase {{ project.current_phase }}: {{ project.phase_name }}</small>
+                    </div>
+                    <div>
+                        {% if project.status == 'Active' %}
+                        <span class="badge bg-success fs-6">Active</span>
+                        {% elif project.status == 'Completed' %}
+                        <span class="badge bg-primary fs-6">Completed</span>
+                        {% elif project.status == 'Draft' %}
+                        <span class="badge bg-secondary fs-6">Draft</span>
+                        {% else %}
+                        <span class="badge bg-warning fs-6">On Hold</span>
+                        {% endif %}
+                        {% if project.is_delayed %}
+                        <span class="badge bg-danger fs-6 ms-1"><i class="fas fa-exclamation-triangle"></i> Delayed</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <small class="text-muted">Start Date</small>
+                        <p class="mb-1">{{ project.start_date.strftime('%Y-%m-%d') if project.start_date else '-' }}</p>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted">Promise Date</small>
+                        <p class="mb-1">{{ project.promise_date.strftime('%Y-%m-%d') if project.promise_date else '-' }}</p>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted">Budget</small>
+                        <p class="mb-1">PKR {{ "{:,.0f}".format(project.budget) }}</p>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted">Total Investment</small>
+                        <p class="mb-1 text-success fw-bold">PKR {{ "{:,.0f}".format(project.total_investment) }}</p>
+                    </div>
+                </div>
+                
+                <div class="mt-3">
+                    <small class="text-muted">Progress</small>
+                    <div class="progress" style="height: 20px;">
+                        <div class="progress-bar" role="progressbar" style="width: {{ (project.current_phase / 6) * 100 }}%">
+                            {{ project.current_phase }}/6 Phases
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <ul class="nav nav-tabs" id="phaseTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {{ 'active' if project.current_phase == 1 else '' }}" id="phase1-tab" data-bs-toggle="tab" data-bs-target="#phase1" type="button">
+                    <i class="fas fa-list me-1"></i> Phase 1: BOM
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {{ 'active' if project.current_phase == 2 else '' }}" id="phase2-tab" data-bs-toggle="tab" data-bs-target="#phase2" type="button">
+                    <i class="fas fa-cogs me-1"></i> Phase 2: Components
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {{ 'active' if project.current_phase == 3 else '' }}" id="phase3-tab" data-bs-toggle="tab" data-bs-target="#phase3" type="button">
+                    <i class="fas fa-tools me-1"></i> Phase 3: Tooling
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {{ 'active' if project.current_phase == 4 else '' }}" id="phase4-tab" data-bs-toggle="tab" data-bs-target="#phase4" type="button">
+                    <i class="fas fa-vial me-1"></i> Phase 4: Testing
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {{ 'active' if project.current_phase == 5 else '' }}" id="phase5-tab" data-bs-toggle="tab" data-bs-target="#phase5" type="button">
+                    <i class="fas fa-check-circle me-1"></i> Phase 5: Approval
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {{ 'active' if project.current_phase == 6 else '' }}" id="phase6-tab" data-bs-toggle="tab" data-bs-target="#phase6" type="button">
+                    <i class="fas fa-rocket me-1"></i> Phase 6: Production
+                </button>
+            </li>
+        </ul>
+        
+        <div class="tab-content p-3 border border-top-0 bg-white" id="phaseTabsContent">
+            <!-- Phase 1: BOM -->
+            <div class="tab-pane fade {{ 'show active' if project.current_phase == 1 else '' }}" id="phase1" role="tabpanel">
+                <h5><i class="fas fa-list me-2"></i>Bill of Materials</h5>
+                <div class="mb-3">
+                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addBOMModal">
+                        <i class="fas fa-plus me-1"></i> Add Material
+                    </button>
+                </div>
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Material Name</th>
+                            <th>SKU</th>
+                            <th>Qty/Unit</th>
+                            <th>Est. Cost</th>
+                            <th>Total</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in project.bom_items %}
+                        <tr>
+                            <td>{{ item.material_name }}</td>
+                            <td>{{ item.material.sku if item.material else '-' }}</td>
+                            <td>{{ item.quantity_per_unit }}</td>
+                            <td>PKR {{ "{:,.0f}".format(item.estimated_cost) }}</td>
+                            <td>PKR {{ "{:,.0f}".format(item.total_cost) }}</td>
+                            <td>
+                                <a href="{{ url_for('product_development.delete_bom', bom_id=item.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete this item?')">
+                                    <i class="fas fa-trash"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="6" class="text-muted">No BOM items added</td></tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="fw-bold">
+                            <td colspan="4">Total BOM Cost</td>
+                            <td>PKR {{ "{:,.0f}".format(project.total_bom_cost) }}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            
+            <!-- Phase 2: Components -->
+            <div class="tab-pane fade {{ 'show active' if project.current_phase == 2 else '' }}" id="phase2" role="tabpanel">
+                <h5><i class="fas fa-cogs me-2"></i>Component Management</h5>
+                <div class="mb-3">
+                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addComponentModal">
+                        <i class="fas fa-plus me-1"></i> Add Component
+                    </button>
+                </div>
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Component</th>
+                            <th>Type</th>
+                            <th>Qty</th>
+                            <th>Vendor</th>
+                            <th>Cost</th>
+                            <th>Link</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for comp in project.components %}
+                        <tr>
+                            <td>{{ comp.component_name }}</td>
+                            <td>
+                                {% if comp.component_type == 'BUY' %}
+                                <span class="badge bg-info">BUY</span>
+                                {% elif comp.component_type == 'MAKE' %}
+                                <span class="badge bg-primary">MAKE</span>
+                                {% else %}
+                                <span class="badge bg-warning">OUTSOURCE</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ comp.quantity }}</td>
+                            <td>{{ comp.vendor.name if comp.vendor else '-' }}</td>
+                            <td>PKR {{ "{:,.0f}".format(comp.cost) }}</td>
+                            <td>
+                                {% if comp.purchase_order_id %}
+                                <a href="{{ url_for('purchase.edit_order', order_id=comp.purchase_order_id) }}" class="btn btn-sm btn-info">PO</a>
+                                {% elif comp.manufacturing_order_id %}
+                                <a href="{{ url_for('manufacturing.view_order', order_id=comp.manufacturing_order_id) }}" class="btn btn-sm btn-info">MO</a>
+                                {% else %}
+                                {% if comp.component_type != 'MAKE' %}
+                                <a href="{{ url_for('product_development.create_purchase_order_from_component', comp_id=comp.id) }}" class="btn btn-sm btn-success">Create PO</a>
+                                {% else %}
+                                <a href="{{ url_for('product_development.create_manufacturing_order_from_component', comp_id=comp.id) }}" class="btn btn-sm btn-success">Create MO</a>
+                                {% endif %}
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{{ url_for('product_development.delete_component', comp_id=comp.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')">
+                                    <i class="fas fa-trash"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="7" class="text-muted">No components added</td></tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="fw-bold">
+                            <td colspan="4">Total Component Cost</td>
+                            <td>PKR {{ "{:,.0f}".format(project.total_component_cost) }}</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            
+            <!-- Phase 3: Tooling -->
+            <div class="tab-pane fade {{ 'show active' if project.current_phase == 3 else '' }}" id="phase3" role="tabpanel">
+                <h5><i class="fas fa-tools me-2"></i>Tooling Development</h5>
+                <div class="mb-3">
+                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addToolingModal">
+                        <i class="fas fa-plus me-1"></i> Add Tool
+                    </button>
+                </div>
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Tool Name</th>
+                            <th>Type</th>
+                            <th>Qty</th>
+                            <th>Vendor</th>
+                            <th>Cost</th>
+                            <th>Status</th>
+                            <th>Expected</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tool in project.tooling %}
+                        <tr>
+                            <td>{{ tool.tool_name }}</td>
+                            <td>{{ tool.tool_type }}</td>
+                            <td>{{ tool.quantity }}</td>
+                            <td>{{ tool.vendor.name if tool.vendor else '-' }}</td>
+                            <td>PKR {{ "{:,.0f}".format(tool.cost) }}</td>
+                            <td>
+                                {% if tool.status == 'Planned' %}
+                                <span class="badge bg-secondary">Planned</span>
+                                {% elif tool.status == 'In Progress' %}
+                                <span class="badge bg-warning">In Progress</span>
+                                {% else %}
+                                <span class="badge bg-success">Completed</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ tool.expected_completion.strftime('%Y-%m-%d') if tool.expected_completion else '-' }}</td>
+                            <td>
+                                {% if tool.status != 'Completed' %}
+                                <form method="POST" action="{{ url_for('product_development.update_tooling_status', tool_id=tool.id) }}" class="d-inline">
+                                    <select name="status" class="form-select form-select-sm d-inline-block" style="width:auto;" onchange="this.form.submit()">
+                                        <option value="Planned" {{ 'selected' if tool.status == 'Planned' else '' }}>Planned</option>
+                                        <option value="In Progress" {{ 'selected' if tool.status == 'In Progress' else '' }}>In Progress</option>
+                                        <option value="Completed" {{ 'selected' if tool.status == 'Completed' else '' }}>Completed</option>
+                                    </select>
+                                </form>
+                                {% endif %}
+                                <a href="{{ url_for('product_development.delete_tooling', tool_id=tool.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')">
+                                    <i class="fas fa-trash"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="8" class="text-muted">No tooling added</td></tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="fw-bold">
+                            <td colspan="4">Total Tooling Cost</td>
+                            <td>PKR {{ "{:,.0f}".format(project.total_tooling_cost) }}</td>
+                            <td colspan="3"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            
+            <!-- Phase 4: Testing -->
+            <div class="tab-pane fade {{ 'show active' if project.current_phase == 4 else '' }}" id="phase4" role="tabpanel">
+                <h5><i class="fas fa-vial me-2"></i>Prototype Testing</h5>
+                <div class="mb-3">
+                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addTestingModal">
+                        <i class="fas fa-plus me-1"></i> Add Trial
+                    </button>
+                </div>
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Trial</th>
+                            <th>Date</th>
+                            <th>Produced</th>
+                            <th>Rejected</th>
+                            <th>Passed</th>
+                            <th>Pass Rate</th>
+                            <th>Test Type</th>
+                            <th>Result</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for test in project.testing %}
+                        <tr>
+                            <td>T{{ test.trial_number }}</td>
+                            <td>{{ test.trial_date.strftime('%Y-%m-%d') if test.trial_date else '-' }}</td>
+                            <td>{{ test.quantity_produced }}</td>
+                            <td>{{ test.rejected_quantity }}</td>
+                            <td>{{ test.passed_quantity }}</td>
+                            <td>{{ test.pass_rate }}%</td>
+                            <td>{{ test.test_type }}</td>
+                            <td>
+                                {% if test.result == 'PASS' %}
+                                <span class="badge bg-success">PASS</span>
+                                {% elif test.result == 'FAIL' %}
+                                <span class="badge bg-danger">FAIL</span>
+                                {% else %}
+                                <span class="badge bg-warning">PENDING</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if test.result == 'PENDING' %}
+                                <form method="POST" action="{{ url_for('product_development.update_testing_result', test_id=test.id) }}" class="d-inline">
+                                    <select name="result" class="form-select form-select-sm d-inline-block" style="width:auto;" onchange="this.form.submit()">
+                                        <option value="PENDING" {{ 'selected' if test.result == 'PENDING' else '' }}>Pending</option>
+                                        <option value="PASS">Pass</option>
+                                        <option value="FAIL">Fail</option>
+                                    </select>
+                                </form>
+                                {% endif %}
+                                <a href="{{ url_for('product_development.delete_testing', test_id=test.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')">
+                                    <i class="fas fa-trash"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="9" class="text-muted">No testing records</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Phase 5: Approval -->
+            <div class="tab-pane fade {{ 'show active' if project.current_phase == 5 else '' }}" id="phase5" role="tabpanel">
+                <h5><i class="fas fa-check-circle me-2"></i>Approval Gate</h5>
+                <div class="card">
+                    <div class="card-body">
+                        <form method="POST" action="{{ url_for('product_development.update_approval', project_id=project.id) }}">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <label class="form-label">Approval Status</label>
+                                    <select name="approval_status" class="form-select">
+                                        <option value="Pending" {{ 'selected' if project.approval and project.approval.approval_status == 'Pending' else '' }}>Pending</option>
+                                        <option value="Approved" {{ 'selected' if project.approval and project.approval.approval_status == 'Approved' else '' }}>Approved</option>
+                                        <option value="Rejected" {{ 'selected' if project.approval and project.approval.approval_status == 'Rejected' else '' }}>Rejected</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-8">
+                                    <label class="form-label">Remarks</label>
+                                    <textarea name="remarks" class="form-control" rows="2">{{ project.approval.remarks if project.approval else '' }}</textarea>
+                                </div>
+                            </div>
+                            <div class="mt-3">
+                                <button type="submit" class="btn btn-primary">Update Approval</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Phase 6: Production -->
+            <div class="tab-pane fade {{ 'show active' if project.current_phase == 6 else '' }}" id="phase6" role="tabpanel">
+                <h5><i class="fas fa-rocket me-2"></i>Production Activation</h5>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card mb-3">
+                            <div class="card-header bg-info text-white">
+                                <h6 class="mb-0">Assets Created</h6>
+                            </div>
+                            <div class="card-body">
+                                <button class="btn btn-sm btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#addAssetModal">
+                                    <i class="fas fa-plus me-1"></i> Add Asset
+                                </button>
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Asset Name</th>
+                                            <th>Tag</th>
+                                            <th>Value</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for asset in project.assets %}
+                                        <tr>
+                                            <td>{{ asset.asset_name }}</td>
+                                            <td>{{ asset.asset_tag }}</td>
+                                            <td>PKR {{ "{:,.0f}".format(asset.value) }}</td>
+                                            <td>
+                                                {% if asset.is_activated %}
+                                                <span class="badge bg-success">Active</span>
+                                                {% else %}
+                                                <span class="badge bg-secondary">Inactive</span>
+                                                <a href="{{ url_for('product_development.activate_asset', asset_id=asset.id) }}" class="btn btn-sm btn-success">Activate</a>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% else %}
+                                        <tr><td colspan="4" class="text-muted">No assets created</td></tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="card mb-3">
+                            <div class="card-header bg-success text-white">
+                                <h6 class="mb-0">Financial Summary</h6>
+                            </div>
+                            <div class="card-body">
+                                <table class="table table-sm">
+                                    <tr><td>BOM Cost</td><td class="text-end">PKR {{ "{:,.0f}".format(project.total_bom_cost) }}</td></tr>
+                                    <tr><td>Component Cost</td><td class="text-end">PKR {{ "{:,.0f}".format(project.total_component_cost) }}</td></tr>
+                                    <tr><td>Tooling Cost</td><td class="text-end">PKR {{ "{:,.0f}".format(project.total_tooling_cost) }}</td></tr>
+                                    <tr class="fw-bold"><td>TOTAL INVESTMENT</td><td class="text-end">PKR {{ "{:,.0f}".format(project.total_investment) }}</td></tr>
+                                    <tr><td>Budget</td><td class="text-end">PKR {{ "{:,.0f}".format(project.budget) }}</td></tr>
+                                    <tr class="{{ 'text-success' if project.budget_vs_actual >= 0 else 'text-danger' }}">
+                                        <td>Budget vs Actual</td>
+                                        <td class="text-end">PKR {{ "{:,.0f}".format(project.budget_vs_actual) }}</td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        {% if project.status != 'Completed' %}
+                        <div class="card">
+                            <div class="card-body text-center">
+                                {% if project.approval and project.approval.approval_status == 'Approved' %}
+                                <form method="POST" action="{{ url_for('product_development.activate_production', project_id=project.id) }}">
+                                    <button type="submit" class="btn btn-success btn-lg">
+                                        <i class="fas fa-rocket me-2"></i> Activate for Production
+                                    </button>
+                                </form>
+                                <small class="text-muted">This will mark project as completed and create assets</small>
+                                {% else %}
+                                <div class="alert alert-warning">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    Project must be approved before activating production
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modals -->
+<!-- Add BOM Modal -->
+<div class="modal fade" id="addBOMModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('product_development.add_bom', project_id=project.id) }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add BOM Item</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label">Material Name</label>
+                        <input type="text" name="material_name" class="form-control" required>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">SKU (optional)</label>
+                        <select name="sku_id" class="form-select">
+                            <option value="">-- Select --</option>
+                            {% for p in products|default([]) %}
+                            <option value="{{ p.id }}">{{ p.name }} ({{ p.sku }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Quantity per Unit</label>
+                        <input type="number" name="quantity_per_unit" class="form-control" value="1" step="0.01">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Estimated Cost (PKR)</label>
+                        <input type="number" name="estimated_cost" class="form-control" step="0.01" value="0">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Notes</label>
+                        <textarea name="notes" class="form-control" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Component Modal -->
+<div class="modal fade" id="addComponentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('product_development.add_component', project_id=project.id) }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Component</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label">Component Name</label>
+                        <input type="text" name="component_name" class="form-control" required>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Type</label>
+                        <select name="component_type" class="form-select">
+                            <option value="BUY">BUY (Purchase)</option>
+                            <option value="MAKE">MAKE (In-house)</option>
+                            <option value="OUTSOURCE">OUTSOURCE (Vendor)</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Quantity</label>
+                        <input type="number" name="quantity" class="form-control" value="1" step="0.01">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Vendor</label>
+                        <select name="vendor_id" class="form-select">
+                            <option value="">-- Select --</option>
+                            {% for v in vendors|default([]) %}
+                            <option value="{{ v.id }}">{{ v.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Estimated Cost (PKR)</label>
+                        <input type="number" name="estimated_cost" class="form-control" step="0.01" value="0">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Notes</label>
+                        <textarea name="notes" class="form-control" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Tooling Modal -->
+<div class="modal fade" id="addToolingModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('product_development.add_tooling', project_id=project.id) }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Tooling</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label">Tool Name</label>
+                        <input type="text" name="tool_name" class="form-control" required>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Tool Type</label>
+                        <select name="tool_type" class="form-select">
+                            <option value="mold">Mold</option>
+                            <option value="die">Die</option>
+                            <option value="injection">Injection</option>
+                            <option value="forging">Forging</option>
+                            <option value="jig">Jig</option>
+                            <option value="fixture">Fixture</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Quantity</label>
+                        <input type="number" name="quantity" class="form-control" value="1" step="0.01">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Vendor</label>
+                        <select name="vendor_id" class="form-select">
+                            <option value="">-- Select --</option>
+                            {% for v in vendors|default([]) %}
+                            <option value="{{ v.id }}">{{ v.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Cost (PKR)</label>
+                        <input type="number" name="cost" class="form-control" step="0.01" value="0">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Expected Completion</label>
+                        <input type="date" name="expected_completion" class="form-control">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Notes</label>
+                        <textarea name="notes" class="form-control" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Testing Modal -->
+<div class="modal fade" id="addTestingModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('product_development.add_testing', project_id=project.id) }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Trial/Testing</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label">Trial Date</label>
+                        <input type="date" name="trial_date" class="form-control" value="{{ today }}">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Quantity Produced</label>
+                        <input type="number" name="quantity_produced" class="form-control" step="0.01" value="0">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Rejected Quantity</label>
+                        <input type="number" name="rejected_quantity" class="form-control" step="0.01" value="0">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Test Type</label>
+                        <select name="test_type" class="form-select">
+                            <option value="Functional">Functional</option>
+                            <option value="Dimensional">Dimensional</option>
+                            <option value="Final">Final</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Notes</label>
+                        <textarea name="notes" class="form-control" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Add Trial</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Asset Modal -->
+<div class="modal fade" id="addAssetModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('product_development.add_asset', project_id=project.id) }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Asset</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label">Link to Tooling (optional)</label>
+                        <select name="tooling_id" class="form-select">
+                            <option value="">-- Select --</option>
+                            {% for tool in project.tooling %}
+                            <option value="{{ tool.id }}">{{ tool.tool_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Asset Name</label>
+                        <input type="text" name="asset_name" class="form-control" required>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Value (PKR)</label>
+                        <input type="number" name="value" class="form-control" step="0.01" value="0">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Useful Life (Years)</label>
+                        <input type="number" name="useful_life_years" class="form-control" value="5">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Depreciation Method</label>
+                        <select name="depreciation_method" class="form-select">
+                            <option value="Straight Line">Straight Line</option>
+                            <option value="Reducing Balance">Reducing Balance</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Notes</label>
+                        <textarea name="notes" class="form-control" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Add Asset</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var triggerTab = document.querySelector('#phase{{ project.current_phase }}-tab');
+    if (triggerTab) {
+        var tab = new bootstrap.Tab(triggerTab);
+        tab.show();
+    }
+});
+</script>
+{% endblock %}
