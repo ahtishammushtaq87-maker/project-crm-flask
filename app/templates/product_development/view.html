@@ -188,9 +188,15 @@
                             <td>PKR {{ "{:,.0f}".format(comp.cost) }}</td>
                             <td>
                                 {% if comp.purchase_order_id %}
+<<<<<<< HEAD
                                 <a href="{{ url_for('purchase.edit_order', order_id=comp.purchase_order_id) }}" class="btn btn-sm btn-info">PO</a>
                                 {% elif comp.manufacturing_order_id %}
                                 <a href="{{ url_for('manufacturing.view_order', order_id=comp.manufacturing_order_id) }}" class="btn btn-sm btn-info">MO</a>
+=======
+                                <a href="{{ url_for('purchase.po_detail', id=comp.purchase_order_id) }}" class="btn btn-sm btn-info">PO</a>
+                                {% elif comp.manufacturing_order_id %}
+                                <a href="{{ url_for('manufacturing.order_details', id=comp.manufacturing_order_id) }}" class="btn btn-sm btn-info">MO</a>
+>>>>>>> 817f50840933f800b784ce4d44645bbd5bb0f00c
                                 {% else %}
                                 {% if comp.component_type != 'MAKE' %}
                                 <a href="{{ url_for('product_development.create_purchase_order_from_component', comp_id=comp.id) }}" class="btn btn-sm btn-success">Create PO</a>
