@@ -15,6 +15,11 @@ def create_app(config_class=Config):
     
     db.init_app(app)
     
+    # Configure engine options based on database type
+    uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+    if uri.startswith('sqlite'):
+        db.engine.configure({'connect_args': {'check_same_thread': False}})
+    
     # Auto-migrate missing columns
     with app.app_context():
         from sqlalchemy import inspect, text
