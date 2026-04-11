@@ -125,6 +125,35 @@ def create_return():
     db.session.add(sale_return)
     db.session.flush()
 
+    # Create production log for rejected quantities (before returning to inventory)
+    return_date = sale_return.date.date() if sale_return.date else datetime.now().date()
+    for item in return_items:
+        from app.models import ProductionLog
+        product = Product.query.get(item['product_id'])
+        
+        existing_log = ProductionLog.query.filter_by(
+            date=return_date,
+            sku_id=product.id,
+            shift='Sales Return'
+        ).first()
+        
+        if existing_log:
+            existing_log.rejected_qty += item['quantity']
+            if existing_log.operator and 'Return' not in existing_log.operator:
+                existing_log.operator += f", Return: {sale_return.return_number}"
+        else:
+            production_log = ProductionLog(
+                date=return_date,
+                sku_id=product.id,
+                shift='Sales Return',
+                operator=f'Customer: {sale_return.sale.customer.name if sale_return.sale and sale_return.sale.customer else "Unknown"}',
+                qty_produced=0,
+                rejected_qty=item['quantity'],
+                notes=f'Rejected from Return: {sale_return.return_number}',
+                created_by=current_user.id
+            )
+            db.session.add(production_log)
+
     for item in return_items:
         return_item = SaleReturnItem(
             return_id=sale_return.id,
@@ -170,7 +199,7 @@ def return_to_inventory(id):
         flash('This return has already been added back to inventory.', 'warning')
         return redirect(url_for('returns.return_detail', id=id))
 
-    # Update inventory for each item
+    # Update inventory for each item (rejected qty already logged at return creation)
     for item in sale_return.items:
         product = Product.query.get(item.product_id)
         if product:
@@ -196,6 +225,24 @@ def delete_return(id):
             product = Product.query.get(item.product_id)
             if product:
                 product.update_quantity(-item.quantity)
+
+    # Delete production log entries for rejected quantities (created at return time)
+    return_date = sale_return.date.date() if sale_return.date else None
+    for item in sale_return.items:
+        if return_date:
+            from app.models import ProductionLog
+            logs = ProductionLog.query.filter_by(
+                date=return_date,
+                sku_id=item.product_id,
+                shift='Sales Return'
+            ).all()
+            for log in logs:
+                if log.notes and sale_return.return_number in log.notes:
+                    db.session.delete(log)
+                elif log.rejected_qty >= item.quantity:
+                    log.rejected_qty -= item.quantity
+                    if log.rejected_qty <= 0:
+                        db.session.delete(log)
 
     # Restore sale totals
     sale.subtotal += sale_return.subtotal

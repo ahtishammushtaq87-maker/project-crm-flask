@@ -67,6 +67,38 @@
                             <label class="form-label">Notes</label>
                             {{ form.notes(class="form-control", rows=2) }}
                         </div>
+
+                        <!-- Monthly Division Section -->
+                        <hr class="my-4">
+                        <h5 class="mb-3">Monthly Division Options</h5>
+                        <div class="mb-3">
+                            <div class="form-check form-switch px-4 py-2 border rounded bg-light">
+                                {{ form.is_monthly_divided(class="form-check-input ms-0 me-3", id="is_monthly_divided") }}
+                                <label class="form-check-label fw-bold" for="is_monthly_divided">Divide Expense Across Entire Month</label>
+                                <div class="form-text mt-0 ms-4">Check this to divide this expense equally across a date range and display it as daily expense.</div>
+                            </div>
+                        </div>
+                        <div id="monthly_division_container" style="display: none;" class="mb-4 p-3 border rounded bg-light">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Distribution Start Date (inclusive)</label>
+                                    {{ form.monthly_start_date(class="form-control", type="date") }}
+                                    <small class="text-muted">When should the daily expense start?</small>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Distribution End Date (inclusive)</label>
+                                    {{ form.monthly_end_date(class="form-control", type="date") }}
+                                    <small class="text-muted">When should the daily expense end?</small>
+                                </div>
+                            </div>
+                            <div class="alert alert-info mb-0">
+                                <strong>Example:</strong> If you set an expense of Rs 3000 from Jan 1 to Jan 31 (31 days), 
+                                it will show as Rs 96.77 daily expense on the dashboard.
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+
                         <div class="mb-3">
                             <div class="form-check form-switch px-4 py-2 border rounded bg-light">
                                 {{ form.is_bom_overhead(class="form-check-input ms-0 me-3", id="is_bom_overhead") }}
@@ -78,6 +110,11 @@
                             <label class="form-label">Linked Finished Product (Overhead)</label>
                             {{ form.product_id(class="form-control") }}
                             <div class="form-text">Select the manufactured product this overhead expense belongs to.</div>
+                        </div>
+                        <div class="mb-3" id="bom_id_container" style="display: none;">
+                            <label class="form-label">Linked BOM (Overhead) - Optional</label>
+                            {{ form.bom_id(class="form-control") }}
+                            <div class="form-text">Or select the BOM directly if expense is for a specific BOM.</div>
                         </div>
                         <button type="submit" class="btn btn-success">Update Expense</button>
                         <a href="{{ url_for('accounting.expenses') }}" class="btn btn-secondary">Cancel</a>
@@ -91,18 +128,33 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const isBomOverheadCheckbox = document.getElementById('is_bom_overhead');
+    const isMonthlyDividedCheckbox = document.getElementById('is_monthly_divided');
     const productIdContainer = document.getElementById('product_id_container');
+    const bomIdContainer = document.getElementById('bom_id_container');
+    const monthlyDivisionContainer = document.getElementById('monthly_division_container');
 
     function toggleProductDropdown() {
         if (isBomOverheadCheckbox.checked) {
             productIdContainer.style.display = 'block';
+            bomIdContainer.style.display = 'block';
         } else {
             productIdContainer.style.display = 'none';
+            bomIdContainer.style.display = 'none';
+        }
+    }
+
+    function toggleMonthlyDivision() {
+        if (isMonthlyDividedCheckbox.checked) {
+            monthlyDivisionContainer.style.display = 'block';
+        } else {
+            monthlyDivisionContainer.style.display = 'none';
         }
     }
 
     isBomOverheadCheckbox.addEventListener('change', toggleProductDropdown);
+    isMonthlyDividedCheckbox.addEventListener('change', toggleMonthlyDivision);
     toggleProductDropdown(); // Initialize on load
+    toggleMonthlyDivision(); // Initialize on load
 });
 
 document.getElementById('billImageInput').addEventListener('change', function(e) {

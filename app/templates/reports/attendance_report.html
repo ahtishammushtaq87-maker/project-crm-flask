@@ -1,0 +1,535 @@
+{% extends "base.html" %}
+
+{% block title %}📊 Attendance Report{% endblock %}
+
+{% block extra_css %}
+<style>
+    .report-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+    }
+
+    .filter-section {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        margin-bottom: 2rem;
+    }
+
+    .filter-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .filter-group {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .filter-group label {
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: #333;
+        font-size: 0.9rem;
+    }
+
+    .filter-group input,
+    .filter-group select {
+        padding: 0.6rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 0.95rem;
+    }
+
+    .filter-buttons {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 1.5rem;
+        flex-wrap: wrap;
+    }
+
+    .btn-filter {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 0.7rem 1.5rem;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+
+    .btn-filter:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    .btn-export {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        border: none;
+        padding: 0.7rem 1.2rem;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .btn-export:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(245, 87, 108, 0.3);
+        text-decoration: none;
+        color: white;
+    }
+
+    .export-section {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        margin-bottom: 2rem;
+    }
+
+    .export-title {
+        font-weight: 600;
+        margin-bottom: 1rem;
+        color: #333;
+        font-size: 1rem;
+    }
+
+    .export-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        border-left: 4px solid #667eea;
+    }
+
+    .stat-card.secondary {
+        border-left-color: #f5576c;
+    }
+
+    .stat-card.tertiary {
+        border-left-color: #6bc34a;
+    }
+
+    .stat-label {
+        color: #666;
+        font-size: 0.9rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #333;
+    }
+
+    .report-table {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        overflow: hidden;
+    }
+
+    .report-table table {
+        width: 100%;
+        margin: 0;
+    }
+
+    .report-table th {
+        background: #366092;
+        color: white;
+        padding: 1rem;
+        font-weight: 600;
+        text-align: left;
+    }
+
+    .report-table td {
+        padding: 0.8rem 1rem;
+        border-bottom: 1px solid #eee;
+    }
+
+    .report-table tbody tr:hover {
+        background: #f9f9f9;
+    }
+
+    .report-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+
+    .badge-status {
+        display: inline-block;
+        padding: 0.3rem 0.8rem;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+
+    .badge-active {
+        background: #d4edda;
+        color: #155724;
+    }
+
+    .badge-completed {
+        background: #d1ecf1;
+        color: #0c5460;
+    }
+
+    .no-records {
+        text-align: center;
+        padding: 3rem;
+        color: #999;
+    }
+
+    .report-type-selector {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .type-btn {
+        padding: 0.6rem 1.2rem;
+        border: 2px solid #ddd;
+        background: white;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+
+    .type-btn.active {
+        background: #667eea;
+        color: white;
+        border-color: #667eea;
+    }
+
+    .type-btn:hover {
+        border-color: #667eea;
+    }
+
+    .text-right {
+        text-align: right;
+    }
+
+    .text-center {
+        text-align: center;
+    }
+
+    @media (max-width: 768px) {
+        .filter-row {
+            grid-template-columns: 1fr;
+        }
+
+        .filter-buttons {
+            flex-direction: column;
+        }
+
+        .btn-filter,
+        .btn-export {
+            width: 100%;
+        }
+
+        .export-buttons {
+            flex-direction: column;
+        }
+
+        .report-table {
+            font-size: 0.9rem;
+        }
+
+        .report-table th,
+        .report-table td {
+            padding: 0.5rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="report-header">
+        <h2 class="mb-2">📊 Attendance Report</h2>
+        <p class="mb-0">Comprehensive attendance analysis with export capabilities</p>
+    </div>
+
+    <!-- Report Type Selector -->
+    <div class="filter-section">
+        <h6 class="mb-3">Report Type</h6>
+        <div class="report-type-selector">
+            <button class="type-btn {% if report_type == 'summary' %}active{% endif %}" 
+                    onclick="setReportType('summary')">
+                <i class="fas fa-chart-pie me-2"></i> Summary
+            </button>
+            <button class="type-btn {% if report_type == 'detailed' %}active{% endif %}" 
+                    onclick="setReportType('detailed')">
+                <i class="fas fa-list me-2"></i> Detailed
+            </button>
+            <button class="type-btn {% if report_type == 'daily' %}active{% endif %}" 
+                    onclick="setReportType('daily')">
+                <i class="fas fa-calendar me-2"></i> Daily
+            </button>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-section">
+        <form method="GET" id="filterForm">
+            <div class="filter-row">
+                <div class="filter-group">
+                    <label for="date_from">📅 From Date</label>
+                    <input type="date" id="date_from" name="date_from" value="{{ date_from }}" required>
+                </div>
+                <div class="filter-group">
+                    <label for="date_to">📅 To Date</label>
+                    <input type="date" id="date_to" name="date_to" value="{{ date_to }}" required>
+                </div>
+                <div class="filter-group">
+                    <label for="staff_id">👤 Staff Member</label>
+                    <select id="staff_id" name="staff_id">
+                        <option value="">-- All Staff --</option>
+                        {% for staff in all_staff %}
+                        <option value="{{ staff.id }}" {% if staff_id_filter|string == staff.id|string %}selected{% endif %}>
+                            {{ staff.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <input type="hidden" id="report_type" name="report_type" value="{{ report_type }}">
+
+            <div class="filter-buttons">
+                <button type="submit" class="btn-filter">
+                    <i class="fas fa-search me-2"></i> Apply Filter
+                </button>
+                <a href="{{ url_for('reports_attendance.attendance_report') }}" class="btn-filter">
+                    <i class="fas fa-redo me-2"></i> Reset
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Export Options -->
+    <div class="export-section">
+        <div class="export-title">📥 Export Report</div>
+        <div class="export-buttons">
+            <a href="{{ url_for('reports_attendance.export_attendance_pdf', 
+                       date_from=date_from, date_to=date_to, 
+                       staff_id=staff_id_filter or '', report_type=report_type) }}" 
+               class="btn-export">
+                <i class="fas fa-file-pdf"></i> PDF
+            </a>
+            <a href="{{ url_for('reports_attendance.export_attendance_excel', 
+                       date_from=date_from, date_to=date_to, 
+                       staff_id=staff_id_filter or '', report_type=report_type) }}" 
+               class="btn-export">
+                <i class="fas fa-file-excel"></i> Excel
+            </a>
+            <a href="{{ url_for('reports_attendance.export_attendance_csv', 
+                       date_from=date_from, date_to=date_to, 
+                       staff_id=staff_id_filter or '', report_type=report_type) }}" 
+               class="btn-export">
+                <i class="fas fa-file-csv"></i> CSV
+            </a>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">⏱️ Total Hours</div>
+            <div class="stat-value">{{ summary_stats.total_hours }}h {{ summary_stats.total_minutes }}m</div>
+        </div>
+        <div class="stat-card secondary">
+            <div class="stat-label">💰 Total Earned</div>
+            <div class="stat-value">Rs {{ "%.2f"|format(summary_stats.total_earned) }}</div>
+        </div>
+        <div class="stat-card tertiary">
+            <div class="stat-label">📋 Records</div>
+            <div class="stat-value">{{ summary_stats.total_records }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">📅 Days Worked</div>
+            <div class="stat-value">{{ summary_stats.days_worked }}</div>
+        </div>
+    </div>
+
+    <!-- Report Data -->
+    {% if report_type == 'summary' %}
+        <!-- Summary Report -->
+        <div class="report-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>👤 Staff Name</th>
+                        <th>📊 Designation</th>
+                        <th>📅 Days</th>
+                        <th>⏱️ Total Hours</th>
+                        <th>⏱️ Avg/Day</th>
+                        <th>💰 Total Earned</th>
+                        <th>💵 Avg/Day</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if report_data %}
+                        {% for staff_id, data in report_data.items() %}
+                        <tr>
+                            <td><strong>{{ data.staff.name }}</strong></td>
+                            <td>{{ data.staff.designation or '--' }}</td>
+                            <td class="text-center">{{ data.days_worked }}</td>
+                            <td class="text-center">{{ data.total_hours }}h {{ data.total_minutes }}m</td>
+                            <td class="text-center">{{ "%.2f"|format(data.avg_hours) }}h</td>
+                            <td class="text-right"><strong>Rs {{ "%.2f"|format(data.total_earned) }}</strong></td>
+                            <td class="text-right">Rs {{ "%.2f"|format(data.total_earned / data.days_worked) }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="7" class="no-records">No attendance records found</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+    {% elif report_type == 'detailed' %}
+        <!-- Detailed Report -->
+        <div class="report-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>📅 Date</th>
+                        <th>👤 Staff</th>
+                        <th>📍 In</th>
+                        <th>📍 Out</th>
+                        <th>⏱️ Duration</th>
+                        <th>💵 Rate/hr</th>
+                        <th>💰 Earned</th>
+                        <th>📝 Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if attendance_records %}
+                        {% for record in attendance_records %}
+                        <tr>
+                            <td><strong>{{ record.date.strftime('%Y-%m-%d') }}</strong></td>
+                            <td>{{ record.staff.name }}</td>
+                            <td class="text-center">
+                                {% if record.clock_in %}
+                                    {{ record.clock_in.strftime('%H:%M') }}
+                                {% else %}
+                                    --
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if record.clock_out %}
+                                    {{ record.clock_out.strftime('%H:%M') }}
+                                {% else %}
+                                    --
+                                {% endif %}
+                            </td>
+                            <td class="text-center">{{ record.get_time_summary() }}</td>
+                            <td class="text-right">Rs {{ "%.2f"|format(record.hourly_rate) }}</td>
+                            <td class="text-right"><strong>Rs {{ "%.2f"|format(record.earned_amount) }}</strong></td>
+                            <td>
+                                {% if record.notes %}
+                                    <small>{{ record.notes[:30] }}{% if record.notes|length > 30 %}...{% endif %}</small>
+                                {% else %}
+                                    <small class="text-muted">--</small>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="8" class="no-records">No attendance records found</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+    {% else %}
+        <!-- Daily Report -->
+        <div class="report-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>📅 Date</th>
+                        <th>👥 Staff Count</th>
+                        <th>⏱️ Total Hours</th>
+                        <th>💰 Total Earned</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if report_data %}
+                        {% for date, daily_data in report_data.items() %}
+                        <tr>
+                            <td><strong>{{ date.strftime('%Y-%m-%d (%a)') }}</strong></td>
+                            <td class="text-center">{{ daily_data.staff_count }}</td>
+                            <td class="text-center">{{ daily_data.total_hours }}h {{ daily_data.total_minutes }}m</td>
+                            <td class="text-right"><strong>Rs {{ "%.2f"|format(daily_data.total_earned) }}</strong></td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="4" class="no-records">No attendance records found</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+
+</div>
+
+<script>
+    function setReportType(type) {
+        document.getElementById('report_type').value = type;
+        document.getElementById('filterForm').submit();
+    }
+
+    // Set default dates if empty
+    document.addEventListener('DOMContentLoaded', function() {
+        const dateFrom = document.getElementById('date_from');
+        const dateTo = document.getElementById('date_to');
+        
+        if (!dateFrom.value) {
+            const today = new Date();
+            const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+            dateFrom.value = firstDay.toISOString().split('T')[0];
+        }
+        
+        if (!dateTo.value) {
+            const today = new Date();
+            dateTo.value = today.toISOString().split('T')[0];
+        }
+    });
+</script>
+{% endblock %}

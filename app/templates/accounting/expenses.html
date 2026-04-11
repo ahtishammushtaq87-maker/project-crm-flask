@@ -54,6 +54,7 @@
                             <th>Vendor</th>
                             <th>Description</th>
                             <th>Amount</th>
+                            <th>Daily Amount</th>
                             <th>Bill</th>
                             <th>Actions</th>
                         </tr>
@@ -68,12 +69,30 @@
                                     BOM Overhead {% if exp.product %}({{ exp.product.name }}){% endif %}
                                 </span>
                                 {% endif %}
+                                {% if exp.is_monthly_divided %}
+                                <span class="badge bg-success ms-1" style="font-size: 0.7rem;" title="Divided from {{ exp.monthly_start_date }} to {{ exp.monthly_end_date }}">
+                                    Divided
+                                </span>
+                                {% endif %}
                             </td>
                             <td>{{ exp.date.strftime('%Y-%m-%d') }}</td>
                             <td>{{ exp.expense_category.name if exp.expense_category else 'N/A' }}</td>
                             <td>{{ exp.vendor.name if exp.vendor else '-' }}</td>
                             <td>{{ exp.description or '-' }}</td>
-                            <td>Rs{{ '%.2f'|format(exp.amount) }}</td>
+                            <td>
+                                <strong>Rs{{ '%.2f'|format(exp.amount) }}</strong>
+                                {% if exp.is_monthly_divided %}
+                                <div class="small text-muted">({{ exp.days_in_month }} days)</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if exp.is_monthly_divided %}
+                                <strong class="text-success">Rs{{ '%.2f'|format(exp.daily_amount) }}</strong>
+                                <div class="small text-muted">per day</div>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
                             <td>
                                 {% if exp.bill_image_path %}
                                 <div class="btn-group" role="group">

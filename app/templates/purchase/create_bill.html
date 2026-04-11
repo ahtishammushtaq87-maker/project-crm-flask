@@ -1,237 +1,525 @@
 {% extends "base.html" %}
+{% block title %}Create Purchase Bill{% endblock %}
 {% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="h3 mb-0"><i class="fas fa-file-invoice me-2 text-primary"></i>Create Purchase Bill</h2>
+            <small class="text-muted">Record a bill for goods received from a vendor</small>
+        </div>
+        <a href="{{ url_for('purchase.bills') }}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Back
+        </a>
+    </div>
 
-<div class="container mt-4">
-    <h2>Create Purchase Bill</h2>
-
-    <form method="POST">
+    <form method="POST" id="billForm">
         {{ form.hidden_tag() }}
 
-        <!-- Vendor + Date -->
-        <div class="row mb-3">
+        <div class="row">
+            <!-- ── Left: Header + Totals ───────────────────────────────── -->
             <div class="col-md-4">
-                <label>Vendor</label>
-                <select name="vendor_id" class="form-control" required>
-                    <option value="">Select Vendor</option>
-                    {% for v in vendors %}
-                        <option value="{{ v.id }}">{{ v.name }}</option>
-                    {% endfor %}
-                </select>
+                <div class="card shadow mb-4">
+                    <div class="card-header py-3">
+                        <h6 class="m-0 fw-bold text-primary"><i class="fas fa-info-circle me-2"></i>Bill Details</h6>
+                    </div>
+                    <div class="card-body">
+                        <!-- Vendor -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Vendor <span class="text-danger">*</span></label>
+                            <select name="vendor_id" id="vendorSelect" class="form-select" required onchange="onVendorChange(this.value)">
+                                <option value="">— Select Vendor —</option>
+                                {% for v in vendors %}
+                                <option value="{{ v.id }}">{{ v.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- ── Smart Advance Badge ── -->
+                        <div id="advanceBadgeWrapper" class="mb-3" style="display:none;">
+                            <div id="advanceBadge" class="alert alert-warning d-flex align-items-start gap-2 py-2 px-3 mb-1"
+                                 role="button" style="cursor:pointer;" onclick="applyAdvance()">
+                                <i class="fas fa-bolt mt-1 flex-shrink-0 text-warning"></i>
+                                <div>
+                                    <strong id="advanceBadgeText"></strong>
+                                    <div class="small text-muted">Click to apply advance to this bill</div>
+                                </div>
+                            </div>
+                            <!-- Shown when advance > grand total -->
+                            <div id="advanceOverMsg" class="alert alert-danger py-2 px-3 small mb-1" style="display:none;">
+                                <i class="fas fa-exclamation-triangle me-1"></i>
+                                <span id="advanceOverText"></span>
+                            </div>
+                            <!-- Shown after applying (advance <= total) -->
+                            <div id="advanceOkMsg" class="alert alert-success py-2 px-3 small" style="display:none;">
+                                <i class="fas fa-check-circle me-1"></i>
+                                <span id="advanceOkText"></span>
+                            </div>
+                        </div>
+
+                        <!-- ── Purchase Order Dropdown ── -->
+                        <div class="mb-3" id="poWrapper" style="display:none;">
+                            <label class="form-label fw-semibold">
+                                <i class="fas fa-clipboard-list me-1 text-primary"></i>Import from Purchase Order
+                                <span class="badge bg-primary ms-1">Optional</span>
+                            </label>
+                            <select id="poSelect" class="form-select" onchange="onPOSelect(this.value)">
+                                <option value="">— Select a Confirmed PO —</option>
+                            </select>
+                            <div class="form-text">Selecting a PO will auto-fill all items below.</div>
+                        </div>
+
+                        <!-- Date + Currency -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Bill Date <span class="text-danger">*</span></label>
+                            <input type="date" name="date" class="form-control" required
+                                   value="{{ now().strftime('%Y-%m-%d') if now is defined else '' }}">
+                        </div>
+                        <div class="mb-3">
+                            <!--<label class="form-label fw-semibold">Currency</label>
+                            <select name="currency_id" class="form-select">
+                                {% for cur in currencies %}
+                                <option value="{{ cur.id }}">{{ cur.name }} ({{ cur.code }})</option>
+                                {% endfor %}
+                            </select>-->
+                        </div>
+
+                        <!-- Notes -->
+                        <div class="mb-0">
+                            <label class="form-label fw-semibold">Notes</label>
+                            <textarea name="notes" id="billNotes" class="form-control" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Totals Card -->
+                <div class="card shadow mb-4">
+                    <div class="card-header py-3">
+                        <h6 class="m-0 fw-bold text-primary"><i class="fas fa-calculator me-2"></i>Summary</h6>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm table-borderless mb-0">
+                            <tr>
+                                <td>Subtotal</td>
+                                <td><input type="text" id="subtotal" class="form-control form-control-sm text-end" readonly></td>
+                            </tr>
+                            <tr>
+                                <td>Tax %</td>
+                                <td><input type="number" name="tax_rate" id="taxRate" value="0" step="0.01" class="form-control form-control-sm" oninput="calculateTotal()"></td>
+                            </tr>
+                            <tr>
+                                <td>Tax Amt</td>
+                                <td><input type="text" id="totalTax" class="form-control form-control-sm text-end" readonly></td>
+                            </tr>
+                            <tr>
+                                <td><i class="fas fa-truck me-1 text-info"></i>Shipping</td>
+                                <td><input type="number" name="shipping_charge" id="shipping" value="0" step="0.01" class="form-control form-control-sm" oninput="calculateTotal()"></td>
+                            </tr>
+                            <tr>
+                                <td>Discount</td>
+                                <td><input type="number" name="discount" id="discount" value="0" step="0.01" class="form-control form-control-sm" oninput="calculateTotal()"></td>
+                            </tr>
+                            <tr class="fw-bold border-top">
+                                <td>Grand Total</td>
+                                <td><input type="text" id="grand_total" class="form-control form-control-sm text-end fw-bold" readonly></td>
+                            </tr>
+                            <tr id="advanceRow">
+                                <td style="vertical-align:middle;">
+                                    <div class="fw-semibold mb-1">
+                                        Advance Paid
+                                        <span id="advanceRemainLabel" class="badge bg-info" style="display:none; margin-left: 10px; padding: 6px 12px; font-size: 0.9rem;">
+                                            <i class="fas fa-info-circle me-1"></i>
+                                            <span id="advanceRemainValue">Rs 0</span> remaining
+                                        </span>
+                                    </div>
+                                    <!-- Clickable badge shown when vendor has pending advances -->
+                                    <div id="useAdvanceBtn" style="display:none;">
+                                        <button type="button" class="btn btn-warning btn-sm w-100"
+                                                onclick="applyAdvance()"
+                                                id="applyAdvanceBtn">
+                                            <i class="fas fa-bolt me-1"></i>
+                                            <span id="advanceBtnLabel">Use Advance</span>
+                                        </button>
+                                        <div id="remainAdvanceMsg" class="text-danger small mt-1 fw-semibold" style="display:none;">
+                                            <i class="fas fa-exclamation-triangle me-1"></i>
+                                            <span id="remainAdvanceText"></span>
+                                        </div>
+                                        <div id="advanceSavedMsg" class="text-success small mt-1" style="display:none;">
+                                            <i class="fas fa-check-circle me-1"></i>
+                                            <span id="advanceSavedText"></span>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <input type="number" name="advance" id="advance" value="0" step="0.01"
+                                           class="form-control form-control-sm" oninput="calculateTotal()">
+                                </td>
+                            </tr>
+                            <tr class="border-top">
+                                <td class="fw-bold">Balance Due</td>
+                                <td><input type="text" id="balance" class="form-control form-control-sm text-end fw-bold" readonly></td>
+                            </tr>
+                        </table>
+                        <div class="mt-3 d-grid">
+                            <button type="submit" class="btn btn-success btn-lg">
+                                <i class="fas fa-save me-1"></i> Save Bill
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <div class="col-md-4">
-                <label>Date</label>
-                <input type="date" name="date" class="form-control" required>
-            </div>
-
-            <div class="col-md-4">
-                <label>Currency</label>
-                <select name="currency_id" class="form-control">
-                    {% for cur in currencies %}
-                    <option value="{{ cur.id }}">{{ cur.name }} ({{ cur.code }})</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="col-md-4">
-                <label>Exchange Rate</label>
-                <input type="number" name="exchange_rate" class="form-control" step="0.0001" value="1">
-            </div>
-
-            <div class="col-md-4">
-                <label>Advance Paid</label>
-                <input type="number" name="advance" id="advance" value="0" class="form-control" oninput="calculateTotal()">
+            <!-- ── Right: Items table ──────────────────────────────────── -->
+            <div class="col-md-8">
+                <div class="card shadow mb-4">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                        <h6 class="m-0 fw-bold text-primary"><i class="fas fa-list me-2"></i>Bill Items</h6>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addRow()">
+                            <i class="fas fa-plus me-1"></i> Add Item
+                        </button>
+                    </div>
+                    <div class="card-body p-0">
+                        <table class="table table-bordered mb-0" id="itemsTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Product</th>
+                                    <th width="90">Qty</th>
+                                    <th width="120">Current Cost</th>
+                                    <th width="120">New Cost</th>
+                                    <th width="130">Amount</th>
+                                    <th width="40"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="itemsBody">
+                                <tr>
+                                    <td>
+                                        <select name="product_id[]" class="form-select product-select" onchange="onProductChange(this)">
+                                            <option value="">— Select Product —</option>
+                                            {% for p in products %}
+                                            <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </td>
+                                    <td><input type="number" name="quantity[]" class="form-control qty" value="1" min="0.01" step="0.01" oninput="calcRow(this)"></td>
+                                    <td><input type="text" class="form-control currentCost" readonly style="background-color: #f8f9fa;"></td>
+                                    <td><input type="number" name="price[]" class="form-control price newCost" value="0" step="0.01" oninput="calcRow(this); updatePriceIndicator(this)"></td>
+                                    <td><input type="text" class="form-control amount" readonly></td>
+                                    <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeRow(this)"><i class="fas fa-times"></i></button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
-
-        <!-- Items -->
-        <div class="card">
-            <div class="card-header d-flex justify-content-between">
-                <strong>Items</strong>
-                <button type="button" class="btn btn-primary btn-sm" onclick="addRow()">+ Add Item</button>
-            </div>
-
-            <div class="card-body p-0">
-                <table class="table table-bordered mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Product</th>
-                            <th width="100">Qty</th>
-                            <th width="120">Price</th>
-                            <th width="100">Tax %</th>
-                            <th width="150">Amount</th>
-                            <th width="50"></th>
-                        </tr>
-                    </thead>
-
-                    <tbody id="itemsBody">
-                        <tr>
-                            <td>
-                                <select name="product_id[]" class="form-control product-select" onchange="onProductChange(this)">
-                                    <option value="">Select Product</option>
-                                    {% for p in products %}
-                                        <option value="{{ p.id }}" data-cost-price="{{ p.cost_price }}">{{ p.name }}</option>
-                                    {% endfor %}
-                                </select>
-                            </td>
-
-                            <td>
-                                <input type="number" name="quantity[]" class="form-control qty" value="1" oninput="calcRow(this)">
-                            </td>
-
-                            <td>
-                                <input type="number" name="price[]" class="form-control price" value="0" oninput="calcRow(this)">
-                            </td>
-
-                            <td>
-                                <input type="number" class="form-control item-tax" value="0" oninput="calcRow(this)">
-                            </td>
-
-                            <td>
-                                <input type="text" class="form-control amount" readonly>
-                            </td>
-
-                            <td>
-                                <button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)">X</button>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Summary -->
-        <div class="row mt-4">
-            <div class="col-md-6">
-                <label>Notes</label>
-                <textarea name="notes" class="form-control"></textarea>
-            </div>
-
-            <div class="col-md-6">
-                <table class="table">
-                    <tr>
-                        <th>Subtotal</th>
-                        <td><input type="text" id="subtotal" class="form-control" readonly></td>
-                    </tr>
-
-                    <tr>
-                        <th>Total Tax</th>
-                        <td><input type="text" id="total_tax" class="form-control" readonly></td>
-                    </tr>
-
-                    <tr>
-                        <th>Discount</th>
-                        <td><input type="number" id="discount" name="discount" value="0" class="form-control" oninput="calculateTotal()"></td>
-                    </tr>
-
-                    <tr>
-                        <th>Shipping</th>
-                        <td><input type="number" id="shipping" name="shipping_charge" value="0" class="form-control" oninput="calculateTotal()"></td>
-                    </tr>
-
-                    <tr>
-                        <th><strong>Grand Total</strong></th>
-                        <td><input type="text" id="grand_total" class="form-control" readonly></td>
-                    </tr>
-
-                    <tr>
-                        <th>Advance Paid</th>
-                        <td><input type="text" id="advance_display" class="form-control" readonly></td>
-                    </tr>
-
-                    <tr>
-                        <th><strong>Balance Due</strong></th>
-                        <td><input type="text" id="balance" class="form-control" readonly></td>
-                    </tr>
-                </table>
-            </div>
-        </div>
-
-        <button type="submit" class="btn btn-success mt-3">Save Bill</button>
     </form>
 </div>
 
-<!-- JS -->
 <script>
-function addRow() {
-    let row = document.querySelector("#itemsBody tr").cloneNode(true);
+// ── State ────────────────────────────────────────────────────────────────
+let pendingAdvance = 0;
 
-    row.querySelectorAll("input").forEach(i => i.value = "");
-    row.querySelector(".qty").value = "1";
-    row.querySelector(".price").value = "0";
-    row.querySelector(".item-tax").value = "0";
-    let select = row.querySelector("select");
-    select.selectedIndex = 0;
-    select.className = "form-control product-select";
-    select.setAttribute("onchange", "onProductChange(this)");
-
-    document.getElementById("itemsBody").appendChild(row);
+function fmt(n) {
+    return n.toLocaleString('en-PK', {minimumFractionDigits: 0, maximumFractionDigits: 0});
 }
 
-function removeRow(btn) {
-    let rows = document.querySelectorAll("#itemsBody tr");
-    if (rows.length > 1) {
-        btn.closest("tr").remove();
-        calculateTotal();
-    }
-}
+// ── Vendor change: load advances + POs ──────────────────────────────────
+function onVendorChange(vendorId) {
+    pendingAdvance = 0;
+    document.getElementById('advance').value = 0;
 
-function onProductChange(select) {
-    let selectedOption = select.options[select.selectedIndex];
-    let costPrice = selectedOption.getAttribute('data-cost-price');
-    
-    if (costPrice && costPrice !== 'None' && costPrice !== '') {
-        let priceInput = select.closest("tr").querySelector(".price");
-        priceInput.value = parseFloat(costPrice).toFixed(2);
-        calcRow(priceInput);
-    }
-}
+    // Hide/reset old badge wrapper elements that might still exist
+    ['advanceBadgeWrapper','advanceOverMsg','advanceOkMsg'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
 
-function calcRow(el) {
-    let row = el.closest("tr");
+    // Hide/reset inline button and advance label
+    document.getElementById('useAdvanceBtn').style.display    = 'none';
+    document.getElementById('remainAdvanceMsg').style.display = 'none';
+    document.getElementById('advanceSavedMsg').style.display  = 'none';
+    document.getElementById('advanceRemainLabel').style.display = 'none';
 
-    let qty = parseFloat(row.querySelector(".qty").value) || 0;
-    let price = parseFloat(row.querySelector(".price").value) || 0;
-    let tax = parseFloat(row.querySelector(".item-tax").value) || 0;
+    // Reset PO dropdown
+    const poWrapper = document.getElementById('poWrapper');
+    const poSelect  = document.getElementById('poSelect');
+    poWrapper.style.display = 'none';
+    poSelect.innerHTML = '<option value="">— Select a Confirmed PO —</option>';
 
-    let subtotal = qty * price;
-    let taxAmount = subtotal * (tax / 100);
-    let total = subtotal + taxAmount;
+    if (!vendorId) { calculateTotal(); return; }
 
-    row.querySelector(".amount").value = total.toFixed(2);
+    // ── Fetch advances ──
+    fetch(`/purchase/api/vendor/${vendorId}/advances`)
+        .then(r => r.json())
+        .then(data => {
+            console.log('Advance data received:', data); // Debug
+            pendingAdvance = data.pending_balance || 0;
+            const btnWrapper = document.getElementById('useAdvanceBtn');
+            const btnLabel   = document.getElementById('advanceBtnLabel');
+            const remainLabel = document.getElementById('advanceRemainLabel');
+            const remainValue = document.getElementById('advanceRemainValue');
+            
+            if (data.total_advances > 0 && data.total_advances > 0) {
+                // Show remaining advance label
+                if (pendingAdvance > 0) {
+                    const formattedAmount = fmt(pendingAdvance);
+                    remainValue.innerHTML = `<strong>Rs ${formattedAmount}</strong>`;
+                    remainLabel.style.display = 'inline-block';
+                    console.log('Showing advance label:', formattedAmount); // Debug
+                } else {
+                    remainLabel.style.display = 'none';
+                }
+                
+                // Build detailed advance info
+                let advanceInfo = `<div class="small mb-2">
+                    <div class="mb-1"><strong>Vendor Advances:</strong></div>
+                    <div class="text-muted">Total Given: Rs ${fmt(data.total_advances)}</div>
+                    <div class="text-success">Already Used: Rs ${fmt(data.total_adjusted)}</div>
+                    <div class="text-info fw-semibold">Available: Rs ${fmt(data.pending_balance)}</div>
+                </div>`;
+                
+                if (data.advances && data.advances.length > 0) {
+                    advanceInfo += '<div class="small"><strong>Details:</strong><ul class="ps-3 mb-0">';
+                    data.advances.forEach(adv => {
+                        const remaining = adv.remaining || 0;
+                        advanceInfo += `<li>
+                            <small>Advance #${adv.id} (${adv.date}): Rs ${fmt(adv.amount)}</small>
+                            <br><small class="text-muted">Applied: Rs ${fmt(adv.applied_amount)} | Remaining: Rs ${fmt(remaining)}</small>
+                        </li>`;
+                    });
+                    advanceInfo += '</ul></div>';
+                }
+                
+                // Update the display element if it exists
+                const useAdvanceDiv = btnWrapper.querySelector('div');
+                if (useAdvanceDiv) {
+                    useAdvanceDiv.innerHTML = advanceInfo;
+                }
+                
+                if (pendingAdvance > 0) {
+                    btnLabel.innerHTML = `<i class="fas fa-bolt me-1"></i>Use Advance  (Rs ${fmt(pendingAdvance)} available)`;
+                    btnWrapper.style.display = 'block';
+                } else {
+                    btnLabel.innerHTML = `<i class="fas fa-bolt me-1"></i>All advances already used`;
+                    btnWrapper.style.display = 'block';
+                    btnWrapper.querySelector('button').disabled = true;
+                }
+                
+                // Also update old badge if it still exists
+                const oldBadgeText = document.getElementById('advanceBadgeText');
+                if (oldBadgeText) {
+                    oldBadgeText.innerHTML = `💰 Vendor Advances<br><small>Total: Rs ${fmt(data.total_advances)} | Available: Rs ${fmt(data.pending_balance)}</small>`;
+                }
+                const oldBadge = document.getElementById('advanceBadgeWrapper');
+                if (oldBadge && pendingAdvance > 0) oldBadge.style.display = 'block';
+            } else {
+                btnWrapper.style.display = 'none';
+                remainLabel.style.display = 'none';
+                const oldBadge = document.getElementById('advanceBadgeWrapper');
+                if (oldBadge) oldBadge.style.display = 'none';
+            }
+        })
+        .catch(err => {
+            console.error('Error fetching advances:', err); // Debug
+        });
+
+    // ── Fetch POs ──
+    fetch(`/purchase/api/vendor/${vendorId}/purchase-orders`)
+        .then(r => r.json())
+        .then(pos => {
+            if (pos.length > 0) {
+                pos.forEach(po => {
+                    const opt = document.createElement('option');
+                    opt.value = po.id;
+                    opt.textContent = `${po.po_number}  (${po.date})  —  Rs ${fmt(po.total)}`;
+                    opt.dataset.po = JSON.stringify(po);
+                    poSelect.appendChild(opt);
+                });
+                poWrapper.style.display = 'block';
+            }
+        }).catch(() => {});
 
     calculateTotal();
 }
 
+// ── Apply advance button clicked ─────────────────────────────────────────
+function applyAdvance() {
+    const grand = parseFloat(document.getElementById('grand_total').value) || 0;
+    // Apply only what's needed to cover the bill (cap at remaining)
+    const apply = Math.min(pendingAdvance, grand);
+    document.getElementById('advance').value = apply.toFixed(2);
+    calculateTotal();
+}
+
+// ── PO selection → fill items ────────────────────────────────────────────
+function onPOSelect(poId) {
+    if (!poId) return;
+    const sel = document.getElementById('poSelect');
+    const opt = sel.options[sel.selectedIndex];
+    const po  = JSON.parse(opt.dataset.po || 'null');
+    if (!po) return;
+
+    const tbody = document.getElementById('itemsBody');
+    tbody.innerHTML = '';
+    po.items.forEach(item => {
+        tbody.appendChild(buildRow(item.product_id, item.product_name, item.quantity, item.unit_price, item.total));
+    });
+    document.getElementById('shipping').value = po.shipping_charge || 0;
+    if (po.notes) document.getElementById('billNotes').value = po.notes;
+    calculateTotal();
+}
+
+function buildRow(productId, productName, qty, price, total) {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+        <td>
+            <select name="product_id[]" class="form-select product-select" onchange="onProductChange(this)">
+                <option value="${productId}" selected>${productName}</option>
+                {% for p in products %}
+                <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.name }}</option>
+                {% endfor %}
+            </select>
+        </td>
+        <td><input type="number" name="quantity[]" class="form-control qty" value="${qty}" min="0.01" step="0.01" oninput="calcRow(this)"></td>
+        <td><input type="text" class="form-control currentCost" readonly style="background-color: #f8f9fa;"></td>
+        <td><input type="number" name="price[]" class="form-control price newCost" value="${price}" step="0.01" oninput="calcRow(this); updatePriceIndicator(this)"></td>
+        <td><input type="text" class="form-control amount" value="${total.toFixed(2)}" readonly></td>
+        <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeRow(this)"><i class="fas fa-times"></i></button></td>`;
+    return row;
+}
+
+// ── Row helpers ──────────────────────────────────────────────────────────
+function addRow() {
+    const firstRow = document.querySelector('#itemsBody tr');
+    const row = firstRow.cloneNode(true);
+    row.querySelectorAll('input').forEach(i => { i.value = i.type === 'number' ? '0' : ''; });
+    row.querySelector('.qty').value = '1';
+    row.querySelector('.product-select').selectedIndex = 0;
+    document.getElementById('itemsBody').appendChild(row);
+}
+
+function removeRow(btn) {
+    if (document.querySelectorAll('#itemsBody tr').length > 1) {
+        btn.closest('tr').remove(); calculateTotal();
+    }
+}
+
+function onProductChange(sel) {
+    const cost = sel.options[sel.selectedIndex].dataset.cost;
+    const row = sel.closest('tr');
+    const currentCostInput = row.querySelector('.currentCost');
+    const priceInput = row.querySelector('.price');
+    
+    if (cost && cost !== 'None') {
+        const costVal = parseFloat(cost);
+        currentCostInput.value = fmt(costVal);
+        currentCostInput.dataset.value = costVal;
+        
+        // Auto-fill new cost with current cost
+        priceInput.value = costVal.toFixed(2);
+        calcRow(priceInput);
+    } else {
+        currentCostInput.value = '—';
+        currentCostInput.dataset.value = 0;
+    }
+    updatePriceIndicator(priceInput);
+}
+
+// ── Update price change indicator ──────────────────────────────────────────
+function updatePriceIndicator(priceInput) {
+    const row = priceInput.closest('tr');
+    const currentCostInput = row.querySelector('.currentCost');
+    const currentCost = parseFloat(currentCostInput.dataset.value) || 0;
+    const newPrice = parseFloat(priceInput.value) || 0;
+    
+    // Check if price changed and add/remove badge
+    const hasIndicator = row.querySelector('.priceChangeBadge');
+    
+    if (currentCost > 0 && newPrice !== currentCost) {
+        // Price changed - add badge if not present
+        if (!hasIndicator) {
+            const badge = document.createElement('span');
+            badge.className = 'priceChangeBadge badge bg-warning ms-2';
+            badge.innerHTML = `<i class="fas fa-tag me-1"></i>Updated Price`;
+            badge.style.fontSize = '0.75rem';
+            badge.title = `Changed from Rs ${fmt(currentCost)}`;
+            priceInput.parentNode.appendChild(badge);
+        }
+        // Update badge title
+        if (hasIndicator) {
+            hasIndicator.title = `Changed from Rs ${fmt(currentCost)} to Rs ${fmt(newPrice)}`;
+        }
+    } else {
+        // Price not changed - remove badge if present
+        if (hasIndicator) {
+            hasIndicator.remove();
+        }
+    }
+}
+
+function calcRow(el) {
+    const row   = el.closest('tr');
+    const qty   = parseFloat(row.querySelector('.qty').value)   || 0;
+    const price = parseFloat(row.querySelector('.price').value) || 0;
+    row.querySelector('.amount').value = (qty * price).toFixed(2);
+    calculateTotal();
+}
+
+// ── Master recalculation ─────────────────────────────────────────────────
 function calculateTotal() {
     let subtotal = 0;
-    let totalTax = 0;
-
-    document.querySelectorAll("#itemsBody tr").forEach(row => {
-        let qty = parseFloat(row.querySelector(".qty").value) || 0;
-        let price = parseFloat(row.querySelector(".price").value) || 0;
-        let tax = parseFloat(row.querySelector(".item-tax").value) || 0;
-
-        let sub = qty * price;
-        let taxAmount = sub * (tax / 100);
-
-        subtotal += sub;
-        totalTax += taxAmount;
+    document.querySelectorAll('#itemsBody tr').forEach(row => {
+        subtotal += parseFloat(row.querySelector('.amount').value) || 0;
     });
 
-    let discount = parseFloat(document.getElementById("discount").value) || 0;
-    let shipping = parseFloat(document.getElementById("shipping").value) || 0;
-    let advance = parseFloat(document.getElementById("advance").value) || 0;
+    const taxRate  = parseFloat(document.getElementById('taxRate').value)  || 0;
+    const shipping = parseFloat(document.getElementById('shipping').value) || 0;
+    const discount = parseFloat(document.getElementById('discount').value) || 0;
+    const advance  = parseFloat(document.getElementById('advance').value)  || 0;
+    const taxAmt   = subtotal * (taxRate / 100);
+    const grand    = Math.max(0, subtotal + taxAmt + shipping - discount);
+    const balance  = grand - advance;
 
-    let grandTotal = subtotal + totalTax + shipping - discount;
-    let balance = grandTotal - advance;
+    document.getElementById('subtotal').value    = subtotal.toFixed(2);
+    document.getElementById('totalTax').value    = taxAmt.toFixed(2);
+    document.getElementById('grand_total').value = grand.toFixed(2);
+    document.getElementById('balance').value     = balance.toFixed(2);
 
-    document.getElementById("subtotal").value = subtotal.toFixed(2);
-    document.getElementById("total_tax").value = totalTax.toFixed(2);
-    document.getElementById("grand_total").value = grandTotal.toFixed(2);
-    document.getElementById("advance_display").value = advance.toFixed(2);
-    document.getElementById("balance").value = balance.toFixed(2);
+    // ── Inline advance messages ──
+    const remainMsg = document.getElementById('remainAdvanceMsg');
+    const savedMsg  = document.getElementById('advanceSavedMsg');
+
+    if (pendingAdvance > 0 && advance > 0) {
+        if (advance > grand && grand > 0) {
+            const leftover = advance - grand;
+            remainMsg.style.display = 'block';
+            savedMsg.style.display  = 'none';
+            document.getElementById('remainAdvanceText').textContent =
+                `Advance Rs ${fmt(advance)} > Bill Rs ${fmt(grand)}. Rs ${fmt(leftover)} remains as vendor credit.`;
+        } else {
+            remainMsg.style.display = 'none';
+            savedMsg.style.display  = 'block';
+            document.getElementById('advanceSavedText').textContent =
+                `Advance Rs ${fmt(advance)} applied. Balance due: Rs ${fmt(balance)}.`;
+        }
+    } else {
+        if (remainMsg) remainMsg.style.display = 'none';
+        if (savedMsg)  savedMsg.style.display  = 'none';
+    }
+
+    // Update old badge msg wrappers if they exist
+    const overMsg = document.getElementById('advanceOverMsg');
+    const okMsg   = document.getElementById('advanceOkMsg');
+    if (overMsg) overMsg.style.display = 'none';
+    if (okMsg)   okMsg.style.display   = 'none';
 }
-</script>
 
+// ── Init ─────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    const dateInput = document.querySelector('input[name="date"]');
+    if (dateInput && !dateInput.value) {
+        dateInput.value = new Date().toISOString().split('T')[0];
+    }
+    calculateTotal();
+});
+</script>
 {% endblock %}

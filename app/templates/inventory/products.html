@@ -14,12 +14,21 @@
     <div class="card mb-3">
         <div class="card-body">
             <form method="GET" class="row g-3">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label">Category</label>
                     <select name="category" class="form-control" onchange="this.form.submit()">
                         <option value="all" {% if current_category == 'all' %}selected{% endif %}>All Categories</option>
                         {% for cat in categories %}
                         <option value="{{ cat }}" {% if current_category == cat %}selected{% endif %}>{{ cat }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Warehouse</label>
+                    <select name="warehouse_id" class="form-control" onchange="this.form.submit()">
+                        <option value="">All Warehouses</option>
+                        {% for wh in warehouses %}
+                        <option value="{{ wh.id }}" {% if current_warehouse_id == wh.id|string %}selected{% endif %}>{{ wh.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -37,7 +46,7 @@
                         <i class="fas fa-filter"></i> Filter
                     </button>
                 </div>
-                {% if qty_min or qty_max %}
+                {% if qty_min or qty_max or current_warehouse_id %}
                 <div class="col-md-2">
                     <label class="form-label">&nbsp;</label>
                     <a href="{{ url_for('inventory.products') }}" class="btn btn-secondary w-100">
@@ -59,11 +68,13 @@
                             <th>SKU</th>
                             <th>Product Name</th>
                             <th>Category</th>
+                            <th>Warehouse</th>
                             <th>Quantity</th>
                             <th>Cost Price</th>
                             <th>Selling Price</th>
                             <th>Stock Value</th>
                             <th>Status</th>
+                            <th>Price History</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -89,6 +100,7 @@
                             <td>{{ product.sku }}</td>
                             <td><strong>{{ product.name }}</strong></td>
                             <td>{{ product.category or '-' }}</td>
+                            <td>{{ product.warehouse.name if product.warehouse else '-' }}</td>
                             <td>
                                 {{ product.quantity }}
                                 {% if product.quantity <= product.reorder_level %}
@@ -106,6 +118,11 @@
                                 {% else %}
                                 <span class="badge bg-success">In Stock</span>
                                 {% endif %}
+                            </td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#priceHistoryModal" onclick="showPriceHistory({{ product.id }}, '{{ product.name }}')">
+                                    <i class="fas fa-history me-1"></i>History
+                                </button>
                             </td>
                             <td style="width: 100px;">
                                 <a href="{{ url_for('inventory.edit_product', id=product.id) }}" 
@@ -133,6 +150,83 @@ function deleteProduct(id) {
     }
 }
 
+function fmt(n) {
+    return n.toLocaleString('en-PK', {minimumFractionDigits: 0, maximumFractionDigits: 2});
+}
+
+function showPriceHistory(productId, productName) {
+    const modal = document.getElementById('priceHistoryModal');
+    const titleEl = modal.querySelector('.modal-title');
+    const bodyEl = modal.querySelector('.priceHistoryBody');
+    
+    titleEl.textContent = `Price History - ${productName}`;
+    bodyEl.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+    
+    // Fetch price history
+    fetch(`/purchase/api/product/${productId}/cost-history`)
+        .then(r => r.json())
+        .then(data => {
+            let html = '';
+            
+            // Current price
+            html += `<div class="alert alert-primary mb-3">
+                <strong>Current Cost Price: Rs ${fmt(data.current_cost_price)}</strong> | Total Quantity: ${fmt(data.total_quantity)} units
+            </div>`;
+            
+            // History table
+            if (data.history.length === 0) {
+                html += '<div class="alert alert-info">No price change history available.</div>';
+            } else {
+                html += `<div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Old Price</th>
+                                <th>New Price</th>
+                                <th>Qty at Old Price</th>
+                                <th>Remaining</th>
+                                <th>Used</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+                
+                data.history.forEach(h => {
+                    const status = h.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Consumed</span>';
+                    const remaining = h.remaining_at_old_price;
+                    const remainingBadge = remaining > 0 ? `<span class="badge bg-warning">${fmt(remaining)} units</span>` : '<span class="badge bg-secondary">0</span>';
+                    
+                    html += `<tr>
+                        <td><small>${h.change_date}</small></td>
+                        <td>Rs ${h.old_price > 0 ? fmt(h.old_price) : '—'}</td>
+                        <td><strong>Rs ${fmt(h.new_price)}</strong></td>
+                        <td>${fmt(h.quantity_at_old_price)}</td>
+                        <td>${remainingBadge}</td>
+                        <td>${fmt(h.used_quantity)}</td>
+                        <td>${status}</td>
+                    </tr>`;
+                });
+                
+                html += '</tbody></table></div>';
+                
+                // Legend
+                html += `<div class="alert alert-light mt-3 small">
+                    <strong>Legend:</strong><br>
+                    <i class="fas fa-tag text-warning me-2"></i> <strong>Qty at Old Price:</strong> Quantity that was in stock when price changed<br>
+                    <i class="fas fa-check text-success me-2"></i> <strong>Remaining:</strong> Amount still available at old price (not yet used)<br>
+                    <i class="fas fa-check-double text-info me-2"></i> <strong>Used:</strong> Amount already consumed/sold at old price
+                </div>`;
+            }
+            
+            bodyEl.innerHTML = html;
+        })
+        .catch(err => {
+            bodyEl.innerHTML = '<div class="alert alert-danger">Error loading price history.</div>';
+            console.error('Error:', err);
+        });
+}
+
 // Initialize tooltips
 document.addEventListener('DOMContentLoaded', function() {
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
@@ -141,4 +235,22 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+
+<!-- Modal: Price History -->
+<div class="modal fade" id="priceHistoryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Price History</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body priceHistoryBody">
+                <!-- Content loaded by JavaScript -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}

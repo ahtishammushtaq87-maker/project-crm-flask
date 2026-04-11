@@ -1,0 +1,389 @@
+{% extends "base.html" %}
+{% block title %}Create Purchase Order{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="h3 mb-0"><i class="fas fa-clipboard-list me-2 text-primary"></i>Create Purchase Order</h2>
+            <small class="text-muted">Draft a PO — confirm it and convert to a bill when goods arrive</small>
+        </div>
+        <a href="{{ url_for('purchase.purchase_orders') }}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Back to Orders
+        </a>
+    </div>
+
+    <form method="POST" id="poForm">
+        <div class="row">
+            <!-- Left: Header fields -->
+            <div class="col-md-4">
+                <div class="card shadow mb-4">
+                    <div class="card-header py-3">
+                        <h6 class="m-0 fw-bold text-primary"><i class="fas fa-info-circle me-2"></i>Order Details</h6>
+                    </div>
+                    <div class="card-body">
+                        <!-- Vendor -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Vendor <span class="text-danger">*</span></label>
+                            <select name="vendor_id" id="vendorSelect" class="form-select" required onchange="onVendorChange(this.value)">
+                                <option value="">— Select Vendor —</option>
+                                {% for v in vendors %}
+                                <option value="{{ v.id }}">{{ v.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Advance Badge -->
+                        <div id="advanceBadgeWrapper" class="mb-3" style="display:none;">
+                            <div id="advanceBadge" class="alert alert-warning d-flex align-items-start gap-2 py-2 px-3 mb-1" role="button" style="cursor:pointer;" onclick="applyAdvance()">
+                                <i class="fas fa-bolt mt-1 flex-shrink-0"></i>
+                                <div>
+                                    <strong id="advanceBadgeText"></strong>
+                                    <div class="small text-muted">Click to apply this advance as advance paid</div>
+                                </div>
+                            </div>
+                            <div id="advanceRemainMsg" class="alert alert-info py-2 px-3 small" style="display:none;">
+                                <i class="fas fa-info-circle me-1"></i><span id="advanceRemainText"></span>
+                            </div>
+                            <div id="advanceOverMsg" class="alert alert-danger py-2 px-3 small" style="display:none;">
+                                <i class="fas fa-exclamation-triangle me-1"></i><span id="advanceOverText"></span>
+                            </div>
+                        </div>
+
+                        <!-- Expected Delivery -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Expected Delivery Date</label>
+                            <input type="date" name="expected_date" class="form-control">
+                        </div>
+
+                        <!-- Delivery Time Window -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Delivery Time Window</label>
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <label class="form-label small text-muted">Start</label>
+                                    <input type="datetime-local" name="delivery_start" class="form-control">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label small text-muted">End</label>
+                                    <input type="datetime-local" name="delivery_end" class="form-control">
+                                </div>
+                            </div>
+                            <small class="text-muted">Select date and time for delivery window</small>
+                        </div>
+
+                        <!-- Advance Amount for this PO -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">
+                                <i class="fas fa-hand-holding-usd me-1 text-warning"></i>Advance Paid
+                            </label>
+                            <input type="number" name="advance_amount" id="advanceAmount" value="0" step="0.01" class="form-control" oninput="calculateTotal()">
+                            <small class="text-muted">Advance amount paid to vendor for this PO</small>
+                        </div>
+
+                        <!-- Notes -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Notes</label>
+                            <textarea name="notes" class="form-control" rows="3" placeholder="Internal notes or terms…"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Give Advance Button (next to vendor) -->
+                <div class="card shadow mb-4 border-warning" id="giveAdvanceCard" style="display:none;">
+                    <div class="card-header py-2 bg-warning text-dark">
+                        <h6 class="m-0 fw-bold"><i class="fas fa-hand-holding-usd me-2"></i>Quick Advance</h6>
+                    </div>
+                    <div class="card-body py-3">
+                        <button type="button" class="btn btn-success w-100" data-bs-toggle="modal" data-bs-target="#quickAdvanceModal">
+                            <i class="fas fa-plus me-1"></i> Give Advance
+                        </button>
+                        <small class="text-muted d-block mt-2">Record advance payment to this vendor directly from PO</small>
+                    </div>
+                </div>
+
+                <!-- Totals Card -->
+                <div class="card shadow mb-4">
+                    <div class="card-header py-3">
+                        <h6 class="m-0 fw-bold text-primary"><i class="fas fa-calculator me-2"></i>Summary</h6>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm table-borderless mb-0">
+                            <tr>
+                                <td>Subtotal</td>
+                                <td class="text-end"><input type="text" id="subtotal" class="form-control form-control-sm text-end" readonly></td>
+                            </tr>
+                            <tr>
+                                <td>Tax %</td>
+                                <td class="text-end">
+                                    <input type="number" name="tax_rate" id="taxRate" value="0" step="0.01" class="form-control form-control-sm text-end" oninput="calculateTotal()">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Tax Amt</td>
+                                <td class="text-end"><input type="text" id="taxAmt" class="form-control form-control-sm text-end" readonly></td>
+                            </tr>
+                            <tr>
+                                <td>Shipping</td>
+                                <td class="text-end">
+                                    <input type="number" name="shipping_charge" id="shipping" value="0" step="0.01" class="form-control form-control-sm text-end" oninput="calculateTotal()">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Discount</td>
+                                <td class="text-end">
+                                    <input type="number" name="discount" id="discount" value="0" step="0.01" class="form-control form-control-sm text-end" oninput="calculateTotal()">
+                                </td>
+                            </tr>
+                            <tr class="fw-bold border-top">
+                                <td>Grand Total</td>
+                                <td class="text-end"><input type="text" id="grand_total" class="form-control form-control-sm text-end fw-bold" readonly></td>
+                            </tr>
+                            <tr id="balanceRow" style="display:none;">
+                                <td class="text-success">Advance Paid</td>
+                                <td class="text-end text-success"><input type="text" id="advancePaid" class="form-control form-control-sm text-end text-success" readonly></td>
+                            </tr>
+                            <tr class="fw-bold border-top">
+                                <td>Balance Due</td>
+                                <td class="text-end"><input type="text" id="balance_due" class="form-control form-control-sm text-end fw-bold" readonly></td>
+                            </tr>
+                        </table>
+                        <div class="mt-3 d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-save me-1"></i> Save as Draft
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Items table -->
+            <div class="col-md-8">
+                <div class="card shadow mb-4">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                        <h6 class="m-0 fw-bold text-primary"><i class="fas fa-list me-2"></i>Order Items</h6>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addRow()">
+                            <i class="fas fa-plus me-1"></i> Add Item
+                        </button>
+                    </div>
+                    <div class="card-body p-0">
+                        <table class="table table-bordered mb-0" id="itemsTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Product</th>
+                                    <th width="90">Qty</th>
+                                    <th width="120">Unit Price</th>
+                                    <th width="130">Amount</th>
+                                    <th width="40"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="itemsBody">
+                                <tr>
+                                    <td>
+                                        <select name="product_id[]" class="form-select product-select" onchange="onProductChange(this)">
+                                            <option value="">— Select Product —</option>
+                                            {% for p in products %}
+                                            <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </td>
+                                    <td><input type="number" name="quantity[]" class="form-control qty" value="1" min="0.01" step="0.01" oninput="calcRow(this)"></td>
+                                    <td><input type="number" name="price[]" class="form-control price" value="0" step="0.01" oninput="calcRow(this)"></td>
+                                    <td><input type="text" class="form-control amount" readonly></td>
+                                    <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeRow(this)"><i class="fas fa-times"></i></button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Quick Advance Modal -->
+<div class="modal fade" id="quickAdvanceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('purchase.vendor_give_advance', id=0) }}" method="POST" id="quickAdvanceForm">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="fas fa-hand-holding-usd me-2"></i>Give Advance</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-start">
+                    <p class="mb-3">Record advance payment for: <strong id="advanceVendorName"></strong></p>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Amount (Rs) <span class="text-danger">*</span></label>
+                        <input type="number" step="0.01" min="0.01" name="amount" class="form-control form-control-lg" placeholder="0.00" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Date</label>
+                        <input type="date" name="advance_date" class="form-control" value="{{ now().strftime('%Y-%m-%d') if now is defined else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Purpose / Description</label>
+                        <input type="text" name="description" class="form-control" placeholder="e.g. Advance against material order">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success fw-bold">
+                        <i class="fas fa-check me-1"></i> Record Advance
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── Get vendor name for modal ─────────────────────────────────────────────────
+function getVendorName() {
+    const sel = document.getElementById('vendorSelect');
+    const opt = sel.options[sel.selectedIndex];
+    return opt.textContent || 'this vendor';
+}
+
+// ── Vendor & Advance logic ──────────────────────────────────────────────────
+let pendingAdvance = 0;
+
+function onVendorChange(vendorId) {
+    const wrapper = document.getElementById('advanceBadgeWrapper');
+    const giveAdvanceCard = document.getElementById('giveAdvanceCard');
+    if (!vendorId) { 
+        wrapper.style.display = 'none'; 
+        giveAdvanceCard.style.display = 'none';
+        return; 
+    }
+    
+    // Show the Give Advance button when vendor is selected
+    giveAdvanceCard.style.display = 'block';
+    
+    fetch(`/purchase/api/vendor/${vendorId}/advances`)
+        .then(r => r.json())
+        .then(data => {
+            pendingAdvance = data.pending_balance || 0;
+            if (pendingAdvance > 0) {
+                document.getElementById('advanceBadgeText').textContent =
+                    `⚡ Rs ${pendingAdvance.toLocaleString('en-PK', {minimumFractionDigits:0})} in pending advances — click to apply`;
+                wrapper.style.display = 'block';
+            } else {
+                wrapper.style.display = 'none';
+            }
+        })
+        .catch(() => { wrapper.style.display = 'none'; });
+}
+
+function applyAdvance() {
+    // Apply vendor's pending advances to this PO
+    const advanceField = document.getElementById('advanceAmount');
+    const badge = document.getElementById('advanceBadge');
+    
+    if (pendingAdvance > 0) {
+        advanceField.value = pendingAdvance;
+        calculateTotal();
+        badge.classList.remove('alert-warning');
+        badge.classList.add('alert-success');
+        document.getElementById('advanceBadgeText').textContent =
+            `✔ Rs ${pendingAdvance.toLocaleString()} advance applied to this PO`;
+    }
+}
+
+// ── Row helpers ─────────────────────────────────────────────────────────────
+function addRow() {
+    const firstRow = document.querySelector('#itemsBody tr');
+    const row = firstRow.cloneNode(true);
+    row.querySelectorAll('input').forEach(i => { i.value = i.type === 'number' ? '0' : ''; });
+    row.querySelector('.qty').value = '1';
+    row.querySelector('.product-select').selectedIndex = 0;
+    document.getElementById('itemsBody').appendChild(row);
+}
+
+function removeRow(btn) {
+    const rows = document.querySelectorAll('#itemsBody tr');
+    if (rows.length > 1) { btn.closest('tr').remove(); calculateTotal(); }
+}
+
+function onProductChange(sel) {
+    const cost = sel.options[sel.selectedIndex].dataset.cost;
+    if (cost && cost !== 'None') {
+        const priceInput = sel.closest('tr').querySelector('.price');
+        priceInput.value = parseFloat(cost).toFixed(2);
+        calcRow(priceInput);
+    }
+}
+
+function calcRow(el) {
+    const row = el.closest('tr');
+    const qty   = parseFloat(row.querySelector('.qty').value)   || 0;
+    const price = parseFloat(row.querySelector('.price').value) || 0;
+    row.querySelector('.amount').value = (qty * price).toFixed(2);
+    calculateTotal();
+}
+
+function calculateTotal() {
+    let subtotal = 0;
+    document.querySelectorAll('#itemsBody tr').forEach(row => {
+        subtotal += parseFloat(row.querySelector('.amount').value) || 0;
+    });
+    const taxRate  = parseFloat(document.getElementById('taxRate').value)  || 0;
+    const shipping = parseFloat(document.getElementById('shipping').value) || 0;
+    const discount = parseFloat(document.getElementById('discount').value) || 0;
+    const advance  = parseFloat(document.getElementById('advanceAmount').value) || 0;
+    const taxAmt   = subtotal * (taxRate / 100);
+    const grand    = subtotal + taxAmt + shipping - discount;
+    const balance  = grand - advance;
+
+    document.getElementById('subtotal').value   = subtotal.toFixed(2);
+    document.getElementById('taxAmt').value     = taxAmt.toFixed(2);
+    document.getElementById('grand_total').value = grand.toFixed(2);
+    
+    const balanceRow = document.getElementById('balanceRow');
+    if (advance > 0) {
+        balanceRow.style.display = 'table-row';
+        document.getElementById('advancePaid').value = advance.toFixed(2);
+        document.getElementById('balance_due').value = balance.toFixed(2);
+    } else {
+        balanceRow.style.display = 'none';
+        document.getElementById('advancePaid').value = '';
+        document.getElementById('balance_due').value = grand.toFixed(2);
+    }
+}
+
+// Init
+document.addEventListener('DOMContentLoaded', () => { 
+    calculateTotal(); 
+    
+    // Update advance modal with vendor info before showing
+    const quickAdvanceModal = document.getElementById('quickAdvanceModal');
+    if (quickAdvanceModal) {
+        quickAdvanceModal.addEventListener('show.bs.modal', function(event) {
+            const vendorId = document.getElementById('vendorSelect').value;
+            
+            // Prevent modal if no vendor selected
+            if (!vendorId) {
+                event.preventDefault();
+                alert('Please select a vendor first.');
+                return;
+            }
+            
+            const vendorName = getVendorName();
+            
+            // Update the vendor name display
+            document.getElementById('advanceVendorName').textContent = vendorName;
+            
+            // Update the form action with vendor ID
+            const form = document.getElementById('quickAdvanceForm');
+            const action = form.action;
+            const baseUrl = action.substring(0, action.lastIndexOf('/'));
+            form.action = baseUrl + '/' + vendorId;
+            
+            // Pre-fill today's date if empty
+            const dateInput = form.querySelector('input[name="advance_date"]');
+            if (dateInput && !dateInput.value) {
+                dateInput.value = new Date().toISOString().split('T')[0];
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

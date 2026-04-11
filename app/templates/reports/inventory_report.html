@@ -125,19 +125,28 @@
     <!-- Filters -->
     <div class="filter-section">
         <form method="GET" action="{{ url_for('reports.inventory_report') }}" class="row g-3">
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label class="form-label small font-weight-bold">Search Product / SKU</label>
                 <div class="input-group">
                     <span class="input-group-text bg-light border-0"><i class="fas fa-search"></i></span>
                     <input type="text" name="search" class="form-control bg-light border-0" placeholder="Product name or SKU..." value="{{ search }}">
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label small font-weight-bold">Category</label>
                 <select name="category" class="form-select bg-light border-0">
                     <option value="all">All Categories</option>
                     {% for cat in categories %}
                     <option value="{{ cat }}" {% if current_category == cat %}selected{% endif %}>{{ cat }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small font-weight-bold">Warehouse</label>
+                <select name="warehouse_id" class="form-select bg-light border-0">
+                    <option value="">All Warehouses</option>
+                    {% for wh in warehouses %}
+                    <option value="{{ wh.id }}" {% if current_warehouse_id == wh.id|string %}selected{% endif %}>{{ wh.name }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -168,6 +177,7 @@
                             <th class="px-4">SKU</th>
                             <th>Product Name</th>
                             <th>Category</th>
+                            <th>Warehouse</th>
                             <th>Quantity</th>
                             <th>Reorder Level</th>
                             <th>Cost Price</th>
@@ -182,6 +192,7 @@
                             <td class="px-4 font-weight-bold">{{ product.sku }}</td>
                             <td>{{ product.name }}</td>
                             <td><span class="badge bg-light text-dark">{{ product.category }}</span></td>
+                            <td>{{ product.warehouse.name if product.warehouse else '-' }}</td>
                             <td>{{ product.quantity }} {{ product.unit }}</td>
                             <td>{{ product.reorder_level }}</td>
                             <td>Rs{{ "%.2f"|format(product.cost_price) }}</td>

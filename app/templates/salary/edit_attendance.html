@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Attendance Record{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 600px;">
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h4 class="mb-0">Edit Attendance Record</h4>
+        </div>
+        <div class="card-body">
+            <form method="POST">
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <label class="form-label">Staff Member</label>
+                        <input type="text" class="form-control" value="{{ attendance.staff.name }}" readonly>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <label class="form-label">Date</label>
+                        <input type="date" name="date" class="form-control" value="{{ attendance.date }}" required>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Clock In Time</label>
+                        <input type="time" name="clock_in" class="form-control" 
+                               value="{% if attendance.clock_in %}{{ attendance.clock_in.strftime('%H:%M') }}{% endif %}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Clock Out Time</label>
+                        <input type="time" name="clock_out" class="form-control"
+                               value="{% if attendance.clock_out %}{{ attendance.clock_out.strftime('%H:%M') }}{% endif %}">
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Notes (Optional)</label>
+                    <textarea name="notes" class="form-control" rows="3" placeholder="e.g., Half day, Late, Medical leave, etc.">{{ attendance.notes or '' }}</textarea>
+                </div>
+                
+                <!-- Display Information -->
+                <div class="alert alert-info">
+                    <strong>Staff Information:</strong>
+                    <ul class="mb-0 mt-2">
+                        <li>Monthly Salary: Rs {{ "%.2f"|format(attendance.staff.monthly_salary) }}</li>
+                        <li>Daily Salary: Rs {{ "%.2f"|format(attendance.staff.daily_salary) }}</li>
+                        <li>Hourly Rate: Rs {{ "%.2f"|format(attendance.hourly_rate or (attendance.staff.daily_salary / 8)) }}/hour</li>
+                    </ul>
+                </div>
+                
+                {% if attendance.hours_worked > 0 or attendance.minutes_worked > 0 %}
+                <div class="alert alert-success">
+                    <strong>Current Record:</strong>
+                    <ul class="mb-0 mt-2">
+                        <li>Duration: {{ attendance.hours_worked }}h {{ attendance.minutes_worked }}m</li>
+                        <li>Earned Amount: Rs {{ "%.2f"|format(attendance.earned_amount) }}</li>
+                    </ul>
+                </div>
+                {% endif %}
+                
+                <div class="d-grid gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Update Record
+                    </button>
+                    <a href="{{ url_for('attendance.index') }}" class="btn btn-secondary">
+                        <i class="fas fa-times"></i> Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

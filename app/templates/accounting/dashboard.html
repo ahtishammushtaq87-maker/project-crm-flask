@@ -50,9 +50,24 @@
             <div class="card p-3 mb-3 border-danger">
                 <h5>Total Expenses</h5>
                 <h3>Rs{{ '%.2f'|format(total_expenses) }}</h3>
-                <div class="mt-1 small text-muted">
-                    <span>Op: Rs{{ '%.2f'|format(operating_expenses) }}</span> | 
-                    <span>BOM: Rs{{ '%.2f'|format(manufacturing_overhead) }}</span>
+                <div class="mt-2 small">
+                    <div class="row">
+                        <div class="col-6">
+                            <span class="text-muted">Op:</span><br>
+                            <strong>Rs{{ '%.2f'|format(operating_expenses) }}</strong>
+                        </div>
+                        <div class="col-6">
+                            <span class="text-muted">BOM:</span><br>
+                            <strong>Rs{{ '%.2f'|format(manufacturing_overhead) }}</strong>
+                        </div>
+                    </div>
+                    {% if divided_expenses_for_period > 0 %}
+                    <div class="mt-2 pt-2 border-top">
+                        <span class="text-info">Divided (Period):</span><br>
+                        <strong class="text-info">Rs{{ '%.2f'|format(divided_expenses_for_period) }}</strong>
+                        <div class="form-text">{{ date_from }} to {{ date_to }}</div>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -63,6 +78,53 @@
             </div>
         </div>
     </div>
+
+    <!-- Daily Expenses Section -->
+    {% if today_daily_expenses > 0 %}
+    <div class="row mt-3">
+        <div class="col-md-12">
+            <div class="card border-info">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">Today's Divided Expenses (Per Day)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <h6 class="text-muted">Today's Daily Expense Total</h6>
+                            <h3 class="text-info">Rs{{ '%.2f'|format(today_daily_expenses) }}</h3>
+                            <small class="text-muted">Only today's portion calculated in net profit</small>
+                        </div>
+                        <div class="col-md-9">
+                            {% if daily_expense_breakdown %}
+                            <h6 class="text-muted mb-3">Breakdown by Category</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Description</th>
+                                            <th>Category</th>
+                                            <th class="text-end">Daily Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for item in daily_expense_breakdown %}
+                                        <tr>
+                                            <td>{{ item.description }}</td>
+                                            <td><span class="badge bg-secondary">{{ item.category }}</span></td>
+                                            <td class="text-end"><strong>Rs{{ '%.2f'|format(item.daily_amount) }}</strong></td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <div class="row">
         <div class="col-md-6">

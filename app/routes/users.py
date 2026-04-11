@@ -51,7 +51,15 @@ def create_user():
             can_view_vendors=form.can_view_vendors.data,
             can_view_customers=form.can_view_customers.data,
             can_view_reports=form.can_view_reports.data,
-            can_view_settings=form.can_view_settings.data
+            can_view_settings=form.can_view_settings.data,
+            can_view_manufacturing=form.can_view_manufacturing.data,
+            can_view_production=form.can_view_production.data,
+            can_view_warehouse=form.can_view_warehouse.data,
+            can_view_attendance=form.can_view_attendance.data,
+            can_view_salary=form.can_view_salary.data,
+            can_view_targets=form.can_view_targets.data,
+            can_view_dashboard=form.can_view_dashboard.data,
+            can_view_accounting=form.can_view_accounting.data
         )
         # Set password - form is now required to have a password
         if form.password.data and form.password.data.strip():
@@ -84,6 +92,14 @@ def edit_user(id):
         user.can_view_customers = form.can_view_customers.data
         user.can_view_reports = form.can_view_reports.data
         user.can_view_settings = form.can_view_settings.data
+        user.can_view_manufacturing = form.can_view_manufacturing.data
+        user.can_view_production = form.can_view_production.data
+        user.can_view_warehouse = form.can_view_warehouse.data
+        user.can_view_attendance = form.can_view_attendance.data
+        user.can_view_salary = form.can_view_salary.data
+        user.can_view_targets = form.can_view_targets.data
+        user.can_view_dashboard = form.can_view_dashboard.data
+        user.can_view_accounting = form.can_view_accounting.data
         if form.password.data and form.password.data.strip():
             user.set_password(form.password.data)
         db.session.commit()
@@ -102,6 +118,14 @@ def edit_user(id):
         form.can_view_customers.data = user.can_view_customers
         form.can_view_reports.data = user.can_view_reports
         form.can_view_settings.data = user.can_view_settings
+        form.can_view_manufacturing.data = getattr(user, 'can_view_manufacturing', True)
+        form.can_view_production.data = getattr(user, 'can_view_production', True)
+        form.can_view_warehouse.data = getattr(user, 'can_view_warehouse', True)
+        form.can_view_attendance.data = getattr(user, 'can_view_attendance', True)
+        form.can_view_salary.data = getattr(user, 'can_view_salary', True)
+        form.can_view_targets.data = getattr(user, 'can_view_targets', True)
+        form.can_view_dashboard.data = getattr(user, 'can_view_dashboard', True)
+        form.can_view_accounting.data = getattr(user, 'can_view_accounting', True)
     return render_template('users/edit.html', form=form, user=user)
 
 # Task Management Routes

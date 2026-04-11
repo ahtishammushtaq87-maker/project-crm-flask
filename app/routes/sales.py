@@ -1,9 +1,9 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file
-from flask_login import login_required
+from flask_login import login_required, current_user
 from app import db
-from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency
+from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance
 from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy import func
 from app.pdf_utils import generate_professional_pdf
 import os
@@ -68,6 +68,9 @@ def create_invoice():
     products = Product.query.all()
     currencies = Currency.query.filter_by(is_active=True).all()
     
+    customer_advances = {c.id: float(c.remaining_advance_balance) for c in customers}
+    customer_total_advances = {c.id: float(c.total_advances_received) for c in customers}
+    
     form.customer_id.choices = [(0, 'Walk-in Customer')] + [(c.id, c.name) for c in customers]
     
     if request.method == 'POST':
@@ -80,8 +83,10 @@ def create_invoice():
         product_ids = request.form.getlist('product_id[]')
         quantities = request.form.getlist('quantity[]')
         prices = request.form.getlist('price[]')
+        deliveries = request.form.getlist('delivery[]')
         
         subtotal = 0
+        item_delivery_total = 0
         sale_items = []
         
         for i in range(len(product_ids)):
@@ -89,20 +94,27 @@ def create_invoice():
                 product = Product.query.get(int(product_ids[i]))
                 quantity = float(quantities[i])
                 price = float(prices[i])
-                total = quantity * price
+                delivery_fee = float(deliveries[i]) if i < len(deliveries) else 0
+                item_subtotal = quantity * price
+                total = item_subtotal + delivery_fee
                 subtotal += total
+                item_delivery_total += delivery_fee
                 
                 sale_items.append({
                     'product_id': product.id,
                     'quantity': quantity,
                     'unit_price': price,
+                    'delivery_fee': delivery_fee,
                     'total': total
                 })
         
         tax_rate = float(request.form.get('tax_rate', 0))
         tax = subtotal * (tax_rate / 100)
         discount = float(request.form.get('discount', 0))
-        total = subtotal + tax - discount
+        delivery_charge = float(request.form.get('delivery_charge', 0))
+        advance_applied = float(request.form.get('advance_applied', 0))
+        
+        total = subtotal + tax + delivery_charge - discount - advance_applied
         
         # Generate invoice number
         last_invoice = Sale.query.order_by(Sale.id.desc()).first()
@@ -117,11 +129,14 @@ def create_invoice():
             tax_rate=tax_rate,
             tax=tax,
             discount=discount,
+            delivery_charge=delivery_charge,
+            advance_applied=advance_applied,
             total=total,
             status=request.form.get('status', 'unpaid'),
             currency_id=request.form.get('currency_id', None),
             exchange_rate=float(request.form.get('exchange_rate', 1)),
-            paid_amount=0
+            paid_amount=0,
+            created_by=current_user.id
         )
 
         due_date_str = request.form.get('due_date')
@@ -134,6 +149,30 @@ def create_invoice():
         db.session.add(sale)
         db.session.flush()
         
+        # Handle advance application - link to customer advances
+        if customer_id and customer_id != '0' and advance_applied > 0:
+            customer = Customer.query.get(int(customer_id))
+            remaining_to_apply = advance_applied
+            
+            # Get advances sorted by date (oldest first)
+            advances = CustomerAdvance.query.filter_by(customer_id=customer.id).filter(
+                CustomerAdvance.is_adjusted == False
+            ).order_by(CustomerAdvance.date).all()
+            
+            for adv in advances:
+                if remaining_to_apply <= 0:
+                    break
+                    
+                available = adv.remaining_balance
+                if available > 0:
+                    apply_amt = min(available, remaining_to_apply)
+                    adv.applied_amount += apply_amt
+                    remaining_to_apply -= apply_amt
+                    
+                    if adv.remaining_balance <= 0:
+                        adv.is_adjusted = True
+                        adv.adjusted_invoice_id = sale.id
+        
         # Add items
         for item in sale_items:
             sale_item = SaleItem(
@@ -141,6 +180,7 @@ def create_invoice():
                 product_id=item['product_id'],
                 quantity=item['quantity'],
                 unit_price=item['unit_price'],
+                delivery_fee=item.get('delivery_fee', 0),
                 total=item['total']
             )
             db.session.add(sale_item)
@@ -153,7 +193,7 @@ def create_invoice():
         flash('Invoice created successfully!', 'success')
         return redirect(url_for('sales.invoice_detail', id=sale.id))
     
-    return render_template('sales/create_invoice.html', form=form, products=products, customers=customers, vendors=vendors, currencies=currencies, now=datetime.now())
+    return render_template('sales/create_invoice.html', form=form, products=products, customers=customers, vendors=vendors, currencies=currencies, now=datetime.now(), customer_advances=customer_advances, customer_total_advances=customer_total_advances)
 
 @bp.route('/invoice/<int:id>')
 @login_required
@@ -223,7 +263,29 @@ def customers():
 @login_required
 def customer_profile(id):
     customer = Customer.query.get_or_404(id)
-    return render_template('sales/customer_profile.html', customer=customer)
+    # Sort sales newest first
+    sales = sorted(customer.sales, key=lambda s: s.date, reverse=True)
+    # Sort advances newest first
+    advances = sorted(customer.advances, key=lambda a: a.date, reverse=True)
+    return render_template('sales/customer_profile.html', 
+                          customer=customer, 
+                          sales=sales, 
+                          advances=advances,
+                          now=datetime.now())
+
+@bp.route('/customer/<int:id>/advances-json')
+@login_required
+def customer_advances_json(id):
+    customer = Customer.query.get_or_404(id)
+    advances = CustomerAdvance.query.filter_by(customer_id=id).order_by(CustomerAdvance.date.desc()).all()
+    return jsonify({
+        'advances': [{
+            'date': a.date.strftime('%d-%b-%Y'),
+            'amount': a.amount,
+            'applied': a.applied_amount,
+            'balance': a.remaining_balance
+        } for a in advances]
+    })
 
 @bp.route('/customer/add', methods=['GET', 'POST'])
 @login_required
@@ -295,10 +357,60 @@ def invoice_pdf(id):
             mimetype='application/pdf'
         )
     except Exception as e:
-        # Log the error and return a user-friendly message
         print(f"PDF generation error: {str(e)}")
         flash(f'Error generating PDF: {str(e)}', 'error')
         return redirect(url_for('sales.invoice_detail', id=id))
+
+@bp.route('/invoice/<int:id>/pdf/view')
+@login_required
+def invoice_pdf_view(id):
+    """View PDF inline (for sharing)"""
+    sale = Sale.query.get_or_404(id)
+    company = Company.query.first()
+    invoice_settings = InvoiceSettings.query.first()
+    
+    try:
+        buffer = generate_professional_pdf('invoice', sale, company, invoice_settings)
+        return send_file(buffer, mimetype='application/pdf')
+    except Exception as e:
+        flash(f'Error generating PDF: {str(e)}', 'error')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
+@bp.route('/invoice/<int:id>/pdf/share')
+@login_required
+def invoice_pdf_share(id):
+    """Generate PDF, save to public folder, and return shareable link"""
+    from flask import current_app
+    import os
+    import secrets
+    
+    sale = Sale.query.get_or_404(id)
+    company = Company.query.first()
+    invoice_settings = InvoiceSettings.query.first()
+    
+    try:
+        buffer = generate_professional_pdf('invoice', sale, company, invoice_settings)
+        buffer.seek(0)
+        pdf_data = buffer.getvalue()
+        
+        # Save to public folder
+        public_dir = os.path.join(current_app.root_path, 'static', 'shared_pdfs')
+        os.makedirs(public_dir, exist_ok=True)
+        
+        # Generate unique filename
+        token = secrets.token_urlsafe(8)
+        filename = f"invoice_{sale.invoice_number or 'unknown'}_{token}.pdf"
+        filepath = os.path.join(public_dir, filename)
+        
+        # Save buffer to file
+        with open(filepath, 'wb') as f:
+            f.write(pdf_data)
+        
+        # Return the shareable URL
+        share_url = url_for('static', filename=f'shared_pdfs/{filename}')
+        return {'share_url': share_url, 'download_url': url_for('sales.invoice_pdf', id=id)}
+    except Exception as e:
+        return {'error': str(e)}, 500
 
 @bp.route('/company', methods=['GET', 'POST'])
 @login_required
@@ -339,6 +451,16 @@ def company_settings():
                 logo_file.save(logo_path)
                 company.logo_path = logo_path
         
+        # Handle signature upload
+        if 'signature' in request.files:
+            sig_file = request.files['signature']
+            if sig_file and sig_file.filename:
+                filename = secure_filename(sig_file.filename)
+                sig_path = os.path.join('app', 'static', 'uploads', filename)
+                os.makedirs(os.path.dirname(sig_path), exist_ok=True)
+                sig_file.save(sig_path)
+                company.signature_path = sig_path
+        
         db.session.commit()
         flash('Company settings updated successfully!', 'success')
         return redirect(url_for('sales.company_settings'))
@@ -357,6 +479,15 @@ def invoice_settings():
             settings = InvoiceSettings()
             db.session.add(settings)
         
+        settings.default_notes = form.default_notes.data
+        settings.default_terms = form.default_terms.data
+        settings.bank_name = form.bank_name.data
+        settings.account_holder_name = form.account_holder_name.data
+        settings.account_number = form.account_number.data
+        settings.ifsc_code = form.ifsc_code.data
+        settings.swift_code = form.swift_code.data
+        settings.bank_address = form.bank_address.data
+        settings.payment_instructions = form.payment_instructions.data
         settings.invoice_prefix = form.invoice_prefix.data
         settings.invoice_suffix = form.invoice_suffix.data
         settings.next_number = form.next_number.data
@@ -370,3 +501,172 @@ def invoice_settings():
         return redirect(url_for('sales.invoice_settings'))
     
     return render_template('sales/invoice_settings.html', settings=settings, form=form)
+
+
+# ===== CUSTOMER ADVANCE ROUTES =====
+
+@bp.route('/customer/<int:id>/advance', methods=['POST'])
+@login_required
+def customer_receive_advance(id):
+    """Record a quick advance payment received from a customer against material."""
+    customer = Customer.query.get_or_404(id)
+    amount = float(request.form.get('amount', 0))
+    description = request.form.get('description', '').strip()
+    advance_date_str = request.form.get('advance_date', '')
+    
+    if amount <= 0:
+        flash('Advance amount must be greater than zero.', 'danger')
+        return redirect(url_for('sales.customer_profile', id=id))
+    
+    try:
+        advance_date = datetime.strptime(advance_date_str, '%Y-%m-%d').date() if advance_date_str else date.today()
+    except ValueError:
+        advance_date = date.today()
+    
+    advance = CustomerAdvance(
+        customer_id=customer.id,
+        amount=amount,
+        date=advance_date,
+        description=description or 'Advance for purchase',
+        created_by=current_user.id
+    )
+    db.session.add(advance)
+    db.session.commit()
+    flash(f'Advance of Rs {amount:,.2f} recorded from {customer.name}.', 'success')
+    return redirect(url_for('sales.customer_profile', id=id))
+
+
+@bp.route('/customer/<int:customer_id>/advance/<int:adv_id>/apply', methods=['POST'])
+@login_required
+def customer_apply_advance(customer_id, adv_id):
+    """Apply a customer advance against a specific invoice."""
+    advance = CustomerAdvance.query.get_or_404(adv_id)
+    invoice_id = request.form.get('invoice_id')
+    
+    # Check if advance still has remaining balance
+    if advance.remaining_balance <= 0:
+        flash('This advance has no remaining balance to apply.', 'warning')
+        return redirect(url_for('sales.customer_profile', id=customer_id))
+    
+    invoice = Sale.query.get_or_404(invoice_id)
+    
+    # Ensure the invoice belongs to the customer
+    if invoice.customer_id != customer_id:
+        flash('Invalid invoice for this customer.', 'danger')
+        return redirect(url_for('sales.customer_profile', id=customer_id))
+    
+    # Check invoice balance
+    if invoice.balance_due <= 0:
+        flash('This invoice has no balance to apply advance against.', 'warning')
+        return redirect(url_for('sales.customer_profile', id=customer_id))
+    
+    # Calculate how much to apply (minimum of advance balance and invoice balance)
+    apply_amount = min(advance.remaining_balance, invoice.balance_due)
+    
+    # Update advance
+    advance.applied_amount += apply_amount
+    if advance.remaining_balance <= 0:
+        advance.is_adjusted = True
+        advance.adjusted_invoice_id = invoice.id
+    
+    # Update invoice advance applied
+    invoice.advance_applied = (invoice.advance_applied or 0) + apply_amount
+    
+    # Recalculate invoice total
+    invoice.calculate_totals()
+    invoice.paid_amount += apply_amount
+    invoice.update_status()
+    
+    db.session.commit()
+    flash(f'Advance of Rs {apply_amount:,.2f} applied to invoice {invoice.invoice_number}.', 'success')
+    return redirect(url_for('sales.customer_profile', id=customer_id))
+
+
+@bp.route('/customer/<int:customer_id>/advance/<int:adv_id>/delete', methods=['POST'])
+@login_required
+def customer_delete_advance(customer_id, adv_id):
+    """Delete a customer advance. If applied, first unapplies from invoices."""
+    advance = CustomerAdvance.query.get_or_404(adv_id)
+    
+    if advance.customer_id != customer_id:
+        flash('Invalid advance for this customer.', 'danger')
+        return redirect(url_for('sales.customer_profile', id=customer_id))
+    
+    # If advance has been applied, unapply it first
+    if advance.applied_amount > 0:
+        from app.models import Sale
+        invoices_with_advance = Sale.query.filter(
+            Sale.customer_id == customer_id,
+            Sale.advance_applied > 0
+        ).all()
+        
+        reverse_amount = advance.applied_amount
+        
+        for invoice in invoices_with_advance:
+            if reverse_amount <= 0:
+                break
+            if invoice.advance_applied > 0:
+                reverse_amt = min(invoice.advance_applied, reverse_amount)
+                invoice.advance_applied -= reverse_amt
+                invoice.calculate_totals()
+                invoice.paid_amount -= reverse_amt
+                invoice.update_status()
+                reverse_amount -= reverse_amt
+        
+        advance.applied_amount = 0
+        advance.is_adjusted = False
+        advance.adjusted_invoice_id = None
+    
+    customer_name = advance.customer.name
+    amount = advance.amount
+    
+    db.session.delete(advance)
+    db.session.commit()
+    flash(f'Advance of Rs {amount:,.2f} from {customer_name} has been deleted.', 'success')
+    return redirect(url_for('sales.customer_profile', id=customer_id))
+
+
+@bp.route('/customer/<int:customer_id>/advance/<int:adv_id>/unapply', methods=['POST'])
+@login_required
+def customer_unapply_advance(customer_id, adv_id):
+    """Unapply/reverse an advance that was applied to an invoice."""
+    advance = CustomerAdvance.query.get_or_404(adv_id)
+    
+    if advance.customer_id != customer_id:
+        flash('Invalid advance for this customer.', 'danger')
+        return redirect(url_for('sales.customer_profile', id=customer_id))
+    
+    if advance.applied_amount <= 0:
+        flash('This advance has not been applied to any invoice.', 'warning')
+        return redirect(url_for('sales.customer_profile', id=customer_id))
+    
+    # Find invoices that have this advance applied
+    from app.models import Sale
+    invoices_with_advance = Sale.query.filter(
+        Sale.customer_id == customer_id,
+        Sale.advance_applied > 0
+    ).all()
+    
+    # Reverse the applied amount from invoices
+    reverse_amount = advance.applied_amount
+    
+    for invoice in invoices_with_advance:
+        if reverse_amount <= 0:
+            break
+        if invoice.advance_applied > 0:
+            reverse_amt = min(invoice.advance_applied, reverse_amount)
+            invoice.advance_applied -= reverse_amt
+            invoice.calculate_totals()
+            invoice.paid_amount -= reverse_amt
+            invoice.update_status()
+            reverse_amount -= reverse_amt
+    
+    # Reset advance
+    advance.applied_amount = 0
+    advance.is_adjusted = False
+    advance.adjusted_invoice_id = None
+    
+    db.session.commit()
+    flash(f'Advance of Rs {advance.amount:,.2f} has been unapplied from invoices.', 'success')
+    return redirect(url_for('sales.customer_profile', id=customer_id))
+

@@ -15,17 +15,29 @@
                     </div>
                     <div class="card-body">
                         <div class="mb-3">
-                            <label class="form-label">Customer</label>
-                            <select name="customer_id" class="form-control">
+                            <label for="customerSelect" class="form-label">Customer</label>
+                            <select name="customer_id" class="form-control" id="customerSelect" onchange="updateCustomerInfo()">
                                 <option value="0">Walk-in Customer</option>
                                 {% for customer in form.customer_id.choices[1:] %}
-                                <option value="{{ customer[0] }}">{{ customer[1] }}</option>
+                                <option value="{{ customer[0] }}" data-advance="{{ customer_advances.get(customer[0], 0) }}" data-total="{{ customer_total_advances.get(customer[0], 0) }}">{{ customer[1] }}</option>
                                 {% endfor %}
                             </select>
                         </div>
+                        <div id="customerAdvanceInfo" class="alert alert-info">
+                            <i class="fas fa-hand-holding-usd me-1"></i>
+                            <strong>Customer Advance:</strong> 
+                            <span id="availableAdvance">Select a customer</span>
+                        </div>
+                        <div id="customerAdvanceDetails" class="mb-3" style="display:none;">
+                            <label class="form-label text-warning fw-bold">
+                                <i class="fas fa-list me-1"></i>Available Advances
+                            </label>
+                            <div id="advanceListContainer" class="bg-light rounded p-2" style="max-height: 150px; overflow-y: auto;">
+                            </div>
+                        </div>
                         <div class="mb-3">
-                            <label class="form-label">Vendor (Optional)</label>
-                            <select name="vendor_id" class="form-control">
+                            <label for="vendorSelect" class="form-label">Vendor (Optional)</label>
+                            <select name="vendor_id" class="form-control" id="vendorSelect">
                                 <option value="0">None</option>
                                 {% for vendor in vendors %}
                                 <option value="{{ vendor.id }}">{{ vendor.name }}</option>
@@ -33,24 +45,24 @@
                             </select>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Date</label>
-                            <input type="date" name="date" class="form-control" value="{{ now.strftime('%Y-%m-%d') }}" required>
+                            <label for="dateInput" class="form-label">Date</label>
+                            <input type="date" name="date" class="form-control" id="dateInput" value="{{ now.strftime('%Y-%m-%d') }}" required>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Currency</label>
-                            <select name="currency_id" class="form-control">
+<div class="mb-3">
+                            <!--<label for="currencySelect" class="form-label">Currency</label>
+                            <select name="currency_id" class="form-control" id="currencySelect">
                                 {% for cur in currencies %}
                                 <option value="{{ cur.id }}">{{ cur.name }} ({{ cur.code }})</option>
                                 {% endfor %}
-                            </select>
+                            </select>-->
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Exchange Rate</label>
-                            <input type="number" step="0.0001" name="exchange_rate" class="form-control" value="1.0">
+                            <label for="exchangeRateInput" class="form-label">Exchange Rate</label>
+                            <input type="number" name="exchange_rate" class="form-control" id="exchangeRateInput" step="0.0001" value="1.0">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Status</label>
-                            <select name="status" class="form-control">
+                            <label for="statusSelect" class="form-label">Status</label>
+                            <select name="status" class="form-control" id="statusSelect">
                                 <option value="draft">Draft</option>
                                 <option value="unpaid" selected>Unpaid</option>
                                 <option value="paid">Paid</option>
@@ -58,8 +70,8 @@
                             </select>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Due Date</label>
-                            <input type="date" name="due_date" class="form-control" value="{{ now.strftime('%Y-%m-%d') }}">
+                            <label for="dueDateInput" class="form-label">Due Date</label>
+                            <input type="date" name="due_date" class="form-control" id="dueDateInput" value="{{ now.strftime('%Y-%m-%d') }}">
                         </div>
                     </div>
                 </div>
@@ -71,12 +83,26 @@
                     </div>
                     <div class="card-body">
                         <div class="mb-3">
-                            <label class="form-label">Discount</label>
-                            <input type="number" name="discount" class="form-control" step="0.01" value="0">
+                            <label for="discountInput" class="form-label">Discount</label>
+                            <input type="number" name="discount" id="discountInput" class="form-control" step="0.01" value="0">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Tax Rate (%)</label>
-                            <input type="number" name="tax_rate" class="form-control" step="0.01" value="0">
+                            <label for="taxRateInput" class="form-label">Tax Rate (%)</label>
+                            <input type="number" name="tax_rate" id="taxRateInput" class="form-control" step="0.01" value="0">
+                        </div>
+                        <div class="mb-3">
+                            <label for="deliveryChargeInput" class="form-label">Delivery Charge (Rs)</label>
+                            <input type="number" name="delivery_charge" id="deliveryChargeInput" class="form-control" step="0.01" value="0">
+                        </div>
+                        <div class="mb-3">
+                            <label for="advanceAppliedInput" class="form-label">
+                                <i class="fas fa-hand-holding-usd me-1 text-warning"></i>Advance Applied (Rs)
+                            </label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-warning text-dark"><i class="fas fa-hand-holding-usd"></i></span>
+                                <input type="number" name="advance_applied" id="advanceAppliedInput" class="form-control border-warning" step="0.01" value="0">
+                            </div>
+                            <small class="text-muted">Available advance will be shown after selecting customer</small>
                         </div>
                         <hr>
                         <div class="mb-2">
@@ -87,6 +113,12 @@
                         </div>
                         <div class="mb-2">
                             <strong>Discount:</strong> <span id="discountDisplay">Rs0.00</span>
+                        </div>
+                        <div class="mb-2">
+                            <strong>Delivery:</strong> <span id="deliveryDisplay">Rs0.00</span>
+                        </div>
+                        <div class="mb-2">
+                            <strong>Advance:</strong> <span id="advanceDisplay">Rs0.00</span>
                         </div>
                         <hr>
                         <div class="mb-2">
@@ -112,6 +144,7 @@
                                 <th>Product</th>
                                 <th>Quantity</th>
                                 <th>Unit Price</th>
+                                <th>Delivery</th>
                                 <th>Total</th>
                                 <th></th>
                             </tr>
@@ -119,7 +152,7 @@
                         <tbody id="itemsBody">
                             <tr class="item-row">
                                 <td>
-                                    <select name="product_id[]" class="form-control product-select" required>
+                                    <select name="product_id[]" class="form-control product-select" id="productSelect1" required>
                                         <option value="">Select Product</option>
                                         {% for product in products %}
                                         <option value="{{ product.id }}" data-price="{{ product.unit_price }}">
@@ -129,10 +162,13 @@
                                     </select>
                                 </td>
                                 <td>
-                                    <input type="number" name="quantity[]" class="form-control quantity" step="0.01" required>
+                                    <input type="number" name="quantity[]" id="quantity1" class="form-control quantity" step="0.01" required>
                                 </td>
                                 <td>
-                                    <input type="number" name="price[]" class="form-control price" step="0.01" readonly>
+                                    <input type="number" name="price[]" id="price1" class="form-control price" step="0.01" readonly>
+                                </td>
+                                <td>
+                                    <input type="number" name="delivery[]" id="delivery1" class="form-control delivery" step="0.01" value="0">
                                 </td>
                                 <td>
                                     <span class="item-total">Rs0.00</span>
@@ -157,11 +193,97 @@
 </div>
 
 <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        updateCustomerInfo();
+    });
+    
+    function updateCustomerInfo() {
+        const select = document.getElementById('customerSelect');
+        const infoDiv = document.getElementById('customerAdvanceInfo');
+        const advanceDetailsDiv = document.getElementById('customerAdvanceDetails');
+        const advanceListContainer = document.getElementById('advanceListContainer');
+        const advanceInput = document.getElementById('advanceAppliedInput');
+        
+        if (!select || !infoDiv) return;
+        
+        const selectedOption = select.options[select.selectedIndex];
+        
+        if (select.value == '0') {
+            infoDiv.className = 'alert alert-info';
+            infoDiv.innerHTML = '<i class="fas fa-hand-holding-usd me-1"></i><strong>Customer Advance:</strong> Select a customer';
+            advanceDetailsDiv.style.display = 'none';
+            if (advanceInput) {
+                advanceInput.max = 0;
+                advanceInput.value = 0;
+            }
+            return;
+        }
+        
+        const advance = parseFloat(selectedOption.getAttribute('data-advance')) || 0;
+        const total = parseFloat(selectedOption.getAttribute('data-total')) || 0;
+        const customerId = select.value;
+        
+        // Fetch individual advances for this customer
+        fetch(`/sales/customer/${customerId}/advances-json`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.advances && data.advances.length > 0) {
+                    let advanceHtml = '<table class="table table-sm mb-0"><thead><tr><th>Date</th><th>Amount</th><th>Applied</th><th>Balance</th></tr></thead><tbody>';
+                    data.advances.forEach(adv => {
+                        advanceHtml += `<tr>
+                            <td>${adv.date}</td>
+                            <td>Rs ${adv.amount.toFixed(2)}</td>
+                            <td>Rs ${adv.applied.toFixed(2)}</td>
+                            <td class="${adv.balance > 0 ? 'text-warning fw-bold' : 'text-success'}">Rs ${adv.balance.toFixed(2)}</td>
+                        </tr>`;
+                    });
+                    advanceHtml += '</tbody></table>';
+                    advanceListContainer.innerHTML = advanceHtml;
+                    advanceDetailsDiv.style.display = 'block';
+                } else {
+                    advanceListContainer.innerHTML = '<p class="text-muted mb-0">No advances on record</p>';
+                    advanceDetailsDiv.style.display = 'block';
+                }
+                
+                if (advance > 0) {
+                    infoDiv.className = 'alert alert-success';
+                    infoDiv.innerHTML = '<i class="fas fa-check-circle me-1"></i><strong>Available Advance:</strong> Rs ' + advance.toFixed(2) + ' <span class="text-muted">| Total: Rs ' + total.toFixed(2) + '</span>';
+                    if (advanceInput) {
+                        advanceInput.max = advance;
+                        if (parseFloat(advanceInput.value) > advance) {
+                            advanceInput.value = advance;
+                        }
+                    }
+                } else {
+                    infoDiv.className = 'alert alert-secondary';
+                    infoDiv.innerHTML = '<i class="fas fa-info-circle me-1"></i><strong>Available Advance:</strong> Rs 0.00 <span class="text-muted">| Total: Rs ' + total.toFixed(2) + '</span>';
+                    if (advanceInput) {
+                        advanceInput.max = 0;
+                        advanceInput.value = 0;
+                    }
+                }
+                calculateTotals();
+            })
+            .catch(error => {
+                console.error('Error fetching advances:', error);
+                advanceDetailsDiv.style.display = 'none';
+                if (advance > 0) {
+                    infoDiv.className = 'alert alert-success';
+                    infoDiv.innerHTML = '<i class="fas fa-check-circle me-1"></i><strong>Available Advance:</strong> Rs ' + advance.toFixed(2) + ' <span class="text-muted">| Total: Rs ' + total.toFixed(2) + '</span>';
+                } else {
+                    infoDiv.className = 'alert alert-secondary';
+                    infoDiv.innerHTML = '<i class="fas fa-info-circle me-1"></i><strong>Available Advance:</strong> Rs 0.00 <span class="text-muted">| Total: Rs ' + total.toFixed(2) + '</span>';
+                }
+                calculateTotals();
+            });
+    }
+    
     function addItem() {
         const newRow = document.querySelector('.item-row').cloneNode(true);
         newRow.querySelectorAll('input, select').forEach(input => input.value = '');
         newRow.querySelector('.quantity').value = '1';
         newRow.querySelector('.price').value = '0';
+        newRow.querySelector('.delivery').value = '0';
         newRow.querySelector('.item-total').textContent = 'Rs0.00';
         document.getElementById('itemsBody').appendChild(newRow);
         attachItemEvents(newRow);
@@ -178,6 +300,7 @@
         const productSelect = row.querySelector('.product-select');
         const quantityInput = row.querySelector('.quantity');
         const priceInput = row.querySelector('.price');
+        const deliveryInput = row.querySelector('.delivery');
         
         productSelect.addEventListener('change', function() {
             const selectedOption = this.options[this.selectedIndex];
@@ -188,12 +311,14 @@
         
         quantityInput.addEventListener('input', () => calculateItemTotal(row));
         priceInput.addEventListener('input', () => calculateItemTotal(row));
+        deliveryInput.addEventListener('input', () => calculateItemTotal(row));
     }
     
     function calculateItemTotal(row) {
         const quantity = parseFloat(row.querySelector('.quantity').value) || 0;
         const price = parseFloat(row.querySelector('.price').value) || 0;
-        const total = quantity * price;
+        const delivery = parseFloat(row.querySelector('.delivery').value) || 0;
+        const total = quantity * price + delivery;
         row.querySelector('.item-total').textContent = `Rs${total.toFixed(2)}`;
         calculateTotals();
     }
@@ -208,11 +333,30 @@
         const taxRate = parseFloat(document.querySelector('input[name="tax_rate"]').value) || 0;
         const tax = subtotal * (taxRate / 100);
         const discount = parseFloat(document.querySelector('input[name="discount"]').value) || 0;
-        const total = subtotal + tax - discount;
+        const delivery_charge = parseFloat(document.querySelector('input[name="delivery_charge"]').value) || 0;
+        
+        const select = document.getElementById('customerSelect');
+        const advanceInput = document.querySelector('input[name="advance_applied"]');
+        let availableAdvance = 0;
+        
+        if (select && select.value != '0') {
+            const selectedOption = select.options[select.selectedIndex];
+            availableAdvance = parseFloat(selectedOption.getAttribute('data-advance')) || 0;
+        }
+        
+        let advance_applied = parseFloat(advanceInput.value) || 0;
+        if (advance_applied > availableAdvance) {
+            advance_applied = availableAdvance;
+            advanceInput.value = availableAdvance;
+        }
+        
+        const total = subtotal + tax + delivery_charge - discount - advance_applied;
         
         document.getElementById('subtotal').textContent = `Rs${subtotal.toFixed(2)}`;
         document.getElementById('tax').textContent = `Rs${tax.toFixed(2)}`;
         document.getElementById('discountDisplay').textContent = `Rs${discount.toFixed(2)}`;
+        document.getElementById('deliveryDisplay').textContent = `Rs${delivery_charge.toFixed(2)}`;
+        document.getElementById('advanceDisplay').textContent = `Rs${advance_applied.toFixed(2)}`;
         document.getElementById('total').textContent = `Rs${total.toFixed(2)}`;
     }
     
@@ -220,5 +364,7 @@
     document.querySelectorAll('.item-row').forEach(attachItemEvents);
     document.querySelector('input[name="discount"]').addEventListener('input', calculateTotals);
     document.querySelector('input[name="tax_rate"]').addEventListener('input', calculateTotals);
+    document.querySelector('input[name="delivery_charge"]').addEventListener('input', calculateTotals);
+    document.querySelector('input[name="advance_applied"]').addEventListener('input', calculateTotals);
 </script>
 {% endblock %}

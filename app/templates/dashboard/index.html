@@ -95,7 +95,10 @@
                 <div class="mt-1" style="font-size: 0.75rem; opacity: 0.9;">
                     <span>Op: Rs{{ "%.2f"|format(operating_expenses) }}</span> | 
                     <span>BOM: Rs{{ "%.2f"|format(manufacturing_overhead) }}</span> |
-                    <span>Pay: Rs{{ "%.2f"|format(total_payroll) }}</span>
+                    <span>Pay: Rs{{ "%.2f"|format(daily_payroll_for_period) }}</span>
+                    {% if divided_expenses_for_period > 0 %}
+                    | <span>Div: Rs{{ "%.2f"|format(divided_expenses_for_period) }}</span>
+                    {% endif %}
                 </div>
                 <small>Combined Total</small>
             </div>

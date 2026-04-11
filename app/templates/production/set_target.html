@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-bullseye"></i> {% if target %}Edit Target{% else %}Set Monthly Target{% endif %}</h2>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Production Target Details</h5>
+        </div>
+        <div class="card-body">
+            <form method="post" class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Month <span class="text-danger">*</span></label>
+                    <select name="month" class="form-select" required>
+                        {% for m in range(1, 13) %}
+                        <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>
+                            {{ ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m-1] }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Year <span class="text-danger">*</span></label>
+                    <select name="year" class="form-select" required>
+                        {% for y in range(2023, 2030) %}
+                        <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Product (SKU) <span class="text-danger">*</span></label>
+                    <select name="sku_id" class="form-select" required>
+                        <option value="">Select Product</option>
+                        {% for product in products %}
+                        <option value="{{ product.id }}" {% if target and target.sku_id == product.id %}selected{% endif %}>
+                            {{ product.sku }} - {{ product.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Target Units <span class="text-danger">*</span></label>
+                    <input type="number" name="target_units" class="form-control" step="1" min="0" 
+                           value="{{ target.target_units if target else '' }}" required>
+                    <small class="text-muted">Monthly production target for this product</small>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Overhead Cost per Unit</label>
+                    <input type="number" name="overhead_cost_per_unit" class="form-control" step="0.01" min="0" 
+                           value="{{ target.overhead_cost_per_unit if target and target.overhead_cost_per_unit else '0' }}">
+                    <small class="text-muted">Manual overhead cost (or leave 0 to use BOM overhead)</small>
+                </div>
+                
+                <div class="col-12">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> 
+                        <strong>Note:</strong> BOM Cost and Selling Price will be fetched automatically from the system.
+                        Use the overhead field to add any additional costs not captured in BOM.
+                    </div>
+                </div>
+                
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save"></i> Save Target
+                    </button>
+                    <a href="{{ url_for('production.index', month=selected_month, year=selected_year) }}" class="btn btn-secondary">
+                        Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

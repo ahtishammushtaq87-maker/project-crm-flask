@@ -1,1 +1,132 @@
-<h1>Profit & Loss</h1>
+{% extends "base.html" %}
+
+{% block title %}Profit & Loss Report{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-file-invoice-dollar text-primary me-2"></i>Profit & Loss Statement</h2>
+</div>
+
+<!-- Filter Section -->
+<div class="card shadow-sm border-0 mb-4 bg-light">
+    <div class="card-body py-3">
+        <form class="row g-3 align-items-end" method="GET">
+            <div class="col-md-4">
+                <label for="start_date" class="form-label small fw-bold">From Date</label>
+                <input type="date" name="start_date" id="start_date" class="form-control" value="{{ start_date }}">
+            </div>
+            <div class="col-md-4">
+                <label for="end_date" class="form-label small fw-bold">To Date</label>
+                <input type="date" name="end_date" id="end_date" class="form-control" value="{{ end_date }}">
+            </div>
+            <div class="col-md-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">
+                    <i class="fas fa-filter me-1"></i> Apply Filter
+                </button>
+                <a href="{{ url_for('accounting.profit_loss') }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-undo"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3">
+                <h5 class="mb-0 fw-bold text-uppercase">Financial Summary</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Account Description</th>
+                                <th class="text-end">Amount (Rs.)</th>
+                                <th class="text-end">Total (Rs.)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Revenue Section -->
+                            <tr class="table-info bg-opacity-10 fw-bold">
+                                <td colspan="2">REVENUE</td>
+                                <td class="text-end">{{ "{:,.2f}".format(total_sales) }}</td>
+                            </tr>
+                            <tr class="fw-bold border-bottom-2">
+                                <td colspan="2">NET REVENUE</td>
+                                <td class="text-end text-primary border-top">{{ "{:,.2f}".format(total_sales) }}</td>
+                            </tr>
+                            
+                            <!-- Purchase Costs -->
+                            <tr><td colspan="3" class="py-2"></td></tr>
+                            <tr class="fw-bold">
+                                <td colspan="2">PURCHASE COSTS</td>
+                                <td class="text-end text-danger">({{ "{:,.2f}".format(total_purchases) }})</td>
+                            </tr>
+                             
+                            <tr class="table-primary fw-bold fs-5">
+                                <td colspan="2">GROSS PROFIT</td>
+                                <td class="text-end">{{ "{:,.2f}".format(gross_profit) }}</td>
+                            </tr>
+                            
+                            <!-- Operating Expenses Section -->
+                            <tr><td colspan="3" class="py-2"></td></tr>
+                            <tr class="table-light fw-bold text-uppercase">
+                                <td colspan="3">Operating Expenses (Deducted from Profit)</td>
+                            </tr>
+                            
+                            <!-- Simple/Daily Expenses -->
+                            {% if expense_categories %}
+                            <tr class="text-secondary">
+                                <td colspan="3" class="ps-3"><em>Simple/Daily Expenses</em></td>
+                            </tr>
+                            {% for cat, amt in expense_categories.items() %}
+                            <tr>
+                                <td class="ps-4">{{ cat }}</td>
+                                <td class="text-end">{{ "{:,.2f}".format(amt) }}</td>
+                                <td></td>
+                            </tr>
+                            {% endfor %}
+                            {% endif %}
+                            
+                            <!-- Divided Expenses -->
+                            {% if divided_expense_categories %}
+                            <tr class="text-secondary">
+                                <td colspan="3" class="ps-3"><em>Salary/Divided Expenses (Prorated)</em></td>
+                            </tr>
+                            {% for cat, amt in divided_expense_categories.items() %}
+                            <tr>
+                                <td class="ps-4">{{ cat }}</td>
+                                <td class="text-end">{{ "{:,.2f}".format(amt) }}</td>
+                                <td></td>
+                            </tr>
+                            {% endfor %}
+                            {% endif %}
+                            
+                            <tr>
+                                <td class="ps-4">Staff Payroll (Salaries & Advances)</td>
+                                <td class="text-end">{{ "{:,.2f}".format(total_payroll) }}</td>
+                                <td></td>
+                            </tr>
+                            <tr class="fw-bold border-top border-bottom">
+                                <td colspan="2">TOTAL OPERATING EXPENSES</td>
+                                <td class="text-end text-danger">({{ "{:,.2f}".format(total_expenses) }})</td>
+                            </tr>
+                            
+                            <!-- Net Profit -->
+                            <tr><td colspan="3" class="py-3"></td></tr>
+                            <tr class="table-dark fw-bold fs-4">
+                                <td colspan="2">NET PROFIT</td>
+                                <td class="text-end {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">
+                                    {{ "{:,.2f}".format(net_profit) }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

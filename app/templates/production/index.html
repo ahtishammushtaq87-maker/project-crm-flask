@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-bullseye"></i> Production Target Tracker</h2>
+        <a href="{{ url_for('production.set_target') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> Set Target
+        </a>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-funnel"></i> Filters</h5>
+        </div>
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Month</label>
+                    <select name="month" class="form-select">
+                        {% for m in range(1, 13) %}
+                        <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>
+                            {{ ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m-1] }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Year</label>
+                    <select name="year" class="form-select">
+                        {% for y in range(2023, 2030) %}
+                        <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Product</label>
+                    <select name="product_id" class="form-select">
+                        <option value="">All Products</option>
+                        {% for product in products %}
+                        <option value="{{ product.id }}" {% if selected_product_id == product.id %}selected{% endif %}>
+                            {{ product.sku }} - {{ product.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">Apply Filters</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h6 class="card-title">Total Target</h6>
+                    <h3 class="mb-0">{{ total_target|default(0)|int }}</h3>
+                    <small>units</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h6 class="card-title">Total Produced</h6>
+                    <h3 class="mb-0">{{ total_produced|default(0)|int }}</h3>
+                    <small>units</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-dark">
+                <div class="card-body">
+                    <h6 class="card-title">Remaining</h6>
+                    <h3 class="mb-0">{{ total_remaining|default(0)|int }}</h3>
+                    <small>units</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <h6 class="card-title">Completion</h6>
+                    <h3 class="mb-0">{{ overall_completion|default(0) }}%</h3>
+                    <small>Target: {{ expected_progress }}%</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card border-success">
+                <div class="card-body">
+                    <h6 class="card-title text-success">Target Revenue</h6>
+                    <h5 class="mb-0">Rs. {{ "{:,.0f}".format(total_revenue|default(0)) }}</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-danger">
+                <div class="card-body">
+                    <h6 class="card-title text-danger">Target Cost</h6>
+                    <h5 class="mb-0">Rs. {{ "{:,.0f}".format(total_cost|default(0)) }}</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-primary">
+                <div class="card-body">
+                    <h6 class="card-title text-primary">Target Profit</h6>
+                    <h5 class="mb-0">Rs. {{ "{:,.0f}".format(total_profit|default(0)) }}</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-warning">
+                <div class="card-body">
+                    <h6 class="card-title text-warning">Actual Revenue</h6>
+                    <h5 class="mb-0">Rs. {{ "{:,.0f}".format(actual_revenue|default(0)) }}</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-warning">
+                <div class="card-body">
+                    <h6 class="card-title text-warning">Actual Cost</h6>
+                    <h5 class="mb-0">Rs. {{ "{:,.0f}".format(actual_cost|default(0)) }}</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-info">
+                <div class="card-body">
+                    <h6 class="card-title text-info">Actual Profit</h6>
+                    <h5 class="mb-0">Rs. {{ "{:,.0f}".format(actual_profit|default(0)) }}</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-table"></i> Production Target vs Actual</h5>
+            <div>
+                <a href="{{ url_for('production.export_report', format='excel', month=selected_month, year=selected_year) }}" class="btn btn-sm btn-success">
+                    <i class="bi bi-file-earmark-excel"></i> Excel
+                </a>
+                <a href="{{ url_for('production.export_report', format='pdf', month=selected_month, year=selected_year) }}" class="btn btn-sm btn-danger">
+                    <i class="bi bi-file-earmark-pdf"></i> PDF
+                </a>
+            </div>
+        </div>
+        <div class="card-body">
+            {% if results %}
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>SKU</th>
+                            <th>Product Name</th>
+                            <th>Target Units</th>
+                            <th>Produced</th>
+                            <th>Rejected</th>
+                            <th>Net</th>
+                            <th>Total</th>
+                            <th>Remaining</th>
+                            <th>Completion %</th>
+                            <th>Progress</th>
+                            <th>Status</th>
+                            <th>BOM Cost</th>
+                            <th>OH Cost</th>
+                            <th>Item Cost</th>
+                            <th>Sell Price</th>
+                            <th>Target Revenue</th>
+                            <th>Est. Cost</th>
+                            <th>Est. Profit</th>
+                            <th>Actual Revenue</th>
+                            <th>Actual Cost</th>
+                            <th>Actual Profit</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in results %}
+                        <tr>
+                            <td>{{ r.product.sku }}</td>
+                            <td>{{ r.product.name }}</td>
+                            <td>
+                                <input type="number" class="form-control form-control-sm inline-edit" 
+                                       data-target-id="{{ r.target.id }}" data-field="target_units" 
+                                       value="{{ r.target.target_units|int }}" min="0" style="width: 80px;">
+                            </td>
+                            <td class="text-success">{{ r.produced_qty|int }}</td>
+                            <td class="text-danger">{{ r.rejected_qty|int }}</td>
+                            <td class="text-primary{% if r.net_produced < 0 %} text-danger{% endif %}">{{ r.net_produced|int }}</td>
+                            <td>{{ r.total_produced|int }}</td>
+                            <td>{{ r.remaining|int }}</td>
+                            <td>{{ r.completion_pct }}%</td>
+                            <td>
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar {% if r.status_class == 'success' %}bg-success{% elif r.status_class == 'danger' %}bg-danger{% else %}bg-primary{% endif %}" 
+                                         style="width: {{ r.completion_pct }}%;">
+                                        {{ r.completion_pct }}%
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="badge bg-{{ r.status_class }}">{{ r.status }}</span>
+                            </td>
+                            <td>Rs. {{ r.bom_cost|round(2) }}</td>
+                            <td>
+                                <input type="number" class="form-control form-control-sm inline-edit" 
+                                       data-target-id="{{ r.target.id }}" data-field="overhead_cost_per_unit" 
+                                       value="{{ r.overhead_cost|round(2) }}" min="0" step="0.01" style="width: 80px;">
+                            </td>
+                            <td>Rs. {{ r.item_cost|round(2) }}</td>
+                            <td>Rs. {{ r.selling_price|round(2) }}</td>
+                            <td>Rs. {{ "{:,.0f}".format(r.target_revenue) }}</td>
+                            <td>Rs. {{ "{:,.0f}".format(r.estimated_cost) }}</td>
+                            <td class="{% if r.estimated_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                Rs. {{ "{:,.0f}".format(r.estimated_profit) }}
+                            </td>
+                            <td>Rs. {{ "{:,.0f}".format(r.actual_revenue) }}</td>
+                            <td>Rs. {{ "{:,.0f}".format(r.actual_cost) }}</td>
+                            <td class="{% if r.actual_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                Rs. {{ "{:,.0f}".format(r.actual_profit) }}
+                            </td>
+                            <td>
+                                <a href="{{ url_for('production.delete_target', id=r.target.id) }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this target?')">
+                                    <i class="bi bi-trash"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5">
+                <p class="text-muted">No targets set for this month. 
+                    <a href="{{ url_for('production.set_target', month=selected_month, year=selected_year) }}">Set targets now</a>
+                </p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Inline edit handler
+    document.querySelectorAll('.inline-edit').forEach(function(input) {
+        input.addEventListener('change', function(e) {
+            const targetId = this.dataset.targetId;
+            const field = this.dataset.field;
+            const value = this.value;
+            
+            fetch('{{ url_for("production.api_update_target") }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    target_id: targetId,
+                    field: field,
+                    value: value
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Reload to recalculate all values
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('Error saving: ' + error);
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

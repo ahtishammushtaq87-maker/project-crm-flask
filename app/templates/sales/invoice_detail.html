@@ -10,6 +10,22 @@
 			<a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" class="btn btn-primary" target="_blank">
 				<i class="fas fa-download"></i> PDF
 			</a>
+			{% if sale.customer and sale.customer.phone %}
+			{% set phone = sale.customer.phone|replace('+', '')|replace(' ', '')|replace('-', '')|replace('(', '')|replace(')', '') %}
+			{% if phone|length >= 10 %}
+			<button type="button" class="btn btn-success" onclick="shareInvoicePDF({{ sale.id }}, '{{ phone }}', '{{ sale.invoice_number }}')">
+				<i class="fab fa-whatsapp"></i> Share PDF
+			</button>
+			{% else %}
+			<button type="button" class="btn btn-secondary" onclick="alert('Invalid WhatsApp number')">
+				<i class="fab fa-whatsapp"></i> Share PDF
+			</button>
+			{% endif %}
+			{% else %}
+			<button type="button" class="btn btn-secondary" onclick="alert('WhatsApp number not available')">
+				<i class="fab fa-whatsapp"></i> Share
+			</button>
+			{% endif %}
 			{% if sale.status != 'paid' %}
 			<button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#discountModal">
 				<i class="fas fa-tag"></i> Direct Discount
@@ -79,6 +95,8 @@
 								<th>Product</th>
 								<th>Qty</th>
 								<th>Unit Price</th>
+								<th>Subtotal</th>
+								<th>Delivery</th>
 								<th>Total</th>
 							</tr>
 						</thead>
@@ -88,6 +106,8 @@
 								<td>{{ item.product.name }}</td>
 								<td>{{ item.quantity }}</td>
 								<td>Rs{{ '%.2f'|format(item.unit_price) }}</td>
+								<td>Rs{{ '%.2f'|format(item.item_subtotal) }}</td>
+								<td>Rs{{ '%.2f'|format(item.delivery_fee) }}</td>
 								<td>Rs{{ '%.2f'|format(item.total) }}</td>
 							</tr>
 							{% endfor %}
@@ -98,10 +118,32 @@
 					<p>Subtotal: Rs{{ '%.2f'|format(sale.subtotal) }}</p>
 					<p>Tax: Rs{{ '%.2f'|format(sale.tax) }}</p>
 					<p>Discount: Rs{{ '%.2f'|format(sale.discount) }}</p>
+					<p>Delivery Charge: Rs{{ '%.2f'|format(sale.delivery_charge) }}</p>
+					<p {% if sale.advance_applied > 0 %}class="text-success fw-bold"{% endif %}>Advance Applied: {% if sale.advance_applied > 0 %}-{% endif %}Rs{{ '%.2f'|format(sale.advance_applied) }}</p>
 					<h4>Total: Rs{{ '%.2f'|format(sale.total) }}</h4>
 					<p>Paid: Rs{{ '%.2f'|format(sale.paid_amount) }}</p>
 					<p>Balance: Rs{{ '%.2f'|format(sale.total - sale.paid_amount) }}</p>
 				</div>
+				
+				{% if sale.adjusted_advances %}
+				<div class="mt-3 p-3 bg-light rounded">
+					<h6><i class="fas fa-hand-holding-usd me-2"></i>Advances Applied to this Invoice</h6>
+					<table class="table table-sm mb-0">
+						<tr>
+							<th>Date</th>
+							<th>Amount Applied</th>
+							<th>Original Amount</th>
+						</tr>
+						{% for adv in sale.adjusted_advances %}
+						<tr>
+							<td>{{ adv.date.strftime('%d-%b-%Y') }}</td>
+							<td>Rs{{ '%.2f'|format(adv.applied_amount) }}</td>
+							<td>Rs{{ '%.2f'|format(adv.amount) }}</td>
+						</tr>
+						{% endfor %}
+					</table>
+				</div>
+				{% endif %}
 			</div>
 		</div>
 	</div>
@@ -122,4 +164,25 @@
 		</div>
 	</div>
 </div>
+
+<script>
+async function shareInvoicePDF(id, phone, invoiceNum) {
+    try {
+        const response = await fetch(`/sales/invoice/${id}/pdf/share`);
+        const data = await response.json();
+        
+        if (data.error) {
+            alert('Error: ' + data.error);
+            return;
+        }
+        
+        const pdfLink = window.location.origin + data.share_url;
+        const message = `Please find attached invoice ${invoiceNum}\n\nView/Download: ${pdfLink}`;
+        const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+        window.open(waUrl, '_blank');
+    } catch (e) {
+        alert('Error sharing: ' + e);
+    }
+}
+</script>
 {% endblock %}

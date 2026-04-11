@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Inventory Details Report{% endblock %}
+
+{% block extra_css %}
+<style>
+    .report-card {
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        background: white;
+    }
+    .filter-section {
+        background: white;
+        padding: 25px;
+        border-radius: 15px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        margin-bottom: 30px;
+    }
+    .download-btn {
+        border-radius: 10px;
+        padding: 8px 15px;
+        font-weight: 600;
+    }
+    .bg-gradient-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .bg-gradient-success {
+        background: linear-gradient(135deg, #2dce89 0%, #2dcecc 100%);
+    }
+    .bg-gradient-info {
+        background: linear-gradient(135deg, #11cdef 0%, #1171ef 100%);
+    }
+    .bg-gradient-warning {
+        background: linear-gradient(135deg, #fb6340 0%, #fbb140 100%);
+    }
+    .bg-gradient-danger {
+        background: linear-gradient(135deg, #f5365c 0%, #f56036 100%);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="font-weight-bold"><i class="fas fa-boxes me-2"></i>Inventory Details Report</h2>
+    </div>
+
+    <!-- Stats Summary -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card report-card bg-gradient-primary text-white">
+                <div class="card-body">
+                    <p class="text-white-50 small mb-1">Total Products</p>
+                    <h3 class="mb-0">{{ product_movements|length }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card report-card bg-gradient-success text-white">
+                <div class="card-body">
+                    <p class="text-white-50 small mb-1">Total Quantity</p>
+                    <h3 class="mb-0">{{ product_movements|sum(attribute='current_stock') }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card report-card bg-gradient-info text-white">
+                <div class="card-body">
+                    <p class="text-white-50 small mb-1">Total Sold (Period)</p>
+                    <h3 class="mb-0">{{ product_movements|sum(attribute='sold') }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card report-card bg-gradient-warning text-white">
+                <div class="card-body">
+                    <p class="text-white-50 small mb-1">Total Purchased (Period)</p>
+                    <h3 class="mb-0">{{ product_movements|sum(attribute='purchased') }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-section">
+        <form method="GET" action="{{ url_for('reports.inventory_details_report') }}" class="row g-3">
+            <div class="col-md-2">
+                <label class="form-label small font-weight-bold">From Date</label>
+                <input type="date" name="from_date" class="form-control" value="{{ from_date }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small font-weight-bold">To Date</label>
+                <input type="date" name="to_date" class="form-control" value="{{ to_date }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small font-weight-bold">Warehouse</label>
+                <select name="warehouse_id" class="form-select">
+                    <option value="">All Warehouses</option>
+                    {% for wh in warehouses %}
+                    <option value="{{ wh.id }}" {% if current_warehouse_id == wh.id|string %}selected{% endif %}>{{ wh.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small font-weight-bold">Category</label>
+                <select name="category" class="form-select">
+                    <option value="all">All Categories</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat }}" {% if current_category == cat %}selected{% endif %}>{{ cat }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small font-weight-bold">Search</label>
+                <input type="text" name="search" class="form-control" placeholder="Product name or SKU..." value="{{ search }}">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">Filter</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Report Table -->
+    <div class="card report-card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Product Name</th>
+                            <th>Category</th>
+                            <th>Warehouse</th>
+                            <th>Current Stock</th>
+                            <th>Purchased</th>
+                            <th>Sold</th>
+                            <th>Net Change</th>
+                            <th>Value (Cost)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pm in product_movements %}
+                        <tr>
+                            <td>{{ pm.product.sku }}</td>
+                            <td><strong>{{ pm.product.name }}</strong></td>
+                            <td>{{ pm.product.category or '-' }}</td>
+                            <td>{{ pm.warehouse }}</td>
+                            <td>{{ pm.current_stock }}</td>
+                            <td class="text-success">+{{ pm.purchased }}</td>
+                            <td class="text-danger">-{{ pm.sold }}</td>
+                            <td {% if pm.purchased - pm.sold > 0 %}class="text-success"{% elif pm.purchased - pm.sold < 0 %}class="text-danger"{% endif %}>
+                                {{ pm.purchased - pm.sold }}
+                            </td>
+                            <td>Rs{{ "%.2f"|format(pm.current_stock * pm.product.cost_price) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="9" class="text-center">No products found.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

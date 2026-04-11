@@ -26,11 +26,9 @@
                            value="{{ to_date }}">
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label">&nbsp;</label>
                     <button type="submit" class="btn btn-primary d-block">Filter</button>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label">&nbsp;</label>
                     <a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary d-block">Clear</a>
                 </div>
                 <input type="hidden" name="status" value="{{ current_status }}">
