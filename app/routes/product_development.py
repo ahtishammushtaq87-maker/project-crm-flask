@@ -273,11 +273,7 @@ def create_purchase_order_from_component(comp_id):
     db.session.commit()
     
     flash(f'Purchase Order {po.po_number} created!', 'success')
-<<<<<<< HEAD
-    return redirect(url_for('purchase.edit_order', order_id=po.id))
-=======
     return redirect(url_for('purchase.po_detail', id=po.id))
->>>>>>> 817f50840933f800b784ce4d44645bbd5bb0f00c
 
 
 @bp.route('/component/create-mo/<int:comp_id>')
@@ -360,11 +356,7 @@ def create_manufacturing_order_from_component(comp_id):
     db.session.commit()
     
     flash(f'Manufacturing Order {mo.order_number} created!', 'success')
-<<<<<<< HEAD
-    return redirect(url_for('manufacturing.view_order', order_id=mo.id))
-=======
     return redirect(url_for('manufacturing.order_details', id=mo.id))
->>>>>>> 817f50840933f800b784ce4d44645bbd5bb0f00c
 
 
 # ==================== PHASE 3: TOOLING ====================
@@ -462,11 +454,7 @@ def create_po_from_tooling(tool_id):
     db.session.commit()
     
     flash(f'Purchase Order {po.po_number} created!', 'success')
-<<<<<<< HEAD
-    return redirect(url_for('purchase.edit_order', order_id=po.id))
-=======
     return redirect(url_for('purchase.po_detail', id=po.id))
->>>>>>> 817f50840933f800b784ce4d44645bbd5bb0f00c
 
 
 # ==================== PHASE 4: TESTING ====================

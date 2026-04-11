@@ -176,7 +176,6 @@ def create_app(config_class=Config):
                     print(f"Created {table_name} table")
         except Exception as e:
             print(f"Product Development tables check: {e}")
-<<<<<<< HEAD
         
         # Migrate company table for signature_path column
         try:
@@ -189,8 +188,6 @@ def create_app(config_class=Config):
                     print("Added column: signature_path to company")
         except Exception as e:
             print(f"Company signature_path migration check: {e}")
-=======
->>>>>>> 817f50840933f800b784ce4d44645bbd5bb0f00c
     
     # Enable SQLite foreign key constraints
     if app.config.get('SQLALCHEMY_DATABASE_URI', '').startswith('sqlite'):
