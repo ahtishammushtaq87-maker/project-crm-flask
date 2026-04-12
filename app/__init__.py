@@ -167,6 +167,19 @@ def create_app(config_class=Config):
         except Exception as e:
             print(f"Customers gst_number migration check: {e}")
         
+        # Migrate boms table for version column
+        try:
+            inspector = inspect(db.engine)
+            if 'boms' in inspector.get_table_names():
+                bom_columns = [c['name'] for c in inspector.get_columns('boms')]
+                if 'version' not in bom_columns:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE boms ADD COLUMN version VARCHAR(20) DEFAULT 'v1'"))
+                        conn.commit()
+                        print("Added column: version to boms")
+        except Exception as e:
+            print(f"Boms version migration check: {e}")
+        
         # Migrate products table for warehouse_id column
         try:
             inspector = inspect(db.engine)
