@@ -153,8 +153,8 @@ def dashboard():
                     # Add proportional amount
                     divided_expenses_for_period += exp.daily_amount * overlap_days
     
-    # Total expenses for the period (non-divided + proportional divided)+ manufacturing_overhead
-    total_expenses = operating_expenses  + divided_expenses_for_period
+    # Total expenses for the period (non-divided + proportional divided)
+    total_expenses = operating_expenses + manufacturing_overhead + divided_expenses_for_period
 
     # Gross Profit = Sales - COGS
     gross_profit = total_sales - total_cogs

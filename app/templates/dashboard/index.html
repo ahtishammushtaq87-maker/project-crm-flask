@@ -91,7 +91,7 @@
                     <i class="fas fa-money-bill-wave"></i>
                 </div>
                 <h5>Total Expenses</h5>
-                <h3>Rs{{ "%.2f"|format(total_expenses) }}</h3>
+                <h3>Rs{{ "%.2f"|format(total_expenses-manufacturing_overhead) }}</h3>
                 <div class="mt-1" style="font-size: 0.75rem; opacity: 0.9;">
                     <span>Op: Rs{{ "%.2f"|format(operating_expenses) }}</span> | 
                     <span>BOM: Rs{{ "%.2f"|format(manufacturing_overhead) }}</span> |
