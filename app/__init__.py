@@ -113,17 +113,18 @@ def create_app(config_class=Config):
                 with db.engine.connect() as conn:
                     for col_name, col_obj in model_columns_dict.items():
                         if col_name not in existing_columns:
-                            # Determine SQLAlchemy type
-                            col_type = str(col_obj.type)
+                            # Get the base type
+                            col_type_str = str(col_obj.type)
+                            base_type = col_type_str.split('(')[0].upper()
                             
                             # Map SQLAlchemy types to PostgreSQL types
                             type_mapping = {
                                 'INTEGER': 'INTEGER',
                                 'FLOAT': 'FLOAT',
                                 'REAL': 'REAL',
-                                'NUMERIC': 'NUMERIC(10,2)',
-                                'DECIMAL': 'DECIMAL(10,2)',
-                                'VARCHAR': f'VARCHAR({col_obj.type.length or 255})',
+                                'NUMERIC': 'NUMERIC',
+                                'DECIMAL': 'NUMERIC',
+                                'VARCHAR': 'VARCHAR',
                                 'TEXT': 'TEXT',
                                 'BOOLEAN': 'BOOLEAN',
                                 'DATE': 'DATE',
@@ -131,19 +132,28 @@ def create_app(config_class=Config):
                                 'TIMESTAMP': 'TIMESTAMP',
                             }
                             
-                            # Get the base type
-                            base_type = str(col_obj.type).split('(')[0]
-                            pg_type = type_mapping.get(base_type.upper(), 'TEXT')
+                            pg_type = type_mapping.get(base_type, 'TEXT')
                             
-                            # Handle VARCHAR without length
-                            if 'VARCHAR' in pg_type and '(' not in str(col_obj.type):
-                                pg_type = 'VARCHAR(255)'
+                            # Handle VARCHAR with length
+                            if pg_type == 'VARCHAR':
+                                if '(' in col_type_str:
+                                    # Extract length from type string
+                                    length_str = col_type_str.split('(')[1].split(')')[0]
+                                    pg_type = f'VARCHAR({length_str})'
+                                else:
+                                    pg_type = 'VARCHAR(255)'
+                            
+                            # Handle NUMERIC/DECIMAL with precision
+                            if pg_type == 'NUMERIC' and '(' in col_type_str:
+                                pg_type = 'NUMERIC(10,2)'
                             
                             # Get default value
                             default = col_obj.default
                             default_str = ''
                             if default and default.arg is not None:
                                 if isinstance(default.arg, bool):
+                                    default_str = f" DEFAULT {default.arg}"
+                                elif isinstance(default.arg, (int, float)):
                                     default_str = f" DEFAULT {default.arg}"
                                 elif isinstance(default.arg, str):
                                     default_str = f" DEFAULT '{default.arg}'"
@@ -152,9 +162,8 @@ def create_app(config_class=Config):
                                 conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {pg_type}{default_str}"))
                                 conn.commit()
                                 print(f"Added column: {col_name} to {table_name}")
-                            except Exception as e:
-                                # Column might already exist or other issue
-                                pass
+                            except Exception as col_err:
+                                print(f"Error adding {col_name} to {table_name}: {col_err}")
         except Exception as e:
             print(f"Auto-migration error: {e}")
     
