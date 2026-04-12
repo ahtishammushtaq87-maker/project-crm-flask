@@ -141,6 +141,19 @@ def create_app(config_class=Config):
         except Exception as e:
             print(f"Staff daily_salary migration check: {e}")
         
+        # Migrate vendors table for shipping_address column
+        try:
+            inspector = inspect(db.engine)
+            if 'vendors' in inspector.get_table_names():
+                vendor_columns = [c['name'] for c in inspector.get_columns('vendors')]
+                if 'shipping_address' not in vendor_columns:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE vendors ADD COLUMN shipping_address TEXT"))
+                        conn.commit()
+                        print("Added column: shipping_address to vendors")
+        except Exception as e:
+            print(f"Vendors shipping_address migration check: {e}")
+        
         # Migrate products table for warehouse_id column
         try:
             inspector = inspect(db.engine)
