@@ -154,6 +154,19 @@ def create_app(config_class=Config):
         except Exception as e:
             print(f"Vendors shipping_address migration check: {e}")
         
+        # Migrate customers table for missing columns
+        try:
+            inspector = inspect(db.engine)
+            if 'customers' in inspector.get_table_names():
+                customer_columns = [c['name'] for c in inspector.get_columns('customers')]
+                if 'gst_number' not in customer_columns:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE customers ADD COLUMN gst_number VARCHAR(20)"))
+                        conn.commit()
+                        print("Added column: gst_number to customers")
+        except Exception as e:
+            print(f"Customers gst_number migration check: {e}")
+        
         # Migrate products table for warehouse_id column
         try:
             inspector = inspect(db.engine)
