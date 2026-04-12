@@ -63,7 +63,7 @@ def index():
         
         bom_cost = 0
         overhead_cost = 0
-        selling_price = product.unit_price
+        selling_price = product.finished_good_price if product.finished_good_price else product.unit_price
         
         bom = BOM.query.filter_by(product_id=product.id, is_active=True).first()
         if bom:
@@ -400,7 +400,7 @@ def api_selling_price(sku_id):
     
     return jsonify({
         'sku_id': sku_id,
-        'selling_price': product.unit_price
+        'selling_price': product.finished_good_price if product.finished_good_price else product.unit_price
     })
 
 
@@ -452,10 +452,10 @@ def export_report(format):
             'BOM Cost': bom_cost,
             'OH Cost (Labor+Overhead)': overhead_cost,
             'Item Cost': bom_cost,
-            'Selling Price': product.unit_price,
-            'Target Revenue': target.target_units * product.unit_price,
+            'Selling Price': product.finished_good_price if product.finished_good_price else product.unit_price,
+            'Target Revenue': target.target_units * (product.finished_good_price if product.finished_good_price else product.unit_price),
             'Est. Cost': target.target_units * bom_cost,
-            'Est. Profit': (target.target_units * product.unit_price) - (target.target_units * bom_cost),
+            'Est. Profit': (target.target_units * (product.finished_good_price if product.finished_good_price else product.unit_price)) - (target.target_units * bom_cost),
             'Status': status
         })
     

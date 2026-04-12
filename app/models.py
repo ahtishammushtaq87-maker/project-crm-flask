@@ -202,6 +202,7 @@ class Product(db.Model):
     image_path = db.Column(db.String(255))  # Path to product image
     is_active = db.Column(db.Boolean, default=True)
     is_manufactured = db.Column(db.Boolean, default=False)
+    finished_good_price = db.Column(db.Float, nullable=True)
     warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

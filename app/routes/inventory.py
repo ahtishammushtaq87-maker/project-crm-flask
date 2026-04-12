@@ -66,30 +66,47 @@ def add_product():
     form = ProductForm()
     
     if request.method == 'POST':
-        # Manually validate to see what's happening
-        if form.name.data and form.sku.data and form.unit_price.data is not None:
+        # Get form data directly from request
+        name = request.form.get('name')
+        sku = request.form.get('sku')
+        description = request.form.get('description')
+        unit_price = request.form.get('unit_price')
+        cost_price = request.form.get('cost_price')
+        quantity = request.form.get('quantity')
+        reorder_level = request.form.get('reorder_level')
+        category = request.form.get('category')
+        is_manufactured = 'is_manufactured' in request.form
+        finished_good_price = request.form.get('finished_good_price')
+        
+        # Validate required fields
+        if name and sku and unit_price is not None:
             # Check if SKU already exists
-            existing_product = Product.query.filter_by(sku=form.sku.data).first()
+            existing_product = Product.query.filter_by(sku=sku).first()
             if existing_product:
-                flash(f'SKU "{form.sku.data}" already exists. Please use a different SKU.', 'error')
+                flash(f'SKU "{sku}" already exists. Please use a different SKU.', 'error')
                 return redirect(url_for('inventory.add_product'))
             
             warehouse_id = request.form.get('warehouse_id')
+            # If finished good, use finished_good_price as the selling price
+            if is_manufactured and finished_good_price:
+                final_unit_price = float(finished_good_price)
+            else:
+                final_unit_price = float(unit_price)
+            
             product = Product(
-                name=form.name.data,
-                sku=form.sku.data,
-                description=form.description.data,
-                unit_price=form.unit_price.data,
-                cost_price=form.cost_price.data if form.cost_price.data is not None else 0.0,
-                quantity=form.quantity.data,
-                reorder_level=form.reorder_level.data,
-                category=form.category.data,
+                name=name,
+                sku=sku,
+                description=description,
+                unit_price=final_unit_price,
+                cost_price=float(cost_price) if cost_price else 0.0,
+                quantity=float(quantity) if quantity else 0,
+                reorder_level=float(reorder_level) if reorder_level else 0,
+                category=category,
                 warehouse_id=int(warehouse_id) if warehouse_id and warehouse_id != '0' else None
             )
             
-            # Only set is_manufactured if column exists
-            if has_column('products', 'is_manufactured'):
-                product.is_manufactured = form.is_manufactured.data
+            product.is_manufactured = is_manufactured
+            product.finished_good_price = float(finished_good_price) if finished_good_price else None
             
             # Handle image upload
             if 'image' in request.files:
@@ -99,7 +116,6 @@ def add_product():
                     image_path = os.path.join('app', 'static', 'uploads', 'products', filename)
                     os.makedirs(os.path.dirname(image_path), exist_ok=True)
                     image_file.save(image_path)
-                    # Normalize path to use forward slashes for consistency
                     product.image_path = image_path.replace('\\', '/')
             
             try:
@@ -112,14 +128,14 @@ def add_product():
                 flash(f'Error adding product: {str(e)}', 'error')
                 return redirect(url_for('inventory.add_product'))
         else:
-            print(f"Form data: name={form.name.data}, sku={form.sku.data}, unit_price={form.unit_price.data}")
-            print(f"Form errors: {form.errors}")
+            flash('Please fill in all required fields.', 'error')
     
     # Fetch unique categories for the dropdown/datalist
     categories = db.session.query(Product.category).distinct().all()
     categories = [c[0] for c in categories if c[0]]
     
     return render_template('inventory/add_product.html', form=form, categories=categories, warehouses=warehouses)
+
 
 @bp.route('/product/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -144,15 +160,23 @@ def edit_product(id):
         product.name = form.name.data
         product.sku = form.sku.data
         product.description = form.description.data
-        product.unit_price = form.unit_price.data
+        
+        product.is_manufactured = form.is_manufactured.data if form.is_manufactured.data else False
+        
+        # Handle finished_good_price
+        finished_good_price = request.form.get('finished_good_price')
+        product.finished_good_price = float(finished_good_price) if finished_good_price else None
+        
+        # If finished good, use finished_good_price as the selling price
+        if product.is_manufactured and product.finished_good_price:
+            product.unit_price = product.finished_good_price
+        else:
+            product.unit_price = form.unit_price.data
+        
         product.cost_price = form.cost_price.data if form.cost_price.data is not None else 0.0
         product.reorder_level = form.reorder_level.data
         product.category = form.category.data
         product.warehouse_id = int(warehouse_id) if warehouse_id and warehouse_id != '0' else None
-        
-        # Only set is_manufactured if column exists
-        if has_column('products', 'is_manufactured'):
-            product.is_manufactured = form.is_manufactured.data
         
         # Handle image upload
         if 'image' in request.files:

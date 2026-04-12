@@ -58,7 +58,7 @@
                     </div>
                 </div>
 
-                <div class="row mb-3">
+                <div class="row mb-3" id="price_row">
                     <div class="col-md-4" id="cost_price_container">
                         <label for="cost_price" class="form-label">Cost Price</label>
                         <div class="input-group">
@@ -66,13 +66,24 @@
                             {{ form.cost_price(class="form-control", type="number", step="0.01", id="cost_price") }}
                         </div>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-4" id="finished_good_price_container" style="display: none;">
+                        <label for="finished_good_price" class="form-label">Selling Price *</label>
+                        <div class="input-group">
+                            <span class="input-group-text">Rs</span>
+                            <input type="number" class="form-control" name="finished_good_price" step="0.01" id="finished_good_price" value="{{ product.finished_good_price if product.finished_good_price else '' }}" required>
+                        </div>
+                        <small class="text-muted">Used for production & sales</small>
+                    </div>
+                    <div class="col-md-4" id="unit_price_container">
                         <label for="unit_price" class="form-label">Selling Price</label>
                         <div class="input-group">
                             <span class="input-group-text">Rs</span>
                             {{ form.unit_price(class="form-control", type="number", step="0.01") }}
                         </div>
                     </div>
+                </div>
+
+                <div class="row mb-3">
                     <div class="col-md-4">
                         <label for="reorder_level" class="form-label">Reorder Level</label>
                         {{ form.reorder_level(class="form-control", type="number", step="0.01") }}
@@ -150,18 +161,30 @@ document.addEventListener('DOMContentLoaded', function() {
     const isManufacturedCheckbox = document.getElementById('is_manufactured');
     const costPriceContainer = document.getElementById('cost_price_container');
     const costPriceInput = document.getElementById('cost_price');
+    const finishedGoodPriceContainer = document.getElementById('finished_good_price_container');
+    const unitPriceContainer = document.getElementById('unit_price_container');
+    const finishedGoodPriceInput = document.getElementById('finished_good_price');
+    const unitPriceInput = document.querySelector('input[name="unit_price"]');
 
-    function toggleCostPrice() {
+    function togglePriceFields() {
         if (isManufacturedCheckbox.checked) {
             costPriceContainer.style.display = 'none';
+            finishedGoodPriceContainer.style.display = 'block';
+            unitPriceContainer.style.display = 'none';
+            if (unitPriceInput) unitPriceInput.removeAttribute('required');
+            if (finishedGoodPriceInput) finishedGoodPriceInput.setAttribute('required', 'required');
         } else {
             costPriceContainer.style.display = 'block';
+            finishedGoodPriceContainer.style.display = 'none';
+            unitPriceContainer.style.display = 'block';
+            if (finishedGoodPriceInput) finishedGoodPriceInput.removeAttribute('required');
+            if (unitPriceInput) unitPriceInput.setAttribute('required', 'required');
         }
     }
 
     if (isManufacturedCheckbox) {
-        isManufacturedCheckbox.addEventListener('change', toggleCostPrice);
-        toggleCostPrice(); // initial call
+        isManufacturedCheckbox.addEventListener('change', togglePriceFields);
+        togglePriceFields();
     }
 });
 </script>

@@ -19,6 +19,8 @@ class ProductForm(FlaskForm):
     quantity = FloatField('Initial Quantity', default=0)
     reorder_level = FloatField('Reorder Level', default=0)
     category = StringField('Category')
+    is_manufactured = BooleanField('Manufactured Product')
+    image = FileField('Product Image', validators=[Optional()])
 
 class WarehouseForm(FlaskForm):
     name = StringField('Warehouse Name', validators=[DataRequired()])
