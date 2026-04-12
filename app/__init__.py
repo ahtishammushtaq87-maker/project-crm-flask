@@ -89,6 +89,10 @@ def create_app(config_class=Config):
                     conn.execute(text("ALTER TABLE expenses ADD COLUMN monthly_end_date DATE"))
                     conn.commit()
                     print("Added column: monthly_end_date to expenses")
+                if 'daily_amount' not in expense_columns:
+                    conn.execute(text("ALTER TABLE expenses ADD COLUMN daily_amount DECIMAL(10,2)"))
+                    conn.commit()
+                    print("Added column: daily_amount to expenses")
         except Exception as e:
             print(f"Expenses product/bom migration check: {e}")
             
