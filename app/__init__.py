@@ -128,6 +128,19 @@ def create_app(config_class=Config):
         except Exception as e:
             print(f"Warehouses table check: {e}")
         
+        # Migrate staff table for daily_salary column
+        try:
+            inspector = inspect(db.engine)
+            if 'staff' in inspector.get_table_names():
+                staff_columns = [c['name'] for c in inspector.get_columns('staff')]
+                if 'daily_salary' not in staff_columns:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE staff ADD COLUMN daily_salary DECIMAL(10,2)"))
+                        conn.commit()
+                        print("Added column: daily_salary to staff")
+        except Exception as e:
+            print(f"Staff daily_salary migration check: {e}")
+        
         # Migrate products table for warehouse_id column
         try:
             inspector = inspect(db.engine)
