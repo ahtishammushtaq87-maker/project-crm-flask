@@ -14,236 +14,149 @@ def create_app(config_class=Config):
     # Disable Jinja2 template caching to ensure fresh renders (development)
     app.jinja_env.cache = None
     
-    # Disable Jinja2 template caching to ensure fresh renders (development)
-    app.jinja_env.cache = None
-    
     db.init_app(app)
     
-    # Auto-migrate missing columns
+    # Auto-migrate missing columns and tables
     with app.app_context():
         from sqlalchemy import inspect, text
-        try:
-            inspector = inspect(db.engine)
-            existing_columns = [c['name'] for c in inspector.get_columns('users')]
-            required_columns = ['can_view_sales', 'can_view_purchases', 'can_view_inventory',
-                'can_view_expenses', 'can_view_returns', 'can_view_vendors',
-                'can_view_customers', 'can_view_reports', 'can_view_settings',
-                'can_view_manufacturing', 'can_view_production', 'can_view_warehouse',
-                'can_view_attendance', 'can_view_salary', 'can_view_targets',
-                'can_view_dashboard', 'can_view_accounting']
-            with db.engine.connect() as conn:
-                for col in required_columns:
-                    if col not in existing_columns:
-                        conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} BOOLEAN DEFAULT true"))
-                        conn.commit()
-                        print(f"Added column: {col}")
-        except Exception as e:
-            print(f"Migration check: {e}")
+        from app.models import (
+            User, Vendor, Customer, Warehouse, Product, Sale, SaleItem,
+            PurchaseBill, PurchaseItem, Transaction, Account, TaxRate,
+            Currency, Payment, RecurringExpense, ExpenseCategory, Expense,
+            StockMovement, Company, InvoiceSettings, PurchaseSettings,
+            SaleReturn, SaleReturnItem, Task, BOM, BOMItem, Staff,
+            Attendance, SalaryAdvance, SalaryPayment, ManufacturingOrder,
+            ManufacturingOrderItem, MonthlyTarget, VendorAdvance, CustomerAdvance,
+            PurchaseOrder, PurchaseOrderItem, CostPriceHistory, BOMVersion,
+            BOMVersionItem, ProductionTarget, ProductionLog, PDProject,
+            PDProjectBOM, PDComponent, PDTooling, PDTesting, PDApproval, PDAsset
+        )
         
-        # Migrate expenses table for is_bom_overhead column
-        try:
-            inspector = inspect(db.engine)
-            expense_columns = [c['name'] for c in inspector.get_columns('expenses')]
-            if 'is_bom_overhead' not in expense_columns:
-                with db.engine.connect() as conn:
-                    conn.execute(text("ALTER TABLE expenses ADD COLUMN is_bom_overhead BOOLEAN DEFAULT false"))
-                    conn.commit()
-                    print("Added column: is_bom_overhead to expenses")
-        except Exception as e:
-            print(f"Expenses migration check: {e}")
+        # Map model classes to table names and their columns
+        model_columns = {
+            'users': User,
+            'vendors': Vendor,
+            'customers': Customer,
+            'warehouses': Warehouse,
+            'products': Product,
+            'sales': Sale,
+            'sale_items': SaleItem,
+            'purchase_bills': PurchaseBill,
+            'purchase_items': PurchaseItem,
+            'transactions': Transaction,
+            'accounts': Account,
+            'tax_rates': TaxRate,
+            'currencies': Currency,
+            'payments': Payment,
+            'recurring_expenses': RecurringExpense,
+            'expense_categories': ExpenseCategory,
+            'expenses': Expense,
+            'stock_movements': StockMovement,
+            'company': Company,
+            'invoice_settings': InvoiceSettings,
+            'purchase_settings': PurchaseSettings,
+            'sale_returns': SaleReturn,
+            'sale_return_items': SaleReturnItem,
+            'tasks': Task,
+            'boms': BOM,
+            'bom_items': BOMItem,
+            'staff': Staff,
+            'attendance': Attendance,
+            'salary_advances': SalaryAdvance,
+            'salary_payments': SalaryPayment,
+            'manufacturing_orders': ManufacturingOrder,
+            'manufacturing_order_items': ManufacturingOrderItem,
+            'monthly_targets': MonthlyTarget,
+            'vendor_advances': VendorAdvance,
+            'customer_advances': CustomerAdvance,
+            'purchase_orders': PurchaseOrder,
+            'purchase_order_items': PurchaseOrderItem,
+            'cost_price_history': CostPriceHistory,
+            'bom_versions': BOMVersion,
+            'bom_version_items': BOMVersionItem,
+            'production_targets': ProductionTarget,
+            'production_logs': ProductionLog,
+            'pd_projects': PDProject,
+            'pd_bom': PDProjectBOM,
+            'pd_components': PDComponent,
+            'pd_tooling': PDTooling,
+            'pd_testing': PDTesting,
+            'pd_approval': PDApproval,
+            'pd_assets': PDAsset
+        }
         
-        # Migrate products table for is_manufactured column
         try:
             inspector = inspect(db.engine)
-            product_columns = [c['name'] for c in inspector.get_columns('products')]
-            if 'is_manufactured' not in product_columns:
-                with db.engine.connect() as conn:
-                    conn.execute(text("ALTER TABLE products ADD COLUMN is_manufactured BOOLEAN DEFAULT false"))
-                    conn.commit()
-                    print("Added column: is_manufactured to products")
-        except Exception as e:
-            print(f"Products migration check: {e}")
-        
-        # Migrate expenses table for product_id and bom_id columns
-        try:
-            inspector = inspect(db.engine)
-            expense_columns = [c['name'] for c in inspector.get_columns('expenses')]
-            with db.engine.connect() as conn:
-                if 'product_id' not in expense_columns:
-                    conn.execute(text("ALTER TABLE expenses ADD COLUMN product_id INTEGER"))
-                    conn.commit()
-                    print("Added column: product_id to expenses")
-                if 'bom_id' not in expense_columns:
-                    conn.execute(text("ALTER TABLE expenses ADD COLUMN bom_id INTEGER"))
-                    conn.commit()
-                    print("Added column: bom_id to expenses")
-                if 'is_monthly_divided' not in expense_columns:
-                    conn.execute(text("ALTER TABLE expenses ADD COLUMN is_monthly_divided BOOLEAN DEFAULT false"))
-                    conn.commit()
-                    print("Added column: is_monthly_divided to expenses")
-                if 'monthly_start_date' not in expense_columns:
-                    conn.execute(text("ALTER TABLE expenses ADD COLUMN monthly_start_date DATE"))
-                    conn.commit()
-                    print("Added column: monthly_start_date to expenses")
-                if 'monthly_end_date' not in expense_columns:
-                    conn.execute(text("ALTER TABLE expenses ADD COLUMN monthly_end_date DATE"))
-                    conn.commit()
-                    print("Added column: monthly_end_date to expenses")
-                if 'daily_amount' not in expense_columns:
-                    conn.execute(text("ALTER TABLE expenses ADD COLUMN daily_amount DECIMAL(10,2)"))
-                    conn.commit()
-                    print("Added column: daily_amount to expenses")
-        except Exception as e:
-            print(f"Expenses product/bom migration check: {e}")
-            
-        # Migrate for monthly_targets table
-        try:
-            inspector = inspect(db.engine)
-            if 'monthly_targets' not in inspector.get_table_names():
-                from app.models import MonthlyTarget
-                MonthlyTarget.__table__.create(db.engine)
-                print("Created monthly_targets table")
-        except Exception as e:
-            print(f"Monthly targets table check: {e}")
-        
-        # Migrate sale_returns table for returned_to_inventory column
-        try:
-            inspector = inspect(db.engine)
-            returns_columns = [c['name'] for c in inspector.get_columns('sale_returns')]
-            if 'returned_to_inventory' not in returns_columns:
-                with db.engine.connect() as conn:
-                    conn.execute(text("ALTER TABLE sale_returns ADD COLUMN returned_to_inventory BOOLEAN DEFAULT false"))
-                    conn.commit()
-                    print("Added column: returned_to_inventory to sale_returns")
-        except Exception as e:
-            print(f"Sale_returns migration check: {e}")
-        
-        # Create warehouses table if not exists
-        try:
-            inspector = inspect(db.engine)
-            if 'warehouses' not in inspector.get_table_names():
-                from app.models import Warehouse
-                Warehouse.__table__.create(db.engine)
-                print("Created warehouses table")
-        except Exception as e:
-            print(f"Warehouses table check: {e}")
-        
-        # Migrate staff table for daily_salary column
-        try:
-            inspector = inspect(db.engine)
-            if 'staff' in inspector.get_table_names():
-                staff_columns = [c['name'] for c in inspector.get_columns('staff')]
-                if 'daily_salary' not in staff_columns:
-                    with db.engine.connect() as conn:
-                        conn.execute(text("ALTER TABLE staff ADD COLUMN daily_salary DECIMAL(10,2)"))
-                        conn.commit()
-                        print("Added column: daily_salary to staff")
-        except Exception as e:
-            print(f"Staff daily_salary migration check: {e}")
-        
-        # Migrate vendors table for shipping_address column
-        try:
-            inspector = inspect(db.engine)
-            if 'vendors' in inspector.get_table_names():
-                vendor_columns = [c['name'] for c in inspector.get_columns('vendors')]
-                if 'shipping_address' not in vendor_columns:
-                    with db.engine.connect() as conn:
-                        conn.execute(text("ALTER TABLE vendors ADD COLUMN shipping_address TEXT"))
-                        conn.commit()
-                        print("Added column: shipping_address to vendors")
-        except Exception as e:
-            print(f"Vendors shipping_address migration check: {e}")
-        
-        # Migrate customers table for missing columns
-        try:
-            inspector = inspect(db.engine)
-            if 'customers' in inspector.get_table_names():
-                customer_columns = [c['name'] for c in inspector.get_columns('customers')]
-                if 'gst_number' not in customer_columns:
-                    with db.engine.connect() as conn:
-                        conn.execute(text("ALTER TABLE customers ADD COLUMN gst_number VARCHAR(20)"))
-                        conn.commit()
-                        print("Added column: gst_number to customers")
-        except Exception as e:
-            print(f"Customers gst_number migration check: {e}")
-        
-        # Migrate boms table for version column
-        try:
-            inspector = inspect(db.engine)
-            if 'boms' in inspector.get_table_names():
-                bom_columns = [c['name'] for c in inspector.get_columns('boms')]
-                if 'version' not in bom_columns:
-                    with db.engine.connect() as conn:
-                        conn.execute(text("ALTER TABLE boms ADD COLUMN version VARCHAR(20) DEFAULT 'v1'"))
-                        conn.commit()
-                        print("Added column: version to boms")
-        except Exception as e:
-            print(f"Boms version migration check: {e}")
-        
-        # Migrate products table for warehouse_id column
-        try:
-            inspector = inspect(db.engine)
-            product_columns = [c['name'] for c in inspector.get_columns('products')]
-            if 'warehouse_id' not in product_columns:
-                with db.engine.connect() as conn:
-                    conn.execute(text("ALTER TABLE products ADD COLUMN warehouse_id INTEGER"))
-                    conn.commit()
-                    print("Added column: warehouse_id to products")
-        except Exception as e:
-            print(f"Products warehouse_id migration check: {e}")
-        
-        # Migrate for production_targets table
-        try:
-            inspector = inspect(db.engine)
-            if 'production_targets' not in inspector.get_table_names():
-                from app.models import ProductionTarget
-                ProductionTarget.__table__.create(db.engine)
-                print("Created production_targets table")
-        except Exception as e:
-            print(f"Production targets table check: {e}")
-        
-        # Migrate for production_logs table
-        try:
-            inspector = inspect(db.engine)
-            if 'production_logs' not in inspector.get_table_names():
-                from app.models import ProductionLog
-                ProductionLog.__table__.create(db.engine)
-                print("Created production_logs table")
-        except Exception as e:
-            print(f"Production logs table check: {e}")
-        
-        # Migrate for Product Development tables
-        try:
-            from app.models import PDProject, PDProjectBOM, PDComponent, PDTooling, PDTesting, PDApproval, PDAsset
-            inspector = inspect(db.engine)
-            tables_to_create = {
-                'pd_projects': PDProject,
-                'pd_bom': PDProjectBOM,
-                'pd_components': PDComponent,
-                'pd_tooling': PDTooling,
-                'pd_testing': PDTesting,
-                'pd_approval': PDApproval,
-                'pd_assets': PDAsset
-            }
             existing_tables = inspector.get_table_names()
-            for table_name, model_class in tables_to_create.items():
+            
+            for table_name, model_class in model_columns.items():
+                # Create table if it doesn't exist
                 if table_name not in existing_tables:
-                    model_class.__table__.create(db.engine)
-                    print(f"Created {table_name} table")
-        except Exception as e:
-            print(f"Product Development tables check: {e}")
-        
-        # Migrate company table for signature_path column
-        try:
-            inspector = inspect(db.engine)
-            company_columns = [c['name'] for c in inspector.get_columns('company')]
-            if 'signature_path' not in company_columns:
+                    try:
+                        model_class.__table__.create(db.engine)
+                        print(f"Created table: {table_name}")
+                    except Exception as e:
+                        print(f"Error creating table {table_name}: {e}")
+                    continue
+                
+                # Get existing columns
+                try:
+                    existing_columns = [c['name'] for c in inspector.get_columns(table_name)]
+                except Exception as e:
+                    print(f"Error getting columns for {table_name}: {e}")
+                    continue
+                
+                # Get columns from model
+                model_columns_dict = {c.name: c for c in model_class.__table__.columns}
+                
+                # Add missing columns
                 with db.engine.connect() as conn:
-                    conn.execute(text("ALTER TABLE company ADD COLUMN signature_path VARCHAR(200)"))
-                    conn.commit()
-                    print("Added column: signature_path to company")
+                    for col_name, col_obj in model_columns_dict.items():
+                        if col_name not in existing_columns:
+                            # Determine SQLAlchemy type
+                            col_type = str(col_obj.type)
+                            
+                            # Map SQLAlchemy types to PostgreSQL types
+                            type_mapping = {
+                                'INTEGER': 'INTEGER',
+                                'FLOAT': 'FLOAT',
+                                'REAL': 'REAL',
+                                'NUMERIC': 'NUMERIC(10,2)',
+                                'DECIMAL': 'DECIMAL(10,2)',
+                                'VARCHAR': f'VARCHAR({col_obj.type.length or 255})',
+                                'TEXT': 'TEXT',
+                                'BOOLEAN': 'BOOLEAN',
+                                'DATE': 'DATE',
+                                'DATETIME': 'TIMESTAMP',
+                                'TIMESTAMP': 'TIMESTAMP',
+                            }
+                            
+                            # Get the base type
+                            base_type = str(col_obj.type).split('(')[0]
+                            pg_type = type_mapping.get(base_type.upper(), 'TEXT')
+                            
+                            # Handle VARCHAR without length
+                            if 'VARCHAR' in pg_type and '(' not in str(col_obj.type):
+                                pg_type = 'VARCHAR(255)'
+                            
+                            # Get default value
+                            default = col_obj.default
+                            default_str = ''
+                            if default and default.arg is not None:
+                                if isinstance(default.arg, bool):
+                                    default_str = f" DEFAULT {default.arg}"
+                                elif isinstance(default.arg, str):
+                                    default_str = f" DEFAULT '{default.arg}'"
+                            
+                            try:
+                                conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {pg_type}{default_str}"))
+                                conn.commit()
+                                print(f"Added column: {col_name} to {table_name}")
+                            except Exception as e:
+                                # Column might already exist or other issue
+                                pass
         except Exception as e:
-            print(f"Company signature_path migration check: {e}")
+            print(f"Auto-migration error: {e}")
     
     # Enable SQLite foreign key constraints
     if app.config.get('SQLALCHEMY_DATABASE_URI', '').startswith('sqlite'):
@@ -307,10 +220,8 @@ def create_app(config_class=Config):
         company = Company.query.first()
         logo_url = None
         if company and company.logo_path:
-            # Normalize path and extract static-relative part correctly
             path = company.logo_path.replace('\\', '/')
             if 'static/' in path:
-                # Get everything AFTER static/
                 logo_url = url_for('static', filename=path.split('static/')[-1])
             else:
                 logo_url = url_for('static', filename=path)
