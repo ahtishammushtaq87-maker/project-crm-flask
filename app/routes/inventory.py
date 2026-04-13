@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from app import db
-from app.models import Product, User, Warehouse
+from app.models import Product, User, Warehouse, ProductCategory
 from app.forms import ProductForm
 from sqlalchemy import func, inspect
 import os
@@ -28,7 +28,7 @@ def products():
     query = Product.query
     
     if category != 'all':
-        query = query.filter(Product.category == category)
+        query = query.filter(Product.category_id == int(category))
     
     if warehouse_id and warehouse_id.isdigit():
         query = query.filter(Product.warehouse_id == int(warehouse_id))
@@ -43,8 +43,7 @@ def products():
     products = query.order_by(Product.name).all()
     
     # Get all categories for filter
-    categories = db.session.query(Product.category).distinct().all()
-    categories = [c[0] for c in categories if c[0]]
+    categories = ProductCategory.query.filter_by(is_active=True).order_by(ProductCategory.name).all()
     
     # Get all warehouses for filter
     warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
@@ -74,7 +73,7 @@ def add_product():
         cost_price = request.form.get('cost_price')
         quantity = request.form.get('quantity')
         reorder_level = request.form.get('reorder_level')
-        category = request.form.get('category')
+        category_id = request.form.get('category_id')
         is_manufactured = 'is_manufactured' in request.form
         finished_good_price = request.form.get('finished_good_price')
         
@@ -101,7 +100,7 @@ def add_product():
                 cost_price=float(cost_price) if cost_price else 0.0,
                 quantity=float(quantity) if quantity else 0,
                 reorder_level=float(reorder_level) if reorder_level else 0,
-                category=category,
+                category_id=int(category_id) if category_id and category_id != '0' else None,
                 warehouse_id=int(warehouse_id) if warehouse_id and warehouse_id != '0' else None
             )
             
@@ -130,9 +129,8 @@ def add_product():
         else:
             flash('Please fill in all required fields.', 'error')
     
-    # Fetch unique categories for the dropdown/datalist
-    categories = db.session.query(Product.category).distinct().all()
-    categories = [c[0] for c in categories if c[0]]
+    # Fetch categories for the dropdown
+    categories = ProductCategory.query.filter_by(is_active=True).order_by(ProductCategory.name).all()
     
     return render_template('inventory/add_product.html', form=form, categories=categories, warehouses=warehouses)
 
@@ -175,8 +173,17 @@ def edit_product(id):
         
         product.cost_price = form.cost_price.data if form.cost_price.data is not None else 0.0
         product.reorder_level = form.reorder_level.data
-        product.category = form.category.data
+        category_id = request.form.get('category_id')
+        product.category_id = int(category_id) if category_id and category_id != '0' else None
         product.warehouse_id = int(warehouse_id) if warehouse_id and warehouse_id != '0' else None
+        
+        # Handle quantity update
+        quantity = request.form.get('quantity')
+        if quantity is not None:
+            try:
+                product.quantity = float(quantity)
+            except (ValueError, TypeError):
+                pass
         
         # Handle image upload
         if 'image' in request.files:
@@ -238,9 +245,8 @@ def edit_product(id):
             flash(f'Error updating product: {str(e)}', 'error')
             return redirect(url_for('inventory.edit_product', id=product.id))
     
-    # Fetch unique categories for the dropdown/datalist
-    categories = db.session.query(Product.category).distinct().all()
-    categories = [c[0] for c in categories if c[0]]
+    # Fetch categories for the dropdown
+    categories = ProductCategory.query.filter_by(is_active=True).order_by(ProductCategory.name).all()
     
     return render_template('inventory/edit_product.html', form=form, product=product, categories=categories, warehouses=warehouses)
 

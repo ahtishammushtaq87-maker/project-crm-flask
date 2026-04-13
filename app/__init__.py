@@ -20,7 +20,7 @@ def create_app(config_class=Config):
     with app.app_context():
         from sqlalchemy import inspect, text
         from app.models import (
-            User, Vendor, Customer, Warehouse, Product, Sale, SaleItem,
+            User, Vendor, Customer, Warehouse, Product, ProductCategory, Sale, SaleItem,
             PurchaseBill, PurchaseItem, Transaction, Account, TaxRate,
             Currency, Payment, RecurringExpense, ExpenseCategory, Expense,
             StockMovement, Company, InvoiceSettings, PurchaseSettings,
@@ -39,6 +39,7 @@ def create_app(config_class=Config):
             'customers': Customer,
             'warehouses': Warehouse,
             'products': Product,
+            'product_categories': ProductCategory,
             'sales': Sale,
             'sale_items': SaleItem,
             'purchase_bills': PurchaseBill,
@@ -203,6 +204,7 @@ def create_app(config_class=Config):
     from app.routes.targets import bp as targets_bp
     from app.routes.production import bp as production_bp
     from app.routes.product_development import bp as pd_bp
+    from app.routes.categories import bp as categories_bp
 
     app.register_blueprint(dashboard_bp, url_prefix='/')
     app.register_blueprint(accounting_bp, url_prefix='/accounting')
@@ -221,6 +223,7 @@ def create_app(config_class=Config):
     app.register_blueprint(targets_bp, url_prefix='/targets')
     app.register_blueprint(production_bp, url_prefix='/production')
     app.register_blueprint(pd_bp, url_prefix='/product-development')
+    app.register_blueprint(categories_bp, url_prefix='/categories')
     
     @app.context_processor
     def inject_company():

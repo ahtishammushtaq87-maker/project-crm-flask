@@ -42,7 +42,7 @@
                     {% if from_date %}From: {{ from_date }}{% endif %}
                     {% if from_date and to_date %} | {% endif %}
                     {% if to_date %}To: {{ to_date }}{% endif %}
-                    {% if current_status != 'all' %} | Status: {{ current_status|title }}{% endif %}
+                    {% if current_status == 'overdue' %} | Status: Overdue{% elif current_status != 'all' %} | Status: {{ current_status|title }}{% endif %}
                 </small>
             </div>
             {% endif %}
@@ -70,6 +70,12 @@
                     <a class="nav-link {% if current_status == 'partial' %}active{% endif %}" 
                        href="{{ url_for('sales.invoices', status='partial', from_date=from_date, to_date=to_date) }}">
                         Partial
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link text-danger {% if current_status == 'overdue' %}active{% endif %}" 
+                       href="{{ url_for('sales.invoices', status='overdue', from_date=from_date, to_date=to_date) }}">
+                        <i class="fas fa-exclamation-triangle"></i> Overdue
                     </a>
                 </li>
             </ul>
@@ -105,12 +111,14 @@
                             <td>Rs{{ "%.2f"|format(sale.paid_amount) }}</td>
                             <td>Rs{{ "%.2f"|format(sale.total - sale.paid_amount) }}</td>
                             <td>
-                                {% if sale.status == 'paid' %}
+                                {% if sale.is_overdue %}
+                                <span class="badge bg-danger">Overdue</span>
+                                {% elif sale.status == 'paid' %}
                                 <span class="badge bg-success">Paid</span>
                                 {% elif sale.status == 'partial' %}
                                 <span class="badge bg-warning">Partial</span>
                                 {% else %}
-                                <span class="badge bg-danger">Unpaid</span>
+                                <span class="badge bg-secondary">Unpaid</span>
                                 {% endif %}
                             </td>
                             <td>

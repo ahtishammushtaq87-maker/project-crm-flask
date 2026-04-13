@@ -34,18 +34,23 @@
 
                 <div class="row mb-3">
                     <div class="col-md-6">
-                        <label for="category" class="form-label">Category</label>
-                        {{ form.category(class="form-control", placeholder="Select or type a category...", list="categoryOptions") }}
-                        <datalist id="categoryOptions">
-                            {% for cat in categories %}
-                            <option value="{{ cat }}">
-                            {% endfor %}
-                        </datalist>
+                        <label for="category_id" class="form-label">Category</label>
+                        <div class="input-group">
+                            <select name="category_id" id="category_id" class="form-control">
+                                <option value="0">No Category</option>
+                                {% for cat in categories %}
+                                <option value="{{ cat.id }}" {% if product.category_id == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <a href="{{ url_for('categories.create_category') }}" class="btn btn-success" target="_blank" title="Create New Category">
+                                <i class="fas fa-plus"></i>
+                            </a>
+                        </div>
                     </div>
-                    <div class="col-md-6 text-muted">
-                        <label class="form-label">Current Quantity</label>
-                        <input type="text" class="form-control" value="{{ product.quantity }}" disabled>
-                        <small>Quantity is managed via Purchases and Sales.</small>
+                    <div class="col-md-6">
+                        <label class="form-label">Quantity</label>
+                        <input type="number" name="quantity" class="form-control" value="{{ product.quantity }}" step="1" min="0">
+                        <small class="text-muted">Current stock quantity</small>
                     </div>
                 </div>
 

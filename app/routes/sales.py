@@ -20,7 +20,12 @@ def invoices():
     
     query = Sale.query
     
-    if status != 'all':
+    if status == 'overdue':
+        query = query.filter(
+            Sale.status != 'paid',
+            Sale.due_date < datetime.utcnow()
+        )
+    elif status != 'all':
         query = query.filter(Sale.status == status)
     
     if from_date:

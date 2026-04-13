@@ -32,13 +32,18 @@
 
                 <div class="row mb-3">
                     <div class="col-md-6">
-                        <label for="category" class="form-label">Category</label>
-                        <input type="text" class="form-control" name="category" placeholder="Select or type a category..." list="categoryOptions">
-                        <datalist id="categoryOptions">
-                            {% for cat in categories %}
-                            <option value="{{ cat }}">
-                            {% endfor %}
-                        </datalist>
+                        <label for="category_id" class="form-label">Category</label>
+                        <div class="input-group">
+                            <select name="category_id" id="category_id" class="form-control">
+                                <option value="0">No Category</option>
+                                {% for cat in categories %}
+                                <option value="{{ cat.id }}">{{ cat.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <a href="{{ url_for('categories.create_category') }}" class="btn btn-success" target="_blank" title="Create New Category">
+                                <i class="fas fa-plus"></i>
+                            </a>
+                        </div>
                     </div>
                     <div class="col-md-6">
                         <label for="quantity" class="form-label">Initial Quantity</label>
@@ -81,10 +86,10 @@
                 </div>
 
                 <div class="row mb-3">
-                    <div class="col-md-4">
+                   <!-- <div class="col-md-4">
                         <label for="reorder_level" class="form-label">Reorder Level</label>
                         <input type="number" class="form-control" name="reorder_level" step="0.01" value="0">
-                    </div>
+                    </div>-->
                 </div>
 
                 <div class="row mb-3">

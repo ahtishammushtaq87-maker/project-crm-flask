@@ -19,7 +19,7 @@
                     <select name="category" class="form-control" onchange="this.form.submit()">
                         <option value="all" {% if current_category == 'all' %}selected{% endif %}>All Categories</option>
                         {% for cat in categories %}
-                        <option value="{{ cat }}" {% if current_category == cat %}selected{% endif %}>{{ cat }}</option>
+                        <option value="{{ cat.id }}" {% if current_category == cat.id|string %}selected{% endif %}>{{ cat.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -99,7 +99,7 @@
                             </td>
                             <td>{{ product.sku }}</td>
                             <td><strong>{{ product.name }}</strong></td>
-                            <td>{{ product.category or '-' }}</td>
+                            <td>{{ product.category.name if product.category else '-' }}</td>
                             <td>{{ product.warehouse.name if product.warehouse else '-' }}</td>
                             <td>
                                 {{ product.quantity }}

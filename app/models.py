@@ -188,7 +188,10 @@ class Product(db.Model):
     sku = db.Column(db.String(50), unique=True, nullable=False, index=True)
     barcode = db.Column(db.String(50), index=True)
     description = db.Column(db.Text)
-    category = db.Column(db.String(50), index=True)
+    category_id = db.Column(db.Integer, db.ForeignKey('product_categories.id'), nullable=True, index=True)
+    category = db.relationship('ProductCategory', backref='products', lazy=True)
+    # Legacy category string field for backward compatibility
+    category_name = db.Column(db.String(50), index=True)
     brand = db.Column(db.String(50))
     unit = db.Column(db.String(20), default='pcs')  # pcs, kg, meter, etc.
     unit_price = db.Column(db.Float, nullable=False, default=0)
@@ -248,6 +251,22 @@ class Product(db.Model):
     
     def __repr__(self):
         return f'<Product {self.name} ({self.sku})>'
+
+
+class ProductCategory(db.Model):
+    """Product Category model"""
+    __tablename__ = 'product_categories'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True, index=True)
+    description = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<ProductCategory {self.name}>'
+
 
 class Sale(db.Model):
     """Sales/Invoice model"""

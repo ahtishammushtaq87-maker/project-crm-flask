@@ -122,7 +122,7 @@
 					<p {% if sale.advance_applied > 0 %}class="text-success fw-bold"{% endif %}>Advance Applied: {% if sale.advance_applied > 0 %}-{% endif %}Rs{{ '%.2f'|format(sale.advance_applied) }}</p>
 					<h4>Total: Rs{{ '%.2f'|format(sale.total) }}</h4>
 					<p>Paid: Rs{{ '%.2f'|format(sale.paid_amount) }}</p>
-					<p>Balance: Rs{{ '%.2f'|format(sale.total - sale.paid_amount) }}</p>
+					<p style="color: red; font-weight: bolder;">Balance: Rs{{ '%.2f'|format(sale.total - sale.paid_amount) }}</p>
 				</div>
 				
 				{% if sale.adjusted_advances %}
