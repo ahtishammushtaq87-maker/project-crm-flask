@@ -4,6 +4,7 @@ from app import db
 from app.models import Product, User, Warehouse, ProductCategory
 from app.forms import ProductForm
 from sqlalchemy import func, inspect
+from io import BytesIO
 import os
 from werkzeug.utils import secure_filename
 
@@ -23,9 +24,17 @@ def products():
     warehouse_id = request.args.get('warehouse_id', '', type=str)
     qty_min = request.args.get('qty_min', '', type=str)
     qty_max = request.args.get('qty_max', '', type=str)
+    search_query = request.args.get('search', '', type=str).strip()
     
     db.session.expire_all()
     query = Product.query
+    
+    # Search filter
+    if search_query:
+        query = query.filter(
+            (Product.name.ilike(f'%{search_query}%')) | 
+            (Product.sku.ilike(f'%{search_query}%'))
+        )
     
     if category != 'all':
         query = query.filter(Product.category_id == int(category))
@@ -55,7 +64,8 @@ def products():
                          current_category=category,
                          current_warehouse_id=warehouse_id,
                          qty_min=qty_min,
-                         qty_max=qty_max)
+                         qty_max=qty_max,
+                         search_query=search_query)
 
 @bp.route('/product/add', methods=['GET', 'POST'])
 @login_required
@@ -287,6 +297,113 @@ def stock_report():
                          total_value=total_value,
                          low_stock_count=low_stock_count,
                          out_of_stock=out_of_stock)
+
+@bp.route('/product/bulk-upload', methods=['GET', 'POST'])
+@login_required
+def bulk_upload():
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            flash('No file selected', 'error')
+            return redirect(url_for('inventory.bulk_upload'))
+        
+        file = request.files['file']
+        if file.filename == '':
+            flash('No file selected', 'error')
+            return redirect(url_for('inventory.bulk_upload'))
+        
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            flash('Please upload an Excel file (.xlsx or .xls)', 'error')
+            return redirect(url_for('inventory.bulk_upload'))
+        
+        try:
+            import pandas as pd
+            df = pd.read_excel(file)
+            
+            required_columns = ['name', 'sku']
+            missing = [col for col in required_columns if col not in df.columns]
+            if missing:
+                flash(f'Missing required columns: {", ".join(missing)}', 'error')
+                return redirect(url_for('inventory.bulk_upload'))
+            
+            added = 0
+            errors = []
+            
+            for idx, row in df.iterrows():
+                try:
+                    name = str(row.get('name', '')).strip()
+                    sku = str(row.get('sku', '')).strip()
+                    
+                    if not name or not sku:
+                        errors.append(f'Row {idx + 2}: Missing name or SKU')
+                        continue
+                    
+                    existing = Product.query.filter_by(sku=sku).first()
+                    if existing:
+                        errors.append(f'Row {idx + 2}: SKU "{sku}" already exists')
+                        continue
+                    
+                    product = Product(
+                        name=name,
+                        sku=sku,
+                        description=str(row.get('description', '')).strip() if pd.notna(row.get('description')) else None,
+                        category_id=int(row.get('category_id')) if pd.notna(row.get('category_id')) else None,
+                        unit_price=float(row.get('unit_price', 0)) if pd.notna(row.get('unit_price')) else 0,
+                        cost_price=float(row.get('cost_price', 0)) if pd.notna(row.get('cost_price')) else 0,
+                        quantity=float(row.get('quantity', 0)) if pd.notna(row.get('quantity')) else 0,
+                        reorder_level=float(row.get('reorder_level', 0)) if pd.notna(row.get('reorder_level')) else 0,
+                    )
+                    
+                    db.session.add(product)
+                    added += 1
+                except Exception as e:
+                    errors.append(f'Row {idx + 2}: {str(e)}')
+            
+            db.session.commit()
+            
+            if added > 0:
+                flash(f'Successfully added {added} products!', 'success')
+            if errors:
+                flash(f'Errors: {"; ".join(errors[:10])}', 'warning')
+            
+            return redirect(url_for('inventory.products'))
+            
+        except Exception as e:
+            flash(f'Error reading file: {str(e)}', 'error')
+            return redirect(url_for('inventory.bulk_upload'))
+    
+    return render_template('inventory/bulk_upload.html')
+
+@bp.route('/product/download-sample')
+@login_required
+def download_sample():
+    try:
+        import pandas as pd
+        from io import BytesIO
+        from flask import send_file
+        
+        sample_data = {
+            'name': ['Product A', 'Product B', 'Product C'],
+            'sku': ['SKU-001', 'SKU-002', 'SKU-003'],
+            'description': ['Description for Product A', 'Description for Product B', 'Description for Product C'],
+            'unit_price': [100.00, 200.00, 50.00],
+            'cost_price': [50.00, 100.00, 25.00],
+            'quantity': [10, 20, 100],
+            'reorder_level': [5, 10, 20],
+            'category_id': ['', '', '']
+        }
+        
+        df = pd.DataFrame(sample_data)
+        
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Products', index=False)
+        
+        output.seek(0)
+        return send_file(output, download_name='sample_products.xlsx', as_attachment=True)
+        
+    except Exception as e:
+        flash(f'Error creating sample: {str(e)}', 'error')
+        return redirect(url_for('inventory.bulk_upload'))
 
 @bp.route('/api/product/<int:id>')
 @login_required
