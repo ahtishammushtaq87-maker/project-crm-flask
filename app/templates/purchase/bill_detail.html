@@ -10,7 +10,7 @@
             <small class="text-muted">{{ bill.date.strftime('%d %B %Y') }}</small>
         </div>
         <div class="btn-group">
-            <a href="{{ url_for('purchase.bill_pdf', id=bill.id) }}" class="btn btn-info">
+            <a href="{{ url_for('purchase.bill_pdf', id=bill.id) }}" class="btn btn-info" target="_blank">
                 <i class="fas fa-file-pdf me-1"></i> PDF
             </a>
             {% if bill.vendor and bill.vendor.phone %}

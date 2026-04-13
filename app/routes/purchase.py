@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response
 from flask_login import login_required, current_user
 from app import db
 from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory
@@ -439,12 +439,13 @@ def bill_pdf(id):
     try:
         buffer = generate_professional_pdf('purchase', bill, company, settings)
         
-        return send_file(
-            buffer,
-            as_attachment=True,
-            download_name=f"PO_{bill.bill_number}.pdf",
-            mimetype='application/pdf'
-        )
+        response = make_response(buffer)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'inline; filename="bill_{bill.bill_number}.pdf"'
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
     except Exception as e:
         flash(f'Error generating PDF: {str(e)}', 'error')
         return redirect(url_for('purchase.bill_detail', id=id))
@@ -988,12 +989,13 @@ def po_pdf(id):
     company = Company.query.first()
     
     buffer = generate_professional_pdf('purchase_order', po, company, None)
-    return send_file(
-        buffer,
-        mimetype='application/pdf',
-        as_attachment=True,
-        download_name=f'{po.po_number}.pdf'
-    )
+    response = make_response(buffer)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'inline; filename="{po.po_number}.pdf"'
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @bp.route('/order/<int:id>/pdf/view')
 @login_required

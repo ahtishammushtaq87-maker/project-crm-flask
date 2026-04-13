@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response
 from flask_login import login_required, current_user
 from app import db
 from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance
@@ -355,12 +355,10 @@ def invoice_pdf(id):
     try:
         buffer = generate_professional_pdf('invoice', sale, company, invoice_settings)
         
-        return send_file(
-            buffer,
-            as_attachment=True,
-            download_name=f"invoice_{sale.invoice_number or 'unknown'}.pdf",
-            mimetype='application/pdf'
-        )
+        response = make_response(buffer)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'inline; filename="invoice_{sale.invoice_number or "unknown"}.pdf"'
+        return response
     except Exception as e:
         print(f"PDF generation error: {str(e)}")
         flash(f'Error generating PDF: {str(e)}', 'error')
@@ -376,7 +374,14 @@ def invoice_pdf_view(id):
     
     try:
         buffer = generate_professional_pdf('invoice', sale, company, invoice_settings)
-        return send_file(buffer, mimetype='application/pdf')
+        
+        response = make_response(buffer)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'inline; filename="{sale.invoice_number}.pdf"'
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
     except Exception as e:
         flash(f'Error generating PDF: {str(e)}', 'error')
         return redirect(url_for('sales.invoice_detail', id=id))
