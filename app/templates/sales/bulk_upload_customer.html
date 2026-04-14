@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Upload Customers{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-sm-flex align-items-center justify-content-between mb-4">
+        <h1 class="h3 mb-0 text-gray-800">Bulk Upload Customers</h1>
+        <a href="{{ url_for('sales.customers') }}" class="btn btn-sm btn-secondary shadow-sm">
+            <i class="fas fa-arrow-left fa-sm text-white-50"></i> Back to Customers
+        </a>
+    </div>
+
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">Upload Excel File</h6>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info">
+                <h5><i class="fas fa-info-circle"></i> Instructions</h5>
+                <ul>
+                    <li>Upload an Excel file (.xlsx or .xls) containing customer data</li>
+                    <li>The file must have column: <strong>name</strong> (required)</li>
+                    <li>Optional columns: email, phone, address, gst_number, pan_number, contact_person</li>
+                </ul>
+            </div>
+            
+            <form method="POST" enctype="multipart/form-data" class="mb-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                
+                <div class="mb-3">
+                    <label for="file" class="form-label">Select Excel File</label>
+                    <input type="file" name="file" class="form-control" accept=".xlsx,.xls" required>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-upload me-1"></i> Upload Customers
+                </button>
+                <a href="{{ url_for('sales.download_customer_sample') }}" class="btn btn-success">
+                    <i class="fas fa-download me-1"></i> Download Sample
+                </a>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

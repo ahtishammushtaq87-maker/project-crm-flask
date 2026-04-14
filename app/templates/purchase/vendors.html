@@ -6,7 +6,12 @@
 <div class="container-fluid">
 	<div class="d-flex justify-content-between align-items-center mb-4">
 		<h2>Vendors</h2>
-		<a href="{{ url_for('purchase.add_vendor') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Add Vendor</a>
+		<div>
+			<a href="{{ url_for('purchase.bulk_upload_vendor') }}" class="btn btn-success">
+				<i class="fas fa-file-excel"></i> Bulk Upload
+			</a>
+			<a href="{{ url_for('purchase.add_vendor') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Add Vendor</a>
+		</div>
 	</div>
 
 	<div class="card">

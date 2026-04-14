@@ -316,11 +316,19 @@ def bulk_upload():
             return redirect(url_for('inventory.bulk_upload'))
         
         try:
-            import pandas as pd
-            df = pd.read_excel(file)
+            from openpyxl import load_workbook
+            from io import BytesIO
+            file_content = file.read()
+            wb = load_workbook(filename=BytesIO(file_content), read_only=True)
+            ws = wb.active
+            rows = list(ws.values)
+            if not rows:
+                flash('File is empty', 'error')
+                return redirect(url_for('inventory.bulk_upload'))
+            headers = [str(h) if h else '' for h in rows[0]]
             
             required_columns = ['name', 'sku']
-            missing = [col for col in required_columns if col not in df.columns]
+            missing = [col for col in required_columns if col not in headers]
             if missing:
                 flash(f'Missing required columns: {", ".join(missing)}', 'error')
                 return redirect(url_for('inventory.bulk_upload'))
@@ -328,35 +336,40 @@ def bulk_upload():
             added = 0
             errors = []
             
-            for idx, row in df.iterrows():
+            for idx, row in enumerate(rows[1:], start=2):
                 try:
-                    name = str(row.get('name', '')).strip()
-                    sku = str(row.get('sku', '')).strip()
+                    row_dict = {}
+                    for i, val in enumerate(row):
+                        if i < len(headers):
+                            row_dict[headers[i]] = val
+                    
+                    name = str(row_dict.get('name', '')).strip()
+                    sku = str(row_dict.get('sku', '')).strip()
                     
                     if not name or not sku:
-                        errors.append(f'Row {idx + 2}: Missing name or SKU')
+                        errors.append(f'Row {idx}: Missing name or SKU')
                         continue
                     
                     existing = Product.query.filter_by(sku=sku).first()
                     if existing:
-                        errors.append(f'Row {idx + 2}: SKU "{sku}" already exists')
+                        errors.append(f'Row {idx}: SKU "{sku}" already exists')
                         continue
                     
                     product = Product(
                         name=name,
                         sku=sku,
-                        description=str(row.get('description', '')).strip() if pd.notna(row.get('description')) else None,
-                        category_id=int(row.get('category_id')) if pd.notna(row.get('category_id')) else None,
-                        unit_price=float(row.get('unit_price', 0)) if pd.notna(row.get('unit_price')) else 0,
-                        cost_price=float(row.get('cost_price', 0)) if pd.notna(row.get('cost_price')) else 0,
-                        quantity=float(row.get('quantity', 0)) if pd.notna(row.get('quantity')) else 0,
-                        reorder_level=float(row.get('reorder_level', 0)) if pd.notna(row.get('reorder_level')) else 0,
+                        description=str(row_dict.get('description', '')).strip() if row_dict.get('description') else None,
+                        category_id=int(row_dict.get('category_id')) if row_dict.get('category_id') else None,
+                        unit_price=float(row_dict.get('unit_price', 0)) if row_dict.get('unit_price') else 0,
+                        cost_price=float(row_dict.get('cost_price', 0)) if row_dict.get('cost_price') else 0,
+                        quantity=float(row_dict.get('quantity', 0)) if row_dict.get('quantity') else 0,
+                        reorder_level=float(row_dict.get('reorder_level', 0)) if row_dict.get('reorder_level') else 0,
                     )
                     
                     db.session.add(product)
                     added += 1
                 except Exception as e:
-                    errors.append(f'Row {idx + 2}: {str(e)}')
+                    errors.append(f'Row {idx}: {str(e)}')
             
             db.session.commit()
             
@@ -377,27 +390,28 @@ def bulk_upload():
 @login_required
 def download_sample():
     try:
-        import pandas as pd
+        from openpyxl import Workbook
         from io import BytesIO
         from flask import send_file
         
-        sample_data = {
-            'name': ['Product A', 'Product B', 'Product C'],
-            'sku': ['SKU-001', 'SKU-002', 'SKU-003'],
-            'description': ['Description for Product A', 'Description for Product B', 'Description for Product C'],
-            'unit_price': [100.00, 200.00, 50.00],
-            'cost_price': [50.00, 100.00, 25.00],
-            'quantity': [10, 20, 100],
-            'reorder_level': [5, 10, 20],
-            'category_id': ['', '', '']
-        }
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Products'
         
-        df = pd.DataFrame(sample_data)
+        headers = ['name', 'sku', 'description', 'unit_price', 'cost_price', 'quantity', 'reorder_level', 'category_id']
+        ws.append(headers)
+        
+        sample_data = [
+            ['Product A', 'SKU-001', 'Description for Product A', 100.00, 50.00, 10, 5, ''],
+            ['Product B', 'SKU-002', 'Description for Product B', 200.00, 100.00, 20, 10, ''],
+            ['Product C', 'SKU-003', 'Description for Product C', 50.00, 25.00, 100, 20, '']
+        ]
+        
+        for row in sample_data:
+            ws.append(row)
         
         output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='Products', index=False)
-        
+        wb.save(output)
         output.seek(0)
         return send_file(output, download_name='sample_products.xlsx', as_attachment=True)
         

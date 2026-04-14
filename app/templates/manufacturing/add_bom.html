@@ -2,6 +2,38 @@
 
 {% block title %}Create BOM{% endblock %}
 
+{% block extra_css %}
+<style>
+#product_id_select {
+    width: 50%;
+}
+.select2-container--bootstrap-5 {
+    width: 30% !important;
+}
+.select2-container--open {
+    z-index: 1050;
+}
+.select2-results__options {
+    max-height: 250px !important;
+    border: 2px solid #000000;
+    overflow-y: auto !important;
+    background-color: #ffffff !important;
+}
+.select2-dropdown {
+    border: 2px solid #000000;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    background-color: #ffffff;
+}
+.select2-results__option {
+    padding: 0.5rem 1rem;
+}
+.select2-results__option--highlighted {
+    background-color: #000000 !important;
+    color: white;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <div class="d-sm-flex align-items-center justify-content-between mb-4">
@@ -27,7 +59,7 @@
                         </div>
                         <div class="mb-3">
                             <label for="product_id" class="form-label">Finished Product</label>
-                            {{ form.product_id(class="form-control", id="product_id_select") }}
+                            {{ form.product_id(id="product_id_select", class="form-select") }}
                             <small class="text-muted">Only products marked as "Manufactured" appear here.</small>
                         </div>
                         <div class="mb-3">
@@ -83,7 +115,7 @@
                                 <tbody id="componentsBody">
                                     <tr class="component-row">
                                         <td>
-                                            <select name="component_id[]" class="form-control component-select" required>
+                                            <select name="component_id[]" class="form-select component-select" required>
                                                 <option value="">Select product...</option>
                                                 {% for p in all_products %}
                                                 <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.name }} ({{ p.sku }}) - Rs {{ "%.2f"|format(p.cost_price) }}</option>
@@ -123,7 +155,7 @@ document.addEventListener('DOMContentLoaded', function() {
         newRow.className = 'component-row';
         newRow.innerHTML = `
             <td>
-                <select name="component_id[]" class="form-control component-select" required>
+                <select name="component_id[]" class="form-select component-select" required>
                     <option value="">Select product...</option>
                     {% for p in all_products %}
                     <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.name }} ({{ p.sku }}) - Rs {{ "%.2f"|format(p.cost_price) }}</option>
@@ -140,6 +172,12 @@ document.addEventListener('DOMContentLoaded', function() {
             </td>
         `;
         componentsBody.appendChild(newRow);
+        $(newRow).find('.component-select').select2({
+            theme: 'bootstrap-5',
+            placeholder: 'Search or select product',
+            allowClear: true,
+            minimumResultsForSearch: 0
+        });
         updateRemoveButtons();
     });
     
@@ -217,6 +255,35 @@ document.addEventListener('DOMContentLoaded', function() {
             fetchActualOverhead();
         }
     }
+});
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(document).ready(function() {
+    // Finished Product select
+    var $productSelect = $('#product_id_select');
+    $productSelect.select2({
+        theme: 'bootstrap-5',
+        placeholder: 'Search or select product',
+        allowClear: true,
+        minimumResultsForSearch: 0
+    });
+    $productSelect.on('select2:open', function() {
+        document.querySelector('.select2-search__field').focus();
+    });
+
+    // Component selects - initialize all with select2
+    $('.component-select').each(function() {
+        $(this).select2({
+            theme: 'bootstrap-5',
+            placeholder: 'Search or select product',
+            allowClear: true,
+            minimumResultsForSearch: 0
+        });
+    });
 });
 </script>
 {% endblock %}

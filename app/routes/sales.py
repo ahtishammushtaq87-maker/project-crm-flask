@@ -263,6 +263,124 @@ def customers():
     customers = Customer.query.all()
     return render_template('sales/customers.html', customers=customers)
 
+@bp.route('/customer/bulk-upload', methods=['GET', 'POST'])
+@login_required
+def bulk_upload_customer():
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            flash('No file selected', 'error')
+            return redirect(url_for('sales.bulk_upload_customer'))
+        
+        file = request.files['file']
+        if file.filename == '':
+            flash('No file selected', 'error')
+            return redirect(url_for('sales.bulk_upload_customer'))
+        
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            flash('Please upload an Excel file (.xlsx or .xls)', 'error')
+            return redirect(url_for('sales.bulk_upload_customer'))
+        
+        try:
+            from openpyxl import load_workbook
+            from io import BytesIO
+            file_content = file.read()
+            wb = load_workbook(filename=BytesIO(file_content), read_only=True)
+            ws = wb.active
+            rows = list(ws.values)
+            if not rows:
+                flash('File is empty', 'error')
+                return redirect(url_for('sales.bulk_upload_customer'))
+            headers = [str(h) if h else '' for h in rows[0]]
+            df_data = []
+            for row in rows[1:]:
+                row_dict = {}
+                for i, val in enumerate(row):
+                    if i < len(headers):
+                        row_dict[headers[i]] = val
+                df_data.append(row_dict)
+            import pandas as pd
+            df = pd.DataFrame(df_data)
+            
+            required_columns = ['name']
+            missing = [col for col in required_columns if col not in df.columns]
+            if missing:
+                flash(f'Missing required columns: {", ".join(missing)}', 'error')
+                return redirect(url_for('sales.bulk_upload_customer'))
+            
+            added = 0
+            errors = []
+            
+            for idx, row in df.iterrows():
+                try:
+                    name = str(row.get('name', '')).strip()
+                    
+                    if not name:
+                        errors.append(f'Row {idx + 2}: Missing name')
+                        continue
+                    
+                    customer = Customer(
+                        name=name,
+                        email=str(row.get('email', '')).strip() if pd.notna(row.get('email')) else None,
+                        phone=str(row.get('phone', '')).strip() if pd.notna(row.get('phone')) else None,
+                        address=str(row.get('address', '')).strip() if pd.notna(row.get('address')) else None,
+                        gst_number=str(row.get('gst_number', '')).strip() if pd.notna(row.get('gst_number')) else None,
+                        pan_number=str(row.get('pan_number', '')).strip() if pd.notna(row.get('pan_number')) else None,
+                        contact_person=str(row.get('contact_person', '')).strip() if pd.notna(row.get('contact_person')) else None,
+                    )
+                    
+                    db.session.add(customer)
+                    added += 1
+                except Exception as e:
+                    errors.append(f'Row {idx + 2}: {str(e)}')
+            
+            db.session.commit()
+            
+            if added > 0:
+                flash(f'Successfully added {added} customers!', 'success')
+            if errors:
+                flash(f'Errors: {"; ".join(errors[:10])}', 'warning')
+            
+            return redirect(url_for('sales.customers'))
+            
+        except Exception as e:
+            flash(f'Error reading file: {str(e)}', 'error')
+            return redirect(url_for('sales.bulk_upload_customer'))
+    
+    return render_template('sales/bulk_upload_customer.html')
+
+@bp.route('/customer/download-sample')
+@login_required
+def download_customer_sample():
+    try:
+        from openpyxl import Workbook
+        from io import BytesIO
+        from flask import send_file
+        
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Customers'
+        
+        headers = ['name', 'email', 'phone', 'address', 'gst_number', 'pan_number', 'contact_person']
+        ws.append(headers)
+        
+        sample_data = [
+            ['Customer A', 'customerA@example.com', '1234567890', '123 Main St, City', 'GST123456789', 'ABCDE1234F', 'John Doe'],
+            ['Customer B', 'customerB@example.com', '2345678901', '456 Oak Ave, Town', 'GST987654321', 'FGHI5678K', 'Jane Smith'],
+            ['Customer C', 'customerC@example.com', '3456789012', '789 Pine Rd, Village', '', '', '']
+        ]
+        
+        for row in sample_data:
+            ws.append(row)
+        
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return send_file(output, download_name='sample_customers.xlsx', as_attachment=True)
+        
+    except Exception as e:
+        flash(f'Error creating sample: {str(e)}', 'error')
+        return redirect(url_for('sales.customers'))
+
 
 @bp.route('/customer/<int:id>')
 @login_required

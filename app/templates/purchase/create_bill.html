@@ -1,5 +1,36 @@
 {% extends "base.html" %}
 {% block title %}Create Purchase Bill{% endblock %}
+
+{% block extra_css %}
+<style>
+.select2-container--bootstrap-5 {
+    width: 30% !important;
+}
+.select2-container--open {
+    z-index: 1050;
+}
+.select2-results__options {
+    max-height: 250px !important;
+    border: 2px solid #000000;
+    overflow-y: auto !important;
+    background-color: #ffffff !important;
+}
+.select2-dropdown {
+    border: 2px solid #000000;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    background-color: #ffffff;
+}
+.select2-results__option {
+    padding: 0.5rem 1rem;
+}
+.select2-results__option--highlighted {
+    background-color: #000000 !important;
+    color: white;
+}
+
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -384,6 +415,17 @@ function buildRow(productId, productName, qty, price, total) {
         <td><input type="number" name="price[]" class="form-control price newCost" value="${price}" step="0.01" oninput="calcRow(this); updatePriceIndicator(this)"></td>
         <td><input type="text" class="form-control amount" value="${total.toFixed(2)}" readonly></td>
         <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeRow(this)"><i class="fas fa-times"></i></button></td>`;
+    
+    // Initialize Select2 on the product select
+    setTimeout(() => {
+        $(row).find('.product-select').select2({
+            theme: 'bootstrap-5',
+            placeholder: 'Search or select product',
+            allowClear: true,
+            minimumResultsForSearch: 0
+        });
+    }, 0);
+    
     return row;
 }
 
@@ -395,6 +437,14 @@ function addRow() {
     row.querySelector('.qty').value = '1';
     row.querySelector('.product-select').selectedIndex = 0;
     document.getElementById('itemsBody').appendChild(row);
+    
+    // Initialize Select2 on new row's product select
+    $(row).find('.product-select').select2({
+        theme: 'bootstrap-5',
+        placeholder: 'Search or select product',
+        allowClear: true,
+        minimumResultsForSearch: 0
+    });
 }
 
 function removeRow(btn) {
@@ -520,6 +570,18 @@ document.addEventListener('DOMContentLoaded', () => {
         dateInput.value = new Date().toISOString().split('T')[0];
     }
     calculateTotal();
+    
+    // Initialize Select2 for product selects
+    $('.product-select').select2({
+        theme: 'bootstrap-5',
+        placeholder: 'Search or select product',
+        allowClear: true,
+        minimumResultsForSearch: 0
+    });
 });
 </script>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 {% endblock %}

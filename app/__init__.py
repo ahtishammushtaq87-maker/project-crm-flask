@@ -11,6 +11,8 @@ def create_app(config_class=Config):
     app.config.from_object(config_class)
     config_class.init_app(app)
     
+    app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload size
+    
     # Disable Jinja2 template caching to ensure fresh renders (development)
     app.jinja_env.cache = None
     

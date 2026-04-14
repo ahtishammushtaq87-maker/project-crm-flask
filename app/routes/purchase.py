@@ -648,6 +648,120 @@ def vendors():
     vendors = Vendor.query.all()
     return render_template('purchase/vendors.html', vendors=vendors)
 
+@bp.route('/vendor/bulk-upload', methods=['GET', 'POST'])
+@login_required
+def bulk_upload_vendor():
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            flash('No file selected', 'error')
+            return redirect(url_for('purchase.bulk_upload_vendor'))
+        
+        file = request.files['file']
+        if file.filename == '':
+            flash('No file selected', 'error')
+            return redirect(url_for('purchase.bulk_upload_vendor'))
+        
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            flash('Please upload an Excel file (.xlsx or .xls)', 'error')
+            return redirect(url_for('purchase.bulk_upload_vendor'))
+        
+        try:
+            from openpyxl import load_workbook
+            from io import BytesIO
+            wb = load_workbook(filename=BytesIO(file.read()), read_only=True)
+            ws = wb.active
+            rows = list(ws.values)
+            if not rows:
+                flash('File is empty', 'error')
+                return redirect(url_for('purchase.bulk_upload_vendor'))
+            headers = [str(h) if h else '' for h in rows[0]]
+            df_data = []
+            for row in rows[1:]:
+                df_data.append({headers[i]: row[i] for i in range(len(headers))})
+            import pandas as pd
+            df = pd.DataFrame(df_data)
+            
+            required_columns = ['name']
+            missing = [col for col in required_columns if col not in df.columns]
+            if missing:
+                flash(f'Missing required columns: {", ".join(missing)}', 'error')
+                return redirect(url_for('purchase.bulk_upload_vendor'))
+            
+            added = 0
+            errors = []
+            
+            for idx, row in df.iterrows():
+                try:
+                    name = str(row.get('name', '')).strip()
+                    
+                    if not name:
+                        errors.append(f'Row {idx + 2}: Missing name')
+                        continue
+                    
+                    vendor = Vendor(
+                        name=name,
+                        email=str(row.get('email', '')).strip() if pd.notna(row.get('email')) else None,
+                        phone=str(row.get('phone', '')).strip() if pd.notna(row.get('phone')) else None,
+                        address=str(row.get('address', '')).strip() if pd.notna(row.get('address')) else None,
+                        shipping_address=str(row.get('shipping_address', '')).strip() if pd.notna(row.get('shipping_address')) else None,
+                        gst_number=str(row.get('gst_number', '')).strip() if pd.notna(row.get('gst_number')) else None,
+                        pan_number=str(row.get('pan_number', '')).strip() if pd.notna(row.get('pan_number')) else None,
+                        contact_person=str(row.get('contact_person', '')).strip() if pd.notna(row.get('contact_person')) else None,
+                    )
+                    
+                    db.session.add(vendor)
+                    added += 1
+                except Exception as e:
+                    errors.append(f'Row {idx + 2}: {str(e)}')
+            
+            db.session.commit()
+            
+            if added > 0:
+                flash(f'Successfully added {added} vendors!', 'success')
+            if errors:
+                flash(f'Errors: {"; ".join(errors[:10])}', 'warning')
+            
+            return redirect(url_for('purchase.vendors'))
+            
+        except Exception as e:
+            flash(f'Error reading file: {str(e)}', 'error')
+            return redirect(url_for('purchase.bulk_upload_vendor'))
+    
+    return render_template('purchase/bulk_upload_vendor.html')
+
+@bp.route('/vendor/download-sample')
+@login_required
+def download_vendor_sample():
+    try:
+        from openpyxl import Workbook
+        from io import BytesIO
+        from flask import send_file
+        
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Vendors'
+        
+        headers = ['name', 'email', 'phone', 'address', 'shipping_address', 'gst_number', 'pan_number', 'contact_person']
+        ws.append(headers)
+        
+        sample_data = [
+            ['Vendor A', 'vendorA@example.com', '1234567890', '123 Factory St, City', '123 Factory St, City', 'GST123456789', 'ABCDE1234F', 'John Doe'],
+            ['Vendor B', 'vendorB@example.com', '2345678901', '456 Warehouse Ave, Town', '456 Warehouse Ave, Town', 'GST987654321', 'FGHI5678K', 'Jane Smith'],
+            ['Vendor C', 'vendorC@example.com', '3456789012', '789 Supply Rd, Village', '789 Supply Rd, Village', '', '', '']
+        ]
+        
+        for row in sample_data:
+            ws.append(row)
+        
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return send_file(output, download_name='sample_vendors.xlsx', as_attachment=True)
+        
+    except Exception as e:
+        flash(f'Error creating sample: {str(e)}', 'error')
+        return redirect(url_for('purchase.vendors'))
+
 @bp.route('/vendor/<int:id>')
 @login_required
 def vendor_profile(id):
