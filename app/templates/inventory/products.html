@@ -18,7 +18,7 @@
     
     <div class="card mb-3">
         <div class="card-body">
-            <form method="GET" class="row g-3">
+            <form method="GET" class="row g-3 filter-form">
                 <div class="col-md-3">
                     <label class="form-label">Search</label>
                     <input type="text" name="search" class="form-control" placeholder="Search by name or SKU..." value="{{ search_query }}">
@@ -37,7 +37,7 @@
                         <i class="fas fa-search"></i> Search
                     </button>
                     {% if search_query %}
-                    <a href="{{ url_for('inventory.products') }}" class="btn btn-secondary w-100 ms-2">
+                    <a href="{{ url_for('inventory.products') }}" class="btn btn-secondary w-100 ms-2 clear-filters" title="Clear Search">
                         <i class="fas fa-times"></i>
                     </a>
                     {% endif %}
@@ -48,7 +48,7 @@
     
     <div class="card mb-3">
         <div class="card-body">
-            <form method="GET" class="row g-3">
+            <form method="GET" class="row g-3 filter-form">
                 <div class="col-md-3">
                     <label class="form-label">Warehouse</label>
                     <select name="warehouse_id" class="form-control" onchange="this.form.submit()">
@@ -75,7 +75,7 @@
                 {% if qty_min or qty_max or current_warehouse_id %}
                 <div class="col-md-2">
                     <label class="form-label">&nbsp;</label>
-                    <a href="{{ url_for('inventory.products') }}" class="btn btn-secondary w-100">
+                    <a href="{{ url_for('inventory.products') }}" class="btn btn-secondary w-100 clear-filters">
                         <i class="fas fa-times"></i> Clear
                     </a>
                 </div>
@@ -208,6 +208,102 @@ function deleteProduct(id) {
         window.location.href = `/inventory/product/${id}/delete`;
     }
 }
+
+// Persistence Logic for Filters
+const FILTER_KEY = 'inventory_products_filters';
+
+function saveFilters() {
+    const filters = {
+        search: document.querySelector('input[name="search"]')?.value || '',
+        category: document.querySelector('select[name="category"]')?.value || 'all',
+        warehouse_id: document.querySelector('select[name="warehouse_id"]')?.value || '',
+        qty_min: document.querySelector('input[name="qty_min"]')?.value || '',
+        qty_max: document.querySelector('input[name="qty_max"]')?.value || ''
+    };
+    localStorage.setItem(FILTER_KEY, JSON.stringify(filters));
+}
+
+function clearFilters() {
+    localStorage.removeItem(FILTER_KEY);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const params = new URLSearchParams(window.location.search);
+    const filterParams = ['search', 'category', 'warehouse_id', 'qty_min', 'qty_max'];
+    const hasParams = filterParams.some(p => params.has(p));
+
+    if (hasParams) {
+        // Save current URL params to storage
+        const filters = {
+            search: params.get('search') || '',
+            category: params.get('category') || 'all',
+            warehouse_id: params.get('warehouse_id') || '',
+            qty_min: params.get('qty_min') || '',
+            qty_max: params.get('qty_max') || ''
+        };
+        localStorage.setItem(FILTER_KEY, JSON.stringify(filters));
+    } else if (window.location.pathname.endsWith('/inventory/products') || window.location.pathname.endsWith('/inventory/products/')) {
+        // No params in URL, check storage
+        const saved = localStorage.getItem(FILTER_KEY);
+        if (saved) {
+            const filters = JSON.parse(saved);
+            const newParams = new URLSearchParams();
+            if (filters.search) newParams.set('search', filters.search);
+            if (filters.category && filters.category !== 'all') newParams.set('category', filters.category);
+            if (filters.warehouse_id) newParams.set('warehouse_id', filters.warehouse_id);
+            if (filters.qty_min) newParams.set('qty_min', filters.qty_min);
+            if (filters.qty_max) newParams.set('qty_max', filters.qty_max);
+            
+            const queryString = newParams.toString();
+            if (queryString) {
+                window.location.search = queryString;
+            }
+        }
+    }
+
+    // Hijack filter form submissions to include ALL filters
+    document.querySelectorAll('.filter-form').forEach(form => {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            // Get values from THIS form
+            const formData = new FormData(this);
+            
+            // Get saved values for OTHER fields not in this form
+            const saved = JSON.parse(localStorage.getItem(FILTER_KEY) || '{}');
+            
+            const finalParams = new URLSearchParams();
+            
+            // Fields to check
+            const fields = ['search', 'category', 'warehouse_id', 'qty_min', 'qty_max'];
+            
+            fields.forEach(field => {
+                let val = formData.get(field);
+                if (val === null) {
+                    // Not in current form, take from saved
+                    val = saved[field];
+                }
+                
+                if (val && val !== 'all' && val !== '') {
+                    finalParams.set(field, val);
+                } else if (field === 'category' && val === 'all') {
+                    // Explicitly skip 'all' category to keep URL clean, but it's handled by default
+                }
+            });
+
+            // Save and Redirect
+            saveFilters();
+            window.location.href = window.location.pathname + '?' + finalParams.toString();
+        });
+    });
+
+    // Attach click listener to clear buttons
+    document.querySelectorAll('.clear-filters').forEach(btn => {
+        btn.addEventListener('click', function() {
+            clearFilters();
+        });
+    });
+});
 
 function fmt(n) {
     return n.toLocaleString('en-PK', {minimumFractionDigits: 0, maximumFractionDigits: 2});
