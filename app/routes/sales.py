@@ -260,8 +260,37 @@ def apply_discount(id):
 @bp.route('/customers')
 @login_required
 def customers():
-    customers = Customer.query.all()
-    return render_template('sales/customers.html', customers=customers)
+    status = request.args.get('status', 'all')
+    search = request.args.get('search', '')
+    customer_id = request.args.get('customer_id', type=int)
+    
+    query = Customer.query
+    
+    if status == 'active':
+        query = query.filter_by(is_active=True)
+    elif status == 'inactive':
+        query = query.filter_by(is_active=False)
+    
+    if customer_id:
+        query = query.filter_by(id=customer_id)
+    elif search:
+        search_filter = f"%{search}%"
+        query = query.filter(
+            (Customer.name.ilike(search_filter)) |
+            (Customer.email.ilike(search_filter)) |
+            (Customer.phone.ilike(search_filter))
+        )
+    
+    customers = query.order_by(Customer.name.asc()).all()
+    # List of all customers for the searchable dropdown
+    all_customers = Customer.query.order_by(Customer.name.asc()).all()
+    
+    return render_template('sales/customers.html', 
+                         customers=customers, 
+                         all_customers=all_customers,
+                         current_status=status, 
+                         search_query=search,
+                         selected_customer_id=customer_id)
 
 @bp.route('/customer/bulk-upload', methods=['GET', 'POST'])
 @login_required
