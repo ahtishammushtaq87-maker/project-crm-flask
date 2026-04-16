@@ -2,32 +2,52 @@
 {% block title %}Create Purchase Order{% endblock %}
 
 {% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
 <style>
+/* Select2 Premium Styling */
 .select2-container--bootstrap-5 {
-    width: 30% !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    display: block !important;
+    box-sizing: border-box !important;
+}
+.select2-container--bootstrap-5 .select2-selection {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    border: 1px solid #ced4da;
+    border-radius: 0.375rem;
+    height: calc(1.5em + 0.75rem + 2px);
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+.select2-container--bootstrap-5.select2-container--focus .select2-selection {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
 }
 .select2-container--open {
-    z-index: 1050;
+    z-index: 1060;
 }
 .select2-results__options {
-    max-height: 250px !important;
-    border: 2px solid #000000;
+    max-height: 300px !important;
     overflow-y: auto !important;
-    background-color: #ffffff !important;
 }
 .select2-dropdown {
-    border: 2px solid #000000;
-    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-    background-color: #ffffff;
+    border: 1px solid #ced4da;
+    border-radius: 0.375rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
 }
-.select2-results__option {
-    padding: 0.5rem 1rem;
+/* Ensure the original select is hidden */
+.select2-hidden-accessible {
+    border: 0 !important;
+    clip: rect(0 0 0 0) !important;
+    height: 1px !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    position: absolute !important;
+    width: 1px !important;
 }
-.select2-results__option--highlighted {
-    background-color: #000000 !important;
-    color: white;
-}
-
 </style>
 {% endblock %}
 
@@ -197,14 +217,14 @@
                         </button>
                     </div>
                     <div class="card-body p-0">
-                        <table class="table table-bordered mb-0" id="itemsTable">
+                        <table class="table table-bordered mb-0" id="itemsTable" style="table-layout: fixed; width: 100%;">
                             <thead class="table-light">
                                 <tr>
-                                    <th>Product</th>
-                                    <th width="90">Qty</th>
-                                    <th width="120">Unit Price</th>
-                                    <th width="130">Amount</th>
-                                    <th width="40"></th>
+                                    <th style="width: 45%;">Product</th>
+                                    <th style="width: 10%;">Qty</th>
+                                    <th style="width: 20%;">Unit Price</th>
+                                    <th style="width: 15%;">Amount</th>
+                                    <th style="width: 10%;"></th>
                                 </tr>
                             </thead>
                             <tbody id="itemsBody">
@@ -213,7 +233,7 @@
                                         <select name="product_id[]" class="form-select product-select" onchange="onProductChange(this)">
                                             <option value="">— Select Product —</option>
                                             {% for p in products %}
-                                            <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.name }}</option>
+                                            <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.sku }} - {{ p.name }}</option>
                                             {% endfor %}
                                         </select>
                                     </td>
@@ -329,12 +349,7 @@ function addRow() {
     document.getElementById('itemsBody').appendChild(row);
     
     // Initialize Select2 on new row's product select
-    $(row).find('.product-select').select2({
-        theme: 'bootstrap-5',
-        placeholder: 'Search or select product',
-        allowClear: true,
-        minimumResultsForSearch: 0
-    });
+    initSelect2($(row).find('.product-select'));
 }
 
 function removeRow(btn) {
@@ -388,17 +403,23 @@ function calculateTotal() {
     }
 }
 
+// ── Helper to init Select2 ──────────────────────────────────────────────
+function initSelect2(selector, placeholder = 'Search or select', width = '100%') {
+    $(selector).select2({
+        theme: 'bootstrap-5',
+        placeholder: placeholder,
+        allowClear: true,
+        width: width
+    });
+}
+
 // Init
 document.addEventListener('DOMContentLoaded', () => { 
     calculateTotal(); 
     
-    // Initialize Select2 for product selects
-    $('.product-select').select2({
-        theme: 'bootstrap-5',
-        placeholder: 'Search or select product',
-        allowClear: true,
-        minimumResultsForSearch: 0
-    });
+    // Initialize Select2 for vendor and product selects
+    initSelect2('#vendorSelect', '— Search or Select Vendor —', '100%');
+    initSelect2('.product-select', '— Search or Select Product —', '100%');
     
     // Update advance modal with vendor info before showing
     const quickAdvanceModal = document.getElementById('quickAdvanceModal');

@@ -31,7 +31,7 @@ def add_bom():
         manufactured_products = Product.query.filter_by(is_manufactured=True).all()
     else:
         manufactured_products = []
-    form.product_id.choices = [(p.id, p.name) for p in manufactured_products]
+    form.product_id.choices = [(p.id, f"{p.sku} - {p.name}") for p in manufactured_products]
     
     # All products can be components (except maybe the finished product itself)
     all_products = Product.query.all()
@@ -189,7 +189,7 @@ def orders():
 def add_order():
     form = ManufacturingOrderForm()
     boms = BOM.query.all()
-    form.bom_id.choices = [(b.id, f"{b.name} ({b.product.name})") for b in boms]
+    form.bom_id.choices = [(b.id, f"{b.name} ({b.product.sku} - {b.product.name})") for b in boms]
     
     if form.validate_on_submit():
         # Generate Unique Order Number

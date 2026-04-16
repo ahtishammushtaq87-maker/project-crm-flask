@@ -645,8 +645,37 @@ def delete_bill(id):
 @bp.route('/vendors')
 @login_required
 def vendors():
-    vendors = Vendor.query.all()
-    return render_template('purchase/vendors.html', vendors=vendors)
+    status = request.args.get('status', 'all')
+    search = request.args.get('search', '')
+    vendor_id = request.args.get('vendor_id', type=int)
+    
+    query = Vendor.query
+    
+    if status == 'active':
+        query = query.filter_by(is_active=True)
+    elif status == 'inactive':
+        query = query.filter_by(is_active=False)
+    
+    if vendor_id:
+        query = query.filter_by(id=vendor_id)
+    elif search:
+        search_filter = f"%{search}%"
+        query = query.filter(
+            (Vendor.name.ilike(search_filter)) |
+            (Vendor.email.ilike(search_filter)) |
+            (Vendor.phone.ilike(search_filter))
+        )
+    
+    vendors = query.order_by(Vendor.name.asc()).all()
+    # List of all vendors for the searchable dropdown
+    all_vendors = Vendor.query.order_by(Vendor.name.asc()).all()
+    
+    return render_template('purchase/vendors.html', 
+                         vendors=vendors,
+                         all_vendors=all_vendors, 
+                         current_status=status, 
+                         search_query=search,
+                         selected_vendor_id=vendor_id)
 
 @bp.route('/vendor/bulk-upload', methods=['GET', 'POST'])
 @login_required
