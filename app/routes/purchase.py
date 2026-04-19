@@ -642,6 +642,42 @@ def delete_bill(id):
     flash('Purchase bill deleted successfully.', 'success')
     return redirect(url_for('purchase.bills'))
 
+@bp.route('/bills/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete_bills():
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No bills selected'}), 400
+    
+    deleted_count = 0
+    errors = []
+    
+    for bill_id in ids:
+        bill = PurchaseBill.query.get(bill_id)
+        if not bill:
+            continue
+            
+        try:
+            # Revert inventory
+            for item in bill.items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    product.update_quantity(-item.quantity)
+            
+            db.session.delete(bill)
+            deleted_count += 1
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f'Error deleting Bill {bill.bill_number}: {str(e)}')
+            
+    if deleted_count > 0:
+        db.session.commit()
+        
+    message = f'Successfully deleted {deleted_count} bills.'
+    if errors:
+        return jsonify({'success': False, 'message': message, 'errors': errors}), 500
+    return jsonify({'success': True, 'message': message})
+
 @bp.route('/vendors')
 @login_required
 def vendors():
@@ -946,6 +982,45 @@ def delete_vendor(id):
     db.session.commit()
     flash('Vendor deleted successfully!', 'success')
     return redirect(url_for('purchase.vendors'))
+
+@bp.route('/vendors/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete_vendors():
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No vendors selected'}), 400
+    
+    deleted_count = 0
+    skipped_count = 0
+    errors = []
+    
+    for vendor_id in ids:
+        vendor = Vendor.query.get(vendor_id)
+        if not vendor:
+            continue
+            
+        # Check associations
+        if vendor.bills or vendor.sales or vendor.expenses:
+            skipped_count += 1
+            continue
+            
+        try:
+            db.session.delete(vendor)
+            deleted_count += 1
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f'Error deleting Vendor {vendor.name}: {str(e)}')
+            
+    if deleted_count > 0:
+        db.session.commit()
+        
+    message = f'Successfully deleted {deleted_count} vendors.'
+    if skipped_count > 0:
+        message += f' Skipped {skipped_count} vendors with associated records.'
+    
+    if errors:
+        return jsonify({'success': False, 'message': message, 'errors': errors}), 500
+    return jsonify({'success': True, 'message': message})
 
 
 # ---------------------------------------------------------------------------
@@ -1265,6 +1340,36 @@ def delete_po(id):
     db.session.commit()
     flash('Purchase Order deleted.', 'success')
     return redirect(url_for('purchase.purchase_orders'))
+
+@bp.route('/purchase-orders/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete_purchase_orders():
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No orders selected'}), 400
+    
+    deleted_count = 0
+    errors = []
+    
+    for po_id in ids:
+        po = PurchaseOrder.query.get(po_id)
+        if not po:
+            continue
+            
+        try:
+            db.session.delete(po)
+            deleted_count += 1
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f'Error deleting Order {po.po_number}: {str(e)}')
+            
+    if deleted_count > 0:
+        db.session.commit()
+        
+    message = f'Successfully deleted {deleted_count} orders.'
+    if errors:
+        return jsonify({'success': False, 'message': message, 'errors': errors}), 500
+    return jsonify({'success': True, 'message': message})
 
 
 # ---------------------------------------------------------------------------

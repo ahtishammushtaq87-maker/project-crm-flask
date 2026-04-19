@@ -56,6 +56,9 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Customers</h2>
         <div>
+            <button id="bulkDeleteBtn" class="btn btn-danger d-none me-2">
+                <i class="fas fa-trash me-1"></i> Delete Selected
+            </button>
             <a href="{{ url_for('sales.bulk_upload_customer') }}" class="btn btn-success">
                 <i class="fas fa-file-excel"></i> Bulk Upload
             </a>
@@ -111,6 +114,9 @@
                 <table class="table table-striped">
                     <thead>
                         <tr>
+                            <th style="width: 40px;" class="text-center">
+                                <input type="checkbox" id="selectAll" class="form-check-input">
+                            </th>
                             <th>Name</th>
                             <th>Email</th>
                             <th>Phone</th>
@@ -124,6 +130,9 @@
                     <tbody>
                         {% for customer in customers %}
                         <tr>
+                            <td class="text-center">
+                                <input type="checkbox" class="form-check-input customer-checkbox" value="{{ customer.id }}">
+                            </td>
                             <td>{{ customer.name }}</td>
                             <td>{{ customer.email or '-' }}</td>
                             <td>{{ customer.phone or '-' }}</td>
@@ -188,6 +197,14 @@ $(document).ready(function() {
         width: '100%',
         placeholder: '— Search or Select Customer —',
         allowClear: true
+    });
+
+    initBulkActions({
+        selectAllId: 'selectAll',
+        checkboxClass: 'customer-checkbox',
+        bulkDeleteBtnId: 'bulkDeleteBtn',
+        deleteUrl: "{{ url_for('sales.bulk_delete_customers') }}",
+        entityName: 'customers'
     });
 });
 </script>

@@ -450,6 +450,75 @@
                 $('#sidebarOverlay').removeClass('show');
             });
         });
+
+        function initBulkActions(config) {
+            const {
+                selectAllId,
+                checkboxClass,
+                bulkDeleteBtnId,
+                deleteUrl,
+                entityName
+            } = config;
+
+            const selectAll = document.getElementById(selectAllId);
+            const checkboxes = document.querySelectorAll(`.${checkboxClass}`);
+            const bulkDeleteBtn = document.getElementById(bulkDeleteBtnId);
+
+            function updateBulkDeleteBtn() {
+                const checkedCount = document.querySelectorAll(`.${checkboxClass}:checked`).length;
+                if (checkedCount > 0) {
+                    bulkDeleteBtn.classList.remove('d-none');
+                    bulkDeleteBtn.innerHTML = `<i class="fas fa-trash"></i> Delete Selected (${checkedCount})`;
+                } else {
+                    bulkDeleteBtn.classList.add('d-none');
+                }
+            }
+
+            if (selectAll) {
+                selectAll.addEventListener('change', function() {
+                    checkboxes.forEach(cb => {
+                        cb.checked = this.checked;
+                    });
+                    updateBulkDeleteBtn();
+                });
+            }
+
+            checkboxes.forEach(cb => {
+                cb.addEventListener('change', updateBulkDeleteBtn);
+            });
+
+            if (bulkDeleteBtn) {
+                bulkDeleteBtn.addEventListener('click', function() {
+                    const selectedIds = Array.from(document.querySelectorAll(`.${checkboxClass}:checked`))
+                        .map(cb => cb.value);
+
+                    if (selectedIds.length === 0) return;
+
+                    if (confirm(`Are you sure you want to delete ${selectedIds.length} ${entityName}? This action cannot be undone.`)) {
+                        fetch(deleteUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ ids: selectedIds })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                alert(data.message);
+                                location.reload();
+                            } else {
+                                alert('Error: ' + data.message + (data.errors ? '\n' + data.errors.join('\n') : ''));
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            alert('An error occurred while deleting.');
+                        });
+                    }
+                });
+            }
+        }
     </script>
     {% block extra_js %}{% endblock %}
 </body>

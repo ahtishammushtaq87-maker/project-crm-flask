@@ -280,6 +280,46 @@ def delete_product(id):
         
     return redirect(url_for('inventory.products'))
 
+@bp.route('/products/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete_products():
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No products selected'}), 400
+    
+    deleted_count = 0
+    skipped_count = 0
+    errors = []
+    
+    for product_id in ids:
+        product = Product.query.get(product_id)
+        if not product:
+            continue
+            
+        # Check if product is associated with any sales, purchases, or stock movements
+        if product.sale_items or product.purchase_items or product.stock_movements:
+            skipped_count += 1
+            continue
+            
+        try:
+            db.session.delete(product)
+            deleted_count += 1
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f'Error deleting {product.name}: {str(e)}')
+            
+    if deleted_count > 0:
+        db.session.commit()
+        
+    message = f'Successfully deleted {deleted_count} products.'
+    if skipped_count > 0:
+        message += f' Skipped {skipped_count} products with transaction history.'
+    
+    if errors:
+        return jsonify({'success': False, 'message': message, 'errors': errors}), 500
+        
+    return jsonify({'success': True, 'message': message})
+
 @bp.route('/stock-report')
 @login_required
 def stock_report():

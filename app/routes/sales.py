@@ -221,6 +221,42 @@ def delete_invoice(id):
     flash('Invoice deleted successfully.', 'success')
     return redirect(url_for('sales.invoices'))
 
+@bp.route('/invoices/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete_invoices():
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No invoices selected'}), 400
+    
+    deleted_count = 0
+    errors = []
+    
+    for invoice_id in ids:
+        sale = Sale.query.get(invoice_id)
+        if not sale:
+            continue
+            
+        try:
+            # Restore inventory
+            for item in sale.items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    product.update_quantity(item.quantity)
+            
+            db.session.delete(sale)
+            deleted_count += 1
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f'Error deleting Invoice {sale.invoice_number}: {str(e)}')
+            
+    if deleted_count > 0:
+        db.session.commit()
+        
+    message = f'Successfully deleted {deleted_count} invoices.'
+    if errors:
+        return jsonify({'success': False, 'message': message, 'errors': errors}), 500
+    return jsonify({'success': True, 'message': message})
+
 @bp.route('/invoice/<int:id>/pay', methods=['POST'])
 @login_required
 def pay_invoice(id):
@@ -490,6 +526,45 @@ def delete_customer(id):
     db.session.commit()
     flash('Customer deleted successfully!', 'success')
     return redirect(url_for('sales.customers'))
+
+@bp.route('/customers/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete_customers():
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No customers selected'}), 400
+    
+    deleted_count = 0
+    skipped_count = 0
+    errors = []
+    
+    for customer_id in ids:
+        customer = Customer.query.get(customer_id)
+        if not customer:
+            continue
+            
+        # Check associations
+        if customer.sales:
+            skipped_count += 1
+            continue
+            
+        try:
+            db.session.delete(customer)
+            deleted_count += 1
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f'Error deleting Customer {customer.name}: {str(e)}')
+            
+    if deleted_count > 0:
+        db.session.commit()
+        
+    message = f'Successfully deleted {deleted_count} customers.'
+    if skipped_count > 0:
+        message += f' Skipped {skipped_count} customers with associated records.'
+    
+    if errors:
+        return jsonify({'success': False, 'message': message, 'errors': errors}), 500
+    return jsonify({'success': True, 'message': message})
 
 
 @bp.route('/invoice/<int:id>/pdf')

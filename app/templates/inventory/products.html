@@ -7,6 +7,9 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Products</h2>
         <div>
+            <button id="bulkDeleteBtn" class="btn btn-danger d-none me-2">
+                <i class="fas fa-trash"></i> Delete Selected
+            </button>
             <a href="{{ url_for('inventory.bulk_upload') }}" class="btn btn-success">
                 <i class="fas fa-file-upload"></i> Bulk Upload
             </a>
@@ -123,6 +126,9 @@
                 <table class="table table-hover">
                     <thead>
                         <tr>
+                            <th style="width: 40px;">
+                                <input type="checkbox" id="selectAll" class="form-check-input">
+                            </th>
                             <th>Image</th>
                             <th>SKU</th>
                             <th>Product Name</th>
@@ -140,6 +146,9 @@
                     <tbody>
                         {% for product in products %}
                         <tr>
+                            <td>
+                                <input type="checkbox" class="form-check-input product-checkbox" value="{{ product.id }}">
+                            </td>
                             <td style="width: 80px;">
                                 {% if product.image_path %}
                                 <a href="{{ url_for('inventory.edit_product', id=product.id) }}" data-bs-toggle="tooltip" title="Click to edit">
@@ -387,6 +396,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Initialize bulk actions
+    initBulkActions({
+        selectAllId: 'selectAll',
+        checkboxClass: 'product-checkbox',
+        bulkDeleteBtnId: 'bulkDeleteBtn',
+        deleteUrl: "{{ url_for('inventory.bulk_delete_products') }}",
+        entityName: 'products'
     });
 });
 </script>

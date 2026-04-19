@@ -1108,6 +1108,79 @@ def delete_expense(id):
     flash('Expense removed', 'success')
     return redirect(url_for('accounting.expenses'))
 
+@bp.route('/expenses/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete_expenses():
+    from app.models import BOM
+    from app.services.bom_versioning import BOMVersioningService
+    
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No expenses selected'}), 400
+    
+    deleted_count = 0
+    errors = []
+    boms_to_update = set()
+    
+    for expense_id in ids:
+        expense = Expense.query.get(expense_id)
+        if not expense:
+            continue
+            
+        try:
+            # Store info for BOM update
+            was_overhead = expense.is_bom_overhead if has_column('expenses', 'is_bom_overhead') else False
+            if was_overhead:
+                if has_column('expenses', 'bom_id') and expense.bom_id:
+                    boms_to_update.add(('bom', expense.bom_id))
+                elif has_column('expenses', 'product_id') and expense.product_id:
+                    boms_to_update.add(('product', expense.product_id))
+            
+            db.session.delete(expense)
+            deleted_count += 1
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f'Error deleting Expense {expense.expense_number}: {str(e)}')
+            
+    if deleted_count > 0:
+        db.session.commit()
+        
+        # Recalculate BOMs if needed
+        for type, id in boms_to_update:
+            bom_to_update = None
+            if type == 'bom':
+                bom_to_update = BOM.query.get(id)
+            else:
+                bom_to_update = BOM.query.filter_by(product_id=id, is_active=True).first()
+                
+            if bom_to_update:
+                try:
+                    user_id = None
+                    try:
+                        if current_user and current_user.is_authenticated:
+                            user_id = current_user.id
+                    except: pass
+                    
+                    if user_id is None:
+                        from app.models import User as UserModel
+                        admin_user = UserModel.query.filter_by(username='admin').first()
+                        user_id = admin_user.id if admin_user else 1
+                        
+                    BOMVersioningService.create_bom_version(
+                        bom=bom_to_update,
+                        change_reason=f"Bulk deletion of expenses including overheads",
+                        change_type='overhead_added',
+                        created_by_id=user_id,
+                        recalculate_overhead=True
+                    )
+                except Exception as e:
+                    print(f"Error updating BOM {bom_to_update.id} after bulk delete: {e}")
+                    
+    message = f'Successfully deleted {deleted_count} expenses.'
+    if errors:
+        return jsonify({'success': False, 'message': message, 'errors': errors}), 500
+    return jsonify({'success': True, 'message': message})
+
 @bp.route('/expense/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_expense(id):
