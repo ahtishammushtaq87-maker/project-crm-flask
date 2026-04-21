@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from app import db
 from datetime import datetime
-from sqlalchemy import func, or_
+from sqlalchemy import inspect, func, or_
 import random
 import string
 
@@ -294,7 +294,7 @@ def create_manufacturing_order_from_component(comp_id):
     project = component.project
     
     # Get or create a BOM
-    from app.models import BOM, BOMItem
+    from app.models import BOM, BOMItem, Company
     
     if project.sku_id:
         # Try to find existing BOM for this SKU
@@ -325,24 +325,23 @@ def create_manufacturing_order_from_component(comp_id):
         flash('Cannot create MO: Please link a product SKU to this PD project first!', 'error')
         return redirect(url_for('product_development.view', project_id=component.project_id))
     
-    # Generate MO number
-    year = datetime.now().year
-    prefix = f"MO-PD-{year}-"
-    last_mo = ManufacturingOrder.query.filter(
-        ManufacturingOrder.order_number.like(f"{prefix}%")
-    ).order_by(ManufacturingOrder.order_number.desc()).first()
-    
-    if last_mo:
-        try:
-            last_num = int(last_mo.order_number.split('-')[-1])
-            new_num = last_num + 1
-        except:
-            new_num = 1
-    else:
-        new_num = 1
-    
+    # Generate MO number using company settings
+    company = Company.query.first()
+    prefix = company.mo_prefix if company and company.mo_prefix else 'MO-'
+    suffix = company.mo_suffix if company and company.mo_suffix else ''
+    next_num = company.next_mo_number if company and company.next_mo_number else 1
+
+    order_number = f"{prefix}{next_num:03d}{suffix}"
+    company.next_mo_number = next_num + 1
+
+    # Safety check for duplicates
+    while ManufacturingOrder.query.filter_by(order_number=order_number).first():
+        next_num += 1
+        order_number = f"{prefix}{next_num:03d}{suffix}"
+        company.next_mo_number = next_num + 1
+
     mo = ManufacturingOrder(
-        order_number=f"{prefix}{new_num:04d}",
+        order_number=order_number,
         bom_id=bom.id,
         status='Draft',
         quantity_to_produce=component.quantity,

@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response
 from flask_login import login_required, current_user
 from app import db
-from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory
+from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory, PurchaseReturn, PurchaseReturnItem, PurchaseSettings
 from app.forms import PurchaseForm, VendorForm
 from datetime import datetime, timedelta, date
 from app.pdf_utils import generate_professional_pdf
@@ -49,6 +49,10 @@ def bills():
     total_paid = sum(bill.paid_amount for bill in bills)
     total_balance = sum(bill.balance_due for bill in bills)
     
+    # Get company date format
+    company = Company.query.first()
+    date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
+    
     return render_template('purchase/bills.html', 
                          bills=bills, 
                          current_status=status,
@@ -57,7 +61,8 @@ def bills():
                          search=search,
                          total_amount=total_amount,
                          total_paid=total_paid,
-                         total_balance=total_balance)
+                         total_balance=total_balance,
+                         date_format=date_format)
 
 @bp.route('/bill/create', methods=['GET', 'POST'])
 @login_required
@@ -72,15 +77,20 @@ def create_bill():
     if form.validate_on_submit():
         vendor_id = form.vendor_id.data
         date = form.date.data
-        
+
         # Get items from form
         product_ids = request.form.getlist('product_id[]')
         quantities = request.form.getlist('quantity[]')
         prices = request.form.getlist('price[]')
-        
-        # Generate bill number
-        last_bill = PurchaseBill.query.order_by(PurchaseBill.id.desc()).first()
-        bill_number = f"PO-{datetime.now().strftime('%Y%m')}-{(last_bill.id + 1) if last_bill else 1:04d}"
+
+        # Generate bill number using settings
+        settings = PurchaseSettings.query.first()
+        if not settings:
+            settings = PurchaseSettings(bill_prefix='PB-', bill_suffix='', next_bill_number=1,
+                                        po_prefix='PO-', po_suffix='', next_po_number=1)
+            db.session.add(settings)
+        bill_number = f"{settings.bill_prefix}{settings.next_bill_number}{settings.bill_suffix}"
+        settings.next_bill_number += 1
         
         bill = PurchaseBill(
             bill_number=bill_number,
@@ -252,7 +262,9 @@ def create_bill():
 @login_required
 def bill_detail(id):
     bill = PurchaseBill.query.get_or_404(id)
-    return render_template('purchase/bill_detail.html', bill=bill)
+    company = Company.query.first()
+    date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
+    return render_template('purchase/bill_detail.html', bill=bill, date_format=date_format)
 
 @bp.route('/bill/<int:id>/update-shipping', methods=['POST'])
 @login_required
@@ -516,6 +528,13 @@ def purchase_settings_page():
         
         settings.default_notes = form.default_notes.data
         settings.default_terms = form.default_terms.data
+        settings.bill_prefix = form.bill_prefix.data or ''
+        settings.bill_suffix = form.bill_suffix.data or ''
+        settings.next_bill_number = form.next_bill_number.data or 1
+        settings.po_prefix = form.po_prefix.data or ''
+        settings.po_suffix = form.po_suffix.data or ''
+        settings.next_po_number = form.next_po_number.data or 1
+        
         db.session.commit()
         flash('Purchase settings saved!', 'success')
         return redirect(url_for('purchase.purchase_settings_page'))
@@ -850,7 +869,8 @@ def add_vendor():
             email=form.email.data,
             phone=form.phone.data,
             address=form.address.data,
-            gst_number=form.gst_number.data
+            gst_number=form.gst_number.data,
+            payment_method=form.payment_method.data
         )
         db.session.add(vendor)
         db.session.commit()
@@ -962,6 +982,7 @@ def edit_vendor(id):
         vendor.phone = form.phone.data
         vendor.address = form.address.data
         vendor.gst_number = form.gst_number.data
+        vendor.payment_method = form.payment_method.data
         db.session.commit()
         flash('Vendor updated successfully!', 'success')
         return redirect(url_for('purchase.vendors'))
@@ -1135,9 +1156,14 @@ def create_po():
         quantities  = request.form.getlist('quantity[]')
         prices      = request.form.getlist('price[]')
 
-        # Auto-generate PO number
-        last = PurchaseOrder.query.order_by(PurchaseOrder.id.desc()).first()
-        po_number = f"PO-{datetime.now().strftime('%Y%m')}-{(last.id + 1) if last else 1:04d}"
+        # Auto-generate PO number using settings
+        settings = PurchaseSettings.query.first()
+        if not settings:
+            settings = PurchaseSettings(bill_prefix='PB-', bill_suffix='', next_bill_number=1,
+                                        po_prefix='PO-', po_suffix='', next_po_number=1)
+            db.session.add(settings)
+        po_number = f"{settings.po_prefix}{settings.next_po_number}{settings.po_suffix}"
+        settings.next_po_number += 1
 
         po = PurchaseOrder(
             po_number=po_number,
@@ -1295,7 +1321,14 @@ def convert_po_to_bill(id):
         return redirect(url_for('purchase.po_detail', id=id))
 
     last_bill = PurchaseBill.query.order_by(PurchaseBill.id.desc()).first()
-    bill_number = f"PB-{datetime.now().strftime('%Y%m')}-{(last_bill.id + 1) if last_bill else 1:04d}"
+    # Generate bill number using settings
+    settings = PurchaseSettings.query.first()
+    if not settings:
+        settings = PurchaseSettings(bill_prefix='PB-', bill_suffix='', next_bill_number=1,
+                                    po_prefix='PO-', po_suffix='', next_po_number=1)
+        db.session.add(settings)
+    bill_number = f"{settings.bill_prefix}{settings.next_bill_number}{settings.bill_suffix}"
+    settings.next_bill_number += 1
 
     bill = PurchaseBill(
         bill_number=bill_number,
@@ -1403,3 +1436,357 @@ def product_cost_history(product_id):
             for h in history
         ]
     })
+
+
+# ---------------------------------------------------------------------------
+# Purchase Returns
+# ---------------------------------------------------------------------------
+@bp.route('/returns/')
+@login_required
+def purchase_return_list():
+    """List all purchase returns"""
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+    status = request.args.get('status', 'all')
+
+    query = PurchaseReturn.query
+
+    if from_date:
+        try:
+            from_date_obj = datetime.strptime(from_date, '%Y-%m-%d')
+            query = query.filter(PurchaseReturn.date >= from_date_obj)
+        except ValueError:
+            pass
+
+    if to_date:
+        try:
+            to_date_obj = datetime.strptime(to_date, '%Y-%m-%d')
+            to_date_obj = to_date_obj.replace(hour=23, minute=59, second=59)
+            query = query.filter(PurchaseReturn.date <= to_date_obj)
+        except ValueError:
+            pass
+
+    if status != 'all':
+        query = query.filter(PurchaseReturn.status == status)
+
+    returns = query.order_by(PurchaseReturn.date.desc()).all()
+
+    total_returns = sum(r.total for r in returns)
+    total_count = len(returns)
+
+    return render_template('purchase/returns.html',
+                        returns=returns,
+                        from_date=from_date,
+                        to_date=to_date,
+                        current_status=status,
+                        total_returns=total_returns,
+                        total_count=total_count)
+
+
+@bp.route('/return/create', methods=['GET', 'POST'])
+@login_required
+def create_purchase_return():
+    """Create a new purchase return"""
+    if request.method == 'GET':
+        bill_id = request.args.get('bill_id')
+        if bill_id:
+            bill = PurchaseBill.query.get_or_404(int(bill_id))
+            return render_template('purchase/create_return.html',
+                               bill=bill,
+                               products=Product.query.filter_by(is_active=True).all(),
+                               now=datetime.now())
+
+        bills = PurchaseBill.query.order_by(PurchaseBill.date.desc()).all()
+        return render_template('purchase/create_return.html',
+                           bills=bills,
+                           bill=None,
+                           products=Product.query.filter_by(is_active=True).all(),
+                           now=datetime.now())
+
+    # POST - process return
+    bill_id = request.form.get('bill_id')
+    bill = PurchaseBill.query.get_or_404(int(bill_id))
+
+    product_ids = request.form.getlist('product_id[]')
+    quantities = request.form.getlist('quantity[]')
+    prices = request.form.getlist('price[]')
+
+    subtotal = 0
+    return_items = []
+
+    for i in range(len(product_ids)):
+        if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
+            product = Product.query.get(int(product_ids[i]))
+            quantity = float(quantities[i])
+            price = float(prices[i])
+            total = quantity * price
+            subtotal += total
+
+            return_items.append({
+                'product_id': product.id,
+                'quantity': quantity,
+                'unit_price': price,
+                'total': total
+            })
+
+    if not return_items:
+        flash('Please add at least one item to return.', 'warning')
+        return redirect(url_for('purchase.create_purchase_return', bill_id=bill_id))
+
+    tax_rate = float(request.form.get('tax_rate', 0))
+    tax = subtotal * (tax_rate / 100)
+    discount = float(request.form.get('discount', 0))
+    total = subtotal + tax - discount
+
+    # Generate return number
+    last_return = PurchaseReturn.query.order_by(PurchaseReturn.id.desc()).first()
+    return_number = f"PRet-{datetime.now().strftime('%Y%m')}-{(last_return.id + 1) if last_return else 1:04d}"
+
+    purchase_return = PurchaseReturn(
+        return_number=return_number,
+        bill_id=bill.id,
+        vendor_id=bill.vendor_id,
+        date=datetime.strptime(request.form.get('date'), '%Y-%m-%d') if request.form.get('date') else datetime.now(),
+        subtotal=subtotal,
+        tax_rate=tax_rate,
+        tax=tax,
+        discount=discount,
+        total=total,
+        reason=request.form.get('reason', ''),
+        status='pending',
+        returned_to_inventory=False,
+        refund_status='none',
+        created_by=current_user.id
+    )
+
+    db.session.add(purchase_return)
+    db.session.flush()
+
+    # Create return items
+    for item in return_items:
+        return_item = PurchaseReturnItem(
+            return_id=purchase_return.id,
+            product_id=item['product_id'],
+            quantity=item['quantity'],
+            unit_price=item['unit_price'],
+            total=item['total']
+        )
+        db.session.add(return_item)
+
+        # Subtract from inventory
+        product = Product.query.get(item['product_id'])
+        if product:
+            product.quantity -= item['quantity']
+            if product.quantity < 0:
+                product.quantity = 0
+
+    # Update bill totals - reduce bill total by return amount
+    bill.subtotal -= subtotal
+    bill.tax -= tax
+    bill.total -= total
+    if bill.total < 0:
+        bill.total = 0
+
+    # Adjust paid amount if needed
+    if bill.paid_amount > 0:
+        if bill.total < bill.paid_amount:
+            bill.paid_amount = bill.total
+
+    # Update bill status based on return
+    original_total = bill.total + total  # Restore original to compare
+    if original_total > 0:
+        if bill.total == 0 or total >= original_total:
+            bill.status = 'return'
+        elif total > 0 and bill.total < original_total:
+            bill.status = 'partial_return'
+        else:
+            bill.status = bill.status  # Keep existing status
+
+    db.session.commit()
+    flash(f'Purchase return {return_number} created successfully!', 'success')
+    return redirect(url_for('purchase.purchase_return_detail', id=purchase_return.id))
+
+
+@bp.route('/return/<int:id>')
+@login_required
+def purchase_return_detail(id):
+    """View purchase return detail"""
+    purchase_return = PurchaseReturn.query.get_or_404(id)
+    return render_template('purchase/return_detail.html', return_obj=purchase_return)
+
+
+@bp.route('/return/<int:id>/mark_returned', methods=['POST'])
+@login_required
+def mark_purchase_returned(id):
+    """Mark return as returned to inventory"""
+    purchase_return = PurchaseReturn.query.get_or_404(id)
+    
+    if not purchase_return.returned_to_inventory:
+        purchase_return.returned_to_inventory = True
+        purchase_return.status = 'completed'
+        db.session.commit()
+        flash('Items marked as returned to inventory.', 'success')
+    else:
+        flash('Items already returned to inventory.', 'info')
+    
+    return redirect(url_for('purchase.purchase_return_detail', id=id))
+
+
+@bp.route('/return/<int:id>/refund', methods=['POST'])
+@login_required
+def process_purchase_refund(id):
+    """Process refund to vendor"""
+    purchase_return = PurchaseReturn.query.get_or_404(id)
+    
+    refund_amount = float(request.form.get('refund_amount', 0))
+    
+    if refund_amount <= 0:
+        flash('Please enter a valid refund amount.', 'warning')
+        return redirect(url_for('purchase.purchase_return_detail', id=id))
+    
+    if refund_amount > purchase_return.total:
+        refund_amount = purchase_return.total
+    
+    purchase_return.refund_amount = refund_amount
+    purchase_return.refund_status = 'paid'
+    purchase_return.status = 'completed'
+    
+    # Create a vendor advance record for the refund (negative = refund paid to vendor)
+    if purchase_return.vendor:
+        vendor_advance = VendorAdvance(
+            vendor_id=purchase_return.vendor.id,
+            amount=-refund_amount,  # Negative amount to represent refund
+            date=datetime.now(),
+            description=f'Refund for Return: {purchase_return.return_number}',
+            created_by=current_user.id
+        )
+        db.session.add(vendor_advance)
+    
+    db.session.commit()
+    flash(f'Refund of Rs{refund_amount:,.2f} processed to vendor.', 'success')
+    return redirect(url_for('purchase.purchase_return_detail', id=id))
+
+
+@bp.route('/returns/vendor/<int:vendor_id>')
+@login_required
+def vendor_purchase_returns(vendor_id):
+    """View all purchase returns for a vendor"""
+    vendor = Vendor.query.get_or_404(vendor_id)
+    returns = PurchaseReturn.query.filter_by(vendor_id=vendor_id).order_by(PurchaseReturn.date.desc()).all()
+    
+    return render_template('purchase/vendor_returns.html',
+                        vendor=vendor,
+                        returns=returns)
+
+
+@bp.route('/return/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_purchase_return(id):
+    """Edit a purchase return"""
+    purchase_return = PurchaseReturn.query.get_or_404(id)
+    bill = purchase_return.bill
+    
+    if request.method == 'POST':
+        purchase_return.reason = request.form.get('reason', '')
+        purchase_return.date = datetime.strptime(request.form.get('date'), '%Y-%m-%d') if request.form.get('date') else purchase_return.date
+        
+        # Update quantities and recalculate totals
+        product_ids = request.form.getlist('product_id[]')
+        quantities = request.form.getlist('quantity[]')
+        prices = request.form.getlist('price[]')
+        
+        # Delete existing items
+        for item in purchase_return.items:
+            # Restore product quantity
+            if item.product:
+                item.product.quantity += item.quantity
+            db.session.delete(item)
+        
+        # Create new items
+        subtotal = 0
+        for i in range(len(product_ids)):
+            if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
+                product = Product.query.get(int(product_ids[i]))
+                quantity = float(quantities[i])
+                price = float(prices[i])
+                total = quantity * price
+                subtotal += total
+                
+                return_item = PurchaseReturnItem(
+                    return_id=purchase_return.id,
+                    product_id=product.id,
+                    quantity=quantity,
+                    unit_price=price,
+                    total=total
+                )
+                db.session.add(return_item)
+                
+                # Subtract from inventory
+                if product:
+                    product.quantity -= quantity
+                    if product.quantity < 0:
+                        product.quantity = 0
+        
+        # Recalculate totals
+        tax_rate = purchase_return.tax_rate
+        tax = subtotal * (tax_rate / 100)
+        discount = purchase_return.discount
+        total = subtotal + tax - discount
+        
+        purchase_return.subtotal = subtotal
+        purchase_return.tax = tax
+        purchase_return.total = total
+        
+        db.session.commit()
+        flash(f'Return {purchase_return.return_number} updated successfully!', 'success')
+        return redirect(url_for('purchase.purchase_return_detail', id=id))
+    
+    return render_template('purchase/edit_return.html',
+                          return_obj=purchase_return,
+                          products=Product.query.filter_by(is_active=True).all())
+
+
+@bp.route('/return/<int:id>/delete', methods=['POST'])
+@login_required
+def delete_purchase_return(id):
+    """Delete a purchase return"""
+    purchase_return = PurchaseReturn.query.get_or_404(id)
+    bill = purchase_return.bill
+    
+    # Restore product quantities
+    for item in purchase_return.items:
+        if item.product:
+            item.product.quantity += item.quantity
+    
+    # Reverse vendor refund if was paid
+    if purchase_return.refund_status == 'paid' and purchase_return.vendor:
+        # Create a positive vendor advance to reverse the refund
+        vendor_advance = VendorAdvance(
+            vendor_id=purchase_return.vendor.id,
+            amount=purchase_return.refund_amount,
+            date=datetime.now(),
+            description=f'Reversal for Return: {purchase_return.return_number}',
+            created_by=current_user.id
+        )
+        db.session.add(vendor_advance)
+    
+    # Restore bill totals and recalculate status
+    if bill:
+        bill.subtotal += purchase_return.subtotal
+        bill.tax += purchase_return.tax
+        bill.total += purchase_return.total
+        
+        # Recalculate bill status based on paid amount vs total
+        if bill.paid_amount >= bill.total and bill.total > 0:
+            bill.status = 'paid'
+        elif bill.paid_amount > 0 and bill.paid_amount < bill.total:
+            bill.status = 'partial'
+        else:
+            bill.status = 'unpaid'
+    
+    return_number = purchase_return.return_number
+    db.session.delete(purchase_return)
+    db.session.commit()
+    
+    flash(f'Return {return_number} deleted successfully!', 'success')
+    return redirect(url_for('purchase.purchase_return_list'))

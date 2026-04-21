@@ -72,6 +72,12 @@
     background: #555;
 }
 
+/* Expense table horizontal scroll at all screen sizes */
+.table-responsive.expenses-table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
 /* Mobile responsive styles */
 @media (max-width: 576px) {
     .card-stats {

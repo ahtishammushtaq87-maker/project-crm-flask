@@ -113,7 +113,7 @@
                                 <input type="checkbox" class="form-check-input invoice-checkbox" value="{{ sale.id }}">
                             </td>
                             <td>{{ sale.invoice_number }}</td>
-                            <td>{{ sale.date.strftime('%Y-%m-%d') }}</td>
+                            <td>{{ sale.date.strftime(date_format) }}</td>
                             <td>{{ sale.customer.name if sale.customer else 'Walk-in Customer' }}</td>
                             <td>{{ sale.vendor.name if sale.vendor else '-' }}</td>
                             <td>Rs{{ "%.2f"|format(sale.subtotal) }}</td>

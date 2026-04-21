@@ -219,40 +219,53 @@ class ProfessionalPDFGenerator:
 
         # Box 1 – Bill To
         b1_rows = []
+        label_map = {'name': 'Name', 'company': 'Company', 'address': 'Address', 'email': 'Email', 'phone': 'Phone', 'gst_number': 'GST No'}
         for key in ('name', 'company', 'address', 'email', 'phone', 'gst_number'):
             val = client_data.get(key, '')
             if val:
-                b1_rows.append(f"GST: {val}" if key == 'gst_number' else val)
-        box1 = make_box(self._get_label('bill_to', 'BILL TO'), b1_rows)
+                label = label_map.get(key, key)
+                b1_rows.append(f"<b>{label}:</b> {val}")
+        box1 = make_box(self._bill_to_label or self._get_label('bill_to', 'BILL TO'), b1_rows)
 
-        # Box 2 – Ship To / Ship From
-        b2_rows = []
+        # Box 2 – Ship To / Ship From (only show if ship_to is provided)
+        box2 = None
         if ship_to:
+            b2_rows = []
             for key in ('name', 'address'):
                 val = ship_to.get(key, '')
                 if val:
-                    b2_rows.append(val)
+                    b2_rows.append(f"<b>{key.title()}:</b> {val}")
             if ship_to.get('contact_person'):
-                b2_rows.append(f"Contact: {ship_to['contact_person']}")
-        if not b2_rows:
-            b2_rows = ['N/A']
-        
-        # Use custom label if provided (e.g., "SHIP FROM" for purchase docs)
-        ship_label = getattr(self, '_ship_to_label', None) or self._get_label('ship_to', 'SHIP TO')
-        box2 = make_box(ship_label, b2_rows)
+                b2_rows.append(f"<b>Contact:</b> {ship_to['contact_person']}")
+            if not b2_rows:
+                b2_rows = ['N/A']
+            
+            # Use custom label if provided (e.g., "SHIP FROM" for purchase docs)
+            ship_label = getattr(self, '_ship_to_label', None) or self._get_label('ship_to', 'SHIP TO')
+            box2 = make_box(ship_label, b2_rows)
 
         # Box 3 – Reference
-        b3_rows = [f"{k}: {v}" for k, v in (reference_data or {}).items() if v]
+        b3_rows = [f"<b>{k}:</b> {v}" for k, v in (reference_data or {}).items() if v]
 
         if b3_rows:
-            box3  = make_box(self._get_label('reference', 'REFERENCE'), b3_rows)
-            # 3 boxes: Bill To | Gap | Ship To | Gap | Reference
-            outer = Table([[box1, '', box2, '', box3]],
-                          colWidths=[2.1*inch, 0.15*inch, 2.1*inch, 0.15*inch, 1.8*inch])
+            box3 = make_box(self._get_label('reference', 'REFERENCE'), b3_rows)
+            if box2:
+                # 3 boxes: Bill To | Gap | Ship To | Gap | Reference
+                outer = Table([[box1, '', box2, '', box3]],
+                              colWidths=[2.1*inch, 0.15*inch, 2.1*inch, 0.15*inch, 1.8*inch])
+            else:
+                # 2 boxes: Bill To | Gap | Reference
+                outer = Table([[box1, '', box3]],
+                              colWidths=[2.8*inch, 0.15*inch, 2.3*inch])
         else:
-            # 2 boxes: Bill To on left, Ship To on right with small gap
-            outer = Table([[box1, '', box2]],
-                          colWidths=[2.8*inch, 1.5*inch, 2.8*inch])
+            if box2:
+                # 2 boxes: Bill To on left, Ship To on right with small gap
+                outer = Table([[box1, '', box2]],
+                              colWidths=[2.8*inch, 1.5*inch, 2.8*inch])
+            else:
+                # 1 box only: Bill To (center it)
+                outer = Table([[box1]],
+                              colWidths=[5.8*inch])
 
         outer.setStyle(TableStyle([
             ('VALIGN',        (0,0), (-1,-1), 'TOP'),
@@ -264,17 +277,24 @@ class ProfessionalPDFGenerator:
         return outer
 
     # ── ITEMS TABLE ────────────────────────────────────────────────────────
-    def _build_items_table(self, items, show_item_code=True):
+    def _build_items_table(self, items, show_item_code=True, show_sku=False):
         headers = ['#', 'Description']
+        if show_sku:
+            headers += ['SKU']
         if show_item_code:
             headers += ['Item Code']
         headers += ['Qty', 'Unit', 'Unit Price', 'Amount']
 
         header_row = [Paragraph(f"<b>{h}</b>", self.styles['TblHeader']) for h in headers]
 
-        col_w = ([0.28*inch, 2.55*inch, 0.72*inch, 0.42*inch, 0.55*inch, 0.85*inch, 0.88*inch]
-                 if show_item_code else
-                 [0.28*inch, 3.2*inch, 0.55*inch, 0.72*inch, 0.95*inch, 0.95*inch])
+        if show_sku and show_item_code:
+            col_w = [0.35*inch, 2.5*inch, 0.7*inch, 0.7*inch, 0.55*inch, 0.5*inch, 0.6*inch, 0.65*inch, 0.95*inch]
+        elif show_sku:
+            col_w = [0.35*inch, 2.8*inch, 0.8*inch, 0.7*inch, 0.6*inch, 0.7*inch, 1.0*inch, 0.85*inch]
+        elif show_item_code:
+            col_w = [0.35*inch, 3.0*inch, 0.8*inch, 0.5*inch, 0.6*inch, 1.0*inch, 1.0*inch]
+        else:
+            col_w = [0.35*inch, 3.5*inch, 0.65*inch, 0.8*inch, 1.1*inch, 1.1*inch]
 
         table_data = [header_row]
         for idx, item in enumerate(items, 1):
@@ -284,6 +304,8 @@ class ProfessionalPDFGenerator:
                           Paragraph(sub,  self.styles['TblCellSub'])]
                          if sub else Paragraph(desc, self.styles['TblCell']))
             row = [Paragraph(str(idx), self.styles['TblCell']), desc_cell]
+            if show_sku:
+                row.append(Paragraph(item.get('sku', '-'), self.styles['TblCell']))
             if show_item_code:
                 row.append(Paragraph(item.get('item_code', '-'), self.styles['TblCell']))
             row += [Paragraph(str(item.get('quantity', 0)), self.styles['TblCell']),
@@ -295,6 +317,8 @@ class ProfessionalPDFGenerator:
         if len(table_data) == 1:
             empty = [Paragraph('1', self.styles['TblCell']),
                      Paragraph('No items listed', self.styles['TblCell'])]
+            if show_sku:
+                empty.append(Paragraph('-', self.styles['TblCell']))
             if show_item_code:
                 empty.append(Paragraph('-', self.styles['TblCell']))
             empty += [Paragraph('-', self.styles['TblCell'])] * 4
@@ -490,7 +514,7 @@ class ProfessionalPDFGenerator:
     def generate_document(self, title, doc_number, date, due_date, client_data, items,
                           totals, payment_info=None, terms=None, notes=None,
                           status=None, ship_to=None, reference_data=None, currency=None,
-                          ship_to_label=None):
+                          ship_to_label=None, bill_to_label=None):
         elements = []
         
         # Set custom ship_to label if provided (e.g., "SHIP FROM" for purchase docs)
@@ -498,6 +522,12 @@ class ProfessionalPDFGenerator:
             self._ship_to_label = ship_to_label
         else:
             self._ship_to_label = None
+            
+        # Set custom bill_to label if provided (e.g., "Statement" for purchase docs)
+        if bill_to_label:
+            self._bill_to_label = bill_to_label
+        else:
+            self._bill_to_label = None
 
         elements.append(self._build_header(title, doc_number, date, due_date, currency, status))
         elements.append(Spacer(1, 8))
@@ -507,7 +537,8 @@ class ProfessionalPDFGenerator:
         elements.append(Paragraph("INVOICE ITEMS", self.styles['SectionHeader']))
 
         show_item_code = any('item_code' in item for item in items)
-        elements.append(self._build_items_table(items, show_item_code))
+        show_sku = any('sku' in item for item in items)
+        elements.append(self._build_items_table(items, show_item_code, show_sku))
         elements.append(Spacer(1, 10))
         elements.append(self._build_bottom_section(totals, payment_info, terms, notes))
 
@@ -566,26 +597,6 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             client_data['company'] = obj.customer.company
 
         ship_to = None
-        if hasattr(obj, 'job_site') and obj.job_site:
-            ship_to = {
-                'name':           obj.job_site.name,
-                'address':        obj.job_site.address,
-                'contact_person': obj.job_site.contact_person,
-            }
-        elif obj.customer:
-            for attr, label in [
-                ('installation_address', 'Installation Address'),
-                ('shipping_address',     'Shipping Address'),
-                ('delivery_address',     'Delivery Address'),
-                ('work_address',         'Work Address'),
-            ]:
-                val = getattr(obj.customer, attr, None)
-                if val:
-                    ship_to = {'name': label, 'address': val,
-                               'contact_person': getattr(obj.customer, 'contact_person', '') or ''}
-                    break
-            if not ship_to and obj.customer.address:
-                ship_to = {'name': 'Billing Address', 'address': obj.customer.address, 'contact_person': ''}
 
         reference_data = {}
         if hasattr(obj, 'po_number')   and obj.po_number:   reference_data['PO No']       = obj.po_number
@@ -602,6 +613,8 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
                 'rate':        f"{currency}{item.unit_price:,.2f}",
                 'amount':      f"{currency}{item.total:,.2f}",
             }
+            if item.product and hasattr(item.product, 'sku') and item.product.sku:
+                entry['sku'] = item.product.sku
             if hasattr(item, 'item_code')        and item.item_code:        entry['item_code']        = item.item_code
             if hasattr(item, 'unit')             and item.unit:             entry['unit']             = item.unit
             if hasattr(item, 'sub_description')  and item.sub_description:  entry['sub_description']  = item.sub_description
@@ -651,7 +664,7 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
 
     # ── PURCHASE BILL ─────────────────────────────────────────────────────
     elif doc_type == 'purchase':
-        title      = getattr(template_config, 'TITLE', 'Purchase Bill') if template_config else "Purchase Bill"
+        title      = getattr(template_config, 'TITLE', 'Purchase') if template_config else "Purchase"
         doc_number = obj.bill_number
         client_data = {
             'name':       obj.vendor.name       if obj.vendor else "Unknown Vendor",
@@ -661,16 +674,7 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             'gst_number': obj.vendor.gst_number if obj.vendor else "",
         }
         
-        # Ship From - Vendor's shipping address
         ship_to = None
-        if hasattr(obj, 'delivery_location') and obj.delivery_location:
-            ship_to = {'name': obj.delivery_location.name, 'address': obj.delivery_location.address,
-                       'contact_person': obj.delivery_location.contact_person}
-        elif obj.vendor:
-            if hasattr(obj.vendor, 'shipping_address') and obj.vendor.shipping_address:
-                ship_to = {'name': 'Vendor Shipping Address', 'address': obj.vendor.shipping_address, 'contact_person': ''}
-            elif obj.vendor.address:
-                ship_to = {'name': 'Vendor Address', 'address': obj.vendor.address, 'contact_person': ''}
         
         reference_data = {}
         if obj.po_id and obj.source_po:
@@ -678,11 +682,18 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
         if hasattr(obj, 'project') and obj.project:
             reference_data['Project'] = obj.project.name if obj.project else ""
 
-        items = [{'description': item.product.name if item.product else "Unknown Product",
-                  'quantity':    int(item.quantity) if item.quantity.is_integer() else item.quantity,
-                  'unit':        getattr(item, 'unit', '-'),
-                  'rate':        f"{currency}{item.unit_price:,.2f}",
-                  'amount':      f"{currency}{item.total:,.2f}"} for item in obj.items]
+        items = []
+        for item in obj.items:
+            entry = {
+                'description': item.product.name if item.product else "Unknown Product",
+                'quantity':    int(item.quantity) if item.quantity.is_integer() else item.quantity,
+                'unit':        getattr(item, 'unit', '-'),
+                'rate':        f"{currency}{item.unit_price:,.2f}",
+                'amount':      f"{currency}{item.total:,.2f}",
+            }
+            if item.product and hasattr(item.product, 'sku') and item.product.sku:
+                entry['sku'] = item.product.sku
+            items.append(entry)
 
         totals = [("Subtotal", f"{currency}{obj.subtotal:,.2f}"),
                   ("Tax",      f"{currency}{obj.tax:,.2f}"),
@@ -718,12 +729,12 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             terms=terms, notes=notes,
             status=getattr(obj, 'status', None),
             ship_to=ship_to, reference_data=reference_data,
-            ship_to_label='SHIP FROM',
+            bill_to_label='Statement',
         )
 
     # ── PURCHASE ORDER ────────────────────────────────────────────────────
     elif doc_type == 'purchase_order':
-        title      = getattr(template_config, 'TITLE', 'Purchase Order') if template_config else "Purchase Order"
+        title      = getattr(template_config, 'TITLE', 'Purchase') if template_config else "Purchase"
         doc_number = obj.po_number
         client_data = {
             'name':       obj.vendor.name       if obj.vendor else "Unknown Vendor",
@@ -733,26 +744,24 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             'gst_number': obj.vendor.gst_number if obj.vendor else "",
         }
         
-        # Ship From - Vendor's shipping address
         ship_to = None
-        if hasattr(obj, 'delivery_location') and obj.delivery_location:
-            ship_to = {'name': obj.delivery_location.name, 'address': obj.delivery_location.address,
-                       'contact_person': obj.delivery_location.contact_person}
-        elif obj.vendor:
-            if hasattr(obj.vendor, 'shipping_address') and obj.vendor.shipping_address:
-                ship_to = {'name': 'Vendor Shipping Address', 'address': obj.vendor.shipping_address, 'contact_person': ''}
-            elif obj.vendor.address:
-                ship_to = {'name': 'Vendor Address', 'address': obj.vendor.address, 'contact_person': ''}
         
         reference_data = {}
         if hasattr(obj, 'project') and obj.project:
             reference_data['Project'] = obj.project.name if obj.project else ""
 
-        items = [{'description': item.product.name if item.product else "Unknown Product",
-                  'quantity':    int(item.quantity) if item.quantity.is_integer() else item.quantity,
-                  'unit':        getattr(item, 'unit', '-'),
-                  'rate':        f"{currency}{item.unit_price:,.2f}",
-                  'amount':      f"{currency}{item.total:,.2f}"} for item in obj.items]
+        items = []
+        for item in obj.items:
+            entry = {
+                'description': item.product.name if item.product else "Unknown Product",
+                'quantity':    int(item.quantity) if item.quantity.is_integer() else item.quantity,
+                'unit':        getattr(item, 'unit', '-'),
+                'rate':        f"{currency}{item.unit_price:,.2f}",
+                'amount':      f"{currency}{item.total:,.2f}",
+            }
+            if item.product and hasattr(item.product, 'sku') and item.product.sku:
+                entry['sku'] = item.product.sku
+            items.append(entry)
 
         totals = [("Subtotal",  f"{currency}{obj.subtotal:,.2f}"),
                   ("Tax",       f"{currency}{obj.tax:,.2f}"),
@@ -777,7 +786,7 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             client_data=client_data, items=items, totals=totals,
             notes=notes, status=getattr(obj, 'status', None),
             ship_to=ship_to, reference_data=reference_data,
-            ship_to_label='SHIP FROM',
+            bill_to_label='Statement',
         )
 
     buffer.seek(0)

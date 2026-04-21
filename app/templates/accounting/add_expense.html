@@ -37,6 +37,29 @@
     border-radius: 0.375rem;
     box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
 }
+/* Make multi-select pills render in a single horizontal line */
+.select2-container--bootstrap-5 .select2-selection--multiple {
+    max-height: 38px !important;
+    overflow: hidden !important;
+}
+
+.select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__rendered {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none; /* Hide scrollbar Firefox */
+}
+
+.select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__rendered::-webkit-scrollbar {
+    display: none; /* Hide scrollbar WebKit */
+}
+
+.select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__choice {
+    flex-shrink: 0;
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
 /* Ensure the original select is hidden */
 .select2-hidden-accessible {
     border: 0 !important;
@@ -146,19 +169,62 @@
                                 <div class="form-text mt-0 ms-4">Check this if this expense should be counted towards manufacturing/BOM overhead costs.</div>
                             </div>
                         </div>
-                        <div class="mb-3" id="product_id_container" style="display: none;">
-                            <label class="form-label">Linked Finished Product (Overhead)</label>
-                            {{ form.product_id(class="form-control") }}
-                            <div class="form-text">Select the manufactured product this overhead expense belongs to.</div>
+
+                        <div id="overhead_targets_container" style="display: none;">
+                            <div class="p-3 border rounded mb-3" style="background: #f8f9ff;">
+                                <h6 class="fw-bold mb-3">
+                                    <i class="bi bi-diagram-3 me-1"></i> How to allocate this overhead?
+                                </h6>
+
+                                <!-- Mode selector -->
+                                <div class="d-flex gap-3 mb-3">
+                                    <div class="form-check flex-fill border rounded p-3" id="mode_mo_card" style="cursor:pointer; background:#fff;">
+                                        <input class="form-check-input" type="radio" name="overhead_mode" id="mode_mo" value="mo" checked>
+                                        <label class="form-check-label fw-semibold" for="mode_mo">
+                                            <i class="bi bi-gear-fill text-warning me-1"></i>
+                                            Link to a Manufacturing Order
+                                            <span class="badge bg-warning text-dark ms-1">In Progress Only</span>
+                                        </label>
+                                        <div class="text-muted small mt-1">Pick a specific running order to charge this overhead to.</div>
+                                    </div>
+                                    <div class="form-check flex-fill border rounded p-3" id="mode_bulk_card" style="cursor:pointer; background:#fff;">
+                                        <input class="form-check-input" type="radio" name="overhead_mode" id="mode_bulk" value="bulk">
+                                        <label class="form-check-label fw-semibold" for="mode_bulk">
+                                            <i class="bi bi-collection-fill text-primary me-1"></i>
+                                            Split across Products / BOMs
+                                        </label>
+                                        <div class="text-muted small mt-1">Divide equally across multiple finished goods or BOMs.</div>
+                                    </div>
+                                </div>
+
+                                <!-- Mode 1: MO picker -->
+                                <div id="mo_mode_section">
+                                    <label class="form-label fw-semibold">Manufacturing Order <span class="badge bg-secondary">Multi-select</span></label>
+                                    {{ form.mo_id(class="form-select", id="mo_id_select", multiple="multiple") }}
+                                    <div class="form-text">Only <strong>In Progress</strong> orders are shown. Select one or multiple to divide overhead.</div>
+                                </div>
+
+                                <!-- Mode 2: Bulk product/BOM -->
+                                <div id="bulk_mode_section" style="display:none;">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">Finished Products <span class="badge bg-secondary">Multi-select</span></label>
+                                        {{ form.product_id(class="form-select", id="product_id_select", multiple="multiple") }}
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">BOMs <span class="badge bg-secondary">Multi-select</span></label>
+                                        {{ form.bom_id(class="form-select", id="bom_id_select", multiple="multiple") }}
+                                    </div>
+                                    <!-- Live Allocation Preview -->
+                                    <div id="allocation_preview" class="alert alert-info mb-0" style="display: none;">
+                                        <strong><i class="bi bi-calculator me-1"></i> Allocation Preview:</strong>
+                                        <span id="allocation_summary"></span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="mb-3" id="bom_id_container" style="display: none;">
-                            <label class="form-label">Linked BOM (Overhead) - Optional</label>
-                            {{ form.bom_id(class="form-control", id="bom_id_select") }}
-                            <div class="form-text">Or select the BOM directly if expense is for a specific BOM.</div>
-                        </div>
+
                         <div class="mb-3 d-flex gap-2">
                             <button type="submit" class="btn btn-success">Save Expense</button>
-                            <button type="button" class="btn btn-warning" id="resetOverheadBtn" style="display: none;">Reset BOM Overhead</button>
                             <a href="{{ url_for('accounting.expenses') }}" class="btn btn-secondary">Cancel</a>
                         </div>
                     </form>
@@ -172,124 +238,114 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
-// ── Helper to init Select2 ──────────────────────────────────────────────
-function initSelect2(selector, placeholder = 'Search or select', width = '100%') {
-    $(selector).select2({
-        theme: 'bootstrap-5',
-        placeholder: placeholder,
-        allowClear: true,
-        width: width
-    });
-}
-
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize Select2 for all selectors
-    initSelect2('select[name="category_id"]', '— Search or Select Category —');
-    initSelect2('select[name="vendor_id"]', '— Search or Select Vendor —');
-    initSelect2('select[name="payment_method"]', '— Search or Select Method —');
-    initSelect2('select[name="product_id"]', '— Search or Select Product —');
-    initSelect2('select[name="bom_id"]', '— Search or Select BOM —');
+    // Single-select
+    $('select[name="category_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Category —', allowClear: true, width: '100%' });
+    $('select[name="payment_method"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Payment Method —', allowClear: true, width: '100%' });
+    $('select[name="vendor_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Vendor (Optional) —', allowClear: true, width: '100%' });
+
+    // MO multi-select
+    $('#mo_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select In Progress Manufacturing Order(s) —', allowClear: true, width: '100%', closeOnSelect: false });
+
+    // Bulk multi-selects
+    $('#product_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select Finished Products —', allowClear: true, width: '100%', closeOnSelect: false });
+    $('#bom_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select BOMs —', allowClear: true, width: '100%', closeOnSelect: false });
 
     const isBomOverheadCheckbox = document.getElementById('is_bom_overhead');
     const isMonthlyDividedCheckbox = document.getElementById('is_monthly_divided');
-    const productIdContainer = document.getElementById('product_id_container');
-    const bomIdContainer = document.getElementById('bom_id_container');
-    const monthlyDivisionContainer = document.getElementById('monthly_division_container');
-    const bomIdSelect = document.getElementById('bom_id_select');
-    const resetBtn = document.getElementById('resetOverheadBtn');
+    const overheadContainer = document.getElementById('overhead_targets_container');
+    const monthlyContainer  = document.getElementById('monthly_division_container');
+    const moSection         = document.getElementById('mo_mode_section');
+    const bulkSection       = document.getElementById('bulk_mode_section');
+    const modeMoRadio       = document.getElementById('mode_mo');
+    const modeBulkRadio     = document.getElementById('mode_bulk');
+    const modeMoCard        = document.getElementById('mode_mo_card');
+    const modeBulkCard      = document.getElementById('mode_bulk_card');
 
-    function toggleProductDropdown() {
-        if (isBomOverheadCheckbox.checked) {
-            productIdContainer.style.display = 'block';
-            bomIdContainer.style.display = 'block';
-            updateResetButton();
+    function applyModeSwitch() {
+        const isMoMode = modeMoRadio.checked;
+        moSection.style.display   = isMoMode ? 'block' : 'none';
+        bulkSection.style.display = isMoMode ? 'none'  : 'block';
+        // Highlight active card
+        modeMoCard.style.borderColor   = isMoMode ? '#fd7e14' : '';
+        modeMoCard.style.background    = isMoMode ? '#fff8f0' : '#fff';
+        modeBulkCard.style.borderColor = !isMoMode ? '#0d6efd' : '';
+        modeBulkCard.style.background  = !isMoMode ? '#f0f5ff' : '#fff';
+        // Clear irrelevant fields
+        if (isMoMode) {
+            $('#product_id_select').val(null).trigger('change');
+            $('#bom_id_select').val(null).trigger('change');
+            document.getElementById('allocation_preview').style.display = 'none';
         } else {
-            productIdContainer.style.display = 'none';
-            bomIdContainer.style.display = 'none';
-            resetBtn.style.display = 'none';
+            $('#mo_id_select').val(null).trigger('change');
+        }
+        updateAllocationPreview();
+    }
+
+    function toggleOverheadSection() {
+        overheadContainer.style.display = isBomOverheadCheckbox.checked ? 'block' : 'none';
+        if (!isBomOverheadCheckbox.checked) {
+            $('#product_id_select').val(null).trigger('change');
+            $('#bom_id_select').val(null).trigger('change');
+            $('#mo_id_select').val(null).trigger('change');
         }
     }
 
     function toggleMonthlyDivision() {
-        if (isMonthlyDividedCheckbox.checked) {
-            monthlyDivisionContainer.style.display = 'block';
-            // Set default dates to current month if not set
+        const checked = isMonthlyDividedCheckbox.checked;
+        monthlyContainer.style.display = checked ? 'block' : 'none';
+        if (checked) {
             const today = new Date();
-            const startDateInput = document.querySelector('input[name="monthly_start_date"]');
-            const endDateInput = document.querySelector('input[name="monthly_end_date"]');
-            
-            if (!startDateInput.value) {
-                const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-                startDateInput.value = firstDay.toISOString().split('T')[0];
-            }
-            if (!endDateInput.value) {
-                const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-                endDateInput.value = lastDay.toISOString().split('T')[0];
-            }
+            const s = document.querySelector('input[name="monthly_start_date"]');
+            const e = document.querySelector('input[name="monthly_end_date"]');
+            if (!s.value) s.value = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+            if (!e.value) e.value = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
+        }
+    }
+
+    function updateAllocationPreview() {
+        if (modeMoRadio.checked) return;  // no preview in MO mode
+        const amountInput = document.querySelector('input[name="amount"]');
+        const amount = parseFloat(amountInput ? amountInput.value : 0) || 0;
+        const p = ($('#product_id_select').val() || []).filter(v => v && v != '0');
+        const b = ($('#bom_id_select').val() || []).filter(v => v && v != '0');
+        const total = p.length + b.length;
+        const preview = document.getElementById('allocation_preview');
+        const summary = document.getElementById('allocation_summary');
+        if (total > 0 && amount > 0) {
+            const per = (amount / total).toFixed(2);
+            summary.innerHTML = total > 1
+                ? ` <strong>Rs ${amount.toFixed(2)}</strong> ÷ ${total} targets = <strong>Rs ${per}</strong> each.`
+                : ` Full amount <strong>Rs ${amount.toFixed(2)}</strong> to 1 target.`;
+            preview.style.display = 'block';
         } else {
-            monthlyDivisionContainer.style.display = 'none';
+            preview.style.display = 'none';
         }
     }
 
-    function updateResetButton() {
-        // Show reset button only if a BOM is selected
-        if (bomIdSelect.value && bomIdSelect.value !== '0') {
-            resetBtn.style.display = 'inline-block';
-        } else {
-            resetBtn.style.display = 'none';
-        }
-    }
-
-    function resetBomOverhead() {
-        const bomId = bomIdSelect.value;
-        if (!bomId || bomId === '0') {
-            alert('Please select a BOM first');
-            return;
-        }
-
-        if (!confirm('Are you sure you want to reset all overhead expenses for this BOM to zero?')) {
-            return;
-        }
-
-        // Send POST request to reset endpoint
-        const resetUrl = '/accounting/bom/' + bomId + '/reset-overhead';
-        fetch(resetUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        }).then(response => {
-            if (response.ok) {
-                // Reload page to show success message
-                window.location.reload();
-            } else {
-                alert('Failed to reset BOM overhead');
-            }
-        }).catch(error => {
-            console.error('Error:', error);
-            alert('Error resetting BOM overhead');
-        });
-    }
-
-    isBomOverheadCheckbox.addEventListener('change', toggleProductDropdown);
+    isBomOverheadCheckbox.addEventListener('change', toggleOverheadSection);
     isMonthlyDividedCheckbox.addEventListener('change', toggleMonthlyDivision);
-    bomIdSelect.addEventListener('change', updateResetButton);
-    resetBtn.addEventListener('click', resetBomOverhead);
-    
-    toggleProductDropdown(); // Initialize on load
+    modeMoRadio.addEventListener('change', applyModeSwitch);
+    modeBulkRadio.addEventListener('change', applyModeSwitch);
+    // Make whole card clickable
+    modeMoCard.addEventListener('click', () => { modeMoRadio.checked = true; applyModeSwitch(); });
+    modeBulkCard.addEventListener('click', () => { modeBulkRadio.checked = true; applyModeSwitch(); });
+    $('#product_id_select').on('change', updateAllocationPreview);
+    $('#bom_id_select').on('change', updateAllocationPreview);
+    const amountEl = document.querySelector('input[name="amount"]');
+    if (amountEl) amountEl.addEventListener('input', updateAllocationPreview);
+
+    toggleOverheadSection();
+    applyModeSwitch();
 });
 
 document.getElementById('billImageInput').addEventListener('change', function(e) {
     const file = e.target.files[0];
     const preview = document.getElementById('billImagePreview');
-    
     if (file) {
         const reader = new FileReader();
         reader.onload = function(e) {
-            preview.innerHTML = `
-                <img src="${e.target.result}" class="img-thumbnail" style="max-width: 200px; max-height: 200px;">
-                <p class="text-muted small mt-1">${file.name}</p>
-            `;
+            preview.innerHTML = `<img src="${e.target.result}" class="img-thumbnail" style="max-width:200px;max-height:200px;"><p class="text-muted small mt-1">${file.name}</p>`;
         };
         reader.readAsDataURL(file);
     } else {

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Expense Settings{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Expense Settings</h2>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Expense Number Formatting</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        {{ form.hidden_tag() }}
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="expense_prefix" class="form-label">Expense Prefix</label>
+                                    {{ form.expense_prefix(class="form-control") }}
+                                    <div class="form-text">Text before the number (e.g., EXP-)</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="expense_suffix" class="form-label">Expense Suffix</label>
+                                    {{ form.expense_suffix(class="form-control") }}
+                                    <div class="form-text">Text after the number (optional)</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="next_number" class="form-label">Next Expense Number</label>
+                            {{ form.next_number(class="form-control") }}
+                            <div class="form-text">The next sequential number to be used</div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">Save Settings</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5>How It Works</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>Number Format:</strong> Generated as <code>{prefix}{number}{suffix}</code></p>
+                    <p><strong>Example:</strong> If prefix=EXP-, next_number=1001 → EXP-1001</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

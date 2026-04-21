@@ -25,13 +25,14 @@ def create_app(config_class=Config):
             User, Vendor, Customer, Warehouse, Product, ProductCategory, Sale, SaleItem,
             PurchaseBill, PurchaseItem, Transaction, Account, TaxRate,
             Currency, Payment, RecurringExpense, ExpenseCategory, Expense,
-            StockMovement, Company, InvoiceSettings, PurchaseSettings,
+            StockMovement, Company, InvoiceSettings, PurchaseSettings, ExpenseSettings,
             SaleReturn, SaleReturnItem, Task, BOM, BOMItem, Staff,
             Attendance, SalaryAdvance, SalaryPayment, ManufacturingOrder,
             ManufacturingOrderItem, MonthlyTarget, VendorAdvance, CustomerAdvance,
             PurchaseOrder, PurchaseOrderItem, CostPriceHistory, BOMVersion,
             BOMVersionItem, ProductionTarget, ProductionLog, PDProject,
-            PDProjectBOM, PDComponent, PDTooling, PDTesting, PDApproval, PDAsset
+            PDProjectBOM, PDComponent, PDTooling, PDTesting, PDApproval, PDAsset,
+            PurchaseReturn, PurchaseReturnItem
         )
         
         # Map model classes to table names and their columns
@@ -58,6 +59,7 @@ def create_app(config_class=Config):
             'company': Company,
             'invoice_settings': InvoiceSettings,
             'purchase_settings': PurchaseSettings,
+            'expense_settings': ExpenseSettings,
             'sale_returns': SaleReturn,
             'sale_return_items': SaleReturnItem,
             'tasks': Task,
@@ -85,7 +87,9 @@ def create_app(config_class=Config):
             'pd_tooling': PDTooling,
             'pd_testing': PDTesting,
             'pd_approval': PDApproval,
-            'pd_assets': PDAsset
+            'pd_assets': PDAsset,
+            'purchase_returns': PurchaseReturn,
+            'purchase_return_items': PurchaseReturnItem
         }
         
         try:

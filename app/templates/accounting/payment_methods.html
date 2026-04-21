@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Payment Methods{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Payment Methods</h2>
+        <a href="{{ url_for('accounting.add_payment_method') }}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Add Payment Method
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for method in methods %}
+                        <tr>
+                            <td><strong>{{ method.name }}</strong></td>
+                            <td>{{ method.description or '-' }}</td>
+                            <td>
+                                {% if method.is_active %}
+                                <span class="badge bg-success">Active</span>
+                                {% else %}
+                                <span class="badge bg-danger">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{{ url_for('accounting.edit_payment_method', id=method.id) }}" 
+                                   class="btn btn-sm btn-warning" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <button class="btn btn-sm btn-danger" onclick="deleteMethod({{ method.id }}, '{{ method.name|e }}')" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="text-center">No payment methods found.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function deleteMethod(id, name) {
+    if (confirm(`Are you sure you want to delete the payment method "${name}"?`)) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/accounting/payment-method/${id}/delete`;
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+</script>
+{% endblock %}

@@ -33,7 +33,56 @@
                             {{ form.default_terms(class="form-control", rows="4", placeholder="Payment terms, delivery policy, warranty terms...") }}
                             <small class="text-muted">These terms will appear on every purchase bill PDF</small>
                         </div>
-                        
+
+                        <hr>
+                        <h6 class="mt-4 mb-3">Number Formatting</h6>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Purchase Bill Prefix</label>
+                                    {{ form.bill_prefix(class="form-control", placeholder="PB-") }}
+                                    <small class="text-muted">e.g., PB- for Purchase Bill</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Purchase Bill Suffix</label>
+                                    {{ form.bill_suffix(class="form-control") }}
+                                    <small class="text-muted">Optional text after number</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Next Purchase Bill Number</label>
+                            {{ form.next_bill_number(class="form-control") }}
+                            <small class="text-muted">Next sequential number for new bills</small>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Purchase Order Prefix</label>
+                                    {{ form.po_prefix(class="form-control", placeholder="PO-") }}
+                                    <small class="text-muted">e.g., PO- for Purchase Order</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Purchase Order Suffix</label>
+                                    {{ form.po_suffix(class="form-control") }}
+                                    <small class="text-muted">Optional text after number</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Next Purchase Order Number</label>
+                            {{ form.next_po_number(class="form-control") }}
+                            <small class="text-muted">Next sequential number for new purchase orders</small>
+                        </div>
+
                         <div class="d-grid">
                             <button type="submit" class="btn btn-primary btn-lg">
                                 <i class="fas fa-save me-1"></i> Save Settings

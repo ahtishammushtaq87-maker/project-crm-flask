@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, FloatField, IntegerField, SelectField, TextAreaField, DateField, FileField, BooleanField, DecimalField
+from wtforms import StringField, FloatField, IntegerField, SelectField, TextAreaField, DateField, FileField, BooleanField, DecimalField, SelectMultipleField
 from wtforms.validators import DataRequired, Email, Optional, NumberRange, EqualTo, InputRequired
 from wtforms.fields import DateTimeField
 from datetime import datetime
@@ -54,6 +54,17 @@ class InvoiceSettingsForm(FlaskForm):
 class PurchaseSettingsForm(FlaskForm):
     default_notes = TextAreaField('Default Purchase Bill Notes')
     default_terms = TextAreaField('Default Terms & Conditions (Policy)')
+    bill_prefix = StringField('Bill Prefix', default='PB-')
+    bill_suffix = StringField('Bill Suffix')
+    next_bill_number = IntegerField('Next Bill Number', default=1)
+    po_prefix = StringField('Purchase Order Prefix', default='PO-')
+    po_suffix = StringField('Purchase Order Suffix')
+    next_po_number = IntegerField('Next PO Number', default=1)
+
+class ExpenseSettingsForm(FlaskForm):
+    expense_prefix = StringField('Expense Prefix', default='EXP-')
+    expense_suffix = StringField('Expense Suffix')
+    next_number = IntegerField('Next Expense Number', default=1)
 
 class SaleForm(FlaskForm):
     customer_id = SelectField('Customer', coerce=int, validators=[DataRequired()])
@@ -65,6 +76,7 @@ class CustomerForm(FlaskForm):
     phone = StringField('Phone')
     address = TextAreaField('Address')
     gst_number = StringField('GST Number')
+    payment_method = StringField('Payment Method', validators=[Optional()])
 
 class PurchaseForm(FlaskForm):
     vendor_id = SelectField('Vendor', coerce=int, validators=[DataRequired()])
@@ -77,6 +89,7 @@ class VendorForm(FlaskForm):
     address = TextAreaField('Address')
     shipping_address = TextAreaField(' Shipping Address')
     gst_number = StringField('GST Number')
+    payment_method = StringField('Payment Method', validators=[Optional()])
 
 class UserForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired()])
@@ -184,15 +197,22 @@ class ExpenseForm(FlaskForm):
     date = DateField('Date', validators=[DataRequired()])
     category_id = SelectField('Category', coerce=int, validators=[DataRequired()])
     vendor_id = SelectField('Vendor (Optional)', coerce=int, validators=[Optional()])
-    payment_method = StringField('Payment Method')
+    payment_method = SelectField('Payment Method', choices=[])
     notes = TextAreaField('Notes')
-    product_id = SelectField('Product (Optional)', coerce=int, validators=[Optional()])
-    bom_id = SelectField('BOM (Optional)', coerce=int, validators=[Optional()])
+    product_id = SelectMultipleField('Product (Optional)', coerce=int, validators=[Optional()])
+
+
+    bom_id = SelectMultipleField('BOM (Optional)', coerce=int, validators=[Optional()])
     bill_image = FileField('Bill Image', validators=[Optional()])
     is_monthly_divided = BooleanField('Is Monthly Divided', default=False)
     monthly_start_date = DateField('Monthly Start Date', validators=[Optional()])
     monthly_end_date = DateField('Monthly End Date', validators=[Optional()])
     is_bom_overhead = BooleanField('Is BOM Overhead', default=False)
+    mo_id = SelectMultipleField('Manufacturing Order (Optional)', coerce=int, validators=[Optional()])
+
+class PaymentMethodForm(FlaskForm):
+    name = StringField('Payment Method Name', validators=[DataRequired()])
+    description = TextAreaField('Description')
 
 class ExpenseCategoryForm(FlaskForm):
     name = StringField('Category Name', validators=[DataRequired()])

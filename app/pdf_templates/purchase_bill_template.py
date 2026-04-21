@@ -3,7 +3,7 @@
 # Edit this file to customize the bill layout
 
 DOCUMENT_TYPE = 'purchase'
-TITLE = 'PURCHASE BILL'
+TITLE = 'PURCHASE'
 
 # Table columns configuration
 # Format: (header_key, width_multiplier, align)

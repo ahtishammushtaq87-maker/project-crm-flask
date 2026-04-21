@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash
 from flask_login import login_required, current_user
 from app import db
-from app.models import Sale, PurchaseBill, Transaction, Expense, ExpenseCategory, Vendor, Account, Payment, TaxRate, Currency, RecurringExpense, Staff, Attendance
+from app.models import Sale, PurchaseBill, Transaction, Expense, ExpenseCategory, Vendor, Account, Payment, TaxRate, Currency, RecurringExpense, Staff, Attendance, ExpenseSettings
 from app.forms import ExpenseForm, ExpenseCategoryForm
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_, inspect
@@ -899,6 +899,7 @@ def expenses():
     # Get filter parameters
     vendor_id = request.args.get('vendor_id', type=int)
     category_id = request.args.get('category_id', type=int)
+    mo_id = request.args.get('mo_id', type=int)
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
@@ -909,6 +910,8 @@ def expenses():
         query = query.filter(Expense.vendor_id == vendor_id)
     if category_id:
         query = query.filter(Expense.category_id == category_id)
+    if mo_id:
+        query = query.filter(Expense.mo_id == mo_id)
     if start_date:
         start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
         query = query.filter(Expense.date >= start_datetime)
@@ -924,16 +927,26 @@ def expenses():
     # Get filter options
     categories = ExpenseCategory.query.filter_by(is_active=True).order_by(ExpenseCategory.name).all()
     vendors = Vendor.query.filter_by(is_active=True).order_by(Vendor.name).all()
+    from app.models import ManufacturingOrder
+    manufacturing_orders = ManufacturingOrder.query.order_by(ManufacturingOrder.order_number.desc()).all()
+    
+    # Get company date format setting
+    from app.models import Company
+    company = Company.query.first()
+    date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
     
     return render_template('accounting/expenses.html', 
                          expenses=expenses, 
                          total_expense=total_expense,
                          categories=categories,
                          vendors=vendors,
+                         manufacturing_orders=manufacturing_orders,
                          selected_vendor=vendor_id,
                          selected_category=category_id,
+                         selected_mo_id=mo_id,
                          selected_start_date=start_date,
-                         selected_end_date=end_date)
+                         selected_end_date=end_date,
+                         date_format=date_format)
 
 @bp.route('/expense/add', methods=['GET', 'POST'])
 @login_required
@@ -952,6 +965,11 @@ def add_expense():
     vendors = Vendor.query.filter_by(is_active=True).order_by(Vendor.name).all()
     form.vendor_id.choices = [(0, 'Select Vendor (Optional)')] + [(v.id, v.name) for v in vendors]
     
+    # Populate Payment Method choices
+    from app.models import PaymentMethod
+    methods = PaymentMethod.query.filter_by(is_active=True).order_by(PaymentMethod.name).all()
+    form.payment_method.choices = [(m.name, m.name) for m in methods]
+    
     # Populate manufactured product choices (if column exists)
     from app.models import Product
     if has_column('products', 'is_manufactured'):
@@ -964,43 +982,24 @@ def add_expense():
     boms = BOM.query.filter_by(is_active=True).order_by(BOM.name).all()
     form.bom_id.choices = [(0, 'Select BOM (Optional)')] + [(b.id, b.name) for b in boms]
     
+    # Populate In Progress Manufacturing Order choices (no placeholder; Select2 shows placeholder text)
+    from app.models import ManufacturingOrder
+    in_progress_mos = (
+        ManufacturingOrder.query
+        .filter_by(status='In Progress')
+        .order_by(ManufacturingOrder.order_number)
+        .all()
+    )
+    form.mo_id.choices = [(mo.id, f"{mo.order_number} — {mo.bom.product.name}") for mo in in_progress_mos]
+    
     if form.validate_on_submit():
-        expense_number = f"EXP-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        
-        # Build expense kwargs based on column existence
-        expense_kwargs = {
-            'expense_number': expense_number,
-            'date': form.date.data,
-            'category_id': form.category_id.data,
-            'vendor_id': form.vendor_id.data if form.vendor_id.data != 0 else None,
-            'description': form.description.data,
-            'amount': form.amount.data,
-            'payment_method': form.payment_method.data,
-            'reference': form.reference.data,
-            'notes': form.notes.data,
-        }
-        
-        if has_column('expenses', 'is_bom_overhead'):
-            expense_kwargs['is_bom_overhead'] = form.is_bom_overhead.data
-        if has_column('expenses', 'product_id'):
-            expense_kwargs['product_id'] = form.product_id.data if form.product_id.data != 0 else None
-        if has_column('expenses', 'bom_id'):
-            expense_kwargs['bom_id'] = form.bom_id.data if form.bom_id.data != 0 else None
-        
-        # Handle monthly division
-        if has_column('expenses', 'is_monthly_divided'):
-            expense_kwargs['is_monthly_divided'] = form.is_monthly_divided.data
-            if form.is_monthly_divided.data:
-                expense_kwargs['monthly_start_date'] = form.monthly_start_date.data
-                expense_kwargs['monthly_end_date'] = form.monthly_end_date.data
-        
-        expense = Expense(**expense_kwargs)
-        
-        # Calculate daily amount if monthly divided
-        if expense.is_monthly_divided:
-            expense.calculate_daily_amount()
+        # Get selected targets
+        base_amount = form.amount.data
+        is_overhead = form.is_bom_overhead.data
+        selected_mo_id = (form.mo_id.data or 0) if is_overhead else 0
         
         # Handle bill image upload
+        bill_path = None
         if 'bill_image' in request.files:
             bill_file = request.files['bill_image']
             if bill_file and bill_file.filename:
@@ -1008,51 +1007,157 @@ def add_expense():
                 bill_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
                 os.makedirs(os.path.dirname(bill_path), exist_ok=True)
                 bill_file.save(bill_path)
-                # Normalize path to use forward slashes for consistency
-                expense.bill_image_path = bill_path.replace('\\', '/')
+                bill_path = bill_path.replace('\\', '/')
         
-        db.session.add(expense)
-        db.session.commit()
+        common_kwargs = dict(
+            date=form.date.data,
+            category_id=form.category_id.data,
+            vendor_id=form.vendor_id.data if form.vendor_id.data != 0 else None,
+            description=form.description.data,
+            payment_method=form.payment_method.data,
+            reference=form.reference.data,
+            notes=form.notes.data,
+            is_bom_overhead=is_overhead,
+            bill_image_path=bill_path,
+            is_monthly_divided=form.is_monthly_divided.data,
+            monthly_start_date=form.monthly_start_date.data if form.is_monthly_divided.data else None,
+            monthly_end_date=form.monthly_end_date.data if form.is_monthly_divided.data else None,
+        )
         
-        # Trigger BOM versioning if expense is for a BOM or manufactured product
-        bom_to_update = None
-        if has_column('expenses', 'is_bom_overhead') and expense.is_bom_overhead:
-            # Check if BOM was directly selected
-            if has_column('expenses', 'bom_id') and expense.bom_id:
-                bom_to_update = BOM.query.get(expense.bom_id)
-            # Otherwise, find BOM from product
-            elif expense.product_id:
-                bom_to_update = BOM.query.filter_by(product_id=expense.product_id, is_active=True).first()
+        # Get expense number settings
+        settings = ExpenseSettings.query.first()
+        if not settings:
+            settings = ExpenseSettings(expense_prefix='EXP-', expense_suffix='', next_number=1)
+            db.session.add(settings)
+        next_expense_num = settings.next_number
         
-        if bom_to_update:
-            from app.services.bom_versioning import BOMVersioningService
-            from app.models import User as UserModel
-            try:
-                # Use current_user.id if available, fallback to admin user
-                user_id = None
-                try:
-                    if current_user and current_user.is_authenticated:
-                        user_id = current_user.id
-                except (AttributeError, TypeError):
-                    pass
-                
-                if user_id is None:
-                    admin_user = UserModel.query.filter_by(username='admin').first()
-                    user_id = admin_user.id if admin_user else 1
-                
-                BOMVersioningService.create_bom_version(
-                    bom=bom_to_update,
-                    change_reason=f"Overhead expense added: {expense.description}",
-                    change_type='overhead_added',
-                    created_by_id=user_id,
-                    recalculate_overhead=True
+        created_expenses = []   # track all new expense objects
+        
+        # Determine the active mode
+        mode = request.form.get('overhead_mode', 'bulk')
+        
+        # ── MODE 1: Direct MO link (Single or Bulk) ────────────────────────
+        if is_overhead and mode == 'mo':
+            selected_mo_ids = form.mo_id.data if form.mo_id.data else []
+            from app.models import ManufacturingOrder
+            valid_mos = []
+            for mo_id in selected_mo_ids:
+                if mo_id != 0:
+                    target_mo = ManufacturingOrder.query.get(mo_id)
+                    if target_mo and target_mo.status == 'In Progress':
+                        valid_mos.append(target_mo)
+            
+            if not valid_mos and any(m != 0 for m in selected_mo_ids):
+                flash('Invalid or completed Manufacturing Order(s) selected.', 'danger')
+                return redirect(url_for('accounting.add_expense'))
+
+            num_mos = len(valid_mos)
+            
+            if num_mos == 0:
+                # No specific MO selected
+                expense_number = f"{settings.expense_prefix}{next_expense_num}{settings.expense_suffix}"
+                next_expense_num += 1
+                exp = Expense(
+                    expense_number=expense_number,
+                    amount=base_amount,
+                    **common_kwargs
                 )
-            except Exception as e:
-                print(f"Error creating BOM version: {e}")
+                if exp.is_monthly_divided:
+                    exp.calculate_daily_amount()
+                db.session.add(exp)
+                created_expenses.append(exp)
+                flash_msg = f'Overhead expense Rs {base_amount} added (Unassigned).'
+            elif num_mos == 1:
+                target_mo = valid_mos[0]
+                expense_number = f"{settings.expense_prefix}{next_expense_num}{settings.expense_suffix}"
+                next_expense_num += 1
+                exp = Expense(
+                    expense_number=expense_number,
+                    amount=base_amount,
+                    mo_id=target_mo.id,
+                    **common_kwargs
+                )
+                if exp.is_monthly_divided:
+                    exp.calculate_daily_amount()
+                db.session.add(exp)
+                created_expenses.append(exp)
+                # Update MO overhead immediately
+                target_mo.actual_overhead_cost = (target_mo.actual_overhead_cost or 0) + base_amount
+                target_mo.total_cost = (target_mo.actual_material_cost or 0) + (target_mo.actual_labor_cost or 0) + target_mo.actual_overhead_cost
+                flash_msg = f'Overhead expense Rs {base_amount} added and linked to {target_mo.order_number}.'
+            else:
+                amount_per_mo = base_amount / num_mos
+                for i, target_mo in enumerate(valid_mos):
+                    kwargs = dict(common_kwargs)
+                    kwargs['expense_number'] = f"{settings.expense_prefix}{next_expense_num}{settings.expense_suffix}"
+                    next_expense_num += 1
+                    kwargs['description'] = f"{form.description.data} (Allocation {i+1}/{num_mos})"
+                    kwargs['amount'] = amount_per_mo
+                    kwargs['mo_id'] = target_mo.id
+
+                    exp = Expense(**kwargs)
+                    if exp.is_monthly_divided:
+                        exp.calculate_daily_amount()
+                    db.session.add(exp)
+                    created_expenses.append(exp)
+
+                    target_mo.actual_overhead_cost = (target_mo.actual_overhead_cost or 0) + amount_per_mo
+                    target_mo.total_cost = (target_mo.actual_material_cost or 0) + (target_mo.actual_labor_cost or 0) + target_mo.actual_overhead_cost
+                flash_msg = f'Expense(s) added. Rs {base_amount} divided into {num_mos} Manufacturing Orders.'
         
-        flash('Expense added successfully', 'success')
+        # ── MODE 2: Bulk Product/BOM allocation ───────────────────────────
+        else:
+            selected_product_ids = form.product_id.data if is_overhead else []
+            selected_bom_ids = form.bom_id.data if is_overhead else []
+            targets = []
+            for pid in selected_product_ids:
+                if pid and pid != 0: targets.append(('product', pid))
+            for bid in selected_bom_ids:
+                if bid and bid != 0: targets.append(('bom', bid))
+            
+            num_targets = len(targets)
+            amount_per = base_amount / num_targets if num_targets > 0 else base_amount
+            
+            if num_targets == 0:
+                expense_number = f"{settings.expense_prefix}{next_expense_num}{settings.expense_suffix}"
+                next_expense_num += 1
+                exp = Expense(
+                    expense_number=expense_number,
+                    amount=base_amount,
+                    **common_kwargs
+                )
+                if exp.is_monthly_divided:
+                    exp.calculate_daily_amount()
+                db.session.add(exp)
+                created_expenses.append(exp)
+            else:
+                for i, (target_type, target_id) in enumerate(targets):
+                    kwargs = dict(common_kwargs)
+                    kwargs['expense_number'] = f"{settings.expense_prefix}{next_expense_num}{settings.expense_suffix}"
+                    next_expense_num += 1
+                    kwargs['description'] = f"{form.description.data} (Allocation {i+1}/{num_targets})"
+                    kwargs['amount'] = amount_per
+                    kwargs['is_bom_overhead'] = True
+                    if target_type == 'product':
+                        kwargs['product_id'] = target_id
+                    else:
+                        kwargs['bom_id'] = target_id
+                    exp = Expense(**kwargs)
+                    if exp.is_monthly_divided:
+                        exp.calculate_daily_amount()
+                    db.session.add(exp)
+                    created_expenses.append(exp)
+            
+            flash_msg = f'Expense(s) added. Rs {base_amount} divided into {max(1, num_targets)} record(s).'
+        # ─────────────────────────────────────────────────────────────────
+        
+        # Update expense settings next number
+        settings.next_number = next_expense_num
+        
+        db.session.commit()
+        flash(flash_msg, 'success')
         return redirect(url_for('accounting.expenses'))
-    
+        
     return render_template('accounting/add_expense.html', form=form)
 
 @bp.route('/expense/<int:id>/delete', methods=['POST'])
@@ -1063,13 +1168,28 @@ def delete_expense(id):
     
     expense = Expense.query.get_or_404(id)
     
-    # Store info before deletion for BOM update
+    from app.models import ManufacturingOrder
+    # Store info before deletion for BOM array / MO updates
     was_overhead = expense.is_bom_overhead if has_column('expenses', 'is_bom_overhead') else False
     bom_id = expense.bom_id if has_column('expenses', 'bom_id') else None
     product_id = expense.product_id if has_column('expenses', 'product_id') else None
+    
+    mo_id_to_reduce = None
+    amount_to_reduce = expense.amount
+    if was_overhead and has_column('expenses', 'mo_id') and expense.mo_id:
+        mo_id_to_reduce = expense.mo_id
+
     description = expense.description
     
     db.session.delete(expense)
+    
+    # Also reduce actual_overhead_cost and total_cost in MO if it was linked
+    if mo_id_to_reduce:
+        linked_mo = ManufacturingOrder.query.get(mo_id_to_reduce)
+        if linked_mo:
+            linked_mo.actual_overhead_cost = max(0, (linked_mo.actual_overhead_cost or 0) - amount_to_reduce)
+            linked_mo.total_cost = (linked_mo.actual_material_cost or 0) + (linked_mo.actual_labor_cost or 0) + linked_mo.actual_overhead_cost
+
     db.session.commit()
     
     # If deleted expense was overhead, recalculate BOM
@@ -1128,15 +1248,27 @@ def bulk_delete_expenses():
             continue
             
         try:
+            from app.models import ManufacturingOrder
             # Store info for BOM update
             was_overhead = expense.is_bom_overhead if has_column('expenses', 'is_bom_overhead') else False
+            amount_to_reduce = expense.amount
+            mo_id_to_reduce = None
             if was_overhead:
                 if has_column('expenses', 'bom_id') and expense.bom_id:
                     boms_to_update.add(('bom', expense.bom_id))
                 elif has_column('expenses', 'product_id') and expense.product_id:
                     boms_to_update.add(('product', expense.product_id))
+                if has_column('expenses', 'mo_id') and expense.mo_id:
+                    mo_id_to_reduce = expense.mo_id
             
             db.session.delete(expense)
+            
+            if mo_id_to_reduce:
+                linked_mo = ManufacturingOrder.query.get(mo_id_to_reduce)
+                if linked_mo:
+                    linked_mo.actual_overhead_cost = max(0, (linked_mo.actual_overhead_cost or 0) - amount_to_reduce)
+                    linked_mo.total_cost = (linked_mo.actual_material_cost or 0) + (linked_mo.actual_labor_cost or 0) + linked_mo.actual_overhead_cost
+                    
             deleted_count += 1
         except Exception as e:
             db.session.rollback()
@@ -1211,45 +1343,109 @@ def edit_expense(id):
     boms = BOM.query.filter_by(is_active=True).order_by(BOM.name).all()
     form.bom_id.choices = [(0, 'Select BOM (Optional)')] + [(b.id, b.name) for b in boms]
     
+    # Populate MO choices (only in-progress orders; no placeholder needed for multi-select)
+    from app.models import ManufacturingOrder
+    in_progress_mos = ManufacturingOrder.query.filter_by(status='In Progress').order_by(ManufacturingOrder.order_number).all()
+    form.mo_id.choices = [(mo.id, f"{mo.order_number} — {mo.bom.product.name}") for mo in in_progress_mos]
+    
+    # Handle case where MO was deleted - store original mo_id before potential overwrite
+    original_mo_id = expense.mo_id if has_column('expenses', 'mo_id') else None
+    
+    # Add any previously linked MO (deleted, completed, or in-progress) to choices
+    if original_mo_id:
+        existing_choice_ids = [c[0] for c in form.mo_id.choices]
+        if original_mo_id not in existing_choice_ids:
+            linked_mo = ManufacturingOrder.query.get(original_mo_id)
+            if linked_mo:
+                if linked_mo.status == 'In Progress':
+                    form.mo_id.choices.append((linked_mo.id, f"{linked_mo.order_number} — {linked_mo.bom.product.name} (Current)"))
+                else:
+                    form.mo_id.choices.append((linked_mo.id, f"{linked_mo.order_number} — {linked_mo.bom.product.name} (Not In Progress)"))
+            else:
+                form.mo_id.choices.append((original_mo_id, f"MO ID {original_mo_id} (Deleted)"))
+        # Set the data to include the original mo_id
+        form.mo_id.data = [original_mo_id]
+    
+    # Populate Payment Method choices
+    from app.models import PaymentMethod
+    methods = PaymentMethod.query.filter_by(is_active=True).order_by(PaymentMethod.name).all()
+    form.payment_method.choices = [(m.name, m.name) for m in methods]
+    
+    # Include current payment method in choices if it's inactive/missing
+    if expense.payment_method and expense.payment_method not in [c[0] for c in form.payment_method.choices]:
+        form.payment_method.choices.append((expense.payment_method, expense.payment_method + " (Inactive)"))
+    
     # Set current vendor selection
     if expense.vendor_id:
         form.vendor_id.data = expense.vendor_id
     else:
         form.vendor_id.data = 0
         
-    # Set current product selection (only if column exists)
+    # product_id, bom_id, mo_id are SelectMultipleField — must be set as lists
     if has_column('expenses', 'product_id') and expense.product_id:
-        form.product_id.data = expense.product_id
+        form.product_id.data = [expense.product_id]
     else:
-        form.product_id.data = 0
+        form.product_id.data = []
     
-    # Set current BOM selection (only if column exists)
     if has_column('expenses', 'bom_id') and expense.bom_id:
-        form.bom_id.data = expense.bom_id
+        form.bom_id.data = [expense.bom_id]
     else:
-        form.bom_id.data = 0
-    
+        form.bom_id.data = []
+        
     if form.validate_on_submit():
         # Store old overhead state to detect changes
         old_is_overhead = expense.is_bom_overhead if has_column('expenses', 'is_bom_overhead') else False
         old_bom_id = expense.bom_id if has_column('expenses', 'bom_id') else None
         old_product_id = expense.product_id if has_column('expenses', 'product_id') else None
+        old_mo_id = expense.mo_id if has_column('expenses', 'mo_id') else None
+        old_amount = expense.amount
         
         expense.date = form.date.data
         expense.category_id = form.category_id.data
         expense.vendor_id = form.vendor_id.data if form.vendor_id.data != 0 else None
         expense.description = form.description.data
         expense.amount = form.amount.data
+        new_amount = expense.amount
         expense.payment_method = form.payment_method.data
         expense.reference = form.reference.data
         expense.notes = form.notes.data
         
         if has_column('expenses', 'is_bom_overhead'):
             expense.is_bom_overhead = form.is_bom_overhead.data
+            new_is_overhead = expense.is_bom_overhead
+
         if has_column('expenses', 'product_id'):
-            expense.product_id = form.product_id.data if form.product_id.data != 0 else None
+            # SelectMultipleField returns a list — take the first non-zero value for single-record edit
+            pid_list = [p for p in (form.product_id.data or []) if p and p != 0]
+            expense.product_id = pid_list[0] if pid_list else None
         if has_column('expenses', 'bom_id'):
-            expense.bom_id = form.bom_id.data if form.bom_id.data != 0 else None
+            bid_list = [b for b in (form.bom_id.data or []) if b and b != 0]
+            expense.bom_id = bid_list[0] if bid_list else None
+        if has_column('expenses', 'mo_id'):
+            mo_list = [m for m in (form.mo_id.data or []) if m and m != 0]
+            expense.mo_id = mo_list[0] if mo_list else None
+            new_mo_id = expense.mo_id
+
+        # Update Manufacturing Order costs if MO association or amount changed
+        from app.models import ManufacturingOrder
+        
+        new_is_overhead = expense.is_bom_overhead if has_column('expenses', 'is_bom_overhead') else False
+        new_mo_id_val = expense.mo_id if has_column('expenses', 'mo_id') else None
+        
+        # 1. Revert from old MO if it was overhead and had an MO
+        if old_is_overhead and old_mo_id:
+            old_mo = ManufacturingOrder.query.get(old_mo_id)
+            if old_mo:
+                old_mo.actual_overhead_cost = max(0, (old_mo.actual_overhead_cost or 0) - old_amount)
+                old_mo.total_cost = (old_mo.actual_material_cost or 0) + (old_mo.actual_labor_cost or 0) + old_mo.actual_overhead_cost
+
+        # 2. Add to new MO if it is currently overhead and has an MO
+        if new_is_overhead and new_mo_id_val:
+            new_mo = ManufacturingOrder.query.get(new_mo_id_val)
+            if new_mo:
+                new_mo.actual_overhead_cost = (new_mo.actual_overhead_cost or 0) + new_amount
+                new_mo.total_cost = (new_mo.actual_material_cost or 0) + (new_mo.actual_labor_cost or 0) + new_mo.actual_overhead_cost
+
         
         # Handle bill image upload
         if 'bill_image' in request.files:
@@ -1391,6 +1587,96 @@ def delete_expense_category(id):
     db.session.commit()
     flash('Expense category deleted successfully', 'success')
     return redirect(url_for('accounting.expense_categories'))
+
+# --- Expense Number Settings ---
+
+@bp.route('/expense-settings', methods=['GET', 'POST'])
+@login_required
+def expense_settings():
+    from app.models import ExpenseSettings
+    from app.forms import ExpenseSettingsForm
+    
+    settings = ExpenseSettings.query.first()
+    
+    form = ExpenseSettingsForm(obj=settings)
+    
+    if form.validate_on_submit():
+        if not settings:
+            settings = ExpenseSettings()
+            db.session.add(settings)
+        
+        settings.expense_prefix = form.expense_prefix.data or ''
+        settings.expense_suffix = form.expense_suffix.data or ''
+        settings.next_number = form.next_number.data or 1
+        
+        db.session.commit()
+        flash('Expense number settings updated successfully.', 'success')
+        return redirect(url_for('accounting.expense_settings'))
+    
+    return render_template('accounting/expense_settings.html', settings=settings, form=form)
+
+# --- Payment Methods Management ---
+
+@bp.route('/payment-methods')
+@login_required
+def payment_methods():
+    from app.models import PaymentMethod
+    methods = PaymentMethod.query.order_by(PaymentMethod.name).all()
+    return render_template('accounting/payment_methods.html', methods=methods)
+
+@bp.route('/payment-method/add', methods=['GET', 'POST'])
+@login_required
+def add_payment_method():
+    from app.models import PaymentMethod
+    from app.forms import PaymentMethodForm
+    
+    form = PaymentMethodForm()
+    if form.validate_on_submit():
+        method = PaymentMethod(
+            name=form.name.data,
+            description=form.description.data
+        )
+        db.session.add(method)
+        db.session.commit()
+        flash('Payment method added successfully', 'success')
+        return redirect(url_for('accounting.payment_methods'))
+    
+    return render_template('accounting/add_payment_method.html', form=form)
+
+@bp.route('/payment-method/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_payment_method(id):
+    from app.models import PaymentMethod
+    from app.forms import PaymentMethodForm
+    
+    method = PaymentMethod.query.get_or_404(id)
+    form = PaymentMethodForm(obj=method)
+    
+    if form.validate_on_submit():
+        method.name = form.name.data
+        method.description = form.description.data
+        db.session.commit()
+        flash('Payment method updated successfully', 'success')
+        return redirect(url_for('accounting.payment_methods'))
+    
+    return render_template('accounting/edit_payment_method.html', form=form, method=method)
+
+@bp.route('/payment-method/<int:id>/delete', methods=['POST'])
+@login_required
+def delete_payment_method(id):
+    from app.models import PaymentMethod, Expense
+    
+    method = PaymentMethod.query.get_or_404(id)
+    # Check if payment method is being used in expenses (string match)
+    if Expense.query.filter_by(payment_method=method.name).first():
+        flash('Cannot delete payment method that is associated with existing expenses', 'danger')
+        return redirect(url_for('accounting.payment_methods'))
+    
+    db.session.delete(method)
+    db.session.commit()
+    flash('Payment method deleted successfully', 'success')
+    return redirect(url_for('accounting.payment_methods'))
+
 
 @bp.route('/bom/<int:bom_id>/reset-overhead', methods=['POST'])
 @login_required

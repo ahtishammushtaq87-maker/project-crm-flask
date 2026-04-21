@@ -16,6 +16,7 @@
                 {% if customer.email and customer.phone %} &nbsp;|&nbsp; {% endif %}
                 {% if customer.phone %}<i class="fas fa-phone me-1"></i>{{ customer.phone }}{% endif %}
                 {% if customer.address %} &nbsp;|&nbsp; <i class="fas fa-map-marker-alt me-1"></i>{{ customer.address }}{% endif %}
+                {% if customer.payment_method %} &nbsp;|&nbsp; <i class="fas fa-money-bill me-1"></i>Payment: {{ customer.payment_method }}{% endif %}
             </p>
         </div>
         <div class="d-flex gap-2">

@@ -73,8 +73,25 @@
 		<div class="col-md-4">
 			<div class="card p-3 mb-3">
 				<strong>Customer:</strong> {{ sale.customer.name if sale.customer else 'Walk-in Customer' }}<br>
+				{% if sale.customer %}
+				{% if sale.customer.phone %}
+				<strong>Phone:</strong> {{ sale.customer.phone }}<br>
+				{% endif %}
+				{% if sale.customer.email %}
+				<strong>Email:</strong> {{ sale.customer.email }}<br>
+				{% endif %}
+				{% if sale.customer.address %}
+				<strong>Address:</strong> {{ sale.customer.address }}<br>
+				{% endif %}
+				{% if sale.customer.gst_number %}
+				<strong>GST No:</strong> {{ sale.customer.gst_number }}<br>
+				{% endif %}
+				{% if sale.customer.pan_number %}
+				<strong>PAN No:</strong> {{ sale.customer.pan_number }}<br>
+				{% endif %}
+				{% endif %}
 				<strong>Vendor:</strong> {{ sale.vendor.name if sale.vendor else '-' }}<br>
-				<strong>Date:</strong> {{ sale.date.strftime('%Y-%m-%d') }}<br>
+				<strong>Date:</strong> {{ sale.date.strftime(date_format) }}<br>
 				<strong>Status:</strong>
 				{% if sale.status == 'paid' %}
 					<span class="badge bg-success">Paid</span>
@@ -92,6 +109,7 @@
 					<table class="table table-bordered">
 						<thead>
 							<tr>
+								<th>SKU</th>
 								<th>Product</th>
 								<th>Qty</th>
 								<th>Unit Price</th>
@@ -103,7 +121,8 @@
 						<tbody>
 							{% for item in sale.items %}
 							<tr>
-								<td>{{ item.product.name }}</td>
+								<td>{{ item.product.sku if item.product else '-' }}</td>
+								<td>{{ item.product.name if item.product else '-' }}</td>
 								<td>{{ item.quantity }}</td>
 								<td>Rs{{ '%.2f'|format(item.unit_price) }}</td>
 								<td>Rs{{ '%.2f'|format(item.item_subtotal) }}</td>
@@ -136,7 +155,7 @@
 						</tr>
 						{% for adv in sale.adjusted_advances %}
 						<tr>
-							<td>{{ adv.date.strftime('%d-%b-%Y') }}</td>
+							<td>{{ adv.date.strftime(date_format) }}</td>
 							<td>Rs{{ '%.2f'|format(adv.applied_amount) }}</td>
 							<td>Rs{{ '%.2f'|format(adv.amount) }}</td>
 						</tr>

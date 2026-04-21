@@ -53,6 +53,10 @@ def invoices():
     total_paid = sum(sale.paid_amount for sale in sales)
     total_balance = sum(sale.balance_due for sale in sales)
     
+    # Get company date format
+    company = Company.query.first()
+    date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
+    
     return render_template('sales/invoices.html', 
                          sales=sales, 
                          current_status=status,
@@ -62,7 +66,8 @@ def invoices():
                          total_tax=total_tax,
                          total_amount=total_amount,
                          total_paid=total_paid,
-                         total_balance=total_balance)
+                         total_balance=total_balance,
+                         date_format=date_format)
 
 @bp.route('/invoice/create', methods=['GET', 'POST'])
 @login_required
@@ -118,13 +123,17 @@ def create_invoice():
         discount = float(request.form.get('discount', 0))
         delivery_charge = float(request.form.get('delivery_charge', 0))
         advance_applied = float(request.form.get('advance_applied', 0))
-        
+
         total = subtotal + tax + delivery_charge - discount - advance_applied
-        
-        # Generate invoice number
-        last_invoice = Sale.query.order_by(Sale.id.desc()).first()
-        invoice_number = f"INV-{datetime.now().strftime('%Y%m')}-{ (last_invoice.id + 1) if last_invoice else 1:04d}"
-        
+
+        # Generate invoice number using settings
+        settings = InvoiceSettings.query.first()
+        if not settings:
+            settings = InvoiceSettings(invoice_prefix='INV-', invoice_suffix='', next_number=1)
+            db.session.add(settings)
+        invoice_number = f"{settings.invoice_prefix}{settings.next_number}{settings.invoice_suffix}"
+        settings.next_number += 1
+
         sale = Sale(
             invoice_number=invoice_number,
             customer_id=customer_id if customer_id != '0' else None,
@@ -204,7 +213,9 @@ def create_invoice():
 @login_required
 def invoice_detail(id):
     sale = Sale.query.get_or_404(id)
-    return render_template('sales/invoice_detail.html', sale=sale)
+    company = Company.query.first()
+    date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
+    return render_template('sales/invoice_detail.html', sale=sale, date_format=date_format)
 
 @bp.route('/invoice/<int:id>/delete', methods=['POST'])
 @login_required
@@ -485,7 +496,8 @@ def add_customer():
             email=form.email.data,
             phone=form.phone.data,
             address=form.address.data,
-            gst_number=form.gst_number.data
+            gst_number=form.gst_number.data,
+            payment_method=form.payment_method.data
         )
         db.session.add(customer)
         db.session.commit()
@@ -506,6 +518,7 @@ def edit_customer(id):
         customer.phone = form.phone.data
         customer.address = form.address.data
         customer.gst_number = form.gst_number.data
+        customer.payment_method = form.payment_method.data
         db.session.commit()
         flash('Customer updated successfully!', 'success')
         return redirect(url_for('sales.customers'))
@@ -668,6 +681,10 @@ def company_settings():
         company.gst_number = request.form.get('gst_number')
         company.pan_number = request.form.get('pan_number')
         company.website = request.form.get('website')
+        company.date_format = request.form.get('date_format', '%Y-%m-%d')
+        company.mo_prefix = request.form.get('mo_prefix', 'MO-')
+        company.mo_suffix = request.form.get('mo_suffix', '')
+        company.next_mo_number = request.form.get('next_mo_number', 1, type=int)
         company.bank_name = request.form.get('bank_name')
         company.account_number = request.form.get('account_number')
         company.ifsc_code = request.form.get('ifsc_code')
@@ -720,9 +737,9 @@ def invoice_settings():
         settings.swift_code = form.swift_code.data
         settings.bank_address = form.bank_address.data
         settings.payment_instructions = form.payment_instructions.data
-        settings.invoice_prefix = form.invoice_prefix.data
-        settings.invoice_suffix = form.invoice_suffix.data
-        settings.next_number = form.next_number.data
+        settings.invoice_prefix = form.invoice_prefix.data or ''
+        settings.invoice_suffix = form.invoice_suffix.data or ''
+        settings.next_number = form.next_number.data or 1
         settings.tax_name = form.tax_name.data
         settings.tax_rate = form.tax_rate.data
         settings.payment_terms = form.payment_terms.data

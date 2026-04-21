@@ -72,6 +72,7 @@ class Vendor(db.Model):
     pan_number = db.Column(db.String(20))
     contact_person = db.Column(db.String(100))
     shipping_address = db.Column(db.Text)
+    payment_method = db.Column(db.String(50), nullable=True)
     payment_terms = db.Column(db.Integer, default=30)  # Days
     credit_limit = db.Column(db.Float, default=0)
     is_active = db.Column(db.Boolean, default=True)
@@ -106,6 +107,18 @@ class Vendor(db.Model):
     def remaining_advance_balance(self):
         return self.total_advances_given - self.total_advances_adjusted
     
+    @property
+    def total_purchase_returns(self):
+        return sum(ret.total for ret in self.purchase_returns)
+    
+    @property
+    def total_refund_paid(self):
+        return sum(ret.refund_amount for ret in self.purchase_returns if ret.refund_status == 'paid')
+    
+    @property
+    def pending_refund(self):
+        return sum(ret.total for ret in self.purchase_returns if ret.refund_status == 'pending')
+    
     def __repr__(self):
         return f'<Vendor {self.name}>'
 
@@ -121,6 +134,7 @@ class Customer(db.Model):
     gst_number = db.Column(db.String(20), index=True)
     pan_number = db.Column(db.String(20))
     contact_person = db.Column(db.String(100))
+    payment_method = db.Column(db.String(50), nullable=True)
     payment_terms = db.Column(db.Integer, default=30)  # Days
     credit_limit = db.Column(db.Float, default=0)
     opening_balance = db.Column(db.Float, default=0)
@@ -393,7 +407,7 @@ class PurchaseBill(db.Model):
     shipping_charge = db.Column(db.Float, default=0)
     advance_applied = db.Column(db.Float, default=0)  # Advance from vendor profile applied to this bill
     total = db.Column(db.Float, default=0)
-    status = db.Column(Enum('paid', 'unpaid', 'partial', name='payment_status'), default='unpaid', index=True)
+    status = db.Column(Enum('paid', 'unpaid', 'partial', 'return', 'partial_return', name='payment_status'), default='unpaid', index=True)
     paid_amount = db.Column(db.Float, default=0)
     notes = db.Column(db.Text)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
@@ -606,6 +620,19 @@ class ExpenseCategory(db.Model):
     def __repr__(self):
         return f'<ExpenseCategory {self.name}>'
 
+class PaymentMethod(db.Model):
+    """Payment method model"""
+    __tablename__ = 'payment_methods'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True, index=True)
+    description = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<PaymentMethod {self.name}>'
+
 class Expense(db.Model):
     """Expense tracking model"""
     __tablename__ = 'expenses'
@@ -624,6 +651,7 @@ class Expense(db.Model):
     is_bom_overhead = db.Column(db.Boolean, default=False)
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True)
     bom_id = db.Column(db.Integer, db.ForeignKey('boms.id'), nullable=True)
+    mo_id = db.Column(db.Integer, db.ForeignKey('manufacturing_orders.id'), nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
@@ -637,6 +665,7 @@ class Expense(db.Model):
     vendor = db.relationship('Vendor', backref='expenses', lazy=True)
     product = db.relationship('Product', backref='overhead_expenses', lazy=True)
     bom = db.relationship('BOM', backref='overhead_expenses', lazy=True)
+    manufacturing_order = db.relationship('ManufacturingOrder', backref='overhead_expenses', lazy=True)
     
     @property
     def days_in_month(self):
@@ -705,7 +734,15 @@ class Company(db.Model):
     account_holder_name = db.Column(db.String(100))
     logo_path = db.Column(db.String(200))
     signature_path = db.Column(db.String(200))
-    
+
+    # Date format setting (Python strftime format string)
+    date_format = db.Column(db.String(20), default='%Y-%m-%d')
+
+    # Manufacturing Order number settings (prefix, suffix, next sequential number)
+    mo_prefix = db.Column(db.String(20), default='MO-')
+    mo_suffix = db.Column(db.String(10), default='')
+    next_mo_number = db.Column(db.Integer, default=1)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -752,16 +789,43 @@ class InvoiceSettings(db.Model):
 class PurchaseSettings(db.Model):
     """Purchase settings and templates"""
     __tablename__ = 'purchase_settings'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     default_notes = db.Column(db.Text)
     default_terms = db.Column(db.Text)  # Policy/terms for purchase bills
-    
+
+    # Bill number formatting
+    bill_prefix = db.Column(db.String(10), default='PB-')
+    bill_suffix = db.Column(db.String(10), default='')
+    next_bill_number = db.Column(db.Integer, default=1)
+
+    # PO number formatting
+    po_prefix = db.Column(db.String(10), default='PO-')
+    po_suffix = db.Column(db.String(10), default='')
+    next_po_number = db.Column(db.Integer, default=1)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     def __repr__(self):
         return f'<PurchaseSettings {self.id}>'
+
+
+class ExpenseSettings(db.Model):
+    """Expense number formatting settings"""
+    __tablename__ = 'expense_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    expense_prefix = db.Column(db.String(10), default='EXP-')
+    expense_suffix = db.Column(db.String(10), default='')
+    next_number = db.Column(db.Integer, default=1)
+    date_format = db.Column(db.String(20), default='%Y-%m-%d')  # Python strftime format
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<ExpenseSettings {self.id}>'
 
 
 class SaleReturn(db.Model):
@@ -817,6 +881,63 @@ class SaleReturnItem(db.Model):
 
     def __repr__(self):
         return f'<SaleReturnItem {self.return_id} - {self.product_id}>'
+
+
+class PurchaseReturn(db.Model):
+    """Purchase return model"""
+    __tablename__ = 'purchase_returns'
+
+    id = db.Column(db.Integer, primary_key=True)
+    return_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    bill_id = db.Column(db.Integer, db.ForeignKey('purchase_bills.id'), nullable=False, index=True)
+    vendor_id = db.Column(db.Integer, db.ForeignKey('vendors.id'), index=True)
+    date = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    subtotal = db.Column(db.Float, default=0)
+    tax_rate = db.Column(db.Float, default=0)
+    tax = db.Column(db.Float, default=0)
+    discount = db.Column(db.Float, default=0)
+    total = db.Column(db.Float, default=0)
+    reason = db.Column(db.Text)
+    status = db.Column(Enum('pending', 'approved', 'completed', name='purchase_return_status'), default='pending', index=True)
+    returned_to_inventory = db.Column(db.Boolean, default=False)
+    refund_amount = db.Column(db.Float, default=0)
+    refund_status = db.Column(Enum('none', 'pending', 'paid', name='purchase_refund_status'), default='none', index=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    bill = db.relationship('PurchaseBill', backref='purchase_returns', lazy=True)
+    vendor = db.relationship('Vendor', backref='purchase_returns', lazy=True)
+    items = db.relationship('PurchaseReturnItem', backref='purchase_return', lazy=True, cascade='all, delete-orphan')
+
+    def calculate_totals(self):
+        """Calculate return totals"""
+        self.subtotal = sum(item.total for item in self.items)
+        self.tax = self.subtotal * (self.tax_rate / 100)
+        self.total = self.subtotal + self.tax - self.discount
+        if self.total < 0:
+            self.total = 0
+
+    def __repr__(self):
+        return f'<PurchaseReturn {self.return_number}>'
+
+
+class PurchaseReturnItem(db.Model):
+    """Purchase return item details"""
+    __tablename__ = 'purchase_return_items'
+
+    id = db.Column(db.Integer, primary_key=True)
+    return_id = db.Column(db.Integer, db.ForeignKey('purchase_returns.id'), nullable=False, index=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    quantity = db.Column(db.Float, nullable=False)
+    unit_price = db.Column(db.Float, nullable=False)
+    total = db.Column(db.Float, nullable=False)
+
+    product = db.relationship('Product', backref='purchase_return_items', lazy=True)
+
+    def __repr__(self):
+        return f'<PurchaseReturnItem {self.return_id} - {self.product_id}>'
 
 
 class Task(db.Model):
@@ -1062,6 +1183,7 @@ class ManufacturingOrder(db.Model):
     end_date = db.Column(db.Date, nullable=True)
     actual_labor_cost = db.Column(db.Float, default=0)
     actual_material_cost = db.Column(db.Float, default=0)
+    actual_overhead_cost = db.Column(db.Float, default=0)
     total_cost = db.Column(db.Float, default=0)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

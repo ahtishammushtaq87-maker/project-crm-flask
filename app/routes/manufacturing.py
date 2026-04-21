@@ -1,11 +1,11 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from app import db
-from app.models import Product, BOM, BOMItem, ManufacturingOrder, ManufacturingOrderItem, StockMovement, BOMVersion
+from app.models import Product, BOM, BOMItem, ManufacturingOrder, ManufacturingOrderItem, StockMovement, BOMVersion, Company, Expense
 from app.forms import BOMForm, ManufacturingOrderForm
 from app.services.bom_versioning import BOMVersioningService
 from datetime import datetime
-from sqlalchemy import inspect
+from sqlalchemy import inspect, or_
 
 bp = Blueprint('manufacturing', __name__)
 
@@ -117,7 +117,8 @@ def add_bom():
             bom=bom,
             change_reason="Initial BOM creation",
             change_type="manual",
-            created_by_id=user_id
+            created_by_id=user_id,
+            recalculate_overhead=False
         )
 
         # Update the product's base cost price to reflect the BOM cost
@@ -128,6 +129,113 @@ def add_bom():
         return redirect(url_for('manufacturing.boms'))
         
     return render_template('manufacturing/add_bom.html', form=form, all_products=all_products)
+
+@bp.route('/bom/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_bom(id):
+    bom = BOM.query.get_or_404(id)
+    form = BOMForm(obj=bom)
+    
+    # Only show manufactured products in the "Finished Product" dropdown (if column exists)
+    if has_column('products', 'is_manufactured'):
+        manufactured_products = Product.query.filter_by(is_manufactured=True).all()
+    else:
+        manufactured_products = []
+        
+    form.product_id.choices = [(p.id, f"{p.sku} - {p.name}") for p in manufactured_products]
+    
+    # Ensure current product is in choices even if not strictly 'manufactured' historically
+    if bom.product_id and bom.product_id not in [p.id for p in manufactured_products]:
+        p = Product.query.get(bom.product_id)
+        if p:
+            form.product_id.choices.append((p.id, f"{p.sku} - {p.name} (Current)"))
+            
+    all_products = Product.query.all()
+
+    if form.validate_on_submit():
+        bom.name = form.name.data
+        bom.product_id = form.product_id.data
+        bom.labor_cost = form.labor_cost.data or 0
+        bom.overhead_cost = form.overhead_cost.data or 0
+
+        # Remove existing BOMItems safely
+        for item in bom.items:
+            db.session.delete(item)
+            
+        db.session.flush() # Secure empty state
+
+        # Process new components
+        component_ids = request.form.getlist('component_id[]')
+        quantities = request.form.getlist('quantity[]')
+        
+        for comp_id, qty in zip(component_ids, quantities):
+            if comp_id and qty:
+                comp_product = Product.query.get(comp_id)
+                if comp_product:
+                    unit_cost = comp_product.cost_price
+                    qty_float = float(qty)
+                    total_cost = unit_cost * qty_float
+                    
+                    new_item = BOMItem(
+                        bom_id=bom.id,
+                        component_id=comp_id,
+                        quantity=qty_float,
+                        unit_cost=unit_cost,
+                        shipping_per_unit=0,
+                        total_cost=total_cost
+                    )
+                    db.session.add(new_item)
+                    
+        db.session.commit()
+        bom.calculate_total_cost()
+
+        # Re-trigger Overhead auto-sync if expense module supports it
+        from app.models import Expense
+        if has_column('expenses', 'is_bom_overhead'):
+            # Link overhead expenses to this BOM
+            db.session.query(Expense).filter(
+                Expense.product_id == bom.product_id,
+                Expense.is_bom_overhead == True,
+                Expense.bom_id == None
+            ).update({Expense.bom_id: bom.id}, synchronize_session=False)
+            
+            # Calculate total overhead from linked expenses for this BOM
+            total_linked_overhead = db.session.query(db.func.sum(Expense.amount)).filter(
+                Expense.bom_id == bom.id,
+                Expense.is_bom_overhead == True
+            ).scalar() or 0
+            
+            if total_linked_overhead > 0:
+                bom.overhead_cost = total_linked_overhead
+                bom.calculate_total_cost()
+                
+        # Bump version safely
+        user_id = None
+        try:
+            if current_user and current_user.is_authenticated:
+                user_id = current_user.id
+        except (AttributeError, TypeError):
+            pass
+        if user_id is None:
+            from app.models import User as UserModel
+            admin_user = UserModel.query.filter_by(username='admin').first()
+            user_id = admin_user.id if admin_user else 1
+
+        BOMVersioningService.create_bom_version(
+            bom=bom,
+            change_reason="BOM structure modified via edit",
+            change_type="manual",
+            created_by_id=user_id,
+            recalculate_overhead=False
+        )
+
+        bom.product.cost_price = bom.total_cost
+        db.session.commit()
+        
+        flash('Bill of Materials updated successfully.', 'success')
+        return redirect(url_for('manufacturing.bom_details', id=bom.id))
+        
+    return render_template('manufacturing/edit_bom.html', form=form, all_products=all_products, bom=bom)
 
 @bp.route('/bom/<int:id>')
 @login_required
@@ -192,31 +300,23 @@ def add_order():
     form.bom_id.choices = [(b.id, f"{b.name} ({b.product.sku} - {b.product.name})") for b in boms]
     
     if form.validate_on_submit():
-        # Generate Unique Order Number
-        today = datetime.utcnow()
-        day_str = today.strftime('%Y%m%d')
-        prefix = f"MO-{day_str}-"
-        
-        # Find the highest existing suffix for today
-        last_order = ManufacturingOrder.query.filter(
-            ManufacturingOrder.order_number.like(f"{prefix}%")
-        ).order_by(ManufacturingOrder.order_number.desc()).first()
-        
-        if last_order:
-            try:
-                last_suffix = int(last_order.order_number.split('-')[-1])
-                new_suffix = last_suffix + 1
-            except (ValueError, IndexError):
-                new_suffix = 1
-        else:
-            new_suffix = 1
-            
-        order_number = f"{prefix}{new_suffix:03d}"
-        
-        # Final safety loop to avoid any duplicate issues
+        # Generate Unique Order Number using company settings
+        company = Company.query.first()
+        prefix = company.mo_prefix if company and company.mo_prefix else 'MO-'
+        suffix = company.mo_suffix if company and company.mo_suffix else ''
+        next_num = company.next_mo_number if company and company.next_mo_number else 1
+
+        order_number = f"{prefix}{next_num:03d}{suffix}"
+
+        # Increment and save next number
+        company.next_mo_number = next_num + 1
+        db.session.commit()  # commit early to persist next number
+
+        # Safety check for duplicates (should not happen but guard)
         while ManufacturingOrder.query.filter_by(order_number=order_number).first():
-            new_suffix += 1
-            order_number = f"{prefix}{new_suffix:03d}"
+            next_num += 1
+            order_number = f"{prefix}{next_num:03d}{suffix}"
+            company.next_mo_number = next_num + 1
         
         bom = BOM.query.get(form.bom_id.data)
         
@@ -246,50 +346,82 @@ def add_order():
                 cost=comp_cost
             )
             db.session.add(mo_item)
+
+        # Collect and link unassigned overhead expenses for this order
+        from app.models import Expense
+        from sqlalchemy import or_
+        
+        unassigned_expenses = Expense.query.filter(
+            Expense.is_bom_overhead == True,
+            Expense.mo_id == None,
+            or_(Expense.bom_id == bom.id, Expense.product_id == bom.product_id)
+        ).all()
+        
+        total_mo_overhead = 0
+        for exp in unassigned_expenses:
+            exp.mo_id = mo.id
+            total_mo_overhead += exp.amount
             
+        mo.actual_overhead_cost = total_mo_overhead
         mo.actual_labor_cost = bom.labor_cost * multiplier
         mo.actual_material_cost = sum(item.component.cost_price * (item.quantity * multiplier) for item in bom.items)
-        mo.total_cost = mo.actual_labor_cost + mo.actual_material_cost + (bom.overhead_cost * multiplier)
-        
-        # Store BOM overhead before resetting for BOM version tracking
-        previous_overhead = bom.overhead_cost
-        
-        # Reset BOM overhead to zero after creating MO (overhead is "consumed" by this production)
-        # Also unlink all overhead expenses so they won't be counted in future calculations
-        if bom.overhead_cost > 0:
-            from app.models import Expense
-            db.session.query(Expense).filter(
-                Expense.bom_id == bom.id,
-                Expense.is_bom_overhead == True
-            ).update({Expense.bom_id: None}, synchronize_session=False)
-            
-            bom.overhead_cost = 0
-            bom.calculate_total_cost()
-            bom.product.cost_price = bom.total_cost
+        mo.total_cost = mo.actual_labor_cost + mo.actual_material_cost + mo.actual_overhead_cost
         
         db.session.commit()
-        
-        # Create BOM version to track the overhead reset
-        if previous_overhead > 0:
-            try:
-                user_id = current_user.id
-            except:
-                from app.models import User as UserModel
-                admin = UserModel.query.filter_by(username='admin').first()
-                user_id = admin.id if admin else 1
-            
-            BOMVersioningService.create_bom_version(
-                bom=bom,
-                change_reason=f"Overhead consumed by MO {order_number}",
-                change_type='overhead_consumed',
-                created_by_id=user_id,
-                recalculate_overhead=False
-            )
         
         flash('Manufacturing Order created successfully.', 'success')
         return redirect(url_for('manufacturing.orders'))
         
     return render_template('manufacturing/add_order.html', form=form)
+
+@bp.route('/order/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_order(id):
+    order = ManufacturingOrder.query.get_or_404(id)
+    form = ManufacturingOrderForm(obj=order)
+    
+    boms = BOM.query.all()
+    form.bom_id.choices = [(b.id, f"{b.name} ({b.product.sku} - {b.product.name})") for b in boms]
+    
+    if form.validate_on_submit():
+        old_bom_id = order.bom_id
+        old_quantity = order.quantity_to_produce
+        
+        order.bom_id = form.bom_id.data
+        order.quantity_to_produce = form.quantity_to_produce.data
+        order.start_date = form.start_date.data
+        order.end_date = form.end_date.data
+        
+        if old_bom_id != order.bom_id or old_quantity != order.quantity_to_produce:
+            multiplier = order.quantity_to_produce
+            
+            for item in order.items:
+                db.session.delete(item)
+            db.session.flush()
+            
+            new_bom = BOM.query.get(order.bom_id)
+            for bom_item in new_bom.items:
+                req_qty = bom_item.quantity * multiplier
+                comp_cost = bom_item.component.cost_price * req_qty
+                
+                mo_item = ManufacturingOrderItem(
+                    mo_id=order.id,
+                    component_id=bom_item.component_id,
+                    quantity_required=req_qty,
+                    quantity_consumed=0,
+                    cost=comp_cost
+                )
+                db.session.add(mo_item)
+            
+            order.actual_labor_cost = new_bom.labor_cost * multiplier
+            order.actual_material_cost = sum(item.component.cost_price * (item.quantity * multiplier) for item in new_bom.items)
+            order.total_cost = order.actual_labor_cost + order.actual_material_cost + (order.actual_overhead_cost or 0)
+        
+        db.session.commit()
+        flash('Manufacturing Order updated successfully.', 'success')
+        return redirect(url_for('manufacturing.order_details', id=order.id))
+    
+    return render_template('manufacturing/edit_order.html', form=form, order=order)
 
 @bp.route('/order/<int:id>')
 @login_required
@@ -352,10 +484,12 @@ def complete_order(id):
     
     # Calculate costs
     order.actual_material_cost = total_material_cost
-    # Using estimated BOM labor & overhead for simplicity
-    multiplier = order.quantity_to_produce
-    order.actual_labor_cost = order.bom.labor_cost * multiplier
-    order.total_cost = order.actual_material_cost + order.actual_labor_cost + (order.bom.overhead_cost * multiplier)
+    # Keep labor cost as set during creation (based on BOM)
+    order.total_cost = order.actual_material_cost + order.actual_labor_cost + order.actual_overhead_cost
+    
+    # Update product cost price based on actual production cost per unit
+    if completed_qty > 0:
+        finished_good.cost_price = order.total_cost / completed_qty
     
     # Update standard cost of finished good (Weighted Average or straight replacement based on latest production)
     # Simple replacement for this implementation
@@ -446,43 +580,16 @@ def delete_order(id):
             StockMovement.reference_type.in_(['manufacturing_consumption', 'manufacturing_finish'])
         ).delete(synchronize_session=False)
     
-    # Restore BOM overhead if it was consumed by this order
-    from app.models import BOMVersion, Expense
-    bom = order.bom
+    # Delete any associated overhead expenses linked to this MO
+    from app.models import Expense
+    linked_expenses = Expense.query.filter_by(mo_id=order.id).all()
+    for exp in linked_expenses:
+        db.session.delete(exp)
     
-    # Find the latest version BEFORE this order was created that has overhead > 0
-    # First get all versions before the order
-    versions_before = BOMVersion.query.filter(
-        BOMVersion.bom_id == bom.id,
-        BOMVersion.created_at < order.created_at
-    ).order_by(BOMVersion.created_at.desc()).all()
-    
-    # Find the first one with overhead > 0
-    restored_overhead = 0
-    for v in versions_before:
-        if v.overhead_cost > 0:
-            restored_overhead = v.overhead_cost
-            break
-    
-    if restored_overhead > 0:
-        # Restore the overhead
-        bom.overhead_cost = restored_overhead
-        
-        # Re-link unlinked overhead expenses for this product
-        db.session.query(Expense).filter(
-            Expense.product_id == bom.product_id,
-            Expense.is_bom_overhead == True,
-            Expense.bom_id == None
-        ).update({Expense.bom_id: bom.id}, synchronize_session=False)
-        
-        bom.calculate_total_cost()
-        bom.product.cost_price = bom.total_cost
-    
-    # Delete the order (cascades will delete MO items)
     db.session.delete(order)
     db.session.commit()
     
-    flash(f'Manufacturing Order {order.order_number} deleted and stock changes reversed.', 'success')
+    flash('Manufacturing Order deleted successfully. Linked overhead expenses have been released.', 'success')
     return redirect(url_for('manufacturing.orders'))
 
 
