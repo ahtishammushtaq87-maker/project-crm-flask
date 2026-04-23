@@ -66,6 +66,16 @@ class ExpenseSettingsForm(FlaskForm):
     expense_suffix = StringField('Expense Suffix')
     next_number = IntegerField('Next Expense Number', default=1)
 
+class SaleReturnSettingsForm(FlaskForm):
+    return_prefix = StringField('Sale Return Prefix', default='RET-')
+    return_suffix = StringField('Sale Return Suffix')
+    next_number = IntegerField('Next Sale Return Number', default=1)
+
+class PurchaseReturnSettingsForm(FlaskForm):
+    return_prefix = StringField('Purchase Return Prefix', default='PRet-')
+    return_suffix = StringField('Purchase Return Suffix')
+    next_number = IntegerField('Next Purchase Return Number', default=1)
+
 class SaleForm(FlaskForm):
     customer_id = SelectField('Customer', coerce=int, validators=[DataRequired()])
     date = DateField('Date', validators=[DataRequired()])

@@ -20,6 +20,22 @@
             </p>
         </div>
         <div class="d-flex gap-2">
+            <div class="dropdown">
+                <button class="btn btn-info dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-download me-1"></i> Export
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="{{ url_for('purchase.vendor_export_pdf', id=vendor.id) }}">
+                        <i class="fas fa-file-pdf text-danger me-2"></i> PDF
+                    </a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('purchase.vendor_export_excel', id=vendor.id) }}">
+                        <i class="fas fa-file-excel text-success me-2"></i> Excel
+                    </a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('purchase.vendor_export_csv', id=vendor.id) }}">
+                        <i class="fas fa-file-csv text-primary me-2"></i> CSV
+                    </a></li>
+                </ul>
+            </div>
             <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#advanceModal">
                 <i class="fas fa-hand-holding-usd me-1"></i> Give Advance
             </button>

@@ -122,16 +122,22 @@
                         <h5>Document Numbering Settings</h5>
                         <p class="text-muted">Configure formatting for other document types:</p>
                         <div class="list-group">
-                            <a href="{{ url_for('accounting.expense_settings') }}" class="list-group-item list-group-item-action">
-                                <i class="fas fa-receipt me-2 text-success"></i> Expense Number Settings
-                            </a>
-                            <a href="{{ url_for('sales.invoice_settings') }}" class="list-group-item list-group-item-action">
-                                <i class="fas fa-file-invoice me-2 text-primary"></i> Invoice Number Settings
-                            </a>
-                            <a href="{{ url_for('purchase.purchase_settings_page') }}" class="list-group-item list-group-item-action">
-                                <i class="fas fa-file-alt me-2 text-warning"></i> Purchase Bill & PO Settings
-                            </a>
-                        </div>
+    <a href="{{ url_for('accounting.expense_settings') }}" class="list-group-item list-group-item-action">
+        <i class="fas fa-receipt me-2 text-success"></i> Expense Number Settings
+    </a>
+    <a href="{{ url_for('sales.invoice_settings') }}" class="list-group-item list-group-item-action">
+        <i class="fas fa-file-invoice me-2 text-primary"></i> Invoice Number Settings
+    </a>
+    <a href="{{ url_for('purchase.purchase_settings_page') }}" class="list-group-item list-group-item-action">
+        <i class="fas fa-file-alt me-2 text-warning"></i> Purchase Bill & PO Settings
+    </a>
+    <a href="{{ url_for('returns.sale_return_settings') }}" class="list-group-item list-group-item-action">
+        <i class="fas fa-undo me-2 text-info"></i> Sale Return Settings
+    </a>
+    <a href="{{ url_for('purchase.purchase_return_settings') }}" class="list-group-item list-group-item-action">
+        <i class="fas fa-undo me-2 text-danger"></i> Purchase Return Settings
+    </a>
+</div>
                         
                         <button type="submit" class="btn btn-primary">Save Settings</button>
                     </form>

@@ -99,8 +99,8 @@ class ProfessionalPDFGenerator:
         add(ParagraphStyle('StatusBadge',    parent=self.styles['Normal'], fontSize=7.5,textColor=PRIMARY_COLOR, fontName='Helvetica-Bold', alignment=TA_RIGHT))
         add(ParagraphStyle('CompanyName',    parent=self.styles['Normal'], fontSize=11, textColor=TEXT_COLOR,    fontName='Helvetica-Bold', spaceAfter=1))
         add(ParagraphStyle('CompanyInfo',    parent=self.styles['Normal'], fontSize=7,  textColor=MUTED_TEXT,    leading=10))
-        add(ParagraphStyle('BoxTitle',       parent=self.styles['Normal'], fontSize=8,  textColor=PRIMARY_COLOR, fontName='Helvetica-Bold', spaceAfter=3))
-        add(ParagraphStyle('BoxValue',       parent=self.styles['Normal'], fontSize=7.5,textColor=TEXT_COLOR,    leading=10))
+        add(ParagraphStyle('BoxTitle',       parent=self.styles['Normal'], fontSize=8,  textColor=PRIMARY_COLOR, fontName='Helvetica-Bold', spaceAfter=3, leftIndent=0))
+        add(ParagraphStyle('BoxValue',       parent=self.styles['Normal'], fontSize=7.5,textColor=TEXT_COLOR,    leading=10, alignment=TA_LEFT, leftIndent=0))
         add(ParagraphStyle('TblHeader',      parent=self.styles['Normal'], fontSize=7.5,textColor=WHITE,         fontName='Helvetica-Bold'))
         add(ParagraphStyle('TblCell',        parent=self.styles['Normal'], fontSize=7.5,textColor=TEXT_COLOR,    leading=10))
         add(ParagraphStyle('TblCellSub',     parent=self.styles['Normal'], fontSize=6.5,textColor=MUTED_TEXT,    leading=9))
@@ -209,10 +209,11 @@ class ProfessionalPDFGenerator:
             tbl = Table(data, colWidths=[BOX_W])
             tbl.setStyle(TableStyle([
                 ('VALIGN',        (0,0), (-1,-1), 'TOP'),
+                ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
                 ('TOPPADDING',    (0,0), (-1,-1), 5),
                 ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-                ('LEFTPADDING',   (0,0), (-1,-1), 8),
-                ('RIGHTPADDING',  (0,0), (-1,-1), 6),
+                ('LEFTPADDING',   (0,0), (-1,-1), 2),
+                ('RIGHTPADDING',  (0,0), (-1,-1), 2),
                 ('BOX',           (0,0), (-1,-1), 0.6, BORDER_GREY),
             ]))
             return tbl
@@ -265,7 +266,7 @@ class ProfessionalPDFGenerator:
             else:
                 # 1 box only: Bill To (center it)
                 outer = Table([[box1]],
-                              colWidths=[5.8*inch])
+                              colWidths=[7.1*inch])
 
         outer.setStyle(TableStyle([
             ('VALIGN',        (0,0), (-1,-1), 'TOP'),
@@ -514,7 +515,8 @@ class ProfessionalPDFGenerator:
     def generate_document(self, title, doc_number, date, due_date, client_data, items,
                           totals, payment_info=None, terms=None, notes=None,
                           status=None, ship_to=None, reference_data=None, currency=None,
-                          ship_to_label=None, bill_to_label=None):
+                          ship_to_label=None, bill_to_label=None,
+                          customer_name=None, amount_due=None, due_date_str=None):
         elements = []
         
         # Set custom ship_to label if provided (e.g., "SHIP FROM" for purchase docs)
@@ -541,6 +543,34 @@ class ProfessionalPDFGenerator:
         elements.append(self._build_items_table(items, show_item_code, show_sku))
         elements.append(Spacer(1, 10))
         elements.append(self._build_bottom_section(totals, payment_info, terms, notes))
+
+        # Add thank you message at the bottom (left-aligned with item table)
+        if customer_name:
+            elements.append(Spacer(1, 20))
+            thank_you_style = ParagraphStyle(
+                'ThankYou',
+                parent=self.styles['Normal'],
+                fontSize=9,
+                alignment=TA_LEFT,
+                textColor=TEXT_COLOR,
+                spaceAfter=6,
+                leading=14,
+                leftIndent=6
+            )
+            thank_you_lines = [
+                f"Thank you, <b>{customer_name}</b>, for your recent purchase.",
+            ]
+            if amount_due is not None and currency:
+                due_str = f", and payment is due by <b>{due_date_str}</b>." if due_date_str else "."
+                thank_you_lines.append(f"Your amount due is <b>{currency}{amount_due:,.2f}</b>{due_str}")
+            thank_you_lines += [
+                "If you have any questions, please let us know.",
+                "",
+                "Best regards,",
+                "We look forward to serving you again in the future."
+            ]
+            for line in thank_you_lines:
+                elements.append(Paragraph(line, thank_you_style))
 
         self.doc.build(
             elements,
@@ -648,7 +678,7 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
                 'IFSC Code':      getattr(company, 'ifsc_code', None),
             }.items() if v}
 
-        cur_label = getattr(obj, 'currency', None) or (currency if currency != 'Rs' else 'USD')
+        cur_label = getattr(obj, 'currency', None) or (currency if currency != 'Rs' else 'RS')
 
         generator.generate_document(
             title=title, doc_number=doc_number,
@@ -660,6 +690,9 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             status=getattr(obj, 'status', None),
             ship_to=ship_to, reference_data=reference_data, currency=cur_label,
             ship_to_label=None,
+            customer_name=obj.customer.name if obj.customer else None,
+            amount_due=obj.balance_due if hasattr(obj, 'balance_due') else None,
+            due_date_str=obj.due_date.strftime('%d-%m-%Y') if hasattr(obj, 'due_date') and obj.due_date else None,
         )
 
     # ── PURCHASE BILL ─────────────────────────────────────────────────────

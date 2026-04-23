@@ -1,7 +1,8 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from app import db
-from app.models import Sale, SaleItem, SaleReturn, SaleReturnItem, Product, Customer
+from app.models import Sale, SaleItem, SaleReturn, SaleReturnItem, Product, Customer, SaleReturnSettings
+from app.forms import SaleReturnSettingsForm
 from datetime import datetime
 
 bp = Blueprint('returns', __name__)
@@ -102,9 +103,37 @@ def create_return():
     discount = float(request.form.get('discount', 0))
     total = subtotal + tax - discount
 
-    # Generate return number
-    last_return = SaleReturn.query.order_by(SaleReturn.id.desc()).first()
-    return_number = f"RET-{datetime.now().strftime('%Y%m')}-{(last_return.id + 1) if last_return else 1:04d}"
+    # Generate return number using settings
+    settings = SaleReturnSettings.query.first()
+    if not settings:
+        settings = SaleReturnSettings(return_prefix='RET-', return_suffix='', next_number=1)
+        db.session.add(settings)
+
+    # Sync next_number with actual highest return number in DB
+    highest_return = SaleReturn.query.order_by(SaleReturn.id.desc()).first()
+    if highest_return and highest_return.return_number:
+        try:
+            prefix_len = len(settings.return_prefix or '')
+            suffix_len = len(settings.return_suffix or '')
+            num_str = highest_return.return_number[prefix_len:]
+            if suffix_len > 0:
+                num_str = num_str[:-suffix_len]
+            max_num = int(num_str)
+            next_return_num = max(settings.next_number, max_num + 1)
+        except (ValueError, IndexError):
+            next_return_num = settings.next_number
+    else:
+        next_return_num = settings.next_number
+
+    # Get unique return number
+    prefix = settings.return_prefix or ''
+    suffix = settings.return_suffix or ''
+    while True:
+        return_number = f"{prefix}{next_return_num}{suffix}"
+        existing = SaleReturn.query.filter_by(return_number=return_number).first()
+        if not existing:
+            break
+        next_return_num += 1
 
     sale_return = SaleReturn(
         return_number=return_number,
@@ -177,6 +206,9 @@ def create_return():
 
     # Update sale status
     sale.update_status()
+
+    # Update return settings next number
+    settings.next_number = next_return_num + 1
 
     db.session.commit()
     flash(f'Return {return_number} created successfully!', 'success')
@@ -277,3 +309,20 @@ def get_sale_details(sale_id):
         'tax_rate': sale.tax_rate,
         'items': items
     })
+
+@bp.route('/settings', methods=['GET', 'POST'])
+@login_required
+def sale_return_settings():
+    settings = SaleReturnSettings.query.first()
+    form = SaleReturnSettingsForm(obj=settings)
+    if form.validate_on_submit():
+        if not settings:
+            settings = SaleReturnSettings()
+            db.session.add(settings)
+        settings.return_prefix = form.return_prefix.data or 'RET-'
+        settings.return_suffix = form.return_suffix.data or ''
+        settings.next_number = form.next_number.data or 1
+        db.session.commit()
+        flash('Sale return settings updated successfully.', 'success')
+        return redirect(url_for('returns.sale_return_settings'))
+    return render_template('sales/sale_return_settings.html', settings=settings, form=form)

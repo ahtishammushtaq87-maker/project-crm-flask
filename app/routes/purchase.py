@@ -1,12 +1,21 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response
 from flask_login import login_required, current_user
 from app import db
-from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory, PurchaseReturn, PurchaseReturnItem, PurchaseSettings
-from app.forms import PurchaseForm, VendorForm
+from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory, PurchaseReturn, PurchaseReturnItem, PurchaseSettings, PurchaseReturnSettings
+from app.forms import PurchaseForm, VendorForm, PurchaseReturnSettingsForm
 from datetime import datetime, timedelta, date
 from app.pdf_utils import generate_professional_pdf
 from app.services.bom_versioning import BOMVersioningService
 import os
+import io
+import csv
+import openpyxl
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.units import inch
+from reportlab.lib.enums import TA_CENTER
 
 bp = Blueprint('purchase', __name__)
 
@@ -1538,9 +1547,37 @@ def create_purchase_return():
     discount = float(request.form.get('discount', 0))
     total = subtotal + tax - discount
 
-    # Generate return number
-    last_return = PurchaseReturn.query.order_by(PurchaseReturn.id.desc()).first()
-    return_number = f"PRet-{datetime.now().strftime('%Y%m')}-{(last_return.id + 1) if last_return else 1:04d}"
+    # Generate return number using settings
+    settings = PurchaseReturnSettings.query.first()
+    if not settings:
+        settings = PurchaseReturnSettings(return_prefix='PRet-', return_suffix='', next_number=1)
+        db.session.add(settings)
+
+    # Sync next_number with actual highest return number in DB
+    highest_return = PurchaseReturn.query.order_by(PurchaseReturn.id.desc()).first()
+    if highest_return and highest_return.return_number:
+        try:
+            prefix_len = len(settings.return_prefix or '')
+            suffix_len = len(settings.return_suffix or '')
+            num_str = highest_return.return_number[prefix_len:]
+            if suffix_len > 0:
+                num_str = num_str[:-suffix_len]
+            max_num = int(num_str)
+            next_return_num = max(settings.next_number, max_num + 1)
+        except (ValueError, IndexError):
+            next_return_num = settings.next_number
+    else:
+        next_return_num = settings.next_number
+
+    # Get unique return number
+    prefix = settings.return_prefix or ''
+    suffix = settings.return_suffix or ''
+    while True:
+        return_number = f"{prefix}{next_return_num}{suffix}"
+        existing = PurchaseReturn.query.filter_by(return_number=return_number).first()
+        if not existing:
+            break
+        next_return_num += 1
 
     purchase_return = PurchaseReturn(
         return_number=return_number,
@@ -1601,6 +1638,9 @@ def create_purchase_return():
             bill.status = 'partial_return'
         else:
             bill.status = bill.status  # Keep existing status
+
+    # Update return settings next number
+    settings.next_number = next_return_num + 1
 
     db.session.commit()
     flash(f'Purchase return {return_number} created successfully!', 'success')
@@ -1790,3 +1830,229 @@ def delete_purchase_return(id):
     
     flash(f'Return {return_number} deleted successfully!', 'success')
     return redirect(url_for('purchase.purchase_return_list'))
+@bp.route('/return/settings', methods=['GET', 'POST'])
+@login_required
+def purchase_return_settings():
+    settings = PurchaseReturnSettings.query.first()
+    form = PurchaseReturnSettingsForm(obj=settings)
+    if form.validate_on_submit():
+        if not settings:
+            settings = PurchaseReturnSettings()
+            db.session.add(settings)
+        settings.return_prefix = form.return_prefix.data or 'PRet-'
+        settings.return_suffix = form.return_suffix.data or ''
+        settings.next_number = form.next_number.data or 1
+        db.session.commit()
+        flash('Purchase return settings updated successfully.', 'success')
+        return redirect(url_for('purchase.purchase_return_settings'))
+    return render_template('purchase/purchase_return_settings.html', settings=settings, form=form)
+
+@bp.route("/vendor/<int:id>/export/csv")
+@login_required
+def vendor_export_csv(id):
+    """Export vendor profile to CSV"""
+    vendor = Vendor.query.get_or_404(id)
+    bills = sorted(vendor.bills, key=lambda b: b.date, reverse=True)
+    advances = sorted(vendor.advances, key=lambda a: a.date, reverse=True)
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Vendor info
+    writer.writerow(["Vendor Profile Export"])
+    writer.writerow(["Name", vendor.name])
+    writer.writerow(["Email", vendor.email or ""])
+    writer.writerow(["Phone", vendor.phone or ""])
+    writer.writerow(["Address", vendor.address or ""])
+    writer.writerow(["Payment Method", vendor.payment_method or ""])
+    writer.writerow([])
+    
+    # Bills
+    writer.writerow(["Purchase Bills"])
+    writer.writerow(["Bill #", "Date", "Subtotal", "Tax", "Discount", "Total", "Paid", "Balance", "Status"])
+    for bill in bills:
+        writer.writerow([
+            bill.bill_number,
+            bill.date.strftime("%Y-%m-%d"),
+            bill.subtotal,
+            bill.tax,
+            bill.discount,
+            bill.total,
+            bill.paid_amount,
+            bill.balance_due,
+            bill.status
+        ])
+    writer.writerow([])
+    
+    # Advances
+    writer.writerow(["Advances"])
+    writer.writerow(["Date", "Description", "Amount", "Status"])
+    for adv in advances:
+        writer.writerow([
+            adv.date.strftime("%Y-%m-%d"),
+            adv.description or "",
+            adv.amount,
+            "Adjusted" if adv.is_adjusted else "Pending"
+        ])
+    
+    output.seek(0)
+    return send_file(
+        io.BytesIO(output.getvalue().encode()),
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=f"vendor_{vendor.id}_{vendor.name}_profile.csv"
+    )
+
+@bp.route("/vendor/<int:id>/export/excel")
+@login_required
+def vendor_export_excel(id):
+    """Export vendor profile to Excel"""
+    vendor = Vendor.query.get_or_404(id)
+    bills = sorted(vendor.bills, key=lambda b: b.date, reverse=True)
+    advances = sorted(vendor.advances, key=lambda a: a.date, reverse=True)
+    
+    wb = openpyxl.Workbook()
+    
+    # Vendor Info sheet
+    ws1 = wb.active
+    ws1.title = "Vendor Info"
+    ws1.append(["Vendor Profile Export"])
+    ws1.append(["Name", vendor.name])
+    ws1.append(["Email", vendor.email or ""])
+    ws1.append(["Phone", vendor.phone or ""])
+    ws1.append(["Address", vendor.address or ""])
+    ws1.append(["Payment Method", vendor.payment_method or ""])
+    
+    # Bills sheet
+    ws2 = wb.create_sheet("Purchase Bills")
+    ws2.append(["Bill #", "Date", "Subtotal", "Tax", "Discount", "Total", "Paid", "Balance", "Status"])
+    for bill in bills:
+        ws2.append([
+            bill.bill_number,
+            bill.date.strftime("%Y-%m-%d"),
+            bill.subtotal,
+            bill.tax,
+            bill.discount,
+            bill.total,
+            bill.paid_amount,
+            bill.balance_due,
+            bill.status
+        ])
+    
+    # Advances sheet
+    ws3 = wb.create_sheet("Advances")
+    ws3.append(["Date", "Description", "Amount", "Status"])
+    for adv in advances:
+        ws3.append([
+            adv.date.strftime("%Y-%m-%d"),
+            adv.description or "",
+            adv.amount,
+            "Adjusted" if adv.is_adjusted else "Pending"
+        ])
+    
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=f"vendor_{vendor.id}_{vendor.name}_profile.xlsx"
+    )
+
+@bp.route("/vendor/<int:id>/export/pdf")
+@login_required
+def vendor_export_pdf(id):
+    """Export vendor profile to PDF"""
+    vendor = Vendor.query.get_or_404(id)
+    bills = sorted(vendor.bills, key=lambda b: b.date, reverse=True)
+    advances = sorted(vendor.advances, key=lambda a: a.date, reverse=True)
+    
+    output = io.BytesIO()
+    doc = SimpleDocTemplate(output, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    # Title
+    title_style = ParagraphStyle("CustomTitle", parent=styles["Heading1"], fontSize=16, textColor=colors.HexColor("#366092"), spaceAfter=12, alignment=TA_CENTER)
+    title = Paragraph(f"Vendor Profile: {vendor.name}", title_style)
+    elements.append(title)
+    
+    # Vendor Info
+    info_data = [
+        ["Name:", vendor.name],
+        ["Email:", vendor.email or ""],
+        ["Phone:", vendor.phone or ""],
+        ["Address:", vendor.address or ""],
+        ["Payment Method:", vendor.payment_method or ""]
+    ]
+    info_table = Table(info_data, colWidths=[2*inch, 4*inch])
+    info_table.setStyle(TableStyle([
+        ("FONTNAME", (0,0), (-1,-1), "Helvetica"),
+        ("FONTSIZE", (0,0), (-1,-1), 10),
+        ("FONTNAME", (0,0), (0,-1), "Helvetica-Bold"),
+    ]))
+    elements.append(info_table)
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Bills Table
+    elements.append(Paragraph("Purchase Bills", styles["Heading2"]))
+    bill_data = [["Bill #", "Date", "Total", "Paid", "Balance", "Status"]]
+    for bill in bills:
+        bill_data.append([
+            bill.bill_number,
+            bill.date.strftime("%Y-%m-%d"),
+            f"Rs {bill.total:,.2f}",
+            f"Rs {bill.paid_amount:,.2f}",
+            f"Rs {bill.balance_due:,.2f}",
+            bill.status.title()
+        ])
+    
+    if len(bill_data) > 1:
+        bill_table = Table(bill_data, colWidths=[1.2*inch, 1*inch, 1*inch, 1*inch, 1*inch, 0.8*inch])
+        bill_table.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#366092")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),
+            ("FONTNAME", (0,0), (-1,-1), "Helvetica"),
+            ("FONTSIZE", (0,0), (-1,-1), 9),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.lightgrey]),
+            ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+        ]))
+        elements.append(bill_table)
+    
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Advances Table
+    elements.append(Paragraph("Advances", styles["Heading2"]))
+    adv_data = [["Date", "Description", "Amount", "Status"]]
+    for adv in advances:
+        adv_data.append([
+            adv.date.strftime("%Y-%m-%d"),
+            adv.description or "",
+            f"Rs {adv.amount:,.2f}",
+            "Adjusted" if adv.is_adjusted else "Pending"
+        ])
+    
+    if len(adv_data) > 1:
+        adv_table = Table(adv_data, colWidths=[1*inch, 2.5*inch, 1*inch, 1*inch])
+        adv_table.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#366092")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),
+            ("FONTNAME", (0,0), (-1,-1), "Helvetica"),
+            ("FONTSIZE", (0,0), (-1,-1), 9),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.lightgrey]),
+            ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+        ]))
+        elements.append(adv_table)
+    
+    doc.build(elements)
+    output.seek(0)
+    
+    return send_file(
+        output,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"vendor_{vendor.id}_{vendor.name}_profile.pdf"
+    )

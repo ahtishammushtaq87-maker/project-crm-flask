@@ -828,6 +828,38 @@ class ExpenseSettings(db.Model):
         return f'<ExpenseSettings {self.id}>'
 
 
+class SaleReturnSettings(db.Model):
+    """Sale return number formatting settings"""
+    __tablename__ = 'sale_return_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    return_prefix = db.Column(db.String(10), default='RET-')
+    return_suffix = db.Column(db.String(10), default='')
+    next_number = db.Column(db.Integer, default=1)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<SaleReturnSettings {self.id}>'
+
+
+class PurchaseReturnSettings(db.Model):
+    """Purchase return number formatting settings"""
+    __tablename__ = 'purchase_return_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    return_prefix = db.Column(db.String(10), default='PRet-')
+    return_suffix = db.Column(db.String(10), default='')
+    next_number = db.Column(db.Integer, default=1)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<PurchaseReturnSettings {self.id}>'
+
+
 class SaleReturn(db.Model):
     """Sales return model"""
     __tablename__ = 'sale_returns'
