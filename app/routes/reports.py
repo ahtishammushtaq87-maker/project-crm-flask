@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, send_file, jsonify, flash, redirect, url_for
 from flask_login import login_required
 from app import db
-from app.models import Sale, SaleItem, PurchaseBill, PurchaseItem, Product, Vendor, Customer, Company, Expense, ExpenseCategory, SaleReturn, SaleReturnItem, BOM, BOMItem, BOMVersion, ManufacturingOrder, Staff, SalaryPayment, SalaryAdvance, Warehouse, Attendance
+from app.models import Sale, SaleItem, PurchaseBill, PurchaseItem, Product, Vendor, Customer, Company, Expense, ExpenseCategory, SaleReturn, SaleReturnItem, BOM, BOMItem, BOMVersion, ManufacturingOrder, Staff, SalaryPayment, SalaryAdvance, Warehouse, Attendance, ProductCategory
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_, or_
 import pandas as pd
@@ -123,7 +123,7 @@ def inventory_report():
     query = Product.query
     
     if category != 'all':
-        query = query.filter(Product.category == category)
+        query = query.filter(Product.category.has(name=category))
     if warehouse_id and warehouse_id.isdigit():
         query = query.filter(Product.warehouse_id == int(warehouse_id))
     if search:
@@ -137,8 +137,8 @@ def inventory_report():
     products = query.order_by(Product.name).all()
     
     # Get categories for filter
-    categories = db.session.query(Product.category).distinct().all()
-    categories = [c[0] for c in categories if c[0]]
+    categories = ProductCategory.query.order_by(ProductCategory.name).all()
+    categories = [c.name for c in categories if c.name]
     
     # Get warehouses for filter
     warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
@@ -170,7 +170,7 @@ def inventory_details_report():
     query = Product.query
     
     if category != 'all':
-        query = query.filter(Product.category == category)
+        query = query.filter(Product.category.has(name=category))
     if warehouse_id and warehouse_id.isdigit():
         query = query.filter(Product.warehouse_id == int(warehouse_id))
     if search:
@@ -229,8 +229,8 @@ def inventory_details_report():
     warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
     
     # Get categories for filter
-    categories = db.session.query(Product.category).distinct().all()
-    categories = [c[0] for c in categories if c[0]]
+    categories = ProductCategory.query.order_by(ProductCategory.name).all()
+    categories = [c.name for c in categories if c.name]
     
     return render_template('reports/inventory_details_report.html',
                          product_movements=product_movements,
@@ -257,7 +257,7 @@ def cogs_report():
     if end_date:
         query = query.filter(Sale.date <= datetime.strptime(end_date, '%Y-%m-%d'))
     if category != 'all':
-        query = query.filter(Product.category == category)
+        query = query.join(Product.category).filter(ProductCategory.name == category)
     if search:
         query = query.filter(or_(Product.name.ilike(f'%{search}%'), Product.sku.ilike(f'%{search}%')))
 
@@ -280,7 +280,7 @@ def cogs_report():
             product_stats[prod.id] = {
                 'product_name': prod.name,
                 'sku': prod.sku,
-                'category': prod.category or 'Uncategorized',
+                'category': prod.category.name if prod.category else 'Uncategorized',
                 'cost_price': prod.cost_price or 0,
                 'quantity_sold': 0,
                 'cogs': 0,
@@ -298,19 +298,20 @@ def cogs_report():
         total_quantity += item.quantity
 
     products = sorted(product_stats.values(), key=lambda x: x['product_name'])
-    categories = [c[0] for c in db.session.query(Product.category).distinct().filter(Product.category.isnot(None)).all()]
+    categories = ProductCategory.query.order_by(ProductCategory.name).all()
+    categories = [c.name for c in categories if c.name]
 
     return render_template('reports/cogs_report.html',
-                         products=products,
-                         categories=categories,
-                         current_category=category,
-                         start_date=start_date,
-                         end_date=end_date,
-                         search=search,
-                         total_cogs=total_cogs,
-                         total_revenue=total_revenue,
-                         total_quantity=total_quantity,
-                         total_profit=total_revenue - total_cogs)
+                          products=products,
+                          categories=categories,
+                          current_category=category,
+                          start_date=start_date,
+                          end_date=end_date,
+                          search=search,
+                          total_cogs=total_cogs,
+                          total_revenue=total_revenue,
+                          total_quantity=total_quantity,
+                          total_profit=total_revenue - total_cogs)
 
 @bp.route('/expense-report')
 @login_required
@@ -882,7 +883,7 @@ def download_report(format, report_type):
         category = request.args.get('category', 'all')
         stock_filter = request.args.get('stock_filter', 'all')
         query = Product.query
-        if category != 'all': query = query.filter(Product.category == category)
+        if category != 'all': query = query.filter(Product.category.has(name=category))
         if search: query = query.filter(or_(Product.name.ilike(f'%{search}%'), Product.sku.ilike(f'%{search}%')))
         if stock_filter == 'min': query = query.filter(Product.quantity <= Product.min_quantity)
         elif stock_filter == 'high': query = query.filter(Product.quantity >= Product.max_quantity)
@@ -893,7 +894,7 @@ def download_report(format, report_type):
         data = [{
             'SKU': p.sku,
             'Product': p.name,
-            'Category': p.category,
+            'Category': p.category.name if p.category else '-',
             'Quantity': p.quantity,
             'Cost Price': f"{p.cost_price:.2f}",
             'Sale Price': f"{p.unit_price:.2f}",
@@ -906,7 +907,7 @@ def download_report(format, report_type):
         query = SaleItem.query.join(Sale).join(Product)
         if start_date: query = query.filter(Sale.date >= datetime.strptime(start_date, '%Y-%m-%d'))
         if end_date: query = query.filter(Sale.date <= datetime.strptime(end_date, '%Y-%m-%d'))
-        if category != 'all': query = query.filter(Product.category == category)
+        if category != 'all': query = query.join(Product.category).filter(ProductCategory.name == category)
         if search: query = query.filter(or_(Product.name.ilike(f'%{search}%'), Product.sku.ilike(f'%{search}%')))
         
         sale_items = query.order_by(Sale.date.desc()).all()
@@ -921,7 +922,7 @@ def download_report(format, report_type):
                 product_stats[prod.id] = {
                     'Product': prod.name,
                     'SKU': prod.sku,
-                    'Category': prod.category or 'Uncategorized',
+                    'Category': prod.category.name if prod.category else 'Uncategorized',
                     'Qty Sold': 0,
                     'Cost Price': f"{prod.cost_price or 0:.2f}",
                     'COGS': 0,

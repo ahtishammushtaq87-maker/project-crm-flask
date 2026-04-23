@@ -15,6 +15,17 @@ def has_column(table_name, column_name):
     except:
         return False
 
+def get_unique_expense_number(settings, next_num):
+    """Generate a unique expense number that doesn't exist in the database."""
+    prefix = settings.expense_prefix or ''
+    suffix = settings.expense_suffix or ''
+    while True:
+        expense_number = f"{prefix}{next_num}{suffix}"
+        existing = Expense.query.filter_by(expense_number=expense_number).first()
+        if not existing:
+            return expense_number, next_num + 1
+        next_num += 1
+
 @bp.route('/ledger')
 def ledger():
     start_date = request.args.get('start_date')
@@ -333,7 +344,7 @@ def transactions():
     payments = []
 
     # Sales payments
-    sales_payments = Payment.query.filter(Payment.invoice_id.isnot(None)).all()
+    sales_payments = Payment.query.filter(Payment.invoice_id != None).all()
     for p in sales_payments:
         txn = Transaction.query.filter(Transaction.reference_type == 'sale', Transaction.reference_id == p.invoice_id).first()
         payments.append({
@@ -353,7 +364,7 @@ def transactions():
         })
 
     # Expense payments
-    expense_payments = Payment.query.filter(Payment.expense_id.isnot(None)).all()
+    expense_payments = Payment.query.filter(Payment.expense_id != None).all()
     for p in expense_payments:
         txn = Transaction.query.filter(Transaction.reference_type == 'expense', Transaction.reference_id == p.expense_id).first()
         payments.append({
@@ -1029,7 +1040,22 @@ def add_expense():
         if not settings:
             settings = ExpenseSettings(expense_prefix='EXP-', expense_suffix='', next_number=1)
             db.session.add(settings)
-        next_expense_num = settings.next_number
+
+        # Sync next_expense_num with actual highest expense number in DB
+        highest_expense = Expense.query.order_by(Expense.id.desc()).first()
+        if highest_expense and highest_expense.expense_number:
+            try:
+                prefix_len = len(settings.expense_prefix or '')
+                suffix_len = len(settings.expense_suffix or '')
+                num_str = highest_expense.expense_number[prefix_len:]
+                if suffix_len > 0:
+                    num_str = num_str[:-suffix_len]
+                max_num = int(num_str)
+                next_expense_num = max(settings.next_number, max_num + 1)
+            except (ValueError, IndexError):
+                next_expense_num = settings.next_number
+        else:
+            next_expense_num = settings.next_number
         
         created_expenses = []   # track all new expense objects
         
@@ -1055,8 +1081,7 @@ def add_expense():
             
             if num_mos == 0:
                 # No specific MO selected
-                expense_number = f"{settings.expense_prefix}{next_expense_num}{settings.expense_suffix}"
-                next_expense_num += 1
+                expense_number, next_expense_num = get_unique_expense_number(settings, next_expense_num)
                 exp = Expense(
                     expense_number=expense_number,
                     amount=base_amount,
@@ -1069,8 +1094,7 @@ def add_expense():
                 flash_msg = f'Overhead expense Rs {base_amount} added (Unassigned).'
             elif num_mos == 1:
                 target_mo = valid_mos[0]
-                expense_number = f"{settings.expense_prefix}{next_expense_num}{settings.expense_suffix}"
-                next_expense_num += 1
+                expense_number, next_expense_num = get_unique_expense_number(settings, next_expense_num)
                 exp = Expense(
                     expense_number=expense_number,
                     amount=base_amount,
@@ -1089,8 +1113,7 @@ def add_expense():
                 amount_per_mo = base_amount / num_mos
                 for i, target_mo in enumerate(valid_mos):
                     kwargs = dict(common_kwargs)
-                    kwargs['expense_number'] = f"{settings.expense_prefix}{next_expense_num}{settings.expense_suffix}"
-                    next_expense_num += 1
+                    kwargs['expense_number'], next_expense_num = get_unique_expense_number(settings, next_expense_num)
                     kwargs['description'] = f"{form.description.data} (Allocation {i+1}/{num_mos})"
                     kwargs['amount'] = amount_per_mo
                     kwargs['mo_id'] = target_mo.id
@@ -1119,8 +1142,7 @@ def add_expense():
             amount_per = base_amount / num_targets if num_targets > 0 else base_amount
             
             if num_targets == 0:
-                expense_number = f"{settings.expense_prefix}{next_expense_num}{settings.expense_suffix}"
-                next_expense_num += 1
+                expense_number, next_expense_num = get_unique_expense_number(settings, next_expense_num)
                 exp = Expense(
                     expense_number=expense_number,
                     amount=base_amount,
@@ -1133,8 +1155,7 @@ def add_expense():
             else:
                 for i, (target_type, target_id) in enumerate(targets):
                     kwargs = dict(common_kwargs)
-                    kwargs['expense_number'] = f"{settings.expense_prefix}{next_expense_num}{settings.expense_suffix}"
-                    next_expense_num += 1
+                    kwargs['expense_number'], next_expense_num = get_unique_expense_number(settings, next_expense_num)
                     kwargs['description'] = f"{form.description.data} (Allocation {i+1}/{num_targets})"
                     kwargs['amount'] = amount_per
                     kwargs['is_bom_overhead'] = True
@@ -1154,9 +1175,17 @@ def add_expense():
         # Update expense settings next number
         settings.next_number = next_expense_num
         
-        db.session.commit()
-        flash(flash_msg, 'success')
-        return redirect(url_for('accounting.expenses'))
+        try:
+            db.session.commit()
+            flash(flash_msg, 'success')
+            return redirect(url_for('accounting.expenses'))
+        except Exception as e:
+            db.session.rollback()
+            if 'UNIQUE constraint failed' in str(e) and 'expense_number' in str(e):
+                flash('Failed to create expense due to a numbering conflict. Please try again.', 'danger')
+            else:
+                flash(f'Error creating expense: {str(e)}', 'danger')
+            return redirect(url_for('accounting.add_expense'))
         
     return render_template('accounting/add_expense.html', form=form)
 

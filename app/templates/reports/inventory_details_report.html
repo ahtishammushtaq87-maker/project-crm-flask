@@ -37,6 +37,9 @@
     .bg-gradient-danger {
         background: linear-gradient(135deg, #f5365c 0%, #f56036 100%);
     }
+    .table>:not(caption)>*>* {
+        padding: .5rem 1.5rem;
+    }
 </style>
 {% endblock %}
 
@@ -144,7 +147,7 @@
                         <tr>
                             <td>{{ pm.product.sku }}</td>
                             <td><strong>{{ pm.product.name }}</strong></td>
-                            <td>{{ pm.product.category or '-' }}</td>
+                            <td>{{ pm.product.category.name if pm.product.category else '-' }}</td>
                             <td>{{ pm.warehouse }}</td>
                             <td>{{ pm.current_stock }}</td>
                             <td class="text-success">+{{ pm.purchased }}</td>

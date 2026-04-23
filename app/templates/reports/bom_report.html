@@ -2,6 +2,14 @@
 
 {% block title %}BOM Report{% endblock %}
 
+{% block extra_css %}
+<style>
+    .table>:not(caption)>*>* {
+        padding: .5rem 1.5rem;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">

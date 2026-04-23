@@ -54,6 +54,9 @@
         align-items: center;
         gap: 8px;
     }
+    .table>:not(caption)>*>* {
+        padding: .5rem 1.5rem;
+    }
 </style>
 {% endblock %}
 
@@ -191,7 +194,7 @@
                         <tr>
                             <td class="px-4 font-weight-bold">{{ product.sku }}</td>
                             <td>{{ product.name }}</td>
-                            <td><span class="badge bg-light text-dark">{{ product.category }}</span></td>
+                            <td><span class="badge bg-light text-dark">{{ product.category.name if product.category else '-' }}</span></td>
                             <td>{{ product.warehouse.name if product.warehouse else '-' }}</td>
                             <td>{{ product.quantity }} {{ product.unit }}</td>
                             <td>{{ product.reorder_level }}</td>

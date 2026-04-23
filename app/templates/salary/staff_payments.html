@@ -1,27 +1,34 @@
 {% extends "base.html" %}
 
-{% block title %}Salary Payments{% endblock %}
-
-{% block extra_js %}
-{% if auto_download_id %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    window.open('{{ url_for("salary.download_pay_stub", id=auto_download_id) }}', '_blank');
-});
-</script>
-{% endif %}
-{% endblock %}
+{% block title %}Salary History - {{ staff.name }}{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="fas fa-money-check-alt me-2 text-success"></i>Salary Payments</h2>
+    <div>
+        <h2><i class="fas fa-file-invoice-dollar me-2 text-primary"></i>Salary History</h2>
+        <p class="text-muted mb-0">{{ staff.name }} - {{ staff.designation }}</p>
+    </div>
     <div class="btn-group">
-        <a href="{{ url_for('salary.process_salary_select') }}" class="btn btn-success text-white">
-            <i class="fas fa-plus me-2"></i>Process Payroll
-        </a>
         <a href="{{ url_for('salary.staff_list') }}" class="btn btn-outline-secondary">
-            <i class="fas fa-users me-2"></i>Staff List
+            <i class="fas fa-arrow-left me-2"></i>Back to Staff
         </a>
+        <a href="{{ url_for('salary.pay_salary', staff_id=staff.id) }}" class="btn btn-success text-white">
+            <i class="fas fa-money-bill-wave me-2"></i>Process Payment
+        </a>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-4 overflow-hidden mb-4">
+    <div class="card-header bg-white border-0 py-3">
+        <div class="d-flex align-items-center">
+            <div class="avatar-lg bg-primary-soft text-primary rounded-circle me-3 p-3">
+                <i class="fas fa-user fa-lg"></i>
+            </div>
+            <div>
+                <h5 class="mb-1">{{ staff.name }}</h5>
+                <p class="text-muted mb-0 small">{{ staff.designation or 'No designation' }} | Monthly: {{ staff.monthly_salary | round(2) }}</p>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -32,10 +39,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 <thead class="bg-light text-muted small text-uppercase">
                     <tr>
                         <th class="px-4">Month/Year</th>
-                        <th>Staff Name</th>
                         <th>Base Salary</th>
-                        <th>Advance Deduct.</th>
-                        <th>Net Paid</th>
+                        <th>Advances</th>
+                        <th>Other Deduct.</th>
+                        <th>Bonus</th>
+                        <th>Net Pay</th>
                         <th>Date</th>
                         <th>Method</th>
                         <th>Status</th>
@@ -50,11 +58,12 @@ document.addEventListener('DOMContentLoaded', function() {
                                 {{ payment.month }}/{{ payment.year }}
                             </span>
                         </td>
-                        <td>{{ payment.staff.name }}</td>
                         <td>{{ payment.base_salary | round(2) }}</td>
                         <td class="text-danger">-{{ payment.advance_deduction | round(2) }}</td>
-                        <td><strong class="text-success">{{ (payment.net_salary) | round(2) }}</strong></td>
-                        <td><small class="text-muted">{{ payment.payment_date.strftime('%d %b, %y') }}</small></td>
+                        <td class="text-danger">-{{ payment.other_deductions | round(2) }}</td>
+                        <td class="text-success">+{{ payment.bonus | round(2) }}</td>
+                        <td><strong class="text-success">{{ payment.net_salary | round(2) }}</strong></td>
+                        <td><small class="text-muted">{{ payment.payment_date.strftime('%d %b, %y') if payment.payment_date else '-' }}</small></td>
                         <td><span class="badge bg-light text-dark px-2 py-1 border small">{{ payment.payment_method }}</span></td>
                         <td>
                             <span class="badge {% if payment.status == 'paid' %}bg-success-soft text-success{% else %}bg-warning-soft text-warning{% endif %} px-2 py-1">
@@ -65,16 +74,11 @@ document.addEventListener('DOMContentLoaded', function() {
                             <a href="{{ url_for('salary.download_pay_stub', id=payment.id) }}" class="btn btn-sm btn-outline-primary border-0" title="Download Pay Slip PDF" target="_blank">
                                 <i class="fas fa-file-pdf"></i>
                             </a>
-                            <form method="POST" action="{{ url_for('salary.delete_payment', id=payment.id) }}" class="d-inline">
-                                <button type="submit" class="btn btn-sm btn-outline-danger border-0" onclick="return confirm('Are you sure you want to delete this salary payment? Any linked advances will be marked as outstanding again.')">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </form>
                         </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="8" class="text-center py-4 text-muted">No salary payments processed yet.</td>
+                        <td colspan="10" class="text-center py-4 text-muted">No salary payments found for this staff.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -84,9 +88,10 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <style>
+    .bg-primary-soft { background-color: rgba(102, 126, 234, 0.1); }
     .bg-success-soft { background-color: rgba(72, 187, 120, 0.1); }
-    .bg-info-soft { background-color: rgba(66, 153, 225, 0.1); }
     .bg-secondary-soft { background-color: rgba(160, 174, 192, 0.1); }
     .text-success { color: #38a169 !important; }
+    .text-primary { color: #5a67d8 !important; }
 </style>
 {% endblock %}
