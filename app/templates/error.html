@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}{{ error_title }} - ERP Portal{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card shadow-sm mt-5">
+            <div class="card-body text-center p-5">
+                {% if error_code %}
+                <div class="display-1 fw-bold text-{{ 'danger' if error_code >= 500 else 'warning' }}">
+                    {{ error_code }}
+                </div>
+                {% endif %}
+                
+                <h2 class="mt-4 mb-3">{{ error_title }}</h2>
+                
+                <p class="lead text-muted mb-4">
+                    {{ error_message }}
+                </p>
+                
+                <div class="mt-5">
+                    <a href="{{ url_for('dashboard.index') }}" class="btn btn-primary me-3">
+                        <i class="fas fa-home me-2"></i>Go to Home
+                    </a>
+                    <button onclick="history.back()" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-2"></i>Go Back
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="text-center mt-4">
+            <small class="text-muted">
+                If the problem persists, please contact support.
+            </small>
+        </div>
+    </div>
+</div>
+{% endblock %}

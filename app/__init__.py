@@ -245,4 +245,55 @@ def create_app(config_class=Config):
                 logo_url = url_for('static', filename=path)
         return dict(company=company, company_logo_url=logo_url)
     
+    # Global error handlers
+    from flask import render_template, request
+    
+    def safe_render_error(**kwargs):
+        """Safely render error template, falling back to plain HTML if needed."""
+        try:
+            return render_template('error.html', **kwargs)
+        except Exception as e:
+            app.logger.error(f'Error rendering error page: {e}')
+            # Fallback plain HTML response
+            code = kwargs.get('error_code', 500)
+            title = kwargs.get('error_title', 'Error')
+            message = kwargs.get('error_message', 'An error occurred.')
+            return f"<h1>{code} - {title}</h1><p>{message}</p>", code
+    
+    @app.errorhandler(404)
+    def not_found_error(error):
+        app.logger.error(f'404 Error: {request.url} - {error}')
+        return safe_render_error(
+            error_code=404,
+            error_title='Page Not Found',
+            error_message='The page you are looking for does not exist or has been moved.'
+        ), 404
+    
+    @app.errorhandler(500)
+    def internal_error(error):
+        app.logger.error(f'500 Internal Server Error: {request.url} - {error}', exc_info=True)
+        return safe_render_error(
+            error_code=500,
+            error_title='Server Error',
+            error_message='An unexpected error occurred. Our team has been notified. Please try again later.'
+        ), 500
+    
+    @app.errorhandler(403)
+    def forbidden_error(error):
+        app.logger.error(f'403 Forbidden: {request.url} - {error}')
+        return safe_render_error(
+            error_code=403,
+            error_title='Access Denied',
+            error_message='You do not have permission to access this page.'
+        ), 403
+    
+    @app.errorhandler(400)
+    def bad_request_error(error):
+        app.logger.error(f'400 Bad Request: {request.url} - {error}')
+        return safe_render_error(
+            error_code=400,
+            error_title='Bad Request',
+            error_message='The request could not be understood. Please check your input and try again.'
+        ), 400
+    
     return app

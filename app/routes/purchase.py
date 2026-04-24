@@ -1691,11 +1691,11 @@ def process_purchase_refund(id):
     purchase_return.refund_status = 'paid'
     purchase_return.status = 'completed'
     
-    # Create a vendor advance record for the refund (negative = refund paid to vendor)
+    # Create a vendor advance record for the refund (positive = refund credited as advance)
     if purchase_return.vendor:
         vendor_advance = VendorAdvance(
             vendor_id=purchase_return.vendor.id,
-            amount=-refund_amount,  # Negative amount to represent refund
+            amount=refund_amount,  # Positive amount: increases remaining advance
             date=datetime.now(),
             description=f'Refund for Return: {purchase_return.return_number}',
             created_by=current_user.id
@@ -1800,10 +1800,10 @@ def delete_purchase_return(id):
     
     # Reverse vendor refund if was paid
     if purchase_return.refund_status == 'paid' and purchase_return.vendor:
-        # Create a positive vendor advance to reverse the refund
+        # Create a negative vendor advance to reverse the refund (offset positive refund)
         vendor_advance = VendorAdvance(
             vendor_id=purchase_return.vendor.id,
-            amount=purchase_return.refund_amount,
+            amount=-purchase_return.refund_amount,
             date=datetime.now(),
             description=f'Reversal for Return: {purchase_return.return_number}',
             created_by=current_user.id
