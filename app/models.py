@@ -409,6 +409,7 @@ class PurchaseBill(db.Model):
     total = db.Column(db.Float, default=0)
     status = db.Column(Enum('paid', 'unpaid', 'partial', 'return', 'partial_return', name='payment_status'), default='unpaid', index=True)
     paid_amount = db.Column(db.Float, default=0)
+    bill_image_path = db.Column(db.String(255))  # Path to uploaded bill image
     notes = db.Column(db.Text)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

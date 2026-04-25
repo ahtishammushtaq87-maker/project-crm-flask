@@ -104,6 +104,357 @@
             background: #5a67d8;
         }
 
+        /* Notification Bell Icon - Sticky Bottom Right */
+        .notification-bell-wrapper {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1060;
+            background: white;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .notification-bell-wrapper:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        .notification-bell-wrapper .notification-bell {
+            font-size: 1.3rem;
+            color: #666;
+        }
+
+        .notification-bell-wrapper:hover .notification-bell {
+            color: #333;
+        }
+
+        .notification-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #dc3545;
+            color: white;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            font-size: 0.65rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .notification-bell-wrapper:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        .notification-bell-wrapper .notification-bell {
+            font-size: 1.3rem;
+            color: #666;
+        }
+
+        .notification-bell-wrapper:hover .notification-bell {
+            color: #333;
+        }
+
+        /* Notification Dropdown Panel - Left of Bell */
+        .notification-dropdown {
+            position: fixed;
+            bottom: 65px;
+            right: 75px;
+            width: 300px;
+            max-width: calc(100vw - 100px);
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            z-index: 1058;
+            display: none;
+            flex-direction: column;
+            max-height: 350px;
+            overflow: hidden;
+        }
+
+        .notification-dropdown.show {
+            display: flex;
+            animation: dropIn 0.2s ease-out;
+        }
+
+        @keyframes dropIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .notification-dropdown-header {
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+            border-radius: 10px 10px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+        }
+
+        .notification-header-text {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .notification-mark-read {
+            background: none;
+            border: none;
+            color: #667eea;
+            cursor: pointer;
+            font-size: 0.8rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .notification-mark-read:hover {
+            background: #e8eaf6;
+        }
+
+        .notification-close {
+            background: none;
+            border: none;
+            color: #6c757d;
+            cursor: pointer;
+            font-size: 1rem;
+            padding: 0;
+            line-height: 1;
+            margin-left: 8px;
+        }
+
+        .notification-close:hover {
+            color: #333;
+        }
+
+        .notification-dropdown-body {
+            padding: 4px 0;
+            max-height: 280px;
+            overflow-y: auto;
+        }
+
+        .notification-item {
+            padding: 10px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 0.85rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .notification-item:last-child {
+            border-bottom: none;
+        }
+
+        .notification-item.danger .notification-message {
+            color: #721c24;
+        }
+
+        .notification-item.success .notification-message {
+            color: #155724;
+        }
+
+        .notification-item.warning .notification-message {
+            color: #856404;
+        }
+
+        .notification-item.info .notification-message {
+            color: #0c5460;
+        }
+
+        .notification-item.unread {
+            background: #fff;
+            border-left: 3px solid;
+        }
+
+        .notification-item.unread.danger {
+            border-left-color: #dc3545;
+        }
+
+        .notification-item.unread.success {
+            border-left-color: #28a745;
+        }
+
+        .notification-item.unread.warning {
+            border-left-color: #ffc107;
+        }
+
+        .notification-item.unread.info {
+            border-left-color: #17a2b8;
+        }
+
+        .notification-item.read {
+            background: #f8f9fa;
+            opacity: 0.7;
+        }
+
+        .notification-message {
+            flex: 1;
+            line-height: 1.4;
+        }
+
+        .notification-dismiss {
+            background: none;
+            border: none;
+            color: #adb5bd;
+            cursor: pointer;
+            font-size: 0.9rem;
+            padding: 2px;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+
+        .notification-dismiss:hover {
+            color: #dc3545;
+        }
+
+        .notification-item.empty {
+            color: #6c757d;
+            font-style: italic;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .notification-footer {
+            padding: 8px 16px;
+            border-top: 1px solid #e9ecef;
+            background: #f8f9fa;
+            border-radius: 0 0 10px 10px;
+            font-size: 0.8rem;
+            text-align: center;
+        }
+
+        .notification-clear-all {
+            background: none;
+            border: none;
+            color: #6c757d;
+            cursor: pointer;
+            font-size: 0.8rem;
+            padding: 2px 8px;
+        }
+
+        .notification-clear-all:hover {
+            color: #dc3545;
+        }
+
+        /* Toast Notifications - Bottom Right (above bell) */
+        .toast-container {
+            position: fixed;
+            bottom: 80px;
+            right: 20px;
+            z-index: 1059;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 400px;
+            pointer-events: none;
+            max-height: calc(100vh - 120px);
+            overflow-y: auto;
+        }
+
+        .toast-container .toast {
+            pointer-events: auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            padding: 0;
+            border-left: 4px solid;
+            min-width: 300px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .toast {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            padding: 0;
+            border-left: 4px solid;
+            min-width: 300px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .toast.toast-success {
+            border-left-color: #28a745;
+        }
+
+        .toast.toast-error,
+        .toast.toast-danger {
+            border-left-color: #dc3545;
+        }
+
+        .toast.toast-warning {
+            border-left-color: #ffc107;
+        }
+
+        .toast.toast-info {
+            border-left-color: #17a2b8;
+        }
+
+        .toast-header {
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .toast-body {
+            padding: 12px 16px;
+            color: #333;
+            font-size: 0.9rem;
+        }
+
+        .toast-close {
+            background: none;
+            border: none;
+            font-size: 1.2rem;
+            line-height: 1;
+            color: #6c757d;
+            cursor: pointer;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .toast-close:hover {
+            color: #333;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
         /* Mobile adjustments */
         @media (max-width: 767.98px) {
             .main-content {
@@ -113,6 +464,94 @@
 
             .nav-link {
                 color: white !important;
+            }
+
+            .notification-bell-wrapper {
+                bottom: 15px;
+                right: 15px;
+                width: 45px;
+                height: 45px;
+            }
+
+            .notification-bell-wrapper .notification-bell {
+                font-size: 1.1rem;
+            }
+
+            /* On mobile, show dropdown below bell instead of left */
+            .notification-dropdown {
+                right: 15px;
+                bottom: 70px;
+                left: auto !important;
+                width: calc(100vw - 30px);
+                max-width: none;
+            }
+
+            .toast-container {
+                bottom: 70px;
+                right: 10px;
+                left: 10px;
+                max-width: none;
+            }
+
+            .toast {
+                min-width: auto;
+            }
+        }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Bell notification icon */
+        .notification-bell {
+            position: relative;
+            cursor: pointer;
+            font-size: 1.2rem;
+            color: #6c757d;
+            transition: color 0.2s;
+        }
+
+        .notification-bell:hover {
+            color: #333;
+        }
+
+        .notification-badge {
+            position: absolute;
+            top: -5px;
+            right: -8px;
+            background: #dc3545;
+            color: white;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            font-size: 0.65rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        /* Mobile adjustments */
+        @media (max-width: 767.98px) {
+            .main-content {
+                margin-left: 0;
+                padding: 15px;
+            }
+
+            .nav-link {
+                color: white !important;
+            }
+
+            .toast-container {
+                bottom: 10px;
+                right: 10px;
+                left: 10px;
+                max-width: none;
+            }
+
+            .toast {
+                min-width: auto;
             }
         }
     </style>
@@ -221,9 +660,9 @@
                 </a>
                 {% endif %}
                 <hr class="bg-white">
-                {% if current_user.is_admin or current_user.can_view_reports %}
-                <a class="nav-link fw-bold text-warning" href="{{ url_for('reports.profit_loss_report') }}">
-                    <i class="fas fa-file-invoice-dollar me-2"></i> Profit & Loss
+                {% if current_user.is_admin or current_user.can_view_settings %}
+                <a class="nav-link" href="{{ url_for('sales.company_settings') }}">
+                    <i class="fas fa-building me-2"></i> Company
                 </a>
                 <a class="nav-link" href="{{ url_for('reports.sales_report') }}">
                     <i class="fas fa-chart-bar me-2"></i> Sales Report
@@ -456,6 +895,37 @@
         </div>
     </div>
 
+    <!-- Sticky Notification Bell (Bottom Right) -->
+    <div class="notification-bell-wrapper" id="notificationBell" title="View notifications">
+        <i class="fas fa-bell notification-bell"></i>
+        {% set error_count = get_flashed_messages(with_categories=true) | selectattr(0, 'equalto', 'danger') | list | length %}
+        {% if error_count > 0 %}
+        <span class="notification-badge">{{ error_count }}</span>
+        {% endif %}
+    </div>
+
+    <!-- Notification Dropdown Panel -->
+    <div class="notification-dropdown" id="notificationDropdown">
+        <div class="notification-dropdown-header">
+            <span class="notification-header-text">Notifications</span>
+            <div>
+                <button type="button" class="notification-mark-read" id="markAllReadBtn">Mark all read</button>
+                <button type="button" class="notification-close" id="notificationClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        <div class="notification-dropdown-body" id="notificationList">
+            <!-- Messages will be injected here by JavaScript -->
+        </div>
+        <div class="notification-footer" id="notificationFooter" style="display: none;">
+            <button class="notification-clear-all" id="clearAllBtn">Clear all notifications</button>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container (temporary toasts) -->
+    <div class="toast-container" id="toastContainer"></div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
@@ -472,14 +942,332 @@
             });
         });
 
+        // Toast notification system
+        const Toast = {
+            container: null,
+            
+            init: function() {
+                this.container = document.getElementById('toastContainer');
+            },
+            
+            show: function(message, type = 'info') {
+                if (!this.container) return;
+
+                const toastId = 'toast-' + Date.now();
+                const iconMap = {
+                    'success': 'fa-check-circle',
+                    'danger': 'fa-exclamation-circle',
+                    'warning': 'fa-exclamation-triangle',
+                    'info': 'fa-info-circle'
+                };
+                const icon = iconMap[type] || iconMap.info;
+
+                const toastHTML = `
+                    <div id="${toastId}" class="toast toast-${type}" role="alert">
+                        <div class="toast-header">
+                            <i class="fas ${icon} me-2 text-${type}"></i>
+                            <strong class="me-auto">Notification</strong>
+                            <small class="text-muted">Just now</small>
+                            <button type="button" class="toast-close" onclick="Toast.dismiss('${toastId}')">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="toast-body">
+                            ${message}
+                        </div>
+                    </div>
+                `;
+
+                this.container.insertAdjacentHTML('beforeend', toastHTML);
+
+                const toastEl = document.getElementById(toastId);
+                setTimeout(() => {
+                    toastEl.style.animation = 'slideIn 0.3s ease-out';
+                }, 10);
+
+                setTimeout(() => {
+                    this.dismiss(toastId);
+                }, 5000);
+            },
+
+            dismiss: function(toastId) {
+                const toast = document.getElementById(toastId);
+                if (toast) {
+                    toast.style.animation = 'slideIn 0.3s ease-out reverse';
+                    setTimeout(() => toast.remove(), 300);
+                }
+            }
+        };
+
+        // Persistent notification system
+        const AppNotifications = {
+            STORAGE_KEY: 'erp_notifications',
+            messages: [],
+            
+            init: function() {
+                Toast.init();
+                this.loadFromStorage();
+                this.processFlashMessages();
+                this.setupBellListener();
+                this.setupCloseListener();
+                this.setupMarkAllRead();
+                this.updateUI();
+                // Attach click listener to notification list
+                this.setupListClickListener();
+            },
+            
+            generateId: function(msg) {
+                const str = msg.message + '|' + (msg.type || 'info') + '|' + (msg.time || '');
+                let hash = 0;
+                for (let i = 0; i < str.length; i++) {
+                    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+                    hash |= 0;
+                }
+                return 'id_' + Math.abs(hash);
+            },
+            
+            loadFromStorage: function() {
+                try {
+                    const stored = localStorage.getItem(this.STORAGE_KEY);
+                    if (stored) {
+                        const parsed = JSON.parse(stored);
+                        this.messages = parsed.map(msg => ({
+                            id: msg.id || this.generateId(msg),
+                            message: msg.message,
+                            type: msg.type || 'info',
+                            time: msg.time || new Date().toISOString(),
+                            read: msg.read || false
+                        }));
+                    }
+                } catch (e) {
+                    console.error('Failed to load notifications:', e);
+                    this.messages = [];
+                }
+            },
+            
+            processFlashMessages: function() {
+                const flashAlerts = document.querySelectorAll('.alert');
+                flashAlerts.forEach(alert => {
+                    const alertClass = alert.className;
+                    let type = 'info';
+                    if (alertClass.includes('success')) type = 'success';
+                    else if (alertClass.includes('danger') || alertClass.includes('error')) type = 'danger';
+                    else if (alertClass.includes('warning')) type = 'warning';
+                    else if (alertClass.includes('info')) type = 'info';
+
+                    const message = alert.textContent.trim().replace(/×/g, '').trim();
+                    const msg = {
+                        id: Date.now() + Math.random(),
+                        message,
+                        type,
+                        time: new Date().toISOString(),
+                        read: false
+                    };
+                    this.messages.push(msg);
+                    alert.remove();
+                    Toast.show(message, type);
+                });
+                this.saveToStorage();
+            },
+            
+            saveToStorage: function() {
+                try {
+                    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.messages));
+                } catch (e) {
+                    console.error('Failed to save notifications:', e);
+                }
+            },
+            
+            markAsRead: function(id, event) {
+                if (event) event.stopPropagation();
+                const msg = this.messages.find(m => String(m.id) === String(id));
+                if (msg) {
+                    msg.read = true;
+                    this.saveToStorage();
+                    this.updateUI();
+                }
+            },
+            
+            dismiss: function(id) {
+                this.messages = this.messages.filter(m => String(m.id) !== String(id));
+                this.saveToStorage();
+                this.updateUI();
+            },
+            
+            markAllAsRead: function() {
+                this.messages.forEach(m => { m.read = true; });
+                this.saveToStorage();
+                this.updateUI();
+            },
+            
+            dismiss: function(id) {
+                this.messages = this.messages.filter(m => m.id !== id);
+                this.saveToStorage();
+                this.updateUI();
+            },
+            
+            clearAll: function() {
+                if (confirm('Clear all notifications?')) {
+                    this.messages = [];
+                    this.saveToStorage();
+                    this.updateUI();
+                }
+            },
+            
+            updateUI: function() {
+                this.updateDropdown();
+                this.updateBadge();
+                this.updateMarkAllReadButton();
+            },
+            
+            updateDropdown: function() {
+                const list = document.getElementById('notificationList');
+                const footer = document.getElementById('notificationFooter');
+                if (!list) return;
+                
+                if (this.messages.length === 0) {
+                    list.innerHTML = '<div class="notification-item empty">No notifications</div>';
+                    if (footer) footer.style.display = 'none';
+                    return;
+                }
+                
+                // Show last 10 messages, newest first
+                const recent = this.messages.slice(-10).reverse();
+                let html = '';
+                recent.forEach(msg => {
+                    html += `
+                        <div class="notification-item ${msg.read ? 'read' : 'unread'} ${msg.type}" data-id="${String(msg.id)}">
+                            <span class="notification-message">${this.escapeHtml(msg.message)}</span>
+                        </div>
+                    `;
+                });
+                list.innerHTML = html;
+                
+                // Show footer when there are any messages
+                if (footer) footer.style.display = 'block';
+                
+                // Attach click handlers to new elements
+                this.attachItemHandlers();
+            },
+            
+            attachItemHandlers: function() {
+                const list = document.getElementById('notificationList');
+                if (!list) return;
+                
+                // Dismiss buttons
+                list.querySelectorAll('.notification-dismiss').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const id = btn.getAttribute('data-id');
+                        this.dismiss(id);
+                    });
+                });
+                
+                // Message items (mark as read)
+                list.querySelectorAll('.notification-item:not(.empty)').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        if (e.target.closest('.notification-dismiss')) return;
+                        e.stopPropagation();
+                        const id = item.getAttribute('data-id');
+                        this.markAsRead(id);
+                    });
+                });
+            },
+            
+            setupListClickListener: function() {
+                const list = document.getElementById('notificationList');
+                if (!list) return;
+                
+                // Attach click listener once - uses event delegation
+                list.addEventListener('click', (e) => {
+                    const dismissBtn = e.target.closest('.notification-dismiss');
+                    if (dismissBtn) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const id = dismissBtn.getAttribute('data-id');
+                        this.dismiss(id);
+                        return;
+                    }
+                    
+                    const item = e.target.closest('.notification-item');
+                    if (item && !e.target.closest('.notification-dismiss')) {
+                        e.stopPropagation(); // Keep dropdown open when marking as read
+                        const id = item.getAttribute('data-id');
+                        this.markAsRead(id);
+                    }
+                });
+            },
+            
+            updateMarkAllReadButton: function() {
+                const btn = document.getElementById('markAllReadBtn');
+                if (!btn) return;
+                const hasUnread = this.messages.some(m => !m.read);
+                btn.style.display = hasUnread ? 'inline-block' : 'none';
+            },
+            
+            escapeHtml: function(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            },
+            
+            setupBellListener: function() {
+                const bell = document.getElementById('notificationBell');
+                if (bell) {
+                    bell.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        const dropdown = document.getElementById('notificationDropdown');
+                        if (dropdown) {
+                            const isVisible = dropdown.classList.contains('show');
+                            document.querySelectorAll('.notification-dropdown').forEach(d => {
+                                d.classList.remove('show');
+                            });
+                            if (!isVisible) {
+                                dropdown.classList.add('show');
+                            }
+                        }
+                    });
+                }
+            },
+            
+            setupCloseListener: function() {
+                const closeBtn = document.getElementById('notificationClose');
+                if (closeBtn) {
+                    closeBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        document.getElementById('notificationDropdown').classList.remove('show');
+                    });
+                }
+                document.addEventListener('click', function(e) {
+                    const dropdown = document.getElementById('notificationDropdown');
+                    const bell = document.getElementById('notificationBell');
+                    if (dropdown && dropdown.classList.contains('show') && 
+                        !dropdown.contains(e.target) && !bell.contains(e.target)) {
+                        dropdown.classList.remove('show');
+                    }
+                });
+            },
+            
+            setupMarkAllRead: function() {
+                const markAllBtn = document.getElementById('markAllReadBtn');
+                if (markAllBtn) {
+                    markAllBtn.addEventListener('click', () => this.markAllAsRead());
+                }
+                const clearAllBtn = document.getElementById('clearAllBtn');
+                if (clearAllBtn) {
+                    clearAllBtn.addEventListener('click', () => this.clearAll());
+                }
+            }
+        };
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            AppNotifications.init();
+        });
+
+        // Bulk actions helper
         function initBulkActions(config) {
-            const {
-                selectAllId,
-                checkboxClass,
-                bulkDeleteBtnId,
-                deleteUrl,
-                entityName
-            } = config;
+            const { selectAllId, checkboxClass, bulkDeleteBtnId, deleteUrl, entityName } = config;
 
             const selectAll = document.getElementById(selectAllId);
             const checkboxes = document.querySelectorAll(`.${checkboxClass}`);
@@ -526,15 +1314,15 @@
                             .then(response => response.json())
                             .then(data => {
                                 if (data.success) {
-                                    alert(data.message);
-                                    location.reload();
+                                    Toast.show(data.message, 'success');
+                                    setTimeout(() => location.reload(), 1500);
                                 } else {
-                                    alert('Error: ' + data.message + (data.errors ? '\n' + data.errors.join('\n') : ''));
+                                    Toast.show('Error: ' + data.message, 'danger');
                                 }
                             })
                             .catch(error => {
                                 console.error('Error:', error);
-                                alert('An error occurred while deleting.');
+                                Toast.show('An error occurred while deleting.', 'danger');
                             });
                     }
                 });

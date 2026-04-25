@@ -13,6 +13,10 @@ def create_app(config_class=Config):
     
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload size
     
+    # Ensure error handlers work even if debug is True (show friendly errors, not debugger)
+    app.config['PROPAGATE_EXCEPTIONS'] = False
+    app.config['TRAP_HTTP_EXCEPTIONS'] = False
+    
     # Disable Jinja2 template caching to ensure fresh renders (development)
     app.jinja_env.cache = None
     
@@ -246,7 +250,8 @@ def create_app(config_class=Config):
         return dict(company=company, company_logo_url=logo_url)
     
     # Global error handlers
-    from flask import render_template, request
+    from flask import render_template, request, flash, redirect, url_for, jsonify
+    from sqlalchemy.exc import IntegrityError
     
     def safe_render_error(**kwargs):
         """Safely render error template, falling back to plain HTML if needed."""
@@ -254,46 +259,123 @@ def create_app(config_class=Config):
             return render_template('error.html', **kwargs)
         except Exception as e:
             app.logger.error(f'Error rendering error page: {e}')
-            # Fallback plain HTML response
             code = kwargs.get('error_code', 500)
             title = kwargs.get('error_title', 'Error')
             message = kwargs.get('error_message', 'An error occurred.')
             return f"<h1>{code} - {title}</h1><p>{message}</p>", code
     
-    @app.errorhandler(404)
-    def not_found_error(error):
-        app.logger.error(f'404 Error: {request.url} - {error}')
-        return safe_render_error(
-            error_code=404,
-            error_title='Page Not Found',
-            error_message='The page you are looking for does not exist or has been moved.'
-        ), 404
+    def get_user_friendly_message(error):
+        """Convert technical errors into one-line simple, understandable messages."""
+        error_str = str(error).lower()
+        
+        # Database integrity errors
+        if 'not null constraint' in error_str or 'integrityerror' in error_str:
+            if 'sale_id' in error_str:
+                return 'Cannot process: Sale ID is required but missing.'
+            elif 'product_id' in error_str:
+                return 'Cannot process: Product is required. Please select a product.'
+            elif 'vendor_id' in error_str or 'customer_id' in error_str:
+                return 'Cannot process: Vendor/Customer is required.'
+            elif 'bill_id' in error_str:
+                return 'Cannot process: Bill reference is missing.'
+            else:
+                return 'Required field missing or duplicate entry exists. Please check your data.'
+        
+        # Foreign key constraints
+        if 'foreign key constraint' in error_str:
+            return 'Cannot save: Referenced record does not exist.'
+        
+        # Unique constraint violations
+        if 'unique constraint' in error_str or 'duplicate' in error_str:
+            return 'Duplicate entry: This record already exists.'
+        
+        # Database errors
+        if 'database is locked' in error_str:
+            return 'Database busy. Try again in a moment.'
+        if 'no such table' in error_str:
+            return 'Database setup incomplete. Contact administrator.'
+        
+        # Default fallback
+        return 'An unexpected error occurred. Please try again.'
     
     @app.errorhandler(500)
     def internal_error(error):
         app.logger.error(f'500 Internal Server Error: {request.url} - {error}', exc_info=True)
-        return safe_render_error(
-            error_code=500,
-            error_title='Server Error',
-            error_message='An unexpected error occurred. Our team has been notified. Please try again later.'
-        ), 500
+        user_message = get_user_friendly_message(error)
+        
+        # AJAX requests get JSON
+        if request.headers.get('Content-Type') == 'application/json' or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify(error=user_message), 500
+        
+        # Regular requests: flash and redirect back
+        try:
+            flash(user_message, 'danger')
+            return redirect(request.referrer or url_for('dashboard.index'))
+        except Exception:
+            return safe_render_error(
+                error_code=500,
+                error_title='Server Error',
+                error_message=user_message
+            ), 500
+    
+    @app.errorhandler(404)
+    def not_found_error(error):
+        app.logger.error(f'404 Error: {request.url} - {error}')
+        user_message = 'The page you are looking for does not exist.'
+        try:
+            flash(user_message, 'danger')
+            return redirect(request.referrer or url_for('dashboard.index'))
+        except Exception:
+            return safe_render_error(
+                error_code=404,
+                error_title='Page Not Found',
+                error_message=user_message
+            ), 404
     
     @app.errorhandler(403)
     def forbidden_error(error):
         app.logger.error(f'403 Forbidden: {request.url} - {error}')
-        return safe_render_error(
-            error_code=403,
-            error_title='Access Denied',
-            error_message='You do not have permission to access this page.'
-        ), 403
+        user_message = 'You do not have permission to access this page.'
+        try:
+            flash(user_message, 'danger')
+            return redirect(request.referrer or url_for('dashboard.index'))
+        except Exception:
+            return safe_render_error(
+                error_code=403,
+                error_title='Access Denied',
+                error_message=user_message
+            ), 403
     
     @app.errorhandler(400)
     def bad_request_error(error):
         app.logger.error(f'400 Bad Request: {request.url} - {error}')
-        return safe_render_error(
-            error_code=400,
-            error_title='Bad Request',
-            error_message='The request could not be understood. Please check your input and try again.'
-        ), 400
+        user_message = 'The request could not be understood. Please check your input.'
+        try:
+            flash(user_message, 'danger')
+            return redirect(request.referrer or url_for('dashboard.index'))
+        except Exception:
+            return safe_render_error(
+                error_code=400,
+                error_title='Bad Request',
+                error_message=user_message
+            ), 400
+    
+    # Catch IntegrityError specifically
+    @app.errorhandler(IntegrityError)
+    def handle_integrity_error(error):
+        app.logger.error(f'IntegrityError: {request.url} - {error}', exc_info=True)
+        user_message = get_user_friendly_message(error)
+        
+        # Rollback to prevent session issues
+        try:
+            db.session.rollback()
+        except:
+            pass
+        
+        if request.headers.get('Content-Type') == 'application/json' or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify(error=user_message), 400
+        
+        flash(user_message, 'danger')
+        return redirect(request.referrer or url_for('dashboard.index'))
     
     return app

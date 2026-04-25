@@ -1,4 +1,5 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response
+
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response, current_app
 from flask_login import login_required, current_user
 from app import db
 from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory, PurchaseReturn, PurchaseReturnItem, PurchaseSettings, PurchaseReturnSettings
@@ -6,6 +7,7 @@ from app.forms import PurchaseForm, VendorForm, PurchaseReturnSettingsForm
 from datetime import datetime, timedelta, date
 from app.pdf_utils import generate_professional_pdf
 from app.services.bom_versioning import BOMVersioningService
+from werkzeug.utils import secure_filename
 import os
 import io
 import csv
@@ -235,6 +237,23 @@ def create_bill():
             bill.status = 'partial'
         else:
             bill.status = 'unpaid'
+
+        # Handle bill image upload
+        if 'bill_image' in request.files:
+            file = request.files['bill_image']
+            if file and file.filename:
+                allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'webp'}
+                ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+                if ext in allowed_extensions:
+                    upload_dir = os.path.join(current_app.root_path, 'static', 'uploads', 'bills')
+                    os.makedirs(upload_dir, exist_ok=True)
+                    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                    filename = secure_filename(f"{bill_number}_{timestamp}.{ext}")
+                    filepath = os.path.join(upload_dir, filename)
+                    file.save(filepath)
+                    bill.bill_image_path = os.path.join('uploads', 'bills', filename).replace('\\', '/')
+                else:
+                    flash('Invalid file type for bill image. Allowed: png, jpg, jpeg, gif, pdf, webp', 'warning')
 
         db.session.commit()
         
@@ -664,6 +683,15 @@ def delete_bill(id):
         product = Product.query.get(item.product_id)
         if product:
             product.update_quantity(-item.quantity)
+
+    # Delete associated bill image if exists
+    if bill.bill_image_path:
+        try:
+            image_full_path = os.path.join(current_app.root_path, 'static', bill.bill_image_path)
+            if os.path.exists(image_full_path):
+                os.remove(image_full_path)
+        except Exception as e:
+            print(f"Warning: Could not delete bill image: {e}")
 
     db.session.delete(bill)
     db.session.commit()

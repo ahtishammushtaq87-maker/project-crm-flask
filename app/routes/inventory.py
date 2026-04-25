@@ -320,6 +320,60 @@ def bulk_delete_products():
         
     return jsonify({'success': True, 'message': message})
 
+@bp.route('/products/bulk-assign-warehouse', methods=['POST'])
+@login_required
+def bulk_assign_warehouse():
+    ids = request.json.get('ids', [])
+    warehouse_id = request.json.get('warehouse_id')
+    
+    if not ids:
+        return jsonify({'success': False, 'message': 'No products selected'}), 400
+    
+    if not warehouse_id:
+        return jsonify({'success': False, 'message': 'No warehouse selected'}), 400
+    
+    # Verify warehouse exists
+    warehouse = Warehouse.query.get(warehouse_id)
+    if not warehouse:
+        return jsonify({'success': False, 'message': 'Invalid warehouse'}), 400
+    
+    updated_count = 0
+    skipped_count = 0
+    errors = []
+    
+    for product_id in ids:
+        product = Product.query.get(product_id)
+        if not product:
+            skipped_count += 1
+            continue
+        
+        # Safety check: skip products with transaction history
+        if product.sale_items or product.purchase_items or product.stock_movements:
+            skipped_count += 1
+            continue
+        
+        try:
+            product.warehouse_id = int(warehouse_id)
+            updated_count += 1
+        except Exception as e:
+            errors.append(f'Error updating {product.name}: {str(e)}')
+    
+    if updated_count > 0:
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'success': False, 'message': f'Database error: {str(e)}'}), 500
+    
+    message = f'Successfully assigned warehouse to {updated_count} products.'
+    if skipped_count > 0:
+        message += f' Skipped {skipped_count} products with transaction history (cannot reassign).'
+    
+    if errors:
+        return jsonify({'success': False, 'message': message, 'errors': errors}), 500
+    
+    return jsonify({'success': True, 'message': message})
+
 @bp.route('/stock-report')
 @login_required
 def stock_report():

@@ -91,6 +91,7 @@ class CustomerForm(FlaskForm):
 class PurchaseForm(FlaskForm):
     vendor_id = SelectField('Vendor', coerce=int, validators=[DataRequired()])
     date = DateField('Date', validators=[DataRequired()])
+    bill_image = FileField('Bill Image', validators=[Optional()])
 
 class VendorForm(FlaskForm):
     name = StringField('Vendor Name', validators=[DataRequired()])

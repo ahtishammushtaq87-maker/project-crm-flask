@@ -70,7 +70,7 @@
         </a>
     </div>
 
-    <form method="POST" id="billForm">
+    <form method="POST" id="billForm" enctype="multipart/form-data">
         {{ form.hidden_tag() }}
 
         <div class="row">
@@ -142,6 +142,13 @@
                                 <option value="{{ cur.id }}">{{ cur.name }} ({{ cur.code }})</option>
                                 {% endfor %}
                             </select>-->
+                        </div>
+
+                        <!-- Bill Image -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold"><i class="fas fa-image me-1 text-info"></i>Bill Image</label>
+                            {{ form.bill_image(class="form-control", accept=".png,.jpg,.jpeg,.gif,.pdf,.webp") }}
+                            <div class="form-text text-muted">Upload a photo or PDF of the vendor bill (optional). Max 5MB.</div>
                         </div>
 
                         <!-- Notes -->

@@ -7,6 +7,9 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Products</h2>
         <div>
+            <button id="bulkWarehouseBtn" class="btn btn-primary d-none me-2">
+                <i class="fas fa-warehouse"></i> Assign Warehouse
+            </button>
             <button id="bulkDeleteBtn" class="btn btn-danger d-none me-2">
                 <i class="fas fa-trash"></i> Delete Selected
             </button>
@@ -18,7 +21,41 @@
             </a>
         </div>
     </div>
-    
+
+    <!-- Bulk Warehouse Assignment Modal -->
+    <div class="modal fade" id="bulkWarehouseModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form id="bulkWarehouseForm" method="POST">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Assign Warehouse to Selected Products</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">Select Warehouse</label>
+                            <select name="warehouse_id" class="form-control" required>
+                                <option value="">-- Select Warehouse --</option>
+                                {% for wh in warehouses %}
+                                <option value="{{ wh.id }}">{{ wh.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <p class="text-muted small">
+                            <i class="fas fa-info-circle"></i> This will assign the selected warehouse to all chosen products. 
+                            Products with existing transactions cannot be reassigned.
+                        </p>
+                        <div id="bulkWarehouseError" class="alert alert-danger d-none"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Assign Warehouse</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div class="card mb-3">
         <div class="card-body">
             <form method="GET" class="row g-3 filter-form">
@@ -391,14 +428,14 @@ function showPriceHistory(productId, productName) {
         });
 }
 
-// Initialize tooltips
+// Initialize tooltips and bulk actions
 document.addEventListener('DOMContentLoaded', function() {
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
 
-    // Initialize bulk actions
+    // Initialize bulk delete actions
     initBulkActions({
         selectAllId: 'selectAll',
         checkboxClass: 'product-checkbox',
@@ -406,7 +443,100 @@ document.addEventListener('DOMContentLoaded', function() {
         deleteUrl: "{{ url_for('inventory.bulk_delete_products') }}",
         entityName: 'products'
     });
+
+    // Bulk Warehouse Assignment functionality
+    const bulkWarehouseBtn = document.getElementById('bulkWarehouseBtn');
+    const bulkWarehouseForm = document.getElementById('bulkWarehouseForm');
+    const bulkWarehouseError = document.getElementById('bulkWarehouseError');
+
+    function updateBulkWarehouseBtn() {
+        const checkedCount = document.querySelectorAll('.product-checkbox:checked').length;
+        if (bulkWarehouseBtn) {
+            if (checkedCount > 0) {
+                bulkWarehouseBtn.classList.remove('d-none');
+                bulkWarehouseBtn.innerHTML = `<i class="fas fa-warehouse"></i> Assign Warehouse (${checkedCount})`;
+            } else {
+                bulkWarehouseBtn.classList.add('d-none');
+            }
+        }
+    }
+
+    // Show modal for warehouse assignment
+    if (bulkWarehouseBtn) {
+        bulkWarehouseBtn.addEventListener('click', function() {
+            const selected = document.querySelectorAll('.product-checkbox:checked');
+            if (selected.length === 0) {
+                alert('Please select at least one product.');
+                return;
+            }
+            bulkWarehouseError.classList.add('d-none');
+            const modal = new bootstrap.Modal(document.getElementById('bulkWarehouseModal'));
+            modal.show();
+        });
+    }
+
+    // Handle form submission
+    if (bulkWarehouseForm) {
+        bulkWarehouseForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const selected = document.querySelectorAll('.product-checkbox:checked');
+            if (selected.length === 0) {
+                showError('No products selected.');
+                return;
+            }
+            
+            const ids = Array.from(selected).map(cb => cb.value);
+            const warehouseId = this.querySelector('select[name="warehouse_id"]').value;
+            
+            if (!warehouseId) {
+                showError('Please select a warehouse.');
+                return;
+            }
+            
+            fetch("{{ url_for('inventory.bulk_assign_warehouse') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: ids, warehouse_id: warehouseId })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    Toast.show(data.message, 'success');
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    showError(data.message || 'Failed to assign warehouse.');
+                }
+            })
+            .catch(err => {
+                showError('Network error: ' + err);
+            });
+        });
+    }
+
+    function showError(msg) {
+        bulkWarehouseError.textContent = msg;
+        bulkWarehouseError.classList.remove('d-none');
+    }
+
+    // Attach update function to all checkboxes
+    document.querySelectorAll('.product-checkbox').forEach(cb => {
+        cb.addEventListener('change', updateBulkWarehouseBtn);
+    });
+
+    // Also update on selectAll change
+    const selectAll = document.getElementById('selectAll');
+    if (selectAll) {
+        selectAll.addEventListener('change', function() {
+            setTimeout(updateBulkWarehouseBtn, 0);
+        });
+    }
+
+    // Initial call to set correct state on page load
+    updateBulkWarehouseBtn();
 });
+
+
 </script>
 
 <!-- Modal: Price History -->

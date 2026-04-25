@@ -37,6 +37,9 @@
             <a href="{{ url_for('purchase.create_purchase_return', bill_id=bill.id) }}" class="btn btn-danger">
                 <i class="fas fa-undo me-1"></i> Create Return
             </a>
+            <a href="{{ url_for('purchase.create_bill') }}" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i> New Bill
+            </a>
             <a href="{{ url_for('purchase.vendor_profile', id=bill.vendor.id) }}" class="btn btn-outline-secondary">
                 <i class="fas fa-building me-1"></i> Vendor
             </a>
@@ -445,6 +448,36 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if bill.bill_image_path %}
+            <div class="card shadow mb-4 border-left-info">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-info"><i class="fas fa-image me-2"></i>Bill Image</h6>
+                </div>
+                <div class="card-body text-center">
+                    {% set ext = bill.bill_image_path.rsplit('.', 1)[1].lower() if '.' in bill.bill_image_path else '' %}
+                    {% if ext == 'pdf' %}
+                        <div class="alert alert-light border">
+                            <i class="fas fa-file-pdf fa-3x text-danger mb-3"></i>
+                            <p class="mb-2">PDF Document</p>
+                            <a href="{{ url_for('static', filename=bill.bill_image_path) }}" target="_blank" class="btn btn-danger btn-sm">
+                                <i class="fas fa-eye me-1"></i>View PDF
+                            </a>
+                        </div>
+                    {% else %}
+                        <a href="{{ url_for('static', filename=bill.bill_image_path) }}" target="_blank" title="Click to view full size">
+                            <img src="{{ url_for('static', filename=bill.bill_image_path) }}" 
+                                 alt="Bill Image" 
+                                 class="img-fluid rounded border shadow-sm mb-2" 
+                                 style="max-height: 300px; cursor: pointer;">
+                        </a>
+                        <div class="small text-muted">
+                            <i class="fas fa-external-link-alt me-1"></i>Click image to open full size
+                        </div>
+                    {% endif %}
                 </div>
             </div>
             {% endif %}

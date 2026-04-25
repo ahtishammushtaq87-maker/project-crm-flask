@@ -47,6 +47,9 @@ PAGE_BG         = colors.HexColor("#f2f2f2")
 # Height reserved at the bottom of every page for the pinned footer
 FOOTER_H = 72
 
+# Shared width for the items table and terms & conditions box
+TABLE_WIDTH = 8.4 * inch
+
 
 class ProfessionalPDFGenerator:
     def __init__(self, buffer, company=None, invoice_settings=None, template_config=None):
@@ -73,12 +76,24 @@ class ProfessionalPDFGenerator:
             self.title           = getattr(self.template, 'TITLE', 'DOCUMENT')
             self.footer_message  = getattr(self.template, 'FOOTER_MESSAGE', 'Thank you for your business!')
             self.labels          = getattr(self.template, 'LABELS', {})
+            self.show_payment_details = getattr(self.template, 'SHOW_PAYMENT_DETAILS', True)
+            self.show_terms = getattr(self.template, 'SHOW_TERMS', True)
+            self.show_notes = getattr(self.template, 'SHOW_NOTES', True)
+            self.show_bank_details = getattr(self.template, 'SHOW_BANK_DETAILS', True)
+            self.footer_show_page_number = getattr(self.template, 'FOOTER_SHOW_PAGE_NUMBER', True)
+            self.footer_show_company_info = getattr(self.template, 'FOOTER_SHOW_COMPANY_INFO', True)
         else:
             self.currency_symbol = DEFAULT_CURRENCY
             self.currency_format = DEFAULT_FORMAT
             self.title           = 'DOCUMENT'
             self.footer_message  = 'Thank you for your business!'
             self.labels          = {}
+            self.show_payment_details = True
+            self.show_terms = True
+            self.show_notes = True
+            self.show_bank_details = True
+            self.footer_show_page_number = True
+            self.footer_show_company_info = True
 
     def _get_label(self, key, default):
         return self.labels.get(key, default)
@@ -100,7 +115,7 @@ class ProfessionalPDFGenerator:
         add(ParagraphStyle('CompanyName',    parent=self.styles['Normal'], fontSize=11, textColor=TEXT_COLOR,    fontName='Helvetica-Bold', spaceAfter=1))
         add(ParagraphStyle('CompanyInfo',    parent=self.styles['Normal'], fontSize=7,  textColor=MUTED_TEXT,    leading=10))
         add(ParagraphStyle('BoxTitle',       parent=self.styles['Normal'], fontSize=8,  textColor=PRIMARY_COLOR, fontName='Helvetica-Bold', spaceAfter=3, leftIndent=0))
-        add(ParagraphStyle('BoxValue',       parent=self.styles['Normal'], fontSize=7.5,textColor=TEXT_COLOR,    leading=10, alignment=TA_LEFT, leftIndent=0))
+        add(ParagraphStyle('BoxValue',       parent=self.styles['Normal'], fontSize=7.5,textColor=TEXT_COLOR,    leading=6, alignment=TA_LEFT, leftIndent=0))
         add(ParagraphStyle('TblHeader',      parent=self.styles['Normal'], fontSize=7.5,textColor=WHITE,         fontName='Helvetica-Bold'))
         add(ParagraphStyle('TblCell',        parent=self.styles['Normal'], fontSize=7.5,textColor=TEXT_COLOR,    leading=10))
         add(ParagraphStyle('TblCellSub',     parent=self.styles['Normal'], fontSize=6.5,textColor=MUTED_TEXT,    leading=9))
@@ -158,7 +173,7 @@ class ProfessionalPDFGenerator:
             colWidths=[META_LABEL_W, META_VAL_W]
         )
         meta_tbl.setStyle(TableStyle([
-            ('ALIGN',         (0,0), (-1,-1), 'RIGHT'),
+            ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
             ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
             ('TOPPADDING',    (0,0), (-1,-1), 1),
             ('BOTTOMPADDING', (0,0), (-1,-1), 1),
@@ -176,7 +191,7 @@ class ProfessionalPDFGenerator:
 
         right_tbl = Table(right_rows, colWidths=[RIGHT_W])
         right_tbl.setStyle(TableStyle([
-            ('ALIGN',  (0,0), (-1,-1), 'RIGHT'),
+            ('ALIGN',  (0,0), (-1,-1), 'LEFT'),
             ('VALIGN', (0,0), (-1,-1), 'TOP'),
             ('TOPPADDING',    (0,0), (-1,-1), 0),
             ('BOTTOMPADDING', (0,0), (-1,-1), 0),
@@ -199,7 +214,7 @@ class ProfessionalPDFGenerator:
 
     # ── INFO BOXES ─────────────────────────────────────────────────────────
     def _build_info_boxes(self, client_data, ship_to=None, reference_data=None):
-        BOX_W = 2.0 * inch
+        BOX_W = 3.0 * inch
         GAP   = 0.125 * inch   # visible space between boxes
 
         def make_box(title_text, rows):
@@ -210,11 +225,12 @@ class ProfessionalPDFGenerator:
             tbl.setStyle(TableStyle([
                 ('VALIGN',        (0,0), (-1,-1), 'TOP'),
                 ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
-                ('TOPPADDING',    (0,0), (-1,-1), 5),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-                ('LEFTPADDING',   (0,0), (-1,-1), 2),
-                ('RIGHTPADDING',  (0,0), (-1,-1), 2),
-                ('BOX',           (0,0), (-1,-1), 0.6, BORDER_GREY),
+                ('TOPPADDING',    (0,0), (-1,-1), 3),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+                ('LEFTPADDING',   (0,0), (-1,-1), 8),
+                ('RIGHTPADDING',  (0,0), (-1,-1), 6),
+                ('BOX',           (0,0), (-1,-1), 0.5, BORDER_GREY),
+                ('BACKGROUND',    (0,0), (-1,-1), WHITE),
             ]))
             return tbl
 
@@ -289,13 +305,17 @@ class ProfessionalPDFGenerator:
         header_row = [Paragraph(f"<b>{h}</b>", self.styles['TblHeader']) for h in headers]
 
         if show_sku and show_item_code:
-            col_w = [0.35*inch, 2.5*inch, 0.7*inch, 0.7*inch, 0.55*inch, 0.5*inch, 0.6*inch, 0.65*inch, 0.95*inch]
+            col_w = [0.385*inch, 2.75*inch, 0.77*inch, 0.77*inch, 0.605*inch, 0.55*inch, 0.66*inch, 0.715*inch, 1.045*inch]
         elif show_sku:
-            col_w = [0.35*inch, 2.8*inch, 0.8*inch, 0.7*inch, 0.6*inch, 0.7*inch, 1.0*inch, 0.85*inch]
+            col_w = [0.385*inch, 3.08*inch, 0.88*inch, 0.77*inch, 0.66*inch, 0.77*inch, 1.1*inch, 0.935*inch]
         elif show_item_code:
-            col_w = [0.35*inch, 3.0*inch, 0.8*inch, 0.5*inch, 0.6*inch, 1.0*inch, 1.0*inch]
+            col_w = [0.385*inch, 3.3*inch, 0.88*inch, 0.55*inch, 0.66*inch, 1.1*inch, 1.1*inch]
         else:
-            col_w = [0.35*inch, 3.5*inch, 0.65*inch, 0.8*inch, 1.1*inch, 1.1*inch]
+            col_w = [0.385*inch, 3.85*inch, 0.715*inch, 0.88*inch, 1.21*inch, 1.21*inch]
+
+        # Scale column widths so the items table matches the terms & conditions box width
+        total_current = sum(col_w)
+        col_w = [w * TABLE_WIDTH / total_current for w in col_w]
 
         table_data = [header_row]
         for idx, item in enumerate(items, 1):
@@ -343,8 +363,7 @@ class ProfessionalPDFGenerator:
             ('ROWBACKGROUNDS',(0,1),  (-1,-1), [WHITE, ACCENT_COLOR]),
             ('VALIGN',        (0,0),  (-1,-1), 'TOP'),
             ('ALIGN',         (0,0),  (0,-1),  'CENTER'),
-            ('ALIGN',         (1,0),  (1,-1),  'LEFT'),
-            ('ALIGN',         (-3,0), (-1,-1), 'RIGHT'),
+            ('ALIGN',         (1,0),  (-1,-1), 'LEFT'),
             ('LINEBELOW',     (0,0),  (-1,0),  1.0, PRIMARY_COLOR),
             ('GRID',          (0,0),  (-1,-1), 0.3, LIGHT_GREY),
             ('LINEBELOW',     (0,-1), (-1,-1), 0.5, BORDER_GREY),
@@ -352,32 +371,16 @@ class ProfessionalPDFGenerator:
         return tbl
 
     # ── TOTALS + NOTES ─────────────────────────────────────────────────────
-    def _build_bottom_section(self, totals, payment_info, terms, notes):
-        notes_content = []
-        if payment_info:
-            notes_content.append(Paragraph("NOTES / PAYMENT TERMS", self.styles['NotesTitle']))
+    def _build_bottom_section(self, totals, payment_info, terms, notes, extra_thank=None, is_purchase=False):
+        # ── Payment Info (Bank Details) Box ─────────────────────────────────────
+        bank_tbl = None
+        if payment_info and self.show_payment_details and self.show_bank_details:
+            bank_rows = [Paragraph("BANK DETAILS", self.styles['NotesTitle'])]
             for k, v in payment_info.items():
                 if v:
-                    notes_content.append(Paragraph(f"<b>{k}:</b> {v}", self.styles['NotesText']))
-            notes_content.append(Spacer(1, 6))
-        if terms:
-            if not payment_info:
-                notes_content.append(Paragraph("TERMS & CONDITIONS", self.styles['NotesTitle']))
-            for line in terms.split('\n'):
-                if line.strip():
-                    notes_content.append(Paragraph(line.strip(), self.styles['NotesText']))
-            notes_content.append(Spacer(1, 6))
-        if notes:
-            if not payment_info and not terms:
-                notes_content.append(Paragraph("NOTES", self.styles['NotesTitle']))
-            for line in notes.split('\n'):
-                if line.strip():
-                    notes_content.append(Paragraph(line.strip(), self.styles['NotesText']))
-
-        notes_tbl = None
-        if notes_content:
-            notes_tbl = Table([[item] for item in notes_content], colWidths=[3.2 * inch])
-            notes_tbl.setStyle(TableStyle([
+                    bank_rows.append(Paragraph(f"<b>{k}:</b> {v}", self.styles['NotesText']))
+            bank_tbl = Table([[item] for item in bank_rows], colWidths=[3.7 * inch])
+            bank_tbl.setStyle(TableStyle([
                 ('VALIGN',        (0,0), (-1,-1), 'TOP'),
                 ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
                 ('TOPPADDING',    (0,0), (-1,-1), 3),
@@ -388,6 +391,7 @@ class ProfessionalPDFGenerator:
                 ('BACKGROUND',    (0,0), (-1,-1), WHITE),
             ]))
 
+        # ── Totals Table ───────────────────────────────────────────────────────
         tot_rows = []
         for i, (label, value) in enumerate(totals):
             is_last = (i == len(totals) - 1)
@@ -398,11 +402,10 @@ class ProfessionalPDFGenerator:
                            self.styles['GrandValue'] if is_bold else self.styles['TotalValue'])
             tot_rows.append([lp, vp])
 
-        tot_tbl = Table(tot_rows, colWidths=[2.0 * inch, 1.1 * inch])
+        tot_tbl = Table(tot_rows, colWidths=[2.0 * inch, 1.7 * inch])
         tot_style = [
             ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
-            ('ALIGN',         (0,0), (0,-1),  'LEFT'),
-            ('ALIGN',         (1,0), (1,-1),  'RIGHT'),
+            ('ALIGN',         (0,0), (-1,-1),  'LEFT'),
             ('TOPPADDING',    (0,0), (-1,-1), 3),
             ('BOTTOMPADDING', (0,0), (-1,-1), 3),
             ('LEFTPADDING',   (0,0), (-1,-1), 8),
@@ -415,16 +418,67 @@ class ProfessionalPDFGenerator:
                                ('BACKGROUND', (0,i), (-1,i), ACCENT_COLOR)]
         tot_tbl.setStyle(TableStyle(tot_style))
 
-        left_cell = notes_tbl if notes_tbl else ''
-        combo = Table([[left_cell, '', tot_tbl]], colWidths=[3.2*inch, 0.15*inch, 3.15*inch])
-        combo.setStyle(TableStyle([
+        # ── Terms & Conditions Box ─────────────────────────────────────────────
+        terms_tbl = None
+        terms_content = []
+        
+        # Build terms content
+        if terms and self.show_terms:
+            terms_content.append(Paragraph("TERMS & CONDITIONS", self.styles['NotesTitle']))
+            for line in terms.split('\n'):
+                if line.strip():
+                    terms_content.append(Paragraph(line.strip(), self.styles['NotesText']))
+        if notes and self.show_notes:
+            if not terms_content:
+                terms_content.append(Paragraph("NOTES", self.styles['NotesTitle']))
+            for line in notes.split('\n'):
+                if line.strip():
+                    terms_content.append(Paragraph(line.strip(), self.styles['NotesText']))
+        
+        if terms_content:
+            terms_tbl = Table([[item] for item in terms_content], colWidths=[7.4 * inch])
+            terms_tbl.setStyle(TableStyle([
+                ('VALIGN',        (0,0), (-1,-1), 'TOP'),
+                ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
+                ('TOPPADDING',    (0,0), (-1,-1), 3),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+                ('LEFTPADDING',   (0,0), (-1,-1), 8),
+                ('RIGHTPADDING',  (0,0), (-1,-1), 6),
+                ('BOX',           (0,0), (-1,-1), 0.5, BORDER_GREY),
+                ('BACKGROUND',    (0,0), (-1,-1), WHITE),
+            ]))
+
+        # ── Compose Final Layout ───────────────────────────────────────────────
+        # Row 1: Bank box (50% width) + Totals table (50% width) side by side
+        if bank_tbl:
+            row1 = Table([[bank_tbl, '', tot_tbl]], colWidths=[3.7*inch, 0.1*inch, 3.7*inch])
+        else:
+            if is_purchase:
+                # Left-align totals for purchase bill
+                row1 = Table([[tot_tbl, '']], colWidths=[0.4*inch, 0.3*inch])
+            else:
+                # Keep existing behavior for invoices and others
+                row1 = Table([[tot_tbl]], colWidths=[3.7*inch])
+        row1.setStyle(TableStyle([
             ('VALIGN',        (0,0), (-1,-1), 'TOP'),
+            ('ALIGN',         (1,0), (1,-1),  'LEFT'),
             ('LEFTPADDING',   (0,0), (-1,-1), 0),
             ('RIGHTPADDING',  (0,0), (-1,-1), 0),
             ('TOPPADDING',    (0,0), (-1,-1), 0),
             ('BOTTOMPADDING', (0,0), (-1,-1), 0),
         ]))
-        return combo
+
+        elements = [row1, Spacer(1, 8)]
+
+        if terms_tbl:
+            elements.append(terms_tbl)
+
+        # Place thank-you message outside (below) the terms box
+        if extra_thank:
+            elements.append(Spacer(1, 6))
+            elements.append(extra_thank)
+
+        return elements
 
     # ── FOOTER — drawn directly on canvas, always at page bottom ──────────
     def _draw_footer(self, c, doc):
@@ -488,35 +542,44 @@ class ProfessionalPDFGenerator:
             c.setFillColor(MUTED_TEXT)
             c.drawString(lx, y, "Authorized Signature")
 
+        # ── Center: FOOTER MESSAGE ─────────────────────────────────────────
+        if self.footer_message:
+            msg_y = divider_y - 11 - 20
+            c.setFont('Helvetica-Bold', 7.5)
+            c.setFillColor(TEXT_COLOR)
+            c.drawCentredString(w / 2, msg_y, str(self.footer_message))
+
         # ── Right: CUSTOMER SUPPORT ────────────────────────────────────────
-        cemail = getattr(self.company, 'email',    '') if self.company else ""
-        cphone = getattr(self.company, 'phone',    '') if self.company else ""
-        cwa    = getattr(self.company, 'whatsapp', '') if self.company else ""
+        if self.footer_show_company_info:
+            cemail = getattr(self.company, 'email',    '') if self.company else ""
+            cphone = getattr(self.company, 'phone',    '') if self.company else ""
+            cwa    = getattr(self.company, 'whatsapp', '') if self.company else ""
 
-        ry = divider_y - 11
-        c.setFont('Helvetica-Bold', 7)
-        c.setFillColor(TEXT_COLOR)
-        c.drawRightString(rx, ry, "CUSTOMER SUPPORT")
+            ry = divider_y - 11
+            c.setFont('Helvetica-Bold', 7)
+            c.setFillColor(TEXT_COLOR)
+            c.drawRightString(rx, ry, "CUSTOMER SUPPORT")
 
-        c.setFont('Helvetica', 6.5)
-        c.setFillColor(MUTED_TEXT)
-        for line in filter(None, [cemail, cphone, f"WhatsApp: {cwa}" if cwa else ""]):
-            ry -= 9
-            c.drawRightString(rx, ry, line)
+            c.setFont('Helvetica', 6.5)
+            c.setFillColor(MUTED_TEXT)
+            for line in filter(None, [cemail, cphone, f"WhatsApp: {cwa}" if cwa else ""]):
+                ry -= 9
+                c.drawRightString(rx, ry, line)
 
         # Page number
-        c.setFont('Helvetica', 7)
-        c.setFillColor(MUTED_TEXT)
-        c.drawCentredString(w / 2, card_margin + 6, f"Page {doc.page}")
+        if self.footer_show_page_number:
+            c.setFont('Helvetica', 7)
+            c.setFillColor(MUTED_TEXT)
+            c.drawCentredString(w / 2, card_margin + 6, f"Page {doc.page}")
 
         c.restoreState()
 
-    # ── MAIN BUILDER ───────────────────────────────────────────────────────
     def generate_document(self, title, doc_number, date, due_date, client_data, items,
-                          totals, payment_info=None, terms=None, notes=None,
-                          status=None, ship_to=None, reference_data=None, currency=None,
-                          ship_to_label=None, bill_to_label=None,
-                          customer_name=None, amount_due=None, due_date_str=None):
+                           totals, payment_info=None, terms=None, notes=None,
+                           status=None, ship_to=None, reference_data=None, currency=None,
+                           ship_to_label=None, bill_to_label=None,
+                           customer_name=None, amount_due=None, due_date_str=None,
+                           is_purchase=False):
         elements = []
         
         # Set custom ship_to label if provided (e.g., "SHIP FROM" for purchase docs)
@@ -542,35 +605,38 @@ class ProfessionalPDFGenerator:
         show_sku = any('sku' in item for item in items)
         elements.append(self._build_items_table(items, show_item_code, show_sku))
         elements.append(Spacer(1, 10))
-        elements.append(self._build_bottom_section(totals, payment_info, terms, notes))
 
-        # Add thank you message at the bottom (left-aligned with item table)
-        if customer_name:
-            elements.append(Spacer(1, 20))
-            thank_you_style = ParagraphStyle(
-                'ThankYou',
+        # Prepare extra thank you message for invoices only
+        extra_thank = None
+        if customer_name and title.lower() == 'invoice':
+            extra_thank_style = ParagraphStyle(
+                'ExtraThankYou',
                 parent=self.styles['Normal'],
                 fontSize=9,
                 alignment=TA_LEFT,
                 textColor=TEXT_COLOR,
                 spaceAfter=6,
                 leading=14,
-                leftIndent=6
+                leftIndent=0
             )
-            thank_you_lines = [
-                f"Thank you, <b>{customer_name}</b>, for your recent purchase.",
-            ]
-            if amount_due is not None and currency:
-                due_str = f", and payment is due by <b>{due_date_str}</b>." if due_date_str else "."
-                thank_you_lines.append(f"Your amount due is <b>{currency}{amount_due:,.2f}</b>{due_str}")
-            thank_you_lines += [
-                "If you have any questions, please let us know.",
-                "",
-                "Best regards,",
-                "We look forward to serving you again in the future."
-            ]
-            for line in thank_you_lines:
-                elements.append(Paragraph(line, thank_you_style))
+            amount_due_fmt = f'{currency}{amount_due:,.2f}' if amount_due is not None else 'N/A'
+            due_date_fmt = due_date_str if due_date_str else 'N/A'
+            # ── CORRECT: Use <br/> for line breaks, NEVER <p> tags ──────────
+            extra_thank = Paragraph(
+                f"<br/>Thank you, <b>{customer_name}</b>, for your recent purchase."
+                f"Your amount due is <b>{amount_due_fmt}</b>, due by <b>{due_date_fmt}</b>."
+                f"If you have any questions, please let us know.<br/>"
+                f"Best regards,<br/>"
+                f"We look forward to serving you again in the future.",
+                extra_thank_style
+            )
+
+        elements.extend(self._build_bottom_section(totals, payment_info, terms, notes, extra_thank=extra_thank, is_purchase=is_purchase))
+
+        # If you want the thank-you message **above the header** instead, move it here:
+        # elements.insert(0, extra_thank)
+        # elements.insert(0, Spacer(1, 12))
+        # (and remove extra_thank from _build_bottom_section call)
 
         self.doc.build(
             elements,
@@ -763,6 +829,7 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             status=getattr(obj, 'status', None),
             ship_to=ship_to, reference_data=reference_data,
             bill_to_label='Statement',
+            is_purchase=True
         )
 
     # ── PURCHASE ORDER ────────────────────────────────────────────────────

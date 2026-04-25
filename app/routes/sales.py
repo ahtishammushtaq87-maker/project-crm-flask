@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response
 from flask_login import login_required, current_user
 from app import db
-from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance
+from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn
 from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm
 from datetime import datetime, date
 from sqlalchemy import func
@@ -215,7 +215,8 @@ def invoice_detail(id):
     sale = Sale.query.get_or_404(id)
     company = Company.query.first()
     date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
-    return render_template('sales/invoice_detail.html', sale=sale, date_format=date_format)
+    returns = SaleReturn.query.filter_by(sale_id=sale.id).order_by(SaleReturn.date.desc()).all()
+    return render_template('sales/invoice_detail.html', sale=sale, returns=returns, date_format=date_format)
 
 @bp.route('/invoice/<int:id>/delete', methods=['POST'])
 @login_required
