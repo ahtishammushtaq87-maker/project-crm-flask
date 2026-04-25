@@ -662,20 +662,20 @@ def invoice_pdf_share(id):
 @login_required
 def company_settings():
     company = Company.query.first()
-    
+
     if request.method == 'POST':
         # Get name from form - required field
         company_name = request.form.get('name')
         if not company_name:
             flash('Company name is required.', 'error')
             return redirect(url_for('sales.company_settings'))
-        
+
         if not company:
             company = Company(name=company_name)
             db.session.add(company)
         else:
             company.name = company_name
-            
+
         company.address = request.form.get('address')
         company.phone = request.form.get('phone')
         company.email = request.form.get('email')
@@ -690,31 +690,68 @@ def company_settings():
         company.account_number = request.form.get('account_number')
         company.ifsc_code = request.form.get('ifsc_code')
         company.account_holder_name = request.form.get('account_holder_name')
-        
+
         # Handle logo upload
         if 'logo' in request.files:
             logo_file = request.files['logo']
             if logo_file and logo_file.filename:
+                # Validate file type
+                allowed_extensions = {'png', 'jpg', 'jpeg', 'gif'}
                 filename = secure_filename(logo_file.filename)
-                logo_path = os.path.join('app', 'static', 'uploads', filename)
-                os.makedirs(os.path.dirname(logo_path), exist_ok=True)
+                ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+                if ext not in allowed_extensions:
+                    flash('Invalid file type for logo. Only PNG, JPG, JPEG, GIF allowed.', 'error')
+                    return redirect(url_for('sales.company_settings'))
+                # Save file
+                upload_dir = os.path.join('app', 'static', 'uploads')
+                os.makedirs(upload_dir, exist_ok=True)
+                logo_path = os.path.join(upload_dir, filename)
                 logo_file.save(logo_path)
+                # Store path
                 company.logo_path = logo_path
-        
+
         # Handle signature upload
         if 'signature' in request.files:
             sig_file = request.files['signature']
             if sig_file and sig_file.filename:
+                # Validate file type
+                allowed_extensions = {'png', 'jpg', 'jpeg'}
                 filename = secure_filename(sig_file.filename)
-                sig_path = os.path.join('app', 'static', 'uploads', filename)
-                os.makedirs(os.path.dirname(sig_path), exist_ok=True)
+                ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+                if ext not in allowed_extensions:
+                    flash('Invalid file type for signature. Only PNG, JPG, JPEG allowed.', 'error')
+                    return redirect(url_for('sales.company_settings'))
+                # Save file
+                upload_dir = os.path.join('app', 'static', 'uploads')
+                os.makedirs(upload_dir, exist_ok=True)
+                sig_path = os.path.join(upload_dir, filename)
                 sig_file.save(sig_path)
                 company.signature_path = sig_path
-        
+
+        # Handle logo removal
+        if request.form.get('remove_logo') == 'on' and company.logo_path:
+            try:
+                logo_file_path = company.logo_path
+                if os.path.exists(logo_file_path):
+                    os.remove(logo_file_path)
+            except Exception:
+                pass  # Ignore deletion errors
+            company.logo_path = None
+
+        # Handle signature removal
+        if request.form.get('remove_signature') == 'on' and company.signature_path:
+            try:
+                sig_file_path = company.signature_path
+                if os.path.exists(sig_file_path):
+                    os.remove(sig_file_path)
+            except Exception:
+                pass  # Ignore deletion errors
+            company.signature_path = None
+
         db.session.commit()
         flash('Company settings updated successfully!', 'success')
         return redirect(url_for('sales.company_settings'))
-    
+
     return render_template('sales/company_settings.html', company=company)
 
 @bp.route('/invoice/settings', methods=['GET', 'POST'])

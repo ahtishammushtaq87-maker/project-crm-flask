@@ -237,19 +237,27 @@ def create_app(config_class=Config):
     
     @app.context_processor
     def inject_company():
-        from app.models import Company
-        from flask import url_for
-        company = Company.query.first()
-        logo_url = None
-        if company and company.logo_path:
-            path = company.logo_path.replace('\\', '/')
-            if 'static/' in path:
-                logo_url = url_for('static', filename=path.split('static/')[-1])
-            else:
-                logo_url = url_for('static', filename=path)
-        return dict(company=company, company_logo_url=logo_url)
-    
-    # Global error handlers
+         from app.models import Company
+         from flask import url_for
+         company = Company.query.first()
+         logo_url = None
+         sig_url = None
+         if company:
+             if company.logo_path:
+                 path = company.logo_path.replace('\\', '/')
+                 if 'static/' in path:
+                     logo_url = url_for('static', filename=path.split('static/')[-1])
+                 else:
+                     logo_url = url_for('static', filename=path)
+             if company.signature_path:
+                 path = company.signature_path.replace('\\', '/')
+                 if 'static/' in path:
+                     sig_url = url_for('static', filename=path.split('static/')[-1])
+                 else:
+                     sig_url = url_for('static', filename=path)
+         return dict(company=company, company_logo_url=logo_url, company_signature_url=sig_url)
+     
+     # Global error handlers
     from flask import render_template, request, flash, redirect, url_for, jsonify
     from sqlalchemy.exc import IntegrityError
     

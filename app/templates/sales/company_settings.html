@@ -59,15 +59,85 @@
                             <div class="col-md-6">
                                 <div class="mb-3">
                                     <label for="gst_number" class="form-label">GST Number</label>
-                                    <input type="text" class="form-control" id="gst_number" name="gst_number" 
+                                    <input type="text" class="form-control" id="gst_number" name="gst_number"
                                            value="{{ company.gst_number }}">
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="mb-3">
                                     <label for="pan_number" class="form-label">PAN Number</label>
-                                    <input type="text" class="form-control" id="pan_number" name="pan_number" 
+                                    <input type="text" class="form-control" id="pan_number" name="pan_number"
                                            value="{{ company.pan_number }}">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Company Logo Upload -->
+                        <hr>
+                        <h5>Company Logo</h5>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="logo" class="form-label">Upload Logo (PNG, JPG, JPEG, GIF - Max 2MB)</label>
+                                    <input type="file" class="form-control" id="logo" name="logo"
+                                           accept="image/png,image/jpeg,image/jpg,image/gif">
+                                    <div class="form-text">Recommended size: 200x100 pixels. Will appear in sidebar and PDFs.</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Current Logo</label>
+                                    {% if company.logo_path %}
+                                    <div class="text-center p-2 border rounded bg-light">
+                                        <img src="{{ company_logo_url }}" alt="Company Logo"
+                                             class="img-fluid" style="max-height: 80px; max-width: 100%;">
+                                        <div class="mt-2">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="remove_logo" name="remove_logo">
+                                                <label class="form-check-label" for="remove_logo">
+                                                    <small class="text-danger">Remove current logo</small>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% else %}
+                                    <p class="text-muted">No logo uploaded</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- PDF Signature Upload -->
+                        <hr>
+                        <h5>PDF Signature</h5>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="signature" class="form-label">Upload Signature (PNG, JPG, JPEG - Max 1MB)</label>
+                                    <input type="file" class="form-control" id="signature" name="signature"
+                                           accept="image/png,image/jpeg,image/jpg">
+                                    <div class="form-text">Signature image will appear on generated PDF invoices (bottom left - PREPARED BY section).</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Current Signature</label>
+                                    {% if company_signature_url %}
+                                    <div class="text-center p-2 border rounded bg-light">
+                                        <img src="{{ company_signature_url }}" alt="Signature"
+                                             class="img-fluid" style="max-height: 60px; max-width: 100%;">
+                                        <div class="mt-2">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="remove_signature" name="remove_signature">
+                                                <label class="form-check-label" for="remove_signature">
+                                                    <small class="text-danger">Remove current signature</small>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% else %}
+                                    <p class="text-muted">No signature uploaded</p>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
