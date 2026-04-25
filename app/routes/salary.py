@@ -1,10 +1,11 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify
+from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, send_file
 from flask_login import login_required, current_user
 from app import db
 from app.models import Staff, SalaryAdvance, SalaryPayment
 from app.forms import StaffForm, SalaryAdvanceForm, SalaryPaymentForm
 from datetime import datetime
 from sqlalchemy import extract
+import io
 
 bp = Blueprint('salary', __name__)
 
@@ -61,6 +62,13 @@ def delete_staff(id):
     flash('Staff member deleted.', 'info')
     return redirect(url_for('salary.staff_list'))
 
+@bp.route('/staff/payments/<int:id>')
+@login_required
+def staff_payments(id):
+    staff = Staff.query.get_or_404(id)
+    payments = SalaryPayment.query.filter_by(staff_id=id).order_by(SalaryPayment.year.desc(), SalaryPayment.month.desc()).all()
+    return render_template('salary/staff_payments.html', staff=staff, payments=payments)
+
 # --- Salary Advances ---
 
 @bp.route('/advances')
@@ -105,7 +113,13 @@ def delete_advance(id):
 @login_required
 def payment_list():
     payments = SalaryPayment.query.order_by(SalaryPayment.year.desc(), SalaryPayment.month.desc()).all()
-    return render_template('salary/payment_list.html', payments=payments)
+    return render_template('salary/payment_list.html', payments=payments, auto_download_id=None)
+
+@bp.route('/payments/<int:paid>')
+@login_required
+def payment_list_with_download(paid):
+    payments = SalaryPayment.query.order_by(SalaryPayment.year.desc(), SalaryPayment.month.desc()).all()
+    return render_template('salary/payment_list.html', payments=payments, auto_download_id=paid)
 
 @bp.route('/payments/process', methods=['GET', 'POST'])
 @login_required
@@ -170,8 +184,8 @@ def pay_salary(staff_id):
                     deducted_so_far += adv.amount
         
         db.session.commit()
-        flash(f'Salary processed for {staff.name}', 'success')
-        return redirect(url_for('salary.payment_list'))
+        flash(f'Salary processed for {staff.name}. Payment ID: {payment.id}', 'success')
+        return redirect(url_for('salary.payment_list_with_download', paid=payment.id))
 
     return render_template('salary/pay_form.html', form=form, staff=staff)
 
@@ -188,6 +202,120 @@ def delete_payment(id):
     db.session.commit()
     flash('Salary payment deleted and advances reverted.', 'info')
     return redirect(url_for('salary.payment_list'))
+
+@bp.route('/payments/download/<int:id>')
+@login_required
+def download_pay_stub(id):
+    from app.models import Attendance, SalaryAdvance, Company
+    from calendar import monthrange
+    from datetime import date
+    
+    payment = SalaryPayment.query.get_or_404(id)
+    staff = Staff.query.get_or_404(payment.staff_id)
+    company = Company.query.first()
+    
+    year = payment.year
+    month = payment.month
+    _, last_day = monthrange(year, month)
+    
+    start_date = date(year, month, 1)
+    end_date = date(year, month, last_day)
+    
+    attendance_records = Attendance.query.filter(
+        Attendance.staff_id == staff.id,
+        Attendance.date >= start_date,
+        Attendance.date <= end_date
+    ).all()
+    
+    total_hours = sum(a.hours_worked for a in attendance_records)
+    total_minutes = sum(a.minutes_worked for a in attendance_records)
+    total_hours += total_minutes / 60
+    days_worked = len(attendance_records)
+    hourly_rate = staff.monthly_salary / 30 / 8
+    hourly_earnings = total_hours * hourly_rate
+    
+    attendance_data = {
+        'total_hours': total_hours,
+        'days_worked': days_worked,
+        'hourly_rate': hourly_rate,
+        'hourly_earnings': hourly_earnings
+    }
+    
+    advances = SalaryAdvance.query.filter(
+        SalaryAdvance.staff_id == staff.id
+    ).all()
+    
+    from app.pdf_templates.pay_stub_template import generate_pay_stub_pdf_with_company
+    
+    pdf_buffer = generate_pay_stub_pdf_with_company(staff, payment, company, attendance_data, advances)
+    
+    filename = f"PaySlip_{staff.name.replace(' ', '_')}_{payment.month:02d}_{payment.year}.pdf"
+    
+    return send_file(
+        pdf_buffer,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=filename
+    )
+
+@bp.route('/payments/download/latest/<int:staff_id>')
+@login_required
+def download_latest_pay_stub(staff_id):
+    from app.models import Attendance, SalaryAdvance, Company
+    from calendar import monthrange
+    from datetime import date
+    
+    payment = SalaryPayment.query.filter_by(staff_id=staff_id).order_by(SalaryPayment.year.desc(), SalaryPayment.month.desc()).first()
+    if not payment:
+        flash('No salary payment found for this staff.', 'warning')
+        return redirect(url_for('salary.staff_list'))
+    
+    staff = Staff.query.get_or_404(staff_id)
+    company = Company.query.first()
+    
+    year = payment.year
+    month = payment.month
+    _, last_day = monthrange(year, month)
+    
+    start_date = date(year, month, 1)
+    end_date = date(year, month, last_day)
+    
+    attendance_records = Attendance.query.filter(
+        Attendance.staff_id == staff.id,
+        Attendance.date >= start_date,
+        Attendance.date <= end_date
+    ).all()
+    
+    total_hours = sum(a.hours_worked for a in attendance_records)
+    total_minutes = sum(a.minutes_worked for a in attendance_records)
+    total_hours += total_minutes / 60
+    days_worked = len(attendance_records)
+    hourly_rate = staff.monthly_salary / 30 / 8
+    hourly_earnings = total_hours * hourly_rate
+    
+    attendance_data = {
+        'total_hours': total_hours,
+        'days_worked': days_worked,
+        'hourly_rate': hourly_rate,
+        'hourly_earnings': hourly_earnings
+    }
+    
+    advances = SalaryAdvance.query.filter(
+        SalaryAdvance.staff_id == staff.id
+    ).all()
+    
+    from app.pdf_templates.pay_stub_template import generate_pay_stub_pdf_with_company
+    
+    pdf_buffer = generate_pay_stub_pdf_with_company(staff, payment, company, attendance_data, advances)
+    
+    filename = f"PaySlip_{staff.name.replace(' ', '_')}_{payment.month:02d}_{payment.year}.pdf"
+    
+    return send_file(
+        pdf_buffer,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=filename
+    )
 
 # --- API for dynamic updates ---
 @bp.route('/api/get_staff_info/<int:staff_id>')

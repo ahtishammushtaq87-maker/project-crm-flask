@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Purchase Returns - {{ vendor.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Purchase Returns - {{ vendor.name }}</h2>
+        <a href="{{ url_for('purchase.vendors') }}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Vendors
+        </a>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5>Summary</h5>
+                    <p><strong>Total Returns:</strong> Rs{{ "%.2f"|format(vendor.total_purchase_returns) }}</p>
+                    <p><strong>Refund Paid:</strong> Rs{{ "%.2f"|format(vendor.total_refund_paid) }}</p>
+                    <p><strong>Pending Refund:</strong> Rs{{ "%.2f"|format(vendor.pending_refund) }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            {% if returns %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Return #</th>
+                            <th>Date</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                            <th>Refund Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ret in returns %}
+                        <tr>
+                            <td>{{ ret.return_number }}</td>
+                            <td>{{ ret.date.strftime('%Y-%m-%d') }}</td>
+                            <td>Rs{{ "%.2f"|format(ret.total) }}</td>
+                            <td>
+                                {% if ret.status == 'completed' %}
+                                <span class="badge bg-success">{{ ret.status|title }}</span>
+                                {% else %}
+                                <span class="badge bg-warning">{{ ret.status|title }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if ret.refund_status == 'paid' %}
+                                <span class="badge bg-success">Paid</span>
+                                {% elif ret.refund_status == 'pending' %}
+                                <span class="badge bg-warning">Pending</span>
+                                {% else %}
+                                <span class="badge bg-secondary">None</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{{ url_for('purchase.purchase_return_detail', id=ret.id) }}" class="btn btn-sm btn-outline-primary">View</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5 text-muted">
+                <p>No purchase returns found for this vendor.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

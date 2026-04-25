@@ -7,7 +7,7 @@
             <h2 class="h3 mb-0 text-gray-800">
                 <i class="fas fa-file-invoice me-2 text-primary"></i>Purchase Bill: {{ bill.bill_number }}
             </h2>
-            <small class="text-muted">{{ bill.date.strftime('%d %B %Y') }}</small>
+            <small class="text-muted">{{ bill.date.strftime(date_format) }}</small>
         </div>
         <div class="btn-group">
             <a href="{{ url_for('purchase.bill_pdf', id=bill.id) }}" class="btn btn-info" target="_blank">
@@ -34,6 +34,12 @@
                 <i class="fas fa-tag me-1"></i> Direct Discount
             </button>
             {% endif %}
+            <a href="{{ url_for('purchase.create_purchase_return', bill_id=bill.id) }}" class="btn btn-danger">
+                <i class="fas fa-undo me-1"></i> Create Return
+            </a>
+            <a href="{{ url_for('purchase.create_bill') }}" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i> New Bill
+            </a>
             <a href="{{ url_for('purchase.vendor_profile', id=bill.vendor.id) }}" class="btn btn-outline-secondary">
                 <i class="fas fa-building me-1"></i> Vendor
             </a>
@@ -206,6 +212,12 @@
                         <tr>
                             <td class="text-success">Discount</td>
                             <td class="text-end text-success">-Rs {{ "{:,.2f}".format(bill.discount) }}</td>
+                        </tr>
+                        {% endif %}
+                        {% if bill.purchase_returns|length > 0 %}
+                        <tr>
+                            <td class="text-danger"><i class="fas fa-undo me-1"></i>Returns</td>
+                            <td class="text-end text-danger">-Rs {{ "{:,.2f}".format(bill.purchase_returns|sum(attribute='total')) }}</td>
                         </tr>
                         {% endif %}
                         <tr class="border-top">
@@ -388,6 +400,88 @@
                 </div>
             </div>
 
+            <!-- Returns for this bill -->
+            {% if bill.purchase_returns %}
+            <div class="card shadow mb-4 border-left-danger">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="m-0 font-weight-bold text-danger"><i class="fas fa-undo me-2"></i>Returns on this Bill</h6>
+                    <span class="badge bg-danger">-Rs {{ "{:,.2f}".format(bill.purchase_returns|sum(attribute='total')) }}</span>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-sm table-bordered mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Return #</th>
+                                <th>Date</th>
+                                <th class="text-end">Amount</th>
+                                <th>Status</th>
+                                <th>Refund</th>
+                                <th class="text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ret in bill.purchase_returns %}
+                            <tr>
+                                <td>{{ ret.return_number }}</td>
+                                <td>{{ ret.date.strftime(date_format) }}</td>
+                                <td class="text-end text-danger">Rs {{ "{:,.2f}".format(ret.total) }}</td>
+                                <td>
+                                    {% if ret.status == 'completed' %}
+                                    <span class="badge bg-success">{{ ret.status|title }}</span>
+                                    {% else %}
+                                    <span class="badge bg-warning">{{ ret.status|title }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if ret.refund_status == 'paid' %}
+                                    <span class="badge bg-success">Paid: Rs {{ "{:,.2f}".format(ret.refund_amount) }}</span>
+                                    {% elif ret.refund_status == 'pending' %}
+                                    <span class="badge bg-warning">Pending</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">None</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <a href="{{ url_for('purchase.purchase_return_detail', id=ret.id) }}" class="btn btn-sm btn-outline-primary">View</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if bill.bill_image_path %}
+            <div class="card shadow mb-4 border-left-info">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-info"><i class="fas fa-image me-2"></i>Bill Image</h6>
+                </div>
+                <div class="card-body text-center">
+                    {% set ext = bill.bill_image_path.rsplit('.', 1)[1].lower() if '.' in bill.bill_image_path else '' %}
+                    {% if ext == 'pdf' %}
+                        <div class="alert alert-light border">
+                            <i class="fas fa-file-pdf fa-3x text-danger mb-3"></i>
+                            <p class="mb-2">PDF Document</p>
+                            <a href="{{ url_for('static', filename=bill.bill_image_path) }}" target="_blank" class="btn btn-danger btn-sm">
+                                <i class="fas fa-eye me-1"></i>View PDF
+                            </a>
+                        </div>
+                    {% else %}
+                        <a href="{{ url_for('static', filename=bill.bill_image_path) }}" target="_blank" title="Click to view full size">
+                            <img src="{{ url_for('static', filename=bill.bill_image_path) }}" 
+                                 alt="Bill Image" 
+                                 class="img-fluid rounded border shadow-sm mb-2" 
+                                 style="max-height: 300px; cursor: pointer;">
+                        </a>
+                        <div class="small text-muted">
+                            <i class="fas fa-external-link-alt me-1"></i>Click image to open full size
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
             {% if bill.notes %}
             <div class="card shadow mb-4">
                 <div class="card-body">
@@ -415,7 +509,7 @@
                         <tbody>
                             {% for adv in bill.adjusted_advances %}
                             <tr>
-                                <td>{{ adv.date.strftime('%d-%m-%Y') }}</td>
+                                <td>{{ adv.date.strftime(date_format) }}</td>
                                 <td>{{ adv.description or '—' }}</td>
                                 <td class="text-end text-success fw-bold">Rs {{ "{:,.2f}".format(adv.amount) }}</td>
                             </tr>

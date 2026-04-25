@@ -7,7 +7,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Company Settings</h2>
     </div>
-    
+
     <div class="row">
         <div class="col-md-8">
             <div class="card">
@@ -59,89 +59,155 @@
                             <div class="col-md-6">
                                 <div class="mb-3">
                                     <label for="gst_number" class="form-label">GST Number</label>
-                                    <input type="text" class="form-control" id="gst_number" name="gst_number" 
+                                    <input type="text" class="form-control" id="gst_number" name="gst_number"
                                            value="{{ company.gst_number }}">
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="mb-3">
                                     <label for="pan_number" class="form-label">PAN Number</label>
-                                    <input type="text" class="form-control" id="pan_number" name="pan_number" 
+                                    <input type="text" class="form-control" id="pan_number" name="pan_number"
                                            value="{{ company.pan_number }}">
                                 </div>
                             </div>
                         </div>
-                        
-                        <hr>
-                        <h5>Banking Details</h5>
-                        
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="bank_name" class="form-label">Bank Name</label>
-                                    <input type="text" class="form-control" id="bank_name" name="bank_name" 
-                                           value="{{ company.bank_name }}">
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="account_holder_name" class="form-label">Account Holder Name</label>
-                                    <input type="text" class="form-control" id="account_holder_name" name="account_holder_name" 
-                                           value="{{ company.account_holder_name }}">
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="account_number" class="form-label">Account Number</label>
-                                    <input type="text" class="form-control" id="account_number" name="account_number" 
-                                           value="{{ company.account_number }}">
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="ifsc_code" class="form-label">IFSC Code</label>
-                                    <input type="text" class="form-control" id="ifsc_code" name="ifsc_code" 
-                                           value="{{ company.ifsc_code }}">
-                                </div>
-                            </div>
-                        </div>
-                        
+
+                        <!-- Company Logo Upload -->
                         <hr>
                         <h5>Company Logo</h5>
-                        
-                        <div class="mb-3">
-                            <label for="logo" class="form-label">Upload Logo</label>
-                            <input type="file" class="form-control" id="logo" name="logo" accept="image/*">
-                            <div class="form-text">Supported formats: JPG, PNG, GIF. Max size: 2MB</div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="logo" class="form-label">Upload Logo (PNG, JPG, JPEG, GIF - Max 2MB)</label>
+                                    <input type="file" class="form-control" id="logo" name="logo"
+                                           accept="image/png,image/jpeg,image/jpg,image/gif">
+                                    <div class="form-text">Recommended size: 200x100 pixels. Will appear in sidebar and PDFs.</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Current Logo</label>
+                                    {% if company.logo_path %}
+                                    <div class="text-center p-2 border rounded bg-light">
+                                        <img src="{{ company_logo_url }}" alt="Company Logo"
+                                             class="img-fluid" style="max-height: 80px; max-width: 100%;">
+                                        <div class="mt-2">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="remove_logo" name="remove_logo">
+                                                <label class="form-check-label" for="remove_logo">
+                                                    <small class="text-danger">Remove current logo</small>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% else %}
+                                    <p class="text-muted">No logo uploaded</p>
+                                    {% endif %}
+                                </div>
+                            </div>
                         </div>
-                        
-                        {% if company.logo_path %}
-                        <div class="mb-3">
-                            <label class="form-label">Current Logo:</label><br>
-                            <img src="{{ url_for('static', filename=company.logo_path.replace('app/static/', '')) }}" 
-                                 alt="Company Logo" style="max-height: 100px;">
+
+                        <!-- PDF Signature Upload -->
+                        <hr>
+                        <h5>PDF Signature</h5>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="signature" class="form-label">Upload Signature (PNG, JPG, JPEG - Max 1MB)</label>
+                                    <input type="file" class="form-control" id="signature" name="signature"
+                                           accept="image/png,image/jpeg,image/jpg">
+                                    <div class="form-text">Signature image will appear on generated PDF invoices (bottom left - PREPARED BY section).</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Current Signature</label>
+                                    {% if company_signature_url %}
+                                    <div class="text-center p-2 border rounded bg-light">
+                                        <img src="{{ company_signature_url }}" alt="Signature"
+                                             class="img-fluid" style="max-height: 60px; max-width: 100%;">
+                                        <div class="mt-2">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="remove_signature" name="remove_signature">
+                                                <label class="form-check-label" for="remove_signature">
+                                                    <small class="text-danger">Remove current signature</small>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% else %}
+                                    <p class="text-muted">No signature uploaded</p>
+                                    {% endif %}
+                                </div>
+                            </div>
                         </div>
-                        {% endif %}
+
+                        <!-- Date & MO Format -->
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="date_format" class="form-label">Date Display Format</label>
+                                    <select class="form-control" id="date_format" name="date_format">
+                                        <option value="%Y-%m-%d" {% if company.date_format == '%Y-%m-%d' %}selected{% endif %}>YYYY-MM-DD (2025-04-21)</option>
+                                        <option value="%d-%m-%Y" {% if company.date_format == '%d-%m-%Y' %}selected{% endif %}>DD-MM-YYYY (21-04-2025)</option>
+                                        <option value="%m-%d-%Y" {% if company.date_format == '%m-%d-%Y' %}selected{% endif %}>MM-DD-YYYY (04-21-2025)</option>
+                                        <option value="%d/%m/%Y" {% if company.date_format == '%d/%m/%Y' %}selected{% endif %}>DD/MM/YYYY (21/04/2025)</option>
+                                        <option value="%m/%d/%Y" {% if company.date_format == '%m/%d/%Y' %}selected{% endif %}>MM/DD/YYYY (04-21-2025)</option>
+                                        <option value="%b %d, %Y" {% if company.date_format == '%b %d, %Y' %}selected{% endif %}>Mon DD, YYYY (Apr 21, 2025)</option>
+                                        <option value="%d %b %Y" {% if company.date_format == '%d %b %Y' %}selected{% endif %}>DD Mon YYYY (21 Apr 2025)</option>
+                                    </select>
+                                    <div class="form-text">Format for displaying dates in tables and reports</div>
+                        </div>
                         
                         <hr>
-                        <h5>Authorized Signature</h5>
-                        
-                        <div class="mb-3">
-                            <label for="signature" class="form-label">Upload Signature</label>
-                            <input type="file" class="form-control" id="signature" name="signature" accept="image/*">
-                            <div class="form-text">Supported formats: PNG, JPG. Recommended: transparent PNG with signature</div>
+                        <h5>Manufacturing Order Numbering</h5>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="mo_prefix" class="form-label">MO Prefix</label>
+                                    <input type="text" class="form-control" id="mo_prefix" name="mo_prefix"
+                                           value="{{ company.mo_prefix or 'MO-' }}">
+                                    <div class="form-text">Text before number</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="mo_suffix" class="form-label">MO Suffix</label>
+                                    <input type="text" class="form-control" id="mo_suffix" name="mo_suffix"
+                                           value="{{ company.mo_suffix or '' }}">
+                                    <div class="form-text">Text after number (optional)</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="next_mo_number" class="form-label">Next MO Number</label>
+                                    <input type="number" class="form-control" id="next_mo_number" name="next_mo_number"
+                                           value="{{ company.next_mo_number or 1 }}" min="1">
+                                    <div class="form-text">Next sequential number</div>
+                                </div>
+                            </div>
                         </div>
                         
-                        {% if company.signature_path %}
-                        <div class="mb-3">
-                            <label class="form-label">Current Signature:</label><br>
-                            <img src="{{ url_for('static', filename=company.signature_path.replace('app/static/', '')) }}" 
-                                 alt="Authorized Signature" style="max-height: 60px;">
-                        </div>
-                        {% endif %}
+                        <hr>
+                        <h5>Document Numbering Settings</h5>
+                        <p class="text-muted">Configure formatting for other document types:</p>
+                        <div class="list-group">
+    <a href="{{ url_for('accounting.expense_settings') }}" class="list-group-item list-group-item-action">
+        <i class="fas fa-receipt me-2 text-success"></i> Expense Number Settings
+    </a>
+    <a href="{{ url_for('sales.invoice_settings') }}" class="list-group-item list-group-item-action">
+        <i class="fas fa-file-invoice me-2 text-primary"></i> Invoice Number Settings
+    </a>
+    <a href="{{ url_for('purchase.purchase_settings_page') }}" class="list-group-item list-group-item-action">
+        <i class="fas fa-file-alt me-2 text-warning"></i> Purchase Bill & PO Settings
+    </a>
+    <a href="{{ url_for('returns.sale_return_settings') }}" class="list-group-item list-group-item-action">
+        <i class="fas fa-undo me-2 text-info"></i> Sale Return Settings
+    </a>
+    <a href="{{ url_for('purchase.purchase_return_settings') }}" class="list-group-item list-group-item-action">
+        <i class="fas fa-undo me-2 text-danger"></i> Purchase Return Settings
+    </a>
+</div>
                         
                         <button type="submit" class="btn btn-primary">Save Settings</button>
                     </form>

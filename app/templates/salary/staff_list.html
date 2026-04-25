@@ -61,6 +61,9 @@
                         </td>
                         <td class="text-end px-4">
                             <div class="btn-group">
+                                <a href="{{ url_for('salary.staff_payments', id=staff.id) }}" class="btn btn-sm btn-light" title="View Salary History">
+                                    <i class="fas fa-history text-info"></i>
+                                </a>
                                 <a href="{{ url_for('salary.edit_staff', id=staff.id) }}" class="btn btn-sm btn-light" title="Edit Staff">
                                     <i class="fas fa-edit text-primary"></i>
                                 </a>

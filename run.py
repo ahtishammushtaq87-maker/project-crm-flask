@@ -351,12 +351,12 @@ def not_found_error(error):
     from flask import render_template
     return render_template('errors/404.html'), 404
 
-@app.errorhandler(500)
-def internal_error(error):
-    """Handle 500 errors"""
-    from flask import render_template
-    db.session.rollback()
-    return render_template('errors/500.html'), 500
+# @app.errorhandler(500)
+# def internal_error(error):
+#     """Handle 500 errors"""
+#     from flask import render_template
+#     db.session.rollback()
+#     return render_template('errors/500.html'), 500
 
 @app.route('/health')
 def health_check():
@@ -392,6 +392,6 @@ if __name__ == "__main__":
     app.run(
         host="127.0.0.1",
         port=port,
-        debug=False,
+        debug=True,
         threaded=True
     )

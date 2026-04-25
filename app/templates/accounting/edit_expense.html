@@ -37,6 +37,46 @@
     border-radius: 0.375rem;
     box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
 }
+/* Make multi-select pills render in a single horizontal line */
+.select2-container--bootstrap-5 .select2-selection--multiple {
+    max-height: 38px !important;
+    overflow: hidden !important;
+}
+.select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__rendered {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__rendered::-webkit-scrollbar {
+    display: none;
+}
+.select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__choice {
+    flex-shrink: 0;
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+/* Radio card styling - hide actual radio but keep accessible */
+.mode-radio-input {
+    position: absolute;
+    opacity: 0;
+    /* Do NOT use pointer-events: none; label needs to toggle it */
+}
+.mode-radio-input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+.mode-card {
+    transition: all 0.2s ease;
+    height: 100%;
+}
+.mode-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+}
+
 /* Ensure the original select is hidden */
 .select2-hidden-accessible {
     border: 0 !important;
@@ -148,6 +188,7 @@
 
                         <hr class="my-4">
 
+                        <!-- BOM Overhead Section -->
                         <div class="mb-3">
                             <div class="form-check form-switch px-4 py-2 border rounded bg-light">
                                 {{ form.is_bom_overhead(class="form-check-input ms-0 me-3", id="is_bom_overhead") }}
@@ -155,18 +196,60 @@
                                 <div class="form-text mt-0 ms-4">Check this if this expense should be counted towards manufacturing/BOM overhead costs.</div>
                             </div>
                         </div>
-                        <div class="mb-3" id="product_id_container" style="display: none;">
-                            <label class="form-label">Linked Finished Product (Overhead)</label>
-                            {{ form.product_id(class="form-control") }}
-                            <div class="form-text">Select the manufactured product this overhead expense belongs to.</div>
+
+                        <div id="overhead_targets_container" style="display: none;">
+                            <!-- Mode selector -->
+                            <div class="d-flex gap-3 mb-3">
+                                <div class="form-check flex-fill border rounded p-3" id="mode_mo_card" style="cursor:pointer; background:#fff8f0; border-color:#fd7e14;">
+                                    <input class="form-check-input" type="radio" name="overhead_mode" id="mode_mo" value="mo" checked>
+                                    <label class="form-check-label fw-semibold" for="mode_mo">
+                                        <i class="bi bi-gear-fill text-warning me-1"></i>
+                                        Link to a Manufacturing Order
+                                        <span class="badge bg-warning text-dark ms-1">In Progress Only</span>
+                                    </label>
+                                    <div class="text-muted small mt-1">Pick a specific running order to charge this overhead to.</div>
+                                </div>
+                                <div class="form-check flex-fill border rounded p-3" id="mode_bulk_card" style="cursor:pointer; background:#f0f5ff; border-color:#0d6efd;">
+                                    <input class="form-check-input" type="radio" name="overhead_mode" id="mode_bulk" value="bulk">
+                                    <label class="form-check-label fw-semibold" for="mode_bulk">
+                                        <i class="bi bi-collection-fill text-primary me-1"></i>
+                                        Split across Products / BOMs
+                                    </label>
+                                    <div class="text-muted small mt-1">Divide equally across multiple finished goods or BOMs.</div>
+                                </div>
+                            </div>
+
+                            <!-- Mode 1: MO picker -->
+                            <div id="mo_mode_section">
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Manufacturing Order <span class="badge bg-secondary">Multi-select</span></label>
+                                    {{ form.mo_id(class="form-select", id="mo_id_select", multiple="multiple") }}
+                                    <div class="form-text">Only <strong>In Progress</strong> orders are shown by default. Previously linked (or deleted) orders appear as "(Current)" or "(Deleted)" and remain selectable.</div>
+                                </div>
+                            </div>
+
+                            <!-- Mode 2: Bulk product/BOM -->
+                            <div id="bulk_mode_section" style="display:none;">
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Finished Products <span class="badge bg-secondary">Multi-select</span></label>
+                                    {{ form.product_id(class="form-select", id="product_id_select", multiple="multiple") }}
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">BOMs <span class="badge bg-secondary">Multi-select</span></label>
+                                    {{ form.bom_id(class="form-select", id="bom_id_select", multiple="multiple") }}
+                                </div>
+                                <!-- Live Allocation Preview -->
+                                <div id="allocation_preview" class="alert alert-info mb-0" style="display: none;">
+                                    <strong><i class="bi bi-calculator me-1"></i> Allocation Preview:</strong>
+                                    <span id="allocation_summary"></span>
+                                </div>
+                            </div>
                         </div>
-                        <div class="mb-3" id="bom_id_container" style="display: none;">
-                            <label class="form-label">Linked BOM (Overhead) - Optional</label>
-                            {{ form.bom_id(class="form-control") }}
-                            <div class="form-text">Or select the BOM directly if expense is for a specific BOM.</div>
+
+                        <div class="mb-3 d-flex gap-2">
+                            <button type="submit" class="btn btn-success">Update Expense</button>
+                            <a href="{{ url_for('accounting.expenses') }}" class="btn btn-secondary">Cancel</a>
                         </div>
-                        <button type="submit" class="btn btn-success">Update Expense</button>
-                        <a href="{{ url_for('accounting.expenses') }}" class="btn btn-secondary">Cancel</a>
                     </form>
                 </div>
             </div>
@@ -178,52 +261,141 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
-// ── Helper to init Select2 ──────────────────────────────────────────────
-function initSelect2(selector, placeholder = 'Search or select', width = '100%') {
-    $(selector).select2({
-        theme: 'bootstrap-5',
-        placeholder: placeholder,
-        allowClear: true,
-        width: width
-    });
-}
-
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize Select2 for all selectors
-    initSelect2('select[name="category_id"]', '— Search or Select Category —');
-    initSelect2('select[name="vendor_id"]', '— Search or Select Vendor —');
-    initSelect2('select[name="payment_method"]', '— Search or Select Method —');
-    initSelect2('select[name="product_id"]', '— Search or Select Product —');
-    initSelect2('select[name="bom_id"]', '— Search or Select BOM —');
+    // Single-select
+    $('select[name="category_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Category —', allowClear: true, width: '100%' });
+    $('select[name="payment_method"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Payment Method —', allowClear: true, width: '100%' });
+    $('select[name="vendor_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Vendor (Optional) —', allowClear: true, width: '100%' });
+
+    // MO multi-select
+    $('#mo_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select In Progress Manufacturing Order(s) —', allowClear: true, width: '100%', closeOnSelect: false });
+
+    // Bulk multi-selects
+    $('#product_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select Finished Products —', allowClear: true, width: '100%', closeOnSelect: false });
+    $('#bom_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select BOMs —', allowClear: true, width: '100%', closeOnSelect: false });
 
     const isBomOverheadCheckbox = document.getElementById('is_bom_overhead');
     const isMonthlyDividedCheckbox = document.getElementById('is_monthly_divided');
-    const productIdContainer = document.getElementById('product_id_container');
-    const bomIdContainer = document.getElementById('bom_id_container');
-    const monthlyDivisionContainer = document.getElementById('monthly_division_container');
+    const overheadContainer = document.getElementById('overhead_targets_container');
+    const monthlyContainer  = document.getElementById('monthly_division_container');
+    const moSection         = document.getElementById('mo_mode_section');
+    const bulkSection       = document.getElementById('bulk_mode_section');
+    const modeMoRadio       = document.getElementById('mode_mo');
+    const modeBulkRadio     = document.getElementById('mode_bulk');
+    const modeMoCard        = document.getElementById('mode_mo_card');
+    const modeBulkCard      = document.getElementById('mode_bulk_card');
 
-    function toggleProductDropdown() {
-        if (isBomOverheadCheckbox.checked) {
-            productIdContainer.style.display = 'block';
-            bomIdContainer.style.display = 'block';
+    // Determine initial mode from pre-selected values
+    function getInitialMode() {
+        const moVals = $('#mo_id_select').val();
+        const prodVals = $('#product_id_select').val();
+        const bomVals = $('#bom_id_select').val();
+        // If any MO is selected -> MO mode, else bulk mode
+        return (moVals && moVals.length > 0) ? 'mo' : 'bulk';
+    }
+
+    function applyModeSwitch() {
+        const isMoMode = modeMoRadio.checked;
+        moSection.style.display   = isMoMode ? 'block' : 'none';
+        bulkSection.style.display = isMoMode ? 'none'  : 'block';
+        // Highlight active card
+        modeMoCard.style.borderColor   = isMoMode ? '#fd7e14' : '';
+        modeMoCard.style.background    = isMoMode ? '#fff8f0' : '#fff';
+        modeBulkCard.style.borderColor = !isMoMode ? '#0d6efd' : '';
+        modeBulkCard.style.background  = !isMoMode ? '#f0f5ff' : '#fff';
+        // Clear irrelevant fields
+        if (isMoMode) {
+            $('#product_id_select').val(null).trigger('change');
+            $('#bom_id_select').val(null).trigger('change');
+            document.getElementById('allocation_preview').style.display = 'none';
         } else {
-            productIdContainer.style.display = 'none';
-            bomIdContainer.style.display = 'none';
+            $('#mo_id_select').val(null).trigger('change');
+        }
+        updateAllocationPreview();
+    }
+
+    function toggleOverheadSection() {
+        overheadContainer.style.display = isBomOverheadCheckbox.checked ? 'block' : 'none';
+        if (!isBomOverheadCheckbox.checked) {
+            $('#product_id_select').val(null).trigger('change');
+            $('#bom_id_select').val(null).trigger('change');
+            $('#mo_id_select').val(null).trigger('change');
+            moSection.style.display = 'none';
+            bulkSection.style.display = 'none';
         }
     }
 
     function toggleMonthlyDivision() {
-        if (isMonthlyDividedCheckbox.checked) {
-            monthlyDivisionContainer.style.display = 'block';
-        } else {
-            monthlyDivisionContainer.style.display = 'none';
+        const checked = isMonthlyDividedCheckbox.checked;
+        monthlyContainer.style.display = checked ? 'block' : 'none';
+        if (checked) {
+            const today = new Date();
+            const s = document.querySelector('input[name="monthly_start_date"]');
+            const e = document.querySelector('input[name="monthly_end_date"]');
+            if (s && !s.value) s.value = today.toISOString().split('T')[0];
+            if (e && !e.value) e.value = today.toISOString().split('T')[0];
         }
     }
 
-    isBomOverheadCheckbox.addEventListener('change', toggleProductDropdown);
+    function updateAllocationPreview() {
+        const summaryEl = document.getElementById('allocation_summary');
+        const prodVals = $('#product_id_select').val() || [];
+        const bomVals = $('#bom_id_select').val() || [];
+        if (prodVals.length > 0 || bomVals.length > 0) {
+            let html = '';
+            if (prodVals.length > 0) {
+                html += `<div><strong>Products (${prodVals.length}):</strong> `;
+                prodVals.forEach(id => {
+                    const txt = $('#product_id_select option[value="'+id+'"]').text();
+                    html += `<span class="badge bg-secondary me-1">${txt}</span>`;
+                });
+                html += '</div>';
+            }
+            if (bomVals.length > 0) {
+                html += `<div><strong>BOMs (${bomVals.length}):</strong> `;
+                bomVals.forEach(id => {
+                    const txt = $('#bom_id_select option[value="'+id+'"]').text();
+                    html += `<span class="badge bg-secondary me-1">${txt}</span>`;
+                });
+                html += '</div>';
+            }
+            summaryEl.innerHTML = html;
+            document.getElementById('allocation_preview').style.display = 'block';
+        } else {
+            document.getElementById('allocation_preview').style.display = 'none';
+        }
+    }
+
+    // Event listeners
+    modeMoRadio.addEventListener('change', applyModeSwitch);
+    modeBulkRadio.addEventListener('change', applyModeSwitch);
+    // Make whole card clickable
+    modeMoCard.addEventListener('click', () => { modeMoRadio.checked = true; applyModeSwitch(); });
+    modeBulkCard.addEventListener('click', () => { modeBulkRadio.checked = true; applyModeSwitch(); });
+    isBomOverheadCheckbox.addEventListener('change', toggleOverheadSection);
     isMonthlyDividedCheckbox.addEventListener('change', toggleMonthlyDivision);
-    toggleProductDropdown(); // Initialize on load
-    toggleMonthlyDivision(); // Initialize on load
+    $('#product_id_select').on('change', updateAllocationPreview);
+    $('#bom_id_select').on('change', updateAllocationPreview);
+    const amountEl = document.querySelector('input[name="amount"]');
+    if (amountEl) amountEl.addEventListener('input', updateAllocationPreview);
+
+    // Initialise
+    const initialMode = getInitialMode();
+    if (initialMode === 'mo') {
+        modeMoRadio.checked = true;
+        modeBulkRadio.checked = false;
+        $('#mo_id_select').prop('disabled', false);
+        $('#product_id_select, #bom_id_select').prop('disabled', true);
+    } else {
+        modeMoRadio.checked = false;
+        modeBulkRadio.checked = true;
+        $('#mo_id_select').prop('disabled', true);
+        $('#product_id_select, #bom_id_select').prop('disabled', false);
+    }
+    toggleOverheadSection();
+    toggleMonthlyDivision();
+    applyModeSwitch();
+    updateAllocationPreview();
 });
 
 document.getElementById('billImageInput').addEventListener('change', function(e) {

@@ -2,17 +2,61 @@
 
 {% block title %}Expenses{% endblock %}
 
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        initBulkActions({
+            selectAllId: 'selectAll',
+            checkboxClass: 'expense-checkbox',
+            bulkDeleteBtnId: 'bulkDeleteBtn',
+            deleteUrl: "{{ url_for('accounting.bulk_delete_expenses') }}",
+            entityName: 'expenses'
+        });
+
+        // Clickable date filtering: clicking a date filters to that month
+        const dateCells = document.querySelectorAll('.clickable-date');
+        const startDateInput = document.getElementById('start_date');
+        const endDateInput = document.getElementById('end_date');
+        const filterForm = document.querySelector('form'); // the filter form
+
+        dateCells.forEach(cell => {
+            cell.addEventListener('click', function() {
+                const dateStr = this.getAttribute('data-date'); // format YYYY-MM-DD
+                if (!dateStr) return;
+                const [year, month, day] = dateStr.split('-').map(Number);
+                // Set start_date to first day of month, end_date to last day of month
+                const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+                // Last day: use next month first day minus one day
+                const nextMonth = month === 12 ? 1 : month + 1;
+                const nextYear = month === 12 ? year + 1 : year;
+                const endDate = new Date(nextYear, nextMonth - 1, 0); // last day of current month
+                const endDateStr = `${endDate.getFullYear()}-${String(endDate.getMonth()+1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+
+                if (startDateInput) startDateInput.value = startDate;
+                if (endDateInput) endDateInput.value = endDateStr;
+                if (filterForm) filterForm.submit();
+            });
+        });
+    });
+</script>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Expenses</h2>
-        <a href="{{ url_for('accounting.add_expense') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Add Expense</a>
+        <div>
+            <button id="bulkDeleteBtn" class="btn btn-danger d-none me-2">
+                <i class="fas fa-trash me-1"></i> Delete Selected
+            </button>
+            <a href="{{ url_for('accounting.add_expense') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Add Expense</a>
+        </div>
     </div>
     <div class="card">
         <div class="card-body">
             <!-- Filter Form -->
             <form method="GET" class="row g-3 mb-4">
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label for="vendor_id" class="form-label">Vendor</label>
                     <select name="vendor_id" id="vendor_id" class="form-select">
                         <option value="">All Vendors</option>
@@ -21,12 +65,21 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label for="category_id" class="form-label">Category</label>
                     <select name="category_id" id="category_id" class="form-select">
                         <option value="">All Categories</option>
                         {% for category in categories %}
                         <option value="{{ category.id }}" {% if selected_category == category.id %}selected{% endif %}>{{ category.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="mo_id" class="form-label">Manufacturing Order</label>
+                    <select name="mo_id" id="mo_id" class="form-select">
+                        <option value="">All MOs</option>
+                        {% for mo in manufacturing_orders %}
+                        <option value="{{ mo.id }}" {% if selected_mo_id == mo.id %}selected{% endif %}>{{ mo.order_number }} - {{ mo.bom.product.name if mo.bom and mo.bom.product else 'N/A' }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -44,14 +97,18 @@
                 </div>
             </form>
             
-            <div class="table-responsive">
+            <div class="table-responsive expenses-table-responsive">
                 <table class="table table-striped">
                     <thead>
                         <tr>
+                            <th style="width: 40px;" class="text-center">
+                                <input type="checkbox" id="selectAll" class="form-check-input">
+                            </th>
                             <th>Expense #</th>
                             <th>Date</th>
                             <th>Category</th>
                             <th>Vendor</th>
+                            <th>Manufacturing Order</th>
                             <th>Description</th>
                             <th>Amount</th>
                             <th>Daily Amount</th>
@@ -62,11 +119,14 @@
                     <tbody>
                         {% for exp in expenses %}
                         <tr>
+                            <td class="text-center">
+                                <input type="checkbox" class="form-check-input expense-checkbox" value="{{ exp.id }}">
+                            </td>
                             <td>
                                 {{ exp.expense_number }}
                                 {% if exp.is_bom_overhead %}
-                                <span class="badge bg-info text-dark ms-1" style="font-size: 0.7rem;" title="Linked to: {{ exp.product.name if exp.product else 'None' }}">
-                                    BOM Overhead {% if exp.product %}({{ exp.product.name }}){% endif %}
+                                <span class="badge bg-info text-dark ms-1" style="font-size: 0.7rem;" title="Linked to: {% if exp.mo_id and exp.manufacturing_order %}MO: {{ exp.manufacturing_order.order_number }}{% elif exp.product %}Product: {{ exp.product.name }}{% else %}None{% endif %}">
+                                    BOM Overhead {% if exp.mo_id and exp.manufacturing_order %}({{ exp.manufacturing_order.order_number }}){% elif exp.product %}({{ exp.product.name }}){% endif %}
                                 </span>
                                 {% endif %}
                                 {% if exp.is_monthly_divided %}
@@ -75,9 +135,18 @@
                                 </span>
                                 {% endif %}
                             </td>
-                            <td>{{ exp.date.strftime('%Y-%m-%d') }}</td>
+                            <td class="clickable-date" data-date="{{ exp.date.strftime('%Y-%m-%d') }}" style="cursor: pointer; color: #0d6efd;" title="Click to filter by this month">
+                                {{ exp.date.strftime(date_format) }}
+                            </td>
                             <td>{{ exp.expense_category.name if exp.expense_category else 'N/A' }}</td>
                             <td>{{ exp.vendor.name if exp.vendor else '-' }}</td>
+                            <td>
+                                {% if exp.mo_id and exp.manufacturing_order %}
+                                <span class="badge bg-primary">{{ exp.manufacturing_order.order_number }}</span>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
                             <td>{{ exp.description or '-' }}</td>
                             <td>
                                 <strong>Rs{{ '%.2f'|format(exp.amount) }}</strong>

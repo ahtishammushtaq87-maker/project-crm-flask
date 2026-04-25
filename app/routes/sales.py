@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response
 from flask_login import login_required, current_user
 from app import db
-from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance
+from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn
 from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm
 from datetime import datetime, date
 from sqlalchemy import func
@@ -53,6 +53,10 @@ def invoices():
     total_paid = sum(sale.paid_amount for sale in sales)
     total_balance = sum(sale.balance_due for sale in sales)
     
+    # Get company date format
+    company = Company.query.first()
+    date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
+    
     return render_template('sales/invoices.html', 
                          sales=sales, 
                          current_status=status,
@@ -62,7 +66,8 @@ def invoices():
                          total_tax=total_tax,
                          total_amount=total_amount,
                          total_paid=total_paid,
-                         total_balance=total_balance)
+                         total_balance=total_balance,
+                         date_format=date_format)
 
 @bp.route('/invoice/create', methods=['GET', 'POST'])
 @login_required
@@ -118,13 +123,17 @@ def create_invoice():
         discount = float(request.form.get('discount', 0))
         delivery_charge = float(request.form.get('delivery_charge', 0))
         advance_applied = float(request.form.get('advance_applied', 0))
-        
+
         total = subtotal + tax + delivery_charge - discount - advance_applied
-        
-        # Generate invoice number
-        last_invoice = Sale.query.order_by(Sale.id.desc()).first()
-        invoice_number = f"INV-{datetime.now().strftime('%Y%m')}-{ (last_invoice.id + 1) if last_invoice else 1:04d}"
-        
+
+        # Generate invoice number using settings
+        settings = InvoiceSettings.query.first()
+        if not settings:
+            settings = InvoiceSettings(invoice_prefix='INV-', invoice_suffix='', next_number=1)
+            db.session.add(settings)
+        invoice_number = f"{settings.invoice_prefix}{settings.next_number}{settings.invoice_suffix}"
+        settings.next_number += 1
+
         sale = Sale(
             invoice_number=invoice_number,
             customer_id=customer_id if customer_id != '0' else None,
@@ -204,7 +213,10 @@ def create_invoice():
 @login_required
 def invoice_detail(id):
     sale = Sale.query.get_or_404(id)
-    return render_template('sales/invoice_detail.html', sale=sale)
+    company = Company.query.first()
+    date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
+    returns = SaleReturn.query.filter_by(sale_id=sale.id).order_by(SaleReturn.date.desc()).all()
+    return render_template('sales/invoice_detail.html', sale=sale, returns=returns, date_format=date_format)
 
 @bp.route('/invoice/<int:id>/delete', methods=['POST'])
 @login_required
@@ -220,6 +232,42 @@ def delete_invoice(id):
     db.session.commit()
     flash('Invoice deleted successfully.', 'success')
     return redirect(url_for('sales.invoices'))
+
+@bp.route('/invoices/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete_invoices():
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No invoices selected'}), 400
+    
+    deleted_count = 0
+    errors = []
+    
+    for invoice_id in ids:
+        sale = Sale.query.get(invoice_id)
+        if not sale:
+            continue
+            
+        try:
+            # Restore inventory
+            for item in sale.items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    product.update_quantity(item.quantity)
+            
+            db.session.delete(sale)
+            deleted_count += 1
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f'Error deleting Invoice {sale.invoice_number}: {str(e)}')
+            
+    if deleted_count > 0:
+        db.session.commit()
+        
+    message = f'Successfully deleted {deleted_count} invoices.'
+    if errors:
+        return jsonify({'success': False, 'message': message, 'errors': errors}), 500
+    return jsonify({'success': True, 'message': message})
 
 @bp.route('/invoice/<int:id>/pay', methods=['POST'])
 @login_required
@@ -449,7 +497,8 @@ def add_customer():
             email=form.email.data,
             phone=form.phone.data,
             address=form.address.data,
-            gst_number=form.gst_number.data
+            gst_number=form.gst_number.data,
+            payment_method=form.payment_method.data
         )
         db.session.add(customer)
         db.session.commit()
@@ -470,6 +519,7 @@ def edit_customer(id):
         customer.phone = form.phone.data
         customer.address = form.address.data
         customer.gst_number = form.gst_number.data
+        customer.payment_method = form.payment_method.data
         db.session.commit()
         flash('Customer updated successfully!', 'success')
         return redirect(url_for('sales.customers'))
@@ -490,6 +540,45 @@ def delete_customer(id):
     db.session.commit()
     flash('Customer deleted successfully!', 'success')
     return redirect(url_for('sales.customers'))
+
+@bp.route('/customers/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete_customers():
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No customers selected'}), 400
+    
+    deleted_count = 0
+    skipped_count = 0
+    errors = []
+    
+    for customer_id in ids:
+        customer = Customer.query.get(customer_id)
+        if not customer:
+            continue
+            
+        # Check associations
+        if customer.sales:
+            skipped_count += 1
+            continue
+            
+        try:
+            db.session.delete(customer)
+            deleted_count += 1
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f'Error deleting Customer {customer.name}: {str(e)}')
+            
+    if deleted_count > 0:
+        db.session.commit()
+        
+    message = f'Successfully deleted {deleted_count} customers.'
+    if skipped_count > 0:
+        message += f' Skipped {skipped_count} customers with associated records.'
+    
+    if errors:
+        return jsonify({'success': False, 'message': message, 'errors': errors}), 500
+    return jsonify({'success': True, 'message': message})
 
 
 @bp.route('/invoice/<int:id>/pdf')
@@ -573,55 +662,96 @@ def invoice_pdf_share(id):
 @login_required
 def company_settings():
     company = Company.query.first()
-    
+
     if request.method == 'POST':
         # Get name from form - required field
         company_name = request.form.get('name')
         if not company_name:
             flash('Company name is required.', 'error')
             return redirect(url_for('sales.company_settings'))
-        
+
         if not company:
             company = Company(name=company_name)
             db.session.add(company)
         else:
             company.name = company_name
-            
+
         company.address = request.form.get('address')
         company.phone = request.form.get('phone')
         company.email = request.form.get('email')
         company.gst_number = request.form.get('gst_number')
         company.pan_number = request.form.get('pan_number')
         company.website = request.form.get('website')
+        company.date_format = request.form.get('date_format', '%Y-%m-%d')
+        company.mo_prefix = request.form.get('mo_prefix', 'MO-')
+        company.mo_suffix = request.form.get('mo_suffix', '')
+        company.next_mo_number = request.form.get('next_mo_number', 1, type=int)
         company.bank_name = request.form.get('bank_name')
         company.account_number = request.form.get('account_number')
         company.ifsc_code = request.form.get('ifsc_code')
         company.account_holder_name = request.form.get('account_holder_name')
-        
+
         # Handle logo upload
         if 'logo' in request.files:
             logo_file = request.files['logo']
             if logo_file and logo_file.filename:
+                # Validate file type
+                allowed_extensions = {'png', 'jpg', 'jpeg', 'gif'}
                 filename = secure_filename(logo_file.filename)
-                logo_path = os.path.join('app', 'static', 'uploads', filename)
-                os.makedirs(os.path.dirname(logo_path), exist_ok=True)
+                ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+                if ext not in allowed_extensions:
+                    flash('Invalid file type for logo. Only PNG, JPG, JPEG, GIF allowed.', 'error')
+                    return redirect(url_for('sales.company_settings'))
+                # Save file
+                upload_dir = os.path.join('app', 'static', 'uploads')
+                os.makedirs(upload_dir, exist_ok=True)
+                logo_path = os.path.join(upload_dir, filename)
                 logo_file.save(logo_path)
+                # Store path
                 company.logo_path = logo_path
-        
+
         # Handle signature upload
         if 'signature' in request.files:
             sig_file = request.files['signature']
             if sig_file and sig_file.filename:
+                # Validate file type
+                allowed_extensions = {'png', 'jpg', 'jpeg'}
                 filename = secure_filename(sig_file.filename)
-                sig_path = os.path.join('app', 'static', 'uploads', filename)
-                os.makedirs(os.path.dirname(sig_path), exist_ok=True)
+                ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+                if ext not in allowed_extensions:
+                    flash('Invalid file type for signature. Only PNG, JPG, JPEG allowed.', 'error')
+                    return redirect(url_for('sales.company_settings'))
+                # Save file
+                upload_dir = os.path.join('app', 'static', 'uploads')
+                os.makedirs(upload_dir, exist_ok=True)
+                sig_path = os.path.join(upload_dir, filename)
                 sig_file.save(sig_path)
                 company.signature_path = sig_path
-        
+
+        # Handle logo removal
+        if request.form.get('remove_logo') == 'on' and company.logo_path:
+            try:
+                logo_file_path = company.logo_path
+                if os.path.exists(logo_file_path):
+                    os.remove(logo_file_path)
+            except Exception:
+                pass  # Ignore deletion errors
+            company.logo_path = None
+
+        # Handle signature removal
+        if request.form.get('remove_signature') == 'on' and company.signature_path:
+            try:
+                sig_file_path = company.signature_path
+                if os.path.exists(sig_file_path):
+                    os.remove(sig_file_path)
+            except Exception:
+                pass  # Ignore deletion errors
+            company.signature_path = None
+
         db.session.commit()
         flash('Company settings updated successfully!', 'success')
         return redirect(url_for('sales.company_settings'))
-    
+
     return render_template('sales/company_settings.html', company=company)
 
 @bp.route('/invoice/settings', methods=['GET', 'POST'])
@@ -645,9 +775,9 @@ def invoice_settings():
         settings.swift_code = form.swift_code.data
         settings.bank_address = form.bank_address.data
         settings.payment_instructions = form.payment_instructions.data
-        settings.invoice_prefix = form.invoice_prefix.data
-        settings.invoice_suffix = form.invoice_suffix.data
-        settings.next_number = form.next_number.data
+        settings.invoice_prefix = form.invoice_prefix.data or ''
+        settings.invoice_suffix = form.invoice_suffix.data or ''
+        settings.next_number = form.next_number.data or 1
         settings.tax_name = form.tax_name.data
         settings.tax_rate = form.tax_rate.data
         settings.payment_terms = form.payment_terms.data

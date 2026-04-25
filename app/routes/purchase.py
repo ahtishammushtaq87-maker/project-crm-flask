@@ -1,12 +1,23 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response
+
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response, current_app
 from flask_login import login_required, current_user
 from app import db
-from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory
-from app.forms import PurchaseForm, VendorForm
+from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory, PurchaseReturn, PurchaseReturnItem, PurchaseSettings, PurchaseReturnSettings
+from app.forms import PurchaseForm, VendorForm, PurchaseReturnSettingsForm
 from datetime import datetime, timedelta, date
 from app.pdf_utils import generate_professional_pdf
 from app.services.bom_versioning import BOMVersioningService
+from werkzeug.utils import secure_filename
 import os
+import io
+import csv
+import openpyxl
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.units import inch
+from reportlab.lib.enums import TA_CENTER
 
 bp = Blueprint('purchase', __name__)
 
@@ -49,6 +60,10 @@ def bills():
     total_paid = sum(bill.paid_amount for bill in bills)
     total_balance = sum(bill.balance_due for bill in bills)
     
+    # Get company date format
+    company = Company.query.first()
+    date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
+    
     return render_template('purchase/bills.html', 
                          bills=bills, 
                          current_status=status,
@@ -57,7 +72,8 @@ def bills():
                          search=search,
                          total_amount=total_amount,
                          total_paid=total_paid,
-                         total_balance=total_balance)
+                         total_balance=total_balance,
+                         date_format=date_format)
 
 @bp.route('/bill/create', methods=['GET', 'POST'])
 @login_required
@@ -72,15 +88,20 @@ def create_bill():
     if form.validate_on_submit():
         vendor_id = form.vendor_id.data
         date = form.date.data
-        
+
         # Get items from form
         product_ids = request.form.getlist('product_id[]')
         quantities = request.form.getlist('quantity[]')
         prices = request.form.getlist('price[]')
-        
-        # Generate bill number
-        last_bill = PurchaseBill.query.order_by(PurchaseBill.id.desc()).first()
-        bill_number = f"PO-{datetime.now().strftime('%Y%m')}-{(last_bill.id + 1) if last_bill else 1:04d}"
+
+        # Generate bill number using settings
+        settings = PurchaseSettings.query.first()
+        if not settings:
+            settings = PurchaseSettings(bill_prefix='PB-', bill_suffix='', next_bill_number=1,
+                                        po_prefix='PO-', po_suffix='', next_po_number=1)
+            db.session.add(settings)
+        bill_number = f"{settings.bill_prefix}{settings.next_bill_number}{settings.bill_suffix}"
+        settings.next_bill_number += 1
         
         bill = PurchaseBill(
             bill_number=bill_number,
@@ -217,6 +238,23 @@ def create_bill():
         else:
             bill.status = 'unpaid'
 
+        # Handle bill image upload
+        if 'bill_image' in request.files:
+            file = request.files['bill_image']
+            if file and file.filename:
+                allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'webp'}
+                ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+                if ext in allowed_extensions:
+                    upload_dir = os.path.join(current_app.root_path, 'static', 'uploads', 'bills')
+                    os.makedirs(upload_dir, exist_ok=True)
+                    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                    filename = secure_filename(f"{bill_number}_{timestamp}.{ext}")
+                    filepath = os.path.join(upload_dir, filename)
+                    file.save(filepath)
+                    bill.bill_image_path = os.path.join('uploads', 'bills', filename).replace('\\', '/')
+                else:
+                    flash('Invalid file type for bill image. Allowed: png, jpg, jpeg, gif, pdf, webp', 'warning')
+
         db.session.commit()
         
         # Trigger BOM versioning for any products that had cost changes
@@ -252,7 +290,9 @@ def create_bill():
 @login_required
 def bill_detail(id):
     bill = PurchaseBill.query.get_or_404(id)
-    return render_template('purchase/bill_detail.html', bill=bill)
+    company = Company.query.first()
+    date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
+    return render_template('purchase/bill_detail.html', bill=bill, date_format=date_format)
 
 @bp.route('/bill/<int:id>/update-shipping', methods=['POST'])
 @login_required
@@ -516,6 +556,13 @@ def purchase_settings_page():
         
         settings.default_notes = form.default_notes.data
         settings.default_terms = form.default_terms.data
+        settings.bill_prefix = form.bill_prefix.data or ''
+        settings.bill_suffix = form.bill_suffix.data or ''
+        settings.next_bill_number = form.next_bill_number.data or 1
+        settings.po_prefix = form.po_prefix.data or ''
+        settings.po_suffix = form.po_suffix.data or ''
+        settings.next_po_number = form.next_po_number.data or 1
+        
         db.session.commit()
         flash('Purchase settings saved!', 'success')
         return redirect(url_for('purchase.purchase_settings_page'))
@@ -637,10 +684,55 @@ def delete_bill(id):
         if product:
             product.update_quantity(-item.quantity)
 
+    # Delete associated bill image if exists
+    if bill.bill_image_path:
+        try:
+            image_full_path = os.path.join(current_app.root_path, 'static', bill.bill_image_path)
+            if os.path.exists(image_full_path):
+                os.remove(image_full_path)
+        except Exception as e:
+            print(f"Warning: Could not delete bill image: {e}")
+
     db.session.delete(bill)
     db.session.commit()
     flash('Purchase bill deleted successfully.', 'success')
     return redirect(url_for('purchase.bills'))
+
+@bp.route('/bills/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete_bills():
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No bills selected'}), 400
+    
+    deleted_count = 0
+    errors = []
+    
+    for bill_id in ids:
+        bill = PurchaseBill.query.get(bill_id)
+        if not bill:
+            continue
+            
+        try:
+            # Revert inventory
+            for item in bill.items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    product.update_quantity(-item.quantity)
+            
+            db.session.delete(bill)
+            deleted_count += 1
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f'Error deleting Bill {bill.bill_number}: {str(e)}')
+            
+    if deleted_count > 0:
+        db.session.commit()
+        
+    message = f'Successfully deleted {deleted_count} bills.'
+    if errors:
+        return jsonify({'success': False, 'message': message, 'errors': errors}), 500
+    return jsonify({'success': True, 'message': message})
 
 @bp.route('/vendors')
 @login_required
@@ -814,7 +906,8 @@ def add_vendor():
             email=form.email.data,
             phone=form.phone.data,
             address=form.address.data,
-            gst_number=form.gst_number.data
+            gst_number=form.gst_number.data,
+            payment_method=form.payment_method.data
         )
         db.session.add(vendor)
         db.session.commit()
@@ -926,6 +1019,7 @@ def edit_vendor(id):
         vendor.phone = form.phone.data
         vendor.address = form.address.data
         vendor.gst_number = form.gst_number.data
+        vendor.payment_method = form.payment_method.data
         db.session.commit()
         flash('Vendor updated successfully!', 'success')
         return redirect(url_for('purchase.vendors'))
@@ -946,6 +1040,45 @@ def delete_vendor(id):
     db.session.commit()
     flash('Vendor deleted successfully!', 'success')
     return redirect(url_for('purchase.vendors'))
+
+@bp.route('/vendors/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete_vendors():
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No vendors selected'}), 400
+    
+    deleted_count = 0
+    skipped_count = 0
+    errors = []
+    
+    for vendor_id in ids:
+        vendor = Vendor.query.get(vendor_id)
+        if not vendor:
+            continue
+            
+        # Check associations
+        if vendor.bills or vendor.sales or vendor.expenses:
+            skipped_count += 1
+            continue
+            
+        try:
+            db.session.delete(vendor)
+            deleted_count += 1
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f'Error deleting Vendor {vendor.name}: {str(e)}')
+            
+    if deleted_count > 0:
+        db.session.commit()
+        
+    message = f'Successfully deleted {deleted_count} vendors.'
+    if skipped_count > 0:
+        message += f' Skipped {skipped_count} vendors with associated records.'
+    
+    if errors:
+        return jsonify({'success': False, 'message': message, 'errors': errors}), 500
+    return jsonify({'success': True, 'message': message})
 
 
 # ---------------------------------------------------------------------------
@@ -1060,9 +1193,14 @@ def create_po():
         quantities  = request.form.getlist('quantity[]')
         prices      = request.form.getlist('price[]')
 
-        # Auto-generate PO number
-        last = PurchaseOrder.query.order_by(PurchaseOrder.id.desc()).first()
-        po_number = f"PO-{datetime.now().strftime('%Y%m')}-{(last.id + 1) if last else 1:04d}"
+        # Auto-generate PO number using settings
+        settings = PurchaseSettings.query.first()
+        if not settings:
+            settings = PurchaseSettings(bill_prefix='PB-', bill_suffix='', next_bill_number=1,
+                                        po_prefix='PO-', po_suffix='', next_po_number=1)
+            db.session.add(settings)
+        po_number = f"{settings.po_prefix}{settings.next_po_number}{settings.po_suffix}"
+        settings.next_po_number += 1
 
         po = PurchaseOrder(
             po_number=po_number,
@@ -1220,7 +1358,14 @@ def convert_po_to_bill(id):
         return redirect(url_for('purchase.po_detail', id=id))
 
     last_bill = PurchaseBill.query.order_by(PurchaseBill.id.desc()).first()
-    bill_number = f"PB-{datetime.now().strftime('%Y%m')}-{(last_bill.id + 1) if last_bill else 1:04d}"
+    # Generate bill number using settings
+    settings = PurchaseSettings.query.first()
+    if not settings:
+        settings = PurchaseSettings(bill_prefix='PB-', bill_suffix='', next_bill_number=1,
+                                    po_prefix='PO-', po_suffix='', next_po_number=1)
+        db.session.add(settings)
+    bill_number = f"{settings.bill_prefix}{settings.next_bill_number}{settings.bill_suffix}"
+    settings.next_bill_number += 1
 
     bill = PurchaseBill(
         bill_number=bill_number,
@@ -1266,6 +1411,36 @@ def delete_po(id):
     flash('Purchase Order deleted.', 'success')
     return redirect(url_for('purchase.purchase_orders'))
 
+@bp.route('/purchase-orders/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete_purchase_orders():
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No orders selected'}), 400
+    
+    deleted_count = 0
+    errors = []
+    
+    for po_id in ids:
+        po = PurchaseOrder.query.get(po_id)
+        if not po:
+            continue
+            
+        try:
+            db.session.delete(po)
+            deleted_count += 1
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f'Error deleting Order {po.po_number}: {str(e)}')
+            
+    if deleted_count > 0:
+        db.session.commit()
+        
+    message = f'Successfully deleted {deleted_count} orders.'
+    if errors:
+        return jsonify({'success': False, 'message': message, 'errors': errors}), 500
+    return jsonify({'success': True, 'message': message})
+
 
 # ---------------------------------------------------------------------------
 # API: Get cost price history for a product
@@ -1298,3 +1473,614 @@ def product_cost_history(product_id):
             for h in history
         ]
     })
+
+
+# ---------------------------------------------------------------------------
+# Purchase Returns
+# ---------------------------------------------------------------------------
+@bp.route('/returns/')
+@login_required
+def purchase_return_list():
+    """List all purchase returns"""
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+    status = request.args.get('status', 'all')
+
+    query = PurchaseReturn.query
+
+    if from_date:
+        try:
+            from_date_obj = datetime.strptime(from_date, '%Y-%m-%d')
+            query = query.filter(PurchaseReturn.date >= from_date_obj)
+        except ValueError:
+            pass
+
+    if to_date:
+        try:
+            to_date_obj = datetime.strptime(to_date, '%Y-%m-%d')
+            to_date_obj = to_date_obj.replace(hour=23, minute=59, second=59)
+            query = query.filter(PurchaseReturn.date <= to_date_obj)
+        except ValueError:
+            pass
+
+    if status != 'all':
+        query = query.filter(PurchaseReturn.status == status)
+
+    returns = query.order_by(PurchaseReturn.date.desc()).all()
+
+    total_returns = sum(r.total for r in returns)
+    total_count = len(returns)
+
+    return render_template('purchase/returns.html',
+                        returns=returns,
+                        from_date=from_date,
+                        to_date=to_date,
+                        current_status=status,
+                        total_returns=total_returns,
+                        total_count=total_count)
+
+
+@bp.route('/return/create', methods=['GET', 'POST'])
+@login_required
+def create_purchase_return():
+    """Create a new purchase return"""
+    if request.method == 'GET':
+        bill_id = request.args.get('bill_id')
+        if bill_id:
+            bill = PurchaseBill.query.get_or_404(int(bill_id))
+            return render_template('purchase/create_return.html',
+                               bill=bill,
+                               products=Product.query.filter_by(is_active=True).all(),
+                               now=datetime.now())
+
+        bills = PurchaseBill.query.order_by(PurchaseBill.date.desc()).all()
+        return render_template('purchase/create_return.html',
+                           bills=bills,
+                           bill=None,
+                           products=Product.query.filter_by(is_active=True).all(),
+                           now=datetime.now())
+
+    # POST - process return
+    bill_id = request.form.get('bill_id')
+    bill = PurchaseBill.query.get_or_404(int(bill_id))
+
+    product_ids = request.form.getlist('product_id[]')
+    quantities = request.form.getlist('quantity[]')
+    prices = request.form.getlist('price[]')
+
+    subtotal = 0
+    return_items = []
+
+    for i in range(len(product_ids)):
+        if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
+            product = Product.query.get(int(product_ids[i]))
+            quantity = float(quantities[i])
+            price = float(prices[i])
+            total = quantity * price
+            subtotal += total
+
+            return_items.append({
+                'product_id': product.id,
+                'quantity': quantity,
+                'unit_price': price,
+                'total': total
+            })
+
+    if not return_items:
+        flash('Please add at least one item to return.', 'warning')
+        return redirect(url_for('purchase.create_purchase_return', bill_id=bill_id))
+
+    tax_rate = float(request.form.get('tax_rate', 0))
+    tax = subtotal * (tax_rate / 100)
+    discount = float(request.form.get('discount', 0))
+    total = subtotal + tax - discount
+
+    # Generate return number using settings
+    settings = PurchaseReturnSettings.query.first()
+    if not settings:
+        settings = PurchaseReturnSettings(return_prefix='PRet-', return_suffix='', next_number=1)
+        db.session.add(settings)
+
+    # Sync next_number with actual highest return number in DB
+    highest_return = PurchaseReturn.query.order_by(PurchaseReturn.id.desc()).first()
+    if highest_return and highest_return.return_number:
+        try:
+            prefix_len = len(settings.return_prefix or '')
+            suffix_len = len(settings.return_suffix or '')
+            num_str = highest_return.return_number[prefix_len:]
+            if suffix_len > 0:
+                num_str = num_str[:-suffix_len]
+            max_num = int(num_str)
+            next_return_num = max(settings.next_number, max_num + 1)
+        except (ValueError, IndexError):
+            next_return_num = settings.next_number
+    else:
+        next_return_num = settings.next_number
+
+    # Get unique return number
+    prefix = settings.return_prefix or ''
+    suffix = settings.return_suffix or ''
+    while True:
+        return_number = f"{prefix}{next_return_num}{suffix}"
+        existing = PurchaseReturn.query.filter_by(return_number=return_number).first()
+        if not existing:
+            break
+        next_return_num += 1
+
+    purchase_return = PurchaseReturn(
+        return_number=return_number,
+        bill_id=bill.id,
+        vendor_id=bill.vendor_id,
+        date=datetime.strptime(request.form.get('date'), '%Y-%m-%d') if request.form.get('date') else datetime.now(),
+        subtotal=subtotal,
+        tax_rate=tax_rate,
+        tax=tax,
+        discount=discount,
+        total=total,
+        reason=request.form.get('reason', ''),
+        status='pending',
+        returned_to_inventory=False,
+        refund_status='none',
+        created_by=current_user.id
+    )
+
+    db.session.add(purchase_return)
+    db.session.flush()
+
+    # Create return items
+    for item in return_items:
+        return_item = PurchaseReturnItem(
+            return_id=purchase_return.id,
+            product_id=item['product_id'],
+            quantity=item['quantity'],
+            unit_price=item['unit_price'],
+            total=item['total']
+        )
+        db.session.add(return_item)
+
+        # Subtract from inventory
+        product = Product.query.get(item['product_id'])
+        if product:
+            product.quantity -= item['quantity']
+            if product.quantity < 0:
+                product.quantity = 0
+
+    # Update bill totals - reduce bill total by return amount
+    bill.subtotal -= subtotal
+    bill.tax -= tax
+    bill.total -= total
+    if bill.total < 0:
+        bill.total = 0
+
+    # Adjust paid amount if needed
+    if bill.paid_amount > 0:
+        if bill.total < bill.paid_amount:
+            bill.paid_amount = bill.total
+
+    # Update bill status based on return
+    original_total = bill.total + total  # Restore original to compare
+    if original_total > 0:
+        if bill.total == 0 or total >= original_total:
+            bill.status = 'return'
+        elif total > 0 and bill.total < original_total:
+            bill.status = 'partial_return'
+        else:
+            bill.status = bill.status  # Keep existing status
+
+    # Update return settings next number
+    settings.next_number = next_return_num + 1
+
+    db.session.commit()
+    flash(f'Purchase return {return_number} created successfully!', 'success')
+    return redirect(url_for('purchase.purchase_return_detail', id=purchase_return.id))
+
+
+@bp.route('/return/<int:id>')
+@login_required
+def purchase_return_detail(id):
+    """View purchase return detail"""
+    purchase_return = PurchaseReturn.query.get_or_404(id)
+    return render_template('purchase/return_detail.html', return_obj=purchase_return)
+
+
+@bp.route('/return/<int:id>/mark_returned', methods=['POST'])
+@login_required
+def mark_purchase_returned(id):
+    """Mark return as returned to inventory"""
+    purchase_return = PurchaseReturn.query.get_or_404(id)
+    
+    if not purchase_return.returned_to_inventory:
+        purchase_return.returned_to_inventory = True
+        purchase_return.status = 'completed'
+        db.session.commit()
+        flash('Items marked as returned to inventory.', 'success')
+    else:
+        flash('Items already returned to inventory.', 'info')
+    
+    return redirect(url_for('purchase.purchase_return_detail', id=id))
+
+
+@bp.route('/return/<int:id>/refund', methods=['POST'])
+@login_required
+def process_purchase_refund(id):
+    """Process refund to vendor"""
+    purchase_return = PurchaseReturn.query.get_or_404(id)
+    
+    refund_amount = float(request.form.get('refund_amount', 0))
+    
+    if refund_amount <= 0:
+        flash('Please enter a valid refund amount.', 'warning')
+        return redirect(url_for('purchase.purchase_return_detail', id=id))
+    
+    if refund_amount > purchase_return.total:
+        refund_amount = purchase_return.total
+    
+    purchase_return.refund_amount = refund_amount
+    purchase_return.refund_status = 'paid'
+    purchase_return.status = 'completed'
+    
+    # Create a vendor advance record for the refund (positive = refund credited as advance)
+    if purchase_return.vendor:
+        vendor_advance = VendorAdvance(
+            vendor_id=purchase_return.vendor.id,
+            amount=refund_amount,  # Positive amount: increases remaining advance
+            date=datetime.now(),
+            description=f'Refund for Return: {purchase_return.return_number}',
+            created_by=current_user.id
+        )
+        db.session.add(vendor_advance)
+    
+    db.session.commit()
+    flash(f'Refund of Rs{refund_amount:,.2f} processed to vendor.', 'success')
+    return redirect(url_for('purchase.purchase_return_detail', id=id))
+
+
+@bp.route('/returns/vendor/<int:vendor_id>')
+@login_required
+def vendor_purchase_returns(vendor_id):
+    """View all purchase returns for a vendor"""
+    vendor = Vendor.query.get_or_404(vendor_id)
+    returns = PurchaseReturn.query.filter_by(vendor_id=vendor_id).order_by(PurchaseReturn.date.desc()).all()
+    
+    return render_template('purchase/vendor_returns.html',
+                        vendor=vendor,
+                        returns=returns)
+
+
+@bp.route('/return/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_purchase_return(id):
+    """Edit a purchase return"""
+    purchase_return = PurchaseReturn.query.get_or_404(id)
+    bill = purchase_return.bill
+    
+    if request.method == 'POST':
+        purchase_return.reason = request.form.get('reason', '')
+        purchase_return.date = datetime.strptime(request.form.get('date'), '%Y-%m-%d') if request.form.get('date') else purchase_return.date
+        
+        # Update quantities and recalculate totals
+        product_ids = request.form.getlist('product_id[]')
+        quantities = request.form.getlist('quantity[]')
+        prices = request.form.getlist('price[]')
+        
+        # Delete existing items
+        for item in purchase_return.items:
+            # Restore product quantity
+            if item.product:
+                item.product.quantity += item.quantity
+            db.session.delete(item)
+        
+        # Create new items
+        subtotal = 0
+        for i in range(len(product_ids)):
+            if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
+                product = Product.query.get(int(product_ids[i]))
+                quantity = float(quantities[i])
+                price = float(prices[i])
+                total = quantity * price
+                subtotal += total
+                
+                return_item = PurchaseReturnItem(
+                    return_id=purchase_return.id,
+                    product_id=product.id,
+                    quantity=quantity,
+                    unit_price=price,
+                    total=total
+                )
+                db.session.add(return_item)
+                
+                # Subtract from inventory
+                if product:
+                    product.quantity -= quantity
+                    if product.quantity < 0:
+                        product.quantity = 0
+        
+        # Recalculate totals
+        tax_rate = purchase_return.tax_rate
+        tax = subtotal * (tax_rate / 100)
+        discount = purchase_return.discount
+        total = subtotal + tax - discount
+        
+        purchase_return.subtotal = subtotal
+        purchase_return.tax = tax
+        purchase_return.total = total
+        
+        db.session.commit()
+        flash(f'Return {purchase_return.return_number} updated successfully!', 'success')
+        return redirect(url_for('purchase.purchase_return_detail', id=id))
+    
+    return render_template('purchase/edit_return.html',
+                          return_obj=purchase_return,
+                          products=Product.query.filter_by(is_active=True).all())
+
+
+@bp.route('/return/<int:id>/delete', methods=['POST'])
+@login_required
+def delete_purchase_return(id):
+    """Delete a purchase return"""
+    purchase_return = PurchaseReturn.query.get_or_404(id)
+    bill = purchase_return.bill
+    
+    # Restore product quantities
+    for item in purchase_return.items:
+        if item.product:
+            item.product.quantity += item.quantity
+    
+    # Reverse vendor refund if was paid
+    if purchase_return.refund_status == 'paid' and purchase_return.vendor:
+        # Create a negative vendor advance to reverse the refund (offset positive refund)
+        vendor_advance = VendorAdvance(
+            vendor_id=purchase_return.vendor.id,
+            amount=-purchase_return.refund_amount,
+            date=datetime.now(),
+            description=f'Reversal for Return: {purchase_return.return_number}',
+            created_by=current_user.id
+        )
+        db.session.add(vendor_advance)
+    
+    # Restore bill totals and recalculate status
+    if bill:
+        bill.subtotal += purchase_return.subtotal
+        bill.tax += purchase_return.tax
+        bill.total += purchase_return.total
+        
+        # Recalculate bill status based on paid amount vs total
+        if bill.paid_amount >= bill.total and bill.total > 0:
+            bill.status = 'paid'
+        elif bill.paid_amount > 0 and bill.paid_amount < bill.total:
+            bill.status = 'partial'
+        else:
+            bill.status = 'unpaid'
+    
+    return_number = purchase_return.return_number
+    db.session.delete(purchase_return)
+    db.session.commit()
+    
+    flash(f'Return {return_number} deleted successfully!', 'success')
+    return redirect(url_for('purchase.purchase_return_list'))
+@bp.route('/return/settings', methods=['GET', 'POST'])
+@login_required
+def purchase_return_settings():
+    settings = PurchaseReturnSettings.query.first()
+    form = PurchaseReturnSettingsForm(obj=settings)
+    if form.validate_on_submit():
+        if not settings:
+            settings = PurchaseReturnSettings()
+            db.session.add(settings)
+        settings.return_prefix = form.return_prefix.data or 'PRet-'
+        settings.return_suffix = form.return_suffix.data or ''
+        settings.next_number = form.next_number.data or 1
+        db.session.commit()
+        flash('Purchase return settings updated successfully.', 'success')
+        return redirect(url_for('purchase.purchase_return_settings'))
+    return render_template('purchase/purchase_return_settings.html', settings=settings, form=form)
+
+@bp.route("/vendor/<int:id>/export/csv")
+@login_required
+def vendor_export_csv(id):
+    """Export vendor profile to CSV"""
+    vendor = Vendor.query.get_or_404(id)
+    bills = sorted(vendor.bills, key=lambda b: b.date, reverse=True)
+    advances = sorted(vendor.advances, key=lambda a: a.date, reverse=True)
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Vendor info
+    writer.writerow(["Vendor Profile Export"])
+    writer.writerow(["Name", vendor.name])
+    writer.writerow(["Email", vendor.email or ""])
+    writer.writerow(["Phone", vendor.phone or ""])
+    writer.writerow(["Address", vendor.address or ""])
+    writer.writerow(["Payment Method", vendor.payment_method or ""])
+    writer.writerow([])
+    
+    # Bills
+    writer.writerow(["Purchase Bills"])
+    writer.writerow(["Bill #", "Date", "Subtotal", "Tax", "Discount", "Total", "Paid", "Balance", "Status"])
+    for bill in bills:
+        writer.writerow([
+            bill.bill_number,
+            bill.date.strftime("%Y-%m-%d"),
+            bill.subtotal,
+            bill.tax,
+            bill.discount,
+            bill.total,
+            bill.paid_amount,
+            bill.balance_due,
+            bill.status
+        ])
+    writer.writerow([])
+    
+    # Advances
+    writer.writerow(["Advances"])
+    writer.writerow(["Date", "Description", "Amount", "Status"])
+    for adv in advances:
+        writer.writerow([
+            adv.date.strftime("%Y-%m-%d"),
+            adv.description or "",
+            adv.amount,
+            "Adjusted" if adv.is_adjusted else "Pending"
+        ])
+    
+    output.seek(0)
+    return send_file(
+        io.BytesIO(output.getvalue().encode()),
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=f"vendor_{vendor.id}_{vendor.name}_profile.csv"
+    )
+
+@bp.route("/vendor/<int:id>/export/excel")
+@login_required
+def vendor_export_excel(id):
+    """Export vendor profile to Excel"""
+    vendor = Vendor.query.get_or_404(id)
+    bills = sorted(vendor.bills, key=lambda b: b.date, reverse=True)
+    advances = sorted(vendor.advances, key=lambda a: a.date, reverse=True)
+    
+    wb = openpyxl.Workbook()
+    
+    # Vendor Info sheet
+    ws1 = wb.active
+    ws1.title = "Vendor Info"
+    ws1.append(["Vendor Profile Export"])
+    ws1.append(["Name", vendor.name])
+    ws1.append(["Email", vendor.email or ""])
+    ws1.append(["Phone", vendor.phone or ""])
+    ws1.append(["Address", vendor.address or ""])
+    ws1.append(["Payment Method", vendor.payment_method or ""])
+    
+    # Bills sheet
+    ws2 = wb.create_sheet("Purchase Bills")
+    ws2.append(["Bill #", "Date", "Subtotal", "Tax", "Discount", "Total", "Paid", "Balance", "Status"])
+    for bill in bills:
+        ws2.append([
+            bill.bill_number,
+            bill.date.strftime("%Y-%m-%d"),
+            bill.subtotal,
+            bill.tax,
+            bill.discount,
+            bill.total,
+            bill.paid_amount,
+            bill.balance_due,
+            bill.status
+        ])
+    
+    # Advances sheet
+    ws3 = wb.create_sheet("Advances")
+    ws3.append(["Date", "Description", "Amount", "Status"])
+    for adv in advances:
+        ws3.append([
+            adv.date.strftime("%Y-%m-%d"),
+            adv.description or "",
+            adv.amount,
+            "Adjusted" if adv.is_adjusted else "Pending"
+        ])
+    
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=f"vendor_{vendor.id}_{vendor.name}_profile.xlsx"
+    )
+
+@bp.route("/vendor/<int:id>/export/pdf")
+@login_required
+def vendor_export_pdf(id):
+    """Export vendor profile to PDF"""
+    vendor = Vendor.query.get_or_404(id)
+    bills = sorted(vendor.bills, key=lambda b: b.date, reverse=True)
+    advances = sorted(vendor.advances, key=lambda a: a.date, reverse=True)
+    
+    output = io.BytesIO()
+    doc = SimpleDocTemplate(output, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    # Title
+    title_style = ParagraphStyle("CustomTitle", parent=styles["Heading1"], fontSize=16, textColor=colors.HexColor("#366092"), spaceAfter=12, alignment=TA_CENTER)
+    title = Paragraph(f"Vendor Profile: {vendor.name}", title_style)
+    elements.append(title)
+    
+    # Vendor Info
+    info_data = [
+        ["Name:", vendor.name],
+        ["Email:", vendor.email or ""],
+        ["Phone:", vendor.phone or ""],
+        ["Address:", vendor.address or ""],
+        ["Payment Method:", vendor.payment_method or ""]
+    ]
+    info_table = Table(info_data, colWidths=[2*inch, 4*inch])
+    info_table.setStyle(TableStyle([
+        ("FONTNAME", (0,0), (-1,-1), "Helvetica"),
+        ("FONTSIZE", (0,0), (-1,-1), 10),
+        ("FONTNAME", (0,0), (0,-1), "Helvetica-Bold"),
+    ]))
+    elements.append(info_table)
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Bills Table
+    elements.append(Paragraph("Purchase Bills", styles["Heading2"]))
+    bill_data = [["Bill #", "Date", "Total", "Paid", "Balance", "Status"]]
+    for bill in bills:
+        bill_data.append([
+            bill.bill_number,
+            bill.date.strftime("%Y-%m-%d"),
+            f"Rs {bill.total:,.2f}",
+            f"Rs {bill.paid_amount:,.2f}",
+            f"Rs {bill.balance_due:,.2f}",
+            bill.status.title()
+        ])
+    
+    if len(bill_data) > 1:
+        bill_table = Table(bill_data, colWidths=[1.2*inch, 1*inch, 1*inch, 1*inch, 1*inch, 0.8*inch])
+        bill_table.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#366092")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),
+            ("FONTNAME", (0,0), (-1,-1), "Helvetica"),
+            ("FONTSIZE", (0,0), (-1,-1), 9),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.lightgrey]),
+            ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+        ]))
+        elements.append(bill_table)
+    
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Advances Table
+    elements.append(Paragraph("Advances", styles["Heading2"]))
+    adv_data = [["Date", "Description", "Amount", "Status"]]
+    for adv in advances:
+        adv_data.append([
+            adv.date.strftime("%Y-%m-%d"),
+            adv.description or "",
+            f"Rs {adv.amount:,.2f}",
+            "Adjusted" if adv.is_adjusted else "Pending"
+        ])
+    
+    if len(adv_data) > 1:
+        adv_table = Table(adv_data, colWidths=[1*inch, 2.5*inch, 1*inch, 1*inch])
+        adv_table.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#366092")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),
+            ("FONTNAME", (0,0), (-1,-1), "Helvetica"),
+            ("FONTSIZE", (0,0), (-1,-1), 9),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.lightgrey]),
+            ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+        ]))
+        elements.append(adv_table)
+    
+    doc.build(elements)
+    output.seek(0)
+    
+    return send_file(
+        output,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"vendor_{vendor.id}_{vendor.name}_profile.pdf"
+    )

@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}Purchase Returns{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Purchase Returns</h2>
+        <a href="{{ url_for('purchase.create_purchase_return') }}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Create Return
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <form method="GET" class="row g-3 mb-3">
+                <div class="col-md-3">
+                    <label for="from_date" class="form-label">From Date</label>
+                    <input type="date" class="form-control" id="from_date" name="from_date"
+                           value="{{ from_date }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="to_date" class="form-label">To Date</label>
+                    <input type="date" class="form-control" id="to_date" name="to_date"
+                           value="{{ to_date }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">&nbsp;</label>
+                    <button type="submit" class="btn btn-primary d-block">Filter</button>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">&nbsp;</label>
+                    <a href="{{ url_for('purchase.purchase_return_list') }}" class="btn btn-secondary d-block">Clear</a>
+                </div>
+                <input type="hidden" name="status" value="{{ current_status }}">
+            </form>
+
+            {% if from_date or to_date %}
+            <div class="alert alert-info mt-2 mb-2">
+                <small>
+                    <i class="fas fa-filter"></i>
+                    <strong>Active Filters:</strong>
+                    {% if from_date %}From: {{ from_date }}{% endif %}
+                    {% if from_date and to_date %} | {% endif %}
+                    {% if to_date %}To: {{ to_date }}{% endif %}
+                    {% if current_status != 'all' %} | Status: {{ current_status|title }}{% endif %}
+                </small>
+            </div>
+            {% endif %}
+
+            <ul class="nav nav-tabs card-header-tabs">
+                <li class="nav-item">
+                    <a class="nav-link {% if current_status == 'all' %}active{% endif %}"
+                       href="{{ url_for('purchase.purchase_return_list', status='all', from_date=from_date, to_date=to_date) }}">
+                        All
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if current_status == 'pending' %}active{% endif %}"
+                       href="{{ url_for('purchase.purchase_return_list', status='pending', from_date=from_date, to_date=to_date) }}">
+                        Pending
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if current_status == 'completed' %}active{% endif %}"
+                       href="{{ url_for('purchase.purchase_return_list', status='completed', from_date=from_date, to_date=to_date) }}">
+                        Completed
+                    </a>
+                </li>
+            </ul>
+        </div>
+        <div class="card-body">
+            {% if returns %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Return #</th>
+                            <th>Date</th>
+                            <th>Bill #</th>
+                            <th>Vendor</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                            <th>Refund Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ret in returns %}
+                        <tr>
+                            <td>{{ ret.return_number }}</td>
+                            <td>{{ ret.date.strftime('%Y-%m-%d') }}</td>
+                            <td>
+                                {% if ret.bill %}
+                                <a href="{{ url_for('purchase.bill_detail', id=ret.bill.id) }}">{{ ret.bill.bill_number }}</a>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if ret.vendor %}
+                                <a href="{{ url_for('purchase.vendor_purchase_returns', vendor_id=ret.vendor.id) }}">{{ ret.vendor.name }}</a>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td>Rs{{ "%.2f"|format(ret.total) }}</td>
+                            <td>
+                                {% if ret.status == 'completed' %}
+                                <span class="badge bg-success">{{ ret.status|title }}</span>
+                                {% elif ret.status == 'approved' %}
+                                <span class="badge bg-info">{{ ret.status|title }}</span>
+                                {% else %}
+                                <span class="badge bg-warning">{{ ret.status|title }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if ret.refund_status == 'paid' %}
+                                <span class="badge bg-success">Paid</span>
+                                {% elif ret.refund_status == 'pending' %}
+                                <span class="badge bg-warning">Pending</span>
+                                {% else %}
+                                <span class="badge bg-secondary">None</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{{ url_for('purchase.purchase_return_detail', id=ret.id) }}" class="btn btn-sm btn-outline-primary">View</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5 text-muted">
+                <p>No purchase returns found.</p>
+            </div>
+            {% endif %}
+        </div>
+        {% if returns %}
+        <div class="card-footer text-muted">
+            <div class="row">
+                <div class="col-md-6">
+                    <strong>Total Returns: Rs{{ "%.2f"|format(total_returns) }}</strong>
+                </div>
+                <div class="col-md-6 text-end">
+                    <strong>{{ total_count }} returns</strong>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

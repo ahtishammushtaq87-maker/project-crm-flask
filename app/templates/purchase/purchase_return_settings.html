@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4><i class="fas fa-undo me-2"></i>Purchase Return Number Settings</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        {{ form.hidden_tag() }}
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                {{ form.return_prefix.label(class="form-label") }}
+                                {{ form.return_prefix(class="form-control") }}
+                                <small class="text-muted">e.g., PRet-</small>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                {{ form.return_suffix.label(class="form-label") }}
+                                {{ form.return_suffix(class="form-control") }}
+                                <small class="text-muted">e.g., -R</small>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                {{ form.next_number.label(class="form-label") }}
+                                {{ form.next_number(class="form-control") }}
+                                <small class="text-muted">Next number to use</small>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-1"></i>Save Settings
+                        </button>
+                        <a href="{{ url_for('sales.company_settings') }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left me-1"></i>Back to Settings
+                        </a>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-info-circle me-2"></i>Preview</h5>
+                </div>
+                <div class="card-body">
+                    <p>Example return number with current settings:</p>
+                    <h4 class="text-primary">
+                        {% if settings %}
+                        {{ settings.return_prefix or 'PRet-' }}{{ settings.next_number or 1 }}{{ settings.return_suffix or '' }}
+                        {% else %}
+                        PRet-1
+                        {% endif %}
+                    </h4>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

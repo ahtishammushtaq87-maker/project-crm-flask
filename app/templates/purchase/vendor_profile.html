@@ -16,9 +16,26 @@
                 {% if vendor.email and vendor.phone %} &nbsp;|&nbsp; {% endif %}
                 {% if vendor.phone %}<i class="fas fa-phone me-1"></i>{{ vendor.phone }}{% endif %}
                 {% if vendor.address %} &nbsp;|&nbsp; <i class="fas fa-map-marker-alt me-1"></i>{{ vendor.address }}{% endif %}
+                {% if vendor.payment_method %} &nbsp;|&nbsp; <i class="fas fa-money-bill me-1"></i>Payment: {{ vendor.payment_method }}{% endif %}
             </p>
         </div>
         <div class="d-flex gap-2">
+            <div class="dropdown">
+                <button class="btn btn-info dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-download me-1"></i> Export
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="{{ url_for('purchase.vendor_export_pdf', id=vendor.id) }}">
+                        <i class="fas fa-file-pdf text-danger me-2"></i> PDF
+                    </a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('purchase.vendor_export_excel', id=vendor.id) }}">
+                        <i class="fas fa-file-excel text-success me-2"></i> Excel
+                    </a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('purchase.vendor_export_csv', id=vendor.id) }}">
+                        <i class="fas fa-file-csv text-primary me-2"></i> CSV
+                    </a></li>
+                </ul>
+            </div>
             <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#advanceModal">
                 <i class="fas fa-hand-holding-usd me-1"></i> Give Advance
             </button>
@@ -393,6 +410,79 @@
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Purchase Returns Section -->
+    <div class="card shadow mb-4">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+            <h6 class="m-0 fw-bold text-danger">
+                <i class="fas fa-undo me-2"></i>Purchase Returns
+                {% if vendor.total_purchase_returns > 0 %}
+                <span class="badge bg-danger ms-2">Rs {{ '{:,.0f}'.format(vendor.total_purchase_returns) }} Total</span>
+                {% endif %}
+            </h6>
+            <a href="{{ url_for('purchase.create_purchase_return', bill_id='') }}" class="btn btn-sm btn-danger">
+                <i class="fas fa-plus me-1"></i> Create Return
+            </a>
+        </div>
+        <div class="card-body p-0">
+            {% set returns = vendor.purchase_returns %}
+            {% if returns %}
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Return #</th>
+                            <th>Date</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                            <th>Refund Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ret in returns[:10] %}
+                        <tr>
+                            <td>{{ ret.return_number }}</td>
+                            <td>{{ ret.date.strftime('%d-%m-%Y') }}</td>
+                            <td class="text-end fw-bold text-danger">Rs {{ '{:,.0f}'.format(ret.total) }}</td>
+                            <td>
+                                {% if ret.status == 'completed' %}
+                                <span class="badge bg-success">{{ ret.status|title }}</span>
+                                {% else %}
+                                <span class="badge bg-warning">{{ ret.status|title }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if ret.refund_status == 'paid' %}
+                                <span class="badge bg-success">Paid: Rs {{ '{:,.0f}'.format(ret.refund_amount) }}</span>
+                                {% elif ret.refund_status == 'pending' %}
+                                <span class="badge bg-warning">Pending</span>
+                                {% else %}
+                                <span class="badge bg-secondary">None</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{{ url_for('purchase.purchase_return_detail', id=ret.id) }}" class="btn btn-sm btn-outline-primary">View</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if returns|length > 10 %}
+            <div class="card-footer text-center">
+                <a href="{{ url_for('purchase.vendor_purchase_returns', vendor_id=vendor.id) }}" class="text-primary">
+                    View All {{ returns|length }} Returns
+                </a>
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="card-body text-center text-muted py-4">
+                <p>No purchase returns found.</p>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
