@@ -15,6 +15,11 @@
     border-radius: 0.375rem;
     height: calc(1.5em + 0.75rem + 2px);
 }
+@media (max-width: 768px) {
+    #itemsTable {
+        min-width: 800px;
+    }
+}
 </style>
 {% endblock %}
 
@@ -184,10 +189,20 @@ function initSelect2(element) {
     if (element) {
         element.querySelectorAll('.searchable-select').forEach(select => {
             if (!select.classList.contains('select2-hidden-accessible')) {
-                $(select).select2({
+                const $select = $(select).select2({
                     theme: 'bootstrap-5',
                     placeholder: 'Select Product',
                     allowClear: true
+                });
+
+                // Auto-focus search field when opened
+                $select.on('select2:open', function() {
+                    setTimeout(() => {
+                        const searchField = document.querySelector('.select2-container--open .select2-search__field');
+                        if (searchField) {
+                            searchField.focus();
+                        }
+                    }, 50);
                 });
             }
         });

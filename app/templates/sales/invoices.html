@@ -31,7 +31,17 @@
                            value="{{ to_date }}">
                 </div>
                 <div class="col-md-2">
-                    <button type="submit" class="btn btn-primary d-block">Filter</button>
+                    <label for="salesman_id" class="form-label">Salesman</label>
+                    <select name="salesman_id" id="salesman_id" class="form-select">
+                        <option value="">All</option>
+                        {% for s in salesmen %}
+                        <option value="{{ s.id }}" {% if salesman_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label d-none d-md-block">&nbsp;</label>
+                    <button type="submit" class="btn btn-primary d-block w-100">Filter</button>
                 </div>
                 <div class="col-md-2">
                     <a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary d-block">Clear</a>
@@ -55,31 +65,31 @@
             <ul class="nav nav-tabs card-header-tabs">
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'all' %}active{% endif %}" 
-                       href="{{ url_for('sales.invoices', status='all', from_date=from_date, to_date=to_date) }}">
+                       href="{{ url_for('sales.invoices', status='all', from_date=from_date, to_date=to_date, salesman_id=salesman_id) }}">
                         All
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'paid' %}active{% endif %}" 
-                       href="{{ url_for('sales.invoices', status='paid', from_date=from_date, to_date=to_date) }}">
+                       href="{{ url_for('sales.invoices', status='paid', from_date=from_date, to_date=to_date, salesman_id=salesman_id) }}">
                         Paid
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'unpaid' %}active{% endif %}" 
-                       href="{{ url_for('sales.invoices', status='unpaid', from_date=from_date, to_date=to_date) }}">
+                       href="{{ url_for('sales.invoices', status='unpaid', from_date=from_date, to_date=to_date, salesman_id=salesman_id) }}">
                         Unpaid
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'partial' %}active{% endif %}" 
-                       href="{{ url_for('sales.invoices', status='partial', from_date=from_date, to_date=to_date) }}">
+                       href="{{ url_for('sales.invoices', status='partial', from_date=from_date, to_date=to_date, salesman_id=salesman_id) }}">
                         Partial
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link text-danger {% if current_status == 'overdue' %}active{% endif %}" 
-                       href="{{ url_for('sales.invoices', status='overdue', from_date=from_date, to_date=to_date) }}">
+                       href="{{ url_for('sales.invoices', status='overdue', from_date=from_date, to_date=to_date, salesman_id=salesman_id) }}">
                         <i class="fas fa-exclamation-triangle"></i> Overdue
                     </a>
                 </li>
@@ -96,6 +106,7 @@
                             <th>Invoice #</th>
                             <th>Date</th>
                             <th>Customer</th>
+                            <th>Salesman</th>
                             <th>Vendor</th>
                             <th>Subtotal</th>
                             <th>Tax</th>
@@ -115,6 +126,7 @@
                             <td>{{ sale.invoice_number }}</td>
                             <td>{{ sale.date.strftime(date_format) }}</td>
                             <td>{{ sale.customer.name if sale.customer else 'Walk-in Customer' }}</td>
+                            <td>{{ sale.salesman.name if sale.salesman else '-' }}</td>
                             <td>{{ sale.vendor.name if sale.vendor else '-' }}</td>
                             <td>Rs{{ "%.2f"|format(sale.subtotal) }}</td>
                             <td>Rs{{ "%.2f"|format(sale.tax) }}</td>

@@ -1,8 +1,8 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response
 from flask_login import login_required, current_user
 from app import db
-from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn
-from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm
+from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman
+from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm, SalesmanForm
 from datetime import datetime, date
 from sqlalchemy import func
 from app.pdf_utils import generate_professional_pdf
@@ -17,6 +17,7 @@ def invoices():
     status = request.args.get('status', 'all')
     from_date = request.args.get('from_date')
     to_date = request.args.get('to_date')
+    salesman_id = request.args.get('salesman_id', type=int)
     
     query = Sale.query
     
@@ -27,6 +28,9 @@ def invoices():
         )
     elif status != 'all':
         query = query.filter(Sale.status == status)
+    
+    if salesman_id:
+        query = query.filter(Sale.salesman_id == salesman_id)
     
     if from_date:
         try:
@@ -57,11 +61,16 @@ def invoices():
     company = Company.query.first()
     date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
     
+        # Load salesmen for filter dropdown
+    salesmen = Salesman.query.filter_by(is_active=True).all()
+    
     return render_template('sales/invoices.html', 
                          sales=sales, 
                          current_status=status,
                          from_date=from_date,
                          to_date=to_date,
+                         salesman_id=salesman_id,
+                         salesmen=salesmen,
                          total_subtotal=total_subtotal,
                          total_tax=total_tax,
                          total_amount=total_amount,
@@ -82,10 +91,12 @@ def create_invoice():
     customer_total_advances = {c.id: float(c.total_advances_received) for c in customers}
     
     form.customer_id.choices = [(0, 'Walk-in Customer')] + [(c.id, c.name) for c in customers]
+    form.salesman_id.choices = [(0, 'No Salesman')] + [(s.id, s.name) for s in Salesman.query.filter_by(is_active=True).all()]
     
     if request.method == 'POST':
         customer_id = request.form.get('customer_id')
         selected_vendor_id = request.form.get('vendor_id')
+        salesman_id = request.form.get('salesman_id')
         date = datetime.strptime(request.form.get('date'), '%Y-%m-%d')
         
         # Get items from form
@@ -149,6 +160,7 @@ def create_invoice():
             status=request.form.get('status', 'unpaid'),
             currency_id=request.form.get('currency_id', None),
             exchange_rate=float(request.form.get('exchange_rate', 1)),
+            salesman_id=salesman_id if salesman_id and salesman_id != '0' else None,
             paid_amount=0,
             created_by=current_user.id
         )
@@ -207,7 +219,8 @@ def create_invoice():
         flash('Invoice created successfully!', 'success')
         return redirect(url_for('sales.invoice_detail', id=sale.id))
     
-    return render_template('sales/create_invoice.html', form=form, products=products, customers=customers, vendors=vendors, currencies=currencies, now=datetime.now(), customer_advances=customer_advances, customer_total_advances=customer_total_advances)
+    salesmen = Salesman.query.filter_by(is_active=True).all()
+    return render_template('sales/create_invoice.html', form=form, products=products, customers=customers, vendors=vendors, currencies=currencies, now=datetime.now(), customer_advances=customer_advances, customer_total_advances=customer_total_advances, salesmen=salesmen)
 
 @bp.route('/invoice/<int:id>')
 @login_required
@@ -957,3 +970,78 @@ def customer_unapply_advance(customer_id, adv_id):
     flash(f'Advance of Rs {advance.amount:,.2f} has been unapplied from invoices.', 'success')
     return redirect(url_for('sales.customer_profile', id=customer_id))
 
+
+# --- Salesman Management ---
+
+@bp.route('/salesmen')
+@login_required
+def salesmen_list():
+    salesmen = Salesman.query.all()
+    return render_template('sales/salesmen.html', salesmen=salesmen)
+
+@bp.route('/salesman/add', methods=['GET', 'POST'])
+@login_required
+def add_salesman():
+    form = SalesmanForm()
+    if form.validate_on_submit():
+        salesman = Salesman(
+            name=form.name.data,
+            email=form.email.data,
+            phone=form.phone.data,
+            address=form.address.data,
+            commission_rate=form.commission_rate.data,
+            is_active=form.is_active.data
+        )
+        db.session.add(salesman)
+        db.session.commit()
+        flash('Salesman added successfully!', 'success')
+        return redirect(url_for('sales.salesmen_list'))
+    return render_template('sales/salesman_form.html', form=form, title='Add Salesman')
+
+@bp.route('/salesman/edit/<int:id>', methods=['GET', 'POST'])
+@login_required
+def edit_salesman(id):
+    salesman = Salesman.query.get_or_404(id)
+    form = SalesmanForm(obj=salesman)
+    if form.validate_on_submit():
+        salesman.name = form.name.data
+        salesman.email = form.email.data
+        salesman.phone = form.phone.data
+        salesman.address = form.address.data
+        salesman.commission_rate = form.commission_rate.data
+        salesman.is_active = form.is_active.data
+        db.session.commit()
+        flash('Salesman updated successfully!', 'success')
+        return redirect(url_for('sales.salesmen_list'))
+    return render_template('sales/salesman_form.html', form=form, title='Edit Salesman', salesman=salesman)
+
+@bp.route('/salesman/delete/<int:id>', methods=['POST'])
+@login_required
+def delete_salesman(id):
+    salesman = Salesman.query.get_or_404(id)
+    if salesman.sales:
+        flash('Cannot delete salesman with associated sales records.', 'danger')
+        return redirect(url_for('sales.salesmen_list'))
+    db.session.delete(salesman)
+    db.session.commit()
+    flash('Salesman deleted successfully.', 'info')
+    return redirect(url_for('sales.salesmen_list'))
+
+@bp.route('/salesman/quick-add', methods=['POST'])
+@login_required
+def quick_add_salesman():
+    name = request.form.get('name')
+    if not name:
+        return jsonify({'success': False, 'message': 'Name is required'}), 400
+    
+    salesman = Salesman(name=name)
+    db.session.add(salesman)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True, 
+        'salesman': {
+            'id': salesman.id,
+            'name': salesman.name
+        }
+    })

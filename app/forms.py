@@ -78,6 +78,7 @@ class PurchaseReturnSettingsForm(FlaskForm):
 
 class SaleForm(FlaskForm):
     customer_id = SelectField('Customer', coerce=int, validators=[DataRequired()])
+    salesman_id = SelectField('Salesman', coerce=int, validators=[Optional()])
     date = DateField('Date', validators=[DataRequired()])
 
 class CustomerForm(FlaskForm):
@@ -247,3 +248,11 @@ class PaymentForm(FlaskForm):
     date = DateField('Date', validators=[DataRequired()])
     payment_method = StringField('Payment Method')
     notes = TextAreaField('Notes')
+
+class SalesmanForm(FlaskForm):
+    name = StringField('Salesman Name', validators=[DataRequired()])
+    email = StringField('Email', validators=[Optional(), Email()])
+    phone = StringField('Phone')
+    address = TextAreaField('Address')
+    commission_rate = FloatField('Commission Rate (%)', default=0, validators=[Optional(), NumberRange(min=0, max=100)])
+    is_active = BooleanField('Active', default=True)

@@ -94,6 +94,7 @@
 				{% endif %}
 				{% endif %}
 				<strong>Vendor:</strong> {{ sale.vendor.name if sale.vendor else '-' }}<br>
+				<strong>Salesman:</strong> {{ sale.salesman.name if sale.salesman else '-' }}<br>
 				<strong>Date:</strong> {{ sale.date.strftime(date_format) }}<br>
 				<strong>Status:</strong>
 				{% if sale.status == 'paid' %}

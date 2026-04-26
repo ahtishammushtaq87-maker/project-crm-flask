@@ -104,6 +104,140 @@
             background: #5a67d8;
         }
 
+        /* ── Global Select2 Premium & Mobile Styling ────────────────── */
+        .select2-container--bootstrap-5 {
+            width: 100% !important;
+            display: block !important;
+            box-sizing: border-box !important;
+        }
+
+        .select2-container--bootstrap-5 .select2-selection {
+            width: 100% !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+            height: calc(1.5em + 0.75rem + 2px);
+            transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+        }
+
+        .select2-container--bootstrap-5.select2-container--focus .select2-selection {
+            border-color: #86b7fe;
+            box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+        }
+
+        .select2-container--open {
+            z-index: 1060;
+        }
+
+        .select2-results__options {
+            max-height: 300px !important;
+            overflow-y: auto !important;
+        }
+
+        .select2-dropdown {
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        }
+
+        .select2-hidden-accessible {
+            border: 0 !important;
+            clip: rect(0 0 0 0) !important;
+            height: 1px !important;
+            margin: -1px !important;
+            overflow: hidden !important;
+            padding: 0 !important;
+            position: absolute !important;
+            width: 1px !important;
+        }
+
+        @media (max-width: 768px) {
+            .select2-container--bootstrap-5 .select2-selection {
+                height: 42px !important;
+                display: flex;
+                align-items: center;
+            }
+
+            .select2-search__field {
+                font-size: 16px !important;
+                /* Prevents auto-zoom on mobile */
+            }
+
+            .select2-selection__rendered {
+                font-size: 13px !important;
+                /* Smaller label on mobile to keep rows compact */
+            }
+
+            .select2-results__option {
+                padding: 6px 10px !important;
+                /* More compact padding for mobile menu */
+                font-size: 13px !important;
+                /* Smaller menu items on mobile */
+            }
+
+            /* Extra compactness for Select2 inside tables on mobile (Sales, Purchase, BOM, etc.) */
+            .table-responsive .select2-container--bootstrap-5 .select2-selection {
+                height: 32px !important;
+            }
+
+            .table-responsive .select2-selection__rendered {
+                font-size: 10px !important;
+                /* Ultra-small font for table item labels */
+                padding-left: 4px !important;
+                padding-right: 20px !important;
+                /* Space for the arrow */
+            }
+
+            .table-responsive .select2-container--bootstrap-5 .select2-selection--single .select2-selection__placeholder {
+                font-size: 10px !important;
+            }
+
+            /* Force horizontal scrolling for all responsive tables on mobile */
+            .table-responsive table,
+            #itemsTable,
+            #componentsTable,
+            #materialsTable,
+            #bomTable {
+                min-width: 800px !important;
+            }
+
+            /* Fix visibility of status badges (Paid, Unpaid, etc.) in tables */
+            .table .badge {
+                display: inline-block !important;
+                padding: 0.35em 0.65em !important;
+                font-size: 0.75em !important;
+                font-weight: 700 !important;
+                line-height: 1 !important;
+                text-align: center !important;
+                white-space: nowrap !important;
+                vertical-align: baseline !important;
+                border-radius: 0.25rem !important;
+                color: #fff !important;
+                /* White text for contrast */
+            }
+
+            .table .bg-success {
+                background-color: #198754 !important;
+            }
+
+            .table .bg-danger {
+                background-color: #dc3545 !important;
+            }
+
+            .table .bg-secondary {
+                background-color: #6c757d !important;
+            }
+
+            .table .bg-warning {
+                background-color: #ffc107 !important;
+                color: #000 !important;
+                /* Warning usually needs dark text */
+            }
+        }
+
+        /* ──────────────────────────────────────────────────────────── */
+
         /* Notification Bell Icon - Sticky Bottom Right */
         .notification-bell-wrapper {
             position: fixed;
@@ -193,6 +327,7 @@
                 opacity: 0;
                 transform: translateX(20px);
             }
+
             to {
                 opacity: 1;
                 transform: translateX(0);
@@ -449,21 +584,31 @@
                 transform: translateX(100%);
                 opacity: 0;
             }
+
             to {
                 transform: translateX(0);
                 opacity: 1;
             }
         }
 
-        /* Mobile adjustments */
-        @media (max-width: 767.98px) {
+        /* Mobile adjustments to match desktop colour grading */
+        @media (max-width: 768px) {
             .main-content {
-                margin-left: 0;
-                padding: 15px;
+                margin-left: 0 !important;
+                padding: 15px !important;
             }
 
-            .nav-link {
-                color: white !important;
+            /* Match sidebar link colors exactly to desktop */
+            .mobile-sidebar .nav-link, .sidebar .nav-link {
+                color: rgba(255, 255, 255, 0.8) !important;
+            }
+
+            .mobile-sidebar .nav-link:hover, 
+            .mobile-sidebar .nav-link.active,
+            .sidebar .nav-link:hover,
+            .sidebar .nav-link.active {
+                color: #ffffff !important;
+                background: rgba(255, 255, 255, 0.1);
             }
 
             .notification-bell-wrapper {
@@ -477,7 +622,6 @@
                 font-size: 1.1rem;
             }
 
-            /* On mobile, show dropdown below bell instead of left */
             .notification-dropdown {
                 right: 15px;
                 bottom: 70px;
@@ -497,13 +641,8 @@
                 min-width: auto;
             }
         }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
 
-        /* Bell notification icon */
+        /* Bell notification icon details */
         .notification-bell {
             position: relative;
             cursor: pointer;
@@ -530,29 +669,6 @@
             align-items: center;
             justify-content: center;
             font-weight: bold;
-        }
-
-        /* Mobile adjustments */
-        @media (max-width: 767.98px) {
-            .main-content {
-                margin-left: 0;
-                padding: 15px;
-            }
-
-            .nav-link {
-                color: white !important;
-            }
-
-            .toast-container {
-                bottom: 10px;
-                right: 10px;
-                left: 10px;
-                max-width: none;
-            }
-
-            .toast {
-                min-width: auto;
-            }
         }
     </style>
     {% block extra_css %}{% endblock %}
@@ -588,17 +704,15 @@
                 <a class="nav-link" href="{{ url_for('dashboard.index') }}">
                     <i class="fas fa-tachometer-alt me-2"></i> Dashboard
                 </a>
-                {% if current_user.is_admin or current_user.can_view_sales %}
+                {% if current_user.is_admin or current_user.can_view_sales or current_user.can_view_returns %}
                 <a class="nav-link" href="{{ url_for('sales.invoices') }}">
                     <i class="fas fa-shopping-cart me-2"></i> Sales
                 </a>
                 <a class="nav-link" href="{{ url_for('returns.return_list') }}">
                     <i class="fas fa-undo me-2"></i> Sales Returns
                 </a>
-                {% endif %}
-                {% if current_user.is_admin or current_user.can_view_returns %}
-                <a class="nav-link" href="{{ url_for('returns.return_list') }}">
-                    <i class="fas fa-undo me-2"></i> Sales Returns
+                <a class="nav-link" href="{{ url_for('sales.salesmen_list') }}">
+                    <i class="fas fa-user-tag me-2"></i> Salesmen
                 </a>
                 {% endif %}
                 {% if current_user.is_admin or current_user.can_view_purchases %}
@@ -758,12 +872,15 @@
                         <a class="nav-link" href="{{ url_for('returns.return_list') }}">
                             <i class="fas fa-undo me-2"></i> Sales Returns
                         </a>
+                        <a class="nav-link" href="{{ url_for('sales.salesmen_list') }}">
+                            <i class="fas fa-user-tag me-2"></i> Salesmen
+                        </a>
                         {% endif %}
                         {% if current_user.is_admin or current_user.can_view_purchases %}
                         <a class="nav-link" href="{{ url_for('purchase.bills') }}">
                             <i class="fas fa-truck me-2"></i> Purchase
                         </a>
-                       <!-- <a class="nav-link" href="{{ url_for('purchase.purchase_orders') }}">
+                        <!-- <a class="nav-link" href="{{ url_for('purchase.purchase_orders') }}">
                             <i class="fas fa-clipboard-list me-2"></i> Purchase Orders
                         </a>-->
                         <a class="nav-link" href="{{ url_for('purchase.purchase_return_list') }}">
@@ -898,7 +1015,8 @@
     <!-- Sticky Notification Bell (Bottom Right) -->
     <div class="notification-bell-wrapper" id="notificationBell" title="View notifications">
         <i class="fas fa-bell notification-bell"></i>
-        {% set error_count = get_flashed_messages(with_categories=true) | selectattr(0, 'equalto', 'danger') | list | length %}
+        {% set error_count = get_flashed_messages(with_categories=true) | selectattr(0, 'equalto', 'danger') | list |
+        length %}
         {% if error_count > 0 %}
         <span class="notification-badge">{{ error_count }}</span>
         {% endif %}
@@ -945,12 +1063,12 @@
         // Toast notification system
         const Toast = {
             container: null,
-            
-            init: function() {
+
+            init: function () {
                 this.container = document.getElementById('toastContainer');
             },
-            
-            show: function(message, type = 'info') {
+
+            show: function (message, type = 'info') {
                 if (!this.container) return;
 
                 const toastId = 'toast-' + Date.now();
@@ -990,7 +1108,7 @@
                 }, 5000);
             },
 
-            dismiss: function(toastId) {
+            dismiss: function (toastId) {
                 const toast = document.getElementById(toastId);
                 if (toast) {
                     toast.style.animation = 'slideIn 0.3s ease-out reverse';
@@ -1003,8 +1121,8 @@
         const AppNotifications = {
             STORAGE_KEY: 'erp_notifications',
             messages: [],
-            
-            init: function() {
+
+            init: function () {
                 Toast.init();
                 this.loadFromStorage();
                 this.processFlashMessages();
@@ -1015,8 +1133,8 @@
                 // Attach click listener to notification list
                 this.setupListClickListener();
             },
-            
-            generateId: function(msg) {
+
+            generateId: function (msg) {
                 const str = msg.message + '|' + (msg.type || 'info') + '|' + (msg.time || '');
                 let hash = 0;
                 for (let i = 0; i < str.length; i++) {
@@ -1025,8 +1143,8 @@
                 }
                 return 'id_' + Math.abs(hash);
             },
-            
-            loadFromStorage: function() {
+
+            loadFromStorage: function () {
                 try {
                     const stored = localStorage.getItem(this.STORAGE_KEY);
                     if (stored) {
@@ -1044,8 +1162,8 @@
                     this.messages = [];
                 }
             },
-            
-            processFlashMessages: function() {
+
+            processFlashMessages: function () {
                 const flashAlerts = document.querySelectorAll('.alert');
                 flashAlerts.forEach(alert => {
                     const alertClass = alert.className;
@@ -1069,16 +1187,16 @@
                 });
                 this.saveToStorage();
             },
-            
-            saveToStorage: function() {
+
+            saveToStorage: function () {
                 try {
                     localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.messages));
                 } catch (e) {
                     console.error('Failed to save notifications:', e);
                 }
             },
-            
-            markAsRead: function(id, event) {
+
+            markAsRead: function (id, event) {
                 if (event) event.stopPropagation();
                 const msg = this.messages.find(m => String(m.id) === String(id));
                 if (msg) {
@@ -1087,50 +1205,50 @@
                     this.updateUI();
                 }
             },
-            
-            dismiss: function(id) {
+
+            dismiss: function (id) {
                 this.messages = this.messages.filter(m => String(m.id) !== String(id));
                 this.saveToStorage();
                 this.updateUI();
             },
-            
-            markAllAsRead: function() {
+
+            markAllAsRead: function () {
                 this.messages.forEach(m => { m.read = true; });
                 this.saveToStorage();
                 this.updateUI();
             },
-            
-            dismiss: function(id) {
+
+            dismiss: function (id) {
                 this.messages = this.messages.filter(m => m.id !== id);
                 this.saveToStorage();
                 this.updateUI();
             },
-            
-            clearAll: function() {
+
+            clearAll: function () {
                 if (confirm('Clear all notifications?')) {
                     this.messages = [];
                     this.saveToStorage();
                     this.updateUI();
                 }
             },
-            
-            updateUI: function() {
+
+            updateUI: function () {
                 this.updateDropdown();
                 this.updateBadge();
                 this.updateMarkAllReadButton();
             },
-            
-            updateDropdown: function() {
+
+            updateDropdown: function () {
                 const list = document.getElementById('notificationList');
                 const footer = document.getElementById('notificationFooter');
                 if (!list) return;
-                
+
                 if (this.messages.length === 0) {
                     list.innerHTML = '<div class="notification-item empty">No notifications</div>';
                     if (footer) footer.style.display = 'none';
                     return;
                 }
-                
+
                 // Show last 10 messages, newest first
                 const recent = this.messages.slice(-10).reverse();
                 let html = '';
@@ -1142,18 +1260,18 @@
                     `;
                 });
                 list.innerHTML = html;
-                
+
                 // Show footer when there are any messages
                 if (footer) footer.style.display = 'block';
-                
+
                 // Attach click handlers to new elements
                 this.attachItemHandlers();
             },
-            
-            attachItemHandlers: function() {
+
+            attachItemHandlers: function () {
                 const list = document.getElementById('notificationList');
                 if (!list) return;
-                
+
                 // Dismiss buttons
                 list.querySelectorAll('.notification-dismiss').forEach(btn => {
                     btn.addEventListener('click', (e) => {
@@ -1162,7 +1280,7 @@
                         this.dismiss(id);
                     });
                 });
-                
+
                 // Message items (mark as read)
                 list.querySelectorAll('.notification-item:not(.empty)').forEach(item => {
                     item.addEventListener('click', (e) => {
@@ -1173,11 +1291,11 @@
                     });
                 });
             },
-            
-            setupListClickListener: function() {
+
+            setupListClickListener: function () {
                 const list = document.getElementById('notificationList');
                 if (!list) return;
-                
+
                 // Attach click listener once - uses event delegation
                 list.addEventListener('click', (e) => {
                     const dismissBtn = e.target.closest('.notification-dismiss');
@@ -1188,7 +1306,7 @@
                         this.dismiss(id);
                         return;
                     }
-                    
+
                     const item = e.target.closest('.notification-item');
                     if (item && !e.target.closest('.notification-dismiss')) {
                         e.stopPropagation(); // Keep dropdown open when marking as read
@@ -1197,24 +1315,24 @@
                     }
                 });
             },
-            
-            updateMarkAllReadButton: function() {
+
+            updateMarkAllReadButton: function () {
                 const btn = document.getElementById('markAllReadBtn');
                 if (!btn) return;
                 const hasUnread = this.messages.some(m => !m.read);
                 btn.style.display = hasUnread ? 'inline-block' : 'none';
             },
-            
-            escapeHtml: function(text) {
+
+            escapeHtml: function (text) {
                 const div = document.createElement('div');
                 div.textContent = text;
                 return div.innerHTML;
             },
-            
-            setupBellListener: function() {
+
+            setupBellListener: function () {
                 const bell = document.getElementById('notificationBell');
                 if (bell) {
-                    bell.addEventListener('click', function(e) {
+                    bell.addEventListener('click', function (e) {
                         e.preventDefault();
                         const dropdown = document.getElementById('notificationDropdown');
                         if (dropdown) {
@@ -1229,8 +1347,8 @@
                     });
                 }
             },
-            
-            setupCloseListener: function() {
+
+            setupCloseListener: function () {
                 const closeBtn = document.getElementById('notificationClose');
                 if (closeBtn) {
                     closeBtn.addEventListener('click', (e) => {
@@ -1238,17 +1356,17 @@
                         document.getElementById('notificationDropdown').classList.remove('show');
                     });
                 }
-                document.addEventListener('click', function(e) {
+                document.addEventListener('click', function (e) {
                     const dropdown = document.getElementById('notificationDropdown');
                     const bell = document.getElementById('notificationBell');
-                    if (dropdown && dropdown.classList.contains('show') && 
+                    if (dropdown && dropdown.classList.contains('show') &&
                         !dropdown.contains(e.target) && !bell.contains(e.target)) {
                         dropdown.classList.remove('show');
                     }
                 });
             },
-            
-            setupMarkAllRead: function() {
+
+            setupMarkAllRead: function () {
                 const markAllBtn = document.getElementById('markAllReadBtn');
                 if (markAllBtn) {
                     markAllBtn.addEventListener('click', () => this.markAllAsRead());
@@ -1261,7 +1379,7 @@
         };
 
         // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             AppNotifications.init();
         });
 
@@ -1328,6 +1446,15 @@
                 });
             }
         }
+        // Global Select2 Focus Auto-Fix
+        $(document).on('select2:open', function (e) {
+            setTimeout(function () {
+                const searchField = document.querySelector('.select2-container--open .select2-search__field');
+                if (searchField) {
+                    searchField.focus();
+                }
+            }, 50);
+        });
     </script>
     {% block extra_js %}{% endblock %}
 </body>

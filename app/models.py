@@ -173,6 +173,26 @@ class Customer(db.Model):
     def __repr__(self):
         return f'<Customer {self.name}>'
 
+class Salesman(db.Model):
+    """Salesman/Salesperson model"""
+    __tablename__ = 'salesmen'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, index=True)
+    email = db.Column(db.String(120), index=True)
+    phone = db.Column(db.String(20))
+    address = db.Column(db.Text)
+    commission_rate = db.Column(db.Float, default=0) # Commission percentage
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    sales = db.relationship('Sale', backref='salesman', lazy=True)
+    
+    def __repr__(self):
+        return f'<Salesman {self.name}>'
+
 class Warehouse(db.Model):
     """Warehouse model"""
     __tablename__ = 'warehouses'
@@ -305,6 +325,7 @@ class Sale(db.Model):
     paid_amount = db.Column(db.Float, default=0)
     vendor_id = db.Column(db.Integer, db.ForeignKey('vendors.id'), index=True, nullable=True)
     vendor = db.relationship('Vendor', backref='sales', lazy=True)
+    salesman_id = db.Column(db.Integer, db.ForeignKey('salesmen.id'), index=True, nullable=True)
     notes = db.Column(db.Text)
     terms = db.Column(db.Text)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))

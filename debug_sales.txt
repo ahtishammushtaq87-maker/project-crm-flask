@@ -1,0 +1,30 @@
+1: 'from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response\n'
+2: 'from flask_login import login_required, current_user\n'
+3: 'from app import db\n'
+4: 'from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman\n'
+5: 'from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm, SalesmanForm\n'
+6: 'from datetime import datetime, date\n'
+7: 'from sqlalchemy import func\n'
+8: 'from app.pdf_utils import generate_professional_pdf\n'
+9: 'import os\n'
+10: 'from werkzeug.utils import secure_filename\n'
+11: '\n'
+12: "bp = Blueprint('sales', __name__)\n"
+13: '\n'
+14: "@bp.route('/invoices')\n"
+15: '@login_required\n'
+16: 'def invoices():\n'
+17: "    status = request.args.get('status', 'all')\n"
+18: "    from_date = request.args.get('from_date')\n"
+19: "    to_date = request.args.get('to_date')\n"
+20: '    \n'
+21: '    query = Sale.query\n'
+22: '    \n'
+23: "    if status == 'overdue':\n"
+24: '        query = query.filter(\n'
+25: "            Sale.status != 'paid',\n"
+26: '            Sale.due_date < datetime.utcnow()\n'
+27: '        )\n'
+28: "    elif status != 'all':\n"
+29: '        query = query.filter(Sale.status == status)\n'
+30: '    \n'

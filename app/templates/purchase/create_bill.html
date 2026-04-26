@@ -55,6 +55,23 @@
         position: absolute !important;
         width: 1px !important;
     }
+    /* Mobile-friendly Select2 adjustments */
+    @media (max-width: 768px) {
+        .select2-container--bootstrap-5 .select2-selection {
+            height: 42px !important;
+            display: flex;
+            align-items: center;
+        }
+        .select2-search__field {
+            font-size: 16px !important; /* Prevents auto-zoom on mobile */
+        }
+        .select2-results__option {
+            padding: 10px 15px !important; /* Better touch targets */
+        }
+        #itemsTable {
+            min-width: 800px; /* Force horizontal scroll on mobile */
+        }
+    }
 </style>
 {% endblock %}
 
@@ -254,41 +271,43 @@
                         </button>
                     </div>
                     <div class="card-body p-0">
-                        <table class="table table-bordered mb-0" id="itemsTable" style="table-layout: fixed; width: 100%;">
-                            <thead class="table-light">
-                                <tr>
-                                    <th style="width: 35%;">Product</th>
-                                    <th style="width: 10%;">Qty</th>
-                                    <th style="width: 15%;">Current Cost</th>
-                                    <th style="width: 15%;">New Cost</th>
-                                    <th style="width: 15%;">Amount</th>
-                                    <th style="width: 10%;"></th>
-                                </tr>
-                            </thead>
-                            <tbody id="itemsBody">
-                                <tr>
-                                    <td>
-                                        <select name="product_id[]" class="form-select product-select"
-                                            onchange="onProductChange(this)">
-                                            <option value="">— Select Product —</option>
-                                            {% for p in products %}
-                                            <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.sku }} - {{ p.name }}
-                                            </option>
-                                            {% endfor %}
-                                        </select>
-                                    </td>
-                                    <td><input type="number" name="quantity[]" class="form-control qty" value="1"
-                                            min="1" step="1" oninput="calcRow(this)"></td>
-                                    <td><input type="text" class="form-control currentCost" readonly
-                                            style="background-color: #f8f9fa;"></td>
-                                    <td><input type="number" name="price[]" class="form-control price newCost" value="0"
-                                            step="0.01" oninput="calcRow(this); updatePriceIndicator(this)"></td>
-                                    <td><input type="text" class="form-control amount" readonly></td>
-                                    <td><button type="button" class="btn btn-sm btn-outline-danger"
-                                            onclick="removeRow(this)"><i class="fas fa-times"></i></button></td>
-                                </tr>
-                            </tbody>
-                        </table>
+                        <div class="table-responsive">
+                            <table class="table table-bordered mb-0" id="itemsTable" style="table-layout: fixed; width: 100%;">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 35%;">Product</th>
+                                        <th style="width: 10%;">Qty</th>
+                                        <th style="width: 15%;">Current Cost</th>
+                                        <th style="width: 15%;">New Cost</th>
+                                        <th style="width: 15%;">Amount</th>
+                                        <th style="width: 10%;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="itemsBody">
+                                    <tr>
+                                        <td>
+                                            <select name="product_id[]" class="form-select product-select"
+                                                onchange="onProductChange(this)">
+                                                <option value="">— Select Product —</option>
+                                                {% for p in products %}
+                                                <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.sku }} - {{ p.name }}
+                                                </option>
+                                                {% endfor %}
+                                            </select>
+                                        </td>
+                                        <td><input type="number" name="quantity[]" class="form-control qty" value="1"
+                                                min="1" step="1" oninput="calcRow(this)"></td>
+                                        <td><input type="text" class="form-control currentCost" readonly
+                                                style="background-color: #f8f9fa;"></td>
+                                        <td><input type="number" name="price[]" class="form-control price newCost" value="0"
+                                                step="0.01" oninput="calcRow(this); updatePriceIndicator(this)"></td>
+                                        <td><input type="text" class="form-control amount" readonly></td>
+                                        <td><button type="button" class="btn btn-sm btn-outline-danger"
+                                                onclick="removeRow(this)"><i class="fas fa-times"></i></button></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -606,11 +625,22 @@
 
     // ── Helper to init Select2 ──────────────────────────────────────────────
     function initSelect2(selector, placeholder = 'Search or select', width = '100%') {
-        $(selector).select2({
+        const $el = $(selector).select2({
             theme: 'bootstrap-5',
             placeholder: placeholder,
             allowClear: true,
             width: width
+        });
+
+        // Auto-focus search field when opened
+        $el.on('select2:open', function() {
+            const openedEl = this;
+            setTimeout(() => {
+                const searchField = document.querySelector('.select2-container--open .select2-search__field');
+                if (searchField) {
+                    searchField.focus();
+                }
+            }, 50);
         });
     }
 
