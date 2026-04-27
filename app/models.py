@@ -77,6 +77,14 @@ class Vendor(db.Model):
     payment_method = db.Column(db.String(50), nullable=True)
     payment_terms = db.Column(db.Integer, default=30)  # Days
     credit_limit = db.Column(db.Float, default=0)
+    
+    # Banking details
+    bank_name = db.Column(db.String(100))
+    account_holder_name = db.Column(db.String(100))
+    account_number = db.Column(db.String(50))
+    swift_code = db.Column(db.String(20))
+    ifsc_code = db.Column(db.String(20))
+    
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

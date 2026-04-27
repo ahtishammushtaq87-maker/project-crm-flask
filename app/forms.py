@@ -104,6 +104,12 @@ class VendorForm(FlaskForm):
     shipping_address = TextAreaField(' Shipping Address')
     gst_number = StringField('GST Number')
     payment_method = StringField('Payment Method', validators=[Optional()])
+    # Banking details
+    bank_name = StringField('Bank Name', validators=[Optional()])
+    account_holder_name = StringField('Account Holder Name', validators=[Optional()])
+    account_number = StringField('Account Number', validators=[Optional()])
+    swift_code = StringField('SWIFT Code', validators=[Optional()])
+    ifsc_code = StringField('IFSC Code', validators=[Optional()])
 
 class UserForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired()])

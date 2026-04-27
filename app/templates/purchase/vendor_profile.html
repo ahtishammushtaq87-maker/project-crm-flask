@@ -18,6 +18,16 @@
                 {% if vendor.address %} &nbsp;|&nbsp; <i class="fas fa-map-marker-alt me-1"></i>{{ vendor.address }}{% endif %}
                 {% if vendor.payment_method %} &nbsp;|&nbsp; <i class="fas fa-money-bill me-1"></i>Payment: {{ vendor.payment_method }}{% endif %}
             </p>
+            {% if vendor.bank_name or vendor.account_number %}
+            <p class="text-muted mb-0 mt-1">
+                <i class="fas fa-university me-1 text-primary"></i>
+                {% if vendor.bank_name %}<strong>{{ vendor.bank_name }}</strong>{% endif %}
+                {% if vendor.account_holder_name %} — {{ vendor.account_holder_name }}{% endif %}
+                {% if vendor.account_number %} — A/C: {{ vendor.account_number }}{% endif %}
+                {% if vendor.ifsc_code %} — IFSC: {{ vendor.ifsc_code }}{% endif %}
+                {% if vendor.swift_code %} — SWIFT: {{ vendor.swift_code }}{% endif %}
+            </p>
+            {% endif %}
         </div>
         <div class="d-flex gap-2">
             <div class="dropdown">

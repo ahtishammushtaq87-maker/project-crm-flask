@@ -1,4 +1,3 @@
-
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response, current_app
 from flask_login import login_required, current_user
 from app import db
@@ -828,6 +827,11 @@ def bulk_upload_vendor():
                         gst_number=str(row.get('gst_number', '')).strip() if pd.notna(row.get('gst_number')) else None,
                         pan_number=str(row.get('pan_number', '')).strip() if pd.notna(row.get('pan_number')) else None,
                         contact_person=str(row.get('contact_person', '')).strip() if pd.notna(row.get('contact_person')) else None,
+                        bank_name=str(row.get('bank_name', '')).strip() if pd.notna(row.get('bank_name')) else None,
+                        account_holder_name=str(row.get('account_holder_name', '')).strip() if pd.notna(row.get('account_holder_name')) else None,
+                        account_number=str(row.get('account_number', '')).strip() if pd.notna(row.get('account_number')) else None,
+                        ifsc_code=str(row.get('ifsc_code', '')).strip() if pd.notna(row.get('ifsc_code')) else None,
+                        swift_code=str(row.get('swift_code', '')).strip() if pd.notna(row.get('swift_code')) else None,
                     )
                     
                     db.session.add(vendor)
@@ -862,13 +866,13 @@ def download_vendor_sample():
         ws = wb.active
         ws.title = 'Vendors'
         
-        headers = ['name', 'email', 'phone', 'address', 'shipping_address', 'gst_number', 'pan_number', 'contact_person']
+        headers = ['name', 'email', 'phone', 'address', 'shipping_address', 'gst_number', 'pan_number', 'contact_person', 'bank_name', 'account_holder_name', 'account_number', 'ifsc_code', 'swift_code']
         ws.append(headers)
         
         sample_data = [
-            ['Vendor A', 'vendorA@example.com', '1234567890', '123 Factory St, City', '123 Factory St, City', 'GST123456789', 'ABCDE1234F', 'John Doe'],
-            ['Vendor B', 'vendorB@example.com', '2345678901', '456 Warehouse Ave, Town', '456 Warehouse Ave, Town', 'GST987654321', 'FGHI5678K', 'Jane Smith'],
-            ['Vendor C', 'vendorC@example.com', '3456789012', '789 Supply Rd, Village', '789 Supply Rd, Village', '', '', '']
+            ['Vendor A', 'vendorA@example.com', '1234567890', '123 Factory St, City', '123 Factory St, City', 'GST123456789', 'ABCDE1234F', 'John Doe', 'State Bank of India', 'John Doe', '123456789012', 'SBIN0001234', 'SBININBB104'],
+            ['Vendor B', 'vendorB@example.com', '2345678901', '456 Warehouse Ave, Town', '456 Warehouse Ave, Town', 'GST987654321', 'FGHI5678K', 'Jane Smith', 'HDFC Bank', 'Jane Smith', '987654321098', 'HDFC0005678', 'HDFCINBB'],
+            ['Vendor C', 'vendorC@example.com', '3456789012', '789 Supply Rd, Village', '789 Supply Rd, Village', '', '', '', '', '', '', '', '']
         ]
         
         for row in sample_data:
@@ -907,7 +911,12 @@ def add_vendor():
             phone=form.phone.data,
             address=form.address.data,
             gst_number=form.gst_number.data,
-            payment_method=form.payment_method.data
+            payment_method=form.payment_method.data,
+            bank_name=form.bank_name.data,
+            account_holder_name=form.account_holder_name.data,
+            account_number=form.account_number.data,
+            swift_code=form.swift_code.data,
+            ifsc_code=form.ifsc_code.data
         )
         db.session.add(vendor)
         db.session.commit()
@@ -1020,6 +1029,11 @@ def edit_vendor(id):
         vendor.address = form.address.data
         vendor.gst_number = form.gst_number.data
         vendor.payment_method = form.payment_method.data
+        vendor.bank_name = form.bank_name.data
+        vendor.account_holder_name = form.account_holder_name.data
+        vendor.account_number = form.account_number.data
+        vendor.swift_code = form.swift_code.data
+        vendor.ifsc_code = form.ifsc_code.data
         db.session.commit()
         flash('Vendor updated successfully!', 'success')
         return redirect(url_for('purchase.vendors'))
@@ -1476,6 +1490,35 @@ def product_cost_history(product_id):
 
 
 # ---------------------------------------------------------------------------
+# API: Delete a cost price history entry (safe)
+# ---------------------------------------------------------------------------
+@bp.route('/api/cost-history/<int:history_id>/delete', methods=['POST'])
+@login_required
+def delete_cost_history(history_id):
+    """Safely delete a cost price history entry if not referenced by BOM items"""
+    history = CostPriceHistory.query.get_or_404(history_id)
+    
+    # Safety check: prevent deletion if referenced by BOM items
+    from app.models import BOMItem
+    referenced_bom_items = BOMItem.query.filter_by(cost_price_history_id=history_id).all()
+    if referenced_bom_items:
+        return jsonify({
+            'success': False,
+            'message': 'Cannot delete this history entry because it is referenced by BOM items. Deleting it would break cost tracking integrity.'
+        }), 400
+    
+    product_id = history.product_id
+    db.session.delete(history)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': 'Price history entry deleted successfully.',
+        'product_id': product_id
+    })
+
+
+# ---------------------------------------------------------------------------
 # Purchase Returns
 # ---------------------------------------------------------------------------
 @bp.route('/returns/')
@@ -1893,6 +1936,11 @@ def vendor_export_csv(id):
     writer.writerow(["Phone", vendor.phone or ""])
     writer.writerow(["Address", vendor.address or ""])
     writer.writerow(["Payment Method", vendor.payment_method or ""])
+    writer.writerow(["Bank Name", vendor.bank_name or ""])
+    writer.writerow(["Account Holder", vendor.account_holder_name or ""])
+    writer.writerow(["Account Number", vendor.account_number or ""])
+    writer.writerow(["IFSC Code", vendor.ifsc_code or ""])
+    writer.writerow(["SWIFT Code", vendor.swift_code or ""])
     writer.writerow([])
     
     # Bills
@@ -1950,6 +1998,11 @@ def vendor_export_excel(id):
     ws1.append(["Phone", vendor.phone or ""])
     ws1.append(["Address", vendor.address or ""])
     ws1.append(["Payment Method", vendor.payment_method or ""])
+    ws1.append(["Bank Name", vendor.bank_name or ""])
+    ws1.append(["Account Holder", vendor.account_holder_name or ""])
+    ws1.append(["Account Number", vendor.account_number or ""])
+    ws1.append(["IFSC Code", vendor.ifsc_code or ""])
+    ws1.append(["SWIFT Code", vendor.swift_code or ""])
     
     # Bills sheet
     ws2 = wb.create_sheet("Purchase Bills")
@@ -2014,7 +2067,12 @@ def vendor_export_pdf(id):
         ["Email:", vendor.email or ""],
         ["Phone:", vendor.phone or ""],
         ["Address:", vendor.address or ""],
-        ["Payment Method:", vendor.payment_method or ""]
+        ["Payment Method:", vendor.payment_method or ""],
+        ["Bank Name:", vendor.bank_name or ""],
+        ["Account Holder:", vendor.account_holder_name or ""],
+        ["Account Number:", vendor.account_number or ""],
+        ["IFSC Code:", vendor.ifsc_code or ""],
+        ["SWIFT Code:", vendor.swift_code or ""]
     ]
     info_table = Table(info_data, colWidths=[2*inch, 4*inch])
     info_table.setStyle(TableStyle([

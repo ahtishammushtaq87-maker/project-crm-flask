@@ -356,6 +356,9 @@ function fmt(n) {
 }
 
 function showPriceHistory(productId, productName) {
+    // Store current product info for refresh after delete
+    window._currentHistoryProduct = { id: productId, name: productName };
+    
     const modal = document.getElementById('priceHistoryModal');
     const titleEl = modal.querySelector('.modal-title');
     const bodyEl = modal.querySelector('.priceHistoryBody');
@@ -389,6 +392,7 @@ function showPriceHistory(productId, productName) {
                                 <th>Remaining</th>
                                 <th>Used</th>
                                 <th>Status</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>`;
@@ -406,6 +410,11 @@ function showPriceHistory(productId, productName) {
                         <td>${remainingBadge}</td>
                         <td>${fmt(h.used_quantity)}</td>
                         <td>${status}</td>
+                        <td>
+                            <button class="btn btn-sm btn-danger" onclick="deleteCostHistory(${h.id})" title="Delete this history entry">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
                     </tr>`;
                 });
                 
@@ -426,6 +435,41 @@ function showPriceHistory(productId, productName) {
             bodyEl.innerHTML = '<div class="alert alert-danger">Error loading price history.</div>';
             console.error('Error:', err);
         });
+}
+
+function deleteCostHistory(historyId) {
+    if (!confirm('Are you sure you want to delete this price history entry? This action cannot be undone.')) {
+        return;
+    }
+    
+    fetch(`/purchase/api/cost-history/${historyId}/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            // Refresh the price history modal
+            if (window._currentHistoryProduct) {
+                showPriceHistory(window._currentHistoryProduct.id, window._currentHistoryProduct.name);
+            }
+            // Show success message
+            const bodyEl = document.querySelector('.priceHistoryBody');
+            if (bodyEl) {
+                const alert = document.createElement('div');
+                alert.className = 'alert alert-success alert-dismissible fade show mt-2';
+                alert.innerHTML = `<i class="fas fa-check-circle me-2"></i>${data.message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+                bodyEl.insertBefore(alert, bodyEl.firstChild);
+            }
+        } else {
+            alert(data.message || 'Failed to delete history entry.');
+        }
+    })
+    .catch(err => {
+        console.error('Error:', err);
+        alert('Error deleting history entry. Please try again.');
+    });
 }
 
 // Initialize tooltips and bulk actions
