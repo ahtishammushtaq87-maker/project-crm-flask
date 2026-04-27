@@ -118,6 +118,8 @@
                                 <input type="checkbox" id="selectAll" class="form-check-input">
                             </th>
                             <th>Name</th>
+                            <th>Company</th>
+                            <th>Group</th>
                             <th>Email</th>
                             <th>Phone</th>
                             <th>GST Number</th>
@@ -134,6 +136,14 @@
                                 <input type="checkbox" class="form-check-input customer-checkbox" value="{{ customer.id }}">
                             </td>
                             <td>{{ customer.name }}</td>
+                            <td>{{ customer.company_name or '-' }}</td>
+                            <td>
+                                {% if customer.group %}
+                                <span class="badge bg-secondary text-white" style="font-size: 0.8rem;">{{ customer.group.name }}</span>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
                             <td>{{ customer.email or '-' }}</td>
                             <td>{{ customer.phone or '-' }}</td>
                             <td>{{ customer.gst_number or '-' }}</td>
@@ -208,4 +218,4 @@ $(document).ready(function() {
     });
 });
 </script>
-{% endblock %}
+{% endblock %}

@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, FloatField, IntegerField, SelectField, TextAreaField, DateField, FileField, BooleanField, DecimalField, SelectMultipleField
+from wtforms import StringField, FloatField, IntegerField, SelectField, TextAreaField, DateField, FileField, BooleanField, DecimalField, SelectMultipleField, SubmitField
 from wtforms.validators import DataRequired, Email, Optional, NumberRange, EqualTo, InputRequired
 from wtforms.fields import DateTimeField
 from datetime import datetime
@@ -83,6 +83,8 @@ class SaleForm(FlaskForm):
 
 class CustomerForm(FlaskForm):
     name = StringField('Customer Name', validators=[DataRequired()])
+    company_name = StringField('Company Name')
+    group_id = SelectField('Customer Group', coerce=int, validators=[Optional()])
     email = StringField('Email', validators=[Optional(), Email()])
     phone = StringField('Phone')
     address = TextAreaField('Address')
@@ -256,3 +258,7 @@ class SalesmanForm(FlaskForm):
     address = TextAreaField('Address')
     commission_rate = FloatField('Commission Rate (%)', default=0, validators=[Optional(), NumberRange(min=0, max=100)])
     is_active = BooleanField('Active', default=True)
+class CustomerGroupForm(FlaskForm):
+    name = StringField('Group Name', validators=[DataRequired()])
+    description = TextAreaField('Description')
+    submit = SubmitField('Save Group')

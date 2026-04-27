@@ -16,6 +16,39 @@
     border-radius: 0.375rem;
     height: calc(1.5em + 0.75rem + 2px);
 }
+
+/* Mobile-friendly Select2 adjustments */
+@media (max-width: 768px) {
+    .select2-container--bootstrap-5 .select2-selection {
+        height: 38px !important;
+        display: flex;
+        align-items: center;
+        font-size: 14px !important;
+    }
+
+    .select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered {
+        line-height: 38px !important;
+        padding-left: 10px !important;
+    }
+
+    .select2-container--bootstrap-5 .select2-selection--single .select2-selection__arrow {
+        height: 36px !important;
+    }
+
+    .select2-search__field {
+        font-size: 16px !important;
+        padding: 6px 10px !important;
+    }
+
+    .select2-results__option {
+        padding: 10px 12px !important;
+        font-size: 14px;
+    }
+
+    #itemsTable {
+        min-width: 800px;
+    }
+}
 </style>
 {% endblock %}
 
@@ -210,20 +243,22 @@
         if (!rowToClone) return;
         
         const newRow = rowToClone.cloneNode(true);
+        
+        // --- CLEAN UP SELECT2 FROM CLONE ---
+        $(newRow).find('.select2-container').remove();
+        const $select = $(newRow).find('.searchable-select');
+        $select.removeClass('select2-hidden-accessible');
+        $select.removeAttr('data-select2-id');
+        $select.removeAttr('aria-hidden');
+        $select.find('option').removeAttr('data-select2-id');
+        // ------------------------------------
+
         newRow.querySelectorAll('input').forEach(input => {
             if (input.type !== 'number' || !input.hasAttribute('readonly') || input.name === 'price[]') {
                 input.value = '';
             }
         });
         
-        // Clear selection if it's cloned from a selected item
-        const select = newRow.querySelector('.product-select');
-        select.value = '';
-        
-        // Remove existing Select2 containers if any (cloning might copy them)
-        $(newRow).find('.select2-container').remove();
-        $(newRow).find('.searchable-select').removeClass('select2-hidden-accessible').removeAttr('data-select2-id');
-
         newRow.querySelector('.item-total').textContent = 'Rs0.00';
         document.getElementById('itemsBody').appendChild(newRow);
         
@@ -290,7 +325,8 @@
             theme: 'bootstrap-5',
             placeholder: placeholder,
             allowClear: true,
-            width: '100%'
+            width: '100%',
+            dropdownParent: $(document.body)
         });
     }
 

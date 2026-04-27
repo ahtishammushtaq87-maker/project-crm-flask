@@ -1,8 +1,8 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response
 from flask_login import login_required, current_user
 from app import db
-from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman
-from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm, SalesmanForm
+from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman, CustomerGroup
+from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm, SalesmanForm, CustomerGroupForm
 from datetime import datetime, date
 from sqlalchemy import func
 from app.pdf_utils import generate_professional_pdf
@@ -504,9 +504,14 @@ def customer_advances_json(id):
 @login_required
 def add_customer():
     form = CustomerForm()
+    groups = CustomerGroup.query.filter_by(is_active=True).all()
+    form.group_id.choices = [(0, '- Select Group -')] + [(g.id, g.name) for g in groups]
+    
     if form.validate_on_submit():
         customer = Customer(
             name=form.name.data,
+            company_name=form.company_name.data,
+            group_id=form.group_id.data if form.group_id.data != 0 else None,
             email=form.email.data,
             phone=form.phone.data,
             address=form.address.data,
@@ -525,9 +530,13 @@ def add_customer():
 def edit_customer(id):
     customer = Customer.query.get_or_404(id)
     form = CustomerForm(obj=customer)
+    groups = CustomerGroup.query.filter_by(is_active=True).all()
+    form.group_id.choices = [(0, '- Select Group -')] + [(g.id, g.name) for g in groups]
     
     if form.validate_on_submit():
         customer.name = form.name.data
+        customer.company_name = form.company_name.data
+        customer.group_id = form.group_id.data if form.group_id.data != 0 else None
         customer.email = form.email.data
         customer.phone = form.phone.data
         customer.address = form.address.data
@@ -1043,5 +1052,75 @@ def quick_add_salesman():
         'salesman': {
             'id': salesman.id,
             'name': salesman.name
+        }
+    })
+
+# --- Customer Group Management ---
+
+@bp.route('/customer-groups')
+@login_required
+def customer_groups_list():
+    groups = CustomerGroup.query.all()
+    return render_template('sales/customer_groups.html', groups=groups)
+
+@bp.route('/customer-group/add', methods=['GET', 'POST'])
+@login_required
+def add_customer_group():
+    form = CustomerGroupForm()
+    if form.validate_on_submit():
+        group = CustomerGroup(
+            name=form.name.data,
+            description=form.description.data
+        )
+        db.session.add(group)
+        db.session.commit()
+        flash('Customer Group added successfully!', 'success')
+        return redirect(url_for('sales.customer_groups_list'))
+    return render_template('sales/customer_group_form.html', form=form, title='Add Customer Group')
+
+@bp.route('/customer-group/edit/<int:id>', methods=['GET', 'POST'])
+@login_required
+def edit_customer_group(id):
+    group = CustomerGroup.query.get_or_404(id)
+    form = CustomerGroupForm(obj=group)
+    if form.validate_on_submit():
+        group.name = form.name.data
+        group.description = form.description.data
+        db.session.commit()
+        flash('Customer Group updated successfully!', 'success')
+        return redirect(url_for('sales.customer_groups_list'))
+    return render_template('sales/customer_group_form.html', form=form, title='Edit Customer Group', group=group)
+
+@bp.route('/customer-group/delete/<int:id>', methods=['POST'])
+@login_required
+def delete_customer_group(id):
+    group = CustomerGroup.query.get_or_404(id)
+    if group.customers:
+        flash('Cannot delete group with associated customers.', 'danger')
+        return redirect(url_for('sales.customer_groups_list'))
+    db.session.delete(group)
+    db.session.commit()
+    flash('Customer Group deleted successfully.', 'info')
+    return redirect(url_for('sales.customer_groups_list'))
+
+@bp.route('/customer-group/quick-add', methods=['POST'])
+@login_required
+def quick_add_customer_group():
+    name = request.form.get('name')
+    if not name:
+        return jsonify({'success': False, 'message': 'Name is required'}), 400
+    
+    if CustomerGroup.query.filter_by(name=name).first():
+        return jsonify({'success': False, 'message': 'Group already exists'}), 400
+
+    group = CustomerGroup(name=name)
+    db.session.add(group)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True, 
+        'group': {
+            'id': group.id,
+            'name': group.name
         }
     })

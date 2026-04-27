@@ -71,6 +71,8 @@ class Vendor(db.Model):
     gst_number = db.Column(db.String(20), index=True)
     pan_number = db.Column(db.String(20))
     contact_person = db.Column(db.String(100))
+    company_name = db.Column(db.String(150), index=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('customer_groups.id'), nullable=True, index=True)
     shipping_address = db.Column(db.Text)
     payment_method = db.Column(db.String(50), nullable=True)
     payment_terms = db.Column(db.Integer, default=30)  # Days
@@ -122,6 +124,24 @@ class Vendor(db.Model):
     def __repr__(self):
         return f'<Vendor {self.name}>'
 
+
+class CustomerGroup(db.Model):
+    """Customer Group model"""
+    __tablename__ = 'customer_groups'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True, index=True)
+    description = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    customers = db.relationship('Customer', backref='group', lazy=True)
+    
+    def __repr__(self):
+        return f'<CustomerGroup {self.name}>'
+
 class Customer(db.Model):
     """Customer model"""
     __tablename__ = 'customers'
@@ -134,6 +154,8 @@ class Customer(db.Model):
     gst_number = db.Column(db.String(20), index=True)
     pan_number = db.Column(db.String(20))
     contact_person = db.Column(db.String(100))
+    company_name = db.Column(db.String(150), index=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('customer_groups.id'), nullable=True, index=True)
     payment_method = db.Column(db.String(50), nullable=True)
     payment_terms = db.Column(db.Integer, default=30)  # Days
     credit_limit = db.Column(db.Float, default=0)

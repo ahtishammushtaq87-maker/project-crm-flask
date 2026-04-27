@@ -58,18 +58,28 @@
     /* Mobile-friendly Select2 adjustments */
     @media (max-width: 768px) {
         .select2-container--bootstrap-5 .select2-selection {
-            height: 42px !important;
+            height: 38px !important; /* Balanced size */
             display: flex;
             align-items: center;
+            font-size: 14px !important;
+        }
+        .select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered {
+            line-height: 38px !important;
+            padding-left: 10px !important;
+        }
+        .select2-container--bootstrap-5 .select2-selection--single .select2-selection__arrow {
+            height: 36px !important;
         }
         .select2-search__field {
-            font-size: 16px !important; /* Prevents auto-zoom on mobile */
+            font-size: 16px !important; /* Keep 16px to prevent auto-zoom jump */
+            padding: 6px 10px !important;
         }
         .select2-results__option {
-            padding: 10px 15px !important; /* Better touch targets */
+            padding: 10px 12px !important; /* Standard touch targets */
+            font-size: 14px;
         }
         #itemsTable {
-            min-width: 800px; /* Force horizontal scroll on mobile */
+            min-width: 800px; /* Reduced width to minimize scrolling jitter */
         }
     }
 </style>
@@ -498,9 +508,25 @@
     function addRow() {
         const firstRow = document.querySelector('#itemsBody tr');
         const row = firstRow.cloneNode(true);
+        
+        // --- CLEAN UP SELECT2 FROM CLONE ---
+        // Remove any existing Select2 containers and resets classes to prevent "duplicate label" bug
+        $(row).find('.select2-container').remove();
+        const $select = $(row).find('.product-select');
+        $select.removeClass('select2-hidden-accessible');
+        $select.removeAttr('data-select2-id');
+        $select.removeAttr('aria-hidden');
+        $select.find('option').removeAttr('data-select2-id');
+        // ------------------------------------
+
         row.querySelectorAll('input').forEach(i => { i.value = i.type === 'number' ? '0' : ''; });
         row.querySelector('.qty').value = '1';
         row.querySelector('.product-select').selectedIndex = 0;
+        
+        // Remove any price change badges from clone
+        const badge = row.querySelector('.priceChangeBadge');
+        if (badge) badge.remove();
+        
         document.getElementById('itemsBody').appendChild(row);
 
         // Initialize Select2 on new row's product select
@@ -629,7 +655,8 @@
             theme: 'bootstrap-5',
             placeholder: placeholder,
             allowClear: true,
-            width: width
+            width: width,
+            dropdownParent: $(document.body) // Fixes clipping in scrollable tables
         });
 
         // Auto-focus search field when opened

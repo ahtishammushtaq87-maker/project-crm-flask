@@ -15,7 +15,35 @@
     border-radius: 0.375rem;
     height: calc(1.5em + 0.75rem + 2px);
 }
+
+/* Mobile-friendly Select2 adjustments */
 @media (max-width: 768px) {
+    .select2-container--bootstrap-5 .select2-selection {
+        height: 38px !important;
+        display: flex;
+        align-items: center;
+        font-size: 14px !important;
+    }
+
+    .select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered {
+        line-height: 38px !important;
+        padding-left: 10px !important;
+    }
+
+    .select2-container--bootstrap-5 .select2-selection--single .select2-selection__arrow {
+        height: 36px !important;
+    }
+
+    .select2-search__field {
+        font-size: 16px !important;
+        padding: 6px 10px !important;
+    }
+
+    .select2-results__option {
+        padding: 10px 12px !important;
+        font-size: 14px;
+    }
+
     #itemsTable {
         min-width: 800px;
     }
@@ -191,9 +219,17 @@ function addItem() {
     const rowToClone = document.querySelector('.item-row');
     if (!rowToClone) return;
     
-    const newRow = rowToClone.clone(true);
+    const newRow = rowToClone.cloneNode(true);
+    
+    // --- CLEAN UP SELECT2 FROM CLONE ---
+    $(newRow).find('.select2-container').remove();
+    $(newRow).find('.searchable-select').removeClass('select2-hidden-accessible').removeAttr('data-select2-id');
+    $(newRow).find('.searchable-select').removeAttr('aria-hidden');
+    $(newRow).find('.searchable-select option').removeAttr('data-select2-id');
+    // ------------------------------------
+
     newRow.querySelectorAll('input').forEach(input => {
-        input.value = input.classList.contains('quantity') ? '' : '';
+        input.value = '';
     });
     newRow.querySelector('.item-total').textContent = 'Rs0.00';
     newRow.querySelector('.product-select').value = '';
@@ -226,12 +262,14 @@ function calculateTotal() {
 
 function initSelect2(element) {
     if (element) {
-        element.querySelectorAll('.searchable-select').forEach(select => {
+        const selects = element.querySelectorAll ? element.querySelectorAll('.searchable-select') : [element];
+        selects.forEach(select => {
             if (!select.classList.contains('select2-hidden-accessible')) {
                 const $select = $(select).select2({
                     theme: 'bootstrap-5',
                     placeholder: 'Select Product',
-                    allowClear: true
+                    allowClear: true,
+                    dropdownParent: $(document.body)
                 });
 
                 // Auto-focus search field when opened
