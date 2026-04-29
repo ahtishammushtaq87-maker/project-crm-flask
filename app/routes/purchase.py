@@ -18,6 +18,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.units import inch
 from reportlab.lib.enums import TA_CENTER
+from sqlalchemy import or_, and_
 
 bp = Blueprint('purchase', __name__)
 
@@ -754,6 +755,121 @@ def pay_bill(id):
         flash(f'Error processing payment: {str(e)}', 'danger')
 
     return redirect(request.referrer or url_for('purchase.bill_detail', id=bill.id))
+
+
+@bp.route('/bill/<int:id>/payment/<int:pay_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_bill_payment(id, pay_id):
+    """Edit existing BillPayment for purchase bill"""
+    bill = PurchaseBill.query.get_or_404(id)
+    payment = BillPayment.query.filter_by(id=pay_id, bill_id=bill.id).first_or_404()
+
+    if request.method == 'POST':
+        old_amount = payment.amount
+
+        # Update payment details
+        payment_date_str = request.form.get('payment_date')
+        if payment_date_str:
+            try:
+                payment.date = datetime.strptime(payment_date_str, '%Y-%m-%d')
+            except ValueError:
+                payment.date = datetime.utcnow()
+        else:
+            payment.date = datetime.utcnow()
+
+        payment.payment_method = request.form.get('payment_method', 'Cash')
+        # Keep existing reference_number if not provided in form
+        if 'reference_number' in request.form:
+            payment.reference_number = request.form.get('reference_number', '')
+        payment.notes = request.form.get('payment_notes', '')
+
+        new_amount = float(request.form.get('amount', 0))
+
+        # Handle image update
+        if 'payment_image' in request.files:
+            payment_file = request.files['payment_image']
+            if payment_file and payment_file.filename:
+                filename = secure_filename(payment_file.filename)
+                upload_dir = os.path.join('app', 'static', 'uploads', 'payments')
+                os.makedirs(upload_dir, exist_ok=True)
+                file_path = os.path.join(upload_dir, filename)
+                payment_file.save(file_path)
+                payment.image_path = os.path.join('uploads', 'payments', filename).replace('\\', '/')
+
+        # IMPORTANT: Update payment amount BEFORE calculating delta effect on bill
+        payment.amount = new_amount
+
+        # Safe paid_amount update: adjust bill's paid_amount by the difference
+        delta = new_amount - old_amount
+        bill.paid_amount += delta
+        if bill.paid_amount < 0:
+            bill.paid_amount = 0
+        if bill.paid_amount > bill.total:
+            bill.paid_amount = bill.total
+        bill.update_status()
+
+        db.session.commit()
+        flash(f'Payment updated: PKR{new_amount:,.2f} ({payment.payment_method})', 'success')
+        return redirect(url_for('purchase.bill_detail', id=bill.id))
+
+    # GET: render edit form (modal embedded in page)
+    return render_template('purchase/edit_bill_payment.html', payment=payment, bill=bill)
+
+
+@bp.route('/bill_payment/<int:pay_id>/image')
+@login_required
+def bill_payment_image(pay_id):
+    """Serve bill payment receipt image"""
+    from flask import current_app
+    payment = BillPayment.query.get_or_404(pay_id)
+    if payment.image_path:
+        # Stored path may be relative to static (uploads/...) or absolute (app/static/...)
+        if os.path.isabs(payment.image_path):
+            file_path = payment.image_path
+        else:
+            file_path = os.path.join(current_app.root_path, 'static', payment.image_path)
+        if os.path.exists(file_path):
+            return send_file(file_path)
+    flash('Image not found', 'error')
+    return redirect(url_for('purchase.bill_detail', id=payment.bill_id))
+
+
+@bp.route('/bill/<int:id>/payment/<int:pay_id>/delete', methods=['POST'])
+@login_required
+def delete_bill_payment(id, pay_id):
+    """Safely delete BillPayment: reverse paid_amount, cleanup transactions"""
+    bill = PurchaseBill.query.get_or_404(id)
+    payment = BillPayment.query.filter_by(id=pay_id, bill_id=bill.id).first_or_404()
+    
+    # Reverse from bill
+    bill.paid_amount -= payment.amount
+    if bill.paid_amount < 0:
+        bill.paid_amount = 0
+    bill.update_status()
+    
+    # Delete linked accounting transactions
+    from app.models import Transaction
+    Transaction.query.filter(
+        or_(
+            and_(Transaction.reference_type == 'payment', Transaction.reference_id == payment.id),
+            and_(Transaction.reference_type == 'purchase', Transaction.reference_id == bill.id, Transaction.amount == payment.amount)
+        )
+    ).delete()
+    
+    # Delete old image if exists
+    if payment.image_path:
+        try:
+            image_path = os.path.join(current_app.root_path, 'static', payment.image_path)
+            if os.path.exists(image_path):
+                os.remove(image_path)
+        except:
+            pass
+    
+    db.session.delete(payment)
+    db.session.commit()
+    flash(f'Payment deleted. Balance updated.', 'success')
+    return redirect(url_for('purchase.bill_detail', id=bill.id))
+
 
 
 @bp.route('/bill/<int:id>/receive', methods=['POST'])

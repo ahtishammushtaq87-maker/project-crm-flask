@@ -1,357 +1,588 @@
 {% extends "base.html" %}
-
 {% block title %}Invoice {{ sale.invoice_number }}{% endblock %}
-
 {% block content %}
 <div class="container-fluid">
-	<div class="d-flex justify-content-between align-items-center mb-4">
-		<h2>Invoice {{ sale.invoice_number }}</h2>
-		<div>
-			<a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" class="btn btn-primary" target="_blank">
-				<i class="fas fa-download"></i> PDF
-			</a>
-			<a href="{{ url_for('sales.edit_invoice', id=sale.id) }}" class="btn btn-info">
-				<i class="fas fa-edit"></i> Edit
-			</a>
-			{% if sale.customer and sale.customer.phone %}
-			{% set phone = sale.customer.phone|replace('+', '')|replace(' ', '')|replace('-', '')|replace('(', '')|replace(')', '') %}
-			{% if phone|length >= 10 %}
-			<button type="button" class="btn btn-success" onclick="shareInvoicePDF({{ sale.id }}, '{{ phone }}', '{{ sale.invoice_number }}')">
-				<i class="fab fa-whatsapp"></i> Share PDF
-			</button>
-			{% else %}
-			<button type="button" class="btn btn-secondary" onclick="alert('Invalid WhatsApp number')">
-				<i class="fab fa-whatsapp"></i> Share PDF
-			</button>
-			{% endif %}
-			{% else %}
-			<button type="button" class="btn btn-secondary" onclick="alert('WhatsApp number not available')">
-				<i class="fab fa-whatsapp"></i> Share
-			</button>
-			{% endif %}
-			{% if sale.status != 'paid' %}
-			<button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#discountModal">
-				<i class="fas fa-tag"></i> Direct Discount
-			</button>
-			{% endif %}
-			<a href="{{ url_for('returns.create_return', sale_id=sale.id) }}" class="btn btn-info text-white">
-				<i class="fas fa-undo"></i> Return
-			</a>
-			<a href="{{ url_for('returns.create_return', sale_id=sale.id) }}" class="btn btn-warning">
-				<i class="fas fa-undo"></i> Create Return
-			</a>
-			<a href="{{ url_for('sales.create_invoice') }}" class="btn btn-primary">
-				<i class="fas fa-plus"></i> New Invoice
-			</a>
-			<a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary">Back</a>
-			<form method="POST" action="{{ url_for('sales.delete_invoice', id=sale.id) }}" style="display:inline;" onsubmit="return confirm('Delete this invoice?');">
-				<button type="submit" class="btn btn-danger">Delete</button>
-			</form>
-		</div>
-	</div>
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div>
+            <h2 class="h3 mb-0 text-gray-800">
+                <i class="fas fa-file-invoice me-2 text-primary"></i>Invoice: {{ sale.invoice_number }}
+            </h2>
+            <small class="text-muted">{{ sale.date.strftime(date_format) }}</small>
+            <span class="badge {% if sale.status == 'paid' %}bg-success{% elif sale.status == 'partial' %}bg-warning text-dark{% else %}bg-danger{% endif %} ms-2">
+                <i class="fas {% if sale.status == 'paid' %}fa-check{% elif sale.status == 'partial' %}fa-clock{% else %}fa-times{% endif %} me-1"></i>{{ sale.status | capitalize }}
+            </span>
+        </div>
+        <div class="btn-group flex-wrap gap-1">
+            <a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" class="btn btn-info" target="_blank">
+                <i class="fas fa-file-pdf me-1"></i>PDF
+            </a>
+            <a href="{{ url_for('sales.edit_invoice', id=sale.id) }}" class="btn btn-warning">
+                <i class="fas fa-edit me-1"></i>Edit
+            </a>
+            {% if sale.customer and sale.customer.phone %}
+            {% set phone = sale.customer.phone|replace('+', '')|replace(' ', '')|replace('-', '')|replace('(', '')|replace(')', '') %}
+            {% if phone|length >= 10 %}
+            <button type="button" class="btn btn-success" onclick="shareInvoicePDF({{ sale.id }}, '{{ phone }}', '{{ sale.invoice_number }}')">
+                <i class="fab fa-whatsapp me-1"></i>Share PDF
+            </button>
+            {% endif %}
+            {% endif %}
+            {% if sale.status != 'paid' %}
+            <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#discountModal">
+                <i class="fas fa-tag me-1"></i>Discount
+            </button>
+            {% endif %}
+            <a href="{{ url_for('returns.create_return', sale_id=sale.id) }}" class="btn btn-danger">
+                <i class="fas fa-undo me-1"></i>Return
+            </a>
+            <a href="{{ url_for('sales.create_invoice') }}" class="btn btn-outline-primary">
+                <i class="fas fa-plus me-1"></i>New Invoice
+            </a>
+            <a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Back
+            </a>
+        </div>
+    </div>
 
-	<!-- Discount Modal -->
-	<div class="modal fade" id="discountModal" tabindex="-1">
-		<div class="modal-dialog">
-			<div class="modal-content">
-				<form action="{{ url_for('sales.apply_discount', id=sale.id) }}" method="POST">
-					<div class="modal-header">
-						<h5 class="modal-title">Give Direct Discount</h5>
-						<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-					</div>
-					<div class="modal-body text-start">
-						<div class="mb-3">
-							<label class="form-label">Discount Amount (PKR)</label>
-							<input type="number" step="0.01" name="discount_amount" class="form-control" placeholder="0.00" required>
-						</div>
-						<p class="text-muted small">This will reduce the balance due for this invoice.</p>
-					</div>
-					<div class="modal-footer">
-						<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-						<button type="submit" class="btn btn-warning text-dark fw-bold">Apply Discount</button>
-					</div>
-				</form>
-			</div>
-		</div>
-	</div>
+    <!-- Discount Modal -->
+    <div class="modal fade" id="discountModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form action="{{ url_for('sales.apply_discount', id=sale.id) }}" method="POST">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="fas fa-tag me-2"></i>Apply Direct Discount</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body text-start">
+                        <p class="text-muted small">Grand Total: <strong>PKR {{ "{:,.2f}".format(sale.total) }}</strong> &nbsp;|&nbsp; Balance Due: <strong>PKR {{ "{:,.2f}".format(sale.total - sale.paid_amount) }}</strong></p>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Discount Amount (PKR)</label>
+                            <input type="number" step="0.01" name="discount_amount" class="form-control" placeholder="0.00" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-warning text-dark fw-bold">Apply Discount</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
-	<div class="row mb-3">
-		<div class="col-md-4">
-			<div class="card p-3 mb-3">
-				{% if sale.customer %}
-				<strong>Customer:</strong>
-				<a href="{{ url_for('sales.customer_profile', id=sale.customer.id) }}" class="fw-bold text-decoration-none">
-					{{ sale.customer.name }}
-				</a><br>
-				{% if sale.customer.phone %}
-				<strong>Phone:</strong> {{ sale.customer.phone }}<br>
-				{% endif %}
-				{% if sale.customer.email %}
-				<strong>Email:</strong> {{ sale.customer.email }}<br>
-				{% endif %}
-				{% if sale.customer.address %}
-				<strong>Address:</strong> {{ sale.customer.address }}<br>
-				{% endif %}
-				{% if sale.customer.gst_number %}
-				<strong>GST No:</strong> {{ sale.customer.gst_number }}<br>
-				{% endif %}
-				{% if sale.customer.pan_number %}
-				<strong>PAN No:</strong> {{ sale.customer.pan_number }}<br>
-				{% endif %}
-				{% else %}
-				<strong>Customer:</strong> Walk-in Customer<br>
-				{% endif %}
-				<strong>Vendor:</strong> {{ sale.vendor.name if sale.vendor else '-' }}<br>
-				<strong>Salesman:</strong> {{ sale.salesman.name if sale.salesman else '-' }}<br>
-				<strong>Date:</strong> {{ sale.date.strftime(date_format) }}<br>
-				{% if sale.due_date %}
-				<strong>Due Date:</strong> {{ sale.due_date.strftime(date_format) }}<br>
-				{% endif %}
-				<strong>Status:</strong>
-				{% if sale.status == 'paid' %}
-					<span class="badge bg-success">Paid</span>
-				{% elif sale.status == 'partial' %}
-					<span class="badge bg-warning">Partial</span>
-				{% else %}
-					<span class="badge bg-danger">Unpaid</span>
-				{% endif %}
-			</div>
-		</div>
-		<div class="col-md-8">
-			<div class="card p-3">
-				<h5>Items</h5>
-				<div class="table-responsive">
-					<table class="table table-bordered">
-						<thead>
-							<tr>
-								<th>SKU</th>
-								<th>Product</th>
-								<th>Qty</th>
-								<th>Unit Price</th>
-								<th>Subtotal</th>
-								<th>Delivery</th>
-								<th>Total</th>
-							</tr>
-						</thead>
-						<tbody>
-							{% for item in sale.items %}
-							<tr>
-								<td>{{ item.product.sku if item.product else '-' }}</td>
-								<td>{{ item.product.name if item.product else '-' }}</td>
-								<td>{{ item.quantity }}</td>
-								<td>PKR{{ '%.2f'|format(item.unit_price) }}</td>
-								<td>PKR{{ '%.2f'|format(item.item_subtotal) }}</td>
-								<td>PKR{{ '%.2f'|format(item.delivery_fee) }}</td>
-								<td>PKR{{ '%.2f'|format(item.total) }}</td>
-							</tr>
-							{% endfor %}
-						</tbody>
-					</table>
-				</div>
-				<div class="text-end mt-3">
-					<p>Subtotal: PKR{{ '%.2f'|format(sale.subtotal) }}</p>
-					<p>Tax: PKR{{ '%.2f'|format(sale.tax) }}</p>
-					<p>Discount: PKR{{ '%.2f'|format(sale.discount) }}</p>
-					<p>Delivery Charge: PKR{{ '%.2f'|format(sale.delivery_charge) }}</p>
-					<p {% if sale.advance_applied > 0 %}class="text-success fw-bold"{% endif %}>Advance Applied: {% if sale.advance_applied > 0 %}-{% endif %}PKR{{ '%.2f'|format(sale.advance_applied) }}</p>
-					<h4>Total: PKR{{ '%.2f'|format(sale.total) }}</h4>
-					<p>Paid: PKR{{ '%.2f'|format(sale.paid_amount) }}</p>
-					<p style="color: red; font-weight: bolder;">Balance: PKR{{ '%.2f'|format(sale.total - sale.paid_amount) }}</p>
-				</div>
-				
-				{% if sale.adjusted_advances %}
-				<div class="mt-3 p-3 bg-light rounded">
-					<h6><i class="fas fa-hand-holding-usd me-2"></i>Advances Applied to this Invoice</h6>
-					<table class="table table-sm mb-0">
-						<tr>
-							<th>Date</th>
-							<th>Amount Applied</th>
-							<th>Original Amount</th>
-						</tr>
-						{% for adv in sale.adjusted_advances %}
-						<tr>
-							<td>{{ adv.date.strftime(date_format) }}</td>
-							<td>PKR{{ '%.2f'|format(adv.applied_amount) }}</td>
-							<td>PKR{{ '%.2f'|format(adv.amount) }}</td>
-						</tr>
-						{% endfor %}
-					</table>
-				</div>
-				{% endif %}
-			</div>
-			{% if returns %}
-			<div class="card mb-3 border-danger">
-				<div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
-					<h5 class="mb-0"><i class="fas fa-undo me-2"></i>Returns on this Invoice ({{ returns|length }})</h5>
-					<span class="badge bg-light text-danger fw-bold">-Rs {{ '%.2f'|format(returns|sum(attribute='total')) }}</span>
-				</div>
-				<div class="card-body p-0">
-					<div class="table-responsive">
-						<table class="table table-bordered mb-0">
-							<thead class="table-light">
-								<tr>
-									<th>Return #</th>
-									<th>Date</th>
-									<th>Status</th>
-									<th>Items</th>
-									<th>Total</th>
-									<th>Inventory</th>
-									<th>Action</th>
-								</tr>
-							</thead>
-							<tbody>
-								{% for ret in returns %}
-								<tr>
-									<td>
-										<a href="{{ url_for('returns.return_detail', id=ret.id) }}">
-											{{ ret.return_number }}
-										</a>
-									</td>
-									<td>{{ ret.date.strftime(date_format) }}</td>
-									<td>
-										{% if ret.status == 'completed' %}
-											<span class="badge bg-success">Completed</span>
-										{% elif ret.status == 'approved' %}
-											<span class="badge bg-info">Approved</span>
-										{% else %}
-											<span class="badge bg-warning">Pending</span>
-										{% endif %}
-									</td>
-									<td>{{ ret.items|length }} item(s)</td>
-									<td class="text-end text-danger">PKR{{ '%.2f'|format(ret.total) }}</td>
-									<td>
-										{% if ret.returned_to_inventory %}
-											<span class="badge bg-success"><i class="fas fa-check-circle"></i> Returned</span>
-										{% else %}
-											<span class="badge bg-warning"><i class="fas fa-clock"></i> Pending</span>
-										{% endif %}
-									</td>
-									<td class="text-center">
-										<a href="{{ url_for('returns.return_detail', id=ret.id) }}" class="btn btn-sm btn-outline-primary">
-											<i class="fas fa-eye"></i> View
-										</a>
-									</td>
-								</tr>
-								{% endfor %}
-							</tbody>
-						</table>
-					</div>
-				</div>
-			</div>
-			{% endif %}
-		</div>
-	</div>
+    <!-- Payment Modal -->
+    <div class="modal fade" id="payModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <form action="{{ url_for('sales.pay_invoice', id=sale.id) }}" method="POST" enctype="multipart/form-data">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title"><i class="fas fa-money-bill-wave me-2"></i>Record Payment — {{ sale.invoice_number }}</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Payment Method</label>
+                                <select name="payment_method" id="paymentMethod" class="form-select">
+                                    <option value="Cash">Cash Payment</option>
+                                    <option value="Bank Transfer">Bank Transfer</option>
+                                    <option value="Cheque">Cheque</option>
+                                    <option value="Online">Online</option>
+                                    {% for method in payment_methods if payment_methods is defined %}
+                                    <option value="{{ method.name }}">{{ method.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Reference # (Optional)</label>
+                                <input type="text" name="reference_number" class="form-control" placeholder="Cheque / Transfer / TRX ID">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Amount (PKR)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">PKR</span>
+                                    <input type="number" step="0.01" min="0.01" name="amount" id="paymentAmount"
+                                           class="form-control" placeholder="0.00" max="{{ sale.total - sale.paid_amount }}">
+                                </div>
+                                <small class="text-muted">Balance Due: PKR {{ "{:,.2f}".format(sale.total - sale.paid_amount) }}</small>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Payment Date</label>
+                                <input type="date" name="payment_date" class="form-control" value="{{ today if today is defined else '' }}">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold"><i class="fas fa-image me-1 text-muted"></i>Payment Proof / Receipt (Optional)</label>
+                                <input type="file" name="payment_image" class="form-control" accept="image/*,.pdf"
+                                       id="payImageInput" onchange="previewPayImage(this)">
+                                <small class="text-muted">Upload cheque scan, bank receipt screenshot, or any payment document</small>
+                                <div id="payImagePreview" class="mt-2" style="display:none;">
+                                    <img id="payImgThumb" src="" alt="Preview" class="img-thumbnail" style="max-height:120px;">
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Payment Notes (Optional)</label>
+                                <textarea name="pay_notes" rows="2" class="form-control" placeholder="Any notes about this payment..."></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-success fw-bold" id="paySubmitBtn">
+                            <i class="fas fa-check me-1"></i>Record Payment
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
-	<div class="card mb-3">
-		<div class="card-body">
-			<h5><i class="fas fa-money-bill-wave me-2"></i>Make Payment</h5>
-			<form method="POST" action="{{ url_for('sales.pay_invoice', id=sale.id) }}" enctype="multipart/form-data">
-				<div class="row g-3">
-					<div class="col-md-3">
-						<label class="form-label small text-muted">Amount (PKR)</label>
-						<input type="number" name="amount" class="form-control" step="0.01" placeholder="0.00" required
-							   max="{{ '%.2f'|format(sale.total - sale.paid_amount) }}">
-					</div>
-					<div class="col-md-3">
-						<label class="form-label small text-muted">Payment Date</label>
-						<input type="date" name="payment_date" class="form-control" value="{{ today }}">
-					</div>
-					<div class="col-md-3">
-						<label class="form-label small text-muted">Method</label>
-						<select name="payment_method" class="form-select">
-							<option value="Cash">Cash</option>
-							{% for method in payment_methods %}
-							<option value="{{ method.name }}">{{ method.name }}</option>
-							{% endfor %}
-						</select>
-					</div>
-					<div class="col-md-3">
-						<label class="form-label small text-muted">Receipt Image</label>
-						<input type="file" name="payment_image" class="form-control" accept=".jpg,.jpeg,.png,.pdf">
-					</div>
-					<div class="col-md-9">
-						<label class="form-label small text-muted">Notes</label>
-						<input type="text" name="payment_notes" class="form-control" placeholder="e.g., UTR #123, Cheque #456">
-					</div>
-					<div class="col-md-3 d-flex align-items-end">
-						<button class="btn btn-success w-100" type="submit"><i class="fas fa-check"></i> Record Payment</button>
-					</div>
-				</div>
-			</form>
-		</div>
-	</div>
+    <!-- MAIN ROW -->
+    <div class="row">
+        <!-- LEFT: Customer + Payment Summary -->
+        <div class="col-md-4">
+            <!-- Customer Info -->
+            <div class="card shadow mb-4">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-user me-2"></i>Customer Information</h6>
+                </div>
+                <div class="card-body">
+                    <p class="mb-1"><strong>Name:</strong> 
+                        {% if sale.customer %}
+                            <a href="{{ url_for('sales.customer_profile', id=sale.customer.id) }}" class="text-decoration-none fw-bold text-primary">
+    {{ sale.customer.name }}
+</a>
+                        {% else %}
+                            Walk-in Customer
+                        {% endif %}
+                    </p>
+                    <p class="mb-1"><strong>Phone:</strong> {{ sale.customer.phone if sale.customer else 'N/A' }}</p>
+                    <p class="mb-1"><strong>Email:</strong> {{ sale.customer.email if sale.customer else 'N/A' }}</p>
+                    <p class="mb-1"><strong>Address:</strong> {{ sale.customer.address if sale.customer else 'N/A' }}</p>
+                    <hr class="my-2">
+                    <h6 class="text-primary mb-2"><i class="fas fa-calendar-alt me-2"></i>Invoice Dates</h6>
+                    <p class="mb-1 small"><strong>Invoice Date:</strong> {{ sale.date.strftime(date_format) }}</p>
+                    <p class="mb-1 small"><strong>Due Date:</strong> {{ sale.due_date.strftime(date_format) if sale.due_date else 'N/A' }}</p>
+                    <p class="mb-0 small"><strong>Salesman:</strong> {{ sale.salesman.name if sale.salesman else 'N/A' }}</p>
+                    {% if sale.vendor %}
+                    <hr class="my-2">
+                    <h6 class="text-primary mb-2"><i class="fas fa-building me-2"></i>Vendor</h6>
+                    <p class="mb-0 small">{{ sale.vendor.name }}</p>
+                    {% endif %}
+                </div>
+            </div>
 
-	{% if payments %}
-	<div class="card mb-3">
-		<div class="card-header bg-light">
-			<h5 class="mb-0"><i class="fas fa-receipt me-2"></i>Payment History</h5>
-		</div>
-		<div class="card-body p-0">
-			<div class="table-responsive">
-				<table class="table table-striped mb-0">
-					<thead class="table-light">
-						<tr>
-							<th>#</th>
-							<th>Date</th>
-							<th>Method</th>
-							<th>Amount</th>
-							<th>Notes</th>
-							<th>Receipt</th>
-						</tr>
-					</thead>
-					<tbody>
-						{% set running_total = 0 %}
-						{% for payment in payments %}
-						<tr>
-							<td>{{ loop.index }}</td>
-							<td>{{ payment.date.strftime(date_format) }}</td>
-							<td><span class="badge bg-info">{{ payment.method or 'Cash' }}</span></td>
-							<td class="fw-bold">PKR{{ '%.2f'|format(payment.amount) }}</td>
-							<td>{{ payment.notes or '-' }}</td>
-							<td>
-								{% if payment.image_path %}
-								<a href="{{ url_for('sales.payment_image', payment_id=payment.id) }}" target="_blank" class="btn btn-sm btn-outline-primary">
-									<i class="fas fa-image"></i> View
-								</a>
-								{% else %}
-								<span class="text-muted">-</span>
-								{% endif %}
-							</td>
-						</tr>
-						{% endfor %}
-					</tbody>
-					<tfoot class="table-light">
-						<tr>
-							<td colspan="3" class="text-end fw-bold">Total Payments:</td>
-							<td class="fw-bold">PKR{{ '%.2f'|format(payments|sum(attribute='amount')) }}</td>
-							<td colspan="2"></td>
-						</tr>
-					</tfoot>
-				</table>
-			</div>
-		</div>
-	</div>
-	{% endif %}
+            <!-- Payment Summary -->
+            <div class="card shadow mb-4">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="m-0 font-weight-bold text-success"><i class="fas fa-rupee-sign me-2"></i>Payment Summary</h6>
+                    {% if sale.status != 'paid' %}
+                    <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#payModal">
+                        <i class="fas fa-plus me-1"></i>Pay
+                    </button>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm table-borderless mb-0">
+                        <tr>
+                            <td class="text-muted">Subtotal</td>
+                            <td class="text-end">PKR {{ "{:,.2f}".format(sale.subtotal) }}</td>
+                        </tr>
+                        {% if sale.delivery_charge > 0 %}
+                        <tr>
+                            <td class="text-info"><i class="fas fa-truck me-1"></i>Delivery</td>
+                            <td class="text-end text-info fw-semibold">
+                                PKR {{ "{:,.2f}".format(sale.delivery_charge) }}
+                            </td>
+                        </tr>
+                        {% endif %}
+                        {% if sale.tax > 0 %}
+                        <tr>
+                            <td class="text-muted">Tax</td>
+                            <td class="text-end">PKR {{ "{:,.2f}".format(sale.tax) }}</td>
+                        </tr>
+                        {% endif %}
+                        {% if sale.discount > 0 %}
+                        <tr>
+                            <td class="text-success">Discount</td>
+                            <td class="text-end text-success">-Rs {{ "{:,.2f}".format(sale.discount) }}</td>
+                        </tr>
+                        {% endif %}
+                        {% if sale.advance_applied > 0 %}
+                        <tr>
+                            <td class="text-warning"><i class="fas fa-hand-holding-usd me-1"></i>Advance</td>
+                            <td class="text-end text-warning">-Rs {{ "{:,.2f}".format(sale.advance_applied) }}</td>
+                        </tr>
+                        {% endif %}
+                        {% if sale.returns|length > 0 %}
+                        <tr>
+                            <td class="text-danger"><i class="fas fa-undo me-1"></i>Returns</td>
+                            <td class="text-end text-danger">-Rs {{ "{:,.2f}".format(sale.returns|sum(attribute='total')) }}</td>
+                        </tr>
+                        {% endif %}
+                        <tr class="border-top">
+                            <td class="fw-bold">Grand Total</td>
+                            <td class="text-end fw-bold fs-6">PKR {{ "{:,.2f}".format(sale.total) }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-success">Paid Amount</td>
+                            <td class="text-end text-success fw-semibold">PKR {{ "{:,.2f}".format(sale.paid_amount) }}</td>
+                        </tr>
+                        <tr class="border-top">
+                            <td class="fw-bold {% if sale.total - sale.paid_amount > 0 %}text-danger{% else %}text-success{% endif %}">Balance Due</td>
+                            <td class="text-end fw-bold {% if sale.total - sale.paid_amount > 0 %}text-danger{% else %}text-success{% endif %} fs-5">
+                                PKR {{ "{:,.2f}".format(sale.total - sale.paid_amount) }}
+                            </td>
+                        </tr>
+                    </table>
+                    <div class="text-center mt-3">
+                        <span class="badge {% if sale.status == 'paid' %}bg-success{% elif sale.status == 'partial' %}bg-warning text-dark{% else %}bg-danger{% endif %} fs-6 px-3 py-2">
+                            {{ sale.status | capitalize }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: Items + History -->
+        <div class="col-md-8">
+            <!-- Items Table -->
+            <div class="card shadow mb-4">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-list me-2"></i>Item Details</h6>
+                </div>
+                <div class="card-body p-0">
+                    {# Calculate totals for footer #}
+                    {% set total_qty = sale.items | sum(attribute='quantity') %}
+                    {% set sum_item_delivery = sale.items | sum(attribute='delivery_fee') %}
+                    {% set has_item_delivery = sum_item_delivery > 0 %}
+                    {% set show_delivery_col = has_item_delivery %}
+                    {% set show_discount_col = sale.discount > 0 %}
+                    {% set base_cols = 6 %}
+                    {% set total_cols = base_cols + (1 if show_delivery_col else 0) + (1 if show_discount_col else 0) %}
+                    {% set label_colspan = total_cols - 1 %}
+                    {% set sum_item_subtotal = sale.subtotal - sum_item_delivery %}
+
+                    <table class="table table-bordered mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>Product</th>
+                                <th class="text-center">Qty</th>
+                                <th class="text-end">Unit Price</th>
+                                <th class="text-end">Subtotal</th>
+                                {% if show_delivery_col %}
+                                <th class="text-end text-info"><i class="fas fa-truck me-1"></i>Delivery</th>
+                                {% endif %}
+                                {% if show_discount_col %}
+                                <th class="text-end text-success">Discount</th>
+                                {% endif %}
+                                <th class="text-end">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in sale.items %}
+                            {% set item_subtotal = item.quantity * item.unit_price %}
+                            {% set item_discount = (item.total / sale.subtotal * sale.discount) if sale.subtotal > 0 else 0 %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td>
+                                    <strong>{{ item.product.name if item.product else 'Deleted Product' }}</strong>
+                                    {% if item.product and item.product.sku %}<br><small class="text-muted">{{ item.product.sku }}</small>{% endif %}
+                                </td>
+                                <td class="text-center">{{ '{:,.2f}'.format(item.quantity) }}</td>
+                                <td class="text-end">PKR {{ "{:,.2f}".format(item.unit_price) }}</td>
+                                <td class="text-end">PKR {{ "{:,.2f}".format(item_subtotal) }}</td>
+                                {% if show_delivery_col %}
+                                <td class="text-end text-info">PKR {{ "{:,.2f}".format(item.delivery_fee) }}</td>
+                                {% endif %}
+                                {% if show_discount_col %}
+                                <td class="text-end text-success">-Rs {{ "{:,.2f}".format(item_discount) }}</td>
+                                {% endif %}
+                                <td class="text-end fw-semibold">PKR {{ "{:,.2f}".format(item.total) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <th colspan="{{ label_colspan }}" class="text-end">Subtotal ({{ total_qty }} items)</th>
+                                <th class="text-end">PKR {{ "{:,.2f}".format(sale.subtotal) }}</th>
+                            </tr>
+                            {% if sale.delivery_charge > 0 %}
+                            <tr>
+                                <th colspan="{{ label_colspan }}" class="text-end text-info"><i class="fas fa-truck me-1"></i>Delivery Charges</th>
+                                <th class="text-end text-info">PKR {{ "{:,.2f}".format(sale.delivery_charge) }}</th>
+                            </tr>
+                            {% endif %}
+                            {% if sale.tax > 0 %}
+                            <tr>
+                                <th colspan="{{ label_colspan }}" class="text-end">Tax ({{ sale.tax_rate }}%)</th>
+                                <th class="text-end">PKR {{ "{:,.2f}".format(sale.tax) }}</th>
+                            </tr>
+                            {% endif %}
+                            {% if sale.discount > 0 %}
+                            <tr>
+                                <th colspan="{{ label_colspan }}" class="text-end text-success">Discount</th>
+                                <th class="text-end text-success">-Rs {{ "{:,.2f}".format(sale.discount) }}</th>
+                            </tr>
+                            {% endif %}
+                            {% if sale.advance_applied > 0 %}
+                            <tr>
+                                <th colspan="{{ label_colspan }}" class="text-end text-warning">Advance Applied</th>
+                                <th class="text-end text-warning">-Rs {{ "{:,.2f}".format(sale.advance_applied) }}</th>
+                            </tr>
+                            {% endif %}
+                            {% if returns|length > 0 %}
+                            <tr>
+                                <th colspan="{{ label_colspan }}" class="text-end text-danger"><i class="fas fa-undo me-1"></i>Returns</th>
+                                <th class="text-end text-danger">-Rs {{ "{:,.2f}".format(returns|sum(attribute='total')) }}</th>
+                            </tr>
+                            {% endif %}
+                            <tr class="table-primary">
+                                <th colspan="{{ label_colspan }}" class="text-end fw-bold">Grand Total</th>
+                                <th class="text-end fw-bold fs-6">PKR {{ "{:,.2f}".format(sale.total) }}</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ═══ PAYMENT HISTORY CARD ═══ -->
+            {% if payments %}
+            <div class="card shadow mb-4 border-start border-success border-3">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="m-0 font-weight-bold text-success"><i class="fas fa-money-bill-wave me-2"></i>Payment History</h6>
+                    <span class="badge bg-success">PKR {{ "{:,.2f}".format(payments|sum(attribute='amount')) }}</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Method</th>
+                                    <th>Reference</th>
+                                    <th class="text-end">Amount</th>
+                                    <th>Receipt</th>
+                                    <th>Notes</th>
+                                    <th class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for payment in payments | sort(attribute='date', reverse=True) %}
+                                <tr>
+                                    <td>
+                                        {{ payment.date.strftime(date_format) }}
+                                        <br><small class="text-muted">{{ payment.date.strftime('%H:%M') }}</small>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-secondary">{{ payment.method or 'Cash' }}</span>
+                                    </td>
+                                    <td class="text-muted small">{{ payment.reference_number or '—' }}</td>
+                                    <td class="text-end fw-bold text-success">PKR {{ "{:,.2f}".format(payment.amount) }}</td>
+                                    <td>
+                                        {% if payment.image_path %}
+                                        {% set pay_ext = payment.image_path.rsplit('.', 1)[1].lower() if '.' in payment.image_path else '' %}
+                                        {% if pay_ext == 'pdf' %}
+                                        <a href="{{ url_for('sales.payment_image', payment_id=payment.id) }}" target="_blank" class="btn btn-sm btn-outline-danger">
+                                            <i class="fas fa-file-pdf"></i> PDF
+                                        </a>
+                                        {% else %}
+                                        <a href="{{ url_for('sales.payment_image', payment_id=payment.id) }}" target="_blank">
+                                            <img src="{{ url_for('sales.payment_image', payment_id=payment.id) }}" alt="Receipt"
+                                                 class="img-thumbnail" style="max-height:50px; cursor:pointer;"
+                                                 title="Click to view full size">
+                                        </a>
+                                        {% endif %}
+                                        {% else %}
+                                        <span class="text-muted small">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-muted small">{{ payment.notes or '—' }}</td>
+                                    <td class="text-center">
+                                        <button type="button" class="btn btn-sm btn-outline-primary edit-payment-btn me-1" data-bs-toggle="modal" data-bs-target="#editPaymentModal{{ payment.id }}">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <form method="POST" action="{{ url_for('sales.delete_payment', id=sale.id, pay_id=payment.id) }}" class="d-inline" style="display: inline-block;">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger delete-payment-btn" onclick="return confirm('Delete this payment? Balance will increase by PKR {{ '{:,.2f}'.format(payment.amount) }}')">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <th colspan="4" class="text-end">Total Paid</th>
+                                    <th class="text-end text-success">PKR {{ "{:,.2f}".format(payments|sum(attribute='amount')) }}</th>
+                                    <th colspan="2"></th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- ═══ RETURNS CARD ═══ -->
+            {% if returns %}
+            <div class="card shadow mb-4 border-start border-danger border-3">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="m-0 font-weight-bold text-danger"><i class="fas fa-undo me-2"></i>Returns on this Invoice</h6>
+                    <span class="badge bg-danger">-Rs {{ "{:,.2f}".format(returns|sum(attribute='total')) }}</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Return #</th>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                    <th>Items</th>
+                                    <th class="text-end">Total</th>
+                                    <th class="text-center">Inventory</th>
+                                    <th class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ret in returns %}
+                                <tr>
+                                    <td><a href="{{ url_for('returns.return_detail', id=ret.id) }}">{{ ret.return_number }}</a></td>
+                                    <td>{{ ret.date.strftime(date_format) }}</td>
+                                    <td>
+                                        {% if ret.status == 'completed' %}
+                                            <span class="badge bg-success">Completed</span>
+                                        {% elif ret.status == 'approved' %}
+                                            <span class="badge bg-info">Approved</span>
+                                        {% else %}
+                                            <span class="badge bg-warning">Pending</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ ret.items|length }} item(s)</td>
+                                    <td class="text-end text-danger">PKR{{ "{:,.2f}".format(ret.total) }}</td>
+                                    <td class="text-center">
+                                        {% if ret.returned_to_inventory %}
+                                            <span class="badge bg-success"><i class="fas fa-check-circle"></i> Returned</span>
+                                        {% else %}
+                                            <span class="badge bg-warning"><i class="fas fa-clock"></i> Pending</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        <a href="{{ url_for('returns.return_detail', id=ret.id) }}" class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-eye"></i> View
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
 </div>
 
+<!-- Edit Payment Modals -->
+{% for payment in payments %}
+<div class="modal fade" id="editPaymentModal{{ payment.id }}" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('sales.edit_payment', id=sale.id, pay_id=payment.id) }}" enctype="multipart/form-data">
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title">Edit Payment #{{ payment.payment_number if payment.payment_number else payment.id }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Amount (PKR)</label>
+                            <input type="number" name="amount" value="{{ '%.2f'|format(payment.amount) }}" step="0.01" class="form-control" required min="0">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Date</label>
+                            <input type="date" name="payment_date" value="{{ payment.date.strftime('%Y-%m-%d') }}" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Method</label>
+                            <select name="payment_method" class="form-select">
+                                <option value="Cash" {{ 'selected' if payment.method == 'Cash' }}>Cash</option>
+                                <option value="Bank Transfer" {{ 'selected' if payment.method == 'Bank Transfer' }}>Bank Transfer</option>
+                                <option value="Cheque" {{ 'selected' if payment.method == 'Cheque' }}>Cheque</option>
+                                <option value="Online" {{ 'selected' if payment.method == 'Online' }}>Online</option>
+                                {% for method in payment_methods if payment_methods is defined %}
+                                <option value="{{ method.name }}" {{ 'selected' if payment.method == method.name }}>{{ method.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">New Receipt (optional)</label>
+                            <input type="file" name="payment_image" class="form-control" accept="image/*,.pdf">
+                            {% if payment.image_path %}
+                            <div class="mt-1">
+                                <small class="text-muted">Current: <a href="{{ url_for('sales.payment_image', payment_id=payment.id) }}" target="_blank">View</a></small>
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold">Notes</label>
+                            <textarea name="payment_notes" class="form-control" rows="2">{{ payment.notes or '' }}</textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update Payment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
 <script>
-async function shareInvoicePDF(id, phone, invoiceNum) {
-    try {
-        const response = await fetch(`/sales/invoice/${id}/pdf/share`);
-        const data = await response.json();
-        
-        if (data.error) {
-            alert('Error: ' + data.error);
-            return;
-        }
-        
-        const pdfLink = window.location.origin + data.share_url;
-        const message = `Please find attached invoice ${invoiceNum}\n\nView/Download: ${pdfLink}`;
-        const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-        window.open(waUrl, '_blank');
-    } catch (e) {
-        alert('Error sharing: ' + e);
+function previewPayImage(input) {
+    const preview = document.getElementById('payImagePreview');
+    const img = document.getElementById('payImgThumb');
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            img.src = e.target.result;
+            preview.style.display = 'block';
+        };
+        reader.readAsDataURL(input.files[0]);
+    } else {
+        preview.style.display = 'none';
     }
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Edit payment buttons
+    document.querySelectorAll('.edit-payment-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const modalId = this.dataset.modal || this.getAttribute('data-bs-target');
+            if (modalId) {
+                const modal = new bootstrap.Modal(document.querySelector(modalId));
+                modal.show();
+            }
+        });
+    });
+
+    // Delete payment confirmation
+    document.querySelectorAll('.delete-payment-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (confirm('Delete this payment? Balance will increase by the payment amount.')) {
+                const form = this.closest('form');
+                fetch(form.action, {
+                    method: 'POST',
+                    body: new FormData(form),
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                }).then(() => location.reload());
+            }
+        });
+    });
+});
 </script>
 {% endblock %}

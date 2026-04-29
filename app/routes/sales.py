@@ -4,7 +4,7 @@ from app import db
 from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman, CustomerGroup, Payment, PaymentMethod
 from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm, SalesmanForm, CustomerGroupForm
 from datetime import datetime, date
-from sqlalchemy import func
+from sqlalchemy import func, or_, and_
 from app.pdf_utils import generate_professional_pdf
 import os
 from werkzeug.utils import secure_filename
@@ -447,6 +447,92 @@ def pay_invoice(id):
         db.session.commit()
         flash(f'Payment of PKR {amount:,.2f} recorded successfully!', 'success')
     
+    return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+
+@bp.route('/invoice/<int:id>/payment/<int:pay_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_payment(id, pay_id):
+    """Edit existing payment for sales invoice"""
+    sale = Sale.query.get_or_404(id)
+    payment = Payment.query.filter_by(id=pay_id, invoice_id=sale.id).first_or_404()
+
+    if request.method == 'POST':
+        old_amount = payment.amount
+
+        # Update payment details
+        payment_date_str = request.form.get('payment_date')
+        if payment_date_str:
+            try:
+                payment.date = datetime.strptime(payment_date_str, '%Y-%m-%d')
+            except ValueError:
+                payment.date = datetime.utcnow()
+        else:
+            payment.date = datetime.utcnow()
+
+        payment.method = request.form.get('payment_method', 'Cash')
+        # Only update reference_number if provided
+        if 'reference_number' in request.form:
+            payment.reference_number = request.form.get('reference_number', '')
+        payment.notes = request.form.get('payment_notes', '')
+
+        new_amount = float(request.form.get('amount', 0))
+
+        # Handle image update
+        if 'payment_image' in request.files:
+            payment_file = request.files['payment_image']
+            if payment_file and payment_file.filename:
+                filename = secure_filename(payment_file.filename)
+                upload_dir = os.path.join('app', 'static', 'uploads', 'sale_payments')
+                os.makedirs(upload_dir, exist_ok=True)
+                file_path = os.path.join(upload_dir, filename)
+                payment_file.save(file_path)
+                payment.image_path = file_path.replace('\\', '/')
+
+        # IMPORTANT: Update payment amount BEFORE calculating delta effect on sale
+        payment.amount = new_amount
+
+        # Safe paid_amount update: adjust sale's paid_amount by the difference
+        delta = new_amount - old_amount
+        from app.utils import safe_update_paid_amount
+        safe_update_paid_amount(sale, delta)
+
+        db.session.commit()
+        flash(f'Payment updated: PKR{new_amount:,.2f} ({payment.method})', 'success')
+        return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+    # GET: render edit form
+    return render_template('sales/edit_payment.html', payment=payment, sale=sale)
+
+
+@bp.route('/invoice/<int:id>/payment/<int:pay_id>/delete', methods=['POST'])
+@login_required
+def delete_payment(id, pay_id):
+    """Safely delete payment: reverse paid_amount, cleanup transactions"""
+    sale = Sale.query.get_or_404(id)
+    payment = Payment.query.filter_by(id=pay_id, invoice_id=sale.id).first_or_404()
+    
+    # Reverse from sale
+    delta = -payment.amount
+    from app.utils import safe_update_paid_amount
+    safe_update_paid_amount(sale, delta)
+    
+    # Delete linked accounting transactions
+    from app.utils import cleanup_linked_transactions
+    cleanup_linked_transactions(payment)
+    
+    # Delete old image if exists
+    if payment.image_path:
+        try:
+            image_path = os.path.join(current_app.root_path, 'static', payment.image_path)
+            if os.path.exists(image_path):
+                os.remove(image_path)
+        except:
+            pass
+    
+    db.session.delete(payment)
+    db.session.commit()
+    flash(f'Payment deleted. Balance updated.', 'success')
     return redirect(url_for('sales.invoice_detail', id=sale.id))
 
 

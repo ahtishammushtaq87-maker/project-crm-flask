@@ -519,9 +519,9 @@ class ProfessionalPDFGenerator:
             try:
                 from reportlab.platypus import Image as RLImage
                 sig_img = RLImage(sig_path)
-                sig_img.drawWidth = 80
-                sig_img.drawHeight = 25
-                y -= 30
+                sig_img.drawWidth = 100
+                sig_img.drawHeight = 100
+                y -= 70
                 sig_img.drawOn(c, lx, y)
             except Exception:
                 y -= 14
