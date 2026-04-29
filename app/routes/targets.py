@@ -200,8 +200,8 @@ def download_report(id, format):
 
     data = [
         {'Metric': 'Production Quantity (Units)', 'Target': target.target_production_qty, 'Actual': actual_prod_qty, 'Achievement %': f"{(actual_prod_qty/target.target_production_qty*100) if target.target_production_qty else 0:.1f}%"},
-        {'Metric': 'Production Cost (Rs.)', 'Target': target.target_production_cost, 'Actual': actual_prod_cost, 'Achievement %': f"{(actual_prod_cost/target.target_production_cost*100) if target.target_production_cost else 0:.1f}%"},
-        {'Metric': 'Sales Revenue (Rs.)', 'Target': target.target_sales_revenue, 'Actual': actual_sales_rev, 'Achievement %': f"{(actual_sales_rev/target.target_sales_revenue*100) if target.target_sales_revenue else 0:.1f}%"},
+        {'Metric': 'Production Cost (PKR)', 'Target': target.target_production_cost, 'Actual': actual_prod_cost, 'Achievement %': f"{(actual_prod_cost/target.target_production_cost*100) if target.target_production_cost else 0:.1f}%"},
+        {'Metric': 'Sales Revenue (PKR)', 'Target': target.target_sales_revenue, 'Actual': actual_sales_rev, 'Achievement %': f"{(actual_sales_rev/target.target_sales_revenue*100) if target.target_sales_revenue else 0:.1f}%"},
         {'Metric': 'Sales Quantity (Units)', 'Target': target.target_sales_qty, 'Actual': actual_sales_qty, 'Achievement %': f"{(actual_sales_qty/target.target_sales_qty*100) if target.target_sales_qty else 0:.1f}%"}
     ]
     

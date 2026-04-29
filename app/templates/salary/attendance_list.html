@@ -144,7 +144,7 @@
             <div class="card" style="border-left: 4px solid #f5576c;">
                 <div class="card-body">
                     <h6 class="text-muted">Total Earned</h6>
-                    <h3>Rs {{ "%.2f"|format(total_earned) }}</h3>
+                    <h3>PKR {{ "%.2f"|format(total_earned) }}</h3>
                 </div>
             </div>
         </div>
@@ -201,9 +201,9 @@
                             <td>
                                 <span class="time-badge">{{ record.get_time_summary() }}</span>
                             </td>
-                            <td>Rs {{ "%.2f"|format(record.hourly_rate) }}/h</td>
+                            <td>PKR {{ "%.2f"|format(record.hourly_rate) }}/h</td>
                             <td>
-                                <span class="earned-badge">Rs {{ "%.2f"|format(record.earned_amount) }}</span>
+                                <span class="earned-badge">PKR {{ "%.2f"|format(record.earned_amount) }}</span>
                             </td>
                             <td>
                                 {% if record.notes %}
@@ -248,12 +248,12 @@
                             <h6 class="mb-1">{{ staff.name }}</h6>
                             <small class="text-muted">{{ staff.designation }}</small>
                         </div>
-                        <span class="badge bg-success">Rs {{ "%.2f"|format(staff.daily_salary) }}/day</span>
+                        <span class="badge bg-success">PKR {{ "%.2f"|format(staff.daily_salary) }}/day</span>
                     </div>
                     
                     <div class="mb-3">
                         <small class="text-muted">Hourly Rate:</small>
-                        <p class="mb-0"><strong>Rs {{ "%.2f"|format(staff.daily_salary / 8) }}/hour</strong></p>
+                        <p class="mb-0"><strong>PKR {{ "%.2f"|format(staff.daily_salary / 8) }}/hour</strong></p>
                     </div>
                     
                     <div class="d-grid gap-2">

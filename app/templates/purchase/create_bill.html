@@ -100,6 +100,15 @@
     <form method="POST" id="billForm" enctype="multipart/form-data">
         {{ form.hidden_tag() }}
 
+        <!-- Inventory Notice -->
+        <div class="alert alert-warning d-flex align-items-center gap-3 mb-4" role="alert">
+            <i class="fas fa-info-circle fa-lg text-warning flex-shrink-0"></i>
+            <div>
+                <strong>Note on Inventory:</strong> Creating this bill will <strong>not</strong> immediately update inventory quantities.
+                After saving, open the bill detail page and click <strong>"Receive Qty"</strong> to record when goods are physically received — that is when stock levels and cost prices will be updated.
+            </div>
+        </div>
+
         <div class="row">
             <!-- ── Left: Header + Totals ───────────────────────────────── -->
             <div class="col-md-4">
@@ -156,11 +165,17 @@
                             <div class="form-text">Selecting a PO will auto-fill all items below.</div>
                         </div>
 
-                        <!-- Date + Currency -->
+                        <!-- Date + Due Date + Currency -->
                         <div class="mb-3">
                             <label class="form-label fw-semibold">Bill Date <span class="text-danger">*</span></label>
                             <input type="date" name="date" class="form-control" required
                                 value="{{ now().strftime('%Y-%m-%d') if now is defined else '' }}">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Due Date</label>
+                            <input type="date" name="due_date" class="form-control"
+                                value="{{ (now() + timedelta(days=30)).strftime('%Y-%m-%d') if now is defined else '' }}">
+                            <div class="form-text text-muted">Defaults to 30 days from bill date.</div>
                         </div>
                         <div class="mb-3">
                             <!--<label class="form-label fw-semibold">Currency</label>
@@ -230,7 +245,7 @@
                                         <span id="advanceRemainLabel" class="badge bg-info"
                                             style="display:none; margin-left: 10px; padding: 6px 12px; font-size: 0.9rem;">
                                             <i class="fas fa-info-circle me-1"></i>
-                                            <span id="advanceRemainValue">Rs 0</span> remaining
+                                            <span id="advanceRemainValue">PKR 0</span> remaining
                                         </span>
                                     </div>
                                     <!-- Clickable badge shown when vendor has pending advances -->
@@ -373,7 +388,7 @@
                     // Show remaining advance label
                     if (pendingAdvance > 0) {
                         const formattedAmount = fmt(pendingAdvance);
-                        remainValue.innerHTML = `<strong>Rs ${formattedAmount}</strong>`;
+                        remainValue.innerHTML = `<strong>PKR ${formattedAmount}</strong>`;
                         remainLabel.style.display = 'inline-block';
                         console.log('Showing advance label:', formattedAmount); // Debug
                     } else {
@@ -383,9 +398,9 @@
                     // Build detailed advance info
                     let advanceInfo = `<div class="small mb-2">
                     <div class="mb-1"><strong>Vendor Advances:</strong></div>
-                    <div class="text-muted">Total Given: Rs ${fmt(data.total_advances)}</div>
-                    <div class="text-success">Already Used: Rs ${fmt(data.total_adjusted)}</div>
-                    <div class="text-info fw-semibold">Available: Rs ${fmt(data.pending_balance)}</div>
+                    <div class="text-muted">Total Given: PKR ${fmt(data.total_advances)}</div>
+                    <div class="text-success">Already Used: PKR ${fmt(data.total_adjusted)}</div>
+                    <div class="text-info fw-semibold">Available: PKR ${fmt(data.pending_balance)}</div>
                 </div>`;
 
                     if (data.advances && data.advances.length > 0) {
@@ -393,8 +408,8 @@
                         data.advances.forEach(adv => {
                             const remaining = adv.remaining || 0;
                             advanceInfo += `<li>
-                            <small>Advance #${adv.id} (${adv.date}): Rs ${fmt(adv.amount)}</small>
-                            <br><small class="text-muted">Applied: Rs ${fmt(adv.applied_amount)} | Remaining: Rs ${fmt(remaining)}</small>
+                            <small>Advance #${adv.id} (${adv.date}): PKR ${fmt(adv.amount)}</small>
+                            <br><small class="text-muted">Applied: PKR ${fmt(adv.applied_amount)} | Remaining: PKR ${fmt(remaining)}</small>
                         </li>`;
                         });
                         advanceInfo += '</ul></div>';
@@ -407,7 +422,7 @@
                     }
 
                     if (pendingAdvance > 0) {
-                        btnLabel.innerHTML = `<i class="fas fa-bolt me-1"></i>Use Advance  (Rs ${fmt(pendingAdvance)} available)`;
+                        btnLabel.innerHTML = `<i class="fas fa-bolt me-1"></i>Use Advance  (PKR ${fmt(pendingAdvance)} available)`;
                         btnWrapper.style.display = 'block';
                     } else {
                         btnLabel.innerHTML = `<i class="fas fa-bolt me-1"></i>All advances already used`;
@@ -418,7 +433,7 @@
                     // Also update old badge if it still exists
                     const oldBadgeText = document.getElementById('advanceBadgeText');
                     if (oldBadgeText) {
-                        oldBadgeText.innerHTML = `💰 Vendor Advances<br><small>Total: Rs ${fmt(data.total_advances)} | Available: Rs ${fmt(data.pending_balance)}</small>`;
+                        oldBadgeText.innerHTML = `💰 Vendor Advances<br><small>Total: PKR ${fmt(data.total_advances)} | Available: PKR ${fmt(data.pending_balance)}</small>`;
                     }
                     const oldBadge = document.getElementById('advanceBadgeWrapper');
                     if (oldBadge && pendingAdvance > 0) oldBadge.style.display = 'block';
@@ -441,7 +456,7 @@
                     pos.forEach(po => {
                         const opt = document.createElement('option');
                         opt.value = po.id;
-                        opt.textContent = `${po.po_number}  (${po.date})  —  Rs ${fmt(po.total)}`;
+                        opt.textContent = `${po.po_number}  (${po.date})  —  PKR ${fmt(po.total)}`;
                         opt.dataset.po = JSON.stringify(po);
                         poSelect.appendChild(opt);
                     });
@@ -577,12 +592,12 @@
                 badge.className = 'priceChangeBadge badge bg-warning ms-2';
                 badge.innerHTML = `<i class="fas fa-tag me-1"></i>Updated Price`;
                 badge.style.fontSize = '0.75rem';
-                badge.title = `Changed from Rs ${fmt(currentCost)}`;
+                badge.title = `Changed from PKR ${fmt(currentCost)}`;
                 priceInput.parentNode.appendChild(badge);
             }
             // Update badge title
             if (hasIndicator) {
-                hasIndicator.title = `Changed from Rs ${fmt(currentCost)} to Rs ${fmt(newPrice)}`;
+                hasIndicator.title = `Changed from PKR ${fmt(currentCost)} to PKR ${fmt(newPrice)}`;
             }
         } else {
             // Price not changed - remove badge if present
@@ -630,12 +645,12 @@
                 remainMsg.style.display = 'block';
                 savedMsg.style.display = 'none';
                 document.getElementById('remainAdvanceText').textContent =
-                    `Advance Rs ${fmt(advance)} > Bill Rs ${fmt(grand)}. Rs ${fmt(leftover)} remains as vendor credit.`;
+                    `Advance PKR ${fmt(advance)} > Bill PKR ${fmt(grand)}. PKR ${fmt(leftover)} remains as vendor credit.`;
             } else {
                 remainMsg.style.display = 'none';
                 savedMsg.style.display = 'block';
                 document.getElementById('advanceSavedText').textContent =
-                    `Advance Rs ${fmt(advance)} applied. Balance due: Rs ${fmt(balance)}.`;
+                    `Advance PKR ${fmt(advance)} applied. Balance due: PKR ${fmt(balance)}.`;
             }
         } else {
             if (remainMsg) remainMsg.style.display = 'none';

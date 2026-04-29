@@ -87,19 +87,19 @@
                     <table class="table table-borderless">
                         <tr>
                             <td><strong>Subtotal:</strong></td>
-                            <td>Rs{{ "%.2f"|format(sale_return.subtotal) }}</td>
+                            <td>PKR{{ "%.2f"|format(sale_return.subtotal) }}</td>
                         </tr>
                         <tr>
                             <td><strong>Tax ({{ sale_return.tax_rate }}%):</strong></td>
-                            <td>Rs{{ "%.2f"|format(sale_return.tax) }}</td>
+                            <td>PKR{{ "%.2f"|format(sale_return.tax) }}</td>
                         </tr>
                         <tr>
                             <td><strong>Discount:</strong></td>
-                            <td>Rs{{ "%.2f"|format(sale_return.discount) }}</td>
+                            <td>PKR{{ "%.2f"|format(sale_return.discount) }}</td>
                         </tr>
                         <tr class="table-active">
                             <td><strong>Total Return:</strong></td>
-                            <td><strong>Rs{{ "%.2f"|format(sale_return.total) }}</strong></td>
+                            <td><strong>PKR{{ "%.2f"|format(sale_return.total) }}</strong></td>
                         </tr>
                     </table>
                 </div>
@@ -127,15 +127,15 @@
                         <tr>
                             <td>{{ item.product.name if item.product else 'Unknown' }}</td>
                             <td>{{ item.quantity }}</td>
-                            <td>Rs{{ "%.2f"|format(item.unit_price) }}</td>
-                            <td>Rs{{ "%.2f"|format(item.total) }}</td>
+                            <td>PKR{{ "%.2f"|format(item.unit_price) }}</td>
+                            <td>PKR{{ "%.2f"|format(item.total) }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                     <tfoot>
                         <tr class="table-dark">
                             <th colspan="3" class="text-end">Total:</th>
-                            <th>Rs{{ "%.2f"|format(sale_return.total) }}</th>
+                            <th>PKR{{ "%.2f"|format(sale_return.total) }}</th>
                         </tr>
                     </tfoot>
                 </table>

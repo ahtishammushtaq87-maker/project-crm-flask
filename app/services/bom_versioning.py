@@ -127,8 +127,8 @@ class BOMVersioningService:
             bom_item_cost = bom_item.unit_cost
             
             print(f"[BOM_VERSION_SERVICE] Component: {component.name}")
-            print(f"[BOM_VERSION_SERVICE]   Current product cost: Rs {current_cost}")
-            print(f"[BOM_VERSION_SERVICE]   BOM item cost: Rs {bom_item_cost}")
+            print(f"[BOM_VERSION_SERVICE]   Current product cost: PKR {current_cost}")
+            print(f"[BOM_VERSION_SERVICE]   BOM item cost: PKR {bom_item_cost}")
             
             if bom_item_cost != current_cost:
                 print(f"[BOM_VERSION_SERVICE] ✓ COST MISMATCH DETECTED!")
@@ -138,7 +138,7 @@ class BOMVersioningService:
                 print(f"[BOM_VERSION_SERVICE] BOM item updated: unit_cost={bom_item.unit_cost}, total_cost={bom_item.total_cost}")
                 
                 # Then create new version (which will recalculate BOM total_cost)
-                change_reason = f"Component '{component.name}' cost changed from Rs {bom_item_cost} to Rs {current_cost}"
+                change_reason = f"Component '{component.name}' cost changed from PKR {bom_item_cost} to PKR {current_cost}"
                 print(f"[BOM_VERSION_SERVICE] Creating new version: {change_reason}")
                 
                 BOMVersioningService.create_bom_version(
@@ -183,7 +183,7 @@ class BOMVersioningService:
             return None
         
         # Create new version
-        change_reason = f"Overhead cost changed from Rs {old_overhead} to Rs {new_overhead}"
+        change_reason = f"Overhead cost changed from PKR {old_overhead} to PKR {new_overhead}"
         
         version = BOMVersioningService.create_bom_version(
             bom=bom,

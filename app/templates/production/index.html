@@ -144,7 +144,7 @@
             <div class="card border-success">
                 <div class="card-body">
                     <h6 class="card-title text-success">Target Revenue</h6>
-                    <h5 class="mb-0">Rs. {{ "{:,.0f}".format(total_revenue|default(0)) }}</h5>
+                    <h5 class="mb-0">PKR {{ "{:,.0f}".format(total_revenue|default(0)) }}</h5>
                 </div>
             </div>
         </div>
@@ -152,7 +152,7 @@
             <div class="card border-danger">
                 <div class="card-body">
                     <h6 class="card-title text-danger">Target Cost</h6>
-                    <h5 class="mb-0">Rs. {{ "{:,.0f}".format(total_cost|default(0)) }}</h5>
+                    <h5 class="mb-0">PKR {{ "{:,.0f}".format(total_cost|default(0)) }}</h5>
                 </div>
             </div>
         </div>
@@ -160,7 +160,7 @@
             <div class="card border-primary">
                 <div class="card-body">
                     <h6 class="card-title text-primary">Target Profit</h6>
-                    <h5 class="mb-0">Rs. {{ "{:,.0f}".format(total_profit|default(0)) }}</h5>
+                    <h5 class="mb-0">PKR {{ "{:,.0f}".format(total_profit|default(0)) }}</h5>
                 </div>
             </div>
         </div>
@@ -168,7 +168,7 @@
             <div class="card border-warning">
                 <div class="card-body">
                     <h6 class="card-title text-warning">Actual Revenue</h6>
-                    <h5 class="mb-0">Rs. {{ "{:,.0f}".format(actual_revenue|default(0)) }}</h5>
+                    <h5 class="mb-0">PKR {{ "{:,.0f}".format(actual_revenue|default(0)) }}</h5>
                 </div>
             </div>
         </div>
@@ -176,7 +176,7 @@
             <div class="card border-warning">
                 <div class="card-body">
                     <h6 class="card-title text-warning">Actual Cost</h6>
-                    <h5 class="mb-0">Rs. {{ "{:,.0f}".format(actual_cost|default(0)) }}</h5>
+                    <h5 class="mb-0">PKR {{ "{:,.0f}".format(actual_cost|default(0)) }}</h5>
                 </div>
             </div>
         </div>
@@ -184,7 +184,7 @@
             <div class="card border-info">
                 <div class="card-body">
                     <h6 class="card-title text-info">Actual Profit</h6>
-                    <h5 class="mb-0">Rs. {{ "{:,.0f}".format(actual_profit|default(0)) }}</h5>
+                    <h5 class="mb-0">PKR {{ "{:,.0f}".format(actual_profit|default(0)) }}</h5>
                 </div>
             </div>
         </div>
@@ -259,23 +259,23 @@
                             <td>
                                 <span class="badge bg-{{ r.status_class }}">{{ r.status }}</span>
                             </td>
-                            <td>Rs. {{ r.bom_cost|round(2) }}</td>
+                            <td>PKR {{ r.bom_cost|round(2) }}</td>
                             <td>
                                 <input type="number" class="form-control form-control-sm inline-edit" 
                                        data-target-id="{{ r.target.id }}" data-field="overhead_cost_per_unit" 
                                        value="{{ r.overhead_cost|round(2) }}" min="0" step="0.01" style="width: 80px;">
                             </td>
-                            <td>Rs. {{ r.item_cost|round(2) }}</td>
-                            <td>Rs. {{ r.selling_price|round(2) }}</td>
-                            <td>Rs. {{ "{:,.0f}".format(r.target_revenue) }}</td>
-                            <td>Rs. {{ "{:,.0f}".format(r.estimated_cost) }}</td>
+                            <td>PKR {{ r.item_cost|round(2) }}</td>
+                            <td>PKR {{ r.selling_price|round(2) }}</td>
+                            <td>PKR {{ "{:,.0f}".format(r.target_revenue) }}</td>
+                            <td>PKR {{ "{:,.0f}".format(r.estimated_cost) }}</td>
                             <td class="{% if r.estimated_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                Rs. {{ "{:,.0f}".format(r.estimated_profit) }}
+                                PKR {{ "{:,.0f}".format(r.estimated_profit) }}
                             </td>
-                            <td>Rs. {{ "{:,.0f}".format(r.actual_revenue) }}</td>
-                            <td>Rs. {{ "{:,.0f}".format(r.actual_cost) }}</td>
+                            <td>PKR {{ "{:,.0f}".format(r.actual_revenue) }}</td>
+                            <td>PKR {{ "{:,.0f}".format(r.actual_cost) }}</td>
                             <td class="{% if r.actual_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                Rs. {{ "{:,.0f}".format(r.actual_profit) }}
+                                PKR {{ "{:,.0f}".format(r.actual_profit) }}
                             </td>
                             <td>
                                 <a href="{{ url_for('production.delete_target', id=r.target.id) }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this target?')">

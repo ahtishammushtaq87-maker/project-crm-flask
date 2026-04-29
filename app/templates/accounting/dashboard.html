@@ -37,34 +37,34 @@
         <div class="col-md-3">
             <div class="card p-3 mb-3 border-primary">
                 <h5>Total Sales</h5>
-                <h3>Rs{{ '%.2f'|format(total_sales) }}</h3>
+                <h3>PKR{{ '%.2f'|format(total_sales) }}</h3>
             </div>
         </div>
         <div class="col-md-3">
             <div class="card p-3 mb-3 border-warning">
                 <h5>Total Purchases</h5>
-                <h3>Rs{{ '%.2f'|format(total_purchases) }}</h3>
+                <h3>PKR{{ '%.2f'|format(total_purchases) }}</h3>
             </div>
         </div>
         <div class="col-md-3">
             <div class="card p-3 mb-3 border-danger">
                 <h5>Total Expenses</h5>
-                <h3>Rs{{ '%.2f'|format(total_expenses) }}</h3>
+                <h3>PKR{{ '%.2f'|format(total_expenses) }}</h3>
                 <div class="mt-2 small">
                     <div class="row">
                         <div class="col-6">
                             <span class="text-muted">Op:</span><br>
-                            <strong>Rs{{ '%.2f'|format(operating_expenses) }}</strong>
+                            <strong>PKR{{ '%.2f'|format(operating_expenses) }}</strong>
                         </div>
                         <div class="col-6">
                             <span class="text-muted">BOM:</span><br>
-                            <strong>Rs{{ '%.2f'|format(manufacturing_overhead) }}</strong>
+                            <strong>PKR{{ '%.2f'|format(manufacturing_overhead) }}</strong>
                         </div>
                     </div>
                     {% if divided_expenses_for_period > 0 %}
                     <div class="mt-2 pt-2 border-top">
                         <span class="text-info">Divided (Period):</span><br>
-                        <strong class="text-info">Rs{{ '%.2f'|format(divided_expenses_for_period) }}</strong>
+                        <strong class="text-info">PKR{{ '%.2f'|format(divided_expenses_for_period) }}</strong>
                         <div class="form-text">{{ date_from }} to {{ date_to }}</div>
                     </div>
                     {% endif %}
@@ -74,7 +74,7 @@
         <div class="col-md-3">
             <div class="card p-3 mb-3 border-dark">
                 <h5>COGS</h5>
-                <h3>Rs{{ '%.2f'|format(total_cogs) }}</h3>
+                <h3>PKR{{ '%.2f'|format(total_cogs) }}</h3>
             </div>
         </div>
     </div>
@@ -91,7 +91,7 @@
                     <div class="row">
                         <div class="col-md-3">
                             <h6 class="text-muted">Today's Daily Expense Total</h6>
-                            <h3 class="text-info">Rs{{ '%.2f'|format(today_daily_expenses) }}</h3>
+                            <h3 class="text-info">PKR{{ '%.2f'|format(today_daily_expenses) }}</h3>
                             <small class="text-muted">Only today's portion calculated in net profit</small>
                         </div>
                         <div class="col-md-9">
@@ -111,7 +111,7 @@
                                         <tr>
                                             <td>{{ item.description }}</td>
                                             <td><span class="badge bg-secondary">{{ item.category }}</span></td>
-                                            <td class="text-end"><strong>Rs{{ '%.2f'|format(item.daily_amount) }}</strong></td>
+                                            <td class="text-end"><strong>PKR{{ '%.2f'|format(item.daily_amount) }}</strong></td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>
@@ -131,7 +131,7 @@
             <div class="card p-3 mb-3 border-info">
                 <h5>Gross Profit (Sales - COGS)</h5>
                 <h2 class="{% if gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-                    Rs{{ '%.2f'|format(gross_profit) }}
+                    PKR{{ '%.2f'|format(gross_profit) }}
                 </h2>
             </div>
         </div>
@@ -139,7 +139,7 @@
             <div class="card p-3 mb-3 border-success">
                 <h5>Net Profit (Gross - Expenses)</h5>
                 <h2 class="{% if net_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-                    Rs{{ '%.2f'|format(net_profit) }}
+                    PKR{{ '%.2f'|format(net_profit) }}
                 </h2>
             </div>
         </div>
@@ -165,7 +165,7 @@
             <div class="card p-3 mb-3 border-success">
                 <h5>Net Profit</h5>
                 <h2 class="{% if net_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-                    Rs{{ '%.2f'|format(net_profit) }}
+                    PKR{{ '%.2f'|format(net_profit) }}
                 </h2>
             </div>
         </div>
@@ -175,7 +175,7 @@
         <div class="col-md-4">
             <div class="card p-3 mb-3 border-success">
                 <h6>Outstanding Invoices</h6>
-                <h4>Rs{{ '%.2f'|format(outstanding_invoices) }}</h4>
+                <h4>PKR{{ '%.2f'|format(outstanding_invoices) }}</h4>
             </div>
         </div>
         <div class="col-md-4">
@@ -209,9 +209,9 @@
                         {% for account, totals in account_summary.items() %}
                         <tr>
                             <td>{{ account }}</td>
-                            <td>Rs{{ '%.2f'|format(totals.debit) }}</td>
-                            <td>Rs{{ '%.2f'|format(totals.credit) }}</td>
-                            <td>Rs{{ '%.2f'|format(totals.debit - totals.credit) }}</td>
+                            <td>PKR{{ '%.2f'|format(totals.debit) }}</td>
+                            <td>PKR{{ '%.2f'|format(totals.credit) }}</td>
+                            <td>PKR{{ '%.2f'|format(totals.debit - totals.credit) }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>

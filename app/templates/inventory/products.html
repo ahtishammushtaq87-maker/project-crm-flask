@@ -212,9 +212,9 @@
                                 <span class="badge bg-warning">Low Stock</span>
                                 {% endif %}
                             </td>
-                            <td>Rs{{ "%.2f"|format(product.cost_price) }}</td>
-                            <td>Rs{{ "%.2f"|format(product.unit_price) }}</td>
-                            <td>Rs{{ "%.2f"|format(product.quantity * product.cost_price) }}</td>
+                            <td>PKR{{ "%.2f"|format(product.cost_price) }}</td>
+                            <td>PKR{{ "%.2f"|format(product.unit_price) }}</td>
+                            <td>PKR{{ "%.2f"|format(product.quantity * product.cost_price) }}</td>
                             <td>
                                 {% if product.quantity == 0 %}
                                 <span class="badge bg-danger">Out of Stock</span>
@@ -374,7 +374,7 @@ function showPriceHistory(productId, productName) {
             
             // Current price
             html += `<div class="alert alert-primary mb-3">
-                <strong>Current Cost Price: Rs ${fmt(data.current_cost_price)}</strong> | Total Quantity: ${fmt(data.total_quantity)} units
+                <strong>Current Cost Price: PKR ${fmt(data.current_cost_price)}</strong> | Total Quantity: ${fmt(data.total_quantity)} units
             </div>`;
             
             // History table
@@ -404,8 +404,8 @@ function showPriceHistory(productId, productName) {
                     
                     html += `<tr>
                         <td><small>${h.change_date}</small></td>
-                        <td>Rs ${h.old_price > 0 ? fmt(h.old_price) : '—'}</td>
-                        <td><strong>Rs ${fmt(h.new_price)}</strong></td>
+                        <td>PKR ${h.old_price > 0 ? fmt(h.old_price) : '—'}</td>
+                        <td><strong>PKR ${fmt(h.new_price)}</strong></td>
                         <td>${fmt(h.quantity_at_old_price)}</td>
                         <td>${remainingBadge}</td>
                         <td>${fmt(h.used_quantity)}</td>

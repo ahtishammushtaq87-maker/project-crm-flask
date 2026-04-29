@@ -63,7 +63,7 @@
         <div class="card border-0 shadow-sm rounded-4 h-100">
             <div class="card-body">
                 <p class="text-muted small text-uppercase fw-bold mb-1">Total Base Salary</p>
-                <h4 class="mb-0 fw-bold">Rs. {{ total_base | round(2) }}</h4>
+                <h4 class="mb-0 fw-bold">PKR {{ total_base | round(2) }}</h4>
             </div>
         </div>
     </div>
@@ -71,7 +71,7 @@
         <div class="card border-0 shadow-sm rounded-4 h-100">
             <div class="card-body text-success">
                 <p class="text-muted small text-uppercase fw-bold mb-1 font-weight-normal">Total Bonus</p>
-                <h4 class="mb-0 fw-bold">+ Rs. {{ total_bonus | round(2) }}</h4>
+                <h4 class="mb-0 fw-bold">+ PKR {{ total_bonus | round(2) }}</h4>
             </div>
         </div>
     </div>
@@ -79,7 +79,7 @@
         <div class="card border-0 shadow-sm rounded-4 h-100">
             <div class="card-body text-danger">
                 <p class="text-muted small text-uppercase fw-bold mb-1 font-weight-normal">Total Deductions</p>
-                <h4 class="mb-0 fw-bold">- Rs. {{ total_deductions | round(2) }}</h4>
+                <h4 class="mb-0 fw-bold">- PKR {{ total_deductions | round(2) }}</h4>
             </div>
         </div>
     </div>
@@ -87,7 +87,7 @@
         <div class="card border-0 shadow-sm rounded-4 bg-primary text-white h-100">
             <div class="card-body">
                 <p class="small text-uppercase fw-bold mb-1 opacity-75">Net Payable</p>
-                <h4 class="mb-0 fw-bold">Rs. {{ total_net | round(2) }}</h4>
+                <h4 class="mb-0 fw-bold">PKR {{ total_net | round(2) }}</h4>
             </div>
         </div>
     </div>

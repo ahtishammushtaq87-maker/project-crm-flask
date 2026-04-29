@@ -12,7 +12,7 @@ from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 from reportlab.platypus.flowables import HRFlowable
 
 # ─── Constants ─────────────────────────────────────────────────────────────────
-CURRENCY_SYMBOL = 'Rs'
+CURRENCY_SYMBOL = 'PKR'
 TITLE = 'PAY SLIP'
 FOOTER_MESSAGE = 'This is a computer-generated document. No signature required.'
 

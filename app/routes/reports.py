@@ -7,6 +7,7 @@ from sqlalchemy import func, and_, or_
 import pandas as pd
 from io import BytesIO
 from app.report_utils import generate_excel, generate_csv, generate_pdf
+from app.routes.filters import apply_saved_filter_to_query
 
 bp = Blueprint('reports', __name__)
 
@@ -45,6 +46,8 @@ def sales_report():
     if customer_id and customer_id != 'all':
         query = query.filter(Sale.customer_id == customer_id)
         
+    query = apply_saved_filter_to_query(query, 'sales_report', request.args)
+    
     sales = query.order_by(Sale.date.desc()).all()
     
     # Calculate totals
@@ -66,7 +69,9 @@ def sales_report():
                          status=status,
                          search=search,
                          customers=customers,
-                         current_customer_id=customer_id)
+                         current_customer_id=customer_id,
+                         active_module='sales_report',
+                         filter_id=request.args.get('filter_id'))
 
 @bp.route('/purchase-report')
 @login_required
@@ -90,6 +95,8 @@ def purchase_report():
     if vendor_id and vendor_id != 'all':
         query = query.filter(PurchaseBill.vendor_id == vendor_id)
     
+    query = apply_saved_filter_to_query(query, 'purchase_report', request.args)
+    
     purchases = query.order_by(PurchaseBill.date.desc()).all()
     
     total_purchases = sum(p.total for p in purchases)
@@ -110,7 +117,9 @@ def purchase_report():
                          status=status,
                          search=search,
                          vendors=vendors,
-                         current_vendor_id=vendor_id)
+                         current_vendor_id=vendor_id,
+                         active_module='purchase_report',
+                         filter_id=request.args.get('filter_id'))
 
 @bp.route('/inventory-report')
 @login_required
@@ -134,6 +143,8 @@ def inventory_report():
     elif stock_filter == 'high':
         query = query.filter(Product.quantity >= Product.max_quantity)
     
+    query = apply_saved_filter_to_query(query, 'inventory_report', request.args)
+    
     products = query.order_by(Product.name).all()
     
     # Get categories for filter
@@ -155,7 +166,9 @@ def inventory_report():
                          search=search,
                          stock_filter=stock_filter,
                          total_value=total_value,
-                         total_items=total_items)
+                         total_items=total_items,
+                         active_module='inventory_report',
+                         filter_id=request.args.get('filter_id'))
 
 
 @bp.route('/inventory-details-report')
@@ -261,6 +274,8 @@ def cogs_report():
     if search:
         query = query.filter(or_(Product.name.ilike(f'%{search}%'), Product.sku.ilike(f'%{search}%')))
 
+    query = apply_saved_filter_to_query(query, 'cogs_report', request.args)
+
     sale_items = query.order_by(Sale.date.desc()).all()
 
     product_stats = {}
@@ -311,7 +326,9 @@ def cogs_report():
                           total_cogs=total_cogs,
                           total_revenue=total_revenue,
                           total_quantity=total_quantity,
-                          total_profit=total_revenue - total_cogs)
+                          total_profit=total_revenue - total_cogs,
+                          active_module='cogs_report',
+                          filter_id=request.args.get('filter_id'))
 
 @bp.route('/expense-report')
 @login_required
@@ -335,6 +352,8 @@ def expense_report():
     if vendor_id and vendor_id != 'all':
         query = query.filter(Expense.vendor_id == vendor_id)
         
+    query = apply_saved_filter_to_query(query, 'expense_report', request.args)
+    
     expenses = query.order_by(Expense.date.desc()).all()
     
     # Unified Expenses (Regular + Payroll)
@@ -409,7 +428,9 @@ def expense_report():
                          categories=categories,
                          vendors=vendors,
                          current_category_id=category_id,
-                         current_vendor_id=vendor_id)
+                         current_vendor_id=vendor_id,
+                         active_module='expense_report',
+                         filter_id=request.args.get('filter_id'))
 
 @bp.route('/return-report')
 @login_required
@@ -433,6 +454,8 @@ def return_report():
     if customer_id and customer_id != 'all':
         query = query.filter(SaleReturn.customer_id == int(customer_id))
 
+    query = apply_saved_filter_to_query(query, 'return_report', request.args)
+
     returns = query.order_by(SaleReturn.date.desc()).all()
 
     total_returns = sum(r.total for r in returns)
@@ -449,7 +472,9 @@ def return_report():
                            status=status,
                            search=search,
                            customers=customers,
-                           current_customer_id=customer_id)
+                           current_customer_id=customer_id,
+                           active_module='return_report',
+                           filter_id=request.args.get('filter_id'))
 
 
 @bp.route('/vendor-report')
@@ -461,6 +486,8 @@ def vendor_report():
     if search:
         query = query.filter(or_(Vendor.name.ilike(f'%{search}%'), Vendor.gst_number.ilike(f'%{search}%')))
         
+    query = apply_saved_filter_to_query(query, 'vendor_report', request.args)
+    
     vendors = query.order_by(Vendor.name).all()
     
     total_purchases = sum(v.total_purchases for v in vendors)
@@ -470,7 +497,9 @@ def vendor_report():
                          vendors=vendors,
                          search=search,
                          total_purchases=total_purchases,
-                         total_outstanding=total_outstanding)
+                         total_outstanding=total_outstanding,
+                         active_module='vendor_report',
+                         filter_id=request.args.get('filter_id'))
 
 @bp.route('/customer-report')
 @login_required
@@ -481,6 +510,8 @@ def customer_report():
     if search:
         query = query.filter(or_(Customer.name.ilike(f'%{search}%'), Customer.gst_number.ilike(f'%{search}%')))
         
+    query = apply_saved_filter_to_query(query, 'customer_report', request.args)
+    
     customers = query.order_by(Customer.name).all()
     
     total_sales = sum(c.total_sales for c in customers)
@@ -490,7 +521,9 @@ def customer_report():
                          customers=customers,
                          search=search,
                          total_sales=total_sales,
-                         total_outstanding=total_outstanding)
+                         total_outstanding=total_outstanding,
+                         active_module='customer_report',
+                         filter_id=request.args.get('filter_id'))
 
 @bp.route('/manufacturing-report')
 @login_required
@@ -511,6 +544,8 @@ def manufacturing_report():
     if product_id and product_id != 'all':
         query = query.filter(BOM.product_id == int(product_id))
         
+    query = apply_saved_filter_to_query(query, 'manufacturing_report', request.args)
+    
     orders = query.order_by(ManufacturingOrder.start_date.desc()).all()
     
     # Calculate stats
@@ -533,7 +568,9 @@ def manufacturing_report():
                          end_date=end_date,
                          status=status,
                          products=products,
-                         current_product_id=product_id)
+                         current_product_id=product_id,
+                         active_module='manufacturing_report',
+                         filter_id=request.args.get('filter_id'))
 
 @bp.route('/bom-report')
 @login_required
@@ -558,6 +595,8 @@ def bom_report():
             query = query.filter(BOM.is_active == True)
         else:
             query = query.filter(BOM.is_active == False)
+    
+    query = apply_saved_filter_to_query(query, 'bom_report', request.args)
     
     boms = query.order_by(BOM.created_at.desc()).all()
     
@@ -589,7 +628,9 @@ def bom_report():
                          products=products,
                          current_product_id=product_id,
                          version_filter=version_filter,
-                         view_mode=view_mode)
+                         view_mode=view_mode,
+                         active_module='bom_report',
+                         filter_id=request.args.get('filter_id'))
 
 @bp.route('/salary-report')
 @login_required
@@ -606,6 +647,8 @@ def salary_report():
         query = query.filter(SalaryPayment.payment_date <= datetime.strptime(end_date, '%Y-%m-%d').date())
     if staff_id and staff_id != 'all':
         query = query.filter(SalaryPayment.staff_id == int(staff_id))
+    
+    query = apply_saved_filter_to_query(query, 'salary_report', request.args)
         
     payments = query.order_by(SalaryPayment.payment_date.desc()).all()
     
@@ -627,7 +670,9 @@ def salary_report():
                          start_date=start_date,
                          end_date=end_date,
                          all_staff=all_staff,
-                         current_staff_id=staff_id)
+                         current_staff_id=staff_id,
+                         active_module='salary_report',
+                         filter_id=request.args.get('filter_id'))
 
 @bp.route('/profit-loss')
 @login_required
@@ -805,7 +850,9 @@ def profit_loss_report():
                           total_bom_costs=total_bom_costs + total_bom_overhead,
                           total_expenses=total_operating_expenses + total_divided_expenses,
                           total_informational=total_informational_outflow,
-                          net_profit=net_profit)
+                          net_profit=net_profit,
+                          active_module='profit_loss_report',
+                          filter_id=request.args.get('filter_id'))
     
     return render_template('reports/profit_loss.html',
                           start_date=start_date_str,
@@ -1209,27 +1256,27 @@ def download_report(format, report_type):
         net_profit = gross_profit - total_operating_exp
         
         title = f"Profit & Loss Statement ({start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')})"
-        headers = ['Account Description', 'Amount (Rs.)', 'Subtotal (Rs.)']
+        headers = ['Account Description', 'Amount (PKR)', 'Subtotal (PKR)']
         data = [
-            {'Account Description': 'REVENUE', 'Amount (Rs.)': '', 'Subtotal (Rs.)': f"{total_rev:.2f}"},
-            {'Account Description': '  Total Sales', 'Amount (Rs.)': f"{total_rev:.2f}", 'Subtotal (Rs.)': ''},
-            {'Account Description': '  Less: Sales Returns', 'Amount (Rs.)': f"({total_ret:.2f})", 'Subtotal (Rs.)': ''},
-            {'Account Description': 'TOTAL NET REVENUE', 'Amount (Rs.)': '', 'Subtotal (Rs.)': f"{net_rev:.2f}"},
-            {'Account Description': '', 'Amount (Rs.)': '', 'Subtotal (Rs.)': ''},
-            {'Account Description': 'COST OF GOODS SOLD', 'Amount (Rs.)': '', 'Subtotal (Rs.)': f"({total_cogs:.2f})"},
-            {'Account Description': 'GROSS PROFIT', 'Amount (Rs.)': '', 'Subtotal (Rs.)': f"{gross_profit:.2f}"},
-            {'Account Description': '', 'Amount (Rs.)': '', 'Subtotal (Rs.)': ''},
-            {'Account Description': 'OPERATING EXPENSES (Deducted from Profit)', 'Amount (Rs.)': '', 'Subtotal (Rs.)': ''},
-            {'Account Description': '  General Business Expenses', 'Amount (Rs.)': f"{total_exp:.2f}", 'Subtotal (Rs.)': ''},
-            {'Account Description': '  Payroll (Salaries & Advances)', 'Amount (Rs.)': f"{salary_paid + salary_adv:.2f}", 'Subtotal (Rs.)': ''},
-            {'Account Description': 'TOTAL OPERATING EXPENSES', 'Amount (Rs.)': '', 'Subtotal (Rs.)': f"({total_operating_exp:.2f})"},
-            {'Account Description': '', 'Amount (Rs.)': '', 'Subtotal (Rs.)': ''},
-            {'Account Description': 'NET PROFIT', 'Amount (Rs.)': '', 'Subtotal (Rs.)': f"{net_profit:.2f}"},
-            {'Account Description': '', 'Amount (Rs.)': '', 'Subtotal (Rs.)': ''},
-            {'Account Description': 'INVENTORY & MANUFACTURING ACTIVITY (Informational)', 'Amount (Rs.)': '', 'Subtotal (Rs.)': ''},
-            {'Account Description': '  Inventory Purchases', 'Amount (Rs.)': f"{total_purchases:.2f}", 'Subtotal (Rs.)': ''},
-            {'Account Description': '  Manufacturing Costs', 'Amount (Rs.)': f"{total_bom + bom_overhead:.2f}", 'Subtotal (Rs.)': ''},
-            {'Account Description': 'TOTAL SECONDARY OUTFLOW', 'Amount (Rs.)': '', 'Subtotal (Rs.)': f"{total_purchases + total_bom + bom_overhead:.2f}"}
+            {'Account Description': 'REVENUE', 'Amount (PKR)': '', 'Subtotal (PKR)': f"{total_rev:.2f}"},
+            {'Account Description': '  Total Sales', 'Amount (PKR)': f"{total_rev:.2f}", 'Subtotal (PKR)': ''},
+            {'Account Description': '  Less: Sales Returns', 'Amount (PKR)': f"({total_ret:.2f})", 'Subtotal (PKR)': ''},
+            {'Account Description': 'TOTAL NET REVENUE', 'Amount (PKR)': '', 'Subtotal (PKR)': f"{net_rev:.2f}"},
+            {'Account Description': '', 'Amount (PKR)': '', 'Subtotal (PKR)': ''},
+            {'Account Description': 'COST OF GOODS SOLD', 'Amount (PKR)': '', 'Subtotal (PKR)': f"({total_cogs:.2f})"},
+            {'Account Description': 'GROSS PROFIT', 'Amount (PKR)': '', 'Subtotal (PKR)': f"{gross_profit:.2f}"},
+            {'Account Description': '', 'Amount (PKR)': '', 'Subtotal (PKR)': ''},
+            {'Account Description': 'OPERATING EXPENSES (Deducted from Profit)', 'Amount (PKR)': '', 'Subtotal (PKR)': ''},
+            {'Account Description': '  General Business Expenses', 'Amount (PKR)': f"{total_exp:.2f}", 'Subtotal (PKR)': ''},
+            {'Account Description': '  Payroll (Salaries & Advances)', 'Amount (PKR)': f"{salary_paid + salary_adv:.2f}", 'Subtotal (PKR)': ''},
+            {'Account Description': 'TOTAL OPERATING EXPENSES', 'Amount (PKR)': '', 'Subtotal (PKR)': f"({total_operating_exp:.2f})"},
+            {'Account Description': '', 'Amount (PKR)': '', 'Subtotal (PKR)': ''},
+            {'Account Description': 'NET PROFIT', 'Amount (PKR)': '', 'Subtotal (PKR)': f"{net_profit:.2f}"},
+            {'Account Description': '', 'Amount (PKR)': '', 'Subtotal (PKR)': ''},
+            {'Account Description': 'INVENTORY & MANUFACTURING ACTIVITY (Informational)', 'Amount (PKR)': '', 'Subtotal (PKR)': ''},
+            {'Account Description': '  Inventory Purchases', 'Amount (PKR)': f"{total_purchases:.2f}", 'Subtotal (PKR)': ''},
+            {'Account Description': '  Manufacturing Costs', 'Amount (PKR)': f"{total_bom + bom_overhead:.2f}", 'Subtotal (PKR)': ''},
+            {'Account Description': 'TOTAL SECONDARY OUTFLOW', 'Amount (PKR)': '', 'Subtotal (PKR)': f"{total_purchases + total_bom + bom_overhead:.2f}"}
         ]
 
     if not data:

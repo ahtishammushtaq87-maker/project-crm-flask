@@ -69,8 +69,8 @@
         <div class="card h-100 shadow-sm border-start border-4 border-{{ performance.prod_cost.status }}">
             <div class="card-body">
                 <h6 class="text-muted small text-uppercase fw-bold">Production Cost</h6>
-                <h3 class="mb-0">Rs. {{ "{:,.0f}".format(performance.prod_cost.actual) }}</h3>
-                <p class="text-muted small mb-0 mt-1">Target: Rs. {{ "{:,.0f}".format(performance.prod_cost.target) }}</p>
+                <h3 class="mb-0">PKR {{ "{:,.0f}".format(performance.prod_cost.actual) }}</h3>
+                <p class="text-muted small mb-0 mt-1">Target: PKR {{ "{:,.0f}".format(performance.prod_cost.target) }}</p>
                 <div class="mt-2">
                     <span class="badge bg-{{ performance.prod_cost.status }}">
                         {{ performance.prod_cost.pct }}% Budget Used
@@ -84,8 +84,8 @@
         <div class="card h-100 shadow-sm border-start border-4 border-{{ performance.sales_revenue.status }}">
             <div class="card-body">
                 <h6 class="text-muted small text-uppercase fw-bold">Sales Revenue</h6>
-                <h3 class="mb-0">Rs. {{ "{:,.0f}".format(performance.sales_revenue.actual) }}</h3>
-                <p class="text-muted small mb-0 mt-1">Target: Rs. {{ "{:,.0f}".format(performance.sales_revenue.target) }}</p>
+                <h3 class="mb-0">PKR {{ "{:,.0f}".format(performance.sales_revenue.actual) }}</h3>
+                <p class="text-muted small mb-0 mt-1">Target: PKR {{ "{:,.0f}".format(performance.sales_revenue.target) }}</p>
                 <div class="mt-2">
                     <span class="badge bg-{{ performance.sales_revenue.status }}">
                         {{ performance.sales_revenue.pct }}% Achieved
@@ -147,12 +147,12 @@
                         </div>
                     </div>
                     <div class="d-flex justify-content-between mt-2 text-muted small px-1">
-                        <span>Rs. 0</span>
-                        <span class="fw-bold text-dark">Budget: Rs. {{ "{:,.0f}".format(performance.prod_cost.target) }}</span>
+                        <span>PKR 0</span>
+                        <span class="fw-bold text-dark">Budget: PKR {{ "{:,.0f}".format(performance.prod_cost.target) }}</span>
                     </div>
                     {% if performance.prod_cost.actual > performance.prod_cost.target %}
                     <div class="alert alert-danger p-2 mt-3 small mb-0">
-                        <i class="fas fa-exclamation-triangle me-1"></i> <strong>Critical:</strong> Over-budget by Rs. {{ "{:,.0f}".format(performance.prod_cost.actual - performance.prod_cost.target) }}.
+                        <i class="fas fa-exclamation-triangle me-1"></i> <strong>Critical:</strong> Over-budget by PKR {{ "{:,.0f}".format(performance.prod_cost.actual - performance.prod_cost.target) }}.
                     </div>
                     {% endif %}
                 </div>
@@ -178,8 +178,8 @@
                         </div>
                     </div>
                     <div class="d-flex justify-content-between mt-2 text-muted small px-1">
-                        <span>Rs. 0</span>
-                        <span class="fw-bold text-dark">Target: Rs. {{ "{:,.0f}".format(performance.sales_revenue.target) }}</span>
+                        <span>PKR 0</span>
+                        <span class="fw-bold text-dark">Target: PKR {{ "{:,.0f}".format(performance.sales_revenue.target) }}</span>
                     </div>
                 </div>
 

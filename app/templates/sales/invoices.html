@@ -128,11 +128,11 @@
                             <td>{{ sale.customer.name if sale.customer else 'Walk-in Customer' }}</td>
                             <td>{{ sale.salesman.name if sale.salesman else '-' }}</td>
                             <td>{{ sale.vendor.name if sale.vendor else '-' }}</td>
-                            <td>Rs{{ "%.2f"|format(sale.subtotal) }}</td>
-                            <td>Rs{{ "%.2f"|format(sale.tax) }}</td>
-                            <td><strong>Rs{{ "%.2f"|format(sale.total) }}</strong></td>
-                            <td>Rs{{ "%.2f"|format(sale.paid_amount) }}</td>
-                            <td>Rs{{ "%.2f"|format(sale.total - sale.paid_amount) }}</td>
+                            <td>PKR{{ "%.2f"|format(sale.subtotal) }}</td>
+                            <td>PKR{{ "%.2f"|format(sale.tax) }}</td>
+                            <td><strong>PKR{{ "%.2f"|format(sale.total) }}</strong></td>
+                            <td>PKR{{ "%.2f"|format(sale.paid_amount) }}</td>
+                            <td>PKR{{ "%.2f"|format(sale.total - sale.paid_amount) }}</td>
                             <td>
                                 {% if sale.is_overdue %}
                                 <span class="badge bg-danger">Overdue</span>
@@ -146,15 +146,19 @@
                             </td>
                             <td>
                                 <a href="{{ url_for('sales.invoice_detail', id=sale.id) }}" 
-                                   class="btn btn-sm btn-info">
+                                   class="btn btn-sm btn-info" title="View">
                                     <i class="fas fa-eye"></i>
+                                </a>
+                                <a href="{{ url_for('sales.edit_invoice', id=sale.id) }}"
+                                   class="btn btn-sm btn-primary" title="Edit">
+                                    <i class="fas fa-edit"></i>
                                 </a>
                                 <a href="{{ url_for('returns.create_return', sale_id=sale.id) }}"
                                    class="btn btn-sm btn-warning" title="Create Return">
                                     <i class="fas fa-undo"></i>
                                 </a>
                                 <form method="POST" action="{{ url_for('sales.delete_invoice', id=sale.id) }}" style="display:inline;" onsubmit="return confirm('Delete this invoice?');">
-                                    <button class="btn btn-sm btn-danger" type="submit">
+                                    <button class="btn btn-sm btn-danger" type="submit" title="Delete">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </form>
@@ -167,11 +171,11 @@
                         <tr class="table-dark">
                             <th class="text-center"></th>
                             <th colspan="4" class="text-end">Total:</th>
-                            <th>Rs{{ "%.2f"|format(total_subtotal) }}</th>
-                            <th>Rs{{ "%.2f"|format(total_tax) }}</th>
-                            <th><strong>Rs{{ "%.2f"|format(total_amount) }}</strong></th>
-                            <th>Rs{{ "%.2f"|format(total_paid) }}</th>
-                            <th>Rs{{ "%.2f"|format(total_balance) }}</th>
+                            <th>PKR{{ "%.2f"|format(total_subtotal) }}</th>
+                            <th>PKR{{ "%.2f"|format(total_tax) }}</th>
+                            <th><strong>PKR{{ "%.2f"|format(total_amount) }}</strong></th>
+                            <th>PKR{{ "%.2f"|format(total_paid) }}</th>
+                            <th>PKR{{ "%.2f"|format(total_balance) }}</th>
                             <th colspan="2"></th>
                         </tr>
                     </tfoot>

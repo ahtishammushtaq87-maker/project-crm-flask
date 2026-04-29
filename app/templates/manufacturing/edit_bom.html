@@ -121,14 +121,14 @@
                         <div class="mb-3">
                             <label for="labor_cost" class="form-label">Estimated Labor Cost (per unit)</label>
                             <div class="input-group">
-                                <span class="input-group-text">Rs</span>
+                                <span class="input-group-text">PKR</span>
                                 {{ form.labor_cost(class="form-control text-end", type="number", step="0.01") }}
                             </div>
                         </div>
                         <div class="mb-3">
                             <label for="overhead_cost" class="form-label">Estimated Overhead Cost (per unit)</label>
                             <div class="input-group">
-                                <span class="input-group-text">Rs</span>
+                                <span class="input-group-text">PKR</span>
                                 {{ form.overhead_cost(class="form-control text-end", type="number", step="0.01", id="overhead_cost_input") }}
                                 <button type="button" class="btn btn-outline-info" id="syncOverheadBtn" title="Sync from Actual Expenses">
                                     <i class="fas fa-sync"></i>
@@ -176,7 +176,7 @@
                                                 <select name="component_id[]" class="form-select component-select" required>
                                                     <option value="">Select product...</option>
                                                     {% for p in all_products %}
-                                                    <option value="{{ p.id }}" data-cost="{{ p.cost_price }}" {% if p.id == item.component_id %}selected{% endif %}>{{ p.sku }} - {{ p.name }} - Rs {{ "%.2f"|format(p.cost_price) }}</option>
+                                                    <option value="{{ p.id }}" data-cost="{{ p.cost_price }}" {% if p.id == item.component_id %}selected{% endif %}>{{ p.sku }} - {{ p.name }} - PKR {{ "%.2f"|format(p.cost_price) }}</option>
                                                     {% endfor %}
                                                 </select>
                                             </td>
@@ -196,7 +196,7 @@
                                                 <select name="component_id[]" class="form-select component-select" required>
                                                     <option value="">Select product...</option>
                                                     {% for p in all_products %}
-                                                    <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.sku }} - {{ p.name }} - Rs {{ "%.2f"|format(p.cost_price) }}</option>
+                                                    <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.sku }} - {{ p.name }} - PKR {{ "%.2f"|format(p.cost_price) }}</option>
                                                     {% endfor %}
                                                 </select>
                                             </td>
@@ -236,7 +236,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <select name="component_id[]" class="form-select component-select" required>
                     <option value="">Select product...</option>
                     {% for p in all_products %}
-                    <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.sku }} - {{ p.name }} - Rs {{ "%.2f"|format(p.cost_price) }}</option>
+                    <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.sku }} - {{ p.name }} - PKR {{ "%.2f"|format(p.cost_price) }}</option>
                     {% endfor %}
                 </select>
             </td>
@@ -304,7 +304,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(data => {
                 const total = data.total_actual_overhead || 0;
                 overheadInput.value = total.toFixed(2);
-                syncStatus.innerHTML = `<i class="fas fa-check-circle text-success"></i> Actual overhead synced: <b>Rs ${total.toFixed(2)}</b>`;
+                syncStatus.innerHTML = `<i class="fas fa-check-circle text-success"></i> Actual overhead synced: <b>PKR ${total.toFixed(2)}</b>`;
                 
                 // Pulsate effect for feedback
                 overheadInput.style.transition = 'background-color 0.3s';

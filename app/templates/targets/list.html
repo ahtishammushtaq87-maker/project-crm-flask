@@ -35,8 +35,8 @@
                             {% endif %}
                         </td>
                         <td>{{ t.target_production_qty }} Units</td>
-                        <td>Rs. {{ "{:,.2f}".format(t.target_production_cost) }}</td>
-                        <td>Rs. {{ "{:,.2f}".format(t.target_sales_revenue) }}</td>
+                        <td>PKR {{ "{:,.2f}".format(t.target_production_cost) }}</td>
+                        <td>PKR {{ "{:,.2f}".format(t.target_sales_revenue) }}</td>
                         <td>
                             <div class="btn-group">
                                 <a href="{{ url_for('targets.report', id=t.id) }}" class="btn btn-sm btn-outline-success" title="View Detailed Report">

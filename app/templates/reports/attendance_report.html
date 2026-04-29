@@ -372,7 +372,7 @@
         </div>
         <div class="stat-card secondary">
             <div class="stat-label">💰 Total Earned</div>
-            <div class="stat-value">Rs {{ "%.2f"|format(summary_stats.total_earned) }}</div>
+            <div class="stat-value">PKR {{ "%.2f"|format(summary_stats.total_earned) }}</div>
         </div>
         <div class="stat-card tertiary">
             <div class="stat-label">📋 Records</div>
@@ -409,8 +409,8 @@
                             <td class="text-center">{{ data.days_worked }}</td>
                             <td class="text-center">{{ data.total_hours }}h {{ data.total_minutes }}m</td>
                             <td class="text-center">{{ "%.2f"|format(data.avg_hours) }}h</td>
-                            <td class="text-right"><strong>Rs {{ "%.2f"|format(data.total_earned) }}</strong></td>
-                            <td class="text-right">Rs {{ "%.2f"|format(data.total_earned / data.days_worked) }}</td>
+                            <td class="text-right"><strong>PKR {{ "%.2f"|format(data.total_earned) }}</strong></td>
+                            <td class="text-right">PKR {{ "%.2f"|format(data.total_earned / data.days_worked) }}</td>
                         </tr>
                         {% endfor %}
                     {% else %}
@@ -459,8 +459,8 @@
                                 {% endif %}
                             </td>
                             <td class="text-center">{{ record.get_time_summary() }}</td>
-                            <td class="text-right">Rs {{ "%.2f"|format(record.hourly_rate) }}</td>
-                            <td class="text-right"><strong>Rs {{ "%.2f"|format(record.earned_amount) }}</strong></td>
+                            <td class="text-right">PKR {{ "%.2f"|format(record.hourly_rate) }}</td>
+                            <td class="text-right"><strong>PKR {{ "%.2f"|format(record.earned_amount) }}</strong></td>
                             <td>
                                 {% if record.notes %}
                                     <small>{{ record.notes[:30] }}{% if record.notes|length > 30 %}...{% endif %}</small>
@@ -498,7 +498,7 @@
                             <td><strong>{{ date.strftime('%Y-%m-%d (%a)') }}</strong></td>
                             <td class="text-center">{{ daily_data.staff_count }}</td>
                             <td class="text-center">{{ daily_data.total_hours }}h {{ daily_data.total_minutes }}m</td>
-                            <td class="text-right"><strong>Rs {{ "%.2f"|format(daily_data.total_earned) }}</strong></td>
+                            <td class="text-right"><strong>PKR {{ "%.2f"|format(daily_data.total_earned) }}</strong></td>
                         </tr>
                         {% endfor %}
                     {% else %}

@@ -59,7 +59,7 @@
                     <div class="mb-3">
                         <label for="target_production_cost" class="form-label fw-bold">Target Production Cost (Budget)</label>
                         <div class="input-group">
-                            <span class="input-group-text">Rs.</span>
+                            <span class="input-group-text">PKR</span>
                             <input type="number" step="0.01" name="target_production_cost" id="target_production_cost" 
                                    class="form-control" placeholder="Max production budget"
                                    value="{{ target.target_production_cost if target else 0 }}" required>
@@ -69,7 +69,7 @@
                     <div class="mb-3">
                         <label for="target_sales_revenue" class="form-label fw-bold">Target Sales Revenue</label>
                         <div class="input-group">
-                            <span class="input-group-text">Rs.</span>
+                            <span class="input-group-text">PKR</span>
                             <input type="number" step="0.01" name="target_sales_revenue" id="target_sales_revenue" 
                                    class="form-control" placeholder="Revenue goal"
                                    value="{{ target.target_sales_revenue if target else 0 }}" required>

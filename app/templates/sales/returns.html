@@ -103,9 +103,9 @@
                                 </a>
                             </td>
                             <td>{{ ret.customer.name if ret.customer else 'Walk-in Customer' }}</td>
-                            <td>Rs{{ "%.2f"|format(ret.subtotal) }}</td>
-                            <td>Rs{{ "%.2f"|format(ret.tax) }}</td>
-                            <td><strong>Rs{{ "%.2f"|format(ret.total) }}</strong></td>
+                            <td>PKR{{ "%.2f"|format(ret.subtotal) }}</td>
+                            <td>PKR{{ "%.2f"|format(ret.tax) }}</td>
+                            <td><strong>PKR{{ "%.2f"|format(ret.total) }}</strong></td>
                             <td>
                                 {% if ret.status == 'completed' %}
                                 <span class="badge bg-success">Completed</span>
@@ -146,7 +146,7 @@
                         <tr class="table-dark">
                             <th colspan="4" class="text-end">Total:</th>
                             <th colspan="2"></th>
-                            <th><strong>Rs{{ "%.2f"|format(total_returns) }}</strong></th>
+                            <th><strong>PKR{{ "%.2f"|format(total_returns) }}</strong></th>
                             <th>{{ total_count }} returns</th>
                             <th></th>
                         </tr>

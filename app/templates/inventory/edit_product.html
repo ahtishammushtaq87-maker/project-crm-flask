@@ -67,14 +67,14 @@
                     <div class="col-md-4" id="cost_price_container">
                         <label for="cost_price" class="form-label">Cost Price</label>
                         <div class="input-group">
-                            <span class="input-group-text">Rs</span>
+                            <span class="input-group-text">PKR</span>
                             {{ form.cost_price(class="form-control", type="number", step="0.01", id="cost_price") }}
                         </div>
                     </div>
                     <div class="col-md-4" id="finished_good_price_container" style="display: none;">
                         <label for="finished_good_price" class="form-label">Selling Price *</label>
                         <div class="input-group">
-                            <span class="input-group-text">Rs</span>
+                            <span class="input-group-text">PKR</span>
                             <input type="number" class="form-control" name="finished_good_price" step="0.01" id="finished_good_price" value="{{ product.finished_good_price if product.finished_good_price else '' }}" required>
                         </div>
                         <small class="text-muted">Used for production & sales</small>
@@ -82,7 +82,7 @@
                     <div class="col-md-4" id="unit_price_container">
                         <label for="unit_price" class="form-label">Selling Price</label>
                         <div class="input-group">
-                            <span class="input-group-text">Rs</span>
+                            <span class="input-group-text">PKR</span>
                             {{ form.unit_price(class="form-control", type="number", step="0.01") }}
                         </div>
                     </div>

@@ -4,6 +4,7 @@ from app import db
 from app.models import Sale, SaleItem, SaleReturn, SaleReturnItem, Product, Customer, SaleReturnSettings
 from app.forms import SaleReturnSettingsForm
 from datetime import datetime
+from app.routes.filters import apply_saved_filter_to_query
 
 bp = Blueprint('returns', __name__)
 
@@ -35,6 +36,8 @@ def return_list():
     if status != 'all':
         query = query.filter(SaleReturn.status == status)
 
+    query = apply_saved_filter_to_query(query, 'sale_return', request.args)
+
     returns = query.order_by(SaleReturn.date.desc()).all()
 
     total_returns = sum(r.total for r in returns)
@@ -46,7 +49,9 @@ def return_list():
                            to_date=to_date,
                            current_status=status,
                            total_returns=total_returns,
-                           total_count=total_count)
+                           total_count=total_count,
+                           active_module='sale_return',
+                           filter_id=request.args.get('filter_id'))
 
 
 @bp.route('/create', methods=['GET', 'POST'])

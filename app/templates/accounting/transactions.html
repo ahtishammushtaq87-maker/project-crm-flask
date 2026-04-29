@@ -106,7 +106,7 @@
                         <tr>
                             <td><input type="checkbox" class="selected-item" value="{{ txn.id }}"></td>
                             <td>{{ txn.date.strftime('%Y-%m-%d') if txn.date else '-' }}</td>
-                            <td>Rs{{ '%.2f'|format(txn.amount or 0) }}</td>
+                            <td>PKR{{ '%.2f'|format(txn.amount or 0) }}</td>
                             <td>{{ txn.payment_mode or '-' }}</td>
                             <td>{{ txn.reference_type|capitalize }} {% if txn.reference_type == 'sale' and txn.invoice %}#{{ txn.invoice.invoice_number }}{% elif txn.reference_type == 'purchase' %}#{{ txn.reference_id }}{% else %}#{{ txn.reference_id }}{% endif %}</td>
                             <td>{{ txn.debit_account or '-' }}</td>

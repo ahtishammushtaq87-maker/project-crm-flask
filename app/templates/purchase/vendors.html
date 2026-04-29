@@ -134,8 +134,8 @@
 							<td>{{ vendor.name }}</td>
 							<td>{{ vendor.email or '-' }}</td>
 							<td>{{ vendor.phone or '-' }}</td>
-							<td>Rs{{ '%.2f'|format(vendor.total_purchases) }}</td>
-							<td>Rs{{ '%.2f'|format(vendor.outstanding_balance) }}</td>
+							<td>PKR{{ '%.2f'|format(vendor.total_purchases) }}</td>
+							<td>PKR{{ '%.2f'|format(vendor.outstanding_balance) }}</td>
 							<td><span class="badge bg-{{ 'success' if vendor.is_active else 'danger' }}">{{ 'Active' if vendor.is_active else 'Inactive' }}</span></td>
 							<td>
 								<div class="btn-group" role="group">
@@ -197,4 +197,4 @@ $(document).ready(function() {
     });
 });
 </script>
-{% endblock %}
+{% endblock %}

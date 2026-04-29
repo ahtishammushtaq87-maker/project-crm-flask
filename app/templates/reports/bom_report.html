@@ -85,7 +85,7 @@
             <div class="card shadow-sm border-start border-success border-4">
                 <div class="card-body">
                     <h6 class="text-muted mb-1">Total Cost Value</h6>
-                    <h3 class="mb-0">Rs {{ "%.2f"|format(total_cost) }}</h3>
+                    <h3 class="mb-0">PKR {{ "%.2f"|format(total_cost) }}</h3>
                 </div>
             </div>
         </div>
@@ -136,9 +136,9 @@
                             <td><span class="fw-bold">{{ v.bom.name }}</span></td>
                             <td>{{ v.bom.product.name }}</td>
                             <td><span class="badge bg-primary">{{ v.version_number }}</span></td>
-                            <td>Rs {{ "%.2f"|format(v.labor_cost) }}</td>
-                            <td>Rs {{ "%.2f"|format(v.overhead_cost) }}</td>
-                            <td><span class="text-primary fw-bold">Rs {{ "%.2f"|format(v.total_cost) }}</span></td>
+                            <td>PKR {{ "%.2f"|format(v.labor_cost) }}</td>
+                            <td>PKR {{ "%.2f"|format(v.overhead_cost) }}</td>
+                            <td><span class="text-primary fw-bold">PKR {{ "%.2f"|format(v.total_cost) }}</span></td>
                             <td><small>{{ v.change_reason or 'N/A' }}</small></td>
                             <td>
                                 {% if v.change_type == 'component_cost' %}
@@ -195,9 +195,9 @@
                             <td>{{ b.product.name }}</td>
                             <td><span class="badge bg-secondary">{{ b.version }}</span></td>
                             <td class="text-center">{{ b.items|length }}</td>
-                            <td>Rs {{ "%.2f"|format(b.labor_cost) }}</td>
-                            <td>Rs {{ "%.2f"|format(b.overhead_cost) }}</td>
-                            <td><span class="text-primary fw-bold">Rs {{ "%.2f"|format(b.total_cost) }}</span></td>
+                            <td>PKR {{ "%.2f"|format(b.labor_cost) }}</td>
+                            <td>PKR {{ "%.2f"|format(b.overhead_cost) }}</td>
+                            <td><span class="text-primary fw-bold">PKR {{ "%.2f"|format(b.total_cost) }}</span></td>
                             <td class="text-center">
                                 {% if b.is_active %}
                                 <span class="badge bg-success">Active</span>

@@ -155,7 +155,7 @@
                             <td {% if pm.purchased - pm.sold > 0 %}class="text-success"{% elif pm.purchased - pm.sold < 0 %}class="text-danger"{% endif %}>
                                 {{ pm.purchased - pm.sold }}
                             </td>
-                            <td>Rs{{ "%.2f"|format(pm.current_stock * pm.product.cost_price) }}</td>
+                            <td>PKR{{ "%.2f"|format(pm.current_stock * pm.product.cost_price) }}</td>
                         </tr>
                         {% else %}
                         <tr>

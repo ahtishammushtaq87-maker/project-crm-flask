@@ -129,9 +129,9 @@
                                 {% if log.product %}
                                 {% set bom = log.product.boms|selectattr('is_active', true)|first %}
                                 {% if bom %}
-                                Rs. {{ bom.total_cost|round(2) }}
+                                PKR {{ bom.total_cost|round(2) }}
                                 {% else %}
-                                Rs. {{ log.product.cost_price|round(2) }}
+                                PKR {{ log.product.cost_price|round(2) }}
                                 {% endif %}
                                 {% else %}
                                 -
@@ -141,9 +141,9 @@
                                 {% if log.product %}
                                 {% set bom = log.product.boms|selectattr('is_active', true)|first %}
                                 {% if bom %}
-                                Rs. {{ bom.overhead_cost|round(2) }}
+                                PKR {{ bom.overhead_cost|round(2) }}
                                 {% else %}
-                                Rs. 0
+                                PKR 0
                                 {% endif %}
                                 {% else %}
                                 -

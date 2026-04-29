@@ -97,10 +97,10 @@
                     <tr>
                         <td class="fw-bold">{{ bill.bill_number }}</td>
                         <td>{{ bill.date.strftime('%d-%m-%Y') }}</td>
-                        <td class="text-end">Rs {{ '{:,.2f}'.format(bill.total) }}</td>
-                        <td class="text-end text-success">Rs {{ '{:,.2f}'.format(bill.paid_amount) }}</td>
+                        <td class="text-end">PKR {{ '{:,.2f}'.format(bill.total) }}</td>
+                        <td class="text-end text-success">PKR {{ '{:,.2f}'.format(bill.paid_amount) }}</td>
                         <td class="text-end {% if bill.balance_due > 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
-                            Rs {{ '{:,.2f}'.format(bill.balance_due) }}
+                            PKR {{ '{:,.2f}'.format(bill.balance_due) }}
                         </td>
                         <td class="text-center">
                             <span class="badge {% if bill.status == 'paid' %}bg-success{% elif bill.status == 'partial' %}bg-warning text-dark{% else %}bg-danger{% endif %}">
@@ -216,19 +216,19 @@
                 </div>
                 <div class="card-body">
                     <table class="table table-sm table-borderless mb-0">
-                        <tr><td>Subtotal</td><td class="text-end">Rs {{ '{:,.2f}'.format(po.subtotal) }}</td></tr>
+                        <tr><td>Subtotal</td><td class="text-end">PKR {{ '{:,.2f}'.format(po.subtotal) }}</td></tr>
                         {% if po.shipping_charge > 0 %}
-                        <tr><td class="text-info"><i class="fas fa-truck me-1"></i>Shipping</td><td class="text-end text-info">Rs {{ '{:,.2f}'.format(po.shipping_charge) }}</td></tr>
+                        <tr><td class="text-info"><i class="fas fa-truck me-1"></i>Shipping</td><td class="text-end text-info">PKR {{ '{:,.2f}'.format(po.shipping_charge) }}</td></tr>
                         {% endif %}
                         {% if po.tax > 0 %}
-                        <tr><td>Tax ({{ po.tax_rate }}%)</td><td class="text-end">Rs {{ '{:,.2f}'.format(po.tax) }}</td></tr>
+                        <tr><td>Tax ({{ po.tax_rate }}%)</td><td class="text-end">PKR {{ '{:,.2f}'.format(po.tax) }}</td></tr>
                         {% endif %}
                         {% if po.discount > 0 %}
                         <tr><td class="text-success">Discount</td><td class="text-end text-success">-Rs {{ '{:,.2f}'.format(po.discount) }}</td></tr>
                         {% endif %}
                         <tr class="border-top fw-bold">
                             <td>Grand Total</td>
-                            <td class="text-end fs-6">Rs {{ '{:,.2f}'.format(po.total) }}</td>
+                            <td class="text-end fs-6">PKR {{ '{:,.2f}'.format(po.total) }}</td>
                         </tr>
                         {% if po.advance_amount > 0 %}
                         <tr class="text-success">
@@ -237,7 +237,7 @@
                         </tr>
                         <tr class="border-top fw-bold">
                             <td>Balance Due</td>
-                            <td class="text-end fs-6">Rs {{ '{:,.2f}'.format(po.total - po.advance_amount) }}</td>
+                            <td class="text-end fs-6">PKR {{ '{:,.2f}'.format(po.total - po.advance_amount) }}</td>
                         </tr>
                         {% endif %}
                     </table>
@@ -252,7 +252,7 @@
                     <h6 class="m-0 fw-bold"><i class="fas fa-hand-holding-usd me-2"></i>Pending Advance</h6>
                 </div>
                 <div class="card-body">
-                    <p class="mb-1 fw-bold fs-5">Rs {{ '{:,.0f}'.format(pending_adv) }}</p>
+                    <p class="mb-1 fw-bold fs-5">PKR {{ '{:,.0f}'.format(pending_adv) }}</p>
                     <p class="mb-0 text-muted small">This vendor has unadjusted advance money. It will be shown on the bill when you convert.</p>
                     <a href="{{ url_for('purchase.vendor_profile', id=po.vendor.id) }}" class="btn btn-sm btn-outline-warning mt-2">
                         View Vendor Profile
@@ -290,12 +290,12 @@
                                 <td>{{ loop.index }}</td>
                                 <td><strong>{{ item.product.name }}</strong></td>
                                 <td class="text-center">{{ '{:,.2f}'.format(item.quantity) }}</td>
-                                <td class="text-end">Rs {{ '{:,.2f}'.format(item.unit_price) }}</td>
-                                <td class="text-end">Rs {{ '{:,.2f}'.format(item.total) }}</td>
+                                <td class="text-end">PKR {{ '{:,.2f}'.format(item.unit_price) }}</td>
+                                <td class="text-end">PKR {{ '{:,.2f}'.format(item.total) }}</td>
                                 {% if po.shipping_charge > 0 %}
                                 <td class="text-end text-info">
-                                    Rs {{ '{:,.2f}'.format(ship_alloc) }}
-                                    <br><small class="text-muted">Rs {{ '{:,.2f}'.format(ship_alloc / item.quantity if item.quantity > 0 else 0) }}/unit</small>
+                                    PKR {{ '{:,.2f}'.format(ship_alloc) }}
+                                    <br><small class="text-muted">PKR {{ '{:,.2f}'.format(ship_alloc / item.quantity if item.quantity > 0 else 0) }}/unit</small>
                                 </td>
                                 {% endif %}
                             </tr>
@@ -304,9 +304,9 @@
                         <tfoot class="table-light fw-bold">
                             <tr>
                                 <th colspan="{{ '4' if po.shipping_charge > 0 else '3' }}" class="text-end">Total</th>
-                                <th class="text-end">Rs {{ '{:,.2f}'.format(po.subtotal) }}</th>
+                                <th class="text-end">PKR {{ '{:,.2f}'.format(po.subtotal) }}</th>
                                 {% if po.shipping_charge > 0 %}
-                                <th class="text-end text-info">Rs {{ '{:,.2f}'.format(po.shipping_charge) }}</th>
+                                <th class="text-end text-info">PKR {{ '{:,.2f}'.format(po.shipping_charge) }}</th>
                                 {% endif %}
                             </tr>
                         </tfoot>

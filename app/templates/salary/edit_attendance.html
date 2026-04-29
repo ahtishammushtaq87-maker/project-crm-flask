@@ -46,9 +46,9 @@
                 <div class="alert alert-info">
                     <strong>Staff Information:</strong>
                     <ul class="mb-0 mt-2">
-                        <li>Monthly Salary: Rs {{ "%.2f"|format(attendance.staff.monthly_salary) }}</li>
-                        <li>Daily Salary: Rs {{ "%.2f"|format(attendance.staff.daily_salary) }}</li>
-                        <li>Hourly Rate: Rs {{ "%.2f"|format(attendance.hourly_rate or (attendance.staff.daily_salary / 8)) }}/hour</li>
+                        <li>Monthly Salary: PKR {{ "%.2f"|format(attendance.staff.monthly_salary) }}</li>
+                        <li>Daily Salary: PKR {{ "%.2f"|format(attendance.staff.daily_salary) }}</li>
+                        <li>Hourly Rate: PKR {{ "%.2f"|format(attendance.hourly_rate or (attendance.staff.daily_salary / 8)) }}/hour</li>
                     </ul>
                 </div>
                 
@@ -57,7 +57,7 @@
                     <strong>Current Record:</strong>
                     <ul class="mb-0 mt-2">
                         <li>Duration: {{ attendance.hours_worked }}h {{ attendance.minutes_worked }}m</li>
-                        <li>Earned Amount: Rs {{ "%.2f"|format(attendance.earned_amount) }}</li>
+                        <li>Earned Amount: PKR {{ "%.2f"|format(attendance.earned_amount) }}</li>
                     </ul>
                 </div>
                 {% endif %}

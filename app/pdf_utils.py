@@ -29,7 +29,7 @@ def load_template_config(doc_type):
     except Exception:
         return None
 
-DEFAULT_CURRENCY = 'Rs'
+DEFAULT_CURRENCY = 'PKR'
 DEFAULT_FORMAT = ',.2f'
 
 PRIMARY_COLOR   = colors.HexColor("#c0392b")
@@ -115,7 +115,7 @@ class ProfessionalPDFGenerator:
         add(ParagraphStyle('CompanyName',    parent=self.styles['Normal'], fontSize=11, textColor=TEXT_COLOR,    fontName='Helvetica-Bold', spaceAfter=1))
         add(ParagraphStyle('CompanyInfo',    parent=self.styles['Normal'], fontSize=7,  textColor=MUTED_TEXT,    leading=10))
         add(ParagraphStyle('BoxTitle',       parent=self.styles['Normal'], fontSize=8,  textColor=PRIMARY_COLOR, fontName='Helvetica-Bold', spaceAfter=3, leftIndent=0))
-        add(ParagraphStyle('BoxValue',       parent=self.styles['Normal'], fontSize=7.5,textColor=TEXT_COLOR,    leading=6, alignment=TA_LEFT, leftIndent=0))
+        add(ParagraphStyle('BoxValue',       parent=self.styles['Normal'], fontSize=7.5,textColor=TEXT_COLOR,    leading=10, alignment=TA_LEFT, leftIndent=0))
         add(ParagraphStyle('TblHeader',      parent=self.styles['Normal'], fontSize=7.5,textColor=WHITE,         fontName='Helvetica-Bold'))
         add(ParagraphStyle('TblCell',        parent=self.styles['Normal'], fontSize=7.5,textColor=TEXT_COLOR,    leading=10))
         add(ParagraphStyle('TblCellSub',     parent=self.styles['Normal'], fontSize=6.5,textColor=MUTED_TEXT,    leading=9))
@@ -625,6 +625,7 @@ class ProfessionalPDFGenerator:
             extra_thank = Paragraph(
                 f"<br/>Thank you, <b>{customer_name}</b>, for your recent purchase."
                 f"Your amount due is <b>{amount_due_fmt}</b>, due by <b>{due_date_fmt}</b>."
+                f"Any discount is valid only if paid by the due date."
                 f"If you have any questions, please let us know.<br/>"
                 f"Best regards,<br/>"
                 f"We look forward to serving you again in the future.",
@@ -744,7 +745,7 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
                 'IFSC Code':      getattr(company, 'ifsc_code', None),
             }.items() if v}
 
-        cur_label = getattr(obj, 'currency', None) or (currency if currency != 'Rs' else 'RS')
+        cur_label = getattr(obj, 'currency', None) or (currency if currency != 'PKR' else 'PKR')
 
         generator.generate_document(
             title=title, doc_number=doc_number,

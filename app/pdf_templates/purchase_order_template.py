@@ -47,7 +47,7 @@ TOTALS = [
 ]
 
 # Default currency symbol
-CURRENCY_SYMBOL = 'Rs'
+CURRENCY_SYMBOL = 'PKR'
 CURRENCY_FORMAT = ',.2f'  # Format: ,.2f = 1,234.56
 
 # Item field mappings

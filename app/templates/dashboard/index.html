@@ -58,7 +58,7 @@
                     <i class="fas fa-chart-line"></i>
                 </div>
                 <h5>Total Sales</h5>
-                <h3>Rs{{ "%.2f"|format(total_sales) }}</h3>
+                <h3>PKR{{ "%.2f"|format(total_sales) }}</h3>
                 <small>This Month</small>
             </div>
         </div>
@@ -69,7 +69,7 @@
                     <i class="fas fa-shopping-cart"></i>
                 </div>
                 <h5>Total Purchases</h5>
-                <h3>Rs{{ "%.2f"|format(total_purchases) }}</h3>
+                <h3>PKR{{ "%.2f"|format(total_purchases) }}</h3>
                 <small>Inventory Added</small>
             </div>
         </div>
@@ -80,7 +80,7 @@
                     <i class="fas fa-boxes"></i>
                 </div>
                 <h5>COGS</h5>
-                <h3>Rs{{ "%.2f"|format(total_cogs) }}</h3>
+                <h3>PKR{{ "%.2f"|format(total_cogs) }}</h3>
                 <small>Cost of Goods Sold</small>
             </div>
         </div>
@@ -91,13 +91,13 @@
                     <i class="fas fa-money-bill-wave"></i>
                 </div>
                 <h5>Total Expenses</h5>
-                <h3>Rs{{ "%.2f"|format(total_expenses-manufacturing_overhead) }}</h3>
+                <h3>PKR{{ "%.2f"|format(total_expenses-manufacturing_overhead) }}</h3>
                 <div class="mt-1" style="font-size: 0.75rem; opacity: 0.9;">
-                    <span>Op: Rs{{ "%.2f"|format(operating_expenses) }}</span> | 
-                    <span>BOM: Rs{{ "%.2f"|format(manufacturing_overhead) }}</span> |
-                    <span>Pay: Rs{{ "%.2f"|format(daily_payroll_for_period) }}</span>
+                    <span>Op: PKR{{ "%.2f"|format(operating_expenses) }}</span> | 
+                    <span>BOM: PKR{{ "%.2f"|format(manufacturing_overhead) }}</span> |
+                    <span>Pay: PKR{{ "%.2f"|format(daily_payroll_for_period) }}</span>
                     {% if divided_expenses_for_period > 0 %}
-                    | <span>Div: Rs{{ "%.2f"|format(divided_expenses_for_period) }}</span>
+                    | <span>Div: PKR{{ "%.2f"|format(divided_expenses_for_period) }}</span>
                     {% endif %}
                 </div>
                 <small>Combined Total</small>
@@ -111,7 +111,7 @@
                 </div>
                 <h5>Gross Profit</h5>
                 <h3 class="{% if gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-                    Rs{{ "%.2f"|format(gross_profit) }}
+                    PKR{{ "%.2f"|format(gross_profit) }}
                 </h3>
                 <small>This Month</small>
             </div>
@@ -126,7 +126,7 @@
                 </div>
                 <h5>Net Profit</h5>
                 <h3 class="{% if net_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-                    Rs{{ "%.2f"|format(net_profit) }}
+                    PKR{{ "%.2f"|format(net_profit) }}
                 </h3>
                 <small>This Month</small>
             </div>
@@ -138,7 +138,7 @@
                     <i class="fas fa-clock"></i>
                 </div>
                 <h5>Outstanding</h5>
-                <h3>Rs{{ "%.2f"|format(outstanding) }}</h3>
+                <h3>PKR{{ "%.2f"|format(outstanding) }}</h3>
                 <small>Unpaid Invoices</small>
             </div>
         </div>
@@ -207,7 +207,7 @@
                                     <td>{{ sale.invoice_number }}</td>
                                     <td>{{ sale.date.strftime('%Y-%m-%d') }}</td>
                                     <td>{{ sale.customer.name if sale.customer else 'Walk-in Customer' }}</td>
-                                    <td>Rs{{ "%.2f"|format(sale.total) }}</td>
+                                    <td>PKR{{ "%.2f"|format(sale.total) }}</td>
                                     <td>
                                         {% if sale.status == 'paid' %}
                                         <span class="badge bg-success">Paid</span>

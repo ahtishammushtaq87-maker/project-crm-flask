@@ -34,18 +34,18 @@
                         <dd class="col-sm-7"><strong>{{ bom.product.name }}</strong></dd>
 
                         <dt class="col-sm-5 text-truncate">Components Cost</dt>
-                        <dd class="col-sm-7">Rs {{ "%.2f"|format(bom.total_cost - bom.labor_cost - bom.overhead_cost) }}</dd>
+                        <dd class="col-sm-7">PKR {{ "%.2f"|format(bom.total_cost - bom.labor_cost - bom.overhead_cost) }}</dd>
 
                         <dt class="col-sm-5 text-truncate">Labor Cost</dt>
-                        <dd class="col-sm-7">Rs {{ "%.2f"|format(bom.labor_cost) }}</dd>
+                        <dd class="col-sm-7">PKR {{ "%.2f"|format(bom.labor_cost) }}</dd>
 
                         <dt class="col-sm-5 text-truncate">Overhead Cost</dt>
-                        <dd class="col-sm-7">Rs {{ "%.2f"|format(bom.overhead_cost) }}</dd>
+                        <dd class="col-sm-7">PKR {{ "%.2f"|format(bom.overhead_cost) }}</dd>
 
                         <hr class="w-100">
 
                         <dt class="col-sm-5 text-truncate text-primary">Total Unit Cost</dt>
-                        <dd class="col-sm-7 text-primary fw-bold">Rs {{ "%.2f"|format(bom.total_cost) }}</dd>
+                        <dd class="col-sm-7 text-primary fw-bold">PKR {{ "%.2f"|format(bom.total_cost) }}</dd>
                     </dl>
                 </div>
             </div>
@@ -86,8 +86,8 @@
                                     <td>{{ item.component.sku }}</td>
                                     <td>{{ item.component.name }}</td>
                                     <td class="text-end">{{ item.quantity }}</td>
-                                    <td class="text-end">Rs {{ "%.2f"|format(item.unit_cost) }}</td>
-                                    <td class="text-end">Rs {{ "%.2f"|format(item.total_cost) }}</td>
+                                    <td class="text-end">PKR {{ "%.2f"|format(item.unit_cost) }}</td>
+                                    <td class="text-end">PKR {{ "%.2f"|format(item.total_cost) }}</td>
                                 </tr>
                                 {% else %}
                                 <tr>

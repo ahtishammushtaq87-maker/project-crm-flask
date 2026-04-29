@@ -1,13 +1,14 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response, current_app
 from flask_login import login_required, current_user
 from app import db
-from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory, PurchaseReturn, PurchaseReturnItem, PurchaseSettings, PurchaseReturnSettings
+from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory, PurchaseReturn, PurchaseReturnItem, PurchaseSettings, PurchaseReturnSettings, BillPayment, BillReceive, BillReceiveItem
 from app.forms import PurchaseForm, VendorForm, PurchaseReturnSettingsForm
 from datetime import datetime, timedelta, date
 from app.pdf_utils import generate_professional_pdf
 from app.services.bom_versioning import BOMVersioningService
 from werkzeug.utils import secure_filename
 import os
+from app.routes.filters import apply_saved_filter_to_query
 import io
 import csv
 import openpyxl
@@ -30,7 +31,12 @@ def bills():
     
     query = PurchaseBill.query
     
-    if status != 'all':
+    if status == 'overdue':
+        query = query.filter(
+            PurchaseBill.status != 'paid',
+            PurchaseBill.due_date < datetime.utcnow()
+        )
+    elif status != 'all':
         query = query.filter(PurchaseBill.status == status)
     
     if from_date:
@@ -52,6 +58,8 @@ def bills():
             (Vendor.name.ilike(f'%{search}%'))
         )
 
+    query = apply_saved_filter_to_query(query, 'purchase', request.args)
+
     bills = query.order_by(PurchaseBill.date.desc()).all()
     
     # Summary totals for the view
@@ -72,7 +80,9 @@ def bills():
                          total_amount=total_amount,
                          total_paid=total_paid,
                          total_balance=total_balance,
-                         date_format=date_format)
+                         date_format=date_format,
+                         active_module='purchase',
+                         filter_id=request.args.get('filter_id'))
 
 @bp.route('/bill/create', methods=['GET', 'POST'])
 @login_required
@@ -102,11 +112,20 @@ def create_bill():
         bill_number = f"{settings.bill_prefix}{settings.next_bill_number}{settings.bill_suffix}"
         settings.next_bill_number += 1
         
+        due_date_str = request.form.get('due_date')
+        if due_date_str:
+            try:
+                due_date = datetime.strptime(due_date_str, '%Y-%m-%d')
+            except ValueError:
+                due_date = date + timedelta(days=30)
+        else:
+            due_date = date + timedelta(days=30)
+
         bill = PurchaseBill(
             bill_number=bill_number,
             vendor_id=vendor_id,
             date=date,
-            due_date=date + timedelta(days=30),
+            due_date=due_date,
             tax_rate=float(request.form.get('tax_rate', 0)),
             discount=float(request.form.get('discount', 0)),
             shipping_charge=float(request.form.get('shipping_charge', 0)),
@@ -148,23 +167,13 @@ def create_bill():
         # Total additional cost to allocate (shipping + tax)
         total_additional_cost = shipping_charge + tax_amount
         
-        # Add items with allocated shipping and tax
+        # Add items WITHOUT updating inventory (deferred to Receive Quantity step)
         for item_data in items_data:
             prod_id = item_data['product_id']
             qty = item_data['quantity']
             price = item_data['unit_price']
             item_total = item_data['total']
-            
-            # Allocate shipping and tax proportionally based on item cost
-            if total_items_cost > 0:
-                allocation_ratio = item_total / total_items_cost
-                allocated_additional = total_additional_cost * allocation_ratio
-            else:
-                allocated_additional = 0
-            
-            # New cost per unit including allocated shipping and tax
-            new_unit_cost = price + (allocated_additional / qty) if qty > 0 else price
-            
+
             item = PurchaseItem(
                 product_id=prod_id,
                 quantity=qty,
@@ -172,34 +181,11 @@ def create_bill():
                 total=item_total
             )
             bill.items.append(item)
-            
-            # Update inventory (increase stock)
-            product = Product.query.get(prod_id)
-            if product:
-                product.update_quantity(qty)
-                
-                # Track cost price change with allocated shipping and tax
-                old_price = product.cost_price
-                
-                # Create cost price history entry with the new cost including shipping/tax
-                cost_history = CostPriceHistory(
-                    product_id=prod_id,
-                    purchase_bill_id=bill.id,
-                    old_price=old_price if old_price > 0 else None,
-                    new_price=new_unit_cost,
-                    quantity_at_old_price=product.quantity - qty,  # Qty at old price = total qty - new qty
-                    used_quantity=0,
-                    reason=f"Purchase bill with shipping Rs {shipping_charge} and tax {tax_rate}% - Base: Rs {price}, New: Rs {new_unit_cost:.2f}",
-                    is_active=True,
-                    created_by=current_user.id
-                )
-                db.session.add(cost_history)
-                
-                # Update product's cost price to new price (including shipping and tax allocation)
-                product.cost_price = new_unit_cost
-        
+            # NOTE: inventory & cost price are NOT updated on bill creation.
+            # They update when user clicks "Receive Quantity" on the bill detail page.
+
         bill.calculate_totals()
-        
+
         # Update paid amount from "Advance Paid" field in template
         advance = float(request.form.get('advance', 0))
         if advance > 0:
@@ -207,12 +193,11 @@ def create_bill():
             pending_advances = VendorAdvance.query.filter_by(
                 vendor_id=vendor.id
             ).order_by(VendorAdvance.date).all()
-            
+
             remaining_to_apply = advance
             for adv in pending_advances:
                 if remaining_to_apply <= 0:
                     break
-                # Apply as much as possible from this advance
                 can_apply = min(adv.remaining_balance, remaining_to_apply)
                 if can_apply > 0:
                     adv.applied_amount += can_apply
@@ -223,13 +208,12 @@ def create_bill():
                     else:
                         adv.adjusted_bill_id = bill.id
                     remaining_to_apply -= can_apply
-            
-            # If there's still remaining advance payment, add it as cash payment
+
             if remaining_to_apply > 0:
                 bill.paid_amount += remaining_to_apply
         else:
             bill.paid_amount = 0
-            
+
         if bill.paid_amount >= bill.total:
             bill.status = 'paid'
         elif bill.paid_amount > 0:
@@ -255,32 +239,7 @@ def create_bill():
                     flash('Invalid file type for bill image. Allowed: png, jpg, jpeg, gif, pdf, webp', 'warning')
 
         db.session.commit()
-        
-        # Trigger BOM versioning for any products that had cost changes
-        for i in range(len(product_ids)):
-            if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
-                prod_id = int(product_ids[i])
-                try:
-                    # Safe user_id resolution
-                    user_id = None
-                    try:
-                        if current_user and current_user.is_authenticated:
-                            user_id = current_user.id
-                    except (AttributeError, TypeError):
-                        pass
-                    if user_id is None:
-                        from app.models import User
-                        admin_user = User.query.filter_by(username='admin').first()
-                        user_id = admin_user.id if admin_user else 1
-                    
-                    BOMVersioningService.check_and_update_bom_for_cost_changes(
-                        product_id=prod_id,
-                        created_by_id=user_id
-                    )
-                except Exception as e:
-                    print(f"Error updating BOM versions for product {prod_id}: {e}")
-        
-        flash('Purchase bill created successfully!', 'success')
+        flash('Purchase bill created successfully! Use "Receive Quantity" on the bill detail page to update inventory.', 'success')
         return redirect(url_for('purchase.bill_detail', id=bill.id))
     
     return render_template('purchase/create_bill.html', form=form, products=products, vendors=vendors, currencies=currencies)
@@ -291,7 +250,127 @@ def bill_detail(id):
     bill = PurchaseBill.query.get_or_404(id)
     company = Company.query.first()
     date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
-    return render_template('purchase/bill_detail.html', bill=bill, date_format=date_format)
+    # Build a dict of already-received quantity per purchase_item_id for the receive modal
+    received_qty_map = {}
+    for br in bill.bill_receives:
+        for bri in br.receive_items:
+            received_qty_map[bri.purchase_item_id] = received_qty_map.get(bri.purchase_item_id, 0) + bri.quantity_received
+    return render_template('purchase/bill_detail.html', bill=bill, date_format=date_format,
+                           received_qty_map=received_qty_map)
+
+@bp.route('/bill/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_bill(id):
+    bill = PurchaseBill.query.get_or_404(id)
+    form = PurchaseForm(obj=bill)
+    vendors = Vendor.query.filter_by(is_active=True).all()
+    products = Product.query.filter_by(is_active=True).all()
+    currencies = Currency.query.filter_by(is_active=True).all()
+
+    form.vendor_id.choices = [(v.id, v.name) for v in vendors]
+
+    if request.method == 'POST':
+        # Only revert inventory if stock was already received for this bill
+        if bill.inventory_received:
+            for item in bill.items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    product.update_quantity(-item.quantity)
+
+        # Safely remove old cost price history entries if not referenced by BOM items
+        old_history_entries = CostPriceHistory.query.filter_by(purchase_bill_id=bill.id).all()
+        for h in old_history_entries:
+            from app.models import BOMItem
+            referenced = BOMItem.query.filter_by(cost_price_history_id=h.id).first()
+            if referenced:
+                h.is_active = False
+            else:
+                db.session.delete(h)
+
+        # Delete old receive records (since we are resetting the bill)
+        if bill.inventory_received:
+            BillReceive.query.filter_by(bill_id=bill.id).delete()
+            bill.inventory_received = False
+
+        # Delete old items
+        PurchaseItem.query.filter_by(bill_id=bill.id).delete()
+
+        # Rebuild from form
+        bill.vendor_id = int(request.form.get('vendor_id', bill.vendor_id))
+        date = request.form.get('date')
+        if date:
+            try:
+                bill.date = datetime.strptime(date, '%Y-%m-%d')
+            except ValueError:
+                pass
+
+        due_date_str = request.form.get('due_date')
+        if due_date_str:
+            try:
+                bill.due_date = datetime.strptime(due_date_str, '%Y-%m-%d')
+            except ValueError:
+                pass
+        else:
+            bill.due_date = bill.date + timedelta(days=30)
+
+        bill.tax_rate = float(request.form.get('tax_rate', 0))
+        bill.discount = float(request.form.get('discount', 0))
+        bill.shipping_charge = float(request.form.get('shipping_charge', 0))
+        bill.currency_id = request.form.get('currency_id') or None
+        bill.exchange_rate = float(request.form.get('exchange_rate', 1))
+        bill.notes = request.form.get('notes', '')
+
+        product_ids = request.form.getlist('product_id[]')
+        quantities = request.form.getlist('quantity[]')
+        prices = request.form.getlist('price[]')
+
+        for i in range(len(product_ids)):
+            if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
+                prod_id = int(product_ids[i])
+                qty = float(quantities[i])
+                price = float(prices[i])
+                item_total = qty * price
+                item = PurchaseItem(
+                    product_id=prod_id,
+                    quantity=qty,
+                    unit_price=price,
+                    total=item_total
+                )
+                bill.items.append(item)
+                # NOTE: inventory NOT updated on edit — user must re-receive
+
+        bill.calculate_totals()
+
+        # Cap paid amount if it now exceeds total
+        if bill.paid_amount > bill.total:
+            bill.paid_amount = bill.total
+            bill.status = 'paid'
+        elif bill.paid_amount > 0 and bill.paid_amount < bill.total:
+            bill.status = 'partial'
+        else:
+            bill.status = 'unpaid'
+
+        # Handle bill image upload on edit
+        if 'bill_image' in request.files:
+            file = request.files['bill_image']
+            if file and file.filename:
+                allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'webp'}
+                ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+                if ext in allowed_extensions:
+                    upload_dir = os.path.join(current_app.root_path, 'static', 'uploads', 'bills')
+                    os.makedirs(upload_dir, exist_ok=True)
+                    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                    filename = secure_filename(f"{bill.bill_number}_{timestamp}.{ext}")
+                    filepath = os.path.join(upload_dir, filename)
+                    file.save(filepath)
+                    bill.bill_image_path = os.path.join('uploads', 'bills', filename).replace('\\', '/')
+
+        db.session.commit()
+        flash('Purchase bill updated successfully! Use "Receive Quantity" to re-update inventory.', 'success')
+        return redirect(url_for('purchase.bill_detail', id=bill.id))
+
+    return render_template('purchase/edit_bill.html', form=form, bill=bill,
+                           products=products, vendors=vendors, currencies=currencies)
 
 @bp.route('/bill/<int:id>/update-shipping', methods=['POST'])
 @login_required
@@ -340,7 +419,7 @@ def update_shipping(id):
                             new_price=new_cost_price,
                             quantity_at_old_price=product.quantity - item.quantity,
                             used_quantity=0,
-                            reason=f"Shipping update - Old Shipping: Rs {old_shipping}, New Shipping: Rs {new_shipping}",
+                            reason=f"Shipping update - Old Shipping: PKR {old_shipping}, New Shipping: PKR {new_shipping}",
                             is_active=True,
                             created_by=current_user.id
                         )
@@ -370,7 +449,7 @@ def update_shipping(id):
                             print(f"Error updating BOM for shipping change: {e}")
         
         db.session.commit()
-        flash(f'Shipping charge updated to Rs {new_shipping:,.2f}. Product costs recalculated!', 'success')
+        flash(f'Shipping charge updated to PKR {new_shipping:,.2f}. Product costs recalculated!', 'success')
         
     except ValueError:
         flash('Invalid shipping amount', 'danger')
@@ -574,20 +653,19 @@ def purchase_settings_page():
 def pay_bill(id):
     bill = PurchaseBill.query.get_or_404(id)
     payment_method = request.form.get('payment_method', 'cash')
-    
+
     vendor = bill.vendor
     total_payment = 0
-    
+    method_label = payment_method.capitalize()
+
     try:
         if payment_method == 'cash':
-            # Simple cash payment
             amount = float(request.form.get('amount', 0))
             if amount > 0:
                 total_payment = amount
                 bill.paid_amount += amount
-                
+
         elif payment_method == 'advance':
-            # Payment using selected advance
             advance_id = request.form.get('selected_advance_id')
             if advance_id:
                 advance = VendorAdvance.query.get(int(advance_id))
@@ -602,16 +680,12 @@ def pay_bill(id):
                         else:
                             advance.adjusted_bill_id = bill.id
                         total_payment = can_apply
-                        
+
         elif payment_method == 'mixed':
-            # Mixed payment - advances + cash
-            # Get selected advances
             advance_ids = request.form.getlist('value')
             cash_amount = float(request.form.get('cash_amount', 0))
-            
             remaining_to_apply = bill.balance_due
-            
-            # Apply advances first
+
             for advance_id in advance_ids:
                 if remaining_to_apply <= 0:
                     break
@@ -628,13 +702,12 @@ def pay_bill(id):
                             advance.adjusted_bill_id = bill.id
                         total_payment += can_apply
                         remaining_to_apply -= can_apply
-            
-            # Apply cash payment
+
             if cash_amount > 0 and remaining_to_apply > 0:
                 cash_to_apply = min(cash_amount, remaining_to_apply)
                 bill.paid_amount += cash_to_apply
                 total_payment += cash_to_apply
-        
+
         # Update bill status
         if bill.paid_amount >= bill.total:
             bill.status = 'paid'
@@ -642,20 +715,151 @@ def pay_bill(id):
             bill.status = 'partial'
         else:
             bill.status = 'unpaid'
-        
-        db.session.commit()
-        
+
+        # ── Save BillPayment record ──────────────────────────────────────
         if total_payment > 0:
-            method_text = f'({payment_method.capitalize()})'
-            flash(f'Payment of Rs {total_payment:,.2f} recorded successfully! {method_text}', 'success')
+            bp_record = BillPayment(
+                bill_id=bill.id,
+                amount=total_payment,
+                payment_method=method_label,
+                reference_number=request.form.get('reference_number', '').strip() or None,
+                notes=request.form.get('pay_notes', '').strip() or None,
+                created_by=current_user.id
+            )
+            # Handle payment image upload
+            if 'pay_image' in request.files:
+                pay_file = request.files['pay_image']
+                if pay_file and pay_file.filename:
+                    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'webp'}
+                    ext = pay_file.filename.rsplit('.', 1)[1].lower() if '.' in pay_file.filename else ''
+                    if ext in allowed_extensions:
+                        upload_dir = os.path.join(current_app.root_path, 'static', 'uploads', 'payments')
+                        os.makedirs(upload_dir, exist_ok=True)
+                        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                        filename = secure_filename(f"pay_{bill.bill_number}_{timestamp}.{ext}")
+                        filepath = os.path.join(upload_dir, filename)
+                        pay_file.save(filepath)
+                        bp_record.image_path = os.path.join('uploads', 'payments', filename).replace('\\', '/')
+            db.session.add(bp_record)
+
+        db.session.commit()
+
+        if total_payment > 0:
+            flash(f'Payment of PKR {total_payment:,.2f} recorded successfully! ({method_label})', 'success')
         else:
             flash('No payment was processed.', 'warning')
-            
+
     except Exception as e:
         db.session.rollback()
         flash(f'Error processing payment: {str(e)}', 'danger')
-    
+
     return redirect(request.referrer or url_for('purchase.bill_detail', id=bill.id))
+
+
+@bp.route('/bill/<int:id>/receive', methods=['POST'])
+@login_required
+def receive_quantity(id):
+    """Receive stock from a purchase bill — updates inventory and cost price."""
+    bill = PurchaseBill.query.get_or_404(id)
+
+    try:
+        # Gather posted quantities per purchase_item_id
+        receive_notes = request.form.get('receive_notes', '').strip() or None
+        received_any = False
+
+        # Build shipping/tax data for cost allocation
+        total_items_cost = sum(item.total for item in bill.items)
+        shipping_charge = bill.shipping_charge
+        tax_rate = bill.tax_rate
+        taxable_amount = total_items_cost + shipping_charge
+        tax_amount = (taxable_amount * tax_rate) / 100 if tax_rate > 0 else 0
+        total_additional_cost = shipping_charge + tax_amount
+
+        # Create the receive record
+        receive_record = BillReceive(
+            bill_id=bill.id,
+            notes=receive_notes,
+            created_by=current_user.id
+        )
+        db.session.add(receive_record)
+        db.session.flush()  # get receive_record.id
+
+        for item in bill.items:
+            field_name = f'qty_{item.id}'
+            qty_str = request.form.get(field_name, '').strip()
+            if not qty_str:
+                continue
+            try:
+                qty_to_receive = float(qty_str)
+            except ValueError:
+                continue
+            if qty_to_receive <= 0:
+                continue
+
+            # Save receive item
+            bri = BillReceiveItem(
+                receive_id=receive_record.id,
+                purchase_item_id=item.id,
+                product_id=item.product_id,
+                quantity_received=qty_to_receive
+            )
+            db.session.add(bri)
+
+            # Update inventory
+            product = Product.query.get(item.product_id)
+            if product:
+                old_qty = product.quantity
+                product.update_quantity(qty_to_receive)
+
+                # Calculate proportional cost (shipping + tax allocated by item value)
+                if total_items_cost > 0:
+                    allocation_ratio = item.total / total_items_cost
+                    allocated_additional = total_additional_cost * allocation_ratio
+                else:
+                    allocated_additional = 0
+                new_unit_cost = item.unit_price + (allocated_additional / qty_to_receive) if qty_to_receive > 0 else item.unit_price
+
+                # Record cost price history
+                old_price = product.cost_price
+                cost_history = CostPriceHistory(
+                    product_id=item.product_id,
+                    purchase_bill_id=bill.id,
+                    old_price=old_price if old_price > 0 else None,
+                    new_price=new_unit_cost,
+                    quantity_at_old_price=old_qty,
+                    used_quantity=0,
+                    reason=f"Received {qty_to_receive} units from Bill {bill.bill_number} — Base: PKR {item.unit_price:.2f}, With shipping/tax: PKR {new_unit_cost:.2f}",
+                    is_active=True,
+                    created_by=current_user.id
+                )
+                db.session.add(cost_history)
+                product.cost_price = new_unit_cost
+
+                # Trigger BOM versioning
+                try:
+                    user_id = current_user.id if current_user.is_authenticated else 1
+                    BOMVersioningService.check_and_update_bom_for_cost_changes(
+                        product_id=item.product_id,
+                        created_by_id=user_id
+                    )
+                except Exception as e:
+                    print(f"BOM versioning error for product {item.product_id}: {e}")
+
+                received_any = True
+
+        if received_any:
+            bill.inventory_received = True
+            db.session.commit()
+            flash('Quantity received and inventory updated successfully!', 'success')
+        else:
+            db.session.rollback()
+            flash('No quantities were entered. Nothing was received.', 'warning')
+
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error receiving quantity: {str(e)}', 'danger')
+
+    return redirect(url_for('purchase.bill_detail', id=bill.id))
 
 @bp.route('/bill/<int:id>/discount', methods=['POST'])
 @login_required
@@ -669,7 +873,7 @@ def apply_discount(id):
         bill.update_status()
         
         db.session.commit()
-        flash(f'Discount of Rs {discount_amount} applied successfully!', 'success')
+        flash(f'Discount of PKR {discount_amount} applied successfully!', 'success')
     
     return redirect(request.referrer or url_for('purchase.bill_detail', id=bill.id))
 
@@ -677,11 +881,12 @@ def apply_discount(id):
 @login_required
 def delete_bill(id):
     bill = PurchaseBill.query.get_or_404(id)
-    # Revert inventory (decrease stock added by this purchase)
-    for item in bill.items:
-        product = Product.query.get(item.product_id)
-        if product:
-            product.update_quantity(-item.quantity)
+    # Only revert inventory if stock was already received
+    if bill.inventory_received:
+        for item in bill.items:
+            product = Product.query.get(item.product_id)
+            if product:
+                product.update_quantity(-item.quantity)
 
     # Delete associated bill image if exists
     if bill.bill_image_path:
@@ -757,6 +962,8 @@ def vendors():
             (Vendor.phone.ilike(search_filter))
         )
     
+    query = apply_saved_filter_to_query(query, 'vendor', request.args)
+
     vendors = query.order_by(Vendor.name.asc()).all()
     # List of all vendors for the searchable dropdown
     all_vendors = Vendor.query.order_by(Vendor.name.asc()).all()
@@ -766,7 +973,9 @@ def vendors():
                          all_vendors=all_vendors, 
                          current_status=status, 
                          search_query=search,
-                         selected_vendor_id=vendor_id)
+                         selected_vendor_id=vendor_id,
+                         active_module='vendor',
+                         filter_id=request.args.get('filter_id'))
 
 @bp.route('/vendor/bulk-upload', methods=['GET', 'POST'])
 @login_required
@@ -953,7 +1162,7 @@ def vendor_give_advance(id):
     )
     db.session.add(advance)
     db.session.commit()
-    flash(f'Advance of Rs {amount:,.2f} recorded for {vendor.name}.', 'success')
+    flash(f'Advance of PKR {amount:,.2f} recorded for {vendor.name}.', 'success')
     return redirect(url_for('purchase.vendor_profile', id=id))
 
 
@@ -987,10 +1196,10 @@ def vendor_adjust_advance(id, adv_id):
                     advance.is_adjusted = True
                     advance.adjusted_bill_id = bill.id
                     db.session.commit()
-                    flash(f'Advance of Rs {apply_amount:,.2f} fully applied to bill {bill.bill_number}.', 'success')
+                    flash(f'Advance of PKR {apply_amount:,.2f} fully applied to bill {bill.bill_number}.', 'success')
                 else:
                     db.session.commit()
-                    flash(f'Advance of Rs {apply_amount:,.2f} applied to bill {bill.bill_number}. Remaining Rs {advance.remaining_balance:,.2f} still available as advance.', 'success')
+                    flash(f'Advance of PKR {apply_amount:,.2f} applied to bill {bill.bill_number}. Remaining PKR {advance.remaining_balance:,.2f} still available as advance.', 'success')
             return redirect(url_for('purchase.vendor_profile', id=id))
     return redirect(url_for('purchase.vendor_profile', id=id))
 
@@ -1174,9 +1383,13 @@ def purchase_orders():
             PurchaseOrder.po_number.ilike(f'%{search}%') |
             Vendor.name.ilike(f'%{search}%')
         )
+    query = apply_saved_filter_to_query(query, 'purchase_order', request.args)
+
     orders = query.order_by(PurchaseOrder.date.desc()).all()
     return render_template('purchase/purchase_orders.html',
-                           orders=orders, current_status=status, search=search)
+                           orders=orders, current_status=status, search=search,
+                           active_module='purchase_order',
+                           filter_id=request.args.get('filter_id'))
 
 
 def _parse_delivery_time(dt_str):
@@ -1549,6 +1762,8 @@ def purchase_return_list():
     if status != 'all':
         query = query.filter(PurchaseReturn.status == status)
 
+    query = apply_saved_filter_to_query(query, 'purchase_return', request.args)
+
     returns = query.order_by(PurchaseReturn.date.desc()).all()
 
     total_returns = sum(r.total for r in returns)
@@ -1560,7 +1775,9 @@ def purchase_return_list():
                         to_date=to_date,
                         current_status=status,
                         total_returns=total_returns,
-                        total_count=total_count)
+                        total_count=total_count,
+                        active_module='purchase_return',
+                        filter_id=request.args.get('filter_id'))
 
 
 @bp.route('/return/create', methods=['GET', 'POST'])
@@ -1774,7 +1991,7 @@ def process_purchase_refund(id):
         db.session.add(vendor_advance)
     
     db.session.commit()
-    flash(f'Refund of Rs{refund_amount:,.2f} processed to vendor.', 'success')
+    flash(f'Refund of PKR{refund_amount:,.2f} processed to vendor.', 'success')
     return redirect(url_for('purchase.purchase_return_detail', id=id))
 
 
@@ -2090,9 +2307,9 @@ def vendor_export_pdf(id):
         bill_data.append([
             bill.bill_number,
             bill.date.strftime("%Y-%m-%d"),
-            f"Rs {bill.total:,.2f}",
-            f"Rs {bill.paid_amount:,.2f}",
-            f"Rs {bill.balance_due:,.2f}",
+            f"PKR {bill.total:,.2f}",
+            f"PKR {bill.paid_amount:,.2f}",
+            f"PKR {bill.balance_due:,.2f}",
             bill.status.title()
         ])
     
@@ -2117,7 +2334,7 @@ def vendor_export_pdf(id):
         adv_data.append([
             adv.date.strftime("%Y-%m-%d"),
             adv.description or "",
-            f"Rs {adv.amount:,.2f}",
+            f"PKR {adv.amount:,.2f}",
             "Adjusted" if adv.is_adjusted else "Pending"
         ])
     

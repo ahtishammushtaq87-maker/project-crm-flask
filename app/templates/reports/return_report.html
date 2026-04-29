@@ -81,7 +81,7 @@
                     <div class="d-flex justify-content-between">
                         <div>
                             <p class="text-white-50 small mb-1">Total Returns</p>
-                            <h3 class="mb-0">Rs{{ "%.2f"|format(total_returns) }}</h3>
+                            <h3 class="mb-0">PKR{{ "%.2f"|format(total_returns) }}</h3>
                         </div>
                         <div class="icon icon-shape bg-white text-primary rounded-circle shadow">
                             <i class="fas fa-undo p-3"></i>
@@ -111,7 +111,7 @@
                     <div class="d-flex justify-content-between">
                         <div>
                             <p class="text-white-50 small mb-1">Average Return</p>
-                            <h3 class="mb-0">Rs{{ "%.2f"|format(total_returns / total_count if total_count > 0 else 0) }}</h3>
+                            <h3 class="mb-0">PKR{{ "%.2f"|format(total_returns / total_count if total_count > 0 else 0) }}</h3>
                         </div>
                         <div class="icon icon-shape bg-white text-info rounded-circle shadow">
                             <i class="fas fa-calculator p-3"></i>
@@ -192,9 +192,9 @@
                             <td>{{ ret.date.strftime('%Y-%m-%d') }}</td>
                             <td>{{ ret.sale.invoice_number if ret.sale else '-' }}</td>
                             <td>{{ ret.customer.name if ret.customer else 'Walk-in' }}</td>
-                            <td>Rs{{ "%.2f"|format(ret.subtotal) }}</td>
-                            <td>Rs{{ "%.2f"|format(ret.tax) }}</td>
-                            <td><strong>Rs{{ "%.2f"|format(ret.total) }}</strong></td>
+                            <td>PKR{{ "%.2f"|format(ret.subtotal) }}</td>
+                            <td>PKR{{ "%.2f"|format(ret.tax) }}</td>
+                            <td><strong>PKR{{ "%.2f"|format(ret.total) }}</strong></td>
                             <td>
                                 {% if ret.status == 'completed' %}
                                 <span class="status-badge bg-success text-white">Completed</span>

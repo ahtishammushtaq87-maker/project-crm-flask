@@ -38,7 +38,7 @@
             <div class="card border-left-success shadow h-100 py-2">
                 <div class="card-body">
                     <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Total Sales</div>
-                    <div class="h5 mb-0 font-weight-bold text-gray-800">Rs {{ '{:,.0f}'.format(customer.total_sales) }}</div>
+                    <div class="h5 mb-0 font-weight-bold text-gray-800">PKR {{ '{:,.0f}'.format(customer.total_sales) }}</div>
                 </div>
             </div>
         </div>
@@ -46,7 +46,7 @@
             <div class="card border-left-danger shadow h-100 py-2">
                 <div class="card-body">
                     <div class="text-xs font-weight-bold text-danger text-uppercase mb-1">Outstanding Balance</div>
-                    <div class="h5 mb-0 font-weight-bold text-gray-800">Rs {{ '{:,.0f}'.format(customer.outstanding_balance) }}</div>
+                    <div class="h5 mb-0 font-weight-bold text-gray-800">PKR {{ '{:,.0f}'.format(customer.outstanding_balance) }}</div>
                 </div>
             </div>
         </div>
@@ -54,7 +54,7 @@
             <div class="card border-left-info shadow h-100 py-2">
                 <div class="card-body">
                     <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Total Delivery</div>
-                    <div class="h5 mb-0 font-weight-bold text-gray-800">Rs {{ '{:,.0f}'.format(customer.total_delivery_charges) }}</div>
+                    <div class="h5 mb-0 font-weight-bold text-gray-800">PKR {{ '{:,.0f}'.format(customer.total_delivery_charges) }}</div>
                 </div>
             </div>
         </div>
@@ -62,7 +62,7 @@
             <div class="card border-left-warning shadow h-100 py-2">
                 <div class="card-body">
                     <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">Total Advances Received</div>
-                    <div class="h5 mb-0 font-weight-bold text-gray-800">Rs {{ '{:,.0f}'.format(customer.total_advances_received) }}</div>
+                    <div class="h5 mb-0 font-weight-bold text-gray-800">PKR {{ '{:,.0f}'.format(customer.total_advances_received) }}</div>
                 </div>
             </div>
         </div>
@@ -70,7 +70,7 @@
             <div class="card border-left-secondary shadow h-100 py-2">
                 <div class="card-body">
                     <div class="text-xs font-weight-bold text-secondary text-uppercase mb-1">Advances Applied</div>
-                    <div class="h5 mb-0 font-weight-bold text-gray-800">Rs {{ '{:,.0f}'.format(customer.total_advances_adjusted) }}</div>
+                    <div class="h5 mb-0 font-weight-bold text-gray-800">PKR {{ '{:,.0f}'.format(customer.total_advances_adjusted) }}</div>
                 </div>
             </div>
         </div>
@@ -80,7 +80,7 @@
                     <div class="text-xs font-weight-bold text-uppercase mb-1 {% if customer.remaining_advance_balance > 0 %}text-dark{% else %}text-secondary{% endif %}">
                         Remaining Advance
                     </div>
-                    <div class="h5 mb-0 font-weight-bold">Rs {{ '{:,.0f}'.format(customer.remaining_advance_balance) }}</div>
+                    <div class="h5 mb-0 font-weight-bold">PKR {{ '{:,.0f}'.format(customer.remaining_advance_balance) }}</div>
                     {% if customer.remaining_advance_balance > 0 %}
                     <small class="text-dark opacity-75">Not yet applied</small>
                     {% endif %}
@@ -119,11 +119,11 @@
                             <tr>
                                 <td><strong>{{ sale.invoice_number }}</strong></td>
                                 <td>{{ sale.date.strftime('%d-%b-%Y') }}</td>
-                                <td>Rs {{ '{:,.2f}'.format(sale.total) }}</td>
-                                <td>Rs {{ '{:,.2f}'.format(sale.delivery_charge) }}</td>
-                                <td>Rs {{ '{:,.2f}'.format(sale.advance_applied) }}</td>
-                                <td>Rs {{ '{:,.2f}'.format(sale.paid_amount) }}</td>
-                                <td class="{% if sale.balance_due > 0 %}text-danger fw-bold{% else %}text-success{% endif %}">Rs {{ '{:,.2f}'.format(sale.balance_due) }}</td>
+                                <td>PKR {{ '{:,.2f}'.format(sale.total) }}</td>
+                                <td>PKR {{ '{:,.2f}'.format(sale.delivery_charge) }}</td>
+                                <td>PKR {{ '{:,.2f}'.format(sale.advance_applied) }}</td>
+                                <td>PKR {{ '{:,.2f}'.format(sale.paid_amount) }}</td>
+                                <td class="{% if sale.balance_due > 0 %}text-danger fw-bold{% else %}text-success{% endif %}">PKR {{ '{:,.2f}'.format(sale.balance_due) }}</td>
                                 <td>
                                     {% if sale.status == 'paid' %}
                                         <span class="badge bg-success">Paid</span>
@@ -176,10 +176,10 @@
                             {% for advance in advances %}
                             <tr>
                                 <td>{{ advance.date.strftime('%d-%b-%Y') }}</td>
-                                <td><strong>Rs {{ '{:,.2f}'.format(advance.amount) }}</strong></td>
+                                <td><strong>PKR {{ '{:,.2f}'.format(advance.amount) }}</strong></td>
                                 <td>{{ advance.description or '-' }}</td>
-                                <td>Rs {{ '{:,.2f}'.format(advance.applied_amount) }}</td>
-                                <td class="{% if advance.remaining_balance > 0 %}text-warning fw-bold{% else %}text-success{% endif %}">Rs {{ '{:,.2f}'.format(advance.remaining_balance) }}</td>
+                                <td>PKR {{ '{:,.2f}'.format(advance.applied_amount) }}</td>
+                                <td class="{% if advance.remaining_balance > 0 %}text-warning fw-bold{% else %}text-success{% endif %}">PKR {{ '{:,.2f}'.format(advance.remaining_balance) }}</td>
                                 <td>
                                     {% if advance.adjusted_invoice %}
                                         <a href="{{ url_for('sales.invoice_detail', id=advance.adjusted_invoice_id) }}">
@@ -229,11 +229,11 @@
                                                         {% if advance.applied_amount > 0 %}
                                                         <div class="alert alert-warning">
                                                             <i class="fas fa-exclamation-triangle me-2"></i>
-                                                            <strong>Warning:</strong> This advance has <strong>Rs {{ '{:,.2f}'.format(advance.applied_amount) }}</strong> applied to invoices.
+                                                            <strong>Warning:</strong> This advance has <strong>PKR {{ '{:,.2f}'.format(advance.applied_amount) }}</strong> applied to invoices.
                                                             Deleting this advance will also unapply it from the related invoices.
                                                         </div>
                                                         {% endif %}
-                                                        <p>Are you sure you want to delete this advance of <strong>Rs {{ '{:,.2f}'.format(advance.amount) }}</strong>?</p>
+                                                        <p>Are you sure you want to delete this advance of <strong>PKR {{ '{:,.2f}'.format(advance.amount) }}</strong>?</p>
                                                         <p class="text-muted small">This action cannot be undone.</p>
                                                     </div>
                                                     <div class="modal-footer">
@@ -251,7 +251,7 @@
                                             <div class="modal-content text-start">
                                                 <form action="{{ url_for('sales.customer_apply_advance', customer_id=customer.id, adv_id=advance.id) }}" method="POST">
                                                     <div class="modal-header">
-                                                        <h5 class="modal-title">Apply Advance - Rs {{ '{:,.2f}'.format(advance.remaining_balance) }}</h5>
+                                                        <h5 class="modal-title">Apply Advance - PKR {{ '{:,.2f}'.format(advance.remaining_balance) }}</h5>
                                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                                     </div>
                                                     <div class="modal-body">
@@ -262,7 +262,7 @@
                                                                 {% for sale in sales %}
                                                                     {% if sale.status != 'paid' and sale.balance_due > 0 %}
                                                                         <option value="{{ sale.id }}">
-                                                                            {{ sale.invoice_number }} - Rs {{ '{:,.2f}'.format(sale.balance_due) }}
+                                                                            {{ sale.invoice_number }} - PKR {{ '{:,.2f}'.format(sale.balance_due) }}
                                                                         </option>
                                                                     {% endif %}
                                                                 {% endfor %}
@@ -290,7 +290,7 @@
                                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                                     </div>
                                                     <div class="modal-body">
-                                                        <p>Are you sure you want to unapply this advance of <strong>Rs {{ '{:,.2f}'.format(advance.applied_amount) }}</strong>?</p>
+                                                        <p>Are you sure you want to unapply this advance of <strong>PKR {{ '{:,.2f}'.format(advance.applied_amount) }}</strong>?</p>
                                                         <p class="text-muted">This will reverse the applied amount from the related invoices.</p>
                                                     </div>
                                                     <div class="modal-footer">
@@ -329,7 +329,7 @@
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="advanceAmountInput" class="form-label">Advance Amount (Rs) *</label>
+                        <label for="advanceAmountInput" class="form-label">Advance Amount (PKR) *</label>
                         <input type="number" step="0.01" name="amount" id="advanceAmountInput" class="form-control" placeholder="0.00" required>
                     </div>
                     <div class="mb-3">

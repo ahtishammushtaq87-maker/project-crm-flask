@@ -155,8 +155,8 @@
                                 </div>
                             </div>
                             <div class="alert alert-info mb-0">
-                                <strong>Example:</strong> If you set an expense of Rs 3000 from Jan 1 to Jan 31 (31 days), 
-                                it will show as Rs 96.77 daily expense on the dashboard.
+                                <strong>Example:</strong> If you set an expense of PKR 3000 from Jan 1 to Jan 31 (31 days), 
+                                it will show as PKR 96.77 daily expense on the dashboard.
                             </div>
                         </div>
 
@@ -315,8 +315,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (total > 0 && amount > 0) {
             const per = (amount / total).toFixed(2);
             summary.innerHTML = total > 1
-                ? ` <strong>Rs ${amount.toFixed(2)}</strong> ÷ ${total} targets = <strong>Rs ${per}</strong> each.`
-                : ` Full amount <strong>Rs ${amount.toFixed(2)}</strong> to 1 target.`;
+                ? ` <strong>PKR ${amount.toFixed(2)}</strong> ÷ ${total} targets = <strong>PKR ${per}</strong> each.`
+                : ` Full amount <strong>PKR ${amount.toFixed(2)}</strong> to 1 target.`;
             preview.style.display = 'block';
         } else {
             preview.style.display = 'none';

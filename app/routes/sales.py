@@ -1,13 +1,14 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response
 from flask_login import login_required, current_user
 from app import db
-from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman, CustomerGroup
+from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman, CustomerGroup, Payment, PaymentMethod
 from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm, SalesmanForm, CustomerGroupForm
 from datetime import datetime, date
 from sqlalchemy import func
 from app.pdf_utils import generate_professional_pdf
 import os
 from werkzeug.utils import secure_filename
+from app.routes.filters import apply_saved_filter_to_query
 
 bp = Blueprint('sales', __name__)
 
@@ -48,6 +49,8 @@ def invoices():
         except ValueError:
             pass  # Invalid date format, ignore filter
     
+    query = apply_saved_filter_to_query(query, 'sale', request.args)
+    
     sales = query.order_by(Sale.date.desc()).all()
     
     # Calculate totals
@@ -76,7 +79,9 @@ def invoices():
                          total_amount=total_amount,
                          total_paid=total_paid,
                          total_balance=total_balance,
-                         date_format=date_format)
+                         date_format=date_format,
+                         active_module='sale',
+                         filter_id=request.args.get('filter_id'))
 
 @bp.route('/invoice/create', methods=['GET', 'POST'])
 @login_required
@@ -229,7 +234,119 @@ def invoice_detail(id):
     company = Company.query.first()
     date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
     returns = SaleReturn.query.filter_by(sale_id=sale.id).order_by(SaleReturn.date.desc()).all()
-    return render_template('sales/invoice_detail.html', sale=sale, returns=returns, date_format=date_format)
+    # Get payment methods for dropdown and existing payments for display
+    payment_methods = PaymentMethod.query.filter_by(is_active=True).order_by(PaymentMethod.name).all()
+    payments = Payment.query.filter_by(invoice_id=sale.id).order_by(Payment.date.desc()).all()
+    return render_template('sales/invoice_detail.html', sale=sale, returns=returns, date_format=date_format, payment_methods=payment_methods, payments=payments, today=datetime.utcnow().strftime('%Y-%m-%d'))
+
+@bp.route('/invoice/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_invoice(id):
+    sale = Sale.query.get_or_404(id)
+    form = SaleForm(obj=sale)
+    customers = Customer.query.all()
+    vendors = Vendor.query.all()
+    products = Product.query.all()
+    currencies = Currency.query.filter_by(is_active=True).all()
+    salesmen = Salesman.query.filter_by(is_active=True).all()
+
+    form.customer_id.choices = [(0, 'Walk-in Customer')] + [(c.id, c.name) for c in customers]
+    form.salesman_id.choices = [(0, 'No Salesman')] + [(s.id, s.name) for s in salesmen]
+
+    if request.method == 'POST':
+        # Revert old inventory
+        for item in sale.items:
+            product = Product.query.get(item.product_id)
+            if product:
+                product.update_quantity(item.quantity)
+
+        # Delete old items
+        SaleItem.query.filter_by(sale_id=sale.id).delete()
+
+        # Rebuild from form
+        customer_id = request.form.get('customer_id')
+        selected_vendor_id = request.form.get('vendor_id')
+        salesman_id = request.form.get('salesman_id')
+        date = datetime.strptime(request.form.get('date'), '%Y-%m-%d')
+
+        product_ids = request.form.getlist('product_id[]')
+        quantities = request.form.getlist('quantity[]')
+        prices = request.form.getlist('price[]')
+        deliveries = request.form.getlist('delivery[]')
+
+        subtotal = 0
+        sale_items = []
+
+        for i in range(len(product_ids)):
+            if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
+                product = Product.query.get(int(product_ids[i]))
+                quantity = float(quantities[i])
+                price = float(prices[i])
+                delivery_fee = float(deliveries[i]) if i < len(deliveries) else 0
+                item_subtotal = quantity * price
+                total = item_subtotal + delivery_fee
+                subtotal += total
+
+                sale_items.append({
+                    'product_id': product.id,
+                    'quantity': quantity,
+                    'unit_price': price,
+                    'delivery_fee': delivery_fee,
+                    'total': total
+                })
+
+        tax_rate = float(request.form.get('tax_rate', 0))
+        tax = subtotal * (tax_rate / 100)
+        discount = float(request.form.get('discount', 0))
+        delivery_charge = float(request.form.get('delivery_charge', 0))
+
+        sale.customer_id = customer_id if customer_id != '0' else None
+        sale.vendor_id = selected_vendor_id if selected_vendor_id and selected_vendor_id != '0' else None
+        sale.salesman_id = salesman_id if salesman_id and salesman_id != '0' else None
+        sale.date = date
+        sale.subtotal = subtotal
+        sale.tax_rate = tax_rate
+        sale.tax = tax
+        sale.discount = discount
+        sale.delivery_charge = delivery_charge
+        sale.advance_applied = float(request.form.get('advance_applied', sale.advance_applied or 0))
+        sale.currency_id = request.form.get('currency_id') or None
+        sale.exchange_rate = float(request.form.get('exchange_rate', 1))
+
+        due_date_str = request.form.get('due_date')
+        if due_date_str:
+            try:
+                sale.due_date = datetime.strptime(due_date_str, '%Y-%m-%d')
+            except ValueError:
+                sale.due_date = None
+
+        # Add items & update inventory
+        for item in sale_items:
+            sale_item = SaleItem(
+                sale_id=sale.id,
+                product_id=item['product_id'],
+                quantity=item['quantity'],
+                unit_price=item['unit_price'],
+                delivery_fee=item.get('delivery_fee', 0),
+                total=item['total']
+            )
+            db.session.add(sale_item)
+            product = Product.query.get(item['product_id'])
+            product.update_quantity(-item['quantity'])
+
+        sale.calculate_totals()
+        # Preserve paid amount; update status accordingly
+        sale.update_status()
+        sale.updated_at = datetime.utcnow()
+
+        db.session.commit()
+        flash('Invoice updated successfully!', 'success')
+        return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+    return render_template('sales/edit_invoice.html', form=form, sale=sale, products=products,
+                           customers=customers, vendors=vendors, currencies=currencies,
+                           salesmen=salesmen, now=datetime.now())
+
 
 @bp.route('/invoice/<int:id>/delete', methods=['POST'])
 @login_required
@@ -289,16 +406,67 @@ def pay_invoice(id):
     amount = float(request.form.get('amount', 0))
     
     if amount > 0:
+        # Update sale payment status (existing logic preserved)
         sale.paid_amount += amount
-        if sale.paid_amount >= sale.total:
-            sale.status = 'paid'
-        else:
-            sale.status = 'partial'
+        sale.update_status()
+        
+        # Handle payment receipt image upload
+        image_path = None
+        if 'payment_image' in request.files:
+            payment_file = request.files['payment_image']
+            if payment_file and payment_file.filename:
+                filename = secure_filename(payment_file.filename)
+                upload_dir = os.path.join('app', 'static', 'uploads', 'sale_payments')
+                os.makedirs(upload_dir, exist_ok=True)
+                file_path = os.path.join(upload_dir, filename)
+                payment_file.save(file_path)
+                image_path = file_path.replace('\\', '/')
+        
+        # Create Payment record for history tracking
+        payment_date_str = request.form.get('payment_date', '')
+        payment_date = datetime.strptime(payment_date_str, '%Y-%m-%d') if payment_date_str else datetime.utcnow()
+        payment_method = request.form.get('payment_method', 'Cash')
+        payment_notes = request.form.get('payment_notes', '')
+        
+        # Generate payment number
+        last_payment = Payment.query.order_by(Payment.id.desc()).first()
+        payment_num = f"PAY-{last_payment.id + 1 if last_payment else 1}"
+        
+        payment = Payment(
+            payment_number=payment_num,
+            date=payment_date,
+            amount=amount,
+            method=payment_method,
+            invoice_id=sale.id,
+            notes=payment_notes,
+            image_path=image_path,
+            created_by=current_user.id
+        )
+        db.session.add(payment)
         
         db.session.commit()
-        flash(f'Payment of ${amount} recorded successfully!', 'success')
+        flash(f'Payment of PKR {amount:,.2f} recorded successfully!', 'success')
     
     return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+
+@bp.route('/payment/<int:payment_id>/image')
+@login_required
+def payment_image(payment_id):
+    """Serve payment receipt image"""
+    from flask import current_app
+    payment = Payment.query.get_or_404(payment_id)
+    if payment.image_path:
+        # Stored path is relative to project root (e.g., 'app/static/uploads/sale_payments/xxx.png')
+        if os.path.isabs(payment.image_path):
+            file_path = payment.image_path
+        else:
+            project_root = os.path.dirname(current_app.root_path)
+            file_path = os.path.join(project_root, payment.image_path)
+        if os.path.exists(file_path):
+            return send_file(file_path)
+    flash('Image not found', 'error')
+    return redirect(url_for('sales.invoice_detail', id=payment.invoice_id))
 
 @bp.route('/invoice/<int:id>/discount', methods=['POST'])
 @login_required
@@ -314,7 +482,7 @@ def apply_discount(id):
         sale.update_status()
         
         db.session.commit()
-        flash(f'Discount of Rs {discount_amount} applied successfully!', 'success')
+        flash(f'Discount of PKR {discount_amount} applied successfully!', 'success')
     
     return redirect(request.referrer or url_for('sales.invoice_detail', id=sale.id))
 
@@ -342,6 +510,8 @@ def customers():
             (Customer.phone.ilike(search_filter))
         )
     
+    query = apply_saved_filter_to_query(query, 'customer', request.args)
+    
     customers = query.order_by(Customer.name.asc()).all()
     # List of all customers for the searchable dropdown
     all_customers = Customer.query.order_by(Customer.name.asc()).all()
@@ -351,7 +521,9 @@ def customers():
                          all_customers=all_customers,
                          current_status=status, 
                          search_query=search,
-                         selected_customer_id=customer_id)
+                         selected_customer_id=customer_id,
+                         active_module='customer',
+                         filter_id=request.args.get('filter_id'))
 
 @bp.route('/customer/bulk-upload', methods=['GET', 'POST'])
 @login_required
@@ -841,7 +1013,7 @@ def customer_receive_advance(id):
     )
     db.session.add(advance)
     db.session.commit()
-    flash(f'Advance of Rs {amount:,.2f} recorded from {customer.name}.', 'success')
+    flash(f'Advance of PKR {amount:,.2f} recorded from {customer.name}.', 'success')
     return redirect(url_for('sales.customer_profile', id=id))
 
 
@@ -887,7 +1059,7 @@ def customer_apply_advance(customer_id, adv_id):
     invoice.update_status()
     
     db.session.commit()
-    flash(f'Advance of Rs {apply_amount:,.2f} applied to invoice {invoice.invoice_number}.', 'success')
+    flash(f'Advance of PKR {apply_amount:,.2f} applied to invoice {invoice.invoice_number}.', 'success')
     return redirect(url_for('sales.customer_profile', id=customer_id))
 
 
@@ -931,7 +1103,7 @@ def customer_delete_advance(customer_id, adv_id):
     
     db.session.delete(advance)
     db.session.commit()
-    flash(f'Advance of Rs {amount:,.2f} from {customer_name} has been deleted.', 'success')
+    flash(f'Advance of PKR {amount:,.2f} from {customer_name} has been deleted.', 'success')
     return redirect(url_for('sales.customer_profile', id=customer_id))
 
 
@@ -976,7 +1148,7 @@ def customer_unapply_advance(customer_id, adv_id):
     advance.adjusted_invoice_id = None
     
     db.session.commit()
-    flash(f'Advance of Rs {advance.amount:,.2f} has been unapplied from invoices.', 'success')
+    flash(f'Advance of PKR {advance.amount:,.2f} has been unapplied from invoices.', 'success')
     return redirect(url_for('sales.customer_profile', id=customer_id))
 
 

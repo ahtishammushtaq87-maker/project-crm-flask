@@ -16,9 +16,9 @@
             <div class="card">
                 <div class="card-body">
                     <h5>Summary</h5>
-                    <p><strong>Total Returns:</strong> Rs{{ "%.2f"|format(vendor.total_purchase_returns) }}</p>
-                    <p><strong>Refund Paid:</strong> Rs{{ "%.2f"|format(vendor.total_refund_paid) }}</p>
-                    <p><strong>Pending Refund:</strong> Rs{{ "%.2f"|format(vendor.pending_refund) }}</p>
+                    <p><strong>Total Returns:</strong> PKR{{ "%.2f"|format(vendor.total_purchase_returns) }}</p>
+                    <p><strong>Refund Paid:</strong> PKR{{ "%.2f"|format(vendor.total_refund_paid) }}</p>
+                    <p><strong>Pending Refund:</strong> PKR{{ "%.2f"|format(vendor.pending_refund) }}</p>
                 </div>
             </div>
         </div>
@@ -44,7 +44,7 @@
                         <tr>
                             <td>{{ ret.return_number }}</td>
                             <td>{{ ret.date.strftime('%Y-%m-%d') }}</td>
-                            <td>Rs{{ "%.2f"|format(ret.total) }}</td>
+                            <td>PKR{{ "%.2f"|format(ret.total) }}</td>
                             <td>
                                 {% if ret.status == 'completed' %}
                                 <span class="badge bg-success">{{ ret.status|title }}</span>

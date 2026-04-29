@@ -38,6 +38,7 @@ def create_app(config_class=Config):
             PDProjectBOM, PDComponent, PDTooling, PDTesting, PDApproval, PDAsset,
             PurchaseReturn, PurchaseReturnItem
         )
+        from app.filter_models import SavedFilter
         
         # Map model classes to table names and their columns
         model_columns = {
@@ -93,7 +94,8 @@ def create_app(config_class=Config):
             'pd_approval': PDApproval,
             'pd_assets': PDAsset,
             'purchase_returns': PurchaseReturn,
-            'purchase_return_items': PurchaseReturnItem
+            'purchase_return_items': PurchaseReturnItem,
+            'saved_filters': SavedFilter
         }
         
         try:
@@ -215,6 +217,7 @@ def create_app(config_class=Config):
     from app.routes.production import bp as production_bp
     from app.routes.product_development import bp as pd_bp
     from app.routes.categories import bp as categories_bp
+    from app.routes.filters import bp as filters_bp
 
     app.register_blueprint(dashboard_bp, url_prefix='/')
     app.register_blueprint(accounting_bp, url_prefix='/accounting')
@@ -234,6 +237,7 @@ def create_app(config_class=Config):
     app.register_blueprint(production_bp, url_prefix='/production')
     app.register_blueprint(pd_bp, url_prefix='/product-development')
     app.register_blueprint(categories_bp, url_prefix='/categories')
+    app.register_blueprint(filters_bp, url_prefix='/api/filters')
     
     @app.context_processor
     def inject_company():

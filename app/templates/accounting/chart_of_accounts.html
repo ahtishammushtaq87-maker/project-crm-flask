@@ -23,9 +23,9 @@
                         {% for account, t in account_balances.items() %}
                         <tr>
                             <td>{{ account }}</td>
-                            <td>Rs{{ '%.2f'|format(t.debit) }}</td>
-                            <td>Rs{{ '%.2f'|format(t.credit) }}</td>
-                            <td>Rs{{ '%.2f'|format(t.debit - t.credit) }}</td>
+                            <td>PKR{{ '%.2f'|format(t.debit) }}</td>
+                            <td>PKR{{ '%.2f'|format(t.credit) }}</td>
+                            <td>PKR{{ '%.2f'|format(t.debit - t.credit) }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>

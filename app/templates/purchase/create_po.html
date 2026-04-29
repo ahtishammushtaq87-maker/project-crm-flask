@@ -254,7 +254,7 @@
                 <div class="modal-body text-start">
                     <p class="mb-3">Record advance payment for: <strong id="advanceVendorName"></strong></p>
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Amount (Rs) <span class="text-danger">*</span></label>
+                        <label class="form-label fw-semibold">Amount (PKR) <span class="text-danger">*</span></label>
                         <input type="number" step="0.01" min="0.01" name="amount" class="form-control form-control-lg" placeholder="0.00" required>
                     </div>
                     <div class="mb-3">
@@ -306,7 +306,7 @@ function onVendorChange(vendorId) {
             pendingAdvance = data.pending_balance || 0;
             if (pendingAdvance > 0) {
                 document.getElementById('advanceBadgeText').textContent =
-                    `⚡ Rs ${pendingAdvance.toLocaleString('en-PK', {minimumFractionDigits:0})} in pending advances — click to apply`;
+                    `⚡ PKR ${pendingAdvance.toLocaleString('en-PK', {minimumFractionDigits:0})} in pending advances — click to apply`;
                 wrapper.style.display = 'block';
             } else {
                 wrapper.style.display = 'none';
@@ -326,7 +326,7 @@ function applyAdvance() {
         badge.classList.remove('alert-warning');
         badge.classList.add('alert-success');
         document.getElementById('advanceBadgeText').textContent =
-            `✔ Rs ${pendingAdvance.toLocaleString()} advance applied to this PO`;
+            `✔ PKR ${pendingAdvance.toLocaleString()} advance applied to this PO`;
     }
 }
 

@@ -1,9 +1,40 @@
-# Fix Invoice PDF Template Configuration Display
+# Sales Invoice Enhancement TODO
 
-- [x] 1. Read and understand `app/pdf_templates/invoice_template.py` and `app/pdf_utils.py`
-- [x] 2. Confirm plan with user
-- [x] 3. Update `_apply_template_settings()` in `app/pdf_utils.py` to load `SHOW_*` and `FOOTER_SHOW_*` flags
-- [x] 4. Update `_build_bottom_section()` in `app/pdf_utils.py` to respect show/hide flags for bank details, terms, and notes
-- [x] 5. Update `_draw_footer()` in `app/pdf_utils.py` to render `FOOTER_MESSAGE` and conditionally show page number / company info
-- [x] 6. Verify no syntax errors and test PDF generation
+## Plan
+1. [x] app/models.py - Add image_path to Payment model
+2. [x] app/routes/sales.py - Update pay_invoice() + add image route
+3. [x] app/templates/sales/invoice_detail.html - Customer link + payment form + history
+4. [x] Create migration script for payments.image_path column
+5. [x] Test and verify migration
+6. [x] Provide SQL query for VPS deployment
+
+## Status: COMPLETE
+
+## Changes Made:
+- **app/models.py**: Added `image_path = db.Column(db.String(255))` to Payment model
+- **app/routes/sales.py**:
+  - Added `Payment`, `PaymentMethod` to imports
+  - `invoice_detail()` now queries payment_methods and payments, passes `today`
+  - `pay_invoice()` enhanced to handle file uploads and create Payment records
+  - New route `/payment/<int:payment_id>/image` to serve receipt images
+- **app/templates/sales/invoice_detail.html**:
+  - Customer name is now a clickable link to customer profile
+  - Due date displayed if set
+  - Payment form upgraded with date, method dropdown, receipt image upload, notes
+  - Payment History table shows all payments with dates, methods, amounts, and receipt images
+- **migrate_payment_image.py**: SQLite migration script for adding image_path column
+
+## VPS Deployment SQL (SQLite):
+```sql
+-- Run this on your VPS database if image_path column doesn't exist
+ALTER TABLE payments ADD COLUMN image_path VARCHAR(255);
+```
+
+## Files Modified:
+- app/models.py
+- app/routes/sales.py
+- app/templates/sales/invoice_detail.html
+
+## Files Created:
+- migrate_payment_image.py
 

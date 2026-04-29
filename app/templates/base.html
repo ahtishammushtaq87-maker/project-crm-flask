@@ -999,8 +999,32 @@
                 </div>
             </div>
 
-            <!-- Main Content -->
-            <div class="col-md-10 col-12 main-content">
+    <!-- Universal Filter Trigger (shown when active_module is set) -->
+    {% if active_module %}
+    <div id="universal-filter-trigger-wrapper" class="position-fixed" style="top: 70px; right: 20px; z-index: 1040;">
+        <button type="button" class="btn btn-primary btn-sm shadow" id="universal-filter-trigger-btn" data-module="{{ active_module }}" data-bs-toggle="modal" data-bs-target="#universalFilterModal">
+            <i class="fas fa-filter me-1"></i> Advanced Filter
+        </button>
+        {% if filter_id %}
+        <a href="{{ request.path }}" class="btn btn-outline-danger btn-sm shadow ms-1" title="Clear filter">
+            <i class="fas fa-times"></i>
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Active Filter Banner -->
+    {% if filter_id %}
+    <div class="alert alert-info alert-dismissible fade show mt-3 mb-0" style="margin-left: 15px; margin-right: 15px;">
+        <i class="fas fa-filter me-2"></i>
+        <strong>Advanced Filter Active</strong> — Results are filtered. 
+        <a href="{{ request.path }}" class="alert-link">Click here to clear</a>.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    <!-- Main Content -->
+    <div class="col-md-10 col-12 main-content">
                 {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                 {% for category, message in messages %}
@@ -1050,8 +1074,11 @@
     <!-- Toast Notification Container (temporary toasts) -->
     <div class="toast-container" id="toastContainer"></div>
 
+    {% include 'components/filter_modal.html' %}
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="{{ url_for('static', filename='js/query_builder.js') }}"></script>
     <script>
         // Mobile sidebar toggle
         $(document).ready(function () {

@@ -77,11 +77,11 @@
                             <td>{{ po.vendor.name }}</td>
                             <td>{{ po.date.strftime('%d-%m-%Y') }}</td>
                             <td>{{ po.expected_date.strftime('%d-%m-%Y') if po.expected_date else '—' }}</td>
-                            <td class="text-end">Rs {{ '{:,.0f}'.format(po.subtotal) }}</td>
+                            <td class="text-end">PKR {{ '{:,.0f}'.format(po.subtotal) }}</td>
                             <td class="text-end {% if po.shipping_charge > 0 %}text-info{% endif %}">
-                                {% if po.shipping_charge > 0 %}Rs {{ '{:,.0f}'.format(po.shipping_charge) }}{% else %}—{% endif %}
+                                {% if po.shipping_charge > 0 %}PKR {{ '{:,.0f}'.format(po.shipping_charge) }}{% else %}—{% endif %}
                             </td>
-                            <td class="text-end fw-bold">Rs {{ '{:,.0f}'.format(po.total) }}</td>
+                            <td class="text-end fw-bold">PKR {{ '{:,.0f}'.format(po.total) }}</td>
                             <td class="text-center">
                                 <span class="badge
                                     {% if po.status == 'Draft' %}bg-secondary

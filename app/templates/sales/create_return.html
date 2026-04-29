@@ -81,7 +81,7 @@
                             <td>{{ s.invoice_number }}</td>
                             <td>{{ s.date.strftime('%Y-%m-%d') }}</td>
                             <td>{{ s.customer.name if s.customer else 'Walk-in Customer' }}</td>
-                            <td>Rs{{ "%.2f"|format(s.total) }}</td>
+                            <td>PKR{{ "%.2f"|format(s.total) }}</td>
                             <td>
                                 {% if s.status == 'paid' %}
                                 <span class="badge bg-success">Paid</span>
@@ -149,17 +149,17 @@
                         </div>
                         <hr>
                         <div class="mb-2">
-                            <strong>Subtotal:</strong> <span id="subtotal">Rs0.00</span>
+                            <strong>Subtotal:</strong> <span id="subtotal">PKR0.00</span>
                         </div>
                         <div class="mb-2">
-                            <strong>Tax:</strong> <span id="tax">Rs0.00</span>
+                            <strong>Tax:</strong> <span id="tax">PKR0.00</span>
                         </div>
                         <div class="mb-2">
-                            <strong>Discount:</strong> <span id="discountDisplay">Rs0.00</span>
+                            <strong>Discount:</strong> <span id="discountDisplay">PKR0.00</span>
                         </div>
                         <hr>
                         <div class="mb-2">
-                            <h4>Total: <span id="total">Rs0.00</span></h4>
+                            <h4>Total: <span id="total">PKR0.00</span></h4>
                         </div>
                     </div>
                 </div>
@@ -212,7 +212,7 @@
                                            value="{{ item.unit_price }}" readonly>
                                 </td>
                                 <td>
-                                    <span class="item-total">Rs0.00</span>
+                                    <span class="item-total">PKR0.00</span>
                                 </td>
                                 <td>
                                     <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)">
@@ -259,7 +259,7 @@
             }
         });
         
-        newRow.querySelector('.item-total').textContent = 'Rs0.00';
+        newRow.querySelector('.item-total').textContent = 'PKR0.00';
         document.getElementById('itemsBody').appendChild(newRow);
         
         // Init Select2 on new row
@@ -296,14 +296,14 @@
         const quantity = parseFloat(row.querySelector('.quantity').value) || 0;
         const price = parseFloat(row.querySelector('.price').value) || 0;
         const total = quantity * price;
-        row.querySelector('.item-total').textContent = `Rs${total.toFixed(2)}`;
+        row.querySelector('.item-total').textContent = `PKR${total.toFixed(2)}`;
         calculateTotals();
     }
 
     function calculateTotals() {
         let subtotal = 0;
         document.querySelectorAll('.item-total').forEach(totalSpan => {
-            const total = parseFloat(totalSpan.textContent.replace('Rs', '')) || 0;
+            const total = parseFloat(totalSpan.textContent.replace('PKR', '')) || 0;
             subtotal += total;
         });
 
@@ -313,11 +313,11 @@
         const discount = discountInput ? (parseFloat(discountInput.value) || 0) : 0;
         const total = subtotal + tax - discount;
 
-        document.getElementById('subtotal').textContent = `Rs${subtotal.toFixed(2)}`;
-        document.getElementById('tax').textContent = `Rs${tax.toFixed(2)}`;
+        document.getElementById('subtotal').textContent = `PKR${subtotal.toFixed(2)}`;
+        document.getElementById('tax').textContent = `PKR${tax.toFixed(2)}`;
         const discountDisplay = document.getElementById('discountDisplay');
-        if (discountDisplay) discountDisplay.textContent = `Rs${discount.toFixed(2)}`;
-        document.getElementById('total').textContent = `Rs${total.toFixed(2)}`;
+        if (discountDisplay) discountDisplay.textContent = `PKR${discount.toFixed(2)}`;
+        document.getElementById('total').textContent = `PKR${total.toFixed(2)}`;
     }
 
     function initSelect2(selector, placeholder = 'Search or select') {

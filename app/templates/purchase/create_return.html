@@ -80,7 +80,7 @@
                             <td>{{ b.bill_number }}</td>
                             <td>{{ b.date.strftime('%Y-%m-%d') }}</td>
                             <td>{{ b.vendor.name if b.vendor else 'Unknown' }}</td>
-                            <td>Rs{{ "%.2f"|format(b.total) }}</td>
+                            <td>PKR{{ "%.2f"|format(b.total) }}</td>
                             <td>
                                 {% if b.status == 'paid' %}
                                 <span class="badge bg-success">Paid</span>
@@ -189,7 +189,7 @@
                                            value="{{ item.unit_price }}" readonly>
                                 </td>
                                 <td>
-                                    <span class="item-total">Rs0.00</span>
+                                    <span class="item-total">PKR0.00</span>
                                 </td>
                                 <td>
                                     <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)">
@@ -231,7 +231,7 @@ function addItem() {
     newRow.querySelectorAll('input').forEach(input => {
         input.value = '';
     });
-    newRow.querySelector('.item-total').textContent = 'Rs0.00';
+    newRow.querySelector('.item-total').textContent = 'PKR0.00';
     newRow.querySelector('.product-select').value = '';
     
     document.getElementById('itemsBody').appendChild(newRow);
@@ -255,7 +255,7 @@ function calculateTotal() {
         const price = parseFloat(row.querySelector('.price').value) || 0;
         const total = qty * price;
         subtotal += total;
-        row.querySelector('.item-total').textContent = 'Rs' + total.toFixed(2);
+        row.querySelector('.item-total').textContent = 'PKR' + total.toFixed(2);
     });
     document.getElementById('subtotal').textContent = subtotal.toFixed(2);
 }

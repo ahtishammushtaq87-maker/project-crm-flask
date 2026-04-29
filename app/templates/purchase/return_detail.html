@@ -74,8 +74,8 @@
                                 <tr>
                                     <td>{{ item.product.name if item.product else 'Unknown' }}</td>
                                     <td>{{ item.quantity }}</td>
-                                    <td>Rs{{ "%.2f"|format(item.unit_price) }}</td>
-                                    <td>Rs{{ "%.2f"|format(item.total) }}</td>
+                                    <td>PKR{{ "%.2f"|format(item.unit_price) }}</td>
+                                    <td>PKR{{ "%.2f"|format(item.total) }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -83,10 +83,10 @@
                     </div>
 
                     <div class="text-end">
-                        <p>Subtotal: Rs{{ "%.2f"|format(return_obj.subtotal) }}</p>
-                        <p>Tax: Rs{{ "%.2f"|format(return_obj.tax) }}</p>
-                        <p>Discount: Rs{{ "%.2f"|format(return_obj.discount) }}</p>
-                        <h4>Total: Rs{{ "%.2f"|format(return_obj.total) }}</h4>
+                        <p>Subtotal: PKR{{ "%.2f"|format(return_obj.subtotal) }}</p>
+                        <p>Tax: PKR{{ "%.2f"|format(return_obj.tax) }}</p>
+                        <p>Discount: PKR{{ "%.2f"|format(return_obj.discount) }}</p>
+                        <h4>Total: PKR{{ "%.2f"|format(return_obj.total) }}</h4>
                     </div>
                 </div>
             </div>
@@ -111,9 +111,9 @@
                 <div class="card-body">
                     <h5>Refund Status</h5>
                     {% if return_obj.refund_status == 'paid' %}
-                        <span class="badge bg-success">Refund Paid: Rs{{ "%.2f"|format(return_obj.refund_amount) }}</span>
+                        <span class="badge bg-success">Refund Paid: PKR{{ "%.2f"|format(return_obj.refund_amount) }}</span>
                     {% elif return_obj.refund_status == 'pending' %}
-                        <span class="badge bg-warning">Refund Pending: Rs{{ "%.2f"|format(return_obj.total) }}</span>
+                        <span class="badge bg-warning">Refund Pending: PKR{{ "%.2f"|format(return_obj.total) }}</span>
                     {% else %}
                         <span class="badge bg-secondary">No Refund</span>
                     {% endif %}

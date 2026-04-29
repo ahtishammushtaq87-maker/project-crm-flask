@@ -7,6 +7,7 @@ from sqlalchemy import func, inspect
 from io import BytesIO
 import os
 from werkzeug.utils import secure_filename
+from app.routes.filters import apply_saved_filter_to_query
 
 bp = Blueprint('inventory', __name__)
 
@@ -49,6 +50,8 @@ def products():
     if qty_max and qty_max.isdigit():
         query = query.filter(Product.quantity <= int(qty_max))
     
+    query = apply_saved_filter_to_query(query, 'product', request.args)
+
     products = query.order_by(Product.name).all()
     
     # Get all categories for filter
@@ -65,7 +68,9 @@ def products():
                          current_warehouse_id=warehouse_id,
                          qty_min=qty_min,
                          qty_max=qty_max,
-                         search_query=search_query)
+                         search_query=search_query,
+                         active_module='product',
+                         filter_id=request.args.get('filter_id'))
 
 @bp.route('/product/add', methods=['GET', 'POST'])
 @login_required
@@ -377,7 +382,9 @@ def bulk_assign_warehouse():
 @bp.route('/stock-report')
 @login_required
 def stock_report():
-    products = Product.query.all()
+    query = Product.query
+    query = apply_saved_filter_to_query(query, 'product', request.args)
+    products = query.all()
     
     # Calculate statistics
     total_products = len(products)
@@ -390,7 +397,9 @@ def stock_report():
                          total_products=total_products,
                          total_value=total_value,
                          low_stock_count=low_stock_count,
-                         out_of_stock=out_of_stock)
+                         out_of_stock=out_of_stock,
+                         active_module='product',
+                         filter_id=request.args.get('filter_id'))
 
 @bp.route('/product/bulk-upload', methods=['GET', 'POST'])
 @login_required

@@ -42,6 +42,9 @@
 {% endblock %}
 
 {% block content %}
+<!-- Module context for universal filter -->
+<div id="module-context" data-module="expense" style="display:none;"></div>
+
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Expenses</h2>
@@ -49,6 +52,9 @@
             <button id="bulkDeleteBtn" class="btn btn-danger d-none me-2">
                 <i class="fas fa-trash me-1"></i> Delete Selected
             </button>
+           <!-- <button type="button" class="btn btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#universalFilterModal" data-module="expense">
+                <i class="fas fa-filter me-1"></i> Advanced Filter
+            </button>-->
             <a href="{{ url_for('accounting.add_expense') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Add Expense</a>
         </div>
     </div>
@@ -149,14 +155,14 @@
                             </td>
                             <td>{{ exp.description or '-' }}</td>
                             <td>
-                                <strong>Rs{{ '%.2f'|format(exp.amount) }}</strong>
+                                <strong>PKR{{ '%.2f'|format(exp.amount) }}</strong>
                                 {% if exp.is_monthly_divided %}
                                 <div class="small text-muted">({{ exp.days_in_month }} days)</div>
                                 {% endif %}
                             </td>
                             <td>
                                 {% if exp.is_monthly_divided %}
-                                <strong class="text-success">Rs{{ '%.2f'|format(exp.daily_amount) }}</strong>
+                                <strong class="text-success">PKR{{ '%.2f'|format(exp.daily_amount) }}</strong>
                                 <div class="small text-muted">per day</div>
                                 {% else %}
                                 -
@@ -198,7 +204,7 @@
                         <strong>Showing {{ expenses|length }} expense{{ 's' if expenses|length != 1 else '' }}</strong>
                     </div>
                     <div class="col-md-6 text-end">
-                        <strong>Total Expense: Rs{{ '%.2f'|format(total_expense) }}</strong>
+                        <strong>Total Expense: PKR{{ '%.2f'|format(total_expense) }}</strong>
                     </div>
                 </div>
             </div>

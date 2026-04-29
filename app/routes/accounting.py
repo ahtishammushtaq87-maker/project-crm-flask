@@ -5,6 +5,7 @@ from app.models import Sale, PurchaseBill, Transaction, Expense, ExpenseCategory
 from app.forms import ExpenseForm, ExpenseCategoryForm
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_, inspect
+from app.routes.filters import apply_saved_filter_to_query
 
 bp = Blueprint('accounting', __name__)
 
@@ -932,6 +933,8 @@ def expenses():
         end_datetime = end_datetime + timedelta(days=1)
         query = query.filter(Expense.date < end_datetime)
     
+    query = apply_saved_filter_to_query(query, 'expense', request.args)
+    
     expenses = query.order_by(Expense.date.desc()).all()
     total_expense = sum(e.amount for e in expenses)
     
@@ -957,7 +960,9 @@ def expenses():
                          selected_mo_id=mo_id,
                          selected_start_date=start_date,
                          selected_end_date=end_date,
-                         date_format=date_format)
+                         date_format=date_format,
+                         active_module='expense',
+                         filter_id=request.args.get('filter_id'))
 
 @bp.route('/expense/add', methods=['GET', 'POST'])
 @login_required
@@ -1091,7 +1096,7 @@ def add_expense():
                     exp.calculate_daily_amount()
                 db.session.add(exp)
                 created_expenses.append(exp)
-                flash_msg = f'Overhead expense Rs {base_amount} added (Unassigned).'
+                flash_msg = f'Overhead expense PKR {base_amount} added (Unassigned).'
             elif num_mos == 1:
                 target_mo = valid_mos[0]
                 expense_number, next_expense_num = get_unique_expense_number(settings, next_expense_num)
@@ -1108,7 +1113,7 @@ def add_expense():
                 # Update MO overhead immediately
                 target_mo.actual_overhead_cost = (target_mo.actual_overhead_cost or 0) + base_amount
                 target_mo.total_cost = (target_mo.actual_material_cost or 0) + (target_mo.actual_labor_cost or 0) + target_mo.actual_overhead_cost
-                flash_msg = f'Overhead expense Rs {base_amount} added and linked to {target_mo.order_number}.'
+                flash_msg = f'Overhead expense PKR {base_amount} added and linked to {target_mo.order_number}.'
             else:
                 amount_per_mo = base_amount / num_mos
                 for i, target_mo in enumerate(valid_mos):
@@ -1126,7 +1131,7 @@ def add_expense():
 
                     target_mo.actual_overhead_cost = (target_mo.actual_overhead_cost or 0) + amount_per_mo
                     target_mo.total_cost = (target_mo.actual_material_cost or 0) + (target_mo.actual_labor_cost or 0) + target_mo.actual_overhead_cost
-                flash_msg = f'Expense(s) added. Rs {base_amount} divided into {num_mos} Manufacturing Orders.'
+                flash_msg = f'Expense(s) added. PKR {base_amount} divided into {num_mos} Manufacturing Orders.'
         
         # ── MODE 2: Bulk Product/BOM allocation ───────────────────────────
         else:
@@ -1169,7 +1174,7 @@ def add_expense():
                     db.session.add(exp)
                     created_expenses.append(exp)
             
-            flash_msg = f'Expense(s) added. Rs {base_amount} divided into {max(1, num_targets)} record(s).'
+            flash_msg = f'Expense(s) added. PKR {base_amount} divided into {max(1, num_targets)} record(s).'
         # ─────────────────────────────────────────────────────────────────
         
         # Update expense settings next number
@@ -1752,13 +1757,13 @@ def reset_bom_overhead(bom_id):
         
         BOMVersioningService.create_bom_version(
             bom=bom,
-            change_reason=f"BOM overhead reset: {expense_count} overhead expense(es) deleted (Rs {total_amount})",
+            change_reason=f"BOM overhead reset: {expense_count} overhead expense(es) deleted (PKR {total_amount})",
             change_type='overhead_removed',
             created_by_id=user_id,
             recalculate_overhead=True
         )
         
-        flash(f'BOM overhead reset successfully! Deleted {expense_count} overhead expense(es) totaling Rs {total_amount}. New overhead: Rs {bom.overhead_cost}', 'success')
+        flash(f'BOM overhead reset successfully! Deleted {expense_count} overhead expense(es) totaling PKR {total_amount}. New overhead: PKR {bom.overhead_cost}', 'success')
     except Exception as e:
         flash(f'BOM overhead reset partially: {expense_count} expenses deleted but versioning failed: {str(e)}', 'warning')
         print(f"Error resetting BOM overhead: {e}")

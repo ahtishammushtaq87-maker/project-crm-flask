@@ -462,12 +462,15 @@ class PurchaseBill(db.Model):
     paid_amount = db.Column(db.Float, default=0)
     bill_image_path = db.Column(db.String(255))  # Path to uploaded bill image
     notes = db.Column(db.Text)
+    inventory_received = db.Column(db.Boolean, default=False)  # True when stock has been received into inventory
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
     items = db.relationship('PurchaseItem', backref='bill', lazy=True, cascade='all, delete-orphan')
+    bill_payments = db.relationship('BillPayment', backref='bill', lazy=True, cascade='all, delete-orphan')
+    bill_receives = db.relationship('BillReceive', backref='bill', lazy=True, cascade='all, delete-orphan')
 
     currency = db.relationship('Currency', backref='purchase_bills', lazy=True)
     
@@ -609,7 +612,7 @@ class Currency(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     code = db.Column(db.String(10), nullable=False, unique=True)
     name = db.Column(db.String(100), nullable=False)
-    symbol = db.Column(db.String(10), default='Rs')
+    symbol = db.Column(db.String(10), default='PKR')
     rate_to_base = db.Column(db.Float, nullable=False, default=1)
     is_active = db.Column(db.Boolean, default=True)
 
@@ -629,6 +632,7 @@ class Payment(db.Model):
     expense_id = db.Column(db.Integer, db.ForeignKey('expenses.id'), nullable=True)
     reference_number = db.Column(db.String(100))
     notes = db.Column(db.Text)
+    image_path = db.Column(db.String(255))  # Path to uploaded payment receipt/bill image
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
 
     invoice = db.relationship('Sale', backref='payments', lazy=True)
@@ -1419,6 +1423,62 @@ class PurchaseOrderItem(db.Model):
 
     def __repr__(self):
         return f'<PurchaseOrderItem po={self.po_id} product={self.product_id}>'
+
+
+class BillPayment(db.Model):
+    """Records each payment transaction against a purchase bill"""
+    __tablename__ = 'bill_payments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    bill_id = db.Column(db.Integer, db.ForeignKey('purchase_bills.id'), nullable=False, index=True)
+    date = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    amount = db.Column(db.Float, nullable=False)
+    payment_method = db.Column(db.String(50), default='Cash')
+    reference_number = db.Column(db.String(100))
+    notes = db.Column(db.Text)
+    image_path = db.Column(db.String(255))  # Upload receipt/payment proof
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    creator = db.relationship('User', backref='bill_payments_created', lazy=True)
+
+    def __repr__(self):
+        return f'<BillPayment bill={self.bill_id} amount={self.amount}>'
+
+
+class BillReceive(db.Model):
+    """Records each 'receive quantity' entry against a purchase bill"""
+    __tablename__ = 'bill_receives'
+
+    id = db.Column(db.Integer, primary_key=True)
+    bill_id = db.Column(db.Integer, db.ForeignKey('purchase_bills.id'), nullable=False, index=True)
+    date = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    notes = db.Column(db.Text)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    receive_items = db.relationship('BillReceiveItem', backref='receive', lazy=True, cascade='all, delete-orphan')
+    creator = db.relationship('User', backref='bill_receives_created', lazy=True)
+
+    def __repr__(self):
+        return f'<BillReceive bill={self.bill_id}>'
+
+
+class BillReceiveItem(db.Model):
+    """Line items for a receive entry - which products and how many were received"""
+    __tablename__ = 'bill_receive_items'
+
+    id = db.Column(db.Integer, primary_key=True)
+    receive_id = db.Column(db.Integer, db.ForeignKey('bill_receives.id'), nullable=False, index=True)
+    purchase_item_id = db.Column(db.Integer, db.ForeignKey('purchase_items.id'), nullable=False, index=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    quantity_received = db.Column(db.Float, nullable=False)
+
+    product = db.relationship('Product', backref='bill_receive_items', lazy=True)
+    purchase_item = db.relationship('PurchaseItem', backref='receive_items', lazy=True)
+
+    def __repr__(self):
+        return f'<BillReceiveItem receive={self.receive_id} product={self.product_id} qty={self.quantity_received}>'
 
 
 class CostPriceHistory(db.Model):

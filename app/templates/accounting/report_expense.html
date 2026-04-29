@@ -12,7 +12,7 @@
         <td>{{ e.date.strftime('%Y-%m-%d') }}</td>
         <td>{{ e.category.name if e.category else '-' }}</td>
         <td>{{ e.vendor.name if e.vendor else '-' }}</td>
-        <td>Rs{{ '%.2f'|format(e.amount) }}</td>
+        <td>PKR{{ '%.2f'|format(e.amount) }}</td>
       </tr>
       {% endfor %}
       </tbody>

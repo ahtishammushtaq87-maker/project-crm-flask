@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Invoice {{ sale.invoice_number }}{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
+<style>
+    .select2-container--bootstrap-5 {
+        width: 100% !important;
+        display: block !important;
+        box-sizing: border-box !important;
+    }
+    @media (max-width: 768px) {
+        .select2-container--bootstrap-5 .select2-selection {
+            height: 38px !important;
+            display: flex;
+            align-items: center;
+            font-size: 14px !important;
+        }
+        .select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered {
+            line-height: 38px !important;
+            padding-left: 10px !important;
+        }
+        #itemsTable {
+            min-width: 800px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h2 class="mb-4">Edit Invoice {{ sale.invoice_number }}</h2>
+
+    <form method="POST" id="invoiceForm">
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h5>Invoice Details</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="customerSelect" class="form-label">Customer</label>
+                            <select name="customer_id" class="form-control" id="customerSelect"
+                                onchange="updateCustomerInfo()">
+                                <option value="0">Walk-in Customer</option>
+                                {% for customer in customers %}
+                                <option value="{{ customer.id }}"
+                                    {% if sale.customer_id == customer.id %}selected{% endif %}>
+                                    {{ customer.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="vendorSelect" class="form-label">Vendor (Optional)</label>
+                            <select name="vendor_id" class="form-control" id="vendorSelect">
+                                <option value="0">None</option>
+                                {% for vendor in vendors %}
+                                <option value="{{ vendor.id }}"
+                                    {% if sale.vendor_id == vendor.id %}selected{% endif %}>
+                                    {{ vendor.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="salesmanSelect" class="form-label">Salesman</label>
+                            <select name="salesman_id" class="form-control" id="salesmanSelect">
+                                <option value="0">No Salesman</option>
+                                {% for salesman in salesmen %}
+                                <option value="{{ salesman.id }}"
+                                    {% if sale.salesman_id == salesman.id %}selected{% endif %}>
+                                    {{ salesman.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="dateInput" class="form-label">Date</label>
+                            <input type="date" name="date" class="form-control" id="dateInput"
+                                value="{{ sale.date.strftime('%Y-%m-%d') }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="statusSelect" class="form-label">Status</label>
+                            <select name="status" class="form-control" id="statusSelect">
+                                <option value="draft" {% if sale.status == 'draft' %}selected{% endif %}>Draft</option>
+                                <option value="unpaid" {% if sale.status == 'unpaid' %}selected{% endif %}>Unpaid</option>
+                                <option value="paid" {% if sale.status == 'paid' %}selected{% endif %}>Paid</option>
+                                <option value="partial" {% if sale.status == 'partial' %}selected{% endif %}>Partial</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="dueDateInput" class="form-label">Due Date</label>
+                            <input type="date" name="due_date" class="form-control" id="dueDateInput"
+                                value="{{ sale.due_date.strftime('%Y-%m-%d') if sale.due_date else '' }}">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h5>Summary</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="discountInput" class="form-label">Discount</label>
+                            <input type="number" name="discount" id="discountInput" class="form-control" step="0.01"
+                                value="{{ '%.2f'|format(sale.discount) }}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="taxRateInput" class="form-label">Tax Rate (%)</label>
+                            <input type="number" name="tax_rate" id="taxRateInput" class="form-control" step="0.01"
+                                value="{{ '%.2f'|format(sale.tax_rate) }}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="deliveryChargeInput" class="form-label">Delivery Charge (PKR)</label>
+                            <input type="number" name="delivery_charge" id="deliveryChargeInput" class="form-control"
+                                step="0.01" value="{{ '%.2f'|format(sale.delivery_charge) }}">
+                        </div>
+                        <hr>
+                        <div class="mb-2">
+                            <strong>Subtotal:</strong> <span id="subtotal">PKR0.00</span>
+                        </div>
+                        <div class="mb-2">
+                            <strong>Tax:</strong> <span id="tax">PKR0.00</span>
+                        </div>
+                        <div class="mb-2">
+                            <strong>Discount:</strong> <span id="discountDisplay">PKR0.00</span>
+                        </div>
+                        <div class="mb-2">
+                            <strong>Delivery:</strong> <span id="deliveryDisplay">PKR0.00</span>
+                        </div>
+                        <hr>
+                        <div class="mb-2">
+                            <h4>Total: <span id="total">PKR0.00</span></h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Items</h5>
+                <button type="button" class="btn btn-sm btn-primary" onclick="addItem()">
+                    <i class="fas fa-plus"></i> Add Item
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered mb-0" id="itemsTable" style="table-layout: fixed; width: 100%;">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 40%;">Product</th>
+                                <th style="width: 15%;">Quantity</th>
+                                <th style="width: 15%;">Unit Price</th>
+                                <th style="width: 15%;">Delivery</th>
+                                <th style="width: 15%;">Total</th>
+                                <th style="width: 40px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="itemsBody">
+                            {% for item in sale.items %}
+                            <tr class="item-row">
+                                <td>
+                                    <select name="product_id[]" class="form-select product-select" required>
+                                        <option value="">Select Product</option>
+                                        {% for product in products %}
+                                        <option value="{{ product.id }}" data-price="{{ product.unit_price }}"
+                                            {% if item.product_id == product.id %}selected{% endif %}>
+                                            {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity }})
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="number" name="quantity[]" class="form-control quantity"
+                                        step="1" value="{{ item.quantity }}" required>
+                                </td>
+                                <td>
+                                    <input type="number" name="price[]" class="form-control price"
+                                        step="0.01" value="{{ '%.2f'|format(item.unit_price) }}" readonly>
+                                </td>
+                                <td>
+                                    <input type="number" name="delivery[]" class="form-control delivery"
+                                        step="0.01" value="{{ '%.2f'|format(item.delivery_fee) }}">
+                                </td>
+                                <td>
+                                    <span class="item-total">PKR{{ '%.2f'|format(item.total) }}</span>
+                                </td>
+                                <td>
+                                    <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <button type="submit" class="btn btn-primary">Update Invoice</button>
+            <a href="{{ url_for('sales.invoice_detail', id=sale.id) }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+    function addItem() {
+        const newRow = document.querySelector('.item-row').cloneNode(true);
+
+        $(newRow).find('.select2-container').remove();
+        const $select = $(newRow).find('.product-select');
+        $select.removeClass('select2-hidden-accessible');
+        $select.removeAttr('data-select2-id');
+        $select.removeAttr('aria-hidden');
+        $select.find('option').removeAttr('data-select2-id');
+        newRow.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+
+        newRow.querySelectorAll('input, select').forEach(input => input.value = '');
+        newRow.querySelector('.quantity').value = '1';
+        newRow.querySelector('.price').value = '0';
+        newRow.querySelector('.delivery').value = '0';
+        newRow.querySelector('.item-total').textContent = 'PKR0.00';
+        newRow.querySelector('.product-select').selectedIndex = 0;
+        document.getElementById('itemsBody').appendChild(newRow);
+
+        initSelect2($(newRow).find('.product-select'), 'Search or select product');
+        attachItemEvents(newRow);
+    }
+
+    function removeItem(btn) {
+        if (document.querySelectorAll('.item-row').length > 1) {
+            btn.closest('.item-row').remove();
+            calculateTotals();
+        }
+    }
+
+    function attachItemEvents(row) {
+        const $productSelect = $(row).find('.product-select');
+        const quantityInput = row.querySelector('.quantity');
+        const priceInput = row.querySelector('.price');
+        const deliveryInput = row.querySelector('.delivery');
+
+        $productSelect.on('change', function () {
+            const selectedOption = $(this).find(':selected');
+            const price = selectedOption.attr('data-price') || 0;
+            priceInput.value = price;
+            calculateItemTotal(row);
+        });
+
+        quantityInput.addEventListener('input', () => calculateItemTotal(row));
+        priceInput.addEventListener('input', () => calculateItemTotal(row));
+        deliveryInput.addEventListener('input', () => calculateItemTotal(row));
+    }
+
+    function calculateItemTotal(row) {
+        const quantity = parseFloat(row.querySelector('.quantity').value) || 0;
+        const price = parseFloat(row.querySelector('.price').value) || 0;
+        const delivery = parseFloat(row.querySelector('.delivery').value) || 0;
+        const total = quantity * price + delivery;
+        row.querySelector('.item-total').textContent = `PKR${total.toFixed(2)}`;
+        calculateTotals();
+    }
+
+    function calculateTotals() {
+        let subtotal = 0;
+        document.querySelectorAll('.item-total').forEach(totalSpan => {
+            const total = parseFloat(totalSpan.textContent.replace('PKR', '')) || 0;
+            subtotal += total;
+        });
+
+        const taxRate = parseFloat(document.querySelector('input[name="tax_rate"]').value) || 0;
+        const tax = subtotal * (taxRate / 100);
+        const discount = parseFloat(document.querySelector('input[name="discount"]').value) || 0;
+        const delivery_charge = parseFloat(document.querySelector('input[name="delivery_charge"]').value) || 0;
+
+        const total = subtotal + tax + delivery_charge - discount;
+
+        document.getElementById('subtotal').textContent = `PKR${subtotal.toFixed(2)}`;
+        document.getElementById('tax').textContent = `PKR${tax.toFixed(2)}`;
+        document.getElementById('discountDisplay').textContent = `PKR${discount.toFixed(2)}`;
+        document.getElementById('deliveryDisplay').textContent = `PKR${delivery_charge.toFixed(2)}`;
+        document.getElementById('total').textContent = `PKR${total.toFixed(2)}`;
+    }
+
+    function initSelect2(selector, placeholder = 'Search or select', width = '100%') {
+        const $el = $(selector).select2({
+            theme: 'bootstrap-5',
+            placeholder: placeholder,
+            allowClear: true,
+            width: width,
+            dropdownParent: $(document.body)
+        });
+
+        $el.on('select2:open', function () {
+            setTimeout(() => {
+                const searchField = document.querySelector('.select2-container--open .select2-search__field');
+                if (searchField) {
+                    searchField.focus();
+                }
+            }, 50);
+        });
+    }
+
+    $(document).ready(function () {
+        initSelect2('#customerSelect', '— Search or Select Customer —');
+        initSelect2('#vendorSelect', '— Search or Select Vendor —');
+        initSelect2('#salesmanSelect', '— Search or Select Salesman —');
+        initSelect2('.product-select', '— Search or Select Product —');
+
+        document.querySelectorAll('.item-row').forEach(attachItemEvents);
+        document.querySelector('input[name="discount"]').addEventListener('input', calculateTotals);
+        document.querySelector('input[name="tax_rate"]').addEventListener('input', calculateTotals);
+        document.querySelector('input[name="delivery_charge"]').addEventListener('input', calculateTotals);
+
+        calculateTotals();
+    });
+</script>
+{% endblock %}
+

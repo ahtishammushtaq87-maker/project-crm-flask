@@ -39,9 +39,9 @@
 
     <div class="row mb-3">
         <div class="col-md-3"><div class="card report-card p-3"><h6>Total Quantity</h6><h3>{{ total_quantity }}</h3></div></div>
-        <div class="col-md-3"><div class="card report-card p-3"><h6>Total COGS</h6><h3>Rs{{ "%.2f"|format(total_cogs) }}</h3></div></div>
-        <div class="col-md-3"><div class="card report-card p-3"><h6>Total Revenue</h6><h3>Rs{{ "%.2f"|format(total_revenue) }}</h3></div></div>
-        <div class="col-md-3"><div class="card report-card p-3"><h6>Total Profit</h6><h3>Rs{{ "%.2f"|format(total_profit) }}</h3></div></div>
+        <div class="col-md-3"><div class="card report-card p-3"><h6>Total COGS</h6><h3>PKR{{ "%.2f"|format(total_cogs) }}</h3></div></div>
+        <div class="col-md-3"><div class="card report-card p-3"><h6>Total Revenue</h6><h3>PKR{{ "%.2f"|format(total_revenue) }}</h3></div></div>
+        <div class="col-md-3"><div class="card report-card p-3"><h6>Total Profit</h6><h3>PKR{{ "%.2f"|format(total_profit) }}</h3></div></div>
     </div>
 
     <div class="filter-section mb-4">
@@ -95,10 +95,10 @@
                         <td>{{ p.sku }}</td>
                         <td>{{ p.category }}</td>
                         <td>{{ p.quantity_sold }}</td>
-                        <td>Rs{{ "%.2f"|format(p.cost_price) }}</td>
-                        <td>Rs{{ "%.2f"|format(p.cogs) }}</td>
-                        <td>Rs{{ "%.2f"|format(p.revenue) }}</td>
-                        <td>Rs{{ "%.2f"|format(p.profit) }}</td>
+                        <td>PKR{{ "%.2f"|format(p.cost_price) }}</td>
+                        <td>PKR{{ "%.2f"|format(p.cogs) }}</td>
+                        <td>PKR{{ "%.2f"|format(p.revenue) }}</td>
+                        <td>PKR{{ "%.2f"|format(p.profit) }}</td>
                     </tr>
                     {% endfor %}
                     {% if not products %}

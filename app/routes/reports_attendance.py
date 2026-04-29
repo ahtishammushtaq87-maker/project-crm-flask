@@ -217,7 +217,7 @@ def export_attendance_csv():
     
     # Write header based on report type
     if report_type == 'summary':
-        writer.writerow(['Staff Name', 'Designation', 'Total Days', 'Total Hours', 'Total Minutes', 'Total Earned (Rs)'])
+        writer.writerow(['Staff Name', 'Designation', 'Total Days', 'Total Hours', 'Total Minutes', 'Total Earned (PKR)'])
         
         # Group by staff
         staff_data = {}
@@ -245,7 +245,7 @@ def export_attendance_csv():
             ])
     
     else:  # detailed
-        writer.writerow(['Date', 'Staff Name', 'Designation', 'Clock In', 'Clock Out', 'Hours', 'Minutes', 'Hourly Rate (Rs)', 'Earned (Rs)', 'Notes'])
+        writer.writerow(['Date', 'Staff Name', 'Designation', 'Clock In', 'Clock Out', 'Hours', 'Minutes', 'Hourly Rate (PKR)', 'Earned (PKR)', 'Notes'])
         
         for record in attendance_records:
             writer.writerow([
@@ -344,7 +344,7 @@ def export_attendance_excel():
     
     if report_type == 'summary':
         # Header row
-        headers = ['Staff Name', 'Designation', 'Total Days', 'Total Hours', 'Total Minutes', 'Total Earned (Rs)']
+        headers = ['Staff Name', 'Designation', 'Total Days', 'Total Hours', 'Total Minutes', 'Total Earned (PKR)']
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=current_row, column=col)
             cell.value = header
@@ -390,7 +390,7 @@ def export_attendance_excel():
     
     else:  # detailed
         # Header row
-        headers = ['Date', 'Staff Name', 'Designation', 'Clock In', 'Clock Out', 'Hours', 'Minutes', 'Hourly Rate (Rs)', 'Earned (Rs)', 'Notes']
+        headers = ['Date', 'Staff Name', 'Designation', 'Clock In', 'Clock Out', 'Hours', 'Minutes', 'Hourly Rate (PKR)', 'Earned (PKR)', 'Notes']
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=current_row, column=col)
             cell.value = header
@@ -539,7 +539,7 @@ def export_attendance_pdf():
             staff_data[record.staff_id].append(record)
         
         # Create table data
-        table_data = [['Staff Name', 'Designation', 'Total Days', 'Total Hours', 'Total Earned (Rs)']]
+        table_data = [['Staff Name', 'Designation', 'Total Days', 'Total Hours', 'Total Earned (PKR)']]
         
         for staff_id, records in staff_data.items():
             staff = Staff.query.get(staff_id)
@@ -554,12 +554,12 @@ def export_attendance_pdf():
                 staff.designation or '',
                 str(len(records)),
                 f"{int(total_hours)}h {int(total_minutes)}m",
-                f"Rs {round(total_earned, 2):,.2f}"
+                f"PKR {round(total_earned, 2):,.2f}"
             ])
     
     else:  # detailed
         # Create table data
-        table_data = [['Date', 'Staff Name', 'Clock In', 'Clock Out', 'Hours', 'Earned (Rs)', 'Notes']]
+        table_data = [['Date', 'Staff Name', 'Clock In', 'Clock Out', 'Hours', 'Earned (PKR)', 'Notes']]
         
         for record in attendance_records:
             table_data.append([
@@ -568,7 +568,7 @@ def export_attendance_pdf():
                 record.clock_in.strftime('%H:%M') if record.clock_in else '',
                 record.clock_out.strftime('%H:%M') if record.clock_out else '',
                 f"{int(record.hours_worked)}h {int(record.minutes_worked)}m",
-                f"Rs {round(record.earned_amount, 2):,.2f}",
+                f"PKR {round(record.earned_amount, 2):,.2f}",
                 record.notes or ''
             ])
     

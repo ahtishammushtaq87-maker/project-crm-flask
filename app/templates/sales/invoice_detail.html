@@ -10,6 +10,9 @@
 			<a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" class="btn btn-primary" target="_blank">
 				<i class="fas fa-download"></i> PDF
 			</a>
+			<a href="{{ url_for('sales.edit_invoice', id=sale.id) }}" class="btn btn-info">
+				<i class="fas fa-edit"></i> Edit
+			</a>
 			{% if sale.customer and sale.customer.phone %}
 			{% set phone = sale.customer.phone|replace('+', '')|replace(' ', '')|replace('-', '')|replace('(', '')|replace(')', '') %}
 			{% if phone|length >= 10 %}
@@ -58,7 +61,7 @@
 					</div>
 					<div class="modal-body text-start">
 						<div class="mb-3">
-							<label class="form-label">Discount Amount (Rs)</label>
+							<label class="form-label">Discount Amount (PKR)</label>
 							<input type="number" step="0.01" name="discount_amount" class="form-control" placeholder="0.00" required>
 						</div>
 						<p class="text-muted small">This will reduce the balance due for this invoice.</p>
@@ -75,8 +78,11 @@
 	<div class="row mb-3">
 		<div class="col-md-4">
 			<div class="card p-3 mb-3">
-				<strong>Customer:</strong> {{ sale.customer.name if sale.customer else 'Walk-in Customer' }}<br>
 				{% if sale.customer %}
+				<strong>Customer:</strong>
+				<a href="{{ url_for('sales.customer_profile', id=sale.customer.id) }}" class="fw-bold text-decoration-none">
+					{{ sale.customer.name }}
+				</a><br>
 				{% if sale.customer.phone %}
 				<strong>Phone:</strong> {{ sale.customer.phone }}<br>
 				{% endif %}
@@ -92,10 +98,15 @@
 				{% if sale.customer.pan_number %}
 				<strong>PAN No:</strong> {{ sale.customer.pan_number }}<br>
 				{% endif %}
+				{% else %}
+				<strong>Customer:</strong> Walk-in Customer<br>
 				{% endif %}
 				<strong>Vendor:</strong> {{ sale.vendor.name if sale.vendor else '-' }}<br>
 				<strong>Salesman:</strong> {{ sale.salesman.name if sale.salesman else '-' }}<br>
 				<strong>Date:</strong> {{ sale.date.strftime(date_format) }}<br>
+				{% if sale.due_date %}
+				<strong>Due Date:</strong> {{ sale.due_date.strftime(date_format) }}<br>
+				{% endif %}
 				<strong>Status:</strong>
 				{% if sale.status == 'paid' %}
 					<span class="badge bg-success">Paid</span>
@@ -128,24 +139,24 @@
 								<td>{{ item.product.sku if item.product else '-' }}</td>
 								<td>{{ item.product.name if item.product else '-' }}</td>
 								<td>{{ item.quantity }}</td>
-								<td>Rs{{ '%.2f'|format(item.unit_price) }}</td>
-								<td>Rs{{ '%.2f'|format(item.item_subtotal) }}</td>
-								<td>Rs{{ '%.2f'|format(item.delivery_fee) }}</td>
-								<td>Rs{{ '%.2f'|format(item.total) }}</td>
+								<td>PKR{{ '%.2f'|format(item.unit_price) }}</td>
+								<td>PKR{{ '%.2f'|format(item.item_subtotal) }}</td>
+								<td>PKR{{ '%.2f'|format(item.delivery_fee) }}</td>
+								<td>PKR{{ '%.2f'|format(item.total) }}</td>
 							</tr>
 							{% endfor %}
 						</tbody>
 					</table>
 				</div>
 				<div class="text-end mt-3">
-					<p>Subtotal: Rs{{ '%.2f'|format(sale.subtotal) }}</p>
-					<p>Tax: Rs{{ '%.2f'|format(sale.tax) }}</p>
-					<p>Discount: Rs{{ '%.2f'|format(sale.discount) }}</p>
-					<p>Delivery Charge: Rs{{ '%.2f'|format(sale.delivery_charge) }}</p>
-					<p {% if sale.advance_applied > 0 %}class="text-success fw-bold"{% endif %}>Advance Applied: {% if sale.advance_applied > 0 %}-{% endif %}Rs{{ '%.2f'|format(sale.advance_applied) }}</p>
-					<h4>Total: Rs{{ '%.2f'|format(sale.total) }}</h4>
-					<p>Paid: Rs{{ '%.2f'|format(sale.paid_amount) }}</p>
-					<p style="color: red; font-weight: bolder;">Balance: Rs{{ '%.2f'|format(sale.total - sale.paid_amount) }}</p>
+					<p>Subtotal: PKR{{ '%.2f'|format(sale.subtotal) }}</p>
+					<p>Tax: PKR{{ '%.2f'|format(sale.tax) }}</p>
+					<p>Discount: PKR{{ '%.2f'|format(sale.discount) }}</p>
+					<p>Delivery Charge: PKR{{ '%.2f'|format(sale.delivery_charge) }}</p>
+					<p {% if sale.advance_applied > 0 %}class="text-success fw-bold"{% endif %}>Advance Applied: {% if sale.advance_applied > 0 %}-{% endif %}PKR{{ '%.2f'|format(sale.advance_applied) }}</p>
+					<h4>Total: PKR{{ '%.2f'|format(sale.total) }}</h4>
+					<p>Paid: PKR{{ '%.2f'|format(sale.paid_amount) }}</p>
+					<p style="color: red; font-weight: bolder;">Balance: PKR{{ '%.2f'|format(sale.total - sale.paid_amount) }}</p>
 				</div>
 				
 				{% if sale.adjusted_advances %}
@@ -160,8 +171,8 @@
 						{% for adv in sale.adjusted_advances %}
 						<tr>
 							<td>{{ adv.date.strftime(date_format) }}</td>
-							<td>Rs{{ '%.2f'|format(adv.applied_amount) }}</td>
-							<td>Rs{{ '%.2f'|format(adv.amount) }}</td>
+							<td>PKR{{ '%.2f'|format(adv.applied_amount) }}</td>
+							<td>PKR{{ '%.2f'|format(adv.amount) }}</td>
 						</tr>
 						{% endfor %}
 					</table>
@@ -207,7 +218,7 @@
 										{% endif %}
 									</td>
 									<td>{{ ret.items|length }} item(s)</td>
-									<td class="text-end text-danger">Rs{{ '%.2f'|format(ret.total) }}</td>
+									<td class="text-end text-danger">PKR{{ '%.2f'|format(ret.total) }}</td>
 									<td>
 										{% if ret.returned_to_inventory %}
 											<span class="badge bg-success"><i class="fas fa-check-circle"></i> Returned</span>
@@ -233,19 +244,94 @@
 
 	<div class="card mb-3">
 		<div class="card-body">
-			<h5>Make Payment</h5>
-			<form method="POST" action="{{ url_for('sales.pay_invoice', id=sale.id) }}">
-				<div class="row g-3 align-items-end">
-					<div class="col-md-4">
-						<input type="number" name="amount" class="form-control" step="0.01" placeholder="Payment amount" required>
+			<h5><i class="fas fa-money-bill-wave me-2"></i>Make Payment</h5>
+			<form method="POST" action="{{ url_for('sales.pay_invoice', id=sale.id) }}" enctype="multipart/form-data">
+				<div class="row g-3">
+					<div class="col-md-3">
+						<label class="form-label small text-muted">Amount (PKR)</label>
+						<input type="number" name="amount" class="form-control" step="0.01" placeholder="0.00" required
+							   max="{{ '%.2f'|format(sale.total - sale.paid_amount) }}">
 					</div>
-					<div class="col-md-2">
-						<button class="btn btn-success" type="submit">Pay</button>
+					<div class="col-md-3">
+						<label class="form-label small text-muted">Payment Date</label>
+						<input type="date" name="payment_date" class="form-control" value="{{ today }}">
+					</div>
+					<div class="col-md-3">
+						<label class="form-label small text-muted">Method</label>
+						<select name="payment_method" class="form-select">
+							<option value="Cash">Cash</option>
+							{% for method in payment_methods %}
+							<option value="{{ method.name }}">{{ method.name }}</option>
+							{% endfor %}
+						</select>
+					</div>
+					<div class="col-md-3">
+						<label class="form-label small text-muted">Receipt Image</label>
+						<input type="file" name="payment_image" class="form-control" accept=".jpg,.jpeg,.png,.pdf">
+					</div>
+					<div class="col-md-9">
+						<label class="form-label small text-muted">Notes</label>
+						<input type="text" name="payment_notes" class="form-control" placeholder="e.g., UTR #123, Cheque #456">
+					</div>
+					<div class="col-md-3 d-flex align-items-end">
+						<button class="btn btn-success w-100" type="submit"><i class="fas fa-check"></i> Record Payment</button>
 					</div>
 				</div>
 			</form>
 		</div>
 	</div>
+
+	{% if payments %}
+	<div class="card mb-3">
+		<div class="card-header bg-light">
+			<h5 class="mb-0"><i class="fas fa-receipt me-2"></i>Payment History</h5>
+		</div>
+		<div class="card-body p-0">
+			<div class="table-responsive">
+				<table class="table table-striped mb-0">
+					<thead class="table-light">
+						<tr>
+							<th>#</th>
+							<th>Date</th>
+							<th>Method</th>
+							<th>Amount</th>
+							<th>Notes</th>
+							<th>Receipt</th>
+						</tr>
+					</thead>
+					<tbody>
+						{% set running_total = 0 %}
+						{% for payment in payments %}
+						<tr>
+							<td>{{ loop.index }}</td>
+							<td>{{ payment.date.strftime(date_format) }}</td>
+							<td><span class="badge bg-info">{{ payment.method or 'Cash' }}</span></td>
+							<td class="fw-bold">PKR{{ '%.2f'|format(payment.amount) }}</td>
+							<td>{{ payment.notes or '-' }}</td>
+							<td>
+								{% if payment.image_path %}
+								<a href="{{ url_for('sales.payment_image', payment_id=payment.id) }}" target="_blank" class="btn btn-sm btn-outline-primary">
+									<i class="fas fa-image"></i> View
+								</a>
+								{% else %}
+								<span class="text-muted">-</span>
+								{% endif %}
+							</td>
+						</tr>
+						{% endfor %}
+					</tbody>
+					<tfoot class="table-light">
+						<tr>
+							<td colspan="3" class="text-end fw-bold">Total Payments:</td>
+							<td class="fw-bold">PKR{{ '%.2f'|format(payments|sum(attribute='amount')) }}</td>
+							<td colspan="2"></td>
+						</tr>
+					</tfoot>
+				</table>
+			</div>
+		</div>
+	</div>
+	{% endif %}
 </div>
 
 <script>

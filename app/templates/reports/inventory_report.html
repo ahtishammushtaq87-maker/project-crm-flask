@@ -84,7 +84,7 @@
                     <div class="d-flex justify-content-between">
                         <div>
                             <p class="text-white-50 small mb-1">Total Stock Value (Cost)</p>
-                            <h3 class="mb-0">Rs{{ "%.2f"|format(total_value) }}</h3>
+                            <h3 class="mb-0">PKR{{ "%.2f"|format(total_value) }}</h3>
                         </div>
                         <div class="icon icon-shape bg-white text-primary rounded-circle shadow">
                             <i class="fas fa-warehouse p-3"></i>
@@ -198,9 +198,9 @@
                             <td>{{ product.warehouse.name if product.warehouse else '-' }}</td>
                             <td>{{ product.quantity }} {{ product.unit }}</td>
                             <td>{{ product.reorder_level }}</td>
-                            <td>Rs{{ "%.2f"|format(product.cost_price) }}</td>
-                            <td>Rs{{ "%.2f"|format(product.unit_price) }}</td>
-                            <td><strong>Rs{{ "%.2f"|format(product.stock_value) }}</strong></td>
+                            <td>PKR{{ "%.2f"|format(product.cost_price) }}</td>
+                            <td>PKR{{ "%.2f"|format(product.unit_price) }}</td>
+                            <td><strong>PKR{{ "%.2f"|format(product.stock_value) }}</strong></td>
                             <td>
                                 {% if product.quantity <= 0 %}
                                 <span class="status-badge bg-danger text-white">Out of Stock</span>

@@ -87,7 +87,7 @@
             <div class="card shadow-sm border-start border-info border-4">
                 <div class="card-body">
                     <h6 class="text-muted mb-1">Material Cost</h6>
-                    <h3 class="mb-0">Rs {{ "%.2f"|format(total_material) }}</h3>
+                    <h3 class="mb-0">PKR {{ "%.2f"|format(total_material) }}</h3>
                 </div>
             </div>
         </div>
@@ -95,7 +95,7 @@
             <div class="card shadow-sm border-start border-warning border-4">
                 <div class="card-body">
                     <h6 class="text-muted mb-1">Total Manufacturing Cost</h6>
-                    <h3 class="mb-0">Rs {{ "%.2f"|format(total_cost) }}</h3>
+                    <h3 class="mb-0">PKR {{ "%.2f"|format(total_cost) }}</h3>
                 </div>
             </div>
         </div>
@@ -126,16 +126,16 @@
                             <td>{{ o.start_date.strftime('%Y-%m-%d') if o.start_date else 'N/A' }}</td>
                             <td>{{ o.bom.product.name }}</td>
                             <td class="text-center">{{ o.quantity_to_produce }}</td>
-                            <td>Rs {{ "%.2f"|format(o.actual_material_cost or 0) }}</td>
-                            <td>Rs {{ "%.2f"|format(o.actual_labor_cost or 0) }}</td>
+                            <td>PKR {{ "%.2f"|format(o.actual_material_cost or 0) }}</td>
+                            <td>PKR {{ "%.2f"|format(o.actual_labor_cost or 0) }}</td>
                             <td>
                                 {% if o.total_cost %}
-                                Rs {{ "%.2f"|format(o.total_cost - (o.actual_material_cost or 0) - (o.actual_labor_cost or 0)) }}
+                                PKR {{ "%.2f"|format(o.total_cost - (o.actual_material_cost or 0) - (o.actual_labor_cost or 0)) }}
                                 {% else %}
-                                Rs 0.00
+                                PKR 0.00
                                 {% endif %}
                             </td>
-                            <td><span class="text-primary fw-bold">Rs {{ "%.2f"|format(o.total_cost or 0) }}</span></td>
+                            <td><span class="text-primary fw-bold">PKR {{ "%.2f"|format(o.total_cost or 0) }}</span></td>
                             <td class="text-center">
                                 {% if o.status == 'Completed' %}
                                 <span class="badge bg-success">Completed</span>
