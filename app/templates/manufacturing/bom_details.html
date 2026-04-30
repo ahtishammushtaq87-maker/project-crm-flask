@@ -7,11 +7,11 @@
     <div class="d-sm-flex align-items-center justify-content-between mb-4">
         <h1 class="h3 mb-0 text-gray-800">Bill of Materials: {{ bom.name }}</h1>
         <div>
-            <form method="POST" action="{{ url_for('manufacturing.delete_bom', id=bom.id) }}" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this BOM?');">
-                <button type="submit" class="btn btn-sm btn-danger shadow-sm">
-                    <i class="fas fa-trash fa-sm text-white-50"></i> Delete
-                </button>
-            </form>
+            <a href="{{ url_for('manufacturing.delete_bom', id=bom.id) }}" 
+               class="btn btn-sm btn-danger shadow-sm"
+               onclick="return confirm('Are you sure you want to delete this BOM?');">
+                <i class="fas fa-trash fa-sm text-white-50"></i> Delete
+            </a>
             <a href="{{ url_for('manufacturing.edit_bom', id=bom.id) }}" class="btn btn-sm btn-warning shadow-sm">
                 <i class="fas fa-edit fa-sm text-dark-50"></i> Edit
             </a>

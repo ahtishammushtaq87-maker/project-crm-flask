@@ -1558,7 +1558,10 @@ class ProductionTarget(db.Model):
     month = db.Column(db.Integer, nullable=False)  # 1-12
     year = db.Column(db.Integer, nullable=False)
     sku_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    start_date = db.Column(db.Date, nullable=True) # Range Start
+    end_date = db.Column(db.Date, nullable=True)   # Range End
     target_units = db.Column(db.Float, nullable=False, default=0)
+    produced_qty = db.Column(db.Float, nullable=True) # Manual override for production qty (None = use logs)
     overhead_cost_per_unit = db.Column(db.Float, default=0)  # Manual overhead cost per unit
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -46,6 +46,23 @@
     position: absolute !important;
     width: 1px !important;
 }
+/* Column Widths */
+.product-col {
+    min-width: 350px;
+}
+.sku-col {
+    white-space: nowrap;
+    min-width: 120px;
+}
+.numeric-col {
+    white-space: nowrap;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.actions-col {
+    width: 80px;
+    text-align: center;
+}
 </style>
 {% endblock %}
 
@@ -208,46 +225,52 @@
                 <table class="table table-bordered table-hover">
                     <thead class="table-dark">
                         <tr>
-                            <th>SKU</th>
-                            <th>Product Name</th>
-                            <th>Target Units</th>
-                            <th>Produced</th>
-                            <th>Rejected</th>
-                            <th>Net</th>
-                            <th>Total</th>
-                            <th>Remaining</th>
-                            <th>Completion %</th>
+                            <th class="sku-col">SKU</th>
+                            <th class="product-col">Product Name</th>
+                            <th class="numeric-col">Target Units</th>
+                            <th class="numeric-col">Produced</th>
+                            <th class="numeric-col">Rejected</th>
+                            <th class="numeric-col">Returned</th>
+                            <th class="numeric-col">Net Produced</th>
+                            <th class="numeric-col">Target Total</th>
+                            <th class="numeric-col">Remaining</th>
+                            <th class="numeric-col">Completion %</th>
                             <th>Progress</th>
                             <th>Status</th>
-                            <th>BOM Cost</th>
-                            <th>OH Cost</th>
-                            <th>Item Cost</th>
-                            <th>Sell Price</th>
-                            <th>Target Revenue</th>
-                            <th>Est. Cost</th>
-                            <th>Est. Profit</th>
-                            <th>Actual Revenue</th>
-                            <th>Actual Cost</th>
-                            <th>Actual Profit</th>
-                            <th>Actions</th>
+                            <th class="numeric-col">Production Cost</th>
+                            <th class="numeric-col">Overhead</th>
+                            <th class="numeric-col">Total Unit Cost</th>
+                            <th class="numeric-col">Sell Price</th>
+                            <th class="numeric-col">Target Revenue</th>
+                            <th class="numeric-col">Est. Cost</th>
+                            <th class="numeric-col">Est. Profit</th>
+                            <th class="numeric-col">Actual Revenue</th>
+                            <th class="numeric-col">Actual Cost</th>
+                            <th class="numeric-col">Actual Profit</th>
+                            <th class="actions-col">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for r in results %}
                         <tr>
-                            <td>{{ r.product.sku }}</td>
-                            <td>{{ r.product.name }}</td>
-                            <td>
-                                <input type="number" class="form-control form-control-sm inline-edit" 
+                            <td class="sku-col">{{ r.product.sku }}</td>
+                            <td class="product-col">{{ r.product.name }}</td>
+                            <td class="numeric-col">
+                                <input type="number" class="form-control form-control-sm inline-edit text-end" 
                                        data-target-id="{{ r.target.id }}" data-field="target_units" 
-                                       value="{{ r.target.target_units|int }}" min="0" style="width: 80px;">
+                                       value="{{ r.target.target_units|int }}" min="0" style="width: 100px;">
                             </td>
-                            <td class="text-success">{{ r.produced_qty|int }}</td>
-                            <td class="text-danger">{{ r.rejected_qty|int }}</td>
-                            <td class="text-primary{% if r.net_produced < 0 %} text-danger{% endif %}">{{ r.net_produced|int }}</td>
-                            <td>{{ r.total_produced|int }}</td>
-                            <td>{{ r.remaining|int }}</td>
-                            <td>{{ r.completion_pct }}%</td>
+                            <td class="numeric-col">
+                                <input type="number" class="form-control form-control-sm inline-edit text-end text-success fw-bold" 
+                                       data-target-id="{{ r.target.id }}" data-field="produced_qty" 
+                                       value="{{ r.produced_qty|int }}" min="0" style="width: 100px;">
+                            </td>
+                            <td class="numeric-col text-danger">{{ r.rejected_qty|int }}</td>
+                            <td class="numeric-col text-warning">{{ r.returned_qty|int }}</td>
+                            <td class="numeric-col text-primary fw-bold">{{ r.net_produced|int }}</td>
+                            <td class="numeric-col">{{ r.target.target_units|int }}</td>
+                            <td class="numeric-col">{{ r.remaining|int }}</td>
+                            <td class="numeric-col">{{ r.completion_pct }}%</td>
                             <td>
                                 <div class="progress" style="height: 20px;">
                                     <div class="progress-bar {% if r.status_class == 'success' %}bg-success{% elif r.status_class == 'danger' %}bg-danger{% else %}bg-primary{% endif %}" 
@@ -259,26 +282,26 @@
                             <td>
                                 <span class="badge bg-{{ r.status_class }}">{{ r.status }}</span>
                             </td>
-                            <td>PKR {{ r.bom_cost|round(2) }}</td>
-                            <td>
-                                <input type="number" class="form-control form-control-sm inline-edit" 
+                            <td class="numeric-col">PKR {{ r.production_cost|round(2) }}</td>
+                            <td class="numeric-col">
+                                <input type="number" class="form-control form-control-sm inline-edit text-end" 
                                        data-target-id="{{ r.target.id }}" data-field="overhead_cost_per_unit" 
-                                       value="{{ r.overhead_cost|round(2) }}" min="0" step="0.01" style="width: 80px;">
+                                       value="{{ r.overhead_cost|round(2) }}" min="0" step="0.01" style="width: 100px;">
                             </td>
-                            <td>PKR {{ r.item_cost|round(2) }}</td>
-                            <td>PKR {{ r.selling_price|round(2) }}</td>
-                            <td>PKR {{ "{:,.0f}".format(r.target_revenue) }}</td>
-                            <td>PKR {{ "{:,.0f}".format(r.estimated_cost) }}</td>
-                            <td class="{% if r.estimated_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            <td class="numeric-col">PKR {{ r.item_cost|round(2) }}</td>
+                            <td class="numeric-col">PKR {{ r.selling_price|round(2) }}</td>
+                            <td class="numeric-col">PKR {{ "{:,.0f}".format(r.target_revenue) }}</td>
+                            <td class="numeric-col">PKR {{ "{:,.0f}".format(r.estimated_cost) }}</td>
+                            <td class="numeric-col {% if r.estimated_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
                                 PKR {{ "{:,.0f}".format(r.estimated_profit) }}
                             </td>
-                            <td>PKR {{ "{:,.0f}".format(r.actual_revenue) }}</td>
-                            <td>PKR {{ "{:,.0f}".format(r.actual_cost) }}</td>
-                            <td class="{% if r.actual_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            <td class="numeric-col">PKR {{ "{:,.0f}".format(r.actual_revenue) }}</td>
+                            <td class="numeric-col">PKR {{ "{:,.0f}".format(r.actual_cost) }}</td>
+                            <td class="numeric-col {% if r.actual_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
                                 PKR {{ "{:,.0f}".format(r.actual_profit) }}
                             </td>
-                            <td>
-                                <a href="{{ url_for('production.delete_target', id=r.target.id) }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this target?')">
+                            <td class="actions-col">
+                                <a href="{{ url_for('production.delete_target', id=r.target.id) }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this target?')" title="Delete Target">
                                     <i class="bi bi-trash"></i>
                                 </a>
                             </td>

@@ -97,8 +97,9 @@ def add_bom():
             if total_linked_overhead > 0:
                 bom.overhead_cost = total_linked_overhead
                 bom.calculate_total_cost()
-                # Update product cost to reflect new BOM total
-                bom.product.cost_price = bom.total_cost
+                # Overhead cost is updated from expenses, but we don't update product.cost_price here
+                # Inventory cost only changes after manufacture is complete
+                # bom.product.cost_price = bom.total_cost
 
         # Create initial version record (v1)
         # Safe user_id resolution
@@ -121,8 +122,8 @@ def add_bom():
             recalculate_overhead=False
         )
 
-        # Update the product's base cost price to reflect the BOM cost
-        bom.product.cost_price = bom.total_cost
+        # We capture the BOM structure/cost in the version record, but don't the product.cost_price yet
+        # Product cost will be updated upon production completion
         db.session.commit()
         
         flash('Bill of Materials created successfully (v1).', 'success')
@@ -229,7 +230,7 @@ def edit_bom(id):
             recalculate_overhead=False
         )
 
-        bom.product.cost_price = bom.total_cost
+        # Structure updated, versioned, but product.cost_price remains untouched until production
         db.session.commit()
         
         flash('Bill of Materials updated successfully.', 'success')
@@ -243,7 +244,7 @@ def bom_details(id):
     bom = BOM.query.get_or_404(id)
     return render_template('manufacturing/bom_details.html', bom=bom)
 
-@bp.route('/bom/<int:id>/delete', methods=['POST'])
+@bp.route('/bom/<int:id>/delete', methods=['GET', 'POST'])
 @login_required
 def delete_bom(id):
     bom = BOM.query.get_or_404(id)
@@ -514,6 +515,28 @@ def complete_order(id):
     )
     db.session.add(production_log)
     
+    # Update Production Target Produced Qty if exists (Stateful Running Total)
+    from app.models import ProductionTarget
+    # Find target covering the production date
+    target = ProductionTarget.query.filter(
+        ProductionTarget.sku_id == finished_good.id,
+        ProductionTarget.start_date <= order.end_date,
+        ProductionTarget.end_date >= order.end_date
+    ).first()
+    
+    if target:
+        if target.produced_qty is None:
+            # First time sync: initialize with current logs sum
+            from sqlalchemy import func
+            log_sum = db.session.query(func.sum(ProductionLog.qty_produced)).filter(
+                ProductionLog.sku_id == target.sku_id,
+                ProductionLog.date >= target.start_date,
+                ProductionLog.date <= target.end_date
+            ).scalar() or 0
+            target.produced_qty = log_sum
+        else:
+            target.produced_qty += completed_qty
+    
     db.session.commit()
     flash('Manufacturing Order completed successfully. Stock adjusted and product cost updated.', 'success')
     return redirect(url_for('manufacturing.order_details', id=order.id))
@@ -542,7 +565,7 @@ def get_actual_overhead(id):
     return jsonify({
         'total_actual_overhead': total_overhead
     })
-@bp.route('/order/<int:id>/delete', methods=['POST'])
+@bp.route('/order/<int:id>/delete', methods=['GET', 'POST'])
 @login_required
 def delete_order(id):
     from app.models import ManufacturingOrder, StockMovement, Product
@@ -579,6 +602,23 @@ def delete_order(id):
             StockMovement.reference_id == order.id,
             StockMovement.reference_type.in_(['manufacturing_consumption', 'manufacturing_finish'])
         ).delete(synchronize_session=False)
+
+        # 5. Remove associated ProductionLog and decrease target counts
+        from app.models import ProductionLog, ProductionTarget
+        logs_to_delete = ProductionLog.query.filter(
+            ProductionLog.operator == f'MO: {order.order_number}'
+        ).all()
+        
+        for l in logs_to_delete:
+            # Subtract from target if target is stateful
+            target = ProductionTarget.query.filter(
+                ProductionTarget.sku_id == order.bom.product_id,
+                ProductionTarget.start_date <= l.date,
+                ProductionTarget.end_date >= l.date
+            ).first()
+            if target and target.produced_qty is not None:
+                target.produced_qty -= l.qty_produced
+            db.session.delete(l)
     
     # Delete any associated overhead expenses linked to this MO
     from app.models import Expense

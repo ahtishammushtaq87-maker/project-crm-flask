@@ -154,7 +154,21 @@
                 .done(function (res) {
                     if (res.success) {
                         QB.fields = res.fields || [];
-                        QB.renderInitialRule();
+                        
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const filterRulesB64 = urlParams.get('filter_rules');
+                        if (filterRulesB64) {
+                            try {
+                                const jsonStr = atob(filterRulesB64);
+                                const rulesObj = JSON.parse(jsonStr);
+                                QB.loadRulesObject(rulesObj);
+                            } catch(e) {
+                                console.error("Failed to load temporary filter from URL", e);
+                                QB.renderInitialRule();
+                            }
+                        } else {
+                            QB.renderInitialRule();
+                        }
                     } else {
                         QB.showMessage(res.message || 'Failed to load fields', 'danger');
                     }
@@ -470,8 +484,13 @@
             const f = QB.savedFilters.find(function (item) { return item.id === filterId; });
             if (!f || !f.rules) return;
 
+            QB.loadRulesObject(f.rules);
+            QB.showMessage('Loaded filter: ' + QB.escapeHtml(f.name), 'info');
+        },
+
+        loadRulesObject: function (rulesObj) {
             // Populate condition
-            const condition = (f.rules.condition || 'AND').toUpperCase();
+            const condition = (rulesObj.condition || 'AND').toUpperCase();
             if (condition === 'OR') {
                 $('#ufm-condition-or').prop('checked', true);
             } else {
@@ -481,7 +500,7 @@
             // Populate rules
             $('#ufm-rules-container').empty();
             QB.ruleCounter = 0;
-            const rules = f.rules.rules || [];
+            const rules = rulesObj.rules || [];
             if (rules.length === 0) {
                 QB.addRuleRow();
             } else {
@@ -493,8 +512,6 @@
                     });
                 });
             }
-
-            QB.showMessage('Loaded filter: ' + QB.escapeHtml(f.name), 'info');
         },
 
         deleteFilter: function (filterId) {

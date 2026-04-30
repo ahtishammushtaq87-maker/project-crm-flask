@@ -1005,7 +1005,7 @@
         <button type="button" class="btn btn-primary btn-sm shadow" id="universal-filter-trigger-btn" data-module="{{ active_module }}" data-bs-toggle="modal" data-bs-target="#universalFilterModal">
             <i class="fas fa-filter me-1"></i> Advanced Filter
         </button>
-        {% if filter_id %}
+        {% if filter_id or request.args.get('filter_rules') %}
         <a href="{{ request.path }}" class="btn btn-outline-danger btn-sm shadow ms-1" title="Clear filter">
             <i class="fas fa-times"></i>
         </a>
@@ -1014,7 +1014,7 @@
     {% endif %}
 
     <!-- Active Filter Banner -->
-    {% if filter_id %}
+    {% if filter_id or request.args.get('filter_rules') %}
     <div class="alert alert-info alert-dismissible fade show mt-3 mb-0" style="margin-left: 15px; margin-right: 15px;">
         <i class="fas fa-filter me-2"></i>
         <strong>Advanced Filter Active</strong> — Results are filtered. 

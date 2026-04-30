@@ -2204,15 +2204,24 @@ def delete_purchase_return(id):
     
     # Reverse vendor refund if was paid
     if purchase_return.refund_status == 'paid' and purchase_return.vendor:
-        # Create a negative vendor advance to reverse the refund (offset positive refund)
-        vendor_advance = VendorAdvance(
+        # Find and delete the original positive advance created for this refund
+        original_advance = VendorAdvance.query.filter_by(
             vendor_id=purchase_return.vendor.id,
-            amount=-purchase_return.refund_amount,
-            date=datetime.now(),
-            description=f'Reversal for Return: {purchase_return.return_number}',
-            created_by=current_user.id
-        )
-        db.session.add(vendor_advance)
+            description=f'Refund for Return: {purchase_return.return_number}'
+        ).first()
+
+        if original_advance:
+            db.session.delete(original_advance)
+        else:
+            # Fallback if original not found: Create a negative vendor advance to reverse the refund
+            vendor_advance = VendorAdvance(
+                vendor_id=purchase_return.vendor.id,
+                amount=-purchase_return.refund_amount,
+                date=datetime.now(),
+                description=f'Reversal for Return: {purchase_return.return_number}',
+                created_by=current_user.id
+            )
+            db.session.add(vendor_advance)
     
     # Restore bill totals and recalculate status
     if bill:

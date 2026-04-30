@@ -1,72 +1,100 @@
 {% extends "base.html" %}
 
+{% block title %}{% if target %}Edit Target{% else %}Set Monthly Target{% endif %}{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
+<style>
+    .select2-container--bootstrap-5 {
+        width: 100% !important;
+    }
+    .inventory-info {
+        font-size: 0.85rem;
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 10px;
+        border-left: 4px solid #0d6efd;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-bullseye"></i> {% if target %}Edit Target{% else %}Set Monthly Target{% endif %}</h2>
     </div>
 
-    <div class="card">
-        <div class="card-header">
-            <h5 class="mb-0">Production Target Details</h5>
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-white py-3">
+            <h5 class="mb-0 text-primary">Production Target Details</h5>
         </div>
         <div class="card-body">
             <form method="post" class="row g-3">
-                <div class="col-md-4">
-                    <label class="form-label">Month <span class="text-danger">*</span></label>
-                    <select name="month" class="form-select" required>
-                        {% for m in range(1, 13) %}
-                        <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>
-                            {{ ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m-1] }}
-                        </option>
-                        {% endfor %}
-                    </select>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">Start Date <span class="text-danger">*</span></label>
+                    <input type="date" name="start_date" class="form-control" 
+                           value="{{ target.start_date.strftime('%Y-%m-%d') if target and target.start_date else '' }}" required>
                 </div>
-                <div class="col-md-4">
-                    <label class="form-label">Year <span class="text-danger">*</span></label>
-                    <select name="year" class="form-select" required>
-                        {% for y in range(2023, 2030) %}
-                        <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
-                        {% endfor %}
-                    </select>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">End Date <span class="text-danger">*</span></label>
+                    <input type="date" name="end_date" class="form-control" 
+                           value="{{ target.end_date.strftime('%Y-%m-%d') if target and target.end_date else '' }}" required>
                 </div>
+                
                 <div class="col-md-4">
-                    <label class="form-label">Product (SKU) <span class="text-danger">*</span></label>
-                    <select name="sku_id" class="form-select" required>
-                        <option value="">Select Product</option>
-                        {% for product in products %}
-                        <option value="{{ product.id }}" {% if target and target.sku_id == product.id %}selected{% endif %}>
-                            {{ product.sku }} - {{ product.name }}
-                        </option>
-                        {% endfor %}
-                    </select>
+                    <label class="form-label fw-bold">Product (SKU) <span class="text-danger">*</span></label>
+                    {% if target %}
+                        <select name="sku_ids" class="form-select product-select" required>
+                            <option value="{{ target.sku_id }}" selected>{{ target.product.sku }} - {{ target.product.name }}</option>
+                        </select>
+                        <small class="text-muted">Editing target for a single product</small>
+                    {% else %}
+                        <select name="sku_ids" class="form-select product-select" multiple="multiple" required>
+                            {% for product in products %}
+                            <option value="{{ product.id }}" 
+                                    data-cost="{{ product.cost_price }}" 
+                                    data-price="{{ product.finished_good_price if product.finished_good_price else product.unit_price }}">
+                                {{ product.sku }} - {{ product.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">You can select multiple products for bulk target setting</small>
+                    {% endif %}
                 </div>
+
                 <div class="col-md-6">
-                    <label class="form-label">Target Units <span class="text-danger">*</span></label>
+                    <label class="form-label fw-bold">Target Units <span class="text-danger">*</span></label>
                     <input type="number" name="target_units" class="form-control" step="1" min="0" 
-                           value="{{ target.target_units if target else '' }}" required>
-                    <small class="text-muted">Monthly production target for this product</small>
+                           value="{{ target.target_units if target else '' }}" required placeholder="e.g. 1000">
+                    <small class="text-muted">Monthly production target for selected product(s)</small>
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">Overhead Cost per Unit</label>
+                    <label class="form-label fw-bold">Overhead Cost per Unit</label>
                     <input type="number" name="overhead_cost_per_unit" class="form-control" step="0.01" min="0" 
                            value="{{ target.overhead_cost_per_unit if target and target.overhead_cost_per_unit else '0' }}">
-                    <small class="text-muted">Manual overhead cost (or leave 0 to use BOM overhead)</small>
+                    <small class="text-muted">Manual overhead cost (leave 0 to use BOM overhead)</small>
                 </div>
                 
-                <div class="col-12">
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle"></i> 
-                        <strong>Note:</strong> BOM Cost and Selling Price will be fetched automatically from the system.
-                        Use the overhead field to add any additional costs not captured in BOM.
+                <div id="bulkPriceInfo" class="col-12 d-none">
+                    <div class="inventory-info mt-2">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong><i class="bi bi-tag"></i> Buying/Manufacturing Cost:</strong> <span id="currentCost">PKR 0.00</span>
+                            </div>
+                            <div class="col-md-6">
+                                <strong><i class="bi bi-currency-dollar"></i> Selling Price:</strong> <span id="currentPrice">PKR 0.00</span>
+                            </div>
+                        </div>
+                        <p class="mb-0 mt-1 text-muted small"><i class="bi bi-info-circle"></i> These are the real-time values from inventory. Target calculations will automatically use these.</p>
                     </div>
                 </div>
-                
-                <div class="col-12">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-save"></i> Save Target
+
+                <div class="col-12 pt-3 border-top mt-4">
+                    <button type="submit" class="btn btn-primary px-4">
+                        <i class="bi bi-save"></i> {% if target %}Update Target{% else %}Save Targets{% endif %}
                     </button>
-                    <a href="{{ url_for('production.index', month=selected_month, year=selected_year) }}" class="btn btn-secondary">
+                    <a href="{{ url_for('production.index', month=selected_month, year=selected_year) }}" class="btn btn-outline-secondary px-4">
                         Cancel
                     </a>
                 </div>
@@ -74,4 +102,43 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(document).ready(function() {
+    const productSelect = $('.product-select').select2({
+        theme: 'bootstrap-5',
+        placeholder: 'Search for finished goods...',
+        allowClear: true
+    });
+
+    function updatePriceInfo() {
+        const selectedData = productSelect.select2('data');
+        const infoBox = $('#bulkPriceInfo');
+        
+        if (selectedData.length === 1) {
+            const option = $(selectedData[0].element);
+            const cost = parseFloat(option.data('cost')) || 0;
+            const price = parseFloat(option.data('price')) || 0;
+            
+            $('#currentCost').text('PKR ' + cost.toLocaleString(undefined, {minimumFractionDigits: 2}));
+            $('#currentPrice').text('PKR ' + price.toLocaleString(undefined, {minimumFractionDigits: 2}));
+            infoBox.removeClass('d-none');
+        } else if (selectedData.length > 1) {
+            $('#currentCost').text('Multiple selected');
+            $('#currentPrice').text('Multiple selected');
+            infoBox.removeClass('d-none');
+        } else {
+            infoBox.addClass('d-none');
+        }
+    }
+
+    productSelect.on('change', updatePriceInfo);
+    
+    // Initial update
+    updatePriceInfo();
+});
+</script>
 {% endblock %}

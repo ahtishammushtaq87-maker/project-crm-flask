@@ -13,6 +13,9 @@ def _require_admin():
     pass
 
 
+import json
+import base64
+
 def apply_saved_filter_to_query(query, module, request_args):
     """
     Safely apply a saved filter to a SQLAlchemy query if filter_id is present.
@@ -20,18 +23,33 @@ def apply_saved_filter_to_query(query, module, request_args):
     Use this in every list/report route to enable advanced filtering.
     """
     filter_id = request_args.get('filter_id', type=int)
-    if not filter_id:
+    filter_rules_b64 = request_args.get('filter_rules', type=str)
+    
+    rules = None
+    
+    if filter_id:
+        sf = SavedFilter.query.get(filter_id)
+        if not sf:
+            flash(f'Saved filter #{filter_id} not found.', 'warning')
+            return query
+        if sf.module != module:
+            # Module mismatch — don't break, just warn and ignore
+            flash(f'Filter mismatch: expected {module}, got {sf.module}.', 'warning')
+            return query
+        rules = sf.rules
+    elif filter_rules_b64:
+        try:
+            json_str = base64.b64decode(filter_rules_b64).decode('utf-8')
+            rules = json.loads(json_str)
+        except Exception as e:
+            flash(f'Error reading filter rules: {str(e)}', 'warning')
+            return query
+
+    if not rules:
         return query
-    sf = SavedFilter.query.get(filter_id)
-    if not sf:
-        flash(f'Saved filter #{filter_id} not found.', 'warning')
-        return query
-    if sf.module != module:
-        # Module mismatch — don't break, just warn and ignore
-        flash(f'Filter mismatch: expected {module}, got {sf.module}.', 'warning')
-        return query
+
     try:
-        query = apply_filters(query, module, sf.rules)
+        query = apply_filters(query, module, rules)
     except Exception as e:
         flash(f'Advanced filter error: {str(e)}', 'warning')
     return query
@@ -152,17 +170,6 @@ def apply_filter():
         )
         db.session.add(sf)
         db.session.commit()
-    else:
-        # Create a temporary filter record so we can reference it by ID
-        # We still save it but with a generated name so the redirect works.
-        temp_name = f"__temp_{current_user.id}_{db.func.random()}"
-        sf = SavedFilter(
-            name=temp_name,
-            module=module,
-            rules=rules
-        )
-        db.session.add(sf)
-        db.session.commit()
 
     # Build redirect URL
     if not redirect_url:
@@ -198,11 +205,21 @@ def apply_filter():
         redirect_url = redirects.get(module, url_for('dashboard.index'))
 
     separator = '&' if '?' in redirect_url else '?'
-    final_url = f"{redirect_url}{separator}filter_id={sf.id}"
+    
+    if sf:
+        final_url = f"{redirect_url}{separator}filter_id={sf.id}"
+        filter_id_val = sf.id
+    else:
+        import base64
+        import json
+        rules_str = json.dumps(rules)
+        encoded_rules = base64.b64encode(rules_str.encode('utf-8')).decode('utf-8')
+        final_url = f"{redirect_url}{separator}filter_rules={encoded_rules}"
+        filter_id_val = None
 
     return jsonify({
         'success': True,
-        'filter_id': sf.id,
+        'filter_id': filter_id_val,
         'redirect_url': final_url
     })
 

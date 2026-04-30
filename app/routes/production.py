@@ -21,12 +21,18 @@ def index():
     month_start = datetime(selected_year, selected_month, 1)
     month_end = datetime(selected_year, selected_month, days_in_month, 23, 59, 59)
     
-    query = ProductionTarget.query.filter_by(month=selected_month, year=selected_year)
+    # Filter targets occurring in this month or with this month/year label
+    query = ProductionTarget.query.filter(
+        db.or_(
+            db.and_(ProductionTarget.month == selected_month, ProductionTarget.year == selected_year),
+            db.and_(ProductionTarget.start_date >= month_start.date(), ProductionTarget.start_date <= month_end.date())
+        )
+    )
     if selected_product_id:
         query = query.filter_by(sku_id=selected_product_id)
     targets = query.all()
     
-    products = Product.query.filter_by(is_active=True).order_by(Product.name).all()
+    products = Product.query.filter_by(is_active=True, is_manufactured=True).order_by(Product.name).all()
     
     results = []
     total_target = 0
@@ -46,37 +52,66 @@ def index():
     for target in targets:
         product = target.product
         
-        produced_qty = db.session.query(func.sum(ProductionLog.qty_produced)).filter(
-            ProductionLog.sku_id == target.sku_id,
-            ProductionLog.date >= month_start.date(),
-            ProductionLog.date <= month_end.date()
-        ).scalar() or 0
-        
+        # Filter logs based on target range if available, else month/year
+        log_start = target.start_date if target.start_date else month_start.date()
+        log_end = target.end_date if target.end_date else month_end.date()
+
+        # Determine Produced Qty: Stateful Value vs dynamic Logs sum
+        if target.produced_qty is not None:
+            # Use stateful value (manual entry + automated additions)
+            produced_qty = target.produced_qty
+            log_produced = 0 # Not used in stateful mode
+        else:
+            # Fallback: Dynamic logs sum (only if never manually adjusted)
+            log_produced = db.session.query(func.sum(ProductionLog.qty_produced)).filter(
+                ProductionLog.sku_id == target.sku_id,
+                ProductionLog.date >= log_start,
+                ProductionLog.date <= log_end
+            ).scalar() or 0
+            produced_qty = log_produced
+            
+        # Calculate rejected qty for the range
         rejected_qty = db.session.query(func.sum(ProductionLog.rejected_qty)).filter(
             ProductionLog.sku_id == target.sku_id,
-            ProductionLog.date >= month_start.date(),
-            ProductionLog.date <= month_end.date()
+            ProductionLog.date >= log_start,
+            ProductionLog.date <= log_end
         ).scalar() or 0
-        
+            
         net_produced = produced_qty - rejected_qty  # Net = Produced - Rejected
         total_produced = produced_qty + rejected_qty  # Total including rejected
         
-        bom_cost = 0
-        overhead_cost = 0
+        # Calculate Returns for this product in this range
+        from app.models import SaleReturn, SaleReturnItem
+        returned_qty = db.session.query(func.sum(SaleReturnItem.quantity)).join(SaleReturn).filter(
+            SaleReturnItem.product_id == target.sku_id,
+            SaleReturn.date >= log_start,
+            SaleReturn.date <= log_end
+        ).scalar() or 0
+        
+        # Truly net produced = Produced - Rejected - Returned
+        final_net_produced = net_produced - returned_qty
+        
         selling_price = product.finished_good_price if product.finished_good_price else product.unit_price
-        
         bom = BOM.query.filter_by(product_id=product.id, is_active=True).first()
+        
+        # Use current product cost (which is updated after complete production)
+        # instead of relying solely on BOM estimate if production has happened
+        item_unit_cost = product.cost_price if product.cost_price > 0 else (bom.total_cost if bom else 0)
+        
+        # Breakdown still shows BOM reference if needed, but calculations use item_unit_cost
         if bom:
-            bom_cost = bom.total_cost - bom.overhead_cost - bom.labor_cost  # Component cost only
-            overhead_cost = bom.overhead_cost + bom.labor_cost  # OH = overhead + labor
+            reference_bom_cost = bom.total_cost - bom.overhead_cost - bom.labor_cost
+            reference_overhead = bom.overhead_cost + bom.labor_cost
         else:
-            bom_cost = product.cost_price
-        
+            reference_bom_cost = product.cost_price
+            reference_overhead = 0
+            
         if target.overhead_cost_per_unit > 0:
-            overhead_cost = target.overhead_cost_per_unit
-        
+            # If target has specific overhead, reflect it in the display
+            reference_overhead = target.overhead_cost_per_unit
+            
         remaining = target.target_units - total_produced
-        completion_pct = (net_produced / target.target_units * 100) if target.target_units > 0 else 0
+        completion_pct = (final_net_produced / target.target_units * 100) if target.target_units > 0 else 0
         
         if completion_pct >= 100:
             status = 'DONE'
@@ -89,19 +124,20 @@ def index():
             status_class = 'danger'
         
         target_revenue = target.target_units * selling_price
-        estimated_cost = target.target_units * bom_cost
+        estimated_cost = target.target_units * item_unit_cost
         estimated_profit = target_revenue - estimated_cost
         
-        # Actual (based on net produced qty after rejecting)
-        actual_revenue = net_produced * selling_price
-        actual_cost = net_produced * bom_cost
+        # Actual (based on net produced qty after rejecting and returns)
+        actual_revenue = final_net_produced * selling_price
+        actual_cost = final_net_produced * item_unit_cost
         actual_profit = actual_revenue - actual_cost
         
         results.append({
             'target': target,
             'product': product,
             'produced_qty': produced_qty,
-            'net_produced': net_produced,
+            'net_produced': final_net_produced,
+            'returned_qty': returned_qty,
             'rejected_qty': rejected_qty,
             'total_produced': total_produced,
             'remaining': remaining,
@@ -109,9 +145,9 @@ def index():
             'expected_progress': round(expected_progress, 1),
             'status': status,
             'status_class': status_class,
-            'bom_cost': bom_cost,
-            'overhead_cost': overhead_cost,
-            'item_cost': bom_cost,
+            'production_cost': item_unit_cost,
+            'overhead_cost': reference_overhead,
+            'item_cost': item_unit_cost,
             'selling_price': selling_price,
             'target_revenue': target_revenue,
             'estimated_cost': estimated_cost,
@@ -122,7 +158,7 @@ def index():
         })
         
         total_target += target.target_units
-        total_produced_all += total_produced
+        total_produced_all += net_produced # Use Net Produced for the summary box
         total_remaining += remaining
         total_revenue += target_revenue
         total_cost += estimated_cost
@@ -163,32 +199,71 @@ def set_target():
     if target_id:
         target = ProductionTarget.query.get_or_404(target_id)
     
-    products = Product.query.filter_by(is_active=True).order_by(Product.name).all()
+    products = Product.query.filter_by(is_active=True, is_manufactured=True).order_by(Product.name).all()
     
     selected_month = request.args.get('month', type=int, default=datetime.now().month)
     selected_year = request.args.get('year', type=int, default=datetime.now().year)
     
     if request.method == 'POST':
-        month = int(request.form.get('month'))
-        year = int(request.form.get('year'))
-        sku_id = int(request.form.get('sku_id'))
+        start_date_str = request.form.get('start_date')
+        end_date_str = request.form.get('end_date')
+        
+        if not start_date_str or not end_date_str:
+            flash('Please select a valid date range.', 'danger')
+            return redirect(url_for('production.set_target'))
+            
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+        
+        month = start_date.month
+        year = start_date.year
+        
+        sku_ids = request.form.getlist('sku_ids')
         target_units = float(request.form.get('target_units', 0))
         overhead_cost_per_unit = float(request.form.get('overhead_cost_per_unit', 0))
         
-        if not target:
-            existing = ProductionTarget.query.filter_by(month=month, year=year, sku_id=sku_id).first()
-            if existing:
-                target = existing
-            else:
-                target = ProductionTarget(month=month, year=year, sku_id=sku_id)
-                db.session.add(target)
+        submitted_sku_ids = [int(sid) for sid in sku_ids if sid]
         
-        target.target_units = target_units
-        target.overhead_cost_per_unit = overhead_cost_per_unit
-        
+        if not submitted_sku_ids and not target:
+            flash('Please select at least one product.', 'danger')
+            return redirect(url_for('production.set_target'))
+
         try:
+            if target:
+                # Single edit mode
+                target.start_date = start_date
+                target.end_date = end_date
+                target.month = month
+                target.year = year
+                target.target_units = target_units
+                target.overhead_cost_per_unit = overhead_cost_per_unit
+            else:
+                # Bulk add/update mode
+                for sku_id in submitted_sku_ids:
+                    # Look for existing target in this EXACT range for this SKU
+                    existing = ProductionTarget.query.filter_by(
+                        start_date=start_date, 
+                        end_date=end_date, 
+                        sku_id=sku_id
+                    ).first()
+                    
+                    if existing:
+                        curr_target = existing
+                    else:
+                        curr_target = ProductionTarget(
+                            start_date=start_date, 
+                            end_date=end_date,
+                            month=month,
+                            year=year,
+                            sku_id=sku_id
+                        )
+                        db.session.add(curr_target)
+                    
+                    curr_target.target_units = target_units
+                    curr_target.overhead_cost_per_unit = overhead_cost_per_unit
+            
             db.session.commit()
-            flash('Target saved successfully.', 'success')
+            flash('Targets saved successfully.', 'success')
             return redirect(url_for('production.index', month=month, year=year))
         except Exception as e:
             db.session.rollback()
@@ -205,14 +280,19 @@ def set_target():
 @login_required
 def delete_target(id):
     """Delete a production target"""
-    target = ProductionTarget.query.get_or_404(id)
-    month = target.month
-    year = target.year
-    
-    db.session.delete(target)
-    db.session.commit()
-    flash('Target deleted.', 'success')
-    return redirect(url_for('production.index', month=month, year=year))
+    try:
+        target = ProductionTarget.query.get_or_404(id)
+        month = target.month
+        year = target.year
+        
+        db.session.delete(target)
+        db.session.commit()
+        flash('Target deleted successfully.', 'success')
+        return redirect(url_for('production.index', month=month, year=year))
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error deleting target: {str(e)}', 'danger')
+        return redirect(url_for('production.index'))
 
 
 @bp.route('/logs')
@@ -285,7 +365,32 @@ def add_log():
         
         try:
             db.session.commit()
-            flash('Production log saved.', 'success')
+            
+            # Update stock: add production qty to finished good
+            production_product = Product.query.get(sku_id)
+            if production_product:
+                # Add to inventory
+                from app.models import StockMovement
+                production_product.quantity += qty_produced
+                
+                # Log movement
+                move = StockMovement(
+                    product_id=production_product.id,
+                    quantity=qty_produced,
+                    movement_type='in',
+                    reference_type='production_log',
+                    reference_id=log.id,
+                    notes=f"Production log: {shift} - {operator}"
+                )
+                db.session.add(move)
+                
+                # Sync cost price as well
+                active_bom = BOM.query.filter_by(product_id=production_product.id, is_active=True).first()
+                if active_bom:
+                    production_product.cost_price = active_bom.total_cost
+                
+            db.session.commit()
+            flash('Production log saved and inventory updated.', 'success')
             return redirect(url_for('production.logs'))
         except Exception as e:
             db.session.rollback()
@@ -299,11 +404,42 @@ def add_log():
 @bp.route('/log/<int:id>/delete')
 @login_required
 def delete_log(id):
-    """Delete a production log"""
+    """Delete a production log and reverse stock"""
     log = ProductionLog.query.get_or_404(id)
-    db.session.delete(log)
-    db.session.commit()
-    flash('Log deleted.', 'success')
+    sku_id = log.sku_id
+    qty = log.qty_produced
+    
+    try:
+        # Reverse stock
+        product = Product.query.get(sku_id)
+        if product:
+            product.quantity -= qty
+            
+            # Remove stock movement
+            from app.models import StockMovement
+            StockMovement.query.filter_by(
+                product_id=sku_id,
+                reference_type='production_log',
+                reference_id=log.id
+            ).delete()
+            
+        # Update Production Target Produced Qty (Stateful)
+        from app.models import ProductionTarget
+        target = ProductionTarget.query.filter(
+            ProductionTarget.sku_id == sku_id,
+            ProductionTarget.start_date <= log.date,
+            ProductionTarget.end_date >= log.date
+        ).first()
+        if target and target.produced_qty is not None:
+            target.produced_qty -= qty
+            
+        db.session.delete(log)
+        db.session.commit()
+        flash('Production log deleted and stock reversed.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error deleting log: {str(e)}', 'danger')
+        
     return redirect(url_for('production.logs'))
 
 
@@ -377,16 +513,26 @@ def api_update_target():
     
     target = ProductionTarget.query.get_or_404(target_id)
     
-    if field == 'target_units':
-        target.target_units = float(value)
-    elif field == 'overhead_cost_per_unit':
-        target.overhead_cost_per_unit = float(value)
-    else:
-        return jsonify({'success': False, 'message': 'Invalid field'}), 400
-    
     try:
+        # Convert value safely
+        if value is None or str(value).strip() == '':
+            num_value = None # Reset to use logs
+        else:
+            num_value = float(value)
+            
+        if field == 'target_units':
+            target.target_units = num_value if num_value is not None else 0
+        elif field == 'produced_qty':
+            target.produced_qty = num_value
+        elif field == 'overhead_cost_per_unit':
+            target.overhead_cost_per_unit = num_value
+        else:
+            return jsonify({'success': False, 'message': 'Invalid field'}), 400
+            
         db.session.commit()
         return jsonify({'success': True, 'message': 'Updated successfully'})
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Invalid number format'}), 400
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -428,16 +574,30 @@ def export_report(format):
             ProductionLog.date <= month_end.date()
         ).scalar() or 0
         
+        rejected_qty = db.session.query(func.sum(ProductionLog.rejected_qty)).filter(
+            ProductionLog.sku_id == target.sku_id,
+            ProductionLog.date >= month_start.date(),
+            ProductionLog.date <= month_end.date()
+        ).scalar() or 0
+        
+        from app.models import SaleReturn, SaleReturnItem
+        returned_qty = db.session.query(func.sum(SaleReturnItem.quantity)).join(SaleReturn).filter(
+            SaleReturnItem.product_id == target.sku_id,
+            SaleReturn.date >= month_start.date(),
+            SaleReturn.date <= month_end.date()
+        ).scalar() or 0
+        
+        net_produced = produced_qty - rejected_qty - returned_qty
+        
         bom = BOM.query.filter_by(product_id=product.id, is_active=True).first()
         bom_cost = (bom.total_cost - bom.overhead_cost - bom.labor_cost) if bom else product.cost_price
         overhead_cost = target.overhead_cost_per_unit if target.overhead_cost_per_unit > 0 else (bom.overhead_cost + bom.labor_cost if bom else 0)
         
-        remaining = target.target_units - produced_qty
-        completion_pct = (produced_qty / target.target_units * 100) if target.target_units > 0 else 0
+        completion_pct = (net_produced / target.target_units * 100) if target.target_units > 0 else 0
         
         if completion_pct >= 100:
             status = 'DONE'
-        elif completion_pct >= ((datetime.now().day / days_in_month) * 100):
+        elif completion_pct >= ((datetime.now().day / monthrange(selected_year, selected_month)[1]) * 100):
             status = 'ON TRACK'
         else:
             status = 'BEHIND'
@@ -447,7 +607,10 @@ def export_report(format):
             'Product Name': product.name,
             'Target Units': target.target_units,
             'Produced Units': produced_qty,
-            'Remaining': remaining,
+            'Rejected Units': rejected_qty,
+            'Returned Units': returned_qty,
+            'Net Produced': net_produced,
+            'Remaining': target.target_units - net_produced,
             'Completion %': f"{completion_pct:.1f}%",
             'BOM Cost': bom_cost,
             'OH Cost (Labor+Overhead)': overhead_cost,
