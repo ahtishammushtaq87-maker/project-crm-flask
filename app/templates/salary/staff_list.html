@@ -47,11 +47,11 @@
                             </div>
                         </td>
                         <td>{{ staff.designation or '---' }}</td>
-                        <td><strong>{{ staff.monthly_salary | round(2) }}</strong></td>
+                        <td><strong>{{ "%.2f" % staff.monthly_salary }}</strong></td>
                         <td>
                             {% set outstanding = staff.total_outstanding_advance %}
                             <span class="badge {% if outstanding > 0 %}bg-warning text-dark{% else %}bg-light text-muted{% endif %} px-2 py-1">
-                                {{ outstanding | round(2) }}
+                                {{ "%.2f" % outstanding }}
                             </span>
                         </td>
                         <td>
@@ -90,11 +90,11 @@
 </div>
 
 <style>
-    .bg-primary-soft { background-color: rgba(102, 126, 234, 0.1); }
-    .bg-success-soft { background-color: rgba(72, 187, 120, 0.1); }
-    .bg-warning-soft { background-color: rgba(236, 201, 75, 0.1); }
-    .bg-secondary-soft { background-color: rgba(160, 174, 192, 0.1); }
-    .text-success { color: #38a169 !important; }
-    .text-primary { color: #5a67d8 !important; }
+    .bg-primary-soft { background-color: rgba(102, 126, 234, 0.25); }
+    .bg-success-soft { background-color: rgba(72, 187, 120, 0.25); }
+    .bg-warning-soft { background-color: rgba(236, 201, 75, 0.25); }
+    .bg-secondary-soft { background-color: rgba(160, 174, 192, 0.25); }
+    .text-success { color: #276749 !important; }
+    .text-primary { color: #4c51bf !important; }
 </style>
 {% endblock %}

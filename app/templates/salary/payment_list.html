@@ -51,9 +51,9 @@ document.addEventListener('DOMContentLoaded', function() {
                             </span>
                         </td>
                         <td>{{ payment.staff.name }}</td>
-                        <td>{{ payment.base_salary | round(2) }}</td>
-                        <td class="text-danger">-{{ payment.advance_deduction | round(2) }}</td>
-                        <td><strong class="text-success">{{ (payment.net_salary) | round(2) }}</strong></td>
+                        <td>{{ "%.2f" % payment.base_salary }}</td>
+                        <td class="text-danger">-{{ "%.2f" % payment.advance_deduction }}</td>
+                        <td><strong class="text-success">{{ "%.2f" % payment.net_salary }}</strong></td>
                         <td><small class="text-muted">{{ payment.payment_date.strftime('%d %b, %y') }}</small></td>
                         <td><span class="badge bg-light text-dark px-2 py-1 border small">{{ payment.payment_method }}</span></td>
                         <td>
@@ -84,9 +84,9 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <style>
-    .bg-success-soft { background-color: rgba(72, 187, 120, 0.1); }
-    .bg-info-soft { background-color: rgba(66, 153, 225, 0.1); }
-    .bg-secondary-soft { background-color: rgba(160, 174, 192, 0.1); }
-    .text-success { color: #38a169 !important; }
+    .bg-success-soft { background-color: rgba(72, 187, 120, 0.25); }
+    .bg-info-soft { background-color: rgba(66, 153, 225, 0.25); }
+    .bg-secondary-soft { background-color: rgba(160, 174, 192, 0.25); }
+    .text-success { color: #276749 !important; }
 </style>
 {% endblock %}

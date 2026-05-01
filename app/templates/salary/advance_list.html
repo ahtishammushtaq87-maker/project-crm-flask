@@ -34,7 +34,7 @@
                     <tr>
                         <td class="px-4 fw-bold text-muted">{{ advance.date.strftime('%d %b, %y') }}</td>
                         <td>{{ advance.staff.name }}</td>
-                        <td><strong class="text-info">{{ advance.amount | round(2) }}</strong></td>
+                        <td><strong class="text-info">{{ "%.2f" % advance.amount }}</strong></td>
                         <td>{{ advance.description or '---' }}</td>
                         <td>
                             {% if advance.is_deducted %}
@@ -70,9 +70,9 @@
 </div>
 
 <style>
-    .bg-success-soft { background-color: rgba(72, 187, 120, 0.1); }
-    .bg-warning-soft { background-color: rgba(236, 201, 75, 0.1); }
-    .text-success { color: #38a169 !important; }
-    .text-warning { color: #d69e2e !important; }
+    .bg-success-soft { background-color: rgba(72, 187, 120, 0.25); }
+    .bg-warning-soft { background-color: rgba(236, 201, 75, 0.25); }
+    .text-success { color: #276749 !important; }
+    .text-warning { color: #975a16 !important; }
 </style>
 {% endblock %}
