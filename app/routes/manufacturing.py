@@ -89,7 +89,8 @@ def add_bom():
             # Calculate total overhead from linked expenses for this BOM
             total_linked_overhead = db.session.query(db.func.sum(Expense.amount)).filter(
                 Expense.bom_id == bom.id,
-                Expense.is_bom_overhead == True
+                Expense.is_bom_overhead == True,
+                Expense.status == 'confirmed'
             ).scalar() or 0
             
             # If there are linked overhead expenses, use that total as BOM overhead cost
@@ -203,7 +204,8 @@ def edit_bom(id):
             # Calculate total overhead from linked expenses for this BOM
             total_linked_overhead = db.session.query(db.func.sum(Expense.amount)).filter(
                 Expense.bom_id == bom.id,
-                Expense.is_bom_overhead == True
+                Expense.is_bom_overhead == True,
+                Expense.status == 'confirmed'
             ).scalar() or 0
             
             if total_linked_overhead > 0:
@@ -560,6 +562,7 @@ def get_actual_overhead(id):
         total_overhead = db.session.query(db.func.sum(Expense.amount)).filter(
             Expense.product_id == id,
             Expense.is_bom_overhead == True,
+            Expense.status == 'confirmed',
             Expense.bom_id == None
         ).scalar() or 0
     return jsonify({

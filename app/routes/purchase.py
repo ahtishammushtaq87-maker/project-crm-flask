@@ -1243,6 +1243,17 @@ def add_vendor():
             swift_code=form.swift_code.data,
             ifsc_code=form.ifsc_code.data
         )
+
+        # Handle image upload
+        if 'image' in request.files:
+            image_file = request.files['image']
+            if image_file and image_file.filename:
+                filename = secure_filename(image_file.filename)
+                image_path = os.path.join('app', 'static', 'uploads', 'vendors', filename)
+                os.makedirs(os.path.dirname(image_path), exist_ok=True)
+                image_file.save(image_path)
+                vendor.image_path = image_path.replace('\\', '/')
+        
         db.session.add(vendor)
         db.session.commit()
         flash('Vendor added successfully!', 'success')
@@ -1359,6 +1370,17 @@ def edit_vendor(id):
         vendor.account_number = form.account_number.data
         vendor.swift_code = form.swift_code.data
         vendor.ifsc_code = form.ifsc_code.data
+
+        # Handle image upload
+        if 'image' in request.files:
+            image_file = request.files['image']
+            if image_file and image_file.filename:
+                filename = secure_filename(image_file.filename)
+                image_path = os.path.join('app', 'static', 'uploads', 'vendors', filename)
+                os.makedirs(os.path.dirname(image_path), exist_ok=True)
+                image_file.save(image_path)
+                vendor.image_path = image_path.replace('\\', '/')
+        
         db.session.commit()
         flash('Vendor updated successfully!', 'success')
         return redirect(url_for('purchase.vendors'))

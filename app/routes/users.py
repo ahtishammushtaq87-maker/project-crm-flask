@@ -34,13 +34,18 @@ def create_user():
         if User.query.filter_by(username=form.username.data).first():
             flash('Username already exists.', 'danger')
             return render_template('users/create.html', form=form)
-        if User.query.filter_by(email=form.email.data).first():
-            flash('Email already exists.', 'danger')
-            return render_template('users/create.html', form=form)
-        
+        # Handle empty email - DB requires it to be non-null and unique
+        user_email = form.email.data
+        if not user_email or not user_email.strip():
+            user_email = f"{form.username.data.lower()}@noemail.local"
+        else:
+            if User.query.filter_by(email=user_email).first():
+                flash('Email already exists.', 'danger')
+                return render_template('users/create.html', form=form)
+            
         user = User(
             username=form.username.data,
-            email=form.email.data,
+            email=user_email,
             role=form.role.data,
             is_active=(form.is_active.data if form.is_active.data is not None else True),
             can_view_sales=form.can_view_sales.data,
@@ -59,7 +64,14 @@ def create_user():
             can_view_salary=form.can_view_salary.data,
             can_view_targets=form.can_view_targets.data,
             can_view_dashboard=form.can_view_dashboard.data,
-            can_view_accounting=form.can_view_accounting.data
+            can_view_accounting=form.can_view_accounting.data,
+            can_view_salesmen=form.can_view_salesmen.data,
+            can_view_product_dev=form.can_view_product_dev.data,
+            can_view_categories=form.can_view_categories.data,
+            can_view_customer_groups=form.can_view_customer_groups.data,
+            can_view_tasks=form.can_view_tasks.data,
+            can_view_profit_loss=form.can_view_profit_loss.data,
+            can_view_users=form.can_view_users.data
         )
         # Set password - form is now required to have a password
         if form.password.data and form.password.data.strip():
@@ -80,7 +92,11 @@ def edit_user(id):
     form = UserEditForm()
     if form.validate_on_submit():
         # Username is not editable, keep original
-        user.email = form.email.data
+        user_email = form.email.data
+        if not user_email or not user_email.strip():
+            user_email = f"{user.username.lower()}_at_noemail.local"
+            
+        user.email = user_email
         user.role = form.role.data
         user.is_active = form.is_active.data
         user.can_view_sales = form.can_view_sales.data
@@ -100,6 +116,13 @@ def edit_user(id):
         user.can_view_targets = form.can_view_targets.data
         user.can_view_dashboard = form.can_view_dashboard.data
         user.can_view_accounting = form.can_view_accounting.data
+        user.can_view_salesmen = form.can_view_salesmen.data
+        user.can_view_product_dev = form.can_view_product_dev.data
+        user.can_view_categories = form.can_view_categories.data
+        user.can_view_customer_groups = form.can_view_customer_groups.data
+        user.can_view_tasks = form.can_view_tasks.data
+        user.can_view_profit_loss = form.can_view_profit_loss.data
+        user.can_view_users = form.can_view_users.data
         if form.password.data and form.password.data.strip():
             user.set_password(form.password.data)
         db.session.commit()
@@ -126,6 +149,13 @@ def edit_user(id):
         form.can_view_targets.data = getattr(user, 'can_view_targets', True)
         form.can_view_dashboard.data = getattr(user, 'can_view_dashboard', True)
         form.can_view_accounting.data = getattr(user, 'can_view_accounting', True)
+        form.can_view_salesmen.data = getattr(user, 'can_view_salesmen', True)
+        form.can_view_product_dev.data = getattr(user, 'can_view_product_dev', True)
+        form.can_view_categories.data = getattr(user, 'can_view_categories', True)
+        form.can_view_customer_groups.data = getattr(user, 'can_view_customer_groups', True)
+        form.can_view_tasks.data = getattr(user, 'can_view_tasks', True)
+        form.can_view_profit_loss.data = getattr(user, 'can_view_profit_loss', True)
+        form.can_view_users.data = getattr(user, 'can_view_users', False)
     return render_template('users/edit.html', form=form, user=user)
 
 # Task Management Routes

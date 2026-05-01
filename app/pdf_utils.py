@@ -48,7 +48,7 @@ PAGE_BG         = colors.HexColor("#f2f2f2")
 FOOTER_H = 72
 
 # Shared width for the items table and terms & conditions box
-TABLE_WIDTH = 8.4 * inch
+TABLE_WIDTH = 7.5 * inch
 
 
 class ProfessionalPDFGenerator:
@@ -153,10 +153,11 @@ class ProfessionalPDFGenerator:
         left.append(Paragraph(cname, self.styles['CompanyName']))
 
         if self.company:
-            for attr, label in [('email','<b>Email:</b> {}'), ('phone','<b>Phone:</b> {}'), ('whatsapp','<b>WhatsApp:</b> {}'), ('address','{}'), ('address2','{}'), ('gst_number','GST: {}')]:
+            for attr, label in [('email','<b>Email:</b> {}'), ('phone','<b>Phone:</b> {}'), ('whatsapp','<b>WhatsApp:</b> {}'), ('address','{}'), ('address2','{}')]:
                 val = getattr(self.company, attr, None)
                 if val:
                     left.append(Paragraph(label.format(val), self.styles['CompanyInfo']))
+            left.append(Paragraph('<b>Website:</b> <a href="https://pumpter.com/"><font color="red">https://pumpter.com/</font></a>', self.styles['CompanyInfo']))
 
         RIGHT_W      = 3.2 * inch
         META_LABEL_W = 1.1 * inch
@@ -300,18 +301,18 @@ class ProfessionalPDFGenerator:
             headers += ['SKU']
         if show_item_code:
             headers += ['Item Code']
-        headers += ['Qty', 'Unit', 'Unit Price', 'Amount']
+        headers += ['Qty', 'Unit Price', 'Amount']
 
         header_row = [Paragraph(f"<b>{h}</b>", self.styles['TblHeader']) for h in headers]
 
         if show_sku and show_item_code:
-            col_w = [0.385*inch, 2.75*inch, 0.77*inch, 0.77*inch, 0.605*inch, 0.55*inch, 0.66*inch, 0.715*inch, 1.045*inch]
+            col_w = [0.385*inch, 2.75*inch, 0.77*inch, 0.77*inch, 0.605*inch, 0.66*inch, 0.715*inch]
         elif show_sku:
-            col_w = [0.385*inch, 3.08*inch, 0.88*inch, 0.77*inch, 0.66*inch, 0.77*inch, 1.1*inch, 0.935*inch]
+            col_w = [0.385*inch, 3.08*inch, 0.88*inch, 0.77*inch, 1.1*inch, 0.935*inch]
         elif show_item_code:
-            col_w = [0.385*inch, 3.3*inch, 0.88*inch, 0.55*inch, 0.66*inch, 1.1*inch, 1.1*inch]
+            col_w = [0.385*inch, 3.3*inch, 0.88*inch, 0.55*inch, 1.1*inch, 1.1*inch]
         else:
-            col_w = [0.385*inch, 3.85*inch, 0.715*inch, 0.88*inch, 1.21*inch, 1.21*inch]
+            col_w = [0.385*inch, 3.85*inch, 0.715*inch, 1.21*inch, 1.21*inch]
 
         # Scale column widths so the items table matches the terms & conditions box width
         total_current = sum(col_w)
@@ -330,7 +331,6 @@ class ProfessionalPDFGenerator:
             if show_item_code:
                 row.append(Paragraph(item.get('item_code', '-'), self.styles['TblCell']))
             row += [Paragraph(str(item.get('quantity', 0)), self.styles['TblCell']),
-                    Paragraph(item.get('unit', '-'),        self.styles['TblCell']),
                     Paragraph(item.get('rate', '-'),        self.styles['TblCell']),
                     Paragraph(item.get('amount', '-'),      self.styles['TblCell'])]
             table_data.append(row)
@@ -342,7 +342,7 @@ class ProfessionalPDFGenerator:
                 empty.append(Paragraph('-', self.styles['TblCell']))
             if show_item_code:
                 empty.append(Paragraph('-', self.styles['TblCell']))
-            empty += [Paragraph('-', self.styles['TblCell'])] * 4
+            empty += [Paragraph('-', self.styles['TblCell'])] * 3
             table_data.append(empty)
 
         tbl = Table(table_data, colWidths=col_w)
@@ -720,7 +720,7 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
         sc = obj.shipping_charge if (hasattr(obj, 'shipping_charge') and obj.shipping_charge) else 0
         totals = [
             ("Subtotal",           f"{currency}{obj.subtotal:,.2f}"),
-            ("Discount",           f"{currency}{obj.discount:,.2f}"),
+            ("One Time Payment Discount",           f"{currency}{obj.discount:,.2f}"),
             ("Shipping / Freight", f"{currency}{sc:,.2f}"),
             ("Tax",                f"{currency}{obj.tax:,.2f}"),
             ("Total Due",          f"{currency}{obj.total:,.2f}"),

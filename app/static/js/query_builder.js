@@ -155,6 +155,13 @@
                     if (res.success) {
                         QB.fields = res.fields || [];
                         
+                        // Populate Sort Field dropdown
+                        const sortSel = $('#ufm-sort-field');
+                        sortSel.empty().append('<option value="">-- Default Order --</option>');
+                        QB.fields.forEach(function (f) {
+                            sortSel.append('<option value="' + f.key + '">' + QB.escapeHtml(f.label) + '</option>');
+                        });
+
                         const urlParams = new URLSearchParams(window.location.search);
                         const filterRulesB64 = urlParams.get('filter_rules');
                         if (filterRulesB64) {
@@ -282,8 +289,17 @@
 
             const field = QB.fields.find(function (f) { return f.key === fieldKey; });
             const type = field ? field.type : 'string';
+            const optionsUrl = field ? field.options_url : null;
 
             let inputHtml = '';
+
+            if (optionsUrl && (operator === 'equal' || operator === 'not_equal')) {
+                inputHtml = '<select class="form-select form-select-sm ufm-rule-value ufm-lookup-select"><option value="">Loading...</option></select>';
+                wrapper.html(inputHtml);
+                const select = wrapper.find('select');
+                QB.loadLookupOptions(select, optionsUrl);
+                return;
+            }
 
             if (type === 'boolean') {
                 inputHtml =
@@ -321,6 +337,9 @@
             $('#ufm-condition-and').prop('checked', true);
             $('#ufm-saved-filters').val('');
             $('#ufm-btn-delete-saved').addClass('d-none');
+            $('#ufm-sort-field').val('');
+            $('#ufm-sort-order').val('asc');
+            QB.renderInitialRule();
         },
 
         buildRulesJson: function () {
@@ -383,11 +402,16 @@
                 return { error: 'Please fill all required values' };
             }
 
-            if (rules.length === 0) {
-                return { error: 'Add at least one rule' };
+            const res = { condition: condition, rules: rules };
+            
+            // Add sorting if selected
+            const sortField = $('#ufm-sort-field').val();
+            if (sortField) {
+                res.sort_field = sortField;
+                res.sort_order = $('#ufm-sort-order').val();
             }
 
-            return { condition: condition, rules: rules };
+            return res;
         },
 
         applyFilter: function () {
@@ -405,7 +429,11 @@
             // Determine redirect URL from current page or data attribute
             let redirectUrl = $('#universal-filter-trigger-btn').attr('data-redirect-url');
             if (!redirectUrl) {
-                redirectUrl = window.location.pathname + window.location.search;
+                // Strip existing filter_id/filter_rules to avoid accumulation in URL
+                const urlObj = new URL(window.location.href);
+                urlObj.searchParams.delete('filter_id');
+                urlObj.searchParams.delete('filter_rules');
+                redirectUrl = urlObj.pathname + urlObj.search;
             }
 
             QB.showMessage('Applying filter...', 'info');
@@ -488,19 +516,28 @@
             QB.showMessage('Loaded filter: ' + QB.escapeHtml(f.name), 'info');
         },
 
-        loadRulesObject: function (rulesObj) {
+        loadRulesObject: function (obj) {
             // Populate condition
-            const condition = (rulesObj.condition || 'AND').toUpperCase();
-            if (condition === 'OR') {
-                $('#ufm-condition-or').prop('checked', true);
-            } else {
-                $('#ufm-condition-and').prop('checked', true);
+            const condition = (obj.condition || 'AND').toUpperCase();
+            // Load condition
+            if (obj.condition) {
+                if (obj.condition === 'OR') $('#ufm-condition-or').prop('checked', true);
+                else $('#ufm-condition-and').prop('checked', true);
             }
 
-            // Populate rules
+            // Load sorting
+            if (obj.sort_field) {
+                $('#ufm-sort-field').val(obj.sort_field);
+                $('#ufm-sort-order').val(obj.sort_order || 'asc');
+            } else {
+                $('#ufm-sort-field').val('');
+                $('#ufm-sort-order').val('asc');
+            }
+
+            // Load rules
             $('#ufm-rules-container').empty();
             QB.ruleCounter = 0;
-            const rules = rulesObj.rules || [];
+            const rules = obj.rules || [];
             if (rules.length === 0) {
                 QB.addRuleRow();
             } else {
@@ -544,6 +581,29 @@
             setTimeout(function () {
                 el.addClass('d-none');
             }, 4000);
+        },
+
+        loadLookupOptions: function (selectEl, url) {
+            $.getJSON(url)
+                .done(function (res) {
+                    if (res.success && res.options) {
+                        selectEl.empty().append('<option value="">-- Select --</option>');
+                        res.options.forEach(function (opt) {
+                            selectEl.append('<option value="' + opt.id + '">' + QB.escapeHtml(opt.text) + '</option>');
+                        });
+                        // Initialize Select2
+                        selectEl.select2({
+                            theme: 'bootstrap-5',
+                            dropdownParent: $('#universalFilterModal'),
+                            width: '100%'
+                        });
+                    } else {
+                        selectEl.html('<option value="">Error loading</option>');
+                    }
+                })
+                .fail(function () {
+                    selectEl.html('<option value="">Failed to fetch</option>');
+                });
         },
 
         escapeHtml: function (text) {

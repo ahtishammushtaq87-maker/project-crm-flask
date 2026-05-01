@@ -28,7 +28,7 @@ def _get_model_classes():
         Expense, ExpenseCategory, Sale, PurchaseBill, Product,
         Vendor, Customer, Staff, ManufacturingOrder, BOM,
         SaleReturn, PurchaseReturn, PurchaseOrder, ProductionLog,
-        SalaryPayment, ProductCategory, SaleItem
+        SalaryPayment, ProductCategory, SaleItem, Salesman, SalesmanGroup, CustomerGroup
     )
     return {
         'expense': Expense,
@@ -69,7 +69,7 @@ def _build_field_registry():
         Expense, ExpenseCategory, Sale, PurchaseBill, Product,
         Vendor, Customer, Staff, ManufacturingOrder, BOM,
         SaleReturn, PurchaseReturn, PurchaseOrder, ProductionLog,
-        SalaryPayment, ProductCategory
+        SalaryPayment, ProductCategory, SaleItem, Salesman, SalesmanGroup, CustomerGroup
     )
     return {
         # === EXPENSE MODULE ===
@@ -93,9 +93,11 @@ def _build_field_registry():
             'tax':            {'expr': lambda: Sale.tax,             'type': 'number'},
             'paid_amount':    {'expr': lambda: Sale.paid_amount,     'type': 'number'},
             'balance_due':    {'expr': lambda: Sale.balance_due,     'type': 'number'},
-            'customer':       {'expr': lambda: Customer.name,        'type': 'string', 'join': Customer},
+            'customer':       {'expr': lambda: Customer.name,        'type': 'string', 'join': Customer, 'options_route': 'filters.get_customers'},
             'status':         {'expr': lambda: Sale.status,          'type': 'string'},
-            'salesman':       {'expr': lambda: Sale.salesman_id,     'type': 'number'},
+            'salesman':       {'expr': lambda: Sale.salesman_id,     'type': 'number', 'options_route': 'filters.get_salesmen'},
+            'salesman_group': {'expr': lambda: SalesmanGroup.name,      'type': 'string', 'join': [Salesman, SalesmanGroup], 'options_route': 'filters.get_salesman_groups'},
+            'customer_group': {'expr': lambda: CustomerGroup.name,      'type': 'string', 'join': [Customer, CustomerGroup], 'options_route': 'filters.get_customer_groups'},
         },
         # === PURCHASE MODULE (bills + purchase report) ===
         'purchase': {
@@ -137,6 +139,7 @@ def _build_field_registry():
             'phone':    {'expr': lambda: Customer.phone, 'type': 'string'},
             'gst_number': {'expr': lambda: Customer.gst_number, 'type': 'string'},
             'is_active': {'expr': lambda: Customer.is_active, 'type': 'boolean'},
+            'customer_group': {'expr': lambda: CustomerGroup.name, 'type': 'string', 'join': CustomerGroup, 'options_route': 'filters.get_customer_groups'},
         },
         # === STAFF MODULE ===
         'staff': {
@@ -242,9 +245,11 @@ def _build_field_registry():
             'tax':            {'expr': lambda: Sale.tax,             'type': 'number'},
             'paid_amount':    {'expr': lambda: Sale.paid_amount,     'type': 'number'},
             'balance_due':    {'expr': lambda: Sale.balance_due,     'type': 'number'},
-            'customer':       {'expr': lambda: Customer.name,        'type': 'string', 'join': Customer},
+            'customer':       {'expr': lambda: Customer.name,        'type': 'string', 'join': Customer, 'options_route': 'filters.get_customers'},
             'status':         {'expr': lambda: Sale.status,          'type': 'string'},
-            'salesman':       {'expr': lambda: Sale.salesman_id,     'type': 'number'},
+            'salesman':       {'expr': lambda: Sale.salesman_id,     'type': 'number', 'options_route': 'filters.get_salesmen'},
+            'salesman_group': {'expr': lambda: SalesmanGroup.name,      'type': 'string', 'join': [Salesman, SalesmanGroup], 'options_route': 'filters.get_salesman_groups'},
+            'customer_group': {'expr': lambda: CustomerGroup.name,      'type': 'string', 'join': [Customer, CustomerGroup], 'options_route': 'filters.get_customer_groups'},
         },
         'purchase_report': {
             'bill_number':  {'expr': lambda: PurchaseBill.bill_number, 'type': 'string'},
@@ -330,6 +335,7 @@ def _build_field_registry():
             'phone':    {'expr': lambda: Customer.phone, 'type': 'string'},
             'gst_number': {'expr': lambda: Customer.gst_number, 'type': 'string'},
             'is_active': {'expr': lambda: Customer.is_active, 'type': 'boolean'},
+            'customer_group': {'expr': lambda: CustomerGroup.name, 'type': 'string', 'join': CustomerGroup, 'options_route': 'filters.get_customer_groups'},
         },
     }
 
@@ -415,7 +421,10 @@ def _coerce_value(value, ftype):
         return str(value)
     if ftype == 'number':
         try:
-            return float(value)
+            val = float(value)
+            if val.is_integer():
+                return int(val)
+            return val
         except (ValueError, TypeError):
             raise ValueError(f"Invalid number: {value}")
     if ftype == 'boolean':
@@ -457,8 +466,21 @@ def _build_filter_expression(field_key, operator, value, module):
     coerced = _coerce_value(value, ftype)
 
     if op == 'equal':
+        if ftype == 'string':
+            return func.lower(expr) == func.lower(coerced)
+        if ftype == 'date':
+            # Date equality should cover the whole day
+            from datetime import timedelta
+            next_day = coerced + timedelta(days=1)
+            return and_(expr >= coerced, expr < next_day)
         return expr == coerced
     if op == 'not_equal':
+        if ftype == 'string':
+            return func.lower(expr) != func.lower(coerced)
+        if ftype == 'date':
+            from datetime import timedelta
+            next_day = coerced + timedelta(days=1)
+            return or_(expr < coerced, expr >= next_day)
         return expr != coerced
     if op == 'contains':
         return expr.ilike(f'%{coerced}%')
@@ -502,12 +524,6 @@ def _recursive_build_query(query, node, module, joined_models):
     op = node['operator']
     value = node['value']
 
-    cfg = get_field_config(module, field)
-    join_model = cfg.get('join')
-    if join_model and join_model not in joined_models:
-        query = query.outerjoin(join_model)
-        joined_models.add(join_model)
-
     return _build_filter_expression(field, op, value, module)
 
 
@@ -517,10 +533,48 @@ def apply_filters(query, module, rules_json):
         raise ValueError(err)
 
     rules = rules_json.get('rules', [])
-    if not rules:
+    sort_field = rules_json.get('sort_field')
+    if not rules and not sort_field:
         return query
 
-    joined_models = set()
+    # Pass 1: Collect all required joins from the rule tree
+    # We use a list to preserve the order (important for chained joins)
+    required_joins = []
+    
+    def _collect(node):
+        if node is None: return
+        if 'rules' in node:
+            for r in node['rules']: _collect(r)
+        elif 'field' in node:
+            cfg = get_field_config(module, node['field'])
+            j = cfg.get('join')
+            if j:
+                if isinstance(j, list):
+                    for m in j:
+                        if m not in required_joins:
+                            required_joins.append(m)
+                elif j not in required_joins:
+                    required_joins.append(j)
+    
+    _collect(rules_json)
+    
+    # Also collect joins for the sort field
+    sort_field = rules_json.get('sort_field')
+    if sort_field:
+        cfg = get_field_config(module, sort_field)
+        j = cfg.get('join')
+        if j:
+            if isinstance(j, list):
+                for m in j:
+                    if m not in required_joins: required_joins.append(m)
+            elif j not in required_joins: required_joins.append(j)
+
+    # Apply joins to the query object sequentially
+    for model_cls in required_joins:
+        query = query.outerjoin(model_cls)
+
+    # Pass 2: Build the filter expressions
+    joined_models = set(required_joins)
     condition = rules_json.get('condition', 'AND')
     clauses = []
 
@@ -529,16 +583,24 @@ def apply_filters(query, module, rules_json):
         if clause is not None:
             clauses.append(clause)
 
-    if not clauses:
-        return query
+    if clauses:
+        if condition == 'AND':
+            query = query.filter(and_(*clauses))
+        else:
+            query = query.filter(or_(*clauses))
 
-    for model_cls in joined_models:
-        query = query.outerjoin(model_cls)
-
-    if condition == 'AND':
-        query = query.filter(and_(*clauses))
-    else:
-        query = query.filter(or_(*clauses))
+    # Finally, apply sorting if requested
+    if sort_field:
+        sort_order = rules_json.get('sort_order', 'asc').lower()
+        cfg = get_field_config(module, sort_field)
+        expr = cfg['expr']()
+        
+        # Clear existing order_by to make advanced filter sort primary
+        query = query.order_by(None)
+        if sort_order == 'desc':
+            query = query.order_by(expr.desc())
+        else:
+            query = query.order_by(expr.asc())
 
     return query
 
@@ -553,7 +615,8 @@ def get_module_fields(module):
         result.append({
             'key': key,
             'type': cfg['type'],
-            'label': key.replace('_', ' ').title()
+            'label': key.replace('_', ' ').title(),
+            'options_route': cfg.get('options_route')
         })
     return result
 

@@ -65,7 +65,8 @@ def index():
                 Expense.is_bom_overhead == False,
                 Expense.is_monthly_divided == False,
                 Expense.date >= start_datetime,
-                Expense.date <= end_datetime
+                Expense.date <= end_datetime,
+                Expense.status == 'confirmed'
             ).scalar() or 0
 
             # Total Manufacturing Overhead (BOM linked, non-divided)
@@ -73,21 +74,24 @@ def index():
                 Expense.is_bom_overhead == True,
                 Expense.is_monthly_divided == False,
                 Expense.date >= start_datetime,
-                Expense.date <= end_datetime
+                Expense.date <= end_datetime,
+                Expense.status == 'confirmed'
             ).scalar() or 0
         else:
             # Fallback: exclude BOM only
             operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
                 Expense.is_bom_overhead == False,
                 Expense.date >= start_datetime,
-                Expense.date <= end_datetime
+                Expense.date <= end_datetime,
+                Expense.status == 'confirmed'
             ).scalar() or 0
 
             # Total Manufacturing Overhead (BOM linked)
             manufacturing_overhead = db.session.query(func.sum(Expense.amount)).filter(
                 Expense.is_bom_overhead == True,
                 Expense.date >= start_datetime,
-                Expense.date <= end_datetime
+                Expense.date <= end_datetime,
+                Expense.status == 'confirmed'
             ).scalar() or 0
     else:
         # Fallback: is_bom_overhead doesn't exist
@@ -96,20 +100,25 @@ def index():
             operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
                 Expense.is_monthly_divided == False,
                 Expense.date >= start_datetime,
-                Expense.date <= end_datetime
+                Expense.date <= end_datetime,
+                Expense.status == 'confirmed'
             ).scalar() or 0
         else:
             # Fallback: include all expenses
             operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
                 Expense.date >= start_datetime,
-                Expense.date <= end_datetime
+                Expense.date <= end_datetime,
+                Expense.status == 'confirmed'
             ).scalar() or 0
         manufacturing_overhead = 0
     
     # Calculate monthly divided expenses - proportional for the period
     divided_expenses_for_period = 0
     if has_column('expenses', 'is_monthly_divided'):
-        monthly_expenses = Expense.query.filter(Expense.is_monthly_divided == True).all()
+        monthly_expenses = Expense.query.filter(
+            Expense.is_monthly_divided == True,
+            Expense.status == 'confirmed'
+        ).all()
         for exp in monthly_expenses:
             if exp.monthly_start_date and exp.monthly_end_date:
                 # Find overlap between expense period and filter period

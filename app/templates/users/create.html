@@ -23,7 +23,7 @@
                             {% endif %}
                         </div>
                         <div class="mb-3">
-                            <label for="email" class="form-label">Email <span class="text-danger">*</span></label>
+                            <label for="email" class="form-label">Email</label>
                             {{ form.email(class="form-control" + (" is-invalid" if form.email.errors else "")) }}
                             {% if form.email.errors %}
                             <div class="invalid-feedback d-block">
@@ -62,109 +62,154 @@
                         </div>
 
                         <hr class="my-4">
-                        <h5 class="mb-3"><i class="fas fa-lock me-2"></i>Module Permissions</h5>
-                        <p class="text-muted small mb-3">Check boxes to grant access to specific modules. Admin role has full access regardless of settings.</p>
-                        <div class="row">
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_sales(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_sales">{{ form.can_view_sales.label.text }}</label>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="mb-0"><i class="fas fa-lock me-2"></i>Module Permissions</h5>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-primary" onclick="togglePermissions(true)">Check All</button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="togglePermissions(false)">Uncheck All</button>
+                            </div>
+                        </div>
+                        <div class="text-muted small mb-3">Admin role has full access regardless of settings.</div>
+
+                        <div class="row g-4">
+                            <!-- Sales & Customers -->
+                            <div class="col-md-6">
+                                <div class="card bg-light border-0">
+                                    <div class="card-body p-3">
+                                        <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-shopping-cart me-2"></i>Sales & Customers</h6>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_sales(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_sales.label.text }}</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_salesmen(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_salesmen.label.text }}</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_customers(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_customers.label.text }}</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_customer_groups(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_customer_groups.label.text }}</label>
+                                        </div>
+                                        <div class="form-check">
+                                            {{ form.can_view_returns(class="form-check-input") }}
+                                            <label class="form-check-label">Returns Access</label>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_purchases(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_purchases">{{ form.can_view_purchases.label.text }}</label>
+
+                            <!-- Purchases & Vendors -->
+                            <div class="col-md-6">
+                                <div class="card bg-light border-0">
+                                    <div class="card-body p-3">
+                                        <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-truck me-2"></i>Purchases & Vendors</h6>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_purchases(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_purchases.label.text }}</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_vendors(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_vendors.label.text }}</label>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_inventory(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_inventory">{{ form.can_view_inventory.label.text }}</label>
+
+                            <!-- Inventory & Manufacturing -->
+                            <div class="col-md-6">
+                                <div class="card bg-light border-0">
+                                    <div class="card-body p-3">
+                                        <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-boxes me-2"></i>Inventory & Manufacturing</h6>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_inventory(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_inventory.label.text }}</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_product_dev(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_product_dev.label.text }}</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_warehouse(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_warehouse.label.text }}</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_categories(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_categories.label.text }}</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_manufacturing(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_manufacturing.label.text }}</label>
+                                        </div>
+                                        <div class="form-check">
+                                            {{ form.can_view_production(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_production.label.text }}</label>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_expenses(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_expenses">{{ form.can_view_expenses.label.text }}</label>
+
+                            <!-- Accounting & Finance -->
+                            <div class="col-md-6">
+                                <div class="card bg-light border-0">
+                                    <div class="card-body p-3">
+                                        <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-money-bill-wave me-2"></i>Accounting & HR</h6>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_accounting(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_accounting.label.text }}</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_expenses(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_expenses.label.text }}</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_salary(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_salary.label.text }}</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_attendance(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_attendance.label.text }}</label>
+                                        </div>
+                                        <div class="form-check">
+                                            {{ form.can_view_targets(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_targets.label.text }}</label>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_returns(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_returns">{{ form.can_view_returns.label.text }}</label>
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_vendors(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_vendors">{{ form.can_view_vendors.label.text }}</label>
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_customers(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_customers">{{ form.can_view_customers.label.text }}</label>
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_reports(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_reports">{{ form.can_view_reports.label.text }}</label>
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_settings(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_settings">{{ form.can_view_settings.label.text }}</label>
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_manufacturing(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_manufacturing">{{ form.can_view_manufacturing.label.text }}</label>
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_production(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_production">{{ form.can_view_production.label.text }}</label>
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_warehouse(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_warehouse">{{ form.can_view_warehouse.label.text }}</label>
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_attendance(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_attendance">{{ form.can_view_attendance.label.text }}</label>
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_salary(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_salary">{{ form.can_view_salary.label.text }}</label>
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_targets(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_targets">{{ form.can_view_targets.label.text }}</label>
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_dashboard(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_dashboard">{{ form.can_view_dashboard.label.text }}</label>
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <div class="form-check">
-                                    {{ form.can_view_accounting(class="form-check-input") }}
-                                    <label class="form-check-label" for="can_view_accounting">{{ form.can_view_accounting.label.text }}</label>
+
+                            <!-- Dashboard & Admin -->
+                            <div class="col-md-6">
+                                <div class="card bg-light border-0">
+                                    <div class="card-body p-3">
+                                        <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-cogs me-2"></i>System & Admin</h6>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_dashboard(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_dashboard.label.text }}</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_reports(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_reports.label.text }}</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_profit_loss(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_profit_loss.label.text }}</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_settings(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_settings.label.text }}</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            {{ form.can_view_tasks(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_tasks.label.text }}</label>
+                                        </div>
+                                        <div class="form-check">
+                                            {{ form.can_view_users(class="form-check-input") }}
+                                            <label class="form-check-label">{{ form.can_view_users.label.text }}</label>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -175,6 +220,20 @@
                         </div>
                     </form>
                     <script>
+                        function togglePermissions(checked) {
+                            const checkboxes = document.querySelectorAll('.form-check-input');
+                            const roleSelect = document.querySelector('#role');
+                            if (roleSelect && roleSelect.value === 'admin' && !checked) {
+                                // Don't allow unchecking if role is admin
+                                return;
+                            }
+                            checkboxes.forEach(cb => {
+                                if (!cb.disabled) {
+                                    cb.checked = checked;
+                                }
+                            });
+                        }
+
                         document.getElementById('userForm').addEventListener('change', function() {
                             const roleSelect = document.querySelector('#role');
                             if (roleSelect && roleSelect.value === 'admin') {

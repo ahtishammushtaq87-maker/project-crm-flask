@@ -4,25 +4,23 @@
 
 {% block content %}
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Sales Returns</h2>
+    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
+        <h2 class="h3 mb-0 text-gray-800">Sales Returns</h2>
         <a href="{{ url_for('returns.create_return') }}" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Create Return
+            <i class="fas fa-plus me-1"></i> Create Return
         </a>
     </div>
 
-    <div class="card">
+    <div class="card shadow">
         <div class="card-header">
             <form method="GET" class="row g-3 mb-3">
                 <div class="col-md-3">
                     <label for="from_date" class="form-label">From Date</label>
-                    <input type="date" class="form-control" id="from_date" name="from_date"
-                           value="{{ from_date }}">
+                    <input type="date" class="form-control" id="from_date" name="from_date" value="{{ from_date }}">
                 </div>
                 <div class="col-md-3">
                     <label for="to_date" class="form-label">To Date</label>
-                    <input type="date" class="form-control" id="to_date" name="to_date"
-                           value="{{ to_date }}">
+                    <input type="date" class="form-control" id="to_date" name="to_date" value="{{ to_date }}">
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">&nbsp;</label>
@@ -51,34 +49,34 @@
             <ul class="nav nav-tabs card-header-tabs">
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'all' %}active{% endif %}"
-                       href="{{ url_for('returns.return_list', status='all', from_date=from_date, to_date=to_date) }}">
+                        href="{{ url_for('returns.return_list', status='all', from_date=from_date, to_date=to_date) }}">
                         All
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'pending' %}active{% endif %}"
-                       href="{{ url_for('returns.return_list', status='pending', from_date=from_date, to_date=to_date) }}">
+                        href="{{ url_for('returns.return_list', status='pending', from_date=from_date, to_date=to_date) }}">
                         Pending
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'approved' %}active{% endif %}"
-                       href="{{ url_for('returns.return_list', status='approved', from_date=from_date, to_date=to_date) }}">
+                        href="{{ url_for('returns.return_list', status='approved', from_date=from_date, to_date=to_date) }}">
                         Approved
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'completed' %}active{% endif %}"
-                       href="{{ url_for('returns.return_list', status='completed', from_date=from_date, to_date=to_date) }}">
+                        href="{{ url_for('returns.return_list', status='completed', from_date=from_date, to_date=to_date) }}">
                         Completed
                     </a>
                 </li>
             </ul>
         </div>
-        <div class="card-body">
+        <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead>
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
                         <tr>
                             <th>Return #</th>
                             <th>Date</th>
@@ -122,16 +120,18 @@
                                 <span class="text-warning"><i class="fas fa-clock"></i> No</span>
                                 {% endif %}
                             </td>
-                            <td>
-                                <a href="{{ url_for('returns.return_detail', id=ret.id) }}"
-                                   class="btn btn-sm btn-info">
-                                    <i class="fas fa-eye"></i>
-                                </a>
-                                <form method="POST" action="{{ url_for('returns.delete_return', id=ret.id) }}" style="display:inline;" onsubmit="return confirm('Delete this return?');">
-                                    <button class="btn btn-sm btn-danger" type="submit">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </form>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{{ url_for('returns.return_detail', id=ret.id) }}" class="btn btn-outline-primary" title="View">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    <form method="POST" action="{{ url_for('returns.delete_return', id=ret.id) }}"
+                                        class="d-inline" onsubmit="return confirm('Delete this return?');">
+                                        <button class="btn btn-outline-danger" type="submit" title="Delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -142,8 +142,8 @@
                         {% endif %}
                     </tbody>
                     {% if returns %}
-                    <tfoot>
-                        <tr class="table-dark">
+                    <tfoot class="table-light">
+                        <tr>
                             <th colspan="4" class="text-end">Total:</th>
                             <th colspan="2"></th>
                             <th><strong>PKR{{ "%.2f"|format(total_returns) }}</strong></th>
@@ -159,22 +159,22 @@
 </div>
 
 <script>
-document.getElementById('from_date').addEventListener('change', function() {
-    const fromDate = this.value;
-    const toDateInput = document.getElementById('to_date');
-    if (fromDate && toDateInput.value && fromDate > toDateInput.value) {
-        toDateInput.value = fromDate;
-    }
-    toDateInput.min = fromDate;
-});
+    document.getElementById('from_date').addEventListener('change', function () {
+        const fromDate = this.value;
+        const toDateInput = document.getElementById('to_date');
+        if (fromDate && toDateInput.value && fromDate > toDateInput.value) {
+            toDateInput.value = fromDate;
+        }
+        toDateInput.min = fromDate;
+    });
 
-document.getElementById('to_date').addEventListener('change', function() {
-    const toDate = this.value;
-    const fromDateInput = document.getElementById('from_date');
-    if (toDate && fromDateInput.value && toDate < fromDateInput.value) {
-        alert('To date cannot be before from date');
-        this.value = fromDateInput.value;
-    }
-});
+    document.getElementById('to_date').addEventListener('change', function () {
+        const toDate = this.value;
+        const fromDateInput = document.getElementById('from_date');
+        if (toDate && fromDateInput.value && toDate < fromDateInput.value) {
+            alert('To date cannot be before from date');
+            this.value = fromDateInput.value;
+        }
+    });
 </script>
 {% endblock %}

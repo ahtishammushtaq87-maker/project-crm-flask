@@ -134,6 +134,13 @@ def list_fields():
     if not module:
         return jsonify({'success': False, 'message': 'module parameter is required'}), 400
     fields = get_module_fields(module)
+    # Resolve options_route to actual URLs
+    for f in fields:
+        if f.get('options_route'):
+            try:
+                f['options_url'] = url_for(f['options_route'])
+            except:
+                f['options_url'] = None
     return jsonify({'success': True, 'module': module, 'fields': fields})
 
 
@@ -261,3 +268,60 @@ def test_filter(id):
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 400
 
+@bp.route('/options/salesmen')
+@login_required
+def get_salesmen():
+    """Returns a list of active salesmen for lookup."""
+    from app.models import Salesman
+    items = Salesman.query.filter_by(is_active=True).order_by(Salesman.name).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.id, 'text': i.name} for i in items]
+    })
+
+
+@bp.route('/options/salesman_groups')
+@login_required
+def get_salesman_groups():
+    """Returns a list of salesman groups for lookup."""
+    from app.models import SalesmanGroup
+    items = SalesmanGroup.query.order_by(SalesmanGroup.name).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.name, 'text': i.name} for i in items]
+    })
+
+
+@bp.route('/options/customers')
+@login_required
+def get_customers():
+    """Returns a list of customers for lookup."""
+    from app.models import Customer
+    items = Customer.query.order_by(Customer.name).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.name, 'text': i.name} for i in items]
+    })
+
+
+@bp.route('/options/vendors')
+@login_required
+def get_vendors():
+    """Returns a list of vendors for lookup."""
+    from app.models import Vendor
+    items = Vendor.query.order_by(Vendor.name).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.name, 'text': i.name} for i in items]
+    })
+
+@bp.route('/options/customer_groups')
+@login_required
+def get_customer_groups():
+    """Returns a list of customer groups for lookup."""
+    from app.models import CustomerGroup
+    items = CustomerGroup.query.order_by(CustomerGroup.name).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.name, 'text': i.name} for i in items]
+    })

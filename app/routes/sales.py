@@ -1,7 +1,7 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response, current_app
 from flask_login import login_required, current_user
 from app import db
-from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman, CustomerGroup, Payment, PaymentMethod
+from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman, CustomerGroup, Payment, PaymentMethod, SalesmanGroup
 from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm, SalesmanForm, CustomerGroupForm
 from datetime import datetime, date
 from sqlalchemy import func, or_, and_
@@ -1250,6 +1250,9 @@ def salesmen_list():
 @login_required
 def add_salesman():
     form = SalesmanForm()
+    groups = SalesmanGroup.query.filter_by(is_active=True).all()
+    form.group_id.choices = [(0, '- Select Group -')] + [(g.id, g.name) for g in groups]
+    
     if form.validate_on_submit():
         salesman = Salesman(
             name=form.name.data,
@@ -1257,6 +1260,7 @@ def add_salesman():
             phone=form.phone.data,
             address=form.address.data,
             commission_rate=form.commission_rate.data,
+            group_id=form.group_id.data if form.group_id.data != 0 else None,
             is_active=form.is_active.data
         )
         db.session.add(salesman)
@@ -1270,12 +1274,16 @@ def add_salesman():
 def edit_salesman(id):
     salesman = Salesman.query.get_or_404(id)
     form = SalesmanForm(obj=salesman)
+    groups = SalesmanGroup.query.filter_by(is_active=True).all()
+    form.group_id.choices = [(0, '- Select Group -')] + [(g.id, g.name) for g in groups]
+    
     if form.validate_on_submit():
         salesman.name = form.name.data
         salesman.email = form.email.data
         salesman.phone = form.phone.data
         salesman.address = form.address.data
         salesman.commission_rate = form.commission_rate.data
+        salesman.group_id = form.group_id.data if form.group_id.data != 0 else None
         salesman.is_active = form.is_active.data
         db.session.commit()
         flash('Salesman updated successfully!', 'success')
@@ -1301,7 +1309,9 @@ def quick_add_salesman():
     if not name:
         return jsonify({'success': False, 'message': 'Name is required'}), 400
     
-    salesman = Salesman(name=name)
+    group_id = request.form.get('group_id')
+    
+    salesman = Salesman(name=name, group_id=group_id if group_id and group_id != '0' else None)
     db.session.add(salesman)
     db.session.commit()
     
@@ -1310,6 +1320,28 @@ def quick_add_salesman():
         'salesman': {
             'id': salesman.id,
             'name': salesman.name
+        }
+    })
+
+@bp.route('/salesman/group/quick-add', methods=['POST'])
+@login_required
+def quick_add_salesman_group():
+    name = request.form.get('name')
+    if not name:
+        return jsonify({'success': False, 'message': 'Name is required'}), 400
+    
+    if SalesmanGroup.query.filter_by(name=name).first():
+        return jsonify({'success': False, 'message': 'Group already exists'}), 400
+
+    group = SalesmanGroup(name=name)
+    db.session.add(group)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True, 
+        'group': {
+            'id': group.id,
+            'name': group.name
         }
     })
 

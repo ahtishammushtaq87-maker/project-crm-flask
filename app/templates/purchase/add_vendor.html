@@ -11,8 +11,15 @@
                     <h4 class="mb-0">Add New Vendor</h4>
                 </div>
                 <div class="card-body p-4">
-                    <form method="POST">
+                    <form method="POST" enctype="multipart/form-data">
                         {{ form.hidden_tag() }}
+                        <div class="row">
+                            <div class="col-md-12 mb-3">
+                                <label class="form-label fw-bold">Vendor Image</label>
+                                {{ form.image(class="form-control") }}
+                                <div class="form-text">Optional: Upload a profile picture or logo for this vendor.</div>
+                            </div>
+                        </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-bold">Vendor Name *</label>

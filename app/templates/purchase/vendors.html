@@ -116,6 +116,7 @@
 							<th style="width: 40px;" class="text-center">
 								<input type="checkbox" id="selectAll" class="form-check-input">
 							</th>
+							<th style="width: 80px;">Image</th>
 							<th>Name</th>
 							<th>Email</th>
 							<th>Phone</th>
@@ -130,6 +131,15 @@
 						<tr>
 							<td class="text-center">
 								<input type="checkbox" class="form-check-input vendor-checkbox" value="{{ vendor.id }}">
+							</td>
+							<td class="text-center">
+								{% if vendor.image_path %}
+									<img src="{{ vendor.image_path.replace('app/', '/') }}" alt="{{ vendor.name }}" class="rounded-circle shadow-sm" style="width: 45px; height: 45px; object-fit: cover;">
+								{% else %}
+									<div class="rounded-circle bg-light d-flex align-items-center justify-content-center shadow-sm" style="width: 45px; height: 45px; margin: 0 auto;">
+										<i class="fas fa-building text-secondary"></i>
+									</div>
+								{% endif %}
 							</td>
 							<td>{{ vendor.name }}</td>
 							<td>{{ vendor.email or '-' }}</td>

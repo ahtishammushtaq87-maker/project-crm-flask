@@ -55,9 +55,12 @@ def generate_pdf(data, title, headers, company_info=None):
     elements.append(Spacer(1, 0.2 * inch))
     
     # Table Data
-    table_data = [headers]
+    hdr_style = ParagraphStyle(name='Hdr', parent=styles['Normal'], fontSize=11, fontName='Helvetica-Bold', alignment=1, textColor=colors.whitesmoke)
+    cell_style = ParagraphStyle(name='Cell', parent=styles['Normal'], fontSize=9, alignment=1)
+    
+    table_data = [[Paragraph(str(h), hdr_style) for h in headers]]
     for row in data:
-        table_data.append([str(row.get(h, '')) for h in headers])
+        table_data.append([Paragraph(str(row.get(h, '')), cell_style) for h in headers])
     
     # Create Table
     # Use variable column widths based on number of headers

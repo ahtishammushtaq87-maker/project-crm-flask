@@ -351,6 +351,8 @@ def expense_report():
         query = query.filter(Expense.category_id == category_id)
     if vendor_id and vendor_id != 'all':
         query = query.filter(Expense.vendor_id == vendor_id)
+    
+    query = query.filter(Expense.status == 'confirmed')
         
     query = apply_saved_filter_to_query(query, 'expense_report', request.args)
     
@@ -716,7 +718,8 @@ def profit_loss_report():
     operating_expenses = Expense.query.filter(
         Expense.date >= start_date, 
         Expense.date <= end_date,
-        Expense.is_bom_overhead == False
+        Expense.is_bom_overhead == False,
+        Expense.status == 'confirmed'
     ).all()
     
     expense_summary = {}
@@ -824,7 +827,8 @@ def profit_loss_report():
     bom_overhead_expenses = Expense.query.filter(
         Expense.date >= start_date, 
         Expense.date <= end_date,
-        Expense.is_bom_overhead == True
+        Expense.is_bom_overhead == True,
+        Expense.status == 'confirmed'
     ).all()
     total_bom_overhead = sum(e.amount for e in bom_overhead_expenses)
     
@@ -848,30 +852,11 @@ def profit_loss_report():
                           total_purchases=total_purchases,
                           manufacturing_orders=manufacturing_orders,
                           total_bom_costs=total_bom_costs + total_bom_overhead,
-                          total_expenses=total_operating_expenses + total_divided_expenses,
+                          total_expenses=total_operating_expenses,
                           total_informational=total_informational_outflow,
                           net_profit=net_profit,
                           active_module='profit_loss_report',
                           filter_id=request.args.get('filter_id'))
-    
-    return render_template('reports/profit_loss.html',
-                          start_date=start_date_str,
-                          end_date=end_date_str,
-                          sales=sales,
-                          returns=returns,
-                          total_revenue=total_revenue,
-                          total_returns=total_returns,
-                          net_revenue=net_revenue,
-                          total_cogs=total_cogs,
-                          gross_profit=gross_profit,
-                          expense_categories=expense_summary,
-                          total_payroll=total_payroll,
-                          purchases=purchases,
-                          total_purchases=total_purchases,
-                          manufacturing_orders=manufacturing_orders,
-                          total_bom_costs=total_bom_costs,
-                          total_expenses=total_expenses,
-                          net_profit=net_profit)
 
 @bp.route('/download-report/<string:format>/<string:report_type>')
 @login_required
@@ -1202,6 +1187,39 @@ def download_report(format, report_type):
                 'Created Date': b.created_at.strftime('%Y-%m-%d') if b.created_at else 'N/A'
             } for b in boms]
 
+    elif report_type == 'bom_detail':
+        bom_id = request.args.get('bom_id')
+        bom = BOM.query.get_or_404(int(bom_id))
+        title = f"BOM Details: {bom.name}"
+        headers = ['BOM Name', 'Finished Good', 'Component Name', 'Item Code', 'Qty', 'Unit Cost', 'Total Cost']
+        data = [{
+            'BOM Name': bom.name,
+            'Finished Good': bom.product.name,
+            'Component Name': item.component.name,
+            'Item Code': item.component.sku,
+            'Qty': item.quantity,
+            'Unit Cost': f"{item.unit_cost:.2f}",
+            'Total Cost': f"{item.total_cost:.2f}"
+        } for item in bom.items]
+        
+        # Add summary rows
+        data.append({
+            'BOM Name': '', 'Finished Good': '', 'Component Name': 'Components Cost:', 'Item Code': '',
+            'Qty': '', 'Unit Cost': '', 'Total Cost': f"{(bom.total_cost - bom.labor_cost - bom.overhead_cost):.2f}"
+        })
+        data.append({
+            'BOM Name': '', 'Finished Good': '', 'Component Name': 'Labor Cost:', 'Item Code': '',
+            'Qty': '', 'Unit Cost': '', 'Total Cost': f"{bom.labor_cost:.2f}"
+        })
+        data.append({
+            'BOM Name': '', 'Finished Good': '', 'Component Name': 'Overhead Cost:', 'Item Code': '',
+            'Qty': '', 'Unit Cost': '', 'Total Cost': f"{bom.overhead_cost:.2f}"
+        })
+        data.append({
+            'BOM Name': '', 'Finished Good': '', 'Component Name': 'TOTAL UNIT COST:', 'Item Code': '',
+            'Qty': '', 'Unit Cost': '', 'Total Cost': f"{bom.total_cost:.2f}"
+        })
+
     elif report_type == 'salary':
         staff_id = request.args.get('staff_id')
         query = SalaryPayment.query
@@ -1242,14 +1260,24 @@ def download_report(format, report_type):
         
         # Expenses
         # Operating
-        total_exp = db.session.query(func.sum(Expense.amount)).filter(Expense.date >= start_date, Expense.date <= end_date, Expense.is_bom_overhead == False).scalar() or 0
+        total_exp = db.session.query(func.sum(Expense.amount)).filter(
+            Expense.date >= start_date, 
+            Expense.date <= end_date, 
+            Expense.is_bom_overhead == False,
+            Expense.status == 'confirmed'
+        ).scalar() or 0
         salary_paid = db.session.query(func.sum(SalaryPayment.net_salary)).filter(SalaryPayment.status == 'paid', SalaryPayment.payment_date >= start_date.date(), SalaryPayment.payment_date <= end_date.date()).scalar() or 0
         salary_adv = db.session.query(func.sum(SalaryAdvance.amount)).filter(SalaryAdvance.date >= start_date.date(), SalaryAdvance.date <= end_date.date()).scalar() or 0
         
         # Informational / Inventory
         total_purchases = db.session.query(func.sum(PurchaseBill.total)).filter(PurchaseBill.date >= start_date, PurchaseBill.date <= end_date).scalar() or 0
         total_bom = db.session.query(func.sum(ManufacturingOrder.total_cost)).filter(ManufacturingOrder.status == 'Completed', ManufacturingOrder.end_date >= start_date.date(), ManufacturingOrder.end_date <= end_date.date()).scalar() or 0
-        bom_overhead = db.session.query(func.sum(Expense.amount)).filter(Expense.date >= start_date, Expense.date <= end_date, Expense.is_bom_overhead == True).scalar() or 0
+        bom_overhead = db.session.query(func.sum(Expense.amount)).filter(
+            Expense.date >= start_date, 
+            Expense.date <= end_date, 
+            Expense.is_bom_overhead == True,
+            Expense.status == 'confirmed'
+        ).scalar() or 0
         
         total_operating_exp = total_exp + salary_paid + salary_adv
         gross_profit = net_rev - total_cogs

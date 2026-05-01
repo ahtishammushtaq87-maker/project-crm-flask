@@ -20,6 +20,7 @@
                             <th>Name</th>
                             <th>Email</th>
                             <th>Phone</th>
+                            <th>Group</th>
                             <th>Commission Rate</th>
                             <th>Status</th>
                             <th>Created At</th>
@@ -32,6 +33,13 @@
                             <td class="fw-bold">{{ salesman.name }}</td>
                             <td>{{ salesman.email or '-' }}</td>
                             <td>{{ salesman.phone or '-' }}</td>
+                            <td>
+                                {% if salesman.group %}
+                                <span class="badge bg-info text-dark">{{ salesman.group.name }}</span>
+                                {% else %}
+                                <span class="text-muted small">-</span>
+                                {% endif %}
+                            </td>
                             <td>{{ salesman.commission_rate }}%</td>
                             <td>
                                 {% if salesman.is_active %}
@@ -54,7 +62,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="7" class="text-center py-4">No salesmen found.</td>
+                            <td colspan="8" class="text-center py-4">No salesmen found.</td>
                         </tr>
                         {% endfor %}
                     </tbody>

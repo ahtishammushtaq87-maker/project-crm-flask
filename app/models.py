@@ -34,6 +34,13 @@ class User(UserMixin, db.Model):
     can_view_targets = db.Column(db.Boolean, default=True)
     can_view_dashboard = db.Column(db.Boolean, default=True)
     can_view_accounting = db.Column(db.Boolean, default=True)
+    can_view_salesmen = db.Column(db.Boolean, default=True)
+    can_view_product_dev = db.Column(db.Boolean, default=True)
+    can_view_categories = db.Column(db.Boolean, default=True)
+    can_view_customer_groups = db.Column(db.Boolean, default=True)
+    can_view_tasks = db.Column(db.Boolean, default=True)
+    can_view_profit_loss = db.Column(db.Boolean, default=True)
+    can_view_users = db.Column(db.Boolean, default=False)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -86,6 +93,7 @@ class Vendor(db.Model):
     ifsc_code = db.Column(db.String(20))
     
     is_active = db.Column(db.Boolean, default=True)
+    image_path = db.Column(db.String(255))  # Path to vendor image
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -150,6 +158,22 @@ class CustomerGroup(db.Model):
     def __repr__(self):
         return f'<CustomerGroup {self.name}>'
 
+class SalesmanGroup(db.Model):
+    """Salesman Group model"""
+    __tablename__ = 'salesman_groups'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True, index=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    salesmen = db.relationship('Salesman', backref='group', lazy=True)
+    
+    def __repr__(self):
+        return f'<SalesmanGroup {self.name}>'
+
 class Customer(db.Model):
     """Customer model"""
     __tablename__ = 'customers'
@@ -212,6 +236,8 @@ class Salesman(db.Model):
     email = db.Column(db.String(120), index=True)
     phone = db.Column(db.String(20))
     address = db.Column(db.Text)
+    group_id = db.Column(db.Integer, db.ForeignKey('salesman_groups.id'), nullable=True, index=True)
+    group_assigned = db.Column(db.String(100), nullable=True) # Legacy field
     commission_rate = db.Column(db.Float, default=0) # Commission percentage
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -710,6 +736,7 @@ class Expense(db.Model):
     mo_id = db.Column(db.Integer, db.ForeignKey('manufacturing_orders.id'), nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    status = db.Column(db.String(20), default='pending', index=True)  # pending, confirmed, rejected
     
     # Monthly distribution fields
     is_monthly_divided = db.Column(db.Boolean, default=False)  # Whether expense is divided across month

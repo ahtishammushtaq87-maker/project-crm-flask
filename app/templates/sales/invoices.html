@@ -135,6 +135,7 @@
                             <th>Date</th>
                             <th>Customer</th>
                             <th>Salesman</th>
+                            <th class="text-end text-muted small">Delivery Charges</th>
                             <th class="text-end">Total</th>
                             <th class="text-end">Paid</th>
                             <th class="text-end text-danger">Balance</th>
@@ -152,6 +153,7 @@
                             <td>{{ sale.date.strftime(date_format) }}</td>
                             <td>{{ sale.customer.name if sale.customer else 'Walk-in Customer' }}</td>
                             <td>{{ sale.salesman.name if sale.salesman else '-' }}</td>
+                            <td class="text-end text-muted small">PKR{{ "{:,.2f}".format(sale.delivery_charge) }}</td>
                             <td class="text-end">PKR{{ "{:,.2f}".format(sale.total) }}</td>
                             <td class="text-end">PKR{{ "{:,.2f}".format(sale.paid_amount) }}</td>
                             <td class="text-end text-danger fw-bold">PKR{{ "{:,.2f}".format(sale.total - sale.paid_amount) }}</td>
@@ -224,7 +226,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="10" class="text-center py-4 text-muted">No sales invoices found.</td>
+                            <td colspan="11" class="text-center py-4 text-muted">No sales invoices found.</td>
                         </tr>
                         {% endfor %}
                     </tbody>

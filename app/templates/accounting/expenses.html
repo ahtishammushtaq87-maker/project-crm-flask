@@ -13,6 +13,62 @@
             entityName: 'expenses'
         });
 
+        // Initialize Bulk Confirm for Admin
+        {% if current_user.is_admin %}
+        const bulkConfirmBtn = document.getElementById('bulkConfirmBtn');
+        const checkboxes = document.querySelectorAll('.expense-checkbox');
+        const selectAll = document.getElementById('selectAll');
+
+        function updateBulkConfirmBtn() {
+            const checkedCount = document.querySelectorAll('.expense-checkbox:checked').length;
+            if (checkedCount > 0) {
+                bulkConfirmBtn.classList.remove('d-none');
+                bulkConfirmBtn.innerHTML = `<i class="fas fa-check me-1"></i> Confirm Selected (${checkedCount})`;
+            } else {
+                bulkConfirmBtn.classList.add('d-none');
+            }
+        }
+
+        if (selectAll) {
+            selectAll.addEventListener('change', updateBulkConfirmBtn);
+        }
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', updateBulkConfirmBtn);
+        });
+
+        if (bulkConfirmBtn) {
+            bulkConfirmBtn.addEventListener('click', function() {
+                const selectedIds = Array.from(document.querySelectorAll('.expense-checkbox:checked'))
+                    .map(cb => cb.value);
+
+                if (selectedIds.length === 0) return;
+
+                if (confirm(`Confirm ${selectedIds.length} expenses? This will update costs for any linked manufacturing orders.`)) {
+                    fetch("{{ url_for('accounting.bulk_confirm_expenses') }}", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ ids: selectedIds })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            Toast.show(data.message, 'success');
+                            setTimeout(() => location.reload(), 1500);
+                        } else {
+                            Toast.show('Error: ' + data.message, 'danger');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        Toast.show('An error occurred during bulk confirmation.', 'danger');
+                    });
+                }
+            });
+        }
+        {% endif %}
+
         // Clickable date filtering: clicking a date filters to that month
         const dateCells = document.querySelectorAll('.clickable-date');
         const startDateInput = document.getElementById('start_date');
@@ -52,6 +108,11 @@
             <button id="bulkDeleteBtn" class="btn btn-danger d-none me-2">
                 <i class="fas fa-trash me-1"></i> Delete Selected
             </button>
+            {% if current_user.is_admin %}
+            <button id="bulkConfirmBtn" class="btn btn-success d-none me-2">
+                <i class="fas fa-check me-1"></i> Confirm Selected
+            </button>
+            {% endif %}
            <!-- <button type="button" class="btn btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#universalFilterModal" data-module="expense">
                 <i class="fas fa-filter me-1"></i> Advanced Filter
             </button>-->
@@ -119,6 +180,7 @@
                             <th>Amount</th>
                             <th>Daily Amount</th>
                             <th>Bill</th>
+                            <th>Status</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -184,7 +246,30 @@
                                 {% endif %}
                             </td>
                             <td>
+                                {% if exp.status == 'pending' %}
+                                <span class="badge bg-warning text-dark">Pending</span>
+                                {% elif exp.status == 'confirmed' %}
+                                <span class="badge bg-success">Confirmed</span>
+                                {% elif exp.status == 'rejected' %}
+                                <span class="badge bg-danger">Rejected</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ exp.status|capitalize }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
                                 <div class="btn-group" role="group">
+                                    {% if current_user.is_admin and exp.status == 'pending' %}
+                                    <form method="POST" action="{{ url_for('accounting.confirm_expense', id=exp.id) }}" style="display:inline;" class="me-1">
+                                        <button type="submit" class="btn btn-sm btn-success" title="Confirm">
+                                            <i class="fas fa-check"></i>
+                                        </button>
+                                    </form>
+                                    <form method="POST" action="{{ url_for('accounting.reject_expense', id=exp.id) }}" style="display:inline;" class="me-1">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Reject">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
                                     <a href="{{ url_for('accounting.edit_expense', id=exp.id) }}" class="btn btn-sm btn-warning" title="Edit">
                                         <i class="fas fa-edit"></i>
                                     </a>

@@ -136,6 +136,7 @@
                             <th>Order Number</th>
                             <th>Date</th>
                             <th>Vendor</th>
+                            <th class="text-end text-muted small">Ship Charges</th>
                             <th class="text-end">Total</th>
                             <th class="text-end">Paid</th>
                             <th class="text-end text-danger">Balance</th>
@@ -152,6 +153,7 @@
                             <td class="fw-bold">{{ bill.bill_number }}</td>
                             <td>{{ bill.date.strftime(date_format) }}</td>
                             <td>{{ bill.vendor.name }}</td>
+                            <td class="text-end text-muted small">PKR{{ "{:,.2f}".format(bill.shipping_charge) }}</td>
                             <td class="text-end">PKR{{ "{:,.2f}".format(bill.total) }}</td>
                             <td class="text-end">PKR{{ "{:,.2f}".format(bill.paid_amount) }}</td>
                             <td class="text-end text-danger fw-bold">PKR{{ "{:,.2f}".format(bill.balance_due) }}</td>
@@ -226,7 +228,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="9" class="text-center py-4 text-muted">No purchase bills found.</td>
+                            <td colspan="10" class="text-center py-4 text-muted">No purchase bills found.</td>
                         </tr>
                         {% endfor %}
                     </tbody>

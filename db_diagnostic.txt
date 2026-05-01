@@ -1,0 +1,10 @@
+
+DB: instance/database.db
+Tables: users, vendors, customers, products, accounts, tax_rates, currencies, expense_categories, company, invoice_settings, staff, monthly_targets, sales, recurring_expenses, stock_movements, tasks, boms, salary_payments, purchase_orders, sale_items, purchase_bills, transactions, expenses, sale_returns, bom_items, salary_advances, manufacturing_orders, purchase_order_items, purchase_items, payments, sale_return_items, manufacturing_order_items, vendor_advances, cost_price_history, sqlite_sequence, bom_versions, bom_version_items, attendance, customer_advances, warehouses, purchase_settings, production_targets, production_logs, pd_projects, pd_bom, pd_components, pd_tooling, pd_testing, pd_approval, pd_assets, product_categories, payment_methods, purchase_returns, purchase_return_items, expense_settings, sale_return_settings, purchase_return_settings, salesmen, customer_groups, saved_filters, bill_payments, bill_receives, bill_receive_items
+Salesmen columns: id, name, email, phone, address, commission_rate, is_active, created_at, updated_at, group_assigned
+
+DB: instance/project_crm.db
+Tables: salesman_groups, sqlite_sequence
+
+DB: instance/crm.db
+Tables: 

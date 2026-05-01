@@ -21,13 +21,26 @@ with app.app_context():
         permission_columns = [
             'can_view_sales', 'can_view_purchases', 'can_view_inventory',
             'can_view_expenses', 'can_view_returns', 'can_view_vendors',
-            'can_view_customers', 'can_view_reports', 'can_view_settings'
+            'can_view_customers', 'can_view_reports', 'can_view_settings',
+            'can_view_manufacturing', 'can_view_production', 'can_view_warehouse',
+            'can_view_attendance', 'can_view_salary', 'can_view_targets',
+            'can_view_dashboard', 'can_view_accounting', 'can_view_salesmen',
+            'can_view_product_dev', 'can_view_categories', 'can_view_customer_groups',
+            'can_view_tasks', 'can_view_profit_loss', 'can_view_users'
         ]
         for col_name in permission_columns:
             if col_name not in existing_columns:
                 with db.engine.connect() as conn:
                     conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} BOOLEAN DEFAULT 1"))
                     conn.commit()
+
+        # Add image_path to vendors if missing
+        existing_vendor_cols = [c['name'] for c in inspector.get_columns('vendors')]
+        if 'image_path' not in existing_vendor_cols:
+            with db.engine.connect() as conn:
+                conn.execute(text("ALTER TABLE vendors ADD COLUMN image_path VARCHAR(255)"))
+                conn.commit()
+                print("Added image_path column to vendors table")
         
         if not User.query.filter_by(username='admin').first():
             admin = User(

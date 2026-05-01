@@ -87,7 +87,7 @@ def dashboard():
     # Apply date filters to all queries
     sales_query = Sale.query.filter(Sale.date >= date_from, Sale.date <= date_to)
     purchases_query = PurchaseBill.query.filter(PurchaseBill.date >= date_from, PurchaseBill.date <= date_to)
-    expenses_query = Expense.query.filter(Expense.date >= date_from, Expense.date <= date_to)
+    expenses_query = Expense.query.filter(Expense.date >= date_from, Expense.date <= date_to, Expense.status == 'confirmed')
 
     from app.models import SaleItem, Product
     total_sales = db.session.query(func.sum(Sale.total)).filter(Sale.date >= date_from, Sale.date <= date_to).scalar() or 0
@@ -113,6 +113,7 @@ def dashboard():
     # Only filter divided expenses if column exists
     if has_column('expenses', 'is_monthly_divided'):
         operating_filter.append(Expense.is_monthly_divided == False)
+    operating_filter.append(Expense.status == 'confirmed')
     
     operating_expenses = db.session.query(func.sum(Expense.amount)).filter(*operating_filter).scalar() or 0
 
@@ -125,6 +126,7 @@ def dashboard():
     # Only filter divided expenses if column exists
     if has_column('expenses', 'is_monthly_divided'):
         bom_filter.append(Expense.is_monthly_divided == False)
+    bom_filter.append(Expense.status == 'confirmed')
     
     manufacturing_overhead = db.session.query(func.sum(Expense.amount)).filter(*bom_filter).scalar() or 0
     
@@ -137,7 +139,8 @@ def dashboard():
     if has_column('expenses', 'is_monthly_divided'):
         # Get all monthly divided expenses
         all_monthly_expenses = Expense.query.filter(
-            Expense.is_monthly_divided == True
+            Expense.is_monthly_divided == True,
+            Expense.status == 'confirmed'
         ).all()
         
         # Calculate today's divided expenses and period total
@@ -201,7 +204,8 @@ def dashboard():
 
         month_expenses = db.session.query(func.sum(Expense.amount)).filter(
             func.extract('year', Expense.date) == current_date.year,
-            func.extract('month', Expense.date) == current_date.month
+            func.extract('month', Expense.date) == current_date.month,
+            Expense.status == 'confirmed'
         ).scalar() or 0
 
         monthly_sales.append(float(month_sales))
@@ -224,7 +228,8 @@ def dashboard():
             func.extract('year', Sale.date) == y
         ).scalar() or 0
         y_exp = db.session.query(func.sum(Expense.amount)).filter(
-            func.extract('year', Expense.date) == y
+            func.extract('year', Expense.date) == y,
+            Expense.status == 'confirmed'
         ).scalar() or 0
         yearly.append({'year': y, 'sales': float(y_sales), 'expenses': float(y_exp)})
 
@@ -795,7 +800,8 @@ def profit_loss():
         Expense.date >= start_datetime, 
         Expense.date <= end_datetime,
         Expense.is_bom_overhead == False,
-        Expense.is_monthly_divided == False
+        Expense.is_monthly_divided == False,
+        Expense.status == 'confirmed'
     ).all()
     
     expense_categories = {}
@@ -936,7 +942,7 @@ def expenses():
     query = apply_saved_filter_to_query(query, 'expense', request.args)
     
     expenses = query.order_by(Expense.date.desc()).all()
-    total_expense = sum(e.amount for e in expenses)
+    total_expense = sum(e.amount for e in expenses if e.status == 'confirmed')
     
     # Get filter options
     categories = ExpenseCategory.query.filter_by(is_active=True).order_by(ExpenseCategory.name).all()
@@ -1014,6 +1020,12 @@ def add_expense():
         is_overhead = form.is_bom_overhead.data
         selected_mo_id = (form.mo_id.data or 0) if is_overhead else 0
         
+        # Determine the active mode
+        mode = request.form.get('overhead_mode', 'bulk')
+        
+        # Determine target status based on user role
+        target_status = 'confirmed' if current_user.is_admin else 'pending'
+        
         # Handle bill image upload
         bill_path = None
         if 'bill_image' in request.files:
@@ -1064,9 +1076,6 @@ def add_expense():
         
         created_expenses = []   # track all new expense objects
         
-        # Determine the active mode
-        mode = request.form.get('overhead_mode', 'bulk')
-        
         # ── MODE 1: Direct MO link (Single or Bulk) ────────────────────────
         if is_overhead and mode == 'mo':
             selected_mo_ids = form.mo_id.data if form.mo_id.data else []
@@ -1090,30 +1099,41 @@ def add_expense():
                 exp = Expense(
                     expense_number=expense_number,
                     amount=base_amount,
+                    status=target_status,
+                    created_by=current_user.id,
                     **common_kwargs
                 )
                 if exp.is_monthly_divided:
                     exp.calculate_daily_amount()
                 db.session.add(exp)
                 created_expenses.append(exp)
-                flash_msg = f'Overhead expense PKR {base_amount} added (Unassigned).'
+                if target_status == 'confirmed':
+                    flash_msg = f'Overhead expense PKR {base_amount} added (Unassigned).'
+                else:
+                    flash_msg = f'Overhead expense PKR {base_amount} created (Unassigned) and waiting for admin confirmation.'
             elif num_mos == 1:
                 target_mo = valid_mos[0]
                 expense_number, next_expense_num = get_unique_expense_number(settings, next_expense_num)
                 exp = Expense(
                     expense_number=expense_number,
                     amount=base_amount,
+                    status=target_status,
                     mo_id=target_mo.id,
+                    created_by=current_user.id,
                     **common_kwargs
                 )
                 if exp.is_monthly_divided:
                     exp.calculate_daily_amount()
                 db.session.add(exp)
                 created_expenses.append(exp)
-                # Update MO overhead immediately
-                target_mo.actual_overhead_cost = (target_mo.actual_overhead_cost or 0) + base_amount
-                target_mo.total_cost = (target_mo.actual_material_cost or 0) + (target_mo.actual_labor_cost or 0) + target_mo.actual_overhead_cost
-                flash_msg = f'Overhead expense PKR {base_amount} added and linked to {target_mo.order_number}.'
+                
+                # Update MO overhead only if confirmed
+                if target_status == 'confirmed':
+                    target_mo.actual_overhead_cost = (target_mo.actual_overhead_cost or 0) + base_amount
+                    target_mo.total_cost = (target_mo.actual_material_cost or 0) + (target_mo.actual_labor_cost or 0) + target_mo.actual_overhead_cost
+                    flash_msg = f'Overhead expense PKR {base_amount} added and linked to {target_mo.order_number}.'
+                else:
+                    flash_msg = f'Overhead expense PKR {base_amount} created for {target_mo.order_number} and is waiting for admin confirmation.'
             else:
                 amount_per_mo = base_amount / num_mos
                 for i, target_mo in enumerate(valid_mos):
@@ -1123,15 +1143,24 @@ def add_expense():
                     kwargs['amount'] = amount_per_mo
                     kwargs['mo_id'] = target_mo.id
 
-                    exp = Expense(**kwargs)
+                    exp = Expense(
+                        status=target_status,
+                        created_by=current_user.id,
+                        **kwargs
+                    )
                     if exp.is_monthly_divided:
                         exp.calculate_daily_amount()
                     db.session.add(exp)
                     created_expenses.append(exp)
 
-                    target_mo.actual_overhead_cost = (target_mo.actual_overhead_cost or 0) + amount_per_mo
-                    target_mo.total_cost = (target_mo.actual_material_cost or 0) + (target_mo.actual_labor_cost or 0) + target_mo.actual_overhead_cost
-                flash_msg = f'Expense(s) added. PKR {base_amount} divided into {num_mos} Manufacturing Orders.'
+                    if target_status == 'confirmed':
+                        target_mo.actual_overhead_cost = (target_mo.actual_overhead_cost or 0) + amount_per_mo
+                        target_mo.total_cost = (target_mo.actual_material_cost or 0) + (target_mo.actual_labor_cost or 0) + target_mo.actual_overhead_cost
+                
+                if target_status == 'confirmed':
+                    flash_msg = f'Expense(s) added. PKR {base_amount} divided into {num_mos} Manufacturing Orders.'
+                else:
+                    flash_msg = f'Expense(s) created and waiting for admin confirmation. PKR {base_amount} allocated to {num_mos} Manufacturing Orders.'
         
         # ── MODE 2: Bulk Product/BOM allocation ───────────────────────────
         else:
@@ -1148,9 +1177,17 @@ def add_expense():
             
             if num_targets == 0:
                 expense_number, next_expense_num = get_unique_expense_number(settings, next_expense_num)
+                # If unassigned but specific IDs provided, attach them
+                pid_list = [p for p in (form.product_id.data or []) if p and p != 0]
+                bid_list = [b for b in (form.bom_id.data or []) if b and b != 0]
+                
                 exp = Expense(
                     expense_number=expense_number,
                     amount=base_amount,
+                    status=target_status,
+                    created_by=current_user.id,
+                    product_id=pid_list[0] if pid_list else None,
+                    bom_id=bid_list[0] if bid_list else None,
                     **common_kwargs
                 )
                 if exp.is_monthly_divided:
@@ -1174,7 +1211,10 @@ def add_expense():
                     db.session.add(exp)
                     created_expenses.append(exp)
             
-            flash_msg = f'Expense(s) added. PKR {base_amount} divided into {max(1, num_targets)} record(s).'
+            if target_status == 'confirmed':
+                flash_msg = f'Expense(s) added. PKR {base_amount} divided into {max(1, num_targets)} record(s).'
+            else:
+                flash_msg = f'Expense(s) created and waiting for admin confirmation. PKR {base_amount} divided into {max(1, num_targets)} record(s).'
         # ─────────────────────────────────────────────────────────────────
         
         # Update expense settings next number
@@ -1210,6 +1250,7 @@ def delete_expense(id):
     
     mo_id_to_reduce = None
     amount_to_reduce = expense.amount
+    is_confirmed = expense.status == 'confirmed'
     if was_overhead and has_column('expenses', 'mo_id') and expense.mo_id:
         mo_id_to_reduce = expense.mo_id
 
@@ -1217,8 +1258,8 @@ def delete_expense(id):
     
     db.session.delete(expense)
     
-    # Also reduce actual_overhead_cost and total_cost in MO if it was linked
-    if mo_id_to_reduce:
+    # Also reduce actual_overhead_cost and total_cost in MO if it was linked and confirmed
+    if mo_id_to_reduce and is_confirmed:
         linked_mo = ManufacturingOrder.query.get(mo_id_to_reduce)
         if linked_mo:
             linked_mo.actual_overhead_cost = max(0, (linked_mo.actual_overhead_cost or 0) - amount_to_reduce)
@@ -1226,8 +1267,8 @@ def delete_expense(id):
 
     db.session.commit()
     
-    # If deleted expense was overhead, recalculate BOM
-    if was_overhead:
+    # If deleted expense was overhead and confirmed, recalculate BOM
+    if was_overhead and is_confirmed:
         bom_to_update = None
         if bom_id:
             bom_to_update = BOM.query.get(bom_id)
@@ -1285,19 +1326,20 @@ def bulk_delete_expenses():
             from app.models import ManufacturingOrder
             # Store info for BOM update
             was_overhead = expense.is_bom_overhead if has_column('expenses', 'is_bom_overhead') else False
-            amount_to_reduce = expense.amount
             mo_id_to_reduce = None
+            amount_to_reduce = expense.amount
+            is_confirmed = expense.status == 'confirmed'
             if was_overhead:
-                if has_column('expenses', 'bom_id') and expense.bom_id:
+                if has_column('expenses', 'bom_id') and expense.bom_id and is_confirmed:
                     boms_to_update.add(('bom', expense.bom_id))
-                elif has_column('expenses', 'product_id') and expense.product_id:
+                elif has_column('expenses', 'product_id') and expense.product_id and is_confirmed:
                     boms_to_update.add(('product', expense.product_id))
                 if has_column('expenses', 'mo_id') and expense.mo_id:
                     mo_id_to_reduce = expense.mo_id
             
             db.session.delete(expense)
             
-            if mo_id_to_reduce:
+            if mo_id_to_reduce and is_confirmed:
                 linked_mo = ManufacturingOrder.query.get(mo_id_to_reduce)
                 if linked_mo:
                     linked_mo.actual_overhead_cost = max(0, (linked_mo.actual_overhead_cost or 0) - amount_to_reduce)
@@ -1343,6 +1385,78 @@ def bulk_delete_expenses():
                     print(f"Error updating BOM {bom_to_update.id} after bulk delete: {e}")
                     
     message = f'Successfully deleted {deleted_count} expenses.'
+    if errors:
+        return jsonify({'success': False, 'message': message, 'errors': errors}), 500
+    return jsonify({'success': True, 'message': message})
+
+@bp.route('/expenses/bulk-confirm', methods=['POST'])
+@login_required
+def bulk_confirm_expenses():
+    if not current_user.is_admin:
+        return jsonify({'success': False, 'message': 'Only admins can confirm expenses.'}), 403
+        
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No expenses selected'}), 400
+        
+    from app.models import BOM, ManufacturingOrder
+    from app.services.bom_versioning import BOMVersioningService
+    
+    confirmed_count = 0
+    errors = []
+    boms_to_update = set()
+    
+    for expense_id in ids:
+        expense = Expense.query.get(expense_id)
+        if not expense or expense.status == 'confirmed':
+            continue
+            
+        try:
+            expense.status = 'confirmed'
+            
+            # Apply side effects (MO updates)
+            if expense.is_bom_overhead and expense.mo_id:
+                mo = ManufacturingOrder.query.get(expense.mo_id)
+                if mo:
+                    mo.actual_overhead_cost = (mo.actual_overhead_cost or 0) + expense.amount
+                    mo.total_cost = (mo.actual_material_cost or 0) + (mo.actual_labor_cost or 0) + mo.actual_overhead_cost
+            
+            # Track BOMs for update
+            if expense.is_bom_overhead:
+                if expense.bom_id:
+                    boms_to_update.add(('bom', expense.bom_id))
+                elif expense.product_id:
+                    boms_to_update.add(('product', expense.product_id))
+            
+            confirmed_count += 1
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f'Error confirming Expense {expense.expense_number}: {str(e)}')
+            
+    if confirmed_count > 0:
+        db.session.commit()
+        
+        # Trigger BOM versioning
+        for type_val, id_val in boms_to_update:
+            bom_to_update = None
+            if type_val == 'bom':
+                bom_to_update = BOM.query.get(id_val)
+            else:
+                bom_to_update = BOM.query.filter_by(product_id=id_val, is_active=True).first()
+                
+            if bom_to_update:
+                try:
+                    BOMVersioningService.create_bom_version(
+                        bom=bom_to_update,
+                        change_reason=f"Bulk confirmation of overhead expenses",
+                        change_type='overhead_added',
+                        created_by_id=current_user.id,
+                        recalculate_overhead=True
+                    )
+                except Exception as e:
+                    print(f"Error updating BOM during bulk confirmation: {e}")
+                    
+    message = f'Successfully confirmed {confirmed_count} expenses.'
     if errors:
         return jsonify({'success': False, 'message': message, 'errors': errors}), 500
     return jsonify({'success': True, 'message': message})
@@ -1433,6 +1547,7 @@ def edit_expense(id):
         old_product_id = expense.product_id if has_column('expenses', 'product_id') else None
         old_mo_id = expense.mo_id if has_column('expenses', 'mo_id') else None
         old_amount = expense.amount
+        is_confirmed = expense.status == 'confirmed'
         
         expense.date = form.date.data
         expense.category_id = form.category_id.data
@@ -1466,15 +1581,15 @@ def edit_expense(id):
         new_is_overhead = expense.is_bom_overhead if has_column('expenses', 'is_bom_overhead') else False
         new_mo_id_val = expense.mo_id if has_column('expenses', 'mo_id') else None
         
-        # 1. Revert from old MO if it was overhead and had an MO
-        if old_is_overhead and old_mo_id:
+        # 1. Revert from old MO if it was overhead, had an MO, and was confirmed
+        if old_is_overhead and old_mo_id and is_confirmed:
             old_mo = ManufacturingOrder.query.get(old_mo_id)
             if old_mo:
                 old_mo.actual_overhead_cost = max(0, (old_mo.actual_overhead_cost or 0) - old_amount)
                 old_mo.total_cost = (old_mo.actual_material_cost or 0) + (old_mo.actual_labor_cost or 0) + old_mo.actual_overhead_cost
 
-        # 2. Add to new MO if it is currently overhead and has an MO
-        if new_is_overhead and new_mo_id_val:
+        # 2. Add to new MO if it is currently overhead, has an MO, and is confirmed
+        if new_is_overhead and new_mo_id_val and is_confirmed:
             new_mo = ManufacturingOrder.query.get(new_mo_id_val)
             if new_mo:
                 new_mo.actual_overhead_cost = (new_mo.actual_overhead_cost or 0) + new_amount
@@ -1511,7 +1626,7 @@ def edit_expense(id):
         new_is_overhead = expense.is_bom_overhead if has_column('expenses', 'is_bom_overhead') else False
         overhead_status_changed = old_is_overhead != new_is_overhead
         
-        if overhead_status_changed or new_is_overhead:
+        if (overhead_status_changed or new_is_overhead) and is_confirmed:
             # Determine which BOM to update
             if new_is_overhead:
                 # Expense is now overhead, find BOM to update
@@ -1587,6 +1702,69 @@ def add_expense_category():
         return redirect(url_for('accounting.expense_categories'))
     
     return render_template('accounting/add_expense_category.html', form=form)
+
+@bp.route('/expense/<int:id>/confirm', methods=['POST'])
+@login_required
+def confirm_expense(id):
+    if not current_user.is_admin:
+        flash('Only admins can confirm expenses.', 'danger')
+        return redirect(url_for('accounting.expenses'))
+        
+    expense = Expense.query.get_or_404(id)
+    if expense.status == 'confirmed':
+        flash('Expense is already confirmed.', 'info')
+        return redirect(url_for('accounting.expenses'))
+        
+    expense.status = 'confirmed'
+    
+    # Apply side effects (MO updates)
+    if expense.is_bom_overhead and expense.mo_id:
+        from app.models import ManufacturingOrder
+        mo = ManufacturingOrder.query.get(expense.mo_id)
+        if mo:
+            mo.actual_overhead_cost = (mo.actual_overhead_cost or 0) + expense.amount
+            mo.total_cost = (mo.actual_material_cost or 0) + (mo.actual_labor_cost or 0) + mo.actual_overhead_cost
+            
+    # Apply BOM versioning if overhead
+    if expense.is_bom_overhead:
+        from app.models import BOM
+        from app.services.bom_versioning import BOMVersioningService
+        from app.models import User as UserModel
+        
+        bom_to_update = None
+        if expense.bom_id:
+            bom_to_update = BOM.query.get(expense.bom_id)
+        elif expense.product_id:
+            bom_to_update = BOM.query.filter_by(product_id=expense.product_id, is_active=True).first()
+            
+        if bom_to_update:
+            try:
+                BOMVersioningService.create_bom_version(
+                    bom=bom_to_update,
+                    change_reason=f"Overhead expense confirmed: {expense.description}",
+                    change_type='overhead_added',
+                    created_by_id=current_user.id,
+                    recalculate_overhead=True
+                )
+            except Exception as e:
+                print(f"Error updating BOM during confirmation: {e}")
+                
+    db.session.commit()
+    flash(f'Expense {expense.expense_number} confirmed successfully.', 'success')
+    return redirect(url_for('accounting.expenses'))
+
+@bp.route('/expense/<int:id>/reject', methods=['POST'])
+@login_required
+def reject_expense(id):
+    if not current_user.is_admin:
+        flash('Only admins can reject expenses.', 'danger')
+        return redirect(url_for('accounting.expenses'))
+        
+    expense = Expense.query.get_or_404(id)
+    expense.status = 'rejected'
+    db.session.commit()
+    flash(f'Expense {expense.expense_number} rejected.', 'warning')
+    return redirect(url_for('accounting.expenses'))
 
 @bp.route('/expense-category/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
