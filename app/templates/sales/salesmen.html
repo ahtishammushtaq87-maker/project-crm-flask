@@ -6,15 +6,17 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Salesmen</h2>
-        <a href="{{ url_for('sales.add_salesman') }}" class="btn btn-primary">
+                {% if current_user.has_permission('sales', 'add') %}
+<a href="{{ url_for('sales.add_salesman') }}" class="btn btn-primary">
             <i class="fas fa-plus"></i> Add Salesman
         </a>
+{% endif %}        
     </div>
 
     <div class="card shadow-sm border-0">
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-hover align-middle">
+                <table class="table table-hover align-middle datatable-export" data-export-title="Salesmen">
                     <thead class="table-light">
                         <tr>
                             <th>Name</th>
@@ -24,7 +26,7 @@
                             <th>Commission Rate</th>
                             <th>Status</th>
                             <th>Created At</th>
-                            <th class="text-end">Actions</th>
+                            <th class="text-end no-export">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -49,15 +51,19 @@
                                 {% endif %}
                             </td>
                             <td>{{ salesman.created_at.strftime('%Y-%m-%d') }}</td>
-                            <td class="text-end">
-                                <a href="{{ url_for('sales.edit_salesman', id=salesman.id) }}" class="btn btn-sm btn-outline-primary">
+                            <td class="text-end no-export">
+                                                                {% if current_user.has_permission('sales', 'edit') %}
+<a href="{{ url_for('sales.edit_salesman', id=salesman.id) }}" class="btn btn-sm btn-outline-primary">
                                     <i class="fas fa-edit"></i>
                                 </a>
-                                <form action="{{ url_for('sales.delete_salesman', id=salesman.id) }}" method="POST" class="d-inline">
+{% endif %}                                
+                                                                {% if current_user.has_permission('sales', 'delete') %}
+<form action="{{ url_for('sales.delete_salesman', id=salesman.id) }}" method="POST" class="d-inline">
                                     <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this salesman?')">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </form>
+{% endif %}                                
                             </td>
                         </tr>
                         {% else %}

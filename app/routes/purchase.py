@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response, current_app
+from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
 from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory, PurchaseReturn, PurchaseReturnItem, PurchaseSettings, PurchaseReturnSettings, BillPayment, BillReceive, BillReceiveItem
@@ -87,6 +88,7 @@ def bills():
 
 @bp.route('/bill/create', methods=['GET', 'POST'])
 @login_required
+@permission_required('purchases', action='add')
 def create_bill():
     form = PurchaseForm()
     vendors = Vendor.query.filter_by(is_active=True).all()
@@ -261,6 +263,7 @@ def bill_detail(id):
 
 @bp.route('/bill/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('purchases', action='edit')
 def edit_bill(id):
     bill = PurchaseBill.query.get_or_404(id)
     form = PurchaseForm(obj=bill)
@@ -375,6 +378,7 @@ def edit_bill(id):
 
 @bp.route('/bill/<int:id>/update-shipping', methods=['POST'])
 @login_required
+@permission_required('purchases', action='edit')
 def update_shipping(id):
     """Update shipping charge and recalculate product costs"""
     bill = PurchaseBill.query.get_or_404(id)
@@ -462,6 +466,7 @@ def update_shipping(id):
 
 @bp.route('/bill/<int:id>/update-tax', methods=['POST'])
 @login_required
+@permission_required('purchases', action='edit')
 def update_tax(id):
     """Update tax rate and recalculate product costs"""
     bill = PurchaseBill.query.get_or_404(id)
@@ -759,6 +764,7 @@ def pay_bill(id):
 
 @bp.route('/bill/<int:id>/payment/<int:pay_id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('purchases', action='edit')
 def edit_bill_payment(id, pay_id):
     """Edit existing BillPayment for purchase bill"""
     bill = PurchaseBill.query.get_or_404(id)
@@ -836,6 +842,7 @@ def bill_payment_image(pay_id):
 
 @bp.route('/bill/<int:id>/payment/<int:pay_id>/delete', methods=['POST'])
 @login_required
+@permission_required('purchases', action='delete')
 def delete_bill_payment(id, pay_id):
     """Safely delete BillPayment: reverse paid_amount, cleanup transactions"""
     bill = PurchaseBill.query.get_or_404(id)
@@ -995,6 +1002,7 @@ def apply_discount(id):
 
 @bp.route('/bill/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('purchases', action='delete')
 def delete_bill(id):
     bill = PurchaseBill.query.get_or_404(id)
     # Only revert inventory if stock was already received
@@ -1227,6 +1235,7 @@ def vendor_profile(id):
 
 @bp.route('/vendor/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('purchases', action='add')
 def add_vendor():
     form = VendorForm()
     if form.validate_on_submit():
@@ -1333,6 +1342,7 @@ def vendor_adjust_advance(id, adv_id):
 
 @bp.route('/vendor/<int:id>/advance/<int:adv_id>/delete', methods=['POST'])
 @login_required
+@permission_required('purchases', action='delete')
 def vendor_delete_advance(id, adv_id):
     """Delete a vendor advance (reverses applied amount from bill if any was applied)."""
     advance = VendorAdvance.query.get_or_404(adv_id)
@@ -1354,6 +1364,7 @@ def vendor_delete_advance(id, adv_id):
 
 @bp.route('/vendor/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('purchases', action='edit')
 def edit_vendor(id):
     vendor = Vendor.query.get_or_404(id)
     form = VendorForm(obj=vendor)
@@ -1389,6 +1400,7 @@ def edit_vendor(id):
 
 @bp.route('/vendor/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('purchases', action='delete')
 def delete_vendor(id):
     vendor = Vendor.query.get_or_404(id)
     
@@ -1545,6 +1557,7 @@ def _parse_delivery_time(dt_str):
 
 @bp.route('/order/create', methods=['GET', 'POST'])
 @login_required
+@permission_required('purchases', action='add')
 def create_po():
     vendors = Vendor.query.filter_by(is_active=True).all()
     products = Product.query.filter_by(is_active=True).all()
@@ -1769,6 +1782,7 @@ def convert_po_to_bill(id):
 
 @bp.route('/order/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('purchases', action='delete')
 def delete_po(id):
     po = PurchaseOrder.query.get_or_404(id)
     db.session.delete(po)
@@ -1845,6 +1859,7 @@ def product_cost_history(product_id):
 # ---------------------------------------------------------------------------
 @bp.route('/api/cost-history/<int:history_id>/delete', methods=['POST'])
 @login_required
+@permission_required('purchases', action='delete')
 def delete_cost_history(history_id):
     """Safely delete a cost price history entry if not referenced by BOM items"""
     history = CostPriceHistory.query.get_or_404(history_id)
@@ -1920,6 +1935,7 @@ def purchase_return_list():
 
 @bp.route('/return/create', methods=['GET', 'POST'])
 @login_required
+@permission_required('purchases', action='add')
 def create_purchase_return():
     """Create a new purchase return"""
     if request.method == 'GET':
@@ -2147,6 +2163,7 @@ def vendor_purchase_returns(vendor_id):
 
 @bp.route('/return/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('purchases', action='edit')
 def edit_purchase_return(id):
     """Edit a purchase return"""
     purchase_return = PurchaseReturn.query.get_or_404(id)
@@ -2214,6 +2231,7 @@ def edit_purchase_return(id):
 
 @bp.route('/return/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('purchases', action='delete')
 def delete_purchase_return(id):
     """Delete a purchase return"""
     purchase_return = PurchaseReturn.query.get_or_404(id)

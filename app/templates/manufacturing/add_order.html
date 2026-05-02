@@ -34,7 +34,8 @@
                     <h6 class="m-0 font-weight-bold text-primary">Order Settings</h6>
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="{{ url_for('manufacturing.add_order') }}">
+                                        {% if current_user.has_permission('manufacturing', 'add') %}
+<form method="POST" action="{{ url_for('manufacturing.add_order') }}">
                         {{ form.hidden_tag() }}
                         
                         <div class="mb-3">
@@ -75,6 +76,7 @@
                             </button>
                         </div>
                     </form>
+{% endif %}                    
                 </div>
             </div>
         </div>

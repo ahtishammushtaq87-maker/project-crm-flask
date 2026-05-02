@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, send_file, jsonify, flash, redirect, url_for
+from app.utils import permission_required
 from flask_login import login_required
 from app import db
 from app.models import Sale, SaleItem, PurchaseBill, PurchaseItem, Product, Vendor, Customer, Company, Expense, ExpenseCategory, SaleReturn, SaleReturnItem, BOM, BOMItem, BOMVersion, ManufacturingOrder, Staff, SalaryPayment, SalaryAdvance, Warehouse, Attendance, ProductCategory

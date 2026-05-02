@@ -6,7 +6,9 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>Payments</h2>
-        <a href="{{ url_for('accounting.add_payment') }}" class="btn btn-primary">Add Payment</a>
+                {% if current_user.has_permission('accounting', 'add') %}
+<a href="{{ url_for('accounting.add_payment') }}" class="btn btn-primary">Add Payment</a>
+{% endif %}        
     </div>
 
     <div class="card">
@@ -36,9 +38,11 @@
                             <td>{{ p.reference_number or '-' }}</td>
                             <td>{{ p.notes or '-' }}</td>
                             <td>
-                                <form action="{{ url_for('accounting.delete_payment', id=p.id) }}" method="POST" class="d-inline">
+                                                                {% if current_user.has_permission('accounting', 'delete') %}
+<form action="{{ url_for('accounting.delete_payment', id=p.id) }}" method="POST" class="d-inline">
                                     <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this payment? Attributes like invoice paid amount will be reverted.')">Delete</button>
                                 </form>
+{% endif %}                                
                             </td>
                         </tr>
                         {% endfor %}

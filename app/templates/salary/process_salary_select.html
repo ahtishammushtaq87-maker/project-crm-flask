@@ -43,7 +43,9 @@
         <div class="text-muted">
             <i class="fas fa-user-slash fa-4x mb-3 opacity-25"></i>
             <p>No active staff members found to process salary.</p>
-            <a href="{{ url_for('salary.add_staff') }}" class="btn btn-primary mt-3">Add New Staff</a>
+                        {% if current_user.has_permission('salary', 'add') %}
+<a href="{{ url_for('salary.add_staff') }}" class="btn btn-primary mt-3">Add New Staff</a>
+{% endif %}            
         </div>
     </div>
     {% endfor %}

@@ -16,9 +16,112 @@
             <a href="{{ url_for('inventory.bulk_upload') }}" class="btn btn-success">
                 <i class="fas fa-file-upload"></i> Bulk Upload
             </a>
-            <a href="{{ url_for('inventory.add_product') }}" class="btn btn-primary">
+                        {% if current_user.has_permission('inventory', 'add') %}
+<a href="{{ url_for('inventory.add_product') }}" class="btn btn-primary">
                 <i class="fas fa-plus"></i> Add Product
             </a>
+{% endif %}            
+        </div>
+    </div>
+
+    <style>
+        .summary-card-stats {
+            border-radius: 12px;
+            color: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+            overflow: hidden;
+            position: relative;
+        }
+        .summary-card-stats:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+        }
+        .bg-gradient-primary-stats { background: linear-gradient(135deg, #4e73df 0%, #224abe 100%); }
+        .bg-gradient-success-stats { background: linear-gradient(135deg, #1cc88a 0%, #13855c 100%); }
+        .bg-gradient-info-stats { background: linear-gradient(135deg, #36b9cc 0%, #258391 100%); }
+        .stat-icon {
+            position: absolute;
+            right: -10px;
+            bottom: -20px;
+            font-size: 5rem;
+            opacity: 0.15;
+            transition: opacity 0.3s;
+            z-index: 0;
+        }
+        .summary-card-stats:hover .stat-icon {
+            opacity: 0.25;
+        }
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin: 10px 0;
+            position: relative;
+            z-index: 1;
+        }
+        .stat-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            opacity: 0.9;
+            position: relative;
+            z-index: 1;
+        }
+    </style>
+
+    {% set ns = namespace(sum_cost=0, sum_selling=0, total_qty=0, total_stock_value=0) %}
+    {% for product in products %}
+        {% set cost = product.cost_price or 0 %}
+        {% set price = product.unit_price or 0 %}
+        {% set qty = product.quantity or 0 %}
+        
+        {% set ns.sum_cost = ns.sum_cost + cost %}
+        {% set ns.sum_selling = ns.sum_selling + price %}
+        {% set ns.total_qty = ns.total_qty + qty %}
+        {% set ns.total_stock_value = ns.total_stock_value + (qty * cost) %}
+    {% endfor %}
+
+    <style>
+        .bg-gradient-warning-stats { background: linear-gradient(135deg, #f6c23e 0%, #dda20a 100%); }
+    </style>
+
+    <div class="row mb-4">
+        <div class="col-md-3 mb-3 mb-md-0">
+            <div class="card summary-card-stats bg-gradient-primary-stats h-100">
+                <div class="card-body">
+                    <div class="stat-label">Total Cost</div>
+                    <div class="stat-value">PKR {{ "{:,.2f}".format(ns.sum_cost) }}</div>
+                    <i class="fas fa-money-check-alt stat-icon"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3 mb-md-0">
+            <div class="card summary-card-stats bg-gradient-success-stats h-100">
+                <div class="card-body">
+                    <div class="stat-label">Total Selling</div>
+                    <div class="stat-value">PKR {{ "{:,.2f}".format(ns.sum_selling) }}</div>
+                    <i class="fas fa-hand-holding-usd stat-icon"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3 mb-md-0">
+            <div class="card summary-card-stats bg-gradient-warning-stats h-100">
+                <div class="card-body">
+                    <div class="stat-label">Total Stock Value</div>
+                    <div class="stat-value">PKR {{ "{:,.2f}".format(ns.total_stock_value) }}</div>
+                    <i class="fas fa-chart-line stat-icon"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card summary-card-stats bg-gradient-info-stats h-100">
+                <div class="card-body">
+                    <div class="stat-label">Total Stock Items</div>
+                    <div class="stat-value">{{ "{:,.0f}".format(ns.total_qty) }} units</div>
+                    <i class="fas fa-boxes stat-icon"></i>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -160,13 +263,13 @@
                     });
                 });
                 </script>
-                <table class="table table-hover">
+                <table class="table table-hover datatable-export" data-export-title="Products Inventory">
                     <thead>
                         <tr>
-                            <th style="width: 40px;">
+                            <th style="width: 40px;" class="no-export">
                                 <input type="checkbox" id="selectAll" class="form-check-input">
                             </th>
-                            <th>Image</th>
+                            <th class="no-export">Image</th>
                             <th>SKU</th>
                             <th>Product Name</th>
                             <th>Category</th>
@@ -176,19 +279,20 @@
                             <th>Selling Price</th>
                             <th>Stock Value</th>
                             <th>Status</th>
-                            <th>Price History</th>
-                            <th>Actions</th>
+                            <th class="no-export">Price History</th>
+                            <th class="no-export">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for product in products %}
                         <tr>
-                            <td>
+                            <td class="no-export">
                                 <input type="checkbox" class="form-check-input product-checkbox" value="{{ product.id }}">
                             </td>
-                            <td style="width: 80px;">
+                            <td style="width: 80px;" class="no-export">
                                 {% if product.image_path %}
-                                <a href="{{ url_for('inventory.edit_product', id=product.id) }}" data-bs-toggle="tooltip" title="Click to edit">
+                                                                {% if current_user.has_permission('inventory', 'edit') %}
+<a href="{{ url_for('inventory.edit_product', id=product.id) }}" data-bs-toggle="tooltip" title="Click to edit">
                                     {% set normalized_path = product.image_path.replace('\\', '/') %}
                                     {% set img_src = normalized_path.replace('app/static/', '') if 'app/static/' in normalized_path else normalized_path %}
                                     <img src="{{ url_for('static', filename=img_src) }}" 
@@ -196,6 +300,7 @@
                                          style="width: 60px; height: 60px; object-fit: cover; cursor: pointer;"
                                          onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 font-size=%2214%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E'">
                                 </a>
+{% endif %}                                
                                 {% else %}
                                 <div class="text-center text-muted p-2" style="border: 1px solid #dee2e6; border-radius: 4px; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center;">
                                     <i class="fas fa-image fa-lg"></i>
@@ -224,16 +329,18 @@
                                 <span class="badge bg-success">In Stock</span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td class="no-export">
                                 <button type="button" class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#priceHistoryModal" onclick="showPriceHistory({{ product.id }}, '{{ product.name }}')">
                                     <i class="fas fa-history me-1"></i>History
                                 </button>
                             </td>
-                            <td style="width: 100px;">
-                                <a href="{{ url_for('inventory.edit_product', id=product.id) }}" 
+                            <td style="width: 100px;" class="no-export">
+                                                                {% if current_user.has_permission('inventory', 'edit') %}
+<a href="{{ url_for('inventory.edit_product', id=product.id) }}" 
                                    class="btn btn-sm btn-warning" title="Edit">
                                     <i class="fas fa-edit"></i>
                                 </a>
+{% endif %}                                
                                 <button class="btn btn-sm btn-danger" onclick="deleteProduct({{ product.id }})" title="Delete">
                                     <i class="fas fa-trash"></i>
                                 </button>

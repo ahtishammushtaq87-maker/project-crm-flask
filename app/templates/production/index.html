@@ -301,9 +301,11 @@
                                 PKR {{ "{:,.0f}".format(r.actual_profit) }}
                             </td>
                             <td class="actions-col">
-                                <a href="{{ url_for('production.delete_target', id=r.target.id) }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this target?')" title="Delete Target">
+                                                                {% if current_user.has_permission('production', 'delete') %}
+<a href="{{ url_for('production.delete_target', id=r.target.id) }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this target?')" title="Delete Target">
                                     <i class="bi bi-trash"></i>
                                 </a>
+{% endif %}                                
                             </td>
                         </tr>
                         {% endfor %}

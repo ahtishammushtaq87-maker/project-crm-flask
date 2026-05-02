@@ -79,25 +79,80 @@
                                     <div class="card-body p-3">
                                         <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-shopping-cart me-2"></i>Sales & Customers</h6>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_sales(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_sales.label.text }}</label>
-                                        </div>
+    {{ form.can_view_sales(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'sales')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_sales.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-sales" id="sub_sales">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_sales(class="form-check-input sub-cb-sales") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_sales(class="form-check-input sub-cb-sales") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_sales(class="form-check-input sub-cb-sales") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_salesmen(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_salesmen.label.text }}</label>
-                                        </div>
+    {{ form.can_view_salesmen(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'salesmen')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_salesmen.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-salesmen" id="sub_salesmen">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_salesmen(class="form-check-input sub-cb-salesmen") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_salesmen(class="form-check-input sub-cb-salesmen") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_salesmen(class="form-check-input sub-cb-salesmen") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_customers(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_customers.label.text }}</label>
-                                        </div>
+    {{ form.can_view_customers(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'customers')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_customers.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-customers" id="sub_customers">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_customers(class="form-check-input sub-cb-customers") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_customers(class="form-check-input sub-cb-customers") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_customers(class="form-check-input sub-cb-customers") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_customer_groups(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_customer_groups.label.text }}</label>
-                                        </div>
-                                        <div class="form-check">
-                                            {{ form.can_view_returns(class="form-check-input") }}
-                                            <label class="form-check-label">Returns Access</label>
-                                        </div>
+    {{ form.can_view_customer_groups(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'customer_groups')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_customer_groups.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-customer_groups" id="sub_customer_groups">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_customer_groups(class="form-check-input sub-cb-customer_groups") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_customer_groups(class="form-check-input sub-cb-customer_groups") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_customer_groups(class="form-check-input sub-cb-customer_groups") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
+                                        <div class="form-checkNone">
+    {{ form.can_view_returns(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'returns')") }}
+    <label class="form-check-label fw-semibold">Returns Access</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-returns" id="sub_returns">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_returns(class="form-check-input sub-cb-returns") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_returns(class="form-check-input sub-cb-returns") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_returns(class="form-check-input sub-cb-returns") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                     </div>
                                 </div>
                             </div>
@@ -108,13 +163,35 @@
                                     <div class="card-body p-3">
                                         <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-truck me-2"></i>Purchases & Vendors</h6>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_purchases(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_purchases.label.text }}</label>
-                                        </div>
+    {{ form.can_view_purchases(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'purchases')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_purchases.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-purchases" id="sub_purchases">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_purchases(class="form-check-input sub-cb-purchases") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_purchases(class="form-check-input sub-cb-purchases") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_purchases(class="form-check-input sub-cb-purchases") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_vendors(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_vendors.label.text }}</label>
-                                        </div>
+    {{ form.can_view_vendors(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'vendors')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_vendors.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-vendors" id="sub_vendors">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_vendors(class="form-check-input sub-cb-vendors") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_vendors(class="form-check-input sub-cb-vendors") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_vendors(class="form-check-input sub-cb-vendors") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                     </div>
                                 </div>
                             </div>
@@ -125,29 +202,95 @@
                                     <div class="card-body p-3">
                                         <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-boxes me-2"></i>Inventory & Manufacturing</h6>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_inventory(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_inventory.label.text }}</label>
-                                        </div>
+    {{ form.can_view_inventory(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'inventory')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_inventory.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-inventory" id="sub_inventory">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_inventory(class="form-check-input sub-cb-inventory") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_inventory(class="form-check-input sub-cb-inventory") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_inventory(class="form-check-input sub-cb-inventory") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_product_dev(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_product_dev.label.text }}</label>
-                                        </div>
+    {{ form.can_view_product_dev(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'product_dev')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_product_dev.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-product_dev" id="sub_product_dev">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_product_dev(class="form-check-input sub-cb-product_dev") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_product_dev(class="form-check-input sub-cb-product_dev") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_product_dev(class="form-check-input sub-cb-product_dev") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_warehouse(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_warehouse.label.text }}</label>
-                                        </div>
+    {{ form.can_view_warehouse(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'warehouse')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_warehouse.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-warehouse" id="sub_warehouse">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_warehouse(class="form-check-input sub-cb-warehouse") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_warehouse(class="form-check-input sub-cb-warehouse") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_warehouse(class="form-check-input sub-cb-warehouse") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_categories(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_categories.label.text }}</label>
-                                        </div>
+    {{ form.can_view_categories(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'categories')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_categories.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-categories" id="sub_categories">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_categories(class="form-check-input sub-cb-categories") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_categories(class="form-check-input sub-cb-categories") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_categories(class="form-check-input sub-cb-categories") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_manufacturing(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_manufacturing.label.text }}</label>
-                                        </div>
-                                        <div class="form-check">
-                                            {{ form.can_view_production(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_production.label.text }}</label>
-                                        </div>
+    {{ form.can_view_manufacturing(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'manufacturing')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_manufacturing.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-manufacturing" id="sub_manufacturing">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_manufacturing(class="form-check-input sub-cb-manufacturing") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_manufacturing(class="form-check-input sub-cb-manufacturing") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_manufacturing(class="form-check-input sub-cb-manufacturing") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
+                                        <div class="form-checkNone">
+    {{ form.can_view_production(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'production')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_production.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-production" id="sub_production">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_production(class="form-check-input sub-cb-production") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_production(class="form-check-input sub-cb-production") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_production(class="form-check-input sub-cb-production") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                     </div>
                                 </div>
                             </div>
@@ -158,25 +301,80 @@
                                     <div class="card-body p-3">
                                         <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-money-bill-wave me-2"></i>Accounting & HR</h6>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_accounting(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_accounting.label.text }}</label>
-                                        </div>
+    {{ form.can_view_accounting(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'accounting')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_accounting.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-accounting" id="sub_accounting">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_accounting(class="form-check-input sub-cb-accounting") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_accounting(class="form-check-input sub-cb-accounting") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_accounting(class="form-check-input sub-cb-accounting") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_expenses(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_expenses.label.text }}</label>
-                                        </div>
+    {{ form.can_view_expenses(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'expenses')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_expenses.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-expenses" id="sub_expenses">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_expenses(class="form-check-input sub-cb-expenses") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_expenses(class="form-check-input sub-cb-expenses") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_expenses(class="form-check-input sub-cb-expenses") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_salary(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_salary.label.text }}</label>
-                                        </div>
+    {{ form.can_view_salary(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'salary')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_salary.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-salary" id="sub_salary">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_salary(class="form-check-input sub-cb-salary") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_salary(class="form-check-input sub-cb-salary") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_salary(class="form-check-input sub-cb-salary") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_attendance(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_attendance.label.text }}</label>
-                                        </div>
-                                        <div class="form-check">
-                                            {{ form.can_view_targets(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_targets.label.text }}</label>
-                                        </div>
+    {{ form.can_view_attendance(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'attendance')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_attendance.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-attendance" id="sub_attendance">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_attendance(class="form-check-input sub-cb-attendance") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_attendance(class="form-check-input sub-cb-attendance") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_attendance(class="form-check-input sub-cb-attendance") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
+                                        <div class="form-checkNone">
+    {{ form.can_view_targets(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'targets')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_targets.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-targets" id="sub_targets">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_targets(class="form-check-input sub-cb-targets") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_targets(class="form-check-input sub-cb-targets") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_targets(class="form-check-input sub-cb-targets") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                     </div>
                                 </div>
                             </div>
@@ -187,29 +385,95 @@
                                     <div class="card-body p-3">
                                         <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-cogs me-2"></i>System & Admin</h6>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_dashboard(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_dashboard.label.text }}</label>
-                                        </div>
+    {{ form.can_view_dashboard(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'dashboard')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_dashboard.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-dashboard" id="sub_dashboard">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_dashboard(class="form-check-input sub-cb-dashboard") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_dashboard(class="form-check-input sub-cb-dashboard") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_dashboard(class="form-check-input sub-cb-dashboard") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_reports(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_reports.label.text }}</label>
-                                        </div>
+    {{ form.can_view_reports(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'reports')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_reports.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-reports" id="sub_reports">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_reports(class="form-check-input sub-cb-reports") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_reports(class="form-check-input sub-cb-reports") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_reports(class="form-check-input sub-cb-reports") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_profit_loss(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_profit_loss.label.text }}</label>
-                                        </div>
+    {{ form.can_view_profit_loss(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'profit_loss')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_profit_loss.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-profit_loss" id="sub_profit_loss">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_profit_loss(class="form-check-input sub-cb-profit_loss") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_profit_loss(class="form-check-input sub-cb-profit_loss") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_profit_loss(class="form-check-input sub-cb-profit_loss") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_settings(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_settings.label.text }}</label>
-                                        </div>
+    {{ form.can_view_settings(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'settings')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_settings.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-settings" id="sub_settings">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_settings(class="form-check-input sub-cb-settings") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_settings(class="form-check-input sub-cb-settings") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_settings(class="form-check-input sub-cb-settings") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                         <div class="form-check mb-2">
-                                            {{ form.can_view_tasks(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_tasks.label.text }}</label>
-                                        </div>
-                                        <div class="form-check">
-                                            {{ form.can_view_users(class="form-check-input") }}
-                                            <label class="form-check-label">{{ form.can_view_users.label.text }}</label>
-                                        </div>
+    {{ form.can_view_tasks(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'tasks')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_tasks.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-tasks" id="sub_tasks">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_tasks(class="form-check-input sub-cb-tasks") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_tasks(class="form-check-input sub-cb-tasks") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_tasks(class="form-check-input sub-cb-tasks") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
+                                        <div class="form-checkNone">
+    {{ form.can_view_users(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'users')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_users.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-users" id="sub_users">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_users(class="form-check-input sub-cb-users") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_users(class="form-check-input sub-cb-users") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_users(class="form-check-input sub-cb-users") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                     </div>
                                 </div>
                             </div>
@@ -221,6 +485,27 @@
                         </div>
                     </form>
                     <script>
+                        
+                        function toggleSubPermissions(checkbox, moduleName) {
+                            const subs = document.querySelectorAll('.sub-cb-' + moduleName);
+                            subs.forEach(cb => {
+                                if (checkbox.checked) {
+                                    cb.disabled = false;
+                                } else {
+                                    cb.checked = false;
+                                    cb.disabled = true;
+                                }
+                            });
+                        }
+                        
+                        // Initialize permissions on load
+                        document.addEventListener('DOMContentLoaded', function() {
+                            document.querySelectorAll('.view-toggle').forEach(toggle => {
+                                const moduleName = toggle.getAttribute('onchange').match(/'([^']+)'/)[1];
+                                toggleSubPermissions(toggle, moduleName);
+                            });
+                        });
+
                         function togglePermissions(checked) {
                             const checkboxes = document.querySelectorAll('.form-check-input');
                             const roleSelect = document.querySelector('#role');

@@ -16,7 +16,7 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(20), default='user')  # admin, manager, user
     is_active = db.Column(db.Boolean, default=True)
     
-    # Permissions
+    # Permissions - View
     can_view_sales = db.Column(db.Boolean, default=True)
     can_view_purchases = db.Column(db.Boolean, default=True)
     can_view_inventory = db.Column(db.Boolean, default=True)
@@ -42,6 +42,84 @@ class User(UserMixin, db.Model):
     can_view_profit_loss = db.Column(db.Boolean, default=True)
     can_view_users = db.Column(db.Boolean, default=False)
 
+    # Permissions - Add
+    can_add_sales = db.Column(db.Boolean, default=False)
+    can_add_purchases = db.Column(db.Boolean, default=False)
+    can_add_inventory = db.Column(db.Boolean, default=False)
+    can_add_expenses = db.Column(db.Boolean, default=False)
+    can_add_returns = db.Column(db.Boolean, default=False)
+    can_add_vendors = db.Column(db.Boolean, default=False)
+    can_add_customers = db.Column(db.Boolean, default=False)
+    can_add_reports = db.Column(db.Boolean, default=False)
+    can_add_settings = db.Column(db.Boolean, default=False)
+    can_add_manufacturing = db.Column(db.Boolean, default=False)
+    can_add_production = db.Column(db.Boolean, default=False)
+    can_add_warehouse = db.Column(db.Boolean, default=False)
+    can_add_attendance = db.Column(db.Boolean, default=False)
+    can_add_salary = db.Column(db.Boolean, default=False)
+    can_add_targets = db.Column(db.Boolean, default=False)
+    can_add_dashboard = db.Column(db.Boolean, default=False)
+    can_add_accounting = db.Column(db.Boolean, default=False)
+    can_add_salesmen = db.Column(db.Boolean, default=False)
+    can_add_product_dev = db.Column(db.Boolean, default=False)
+    can_add_categories = db.Column(db.Boolean, default=False)
+    can_add_customer_groups = db.Column(db.Boolean, default=False)
+    can_add_tasks = db.Column(db.Boolean, default=False)
+    can_add_profit_loss = db.Column(db.Boolean, default=False)
+    can_add_users = db.Column(db.Boolean, default=False)
+
+    # Permissions - Edit
+    can_edit_sales = db.Column(db.Boolean, default=False)
+    can_edit_purchases = db.Column(db.Boolean, default=False)
+    can_edit_inventory = db.Column(db.Boolean, default=False)
+    can_edit_expenses = db.Column(db.Boolean, default=False)
+    can_edit_returns = db.Column(db.Boolean, default=False)
+    can_edit_vendors = db.Column(db.Boolean, default=False)
+    can_edit_customers = db.Column(db.Boolean, default=False)
+    can_edit_reports = db.Column(db.Boolean, default=False)
+    can_edit_settings = db.Column(db.Boolean, default=False)
+    can_edit_manufacturing = db.Column(db.Boolean, default=False)
+    can_edit_production = db.Column(db.Boolean, default=False)
+    can_edit_warehouse = db.Column(db.Boolean, default=False)
+    can_edit_attendance = db.Column(db.Boolean, default=False)
+    can_edit_salary = db.Column(db.Boolean, default=False)
+    can_edit_targets = db.Column(db.Boolean, default=False)
+    can_edit_dashboard = db.Column(db.Boolean, default=False)
+    can_edit_accounting = db.Column(db.Boolean, default=False)
+    can_edit_salesmen = db.Column(db.Boolean, default=False)
+    can_edit_product_dev = db.Column(db.Boolean, default=False)
+    can_edit_categories = db.Column(db.Boolean, default=False)
+    can_edit_customer_groups = db.Column(db.Boolean, default=False)
+    can_edit_tasks = db.Column(db.Boolean, default=False)
+    can_edit_profit_loss = db.Column(db.Boolean, default=False)
+    can_edit_users = db.Column(db.Boolean, default=False)
+
+    # Permissions - Delete
+    can_delete_sales = db.Column(db.Boolean, default=False)
+    can_delete_purchases = db.Column(db.Boolean, default=False)
+    can_delete_inventory = db.Column(db.Boolean, default=False)
+    can_delete_expenses = db.Column(db.Boolean, default=False)
+    can_delete_returns = db.Column(db.Boolean, default=False)
+    can_delete_vendors = db.Column(db.Boolean, default=False)
+    can_delete_customers = db.Column(db.Boolean, default=False)
+    can_delete_reports = db.Column(db.Boolean, default=False)
+    can_delete_settings = db.Column(db.Boolean, default=False)
+    can_delete_manufacturing = db.Column(db.Boolean, default=False)
+    can_delete_production = db.Column(db.Boolean, default=False)
+    can_delete_warehouse = db.Column(db.Boolean, default=False)
+    can_delete_attendance = db.Column(db.Boolean, default=False)
+    can_delete_salary = db.Column(db.Boolean, default=False)
+    can_delete_targets = db.Column(db.Boolean, default=False)
+    can_delete_dashboard = db.Column(db.Boolean, default=False)
+    can_delete_accounting = db.Column(db.Boolean, default=False)
+    can_delete_salesmen = db.Column(db.Boolean, default=False)
+    can_delete_product_dev = db.Column(db.Boolean, default=False)
+    can_delete_categories = db.Column(db.Boolean, default=False)
+    can_delete_customer_groups = db.Column(db.Boolean, default=False)
+    can_delete_tasks = db.Column(db.Boolean, default=False)
+    can_delete_profit_loss = db.Column(db.Boolean, default=False)
+    can_delete_users = db.Column(db.Boolean, default=False)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -63,6 +141,12 @@ class User(UserMixin, db.Model):
     def is_admin(self):
         return self.role == 'admin'
     
+    def has_permission(self, module, action='view'):
+        if self.role == 'admin':
+            return True
+        attr = f'can_{action}_{module}'
+        return getattr(self, attr, False)
+        
     def __repr__(self):
         return f'<User {self.username}>'
 
@@ -1294,6 +1378,7 @@ class ManufacturingOrder(db.Model):
     bom_id = db.Column(db.Integer, db.ForeignKey('boms.id'), nullable=False, index=True)
     status = db.Column(Enum('Draft', 'In Progress', 'Completed', name='mo_status'), default='Draft', index=True)
     quantity_to_produce = db.Column(db.Float, nullable=False)
+    produced_qty = db.Column(db.Float, default=0)
     start_date = db.Column(db.Date, nullable=True)
     end_date = db.Column(db.Date, nullable=True)
     actual_labor_cost = db.Column(db.Float, default=0)
@@ -1306,6 +1391,28 @@ class ManufacturingOrder(db.Model):
     
     bom = db.relationship('BOM', backref='manufacturing_orders', lazy=True)
     items = db.relationship('ManufacturingOrderItem', backref='manufacturing_order', lazy=True, cascade='all, delete-orphan')
+    history = db.relationship('ManufacturingOrderHistory', backref='order', lazy=True, cascade='all, delete-orphan')
+
+    @property
+    def remaining_qty(self):
+        return max(0, self.quantity_to_produce - (self.produced_qty or 0))
+
+class ManufacturingOrderHistory(db.Model):
+    """Tracks partial completions of a Manufacturing Order"""
+    __tablename__ = 'manufacturing_order_history'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    mo_id = db.Column(db.Integer, db.ForeignKey('manufacturing_orders.id'), nullable=False, index=True)
+    quantity_produced = db.Column(db.Float, nullable=False)
+    material_cost = db.Column(db.Float, default=0)
+    labor_cost = db.Column(db.Float, default=0)
+    overhead_cost = db.Column(db.Float, default=0)
+    is_manual_overhead = db.Column(db.Boolean, default=False)
+    total_cost = db.Column(db.Float, default=0)
+    completion_date = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    
+    creator = db.relationship('User', foreign_keys=[created_by])
 
 class ManufacturingOrderItem(db.Model):
     """Manufacturing Order Component"""

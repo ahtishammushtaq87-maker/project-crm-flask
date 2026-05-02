@@ -8,9 +8,14 @@
         <h1 class="h3 mb-0 text-gray-800">Manufacturing Order: {{ order.order_number }}</h1>
         <div>
             {% if order.status != 'Completed' %}
-            <form method="POST" action="{{ url_for('manufacturing.complete_order', id=order.id) }}" class="d-inline" onsubmit="return confirm('Are you sure you want to COMPLETE this order? Components will be consumed from inventory, and the finished good will be added to inventory.');">
+            <button type="button" class="btn btn-sm btn-primary shadow-sm" data-bs-toggle="modal"
+                data-bs-target="#partialCompleteModal">
+                <i class="fas fa-check-circle fa-sm text-white-50"></i> Batch Complete
+            </button>
+            <form method="POST" action="{{ url_for('manufacturing.complete_order', id=order.id) }}" class="d-inline"
+                onsubmit="return confirm('Are you sure you want to COMPLETE this order? Components will be consumed from inventory, and the finished good will be added to inventory.');">
                 <button type="submit" class="btn btn-sm btn-success shadow-sm">
-                    <i class="fas fa-check fa-sm text-white-50"></i> Mark as Completed
+                    <i class="fas fa-check fa-sm text-white-50"></i> Final Complete (All)
                 </button>
             </form>
             {% endif %}
@@ -23,11 +28,13 @@
     <!-- Feedback Alerts -->
     {% if order.status == 'Completed' %}
     <div class="alert alert-success border-left-success" role="alert">
-        <i class="fas fa-check-circle me-2"></i> This order was completed on {{ order.end_date.strftime('%d %b %Y') if order.end_date else '-' }}. Stock has been updated and COGS processed.
+        <i class="fas fa-check-circle me-2"></i> This order was completed on {{ order.end_date.strftime('%d %b %Y') if
+        order.end_date else '-' }}. Stock has been updated and COGS processed.
     </div>
     {% else %}
     <div class="alert alert-warning border-left-warning" role="alert">
-        <i class="fas fa-tools me-2"></i> This order is <strong>In Progress</strong>. Click "Mark as Completed" to finish production and update inventory.
+        <i class="fas fa-tools me-2"></i> This order is <strong>In Progress</strong>. Click "Mark as Completed" to
+        finish production and update inventory.
     </div>
     {% endif %}
 
@@ -48,13 +55,28 @@
 
                         <dt class="col-sm-5 text-truncate">Qty to Produce</dt>
                         <dd class="col-sm-7">{{ order.quantity_to_produce }} Units</dd>
-                        
+
                         <dt class="col-sm-5 text-truncate">Start Date</dt>
-                        <dd class="col-sm-7">{{ order.start_date.strftime('%d-%b-%Y') if order.start_date else '-' }}</dd>
+                        <dd class="col-sm-7">{{ order.start_date.strftime('%d-%b-%Y') if order.start_date else '-' }}
+                        </dd>
+
+                        <dt class="col-sm-12 mt-3 text-primary">Production Progress</dt>
+                        <dd class="col-sm-12">
+                            <div class="progress mb-2" style="height: 20px; --progress-val: {{ progress }}%;">
+                                <div class="progress-bar bg-success" role="progressbar" style="width: var(--progress-val);"
+                                    aria-valuenow="{{ progress }}" aria-valuemin="0" aria-valuemax="100">
+                                    {{ "%.1f"|format(progress) }}%
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-between small">
+                                <span>Produced: <strong>{{ order.produced_qty or 0 }}</strong></span>
+                                <span>Remaining: <strong>{{ order.remaining_qty }}</strong></span>
+                            </div>
+                        </dd>
                     </dl>
                 </div>
             </div>
-            
+
             <div class="card shadow mb-4">
                 <div class="card-header py-3">
                     <h6 class="m-0 font-weight-bold text-primary">Cost Allocation</h6>
@@ -62,15 +84,28 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between mb-2">
                         <span>Material Cost:</span>
-                        <span>PKR {{ "%.2f"|format(order.actual_material_cost) }}</span>
+                        <div class="text-end">
+                            <span class="d-block">PKR {{ "%.2f"|format(order.actual_material_cost) }}</span>
+                            <small class="text-muted">Per Unit: PKR {{ "%.2f"|format(order.actual_material_cost /
+                                order.quantity_to_produce if order.quantity_to_produce > 0 else 0) }}</small>
+                        </div>
                     </div>
                     <div class="d-flex justify-content-between mb-2">
                         <span>Labor Cost:</span>
-                        <span>PKR {{ "%.2f"|format(order.actual_labor_cost) }}</span>
+                        <div class="text-end">
+                            <span class="d-block">PKR {{ "%.2f"|format(order.actual_labor_cost) }}</span>
+                            <small class="text-muted">Per Unit: PKR {{ "%.2f"|format(order.actual_labor_cost /
+                                order.quantity_to_produce if order.quantity_to_produce > 0 else 0) }}</small>
+                        </div>
                     </div>
-                    <div class="d-flex justify-content-between mb-2 text-muted">
-                        <span>Overhead:</span>
-                        <span>PKR {{ "%.2f"|format(order.total_cost - order.actual_labor_cost - order.actual_material_cost) }}</span>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Overhead:</span>
+                        <div class="text-end">
+                            <span class="d-block text-muted">PKR {{ "%.2f"|format(order.actual_overhead_cost or 0)
+                                }}</span>
+                            <small class="text-muted">Per Unit: PKR {{ "%.2f"|format((order.actual_overhead_cost or 0) /
+                                order.quantity_to_produce if order.quantity_to_produce > 0 else 0) }}</small>
+                        </div>
                     </div>
                     <hr>
                     <div class="d-flex justify-content-between text-success fw-bold">
@@ -80,7 +115,8 @@
                     {% if order.status == 'Completed' %}
                     <div class="d-flex justify-content-between mt-2 text-info small fw-bold">
                         <span>Updated Unit Cost:</span>
-                        <span>PKR {{ "%.2f"|format(order.total_cost / order.quantity_to_produce if order.quantity_to_produce else 0) }}</span>
+                        <span>PKR {{ "%.2f"|format(order.total_cost / order.quantity_to_produce if
+                            order.quantity_to_produce else 0) }}</span>
                     </div>
                     {% endif %}
                 </div>
@@ -121,13 +157,14 @@
                                     </td>
                                     <td class="text-end">
                                         {% if order.status != 'Completed' %}
-                                            {% if item.component.quantity >= item.quantity_required %}
-                                            <span class="badge bg-success">In Stock ({{ item.component.quantity }})</span>
-                                            {% else %}
-                                            <span class="badge bg-danger">Shortage (Need {{ item.quantity_required - item.component.quantity }})</span>
-                                            {% endif %}
+                                        {% if item.component.quantity >= item.quantity_required %}
+                                        <span class="badge bg-success">In Stock ({{ item.component.quantity }})</span>
                                         {% else %}
-                                            <span class="text-muted">Consumed</span>
+                                        <span class="badge bg-danger">Shortage (Need {{ item.quantity_required -
+                                            item.component.quantity }})</span>
+                                        {% endif %}
+                                        {% else %}
+                                        <span class="text-muted">Consumed</span>
                                         {% endif %}
                                     </td>
                                 </tr>
@@ -140,4 +177,164 @@
         </div>
     </div>
 </div>
+
+<!-- Production History -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-primary">Production History (Batches)</h6>
+            </div>
+            <div class="card-body">
+                {% if order.history %}
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Quantity</th>
+                                <th>Material (Total/Unit)</th>
+                                <th>Labor (Total/Unit)</th>
+                                <th>Overhead (Total/Unit)</th>
+                                <th>Total Batch Cost</th>
+                                <th>Final Unit Cost</th>
+                                <th>Entered By</th>
+                                <th class="text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for h in order.history|sort(attribute='completion_date', reverse=True) %}
+                            <tr>
+                                <td>{{ h.completion_date.strftime('%d-%m-%Y %H:%M') }}</td>
+                                <td class="fw-bold">{{ h.quantity_produced }}</td>
+                                <td>
+                                    <span class="d-block">PKR {{ "%.2f"|format(h.material_cost) }}</span>
+                                    <small class="text-muted">Unit: {{ "%.2f"|format(h.material_cost /
+                                        h.quantity_produced if h.quantity_produced > 0 else 0) }}</small>
+                                </td>
+                                <td>
+                                    <span class="d-block">PKR {{ "%.2f"|format(h.labor_cost) }}</span>
+                                    <small class="text-muted">Unit: {{ "%.2f"|format(h.labor_cost / h.quantity_produced
+                                        if h.quantity_produced > 0 else 0) }}</small>
+                                </td>
+                                <td>
+                                    <span class="d-block">PKR {{ "%.2f"|format(h.overhead_cost) }}</span>
+                                    <small class="text-muted">Unit: {{ "%.2f"|format(h.overhead_cost /
+                                        h.quantity_produced if h.quantity_produced > 0 else 0) }}</small>
+                                </td>
+                                <td class="text-success fw-bold">PKR {{ "%.2f"|format(h.total_cost) }}</td>
+                                <td class="text-info fw-bold">PKR {{ "%.2f"|format(h.total_cost / h.quantity_produced if
+                                    h.quantity_produced > 0 else 0) }}</td>
+                                <td>{{ h.creator.username if h.creator else 'System' }}</td>
+                                <td class="text-center">
+                                                                        {% if current_user.has_permission('manufacturing', 'delete') %}
+<form action="{{ url_for('manufacturing.delete_history_batch', id=h.id) }}"
+                                        method="POST"
+                                        onsubmit="return confirm('Are you sure you want to REVERSE this batch? Components will be put back in stock, finished items removed, and overhead returned to the MO bucket.');">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger"
+                                            title="Reverse Batch">
+                                            <i class="fas fa-undo"></i>
+                                        </button>
+                                    </form>
+{% endif %}                                    
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    <i class="fas fa-history fa-3x mb-3 opacity-25"></i>
+                    <p>No production batches have been completed yet.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- Partial Completion Modal -->
+<div class="modal fade" id="partialCompleteModal" tabindex="-1" aria-labelledby="partialCompleteModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('manufacturing.partial_complete_order', id=order.id) }}" method="POST">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="partialCompleteModalLabel">Complete Batch Production</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Order: <strong>{{ order.order_number }}</strong></p>
+                    <p>Remaining Quantity: <strong>{{ order.remaining_qty }}</strong></p>
+                    <div class="mb-3">
+                        <label for="qty_produced_detail" class="form-label">Quantity Produced Now</label>
+                        <input type="number" step="any" class="form-control" id="qty_produced_detail"
+                            name="qty_produced" value="{{ order.remaining_qty }}" max="{{ order.remaining_qty }}"
+                            required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label d-block text-primary fw-bold">Overhead Allocation Mode</label>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="overhead_mode" id="modeTotal_detail"
+                                value="total" checked>
+                            <label class="form-check-input-label" for="modeTotal_detail">
+                                Apply Total Linked Overhead (PKR {{ "%.2f"|format(order.actual_overhead_cost or 0) }}) - Reset Bucket
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="overhead_mode" id="modeTotalKeep_detail"
+                                value="total_keep">
+                            <label class="form-check-input-label" for="modeTotalKeep_detail">
+                                Apply Total Linked Overhead (PKR {{ "%.2f"|format(order.actual_overhead_cost or 0) }}) - Keep for Remaining
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="overhead_mode" id="modePerUnit_detail"
+                                value="per_unit">
+                            <label class="form-check-input-label" for="modePerUnit_detail">
+                                Manual Per Unit Overhead
+                            </label>
+                        </div>
+                        <div id="perUnitInputGroup_detail" style="display: none;">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">PKR</span>
+                                <input type="number" step="any" class="form-control" id="per_unit_overhead_detail"
+                                    name="per_unit_overhead" placeholder="Cost per unit">
+                            </div>
+                        </div>
+                        <div class="form-text mt-2"><i class="fas fa-info-circle me-1"></i> Bucket resetting depends on the mode selected above.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Produce Batch</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const modeTotalDetail = document.getElementById('modeTotal_detail');
+        const modePerUnitDetail = document.getElementById('modePerUnit_detail');
+        const perUnitGroupDetail = document.getElementById('perUnitInputGroup_detail');
+
+        const modeTotalKeepDetail = document.getElementById('modeTotalKeep_detail');
+
+        if (modeTotalDetail && modePerUnitDetail && modeTotalKeepDetail) {
+            [modeTotalDetail, modePerUnitDetail, modeTotalKeepDetail].forEach(radio => {
+                radio.addEventListener('change', function () {
+                    perUnitGroupDetail.style.display = modePerUnitDetail.checked ? 'block' : 'none';
+                    if (modePerUnitDetail.checked) document.getElementById('per_unit_overhead_detail').required = true;
+                    else document.getElementById('per_unit_overhead_detail').required = false;
+                });
+            });
+        }
+    });
+</script>
 {% endblock %}

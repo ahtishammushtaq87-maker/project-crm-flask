@@ -6,9 +6,11 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="fas fa-tasks me-2"></i>Tasks</h2>
     {% if current_user.role == 'admin' %}
-    <a href="{{ url_for('users.create_task') }}" class="btn btn-primary">
+        {% if current_user.has_permission('users', 'add') %}
+<a href="{{ url_for('users.create_task') }}" class="btn btn-primary">
         <i class="fas fa-plus me-2"></i>Assign New Task
     </a>
+{% endif %}    
     {% endif %}
 </div>
 
@@ -34,7 +36,8 @@
                 </div>
             </div>
             <div class="card-footer bg-transparent">
-                <form action="{{ url_for('users.update_task_status', id=task.id) }}" method="POST" class="d-flex gap-2">
+                                {% if current_user.has_permission('users', 'edit') %}
+<form action="{{ url_for('users.update_task_status', id=task.id) }}" method="POST" class="d-flex gap-2">
                     <select name="status" class="form-select form-select-sm">
                         <option value="Pending" {% if task.status == 'Pending' %}selected{% endif %}>Pending</option>
                         <option value="In Progress" {% if task.status == 'In Progress' %}selected{% endif %}>In Progress</option>
@@ -43,12 +46,15 @@
                     </select>
                     <button type="submit" class="btn btn-sm btn-primary">Update</button>
                 </form>
+{% endif %}                
                 {% if current_user.role == 'admin' %}
-                <form action="{{ url_for('users.delete_task', id=task.id) }}" method="POST" style="margin-top: 8px;">
+                                {% if current_user.has_permission('users', 'delete') %}
+<form action="{{ url_for('users.delete_task', id=task.id) }}" method="POST" style="margin-top: 8px;">
                     <button type="submit" class="btn btn-sm btn-danger w-100" onclick="return confirm('Are you sure you want to delete this task?');">
                         <i class="fas fa-trash me-1"></i>Delete Task
                     </button>
                 </form>
+{% endif %}                
                 {% endif %}
             </div>
         </div>

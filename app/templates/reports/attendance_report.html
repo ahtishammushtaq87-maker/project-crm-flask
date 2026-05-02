@@ -361,6 +361,9 @@
                class="btn-export">
                 <i class="fas fa-file-csv"></i> CSV
             </a>
+            <a href="javascript:void(0)" onclick="window.print()" class="btn-export" style="background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%); color: #333;">
+                <i class="fas fa-print"></i> Print
+            </a>
         </div>
     </div>
 
@@ -387,8 +390,8 @@
     <!-- Report Data -->
     {% if report_type == 'summary' %}
         <!-- Summary Report -->
-        <div class="report-table">
-            <table>
+        <div class="report-table table-responsive">
+            <table class="table table-hover mb-0 datatable-export" data-export-title="Attendance Summary">
                 <thead>
                     <tr>
                         <th>👤 Staff Name</th>
@@ -424,8 +427,8 @@
 
     {% elif report_type == 'detailed' %}
         <!-- Detailed Report -->
-        <div class="report-table">
-            <table>
+        <div class="report-table table-responsive">
+            <table class="table table-hover mb-0 datatable-export" data-export-title="Detailed Attendance">
                 <thead>
                     <tr>
                         <th>📅 Date</th>
@@ -481,8 +484,8 @@
 
     {% else %}
         <!-- Daily Report -->
-        <div class="report-table">
-            <table>
+        <div class="report-table table-responsive">
+            <table class="table table-hover mb-0 datatable-export" data-export-title="Daily Attendance">
                 <thead>
                     <tr>
                         <th>📅 Date</th>

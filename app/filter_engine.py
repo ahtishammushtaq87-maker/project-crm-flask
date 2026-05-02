@@ -78,10 +78,11 @@ def _build_field_registry():
             'date':         {'expr': lambda: Expense.date,           'type': 'date'},
             'year':         {'expr': lambda: func.extract('year', Expense.date), 'type': 'number'},
             'amount':       {'expr': lambda: Expense.amount,         'type': 'number'},
-            'category':     {'expr': lambda: ExpenseCategory.name,   'type': 'string', 'join': ExpenseCategory},
-            'payment_mode': {'expr': lambda: Expense.payment_method,'type': 'string'},
+            'category':     {'expr': lambda: ExpenseCategory.name,   'type': 'string', 'join': ExpenseCategory, 'options_route': 'filters.get_expense_categories'},
+            'payment_mode': {'expr': lambda: Expense.payment_method,'type': 'string', 'options_route': 'filters.get_payment_methods'},
             'billable':     {'expr': lambda: Expense.is_bom_overhead,'type': 'boolean'},
             'recurring':    {'expr': lambda: Expense.is_monthly_divided, 'type': 'boolean'},
+            'vendor':       {'expr': lambda: Vendor.name,            'type': 'string', 'join': Vendor, 'options_route': 'filters.get_vendors'},
         },
         # === SALE MODULE (invoices + sales report) ===
         'sale': {
@@ -109,7 +110,7 @@ def _build_field_registry():
             'tax':          {'expr': lambda: PurchaseBill.tax,         'type': 'number'},
             'paid_amount':  {'expr': lambda: PurchaseBill.paid_amount, 'type': 'number'},
             'balance_due':  {'expr': lambda: PurchaseBill.balance_due, 'type': 'number'},
-            'vendor':       {'expr': lambda: Vendor.name,              'type': 'string', 'join': Vendor},
+            'vendor':       {'expr': lambda: Vendor.name,              'type': 'string', 'join': Vendor, 'options_route': 'filters.get_vendors'},
             'status':       {'expr': lambda: PurchaseBill.status,      'type': 'string'},
         },
         # === PRODUCT / INVENTORY MODULE ===
@@ -121,7 +122,7 @@ def _build_field_registry():
             'quantity': {'expr': lambda: Product.quantity,   'type': 'number'},
             'min_quantity': {'expr': lambda: Product.min_quantity, 'type': 'number'},
             'max_quantity': {'expr': lambda: Product.max_quantity, 'type': 'number'},
-            'category': {'expr': lambda: ProductCategory.name, 'type': 'string', 'join': ProductCategory},
+            'category': {'expr': lambda: ProductCategory.name, 'type': 'string', 'join': ProductCategory, 'options_route': 'filters.get_product_categories'},
             'is_active': {'expr': lambda: Product.is_active, 'type': 'boolean'},
         },
         # === VENDOR MODULE ===
@@ -279,8 +280,8 @@ def _build_field_registry():
             'date':         {'expr': lambda: Expense.date,           'type': 'date'},
             'year':         {'expr': lambda: func.extract('year', Expense.date), 'type': 'number'},
             'amount':       {'expr': lambda: Expense.amount,         'type': 'number'},
-            'category':     {'expr': lambda: ExpenseCategory.name,   'type': 'string', 'join': ExpenseCategory},
-            'payment_mode': {'expr': lambda: Expense.payment_method,'type': 'string'},
+            'category':     {'expr': lambda: ExpenseCategory.name,   'type': 'string', 'join': ExpenseCategory, 'options_route': 'filters.get_expense_categories'},
+            'payment_mode': {'expr': lambda: Expense.payment_method,'type': 'string', 'options_route': 'filters.get_payment_methods'},
             'billable':     {'expr': lambda: Expense.is_bom_overhead,'type': 'boolean'},
             'recurring':    {'expr': lambda: Expense.is_monthly_divided, 'type': 'boolean'},
         },

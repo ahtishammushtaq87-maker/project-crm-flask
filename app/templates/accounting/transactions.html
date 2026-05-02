@@ -6,7 +6,9 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>Transactions</h2>
-        <a href="{{ url_for('accounting.add_transaction') }}" class="btn btn-primary">+ Add Transaction</a>
+                {% if current_user.has_permission('accounting', 'add') %}
+<a href="{{ url_for('accounting.add_transaction') }}" class="btn btn-primary">+ Add Transaction</a>
+{% endif %}        
     </div>
 
     <nav class="mb-3">
@@ -134,18 +136,24 @@
                                 {% if not txn.is_mapped %}
                                     <div class="btn-group">
                                         <a href="{{ url_for('accounting.map_transaction', payment_id=txn.id, ref_type=txn.reference_type) }}" class="btn btn-primary btn-sm">Map</a>
-                                        <form method="POST" action="{{ url_for('accounting.delete_payment', id=txn.id) }}" style="display:inline;">
+                                                                                {% if current_user.has_permission('accounting', 'delete') %}
+<form method="POST" action="{{ url_for('accounting.delete_payment', id=txn.id) }}" style="display:inline;">
                                             <button class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete this payment record completely?')">Delete</button>
                                         </form>
+{% endif %}                                        
                                     </div>
                                 {% else %}
                                     <div class="btn-group">
-                                        <form method="POST" action="{{ url_for('accounting.delete_transaction', id=txn.transaction_id) }}" style="display:inline;">
+                                                                                {% if current_user.has_permission('accounting', 'delete') %}
+<form method="POST" action="{{ url_for('accounting.delete_transaction', id=txn.transaction_id) }}" style="display:inline;">
                                             <button class="btn btn-danger btn-sm" onclick="return confirm('Delete mapping?')">Unmap</button>
                                         </form>
-                                        <form method="POST" action="{{ url_for('accounting.delete_payment', id=txn.id) }}" style="display:inline;">
+{% endif %}                                        
+                                                                                {% if current_user.has_permission('accounting', 'delete') %}
+<form method="POST" action="{{ url_for('accounting.delete_payment', id=txn.id) }}" style="display:inline;">
                                             <button class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete this payment record and its mapping completely?')">Delete</button>
                                         </form>
+{% endif %}                                        
                                     </div>
                                 {% endif %}
                             </td>

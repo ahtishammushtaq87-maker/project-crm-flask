@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, send_file
+from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
 from app.models import Staff, Attendance

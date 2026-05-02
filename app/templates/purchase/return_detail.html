@@ -7,14 +7,18 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Return {{ return_obj.return_number }}</h2>
         <div>
-            <a href="{{ url_for('purchase.edit_purchase_return', id=return_obj.id) }}" class="btn btn-primary">
+                        {% if current_user.has_permission('purchases', 'edit') %}
+<a href="{{ url_for('purchase.edit_purchase_return', id=return_obj.id) }}" class="btn btn-primary">
                 <i class="fas fa-edit"></i> Edit
             </a>
-            <form method="POST" action="{{ url_for('purchase.delete_purchase_return', id=return_obj.id) }}" style="display:inline;" onsubmit="return confirm('Delete this return? This will restore product quantities and bill totals.');">
+{% endif %}            
+                        {% if current_user.has_permission('purchases', 'delete') %}
+<form method="POST" action="{{ url_for('purchase.delete_purchase_return', id=return_obj.id) }}" style="display:inline;" onsubmit="return confirm('Delete this return? This will restore product quantities and bill totals.');">
                 <button type="submit" class="btn btn-danger">
                     <i class="fas fa-trash"></i> Delete
                 </button>
             </form>
+{% endif %}            
             <a href="{{ url_for('purchase.purchase_return_list') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Returns
             </a>

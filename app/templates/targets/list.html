@@ -48,10 +48,12 @@
                                 </a>
                                 {% endif %}
                                 {% if current_user.is_admin %}
-                                <a href="{{ url_for('targets.delete_target', id=t.id) }}" class="btn btn-sm btn-outline-danger" 
+                                                                {% if current_user.has_permission('targets', 'delete') %}
+<a href="{{ url_for('targets.delete_target', id=t.id) }}" class="btn btn-sm btn-outline-danger" 
                                    onclick="return confirm('Are you sure you want to delete this target?')" title="Delete">
                                     <i class="fas fa-trash"></i>
                                 </a>
+{% endif %}                                
                                 {% endif %}
                             </div>
                         </td>

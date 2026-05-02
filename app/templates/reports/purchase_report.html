@@ -72,6 +72,7 @@
                 <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='pdf', report_type='purchase', **request.args) }}"><i class="fas fa-file-pdf text-danger me-2"></i> PDF Format</a></li>
                 <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='excel', report_type='purchase', **request.args) }}"><i class="fas fa-file-excel text-success me-2"></i> Excel Format</a></li>
                 <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='csv', report_type='purchase', **request.args) }}"><i class="fas fa-file-csv text-info me-2"></i> CSV Format</a></li>
+                <li><a class="dropdown-item" href="javascript:void(0)" onclick="window.print()"><i class="fas fa-print text-secondary me-2"></i> Print Format</a></li>
             </ul>
         </div>
     </div>
@@ -189,7 +190,7 @@
         </div>
         <div class="card-body px-0">
             <div class="table-responsive">
-                <table class="table align-items-center table-flush">
+                <table class="table align-items-center table-flush datatable-export" data-export-title="Purchase Report">
                     <thead>
                         <tr>
                             <th class="px-4">Bill #</th>
@@ -199,7 +200,7 @@
                             <th>Paid</th>
                             <th>Balance</th>
                             <th>Status</th>
-                            <th>Actions</th>
+                            <th class="no-export">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -220,7 +221,7 @@
                                 <span class="status-badge bg-danger text-white">Unpaid</span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td class="no-export">
                                 <a href="{{ url_for('purchase.bill_detail', id=purchase.id) }}" class="btn btn-sm btn-outline-primary rounded-pill">View</a>
                             </td>
                         </tr>

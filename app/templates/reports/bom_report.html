@@ -22,6 +22,7 @@
                 <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='pdf', report_type='bom', start_date=start_date, end_date=end_date, product_id=current_product_id, version=version_filter, view_mode=view_mode) }}">PDF Document</a></li>
                 <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='excel', report_type='bom', start_date=start_date, end_date=end_date, product_id=current_product_id, version=version_filter, view_mode=view_mode) }}">Excel Spreadsheet</a></li>
                 <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='csv', report_type='bom', start_date=start_date, end_date=end_date, product_id=current_product_id, version=version_filter, view_mode=view_mode) }}">CSV File</a></li>
+                <li><a class="dropdown-item" href="javascript:void(0)" onclick="window.print()">Print Report</a></li>
             </ul>
         </div>
     </div>
@@ -115,7 +116,7 @@
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover mb-0">
+                <table class="table table-hover mb-0 datatable-export" data-export-title="BOM Version History">
                     <thead class="table-light">
                         <tr>
                             <th>BOM Name</th>
@@ -173,7 +174,7 @@
     <div class="card shadow-sm">
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover mb-0">
+                <table class="table table-hover mb-0 datatable-export" data-export-title="Current BOMs">
                     <thead class="table-light">
                         <tr>
                             <th>BOM Name</th>

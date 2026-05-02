@@ -91,9 +91,11 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <a href="{{ url_for('purchase.create_purchase_return', bill_id=b.id) }}" class="btn btn-sm btn-primary">
+                                                                {% if current_user.has_permission('purchases', 'add') %}
+<a href="{{ url_for('purchase.create_purchase_return', bill_id=b.id) }}" class="btn btn-sm btn-primary">
                                     <i class="fas fa-undo"></i> Return
                                 </a>
+{% endif %}                                
                             </td>
                         </tr>
                         {% endfor %}

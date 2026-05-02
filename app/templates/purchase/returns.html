@@ -6,9 +6,11 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Purchase Returns</h2>
-        <a href="{{ url_for('purchase.create_purchase_return') }}" class="btn btn-primary">
+                {% if current_user.has_permission('purchases', 'add') %}
+<a href="{{ url_for('purchase.create_purchase_return') }}" class="btn btn-primary">
             <i class="fas fa-plus"></i> Create Return
         </a>
+{% endif %}        
     </div>
 
     <div class="card">
@@ -72,8 +74,8 @@
         <div class="card-body">
             {% if returns %}
             <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead>
+                <table class="table table-hover datatable-export" data-export-title="Purchase Returns">
+                    <thead class="table-light">
                         <tr>
                             <th>Return #</th>
                             <th>Date</th>
@@ -82,7 +84,7 @@
                             <th>Total</th>
                             <th>Status</th>
                             <th>Refund Status</th>
-                            <th>Actions</th>
+                            <th class="no-export">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -123,7 +125,7 @@
                                 <span class="badge bg-secondary">None</span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td class="no-export">
                                 <a href="{{ url_for('purchase.purchase_return_detail', id=ret.id) }}" class="btn btn-sm btn-outline-primary">View</a>
                             </td>
                         </tr>

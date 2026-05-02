@@ -19,6 +19,9 @@
             <a href="{{ url_for('reports.download_report', format='csv', report_type='salary', start_date=start_date, end_date=end_date, staff_id=current_staff_id) }}" class="btn btn-outline-primary">
                 <i class="fas fa-file-csv me-1"></i> CSV
             </a>
+            <a href="javascript:void(0)" onclick="window.print()" class="btn btn-outline-secondary">
+                <i class="fas fa-print me-1"></i> Print
+            </a>
         </div>
     </div>
 </div>
@@ -97,7 +100,7 @@
 <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
+            <table class="table table-hover align-middle mb-0 datatable-export" data-export-title="Salary Report">
                 <thead class="bg-light text-muted small text-uppercase">
                     <tr>
                         <th class="px-4">Staff</th>

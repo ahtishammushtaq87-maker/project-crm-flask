@@ -60,3 +60,34 @@ def cleanup_linked_transactions(payment_instance):
         )
     ).delete()
 
+
+from functools import wraps
+from flask import flash, redirect, url_for, request
+from flask_login import current_user
+
+def permission_required(module, action='view'):
+    """
+    Decorator to check if current user has permission for a specific module and action.
+    Options for action: 'view', 'add', 'edit', 'delete'.
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if not current_user.is_authenticated:
+                return redirect(url_for('auth.login', next=request.url))
+            
+            # Admins have full access
+            if getattr(current_user, 'role', '') == 'admin':
+                return f(*args, **kwargs)
+                
+            # Check specific permission
+            attr_name = f'can_{action}_{module}'
+            has_permission = getattr(current_user, attr_name, False)
+            
+            if not has_permission:
+                flash(f'You do not have {action} permission for the {module} module.', 'danger')
+                return redirect(request.referrer or url_for('dashboard.index'))
+                
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator

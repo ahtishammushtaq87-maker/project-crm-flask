@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from app.utils import permission_required
 from flask_login import login_required
 from app import db
 from app.models import ProductCategory
@@ -21,6 +22,7 @@ def categories():
 
 @bp.route('/category/create', methods=['GET', 'POST'])
 @login_required
+@permission_required('categories', action='add')
 def create_category():
     if request.method == 'POST':
         name = request.form.get('name')
@@ -54,6 +56,7 @@ def create_category():
 
 @bp.route('/category/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('categories', action='edit')
 def edit_category(id):
     category = ProductCategory.query.get_or_404(id)
     
@@ -89,6 +92,7 @@ def edit_category(id):
 
 @bp.route('/category/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('categories', action='delete')
 def delete_category(id):
     category = ProductCategory.query.get_or_404(id)
     

@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
 from app.models import Warehouse, Product
@@ -21,6 +22,7 @@ def warehouses():
 
 @bp.route('/warehouse/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('warehouse', action='add')
 def add_warehouse():
     if request.method == 'POST':
         name = request.form.get('name')
@@ -58,6 +60,7 @@ def add_warehouse():
 
 @bp.route('/warehouse/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('warehouse', action='edit')
 def edit_warehouse(id):
     warehouse = Warehouse.query.get_or_404(id)
     
@@ -114,6 +117,7 @@ def warehouse_detail(id):
 
 @bp.route('/warehouse/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('warehouse', action='delete')
 def delete_warehouse(id):
     warehouse = Warehouse.query.get_or_404(id)
     

@@ -46,11 +46,13 @@
             </form>
             {% endif %}
             <!-- Delete Button - always show -->
-            <form action="{{ url_for('purchase.delete_po', id=po.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Delete this purchase order? This cannot be undone.')">
+                        {% if current_user.has_permission('purchases', 'delete') %}
+<form action="{{ url_for('purchase.delete_po', id=po.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Delete this purchase order? This cannot be undone.')">
                 <button class="btn btn-danger" type="submit" title="Delete Purchase Order">
                     <i class="fas fa-trash me-1"></i> Delete
                 </button>
             </form>
+{% endif %}            
             <a href="{{ url_for('purchase.purchase_orders') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left me-1"></i> Back
             </a>

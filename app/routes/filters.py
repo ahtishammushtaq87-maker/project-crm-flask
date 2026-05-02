@@ -325,3 +325,39 @@ def get_customer_groups():
         'success': True,
         'options': [{'id': i.name, 'text': i.name} for i in items]
     })
+
+
+@bp.route('/options/expense_categories')
+@login_required
+def get_expense_categories():
+    """Returns a list of expense categories for lookup."""
+    from app.models import ExpenseCategory
+    items = ExpenseCategory.query.filter_by(is_active=True).order_by(ExpenseCategory.name).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.name, 'text': i.name} for i in items]
+    })
+
+
+@bp.route('/options/payment_methods')
+@login_required
+def get_payment_methods():
+    """Returns a list of payment methods for lookup."""
+    from app.models import PaymentMethod
+    items = PaymentMethod.query.filter_by(is_active=True).order_by(PaymentMethod.name).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.name, 'text': i.name} for i in items]
+    })
+
+
+@bp.route('/options/product_categories')
+@login_required
+def get_product_categories():
+    """Returns a list of product categories for lookup."""
+    from app.models import ProductCategory
+    items = ProductCategory.query.filter_by(is_active=True).order_by(ProductCategory.name).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.name, 'text': i.name} for i in items]
+    })

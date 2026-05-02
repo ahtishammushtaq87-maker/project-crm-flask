@@ -99,7 +99,8 @@
         </a>
     </div>
 
-    <form method="POST" action="{{ url_for('manufacturing.edit_bom', id=bom.id) }}">
+        {% if current_user.has_permission('manufacturing', 'edit') %}
+<form method="POST" action="{{ url_for('manufacturing.edit_bom', id=bom.id) }}">
         {{ form.hidden_tag() }}
         <div class="row">
             <!-- Left Column: BOM Details -->
@@ -218,6 +219,7 @@
             </div>
         </div>
     </form>
+{% endif %}    
 </div>
 
 <script>

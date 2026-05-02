@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request
+from app.utils import permission_required
 from flask_login import login_required
 from app.models import Sale, Product, PurchaseBill, Expense, db, SaleItem, Vendor, Customer, Staff, Attendance
 from datetime import datetime, timedelta
@@ -237,6 +238,9 @@ def index():
     # Total Products
     products_count = Product.query.count()
     
+    # Total Stock Value
+    total_stock_value = db.session.query(func.sum(Product.quantity * Product.cost_price)).scalar() or 0
+    
     # Active Vendors
     vendors_count = Vendor.query.filter(Vendor.is_active == True).count()
     
@@ -276,6 +280,7 @@ def index():
                          outstanding=outstanding,
                          low_stock=low_stock,
                          products_count=products_count,
+                         total_stock_value=total_stock_value,
                          vendors_count=vendors_count,
                          customers_count=customers_count,
                          recent_sales=recent_sales,

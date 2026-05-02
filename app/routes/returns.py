@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
 from app.models import Sale, SaleItem, SaleReturn, SaleReturnItem, Product, Customer, SaleReturnSettings
@@ -56,6 +57,7 @@ def return_list():
 
 @bp.route('/create', methods=['GET', 'POST'])
 @login_required
+@permission_required('returns', action='add')
 def create_return():
     if request.method == 'GET':
         sale_id = request.args.get('sale_id')
@@ -252,6 +254,7 @@ def return_to_inventory(id):
 
 @bp.route('/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('returns', action='delete')
 def delete_return(id):
     sale_return = SaleReturn.query.get_or_404(id)
     sale = sale_return.sale

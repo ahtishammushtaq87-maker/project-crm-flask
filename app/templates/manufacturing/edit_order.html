@@ -39,7 +39,8 @@
                     </div>
                     {% endif %}
                     
-                    <form method="POST" action="{{ url_for('manufacturing.edit_order', id=order.id) }}">
+                                        {% if current_user.has_permission('manufacturing', 'edit') %}
+<form method="POST" action="{{ url_for('manufacturing.edit_order', id=order.id) }}">
                         {{ form.hidden_tag() }}
                         
                         <div class="mb-3">
@@ -73,6 +74,7 @@
                             </button>
                         </div>
                     </form>
+{% endif %}                    
                 </div>
             </div>
         </div>

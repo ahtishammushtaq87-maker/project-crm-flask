@@ -214,25 +214,29 @@ class ProfessionalPDFGenerator:
         return header_tbl
 
     # ── INFO BOXES ─────────────────────────────────────────────────────────
-    def _build_info_boxes(self, client_data, ship_to=None, reference_data=None):
+    def _build_info_boxes(self, client_data, ship_to=None, reference_data=None, is_invoice=False):
         BOX_W = 3.0 * inch
         GAP   = 0.125 * inch   # visible space between boxes
 
-        def make_box(title_text, rows):
+        def make_box(title_text, rows, custom_style=None):
             data = [[Paragraph(title_text, self.styles['BoxTitle'])]]
             for row in rows:
                 data.append([Paragraph(row, self.styles['BoxValue'])])
             tbl = Table(data, colWidths=[BOX_W])
-            tbl.setStyle(TableStyle([
+            style = [
                 ('VALIGN',        (0,0), (-1,-1), 'TOP'),
                 ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
                 ('TOPPADDING',    (0,0), (-1,-1), 3),
                 ('BOTTOMPADDING', (0,0), (-1,-1), 8),
                 ('LEFTPADDING',   (0,0), (-1,-1), 8),
                 ('RIGHTPADDING',  (0,0), (-1,-1), 6),
-                ('BOX',           (0,0), (-1,-1), 0.5, BORDER_GREY),
                 ('BACKGROUND',    (0,0), (-1,-1), WHITE),
-            ]))
+            ]
+            if custom_style:
+                style.extend(custom_style)
+            else:
+                style.append(('BOX', (0,0), (-1,-1), 0.5, BORDER_GREY))
+            tbl.setStyle(TableStyle(style))
             return tbl
 
         # Box 1 – Bill To
@@ -265,12 +269,25 @@ class ProfessionalPDFGenerator:
         # Box 3 – Reference
         b3_rows = [f"<b>{k}:</b> {v}" for k, v in (reference_data or {}).items() if v]
 
+        box4 = None
+        if is_invoice:
+            addr_rows = [
+                "<b>Address 1:</b> No. 139 Tiyu West Road, Unit 15-A, Tianhe District, Guangzhou, Guangdong, 510620",
+                "<b>Address 2:</b> LS-25, Super Auto Parts Market, Main Super Highway, Sohrab Goth, Karachi."
+            ]
+            # They requested "wiht right border" - we will give it a standard box outline but specifically ensure a border to the right side if they meant border-right only. Standard BOX has right border.
+            box4 = make_box("Our Locations", addr_rows)
+
         if b3_rows:
             box3 = make_box(self._get_label('reference', 'REFERENCE'), b3_rows)
             if box2:
                 # 3 boxes: Bill To | Gap | Ship To | Gap | Reference
                 outer = Table([[box1, '', box2, '', box3]],
                               colWidths=[2.1*inch, 0.15*inch, 2.1*inch, 0.15*inch, 1.8*inch])
+            elif box4:
+                # 3 boxes: Bill To | Gap | Our Addresses | Gap | Reference
+                outer = Table([[box1, '', box4, '', box3]],
+                              colWidths=[2.2*inch, 0.15*inch, 2.7*inch, 0.15*inch, 1.8*inch])
             else:
                 # 2 boxes: Bill To | Gap | Reference
                 outer = Table([[box1, '', box3]],
@@ -280,6 +297,10 @@ class ProfessionalPDFGenerator:
                 # 2 boxes: Bill To on left, Ship To on right with small gap
                 outer = Table([[box1, '', box2]],
                               colWidths=[2.8*inch, 1.5*inch, 2.8*inch])
+            elif box4:
+                # 2 boxes: Bill To on left, Our Addresses on right
+                outer = Table([[box1, '', box4]],
+                              colWidths=[3.2*inch, 0.5*inch, 3.4*inch])
             else:
                 # 1 box only: Bill To (center it)
                 outer = Table([[box1]],
@@ -579,7 +600,7 @@ class ProfessionalPDFGenerator:
                            status=None, ship_to=None, reference_data=None, currency=None,
                            ship_to_label=None, bill_to_label=None,
                            customer_name=None, amount_due=None, due_date_str=None,
-                           is_purchase=False):
+                           is_purchase=False, is_invoice=False):
         elements = []
         
         # Set custom ship_to label if provided (e.g., "SHIP FROM" for purchase docs)
@@ -597,7 +618,8 @@ class ProfessionalPDFGenerator:
         elements.append(self._build_header(title, doc_number, date, due_date, currency, status))
         elements.append(Spacer(1, 8))
         elements.append(HRFlowable(width="100%", thickness=0.6, color=BORDER_GREY, spaceAfter=8))
-        elements.append(self._build_info_boxes(client_data, ship_to, reference_data))
+        show_locations = is_invoice or is_purchase
+        elements.append(self._build_info_boxes(client_data, ship_to, reference_data, is_invoice=show_locations))
         elements.append(Spacer(1, 10))
         elements.append(Paragraph("INVOICE ITEMS", self.styles['SectionHeader']))
 
@@ -720,7 +742,7 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
         sc = obj.shipping_charge if (hasattr(obj, 'shipping_charge') and obj.shipping_charge) else 0
         totals = [
             ("Subtotal",           f"{currency}{obj.subtotal:,.2f}"),
-            ("One Time Payment Discount",           f"{currency}{obj.discount:,.2f}"),
+            ("<b>One Time Payment Discount</b>", f"<b>{currency}{obj.discount:,.2f}</b>"),
             ("Shipping / Freight", f"{currency}{sc:,.2f}"),
             ("Tax",                f"{currency}{obj.tax:,.2f}"),
             ("Total Due",          f"{currency}{obj.total:,.2f}"),
@@ -760,6 +782,7 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             customer_name=obj.customer.name if obj.customer else None,
             amount_due=obj.balance_due if hasattr(obj, 'balance_due') else None,
             due_date_str=obj.due_date.strftime('%d-%m-%Y') if hasattr(obj, 'due_date') and obj.due_date else None,
+            is_invoice=True
         )
 
     # ── PURCHASE BILL ─────────────────────────────────────────────────────

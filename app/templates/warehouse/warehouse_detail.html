@@ -7,9 +7,11 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="fas fa-warehouse me-2"></i>{{ warehouse.name }}</h2>
         <div>
-            <a href="{{ url_for('warehouse.edit_warehouse', id=warehouse.id) }}" class="btn btn-warning">
+                        {% if current_user.has_permission('warehouse', 'edit') %}
+<a href="{{ url_for('warehouse.edit_warehouse', id=warehouse.id) }}" class="btn btn-warning">
                 <i class="fas fa-edit me-2"></i>Edit
             </a>
+{% endif %}            
             {% if not products %}
             <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">
                 <i class="fas fa-trash me-2"></i>Delete
@@ -35,10 +37,12 @@
                     <p class="text-muted">This action cannot be undone.</p>
                 </div>
                 <div class="modal-footer">
-                    <form method="POST" action="{{ url_for('warehouse.delete_warehouse', id=warehouse.id) }}">
+                                        {% if current_user.has_permission('warehouse', 'delete') %}
+<form method="POST" action="{{ url_for('warehouse.delete_warehouse', id=warehouse.id) }}">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" class="btn btn-danger">Delete</button>
                     </form>
+{% endif %}                    
                 </div>
             </div>
         </div>
@@ -122,7 +126,7 @@
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-hover">
+                <table class="table table-hover datatable-export" data-export-title="Warehouse Products: {{ warehouse.name }}">
                     <thead>
                         <tr>
                             <th>SKU</th>

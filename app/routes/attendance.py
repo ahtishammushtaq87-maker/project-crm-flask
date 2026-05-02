@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify
+from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
 from app.models import Staff, Attendance
@@ -142,6 +143,7 @@ def clock_out(staff_id):
 
 @bp.route('/record/<int:attendance_id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('attendance', action='edit')
 def edit_attendance(attendance_id):
     """Edit attendance record (for manual corrections)"""
     attendance = Attendance.query.get_or_404(attendance_id)
@@ -175,6 +177,7 @@ def edit_attendance(attendance_id):
 
 @bp.route('/record/<int:attendance_id>/delete', methods=['POST'])
 @login_required
+@permission_required('attendance', action='delete')
 def delete_attendance(attendance_id):
     """Delete attendance record"""
     attendance = Attendance.query.get_or_404(attendance_id)

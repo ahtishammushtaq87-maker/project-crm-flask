@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash
+from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
 from app.models import Sale, PurchaseBill, Transaction, Expense, ExpenseCategory, Vendor, Account, Payment, TaxRate, Currency, RecurringExpense, Staff, Attendance, ExpenseSettings
@@ -266,6 +267,7 @@ def accounts():
 
 @bp.route('/account/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('accounting', action='add')
 def add_account():
     if request.method == 'POST':
         name = request.form.get('name')
@@ -286,6 +288,7 @@ def add_account():
 
 @bp.route('/account/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('accounting', action='edit')
 def edit_account(id):
     account = Account.query.get_or_404(id)
     if request.method == 'POST':
@@ -303,6 +306,7 @@ def edit_account(id):
 
 @bp.route('/account/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('accounting', action='delete')
 def delete_account(id):
     account = Account.query.get_or_404(id)
     db.session.delete(account)
@@ -543,6 +547,7 @@ def report_tax_summary():
 
 @bp.route('/transaction/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('accounting', action='add')
 def add_transaction():
     accounts = Account.query.order_by(Account.name).all()
     invoices = Sale.query.order_by(Sale.invoice_number).all()
@@ -598,6 +603,7 @@ def add_transaction():
     
 @bp.route('/transaction/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('accounting', action='delete')
 def delete_transaction(id):
     transaction = Transaction.query.get_or_404(id)
     try:
@@ -661,6 +667,7 @@ def payments():
 
 @bp.route('/payment/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('accounting', action='add')
 def add_payment():
     invoices = Sale.query.filter(Sale.status != 'paid').all()
     if request.method == 'POST':
@@ -696,6 +703,7 @@ def add_payment():
 
 @bp.route('/payment/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('accounting', action='delete')
 def delete_payment(id):
     payment = Payment.query.get_or_404(id)
     
@@ -972,6 +980,7 @@ def expenses():
 
 @bp.route('/expense/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('accounting', action='add')
 def add_expense():
     from app.models import ExpenseCategory, Vendor, BOM
     from werkzeug.utils import secure_filename
@@ -1236,6 +1245,7 @@ def add_expense():
 
 @bp.route('/expense/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('accounting', action='delete')
 def delete_expense(id):
     from app.models import BOM
     from app.services.bom_versioning import BOMVersioningService
@@ -1463,6 +1473,7 @@ def bulk_confirm_expenses():
 
 @bp.route('/expense/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('accounting', action='edit')
 def edit_expense(id):
     from app.models import ExpenseCategory, Vendor, BOM
     from werkzeug.utils import secure_filename
@@ -1686,6 +1697,7 @@ def expense_categories():
 
 @bp.route('/expense-category/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('accounting', action='add')
 def add_expense_category():
     from app.models import ExpenseCategory
     from app.forms import ExpenseCategoryForm
@@ -1768,6 +1780,7 @@ def reject_expense(id):
 
 @bp.route('/expense-category/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('accounting', action='edit')
 def edit_expense_category(id):
     from app.models import ExpenseCategory
     from app.forms import ExpenseCategoryForm
@@ -1786,6 +1799,7 @@ def edit_expense_category(id):
 
 @bp.route('/expense-category/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('accounting', action='delete')
 def delete_expense_category(id):
     from app.models import ExpenseCategory
     
@@ -1838,6 +1852,7 @@ def payment_methods():
 
 @bp.route('/payment-method/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('accounting', action='add')
 def add_payment_method():
     from app.models import PaymentMethod
     from app.forms import PaymentMethodForm
@@ -1857,6 +1872,7 @@ def add_payment_method():
 
 @bp.route('/payment-method/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('accounting', action='edit')
 def edit_payment_method(id):
     from app.models import PaymentMethod
     from app.forms import PaymentMethodForm
@@ -1875,6 +1891,7 @@ def edit_payment_method(id):
 
 @bp.route('/payment-method/<int:id>/delete', methods=['POST'])
 @login_required
+@permission_required('accounting', action='delete')
 def delete_payment_method(id):
     from app.models import PaymentMethod, Expense
     

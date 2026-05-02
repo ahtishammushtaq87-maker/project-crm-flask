@@ -1,7 +1,8 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
-from app.models import Product, BOM, BOMItem, ManufacturingOrder, ManufacturingOrderItem, StockMovement, BOMVersion, Company, Expense
+from app.models import Product, BOM, BOMItem, ManufacturingOrder, ManufacturingOrderItem, StockMovement, BOMVersion, Company, Expense, ManufacturingOrderHistory, ProductionLog, ProductionTarget
 from app.forms import BOMForm, ManufacturingOrderForm
 from app.services.bom_versioning import BOMVersioningService
 from datetime import datetime
@@ -24,6 +25,7 @@ def boms():
 
 @bp.route('/bom/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('manufacturing', action='add')
 def add_bom():
     form = BOMForm()
     # Only show manufactured products in the "Finished Product" dropdown (if column exists)
@@ -134,6 +136,7 @@ def add_bom():
 
 @bp.route('/bom/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('manufacturing', action='edit')
 def edit_bom(id):
     bom = BOM.query.get_or_404(id)
     form = BOMForm(obj=bom)
@@ -248,6 +251,7 @@ def bom_details(id):
 
 @bp.route('/bom/<int:id>/delete', methods=['GET', 'POST'])
 @login_required
+@permission_required('manufacturing', action='delete')
 def delete_bom(id):
     bom = BOM.query.get_or_404(id)
     if bom.manufacturing_orders:
@@ -297,6 +301,7 @@ def orders():
 
 @bp.route('/order/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('manufacturing', action='add')
 def add_order():
     form = ManufacturingOrderForm()
     boms = BOM.query.all()
@@ -379,6 +384,7 @@ def add_order():
 
 @bp.route('/order/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('manufacturing', action='edit')
 def edit_order(id):
     order = ManufacturingOrder.query.get_or_404(id)
     form = ManufacturingOrderForm(obj=order)
@@ -430,7 +436,10 @@ def edit_order(id):
 @login_required
 def order_details(id):
     order = ManufacturingOrder.query.get_or_404(id)
-    return render_template('manufacturing/order_details.html', order=order)
+    progress = 0
+    if order.quantity_to_produce and order.quantity_to_produce > 0:
+        progress = ((order.produced_qty or 0) / order.quantity_to_produce) * 100.0
+    return render_template('manufacturing/order_details.html', order=order, progress=progress)
 
 @bp.route('/order/<int:id>/complete', methods=['POST'])
 @login_required
@@ -543,6 +552,282 @@ def complete_order(id):
     flash('Manufacturing Order completed successfully. Stock adjusted and product cost updated.', 'success')
     return redirect(url_for('manufacturing.order_details', id=order.id))
 
+@bp.route('/order/<int:id>/partial_complete', methods=['POST'])
+@login_required
+def partial_complete_order(id):
+    order = ManufacturingOrder.query.get_or_404(id)
+    
+    if order.status == 'Completed':
+        flash('Order is already completed.', 'warning')
+        return redirect(url_for('manufacturing.order_details', id=order.id))
+        
+    try:
+        qty_produced = float(request.form.get('qty_produced', 0))
+    except ValueError:
+        flash('Invalid quantity.', 'danger')
+        return redirect(url_for('manufacturing.order_details', id=order.id))
+
+    if qty_produced <= 0:
+        flash('Quantity must be greater than zero.', 'danger')
+        return redirect(url_for('manufacturing.order_details', id=order.id))
+        
+    if qty_produced > order.remaining_qty:
+        flash(f'Cannot produce more than remaining quantity ({order.remaining_qty}).', 'danger')
+        return redirect(url_for('manufacturing.order_details', id=order.id))
+
+    # Check component inventory for THIS batch
+    multiplier = qty_produced
+    for item in order.items:
+        # We need to know how much component is needed per unit of finished good
+        # The BOM ratio is (item.quantity_required / order.quantity_to_produce)
+        ratio = item.quantity_required / order.quantity_to_produce
+        needed_qty = ratio * qty_produced
+        
+        if item.component.quantity < needed_qty:
+            flash(f'Insufficient stock for component {item.component.name}. Required: {needed_qty}, Available: {item.component.quantity}', 'danger')
+            return redirect(url_for('manufacturing.order_details', id=order.id))
+
+    # Consume components and record stock movements
+    total_material_cost = 0
+    for item in order.items:
+        ratio = item.quantity_required / order.quantity_to_produce
+        batch_consume_qty = ratio * qty_produced
+        
+        item.component.quantity -= batch_consume_qty
+        item.quantity_consumed += batch_consume_qty
+        
+        movement_out = StockMovement(
+            product_id=item.component_id,
+            movement_type='out',
+            reference_type='manufacturing_usage',
+            reference_id=order.id,
+            quantity=batch_consume_qty,
+            previous_quantity=item.component.quantity + batch_consume_qty,
+            new_quantity=item.component.quantity,
+            reason=f'Consumed (Partial) in MO {order.order_number}',
+            created_by=current_user.id
+        )
+        db.session.add(movement_out)
+        total_material_cost += item.component.cost_price * batch_consume_qty
+
+    # Add finished good and record stock movement
+    finished_good = order.bom.product
+    finished_good.quantity += qty_produced
+    
+    movement_in = StockMovement(
+        product_id=finished_good.id,
+        movement_type='in',
+        reference_type='manufacturing_finish',
+        reference_id=order.id,
+        quantity=qty_produced,
+        previous_quantity=finished_good.quantity - qty_produced,
+        new_quantity=finished_good.quantity,
+        reason=f'Produced (Partial) from MO {order.order_number}',
+        created_by=current_user.id
+    )
+    db.session.add(movement_in)
+    
+    # Calculate costs for this batch
+    batch_labor_cost = (order.actual_labor_cost / order.quantity_to_produce) * qty_produced if order.quantity_to_produce > 0 else 0
+    
+    # Overhead logic: dynamic based on user selection
+    overhead_mode = request.form.get('overhead_mode', 'total')
+    if overhead_mode == 'per_unit':
+        per_unit_overhead = float(request.form.get('per_unit_overhead', 0))
+        batch_overhead_cost = per_unit_overhead * qty_produced
+        reset_overhead = False
+    elif overhead_mode == 'total_keep':
+        batch_overhead_cost = order.actual_overhead_cost or 0
+        reset_overhead = False
+    else:
+        # Total mode: Apply ALL current actual_overhead_cost
+        batch_overhead_cost = order.actual_overhead_cost or 0
+        reset_overhead = True
+        
+    batch_total_cost = total_material_cost + batch_labor_cost + batch_overhead_cost
+    
+    # Update product cost price based on this batch's unit cost
+    if qty_produced > 0:
+        unit_cost = batch_total_cost / qty_produced
+        finished_good.cost_price = unit_cost
+        
+    # Record history
+    history = ManufacturingOrderHistory(
+        mo_id=order.id,
+        quantity_produced=qty_produced,
+        material_cost=total_material_cost,
+        labor_cost=batch_labor_cost,
+        overhead_cost=batch_overhead_cost,
+        is_manual_overhead=(overhead_mode == 'per_unit' or overhead_mode == 'total_keep'),
+        total_cost=batch_total_cost,
+        created_by=current_user.id
+    )
+    db.session.add(history)
+    
+    # Update Order
+    order.produced_qty = (order.produced_qty or 0) + qty_produced
+    
+    # RESET overhead for remaining quantity
+    if reset_overhead:
+        order.actual_overhead_cost = 0
+    
+    # If completed
+    if order.produced_qty >= order.quantity_to_produce:
+        order.status = 'Completed'
+        order.end_date = datetime.now().date()
+    else:
+        order.status = 'In Progress'
+
+    # Production Log Entry
+    production_log = ProductionLog(
+        date=datetime.now().date(),
+        sku_id=finished_good.id,
+        shift='Production Order',
+        operator=f'MO: {order.order_number}',
+        qty_produced=qty_produced,
+        rejected_qty=0,
+        notes=f'Partial completion from MO {order.order_number}',
+        created_by=current_user.id
+    )
+    db.session.add(production_log)
+    
+    # Target Updates
+    target = ProductionTarget.query.filter(
+        ProductionTarget.sku_id == finished_good.id,
+        ProductionTarget.start_date <= datetime.now().date(),
+        ProductionTarget.end_date >= datetime.now().date()
+    ).first()
+    
+    if target:
+        if target.produced_qty is None:
+            from sqlalchemy import func
+            log_sum = db.session.query(func.sum(ProductionLog.qty_produced)).filter(
+                ProductionLog.sku_id == target.sku_id,
+                ProductionLog.date >= target.start_date,
+                ProductionLog.date <= target.end_date
+            ).scalar() or 0
+            target.produced_qty = log_sum
+        else:
+            target.produced_qty += qty_produced
+            
+    db.session.commit()
+    flash(f'Successfully produced {qty_produced} units. Overhead applied and reset for remaining.', 'success')
+    return redirect(url_for('manufacturing.order_details', id=order.id))
+
+@bp.route('/api/order/<int:id>/history')
+@login_required
+def get_order_history(id):
+    order = ManufacturingOrder.query.get_or_404(id)
+    history = ManufacturingOrderHistory.query.filter_by(mo_id=id).order_by(ManufacturingOrderHistory.completion_date.desc()).all()
+    
+    return jsonify({
+        'order_number': order.order_number,
+        'history': [{
+            'id': h.id,
+            'quantity_produced': h.quantity_produced,
+            'material_cost': h.material_cost,
+            'labor_cost': h.labor_cost,
+            'overhead_cost': h.overhead_cost,
+            'total_cost': h.total_cost,
+            'completion_date': h.completion_date.strftime('%d-%m-%Y %H:%M'),
+            'created_by': h.creator.username if h.creator else 'System'
+        } for h in history]
+    })
+
+@bp.route('/history/<int:id>/delete', methods=['POST'])
+@login_required
+@permission_required('manufacturing', action='delete')
+def delete_history_batch(id):
+    batch = ManufacturingOrderHistory.query.get_or_404(id)
+    order = batch.order
+    
+    if order.status == 'Completed' and order.produced_qty == batch.quantity_produced:
+        # If this was the only batch making it completed, it will become In Progress
+        pass
+        
+    try:
+        # 1. Reverse Finished Good Quantity
+        finished_good = order.bom.product
+        finished_good.quantity -= batch.quantity_produced
+        
+        movement_out = StockMovement(
+            product_id=finished_good.id,
+            movement_type='out',
+            reference_type='manufacturing_finish_reversal',
+            reference_id=order.id,
+            quantity=batch.quantity_produced,
+            previous_quantity=finished_good.quantity + batch.quantity_produced,
+            new_quantity=finished_good.quantity,
+            reason=f'Reversal of Batch {batch.id} from MO {order.order_number}',
+            created_by=current_user.id
+        )
+        db.session.add(movement_out)
+        
+        # 2. Reverse Component Consumption
+        for item in order.items:
+            # Re-calculate how much was consumed for this batch
+            ratio = item.quantity_required / order.quantity_to_produce
+            batch_consume_qty = ratio * batch.quantity_produced
+            
+            item.component.quantity += batch_consume_qty
+            item.quantity_consumed -= batch_consume_qty
+            
+            movement_in = StockMovement(
+                product_id=item.component_id,
+                movement_type='in',
+                reference_type='manufacturing_usage_reversal',
+                reference_id=order.id,
+                quantity=batch_consume_qty,
+                previous_quantity=item.component.quantity - batch_consume_qty,
+                new_quantity=item.component.quantity,
+                reason=f'Reversal of component usage for Batch {batch.id} MO {order.order_number}',
+                created_by=current_user.id
+            )
+            db.session.add(movement_in)
+            
+        # 3. Reverse Overhead to MO Bucket (ONLY if it was NOT a manual per-unit entry)
+        if not batch.is_manual_overhead:
+            # We put it back into actual_overhead_cost so it can be re-allocated
+            order.actual_overhead_cost = (order.actual_overhead_cost or 0) + batch.overhead_cost
+        
+        # 4. Update Order produced quantity and status
+        order.produced_qty -= batch.quantity_produced
+        order.status = 'In Progress'
+        order.end_date = None
+        
+        # 5. Remove Production Logs linked to this production
+        # We search by date and reference in notes as per our partial_complete logic
+        logs = ProductionLog.query.filter(
+            ProductionLog.sku_id == finished_good.id,
+            ProductionLog.qty_produced == batch.quantity_produced,
+            ProductionLog.notes.like(f'%MO {order.order_number}%')
+        ).all()
+        for log in logs:
+            # Since there might be multiple same qty logs, we try to be careful.
+            # But usually it's unique enough with the MO number.
+            db.session.delete(log)
+            
+        # 6. Update Targets
+        target = ProductionTarget.query.filter(
+            ProductionTarget.sku_id == finished_good.id,
+            ProductionTarget.start_date <= batch.completion_date.date(),
+            ProductionTarget.end_date >= batch.completion_date.date()
+        ).first()
+        if target and target.produced_qty is not None:
+            target.produced_qty -= batch.quantity_produced
+
+        # 7. Delete the history record itself
+        db.session.delete(batch)
+        
+        db.session.commit()
+        flash(f'Batch of {batch.quantity_produced} items reversed. Inventory and overhead have been restored.', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error reversing batch: {str(e)}', 'danger')
+        
+    return redirect(url_for('manufacturing.order_details', id=order.id))
+
 @bp.route('/api/bom/<int:id>/details')
 @login_required
 def get_bom_details(id):
@@ -570,6 +855,7 @@ def get_actual_overhead(id):
     })
 @bp.route('/order/<int:id>/delete', methods=['GET', 'POST'])
 @login_required
+@permission_required('manufacturing', action='delete')
 def delete_order(id):
     from app.models import ManufacturingOrder, StockMovement, Product
     order = ManufacturingOrder.query.get_or_404(id)

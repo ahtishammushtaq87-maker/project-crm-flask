@@ -13,19 +13,50 @@
             entityName: 'expenses'
         });
 
+        // Clickable date filtering: clicking a date filters to that month
+        const dateCells = document.querySelectorAll('.clickable-date');
+        const startDateInput = document.getElementById('start_date');
+        const endDateInput = document.getElementById('end_date');
+        const filterForm = document.querySelector('form'); // the filter form
+
+        dateCells.forEach(cell => {
+            cell.addEventListener('click', function() {
+                const dateStr = this.getAttribute('data-date'); // format YYYY-MM-DD
+                if (!dateStr) return;
+                const [year, month, day] = dateStr.split('-').map(Number);
+                // Set start_date to first day of month, end_date to last day of month
+                const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+                // Last day: use next month first day minus one day
+                const nextMonth = month === 12 ? 1 : month + 1;
+                const nextYear = month === 12 ? year + 1 : year;
+                const endDate = new Date(nextYear, nextMonth - 1, 0); // last day of current month
+                const endDateStr = `${endDate.getFullYear()}-${String(endDate.getMonth()+1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+
+                if (startDateInput) startDateInput.value = startDate;
+                if (endDateInput) endDateInput.value = endDateStr;
+                if (filterForm) filterForm.submit();
+            });
+        });
+    });
+</script>
+
+{% if current_user.is_admin %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
         // Initialize Bulk Confirm for Admin
-        {% if current_user.is_admin %}
         const bulkConfirmBtn = document.getElementById('bulkConfirmBtn');
         const checkboxes = document.querySelectorAll('.expense-checkbox');
         const selectAll = document.getElementById('selectAll');
 
         function updateBulkConfirmBtn() {
             const checkedCount = document.querySelectorAll('.expense-checkbox:checked').length;
-            if (checkedCount > 0) {
-                bulkConfirmBtn.classList.remove('d-none');
-                bulkConfirmBtn.innerHTML = `<i class="fas fa-check me-1"></i> Confirm Selected (${checkedCount})`;
-            } else {
-                bulkConfirmBtn.classList.add('d-none');
+            if (bulkConfirmBtn) {
+                if (checkedCount > 0) {
+                    bulkConfirmBtn.classList.remove('d-none');
+                    bulkConfirmBtn.innerHTML = `<i class="fas fa-check me-1"></i> Confirm Selected (${checkedCount})`;
+                } else {
+                    bulkConfirmBtn.classList.add('d-none');
+                }
             }
         }
 
@@ -67,34 +98,9 @@
                 }
             });
         }
-        {% endif %}
-
-        // Clickable date filtering: clicking a date filters to that month
-        const dateCells = document.querySelectorAll('.clickable-date');
-        const startDateInput = document.getElementById('start_date');
-        const endDateInput = document.getElementById('end_date');
-        const filterForm = document.querySelector('form'); // the filter form
-
-        dateCells.forEach(cell => {
-            cell.addEventListener('click', function() {
-                const dateStr = this.getAttribute('data-date'); // format YYYY-MM-DD
-                if (!dateStr) return;
-                const [year, month, day] = dateStr.split('-').map(Number);
-                // Set start_date to first day of month, end_date to last day of month
-                const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-                // Last day: use next month first day minus one day
-                const nextMonth = month === 12 ? 1 : month + 1;
-                const nextYear = month === 12 ? year + 1 : year;
-                const endDate = new Date(nextYear, nextMonth - 1, 0); // last day of current month
-                const endDateStr = `${endDate.getFullYear()}-${String(endDate.getMonth()+1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
-
-                if (startDateInput) startDateInput.value = startDate;
-                if (endDateInput) endDateInput.value = endDateStr;
-                if (filterForm) filterForm.submit();
-            });
-        });
     });
 </script>
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -116,7 +122,66 @@
            <!-- <button type="button" class="btn btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#universalFilterModal" data-module="expense">
                 <i class="fas fa-filter me-1"></i> Advanced Filter
             </button>-->
-            <a href="{{ url_for('accounting.add_expense') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Add Expense</a>
+                        {% if current_user.has_permission('accounting', 'add') %}
+<a href="{{ url_for('accounting.add_expense') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Add Expense</a>
+{% endif %}            
+        </div>
+    </div>
+
+    <!-- Summary Boxes -->
+    {% set totals = namespace(op=0, divided=0, mo_overhead=0) %}
+    {% for exp in expenses if exp.status == 'confirmed' %}
+        {% if exp.is_bom_overhead %}
+            {% set totals.mo_overhead = totals.mo_overhead + exp.amount %}
+        {% elif exp.is_monthly_divided %}
+            {% set totals.divided = totals.divided + exp.amount %}
+        {% else %}
+            {% set totals.op = totals.op + exp.amount %}
+        {% endif %}
+    {% endfor %}
+
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card-stats shadow-sm" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-white-50">Total Op Expense</h6>
+                        <h3 class="mb-0">{{ '%.2f'|format(totals.op) }}</h3>
+                        <small class="text-white-50">Operational expenses</small>
+                    </div>
+                    <div class="stats-icon">
+                        <i class="fas fa-wallet fa-lg"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card-stats shadow-sm" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-white-50">Total Divided Expense</h6>
+                        <h3 class="mb-0">{{ '%.2f'|format(totals.divided) }}</h3>
+                        <small class="text-white-50">Monthly distributed</small>
+                    </div>
+                    <div class="stats-icon">
+                        <i class="fas fa-calendar-alt fa-lg"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card-stats shadow-sm" style="background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%);">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-white-50">Total MO Overhead</h6>
+                        <h3 class="mb-0">{{ '%.2f'|format(totals.mo_overhead) }}</h3>
+                        <small class="text-white-50">Manufacturing overheads</small>
+                    </div>
+                    <div class="stats-icon">
+                        <i class="fas fa-industry fa-lg"></i>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     <div class="card">
@@ -165,10 +230,10 @@
             </form>
             
             <div class="table-responsive expenses-table-responsive">
-                <table class="table table-striped">
+                <table class="table table-striped datatable-export" data-export-title="Expenses">
                     <thead>
                         <tr>
-                            <th style="width: 40px;" class="text-center">
+                            <th style="width: 40px;" class="text-center no-export">
                                 <input type="checkbox" id="selectAll" class="form-check-input">
                             </th>
                             <th>Expense #</th>
@@ -179,15 +244,15 @@
                             <th>Description</th>
                             <th>Amount</th>
                             <th>Daily Amount</th>
-                            <th>Bill</th>
+                            <th class="no-export">Bill</th>
                             <th>Status</th>
-                            <th>Actions</th>
+                            <th class="no-export">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for exp in expenses %}
                         <tr>
-                            <td class="text-center">
+                            <td class="text-center no-export">
                                 <input type="checkbox" class="form-check-input expense-checkbox" value="{{ exp.id }}">
                             </td>
                             <td>
@@ -230,7 +295,7 @@
                                 -
                                 {% endif %}
                             </td>
-                            <td>
+                            <td class="no-export">
                                 {% if exp.bill_image_path %}
                                 <div class="btn-group" role="group">
                                     <button type="button" class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#billModal{{ exp.id }}" title="Preview Bill">
@@ -256,7 +321,7 @@
                                 <span class="badge bg-secondary">{{ exp.status|capitalize }}</span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td class="no-export">
                                 <div class="btn-group" role="group">
                                     {% if current_user.is_admin and exp.status == 'pending' %}
                                     <form method="POST" action="{{ url_for('accounting.confirm_expense', id=exp.id) }}" style="display:inline;" class="me-1">
@@ -270,12 +335,16 @@
                                         </button>
                                     </form>
                                     {% endif %}
-                                    <a href="{{ url_for('accounting.edit_expense', id=exp.id) }}" class="btn btn-sm btn-warning" title="Edit">
+                                                                        {% if current_user.has_permission('accounting', 'edit') %}
+<a href="{{ url_for('accounting.edit_expense', id=exp.id) }}" class="btn btn-sm btn-warning" title="Edit">
                                         <i class="fas fa-edit"></i>
                                     </a>
-                                    <form method="POST" action="{{ url_for('accounting.delete_expense', id=exp.id) }}" style="display:inline;" onsubmit="return confirm('Delete this expense?');">
+{% endif %}                                    
+                                                                        {% if current_user.has_permission('accounting', 'delete') %}
+<form method="POST" action="{{ url_for('accounting.delete_expense', id=exp.id) }}" style="display:inline;" onsubmit="return confirm('Delete this expense?');">
                                         <button type="submit" class="btn btn-sm btn-danger" title="Delete">Delete</button>
                                     </form>
+{% endif %}                                    
                                 </div>
                             </td>
                         </tr>

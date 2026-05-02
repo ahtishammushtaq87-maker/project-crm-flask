@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, send_file
+from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
 from app.models import ProductionTarget, ProductionLog, Product, BOM, SaleItem, Sale
@@ -278,6 +279,7 @@ def set_target():
 
 @bp.route('/delete-target/<int:id>')
 @login_required
+@permission_required('production', action='delete')
 def delete_target(id):
     """Delete a production target"""
     try:
@@ -323,6 +325,7 @@ def logs():
 
 @bp.route('/log/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('production', action='add')
 def add_log():
     """Add daily production log entry"""
     log_id = request.args.get('id', type=int)
@@ -403,6 +406,7 @@ def add_log():
 
 @bp.route('/log/<int:id>/delete')
 @login_required
+@permission_required('production', action='delete')
 def delete_log(id):
     """Delete a production log and reverse stock"""
     log = ProductionLog.query.get_or_404(id)
@@ -504,6 +508,7 @@ def api_bom_cost(sku_id):
 
 @bp.route('/api/update-target', methods=['POST'])
 @login_required
+@permission_required('production', action='edit')
 def api_update_target():
     """API: Update production target inline"""
     data = request.get_json()

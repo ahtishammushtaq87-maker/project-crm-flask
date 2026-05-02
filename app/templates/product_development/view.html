@@ -131,9 +131,11 @@
                             <td>PKR {{ "{:,.0f}".format(item.estimated_cost) }}</td>
                             <td>PKR {{ "{:,.0f}".format(item.total_cost) }}</td>
                             <td>
-                                <a href="{{ url_for('product_development.delete_bom', bom_id=item.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete this item?')">
+                                                                {% if current_user.has_permission('product_dev', 'delete') %}
+<a href="{{ url_for('product_development.delete_bom', bom_id=item.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete this item?')">
                                     <i class="fas fa-trash"></i>
                                 </a>
+{% endif %}                                
                             </td>
                         </tr>
                         {% else %}
@@ -189,7 +191,9 @@
                             <td>
                                 {% if comp.purchase_order_id %}
 <<<<<<< HEAD
-                                <a href="{{ url_for('purchase.edit_order', order_id=comp.purchase_order_id) }}" class="btn btn-sm btn-info">PO</a>
+                                                                {% if current_user.has_permission('purchases', 'edit') %}
+<a href="{{ url_for('purchase.edit_order', order_id=comp.purchase_order_id) }}" class="btn btn-sm btn-info">PO</a>
+{% endif %}                                
                                 {% elif comp.manufacturing_order_id %}
                                 <a href="{{ url_for('manufacturing.view_order', order_id=comp.manufacturing_order_id) }}" class="btn btn-sm btn-info">MO</a>
 =======
@@ -199,16 +203,22 @@
 >>>>>>> 817f50840933f800b784ce4d44645bbd5bb0f00c
                                 {% else %}
                                 {% if comp.component_type != 'MAKE' %}
-                                <a href="{{ url_for('product_development.create_purchase_order_from_component', comp_id=comp.id) }}" class="btn btn-sm btn-success">Create PO</a>
+                                                                {% if current_user.has_permission('product_dev', 'add') %}
+<a href="{{ url_for('product_development.create_purchase_order_from_component', comp_id=comp.id) }}" class="btn btn-sm btn-success">Create PO</a>
+{% endif %}                                
                                 {% else %}
-                                <a href="{{ url_for('product_development.create_manufacturing_order_from_component', comp_id=comp.id) }}" class="btn btn-sm btn-success">Create MO</a>
+                                                                {% if current_user.has_permission('product_dev', 'add') %}
+<a href="{{ url_for('product_development.create_manufacturing_order_from_component', comp_id=comp.id) }}" class="btn btn-sm btn-success">Create MO</a>
+{% endif %}                                
                                 {% endif %}
                                 {% endif %}
                             </td>
                             <td>
-                                <a href="{{ url_for('product_development.delete_component', comp_id=comp.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')">
+                                                                {% if current_user.has_permission('product_dev', 'delete') %}
+<a href="{{ url_for('product_development.delete_component', comp_id=comp.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')">
                                     <i class="fas fa-trash"></i>
                                 </a>
+{% endif %}                                
                             </td>
                         </tr>
                         {% else %}
@@ -266,17 +276,21 @@
                             <td>{{ tool.expected_completion.strftime('%Y-%m-%d') if tool.expected_completion else '-' }}</td>
                             <td>
                                 {% if tool.status != 'Completed' %}
-                                <form method="POST" action="{{ url_for('product_development.update_tooling_status', tool_id=tool.id) }}" class="d-inline">
+                                                                {% if current_user.has_permission('product_dev', 'edit') %}
+<form method="POST" action="{{ url_for('product_development.update_tooling_status', tool_id=tool.id) }}" class="d-inline">
                                     <select name="status" class="form-select form-select-sm d-inline-block" style="width:auto;" onchange="this.form.submit()">
                                         <option value="Planned" {{ 'selected' if tool.status == 'Planned' else '' }}>Planned</option>
                                         <option value="In Progress" {{ 'selected' if tool.status == 'In Progress' else '' }}>In Progress</option>
                                         <option value="Completed" {{ 'selected' if tool.status == 'Completed' else '' }}>Completed</option>
                                     </select>
                                 </form>
+{% endif %}                                
                                 {% endif %}
-                                <a href="{{ url_for('product_development.delete_tooling', tool_id=tool.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')">
+                                                                {% if current_user.has_permission('product_dev', 'delete') %}
+<a href="{{ url_for('product_development.delete_tooling', tool_id=tool.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')">
                                     <i class="fas fa-trash"></i>
                                 </a>
+{% endif %}                                
                             </td>
                         </tr>
                         {% else %}
@@ -336,17 +350,21 @@
                             </td>
                             <td>
                                 {% if test.result == 'PENDING' %}
-                                <form method="POST" action="{{ url_for('product_development.update_testing_result', test_id=test.id) }}" class="d-inline">
+                                                                {% if current_user.has_permission('product_dev', 'edit') %}
+<form method="POST" action="{{ url_for('product_development.update_testing_result', test_id=test.id) }}" class="d-inline">
                                     <select name="result" class="form-select form-select-sm d-inline-block" style="width:auto;" onchange="this.form.submit()">
                                         <option value="PENDING" {{ 'selected' if test.result == 'PENDING' else '' }}>Pending</option>
                                         <option value="PASS">Pass</option>
                                         <option value="FAIL">Fail</option>
                                     </select>
                                 </form>
+{% endif %}                                
                                 {% endif %}
-                                <a href="{{ url_for('product_development.delete_testing', test_id=test.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')">
+                                                                {% if current_user.has_permission('product_dev', 'delete') %}
+<a href="{{ url_for('product_development.delete_testing', test_id=test.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')">
                                     <i class="fas fa-trash"></i>
                                 </a>
+{% endif %}                                
                             </td>
                         </tr>
                         {% else %}
@@ -361,7 +379,8 @@
                 <h5><i class="fas fa-check-circle me-2"></i>Approval Gate</h5>
                 <div class="card">
                     <div class="card-body">
-                        <form method="POST" action="{{ url_for('product_development.update_approval', project_id=project.id) }}">
+                                                {% if current_user.has_permission('product_dev', 'edit') %}
+<form method="POST" action="{{ url_for('product_development.update_approval', project_id=project.id) }}">
                             <div class="row">
                                 <div class="col-md-4">
                                     <label class="form-label">Approval Status</label>
@@ -380,6 +399,7 @@
                                 <button type="submit" class="btn btn-primary">Update Approval</button>
                             </div>
                         </form>
+{% endif %}                        
                     </div>
                 </div>
             </div>
@@ -482,7 +502,8 @@
 <div class="modal fade" id="addBOMModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="{{ url_for('product_development.add_bom', project_id=project.id) }}">
+                        {% if current_user.has_permission('product_dev', 'add') %}
+<form method="POST" action="{{ url_for('product_development.add_bom', project_id=project.id) }}">
                 <div class="modal-header">
                     <h5 class="modal-title">Add BOM Item</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -518,6 +539,7 @@
                     <button type="submit" class="btn btn-primary">Add</button>
                 </div>
             </form>
+{% endif %}            
         </div>
     </div>
 </div>
@@ -526,7 +548,8 @@
 <div class="modal fade" id="addComponentModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="{{ url_for('product_development.add_component', project_id=project.id) }}">
+                        {% if current_user.has_permission('product_dev', 'add') %}
+<form method="POST" action="{{ url_for('product_development.add_component', project_id=project.id) }}">
                 <div class="modal-header">
                     <h5 class="modal-title">Add Component</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -570,6 +593,7 @@
                     <button type="submit" class="btn btn-primary">Add</button>
                 </div>
             </form>
+{% endif %}            
         </div>
     </div>
 </div>
@@ -578,7 +602,8 @@
 <div class="modal fade" id="addToolingModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="{{ url_for('product_development.add_tooling', project_id=project.id) }}">
+                        {% if current_user.has_permission('product_dev', 'add') %}
+<form method="POST" action="{{ url_for('product_development.add_tooling', project_id=project.id) }}">
                 <div class="modal-header">
                     <h5 class="modal-title">Add Tooling</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -630,6 +655,7 @@
                     <button type="submit" class="btn btn-primary">Add</button>
                 </div>
             </form>
+{% endif %}            
         </div>
     </div>
 </div>
@@ -638,7 +664,8 @@
 <div class="modal fade" id="addTestingModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="{{ url_for('product_development.add_testing', project_id=project.id) }}">
+                        {% if current_user.has_permission('product_dev', 'add') %}
+<form method="POST" action="{{ url_for('product_development.add_testing', project_id=project.id) }}">
                 <div class="modal-header">
                     <h5 class="modal-title">Add Trial/Testing</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -673,6 +700,7 @@
                     <button type="submit" class="btn btn-primary">Add Trial</button>
                 </div>
             </form>
+{% endif %}            
         </div>
     </div>
 </div>
@@ -681,7 +709,8 @@
 <div class="modal fade" id="addAssetModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="{{ url_for('product_development.add_asset', project_id=project.id) }}">
+                        {% if current_user.has_permission('product_dev', 'add') %}
+<form method="POST" action="{{ url_for('product_development.add_asset', project_id=project.id) }}">
                 <div class="modal-header">
                     <h5 class="modal-title">Add Asset</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -724,6 +753,7 @@
                     <button type="submit" class="btn btn-primary">Add Asset</button>
                 </div>
             </form>
+{% endif %}            
         </div>
     </div>
 </div>

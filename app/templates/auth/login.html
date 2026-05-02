@@ -489,6 +489,28 @@
                 margin: 0 auto;
             }
         }
+        .password-field-wrapper {
+            position: relative;
+        }
+
+        .toggle-password {
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: var(--text-muted);
+            transition: color 0.3s;
+            z-index: 10;
+        }
+
+        .toggle-password:hover {
+            color: var(--primary);
+        }
+
+        .form-control.with-password-toggle {
+            padding-right: 45px;
+        }
     </style>
 </head>
 <body>
@@ -547,16 +569,20 @@
                         <label for="password" class="form-label">
                             <i class="fas fa-lock"></i> Password
                         </label>
-                        {% if form.password.errors %}
-                            {{ form.password(class="form-control is-invalid", type="password", placeholder="Enter your password") }}
-                            <div class="invalid-feedback">
-                                {% for error in form.password.errors %}
-                                    {{ error }}
-                                {% endfor %}
-                            </div>
-                        {% else %}
-                            {{ form.password(class="form-control", type="password", placeholder="Enter your password") }}
-                        {% endif %}
+                        <div class="password-field-wrapper">
+                            {% if form.password.errors %}
+                                {{ form.password(class="form-control is-invalid with-password-toggle", type="password", id="password", placeholder="Enter your password") }}
+                                <i class="fas fa-eye toggle-password" id="togglePassword"></i>
+                                <div class="invalid-feedback">
+                                    {% for error in form.password.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                {{ form.password(class="form-control with-password-toggle", type="password", id="password", placeholder="Enter your password") }}
+                                <i class="fas fa-eye toggle-password" id="togglePassword"></i>
+                            {% endif %}
+                        </div>
                     </div>
 
                     <button type="submit" class="btn btn-primary btn-login">
@@ -614,6 +640,18 @@
                 }, 400);
             });
         });
+
+        // Toggle Password Visibility
+        const togglePassword = document.querySelector('#togglePassword');
+        const passwordField = document.querySelector('#password');
+
+        if (togglePassword && passwordField) {
+            togglePassword.addEventListener('click', function() {
+                const type = passwordField.getAttribute('type') === 'password' ? 'text' : 'password';
+                passwordField.setAttribute('type', type);
+                this.classList.toggle('fa-eye-slash');
+            });
+        }
     </script>
 </body>
 </html>

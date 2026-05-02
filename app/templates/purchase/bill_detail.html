@@ -78,9 +78,11 @@
             <a href="{{ url_for('purchase.bill_pdf', id=bill.id) }}" class="btn btn-info" target="_blank">
                 <i class="fas fa-file-pdf me-1"></i>PDF
             </a>
-            <a href="{{ url_for('purchase.edit_bill', id=bill.id) }}" class="btn btn-warning">
+                        {% if current_user.has_permission('purchases', 'edit') %}
+<a href="{{ url_for('purchase.edit_bill', id=bill.id) }}" class="btn btn-warning">
                 <i class="fas fa-edit me-1"></i>Edit
             </a>
+{% endif %}            
             {% if bill.vendor and bill.vendor.phone %}
             {% set phone = bill.vendor.phone|replace('+', '')|replace(' ', '')|replace('-', '')|replace('(',
             '')|replace(')', '') %}
@@ -103,12 +105,16 @@
                 <span class="badge bg-light text-dark ms-1">{{ bill.bill_receives|length }}</span>
                 {% endif %}
             </button>
-            <a href="{{ url_for('purchase.create_purchase_return', bill_id=bill.id) }}" class="btn btn-danger">
+                        {% if current_user.has_permission('purchases', 'add') %}
+<a href="{{ url_for('purchase.create_purchase_return', bill_id=bill.id) }}" class="btn btn-danger">
                 <i class="fas fa-undo me-1"></i>Return
             </a>
-            <a href="{{ url_for('purchase.create_bill') }}" class="btn btn-outline-primary">
+{% endif %}            
+                        {% if current_user.has_permission('purchases', 'add') %}
+<a href="{{ url_for('purchase.create_bill') }}" class="btn btn-outline-primary">
                 <i class="fas fa-plus me-1"></i>New Bill
             </a>
+{% endif %}            
             <a href="{{ url_for('purchase.vendor_profile', id=bill.vendor.id) }}" class="btn btn-outline-secondary">
                 <i class="fas fa-building me-1"></i>Vendor
             </a>
@@ -241,7 +247,8 @@
     <div class="modal fade" id="editShippingModal" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content">
-                <form action="{{ url_for('purchase.update_shipping', id=bill.id) }}" method="POST">
+                                {% if current_user.has_permission('purchases', 'edit') %}
+<form action="{{ url_for('purchase.update_shipping', id=bill.id) }}" method="POST">
                     <div class="modal-header">
                         <h5 class="modal-title"><i class="fas fa-truck me-2"></i>Update Shipping Charge</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -266,6 +273,7 @@
                         <button type="submit" class="btn btn-info fw-bold">Update Shipping</button>
                     </div>
                 </form>
+{% endif %}                
             </div>
         </div>
     </div>
@@ -276,7 +284,8 @@
     <div class="modal fade" id="editTaxModal" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content">
-                <form action="{{ url_for('purchase.update_tax', id=bill.id) }}" method="POST">
+                                {% if current_user.has_permission('purchases', 'edit') %}
+<form action="{{ url_for('purchase.update_tax', id=bill.id) }}" method="POST">
                     <div class="modal-header">
                         <h5 class="modal-title"><i class="fas fa-percentage me-2"></i>Update Tax Rate</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -301,6 +310,7 @@
                         <button type="submit" class="btn btn-warning text-dark fw-bold">Update Tax</button>
                     </div>
                 </form>
+{% endif %}                
             </div>
         </div>
     </div>
@@ -792,7 +802,8 @@
                                         data-bs-toggle="modal" data-bs-target="#editBillPaymentModal{{ pay.id }}">
                                         <i class="fas fa-edit"></i>
                                     </button>
-                                    <form method="POST"
+                                                                        {% if current_user.has_permission('purchases', 'delete') %}
+<form method="POST"
                                         action="{{ url_for('purchase.delete_bill_payment', id=bill.id, pay_id=pay.id) }}"
                                         class="d-inline" style="display: inline-block;">
                                         <button type="submit" class="btn btn-sm btn-outline-danger delete-payment-btn"
@@ -800,6 +811,7 @@
                                             <i class="fas fa-trash"></i>
                                         </button>
                                     </form>
+{% endif %}                                    
                                 </td>
                             </tr>
                             {% endfor %}
@@ -820,7 +832,8 @@
                     <div class="modal fade" id="editBillPaymentModal{{ pay.id }}" tabindex="-1">
                         <div class="modal-dialog modal-lg">
                             <div class="modal-content">
-                                <form method="POST"
+                                                                {% if current_user.has_permission('purchases', 'edit') %}
+<form method="POST"
                                     action="{{ url_for('purchase.edit_bill_payment', id=bill.id, pay_id=pay.id) }}"
                                     enctype="multipart/form-data">
                                     <div class="modal-header bg-info text-white">
@@ -879,6 +892,7 @@
                                         <button type="submit" class="btn btn-primary">Update Payment</button>
                                     </div>
                                 </form>
+{% endif %}                                
                             </div>
                         </div>
                     </div>

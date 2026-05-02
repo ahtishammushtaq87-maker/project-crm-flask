@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
 from datetime import datetime
@@ -66,6 +67,7 @@ def index():
 
 @bp.route('/create', methods=['GET', 'POST'])
 @login_required
+@permission_required('product_dev', action='add')
 def create():
     """Create new product development project"""
     if request.method == 'POST':
@@ -112,6 +114,7 @@ def view(project_id):
 
 @bp.route('/edit/<int:project_id>', methods=['GET', 'POST'])
 @login_required
+@permission_required('product_dev', action='edit')
 def edit(project_id):
     """Edit project details"""
     project = PDProject.query.get_or_404(project_id)
@@ -135,6 +138,7 @@ def edit(project_id):
 
 @bp.route('/delete/<int:project_id>', methods=['POST'])
 @login_required
+@permission_required('product_dev', action='delete')
 def delete(project_id):
     """Delete project"""
     project = PDProject.query.get_or_404(project_id)
@@ -158,6 +162,7 @@ def phase(project_id, phase):
 
 @bp.route('/bom/add/<int:project_id>', methods=['POST'])
 @login_required
+@permission_required('product_dev', action='add')
 def add_bom(project_id):
     """Add BOM item"""
     project = PDProject.query.get_or_404(project_id)
@@ -179,6 +184,7 @@ def add_bom(project_id):
 
 @bp.route('/bom/delete/<int:bom_id>')
 @login_required
+@permission_required('product_dev', action='delete')
 def delete_bom(bom_id):
     """Delete BOM item"""
     bom_item = PDProjectBOM.query.get_or_404(bom_id)
@@ -195,6 +201,7 @@ def delete_bom(bom_id):
 
 @bp.route('/component/add/<int:project_id>', methods=['POST'])
 @login_required
+@permission_required('product_dev', action='add')
 def add_component(project_id):
     """Add component"""
     project = PDProject.query.get_or_404(project_id)
@@ -217,6 +224,7 @@ def add_component(project_id):
 
 @bp.route('/component/delete/<int:comp_id>')
 @login_required
+@permission_required('product_dev', action='delete')
 def delete_component(comp_id):
     """Delete component"""
     component = PDComponent.query.get_or_404(comp_id)
@@ -231,6 +239,7 @@ def delete_component(comp_id):
 
 @bp.route('/component/create-po/<int:comp_id>')
 @login_required
+@permission_required('product_dev', action='add')
 def create_purchase_order_from_component(comp_id):
     """Create Purchase Order from BUY/OUTSOURCE component"""
     component = PDComponent.query.get_or_404(comp_id)
@@ -278,6 +287,7 @@ def create_purchase_order_from_component(comp_id):
 
 @bp.route('/component/create-mo/<int:comp_id>')
 @login_required
+@permission_required('product_dev', action='add')
 def create_manufacturing_order_from_component(comp_id):
     """Create Manufacturing Order from MAKE component"""
     component = PDComponent.query.get_or_404(comp_id)
@@ -362,6 +372,7 @@ def create_manufacturing_order_from_component(comp_id):
 
 @bp.route('/tooling/add/<int:project_id>', methods=['POST'])
 @login_required
+@permission_required('product_dev', action='add')
 def add_tooling(project_id):
     """Add tooling"""
     project = PDProject.query.get_or_404(project_id)
@@ -386,6 +397,7 @@ def add_tooling(project_id):
 
 @bp.route('/tooling/delete/<int:tool_id>')
 @login_required
+@permission_required('product_dev', action='delete')
 def delete_tooling(tool_id):
     """Delete tooling"""
     tooling = PDTooling.query.get_or_404(tool_id)
@@ -400,6 +412,7 @@ def delete_tooling(tool_id):
 
 @bp.route('/tooling/update-status/<int:tool_id>', methods=['POST'])
 @login_required
+@permission_required('product_dev', action='edit')
 def update_tooling_status(tool_id):
     """Update tooling status"""
     tooling = PDTooling.query.get_or_404(tool_id)
@@ -415,6 +428,7 @@ def update_tooling_status(tool_id):
 
 @bp.route('/tooling/create-po/<int:tool_id>')
 @login_required
+@permission_required('product_dev', action='add')
 def create_po_from_tooling(tool_id):
     """Create Purchase Order from tooling"""
     tooling = PDTooling.query.get_or_404(tool_id)
@@ -460,6 +474,7 @@ def create_po_from_tooling(tool_id):
 
 @bp.route('/testing/add/<int:project_id>', methods=['POST'])
 @login_required
+@permission_required('product_dev', action='add')
 def add_testing(project_id):
     """Add testing/trial"""
     project = PDProject.query.get_or_404(project_id)
@@ -488,6 +503,7 @@ def add_testing(project_id):
 
 @bp.route('/testing/update-result/<int:test_id>', methods=['POST'])
 @login_required
+@permission_required('product_dev', action='edit')
 def update_testing_result(test_id):
     """Update testing result (PASS/FAIL)"""
     testing = PDTesting.query.get_or_404(test_id)
@@ -500,6 +516,7 @@ def update_testing_result(test_id):
 
 @bp.route('/testing/delete/<int:test_id>')
 @login_required
+@permission_required('product_dev', action='delete')
 def delete_testing(test_id):
     """Delete testing record"""
     testing = PDTesting.query.get_or_404(test_id)
@@ -516,6 +533,7 @@ def delete_testing(test_id):
 
 @bp.route('/approval/update/<int:project_id>', methods=['POST'])
 @login_required
+@permission_required('product_dev', action='edit')
 def update_approval(project_id):
     """Update approval status"""
     project = PDProject.query.get_or_404(project_id)
@@ -582,6 +600,7 @@ def activate_production(project_id):
 
 @bp.route('/asset/add/<int:project_id>', methods=['POST'])
 @login_required
+@permission_required('product_dev', action='add')
 def add_asset(project_id):
     """Add asset manually"""
     project = PDProject.query.get_or_404(project_id)
@@ -605,6 +624,7 @@ def add_asset(project_id):
 
 @bp.route('/asset/delete/<int:asset_id>')
 @login_required
+@permission_required('product_dev', action='delete')
 def delete_asset(asset_id):
     """Delete asset"""
     asset = PDAsset.query.get_or_404(asset_id)
@@ -673,6 +693,7 @@ def api_project(project_id):
 
 @bp.route('/update-phase/<int:project_id>/<int:phase>', methods=['POST'])
 @login_required
+@permission_required('product_dev', action='edit')
 def update_phase(project_id, phase):
     """Update project current phase"""
     project = PDProject.query.get_or_404(project_id)

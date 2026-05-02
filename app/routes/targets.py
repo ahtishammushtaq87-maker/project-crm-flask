@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, send_file
+from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
 from app.models import MonthlyTarget, ManufacturingOrder, Sale, SaleItem, Product, BOM, Company
@@ -233,6 +234,7 @@ def download_report(id, format):
 
 @bp.route('/delete/<int:id>')
 @login_required
+@permission_required('targets', action='delete')
 def delete_target(id):
     if not current_user.is_admin:
         flash('Only admins can delete targets.', 'danger')

@@ -164,7 +164,7 @@
             <h5 class="mb-0">📋 Attendance Records</h5>
         </div>
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table class="table table-hover mb-0 datatable-export" data-export-title="Attendance Records">
                 <thead class="table-light">
                     <tr>
                         <th>Date</th>
@@ -175,7 +175,7 @@
                         <th>Hourly Rate</th>
                         <th>Earned</th>
                         <th>Notes</th>
-                        <th>Actions</th>
+                        <th class="no-export">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -212,15 +212,19 @@
                                     <small class="text-muted">—</small>
                                 {% endif %}
                             </td>
-                            <td>
-                                <a href="{{ url_for('attendance.edit_attendance', attendance_id=record.id) }}" class="btn btn-sm btn-outline-primary">
+                            <td class="no-export">
+                                                                {% if current_user.has_permission('attendance', 'edit') %}
+<a href="{{ url_for('attendance.edit_attendance', attendance_id=record.id) }}" class="btn btn-sm btn-outline-primary">
                                     <i class="fas fa-edit"></i>
                                 </a>
-                                <form method="POST" action="{{ url_for('attendance.delete_attendance', attendance_id=record.id) }}" style="display:inline;">
+{% endif %}                                
+                                                                {% if current_user.has_permission('attendance', 'delete') %}
+<form method="POST" action="{{ url_for('attendance.delete_attendance', attendance_id=record.id) }}" style="display:inline;">
                                     <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this record?')">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </form>
+{% endif %}                                
                             </td>
                         </tr>
                         {% endfor %}

@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
 from app.models import Product, User, Warehouse, ProductCategory
@@ -74,6 +75,7 @@ def products():
 
 @bp.route('/product/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('inventory', action='add')
 def add_product():
     db.session.expire_all()
     warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
@@ -152,6 +154,7 @@ def add_product():
 
 @bp.route('/product/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
+@permission_required('inventory', action='edit')
 def edit_product(id):
     product = Product.query.get_or_404(id)
     db.session.expire_all()
@@ -267,6 +270,7 @@ def edit_product(id):
 
 @bp.route('/product/<int:id>/delete', methods=['GET', 'POST'])
 @login_required
+@permission_required('inventory', action='delete')
 def delete_product(id):
     product = Product.query.get_or_404(id)
     

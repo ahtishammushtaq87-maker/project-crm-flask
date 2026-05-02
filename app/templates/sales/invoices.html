@@ -25,35 +25,105 @@
             <a href="{{ url_for('sales.invoice_settings') }}" class="btn btn-outline-secondary">
                 <i class="fas fa-cog me-1"></i> Settings
             </a>
-            <a href="{{ url_for('sales.create_invoice') }}" class="btn btn-primary">
+                        {% if current_user.has_permission('sales', 'add') %}
+<a href="{{ url_for('sales.create_invoice') }}" class="btn btn-primary">
                 <i class="fas fa-plus me-1"></i> Create New Invoice
             </a>
+{% endif %}            
         </div>
     </div>
 
-    <!-- Summary Cards -->
+    <!-- Summary Boxes -->
+    {% set sale_totals = namespace(collected=0, partial_total=0, partial_unpaid=0, unpaid=0, overdue=0) %}
+    {% for sale in sales %}
+        {% if sale.status == 'paid' %}
+            {% set sale_totals.collected = sale_totals.collected + sale.total %}
+        {% elif sale.status == 'partial' %}
+            {% set sale_totals.collected = sale_totals.collected + sale.paid_amount %}
+            {% set sale_totals.partial_total = sale_totals.partial_total + sale.total %}
+            {% set sale_totals.partial_unpaid = sale_totals.partial_unpaid + (sale.total - sale.paid_amount) %}
+        {% else %}
+            {% set sale_totals.unpaid = sale_totals.unpaid + sale.total %}
+        {% endif %}
+        
+        {% if sale.is_overdue %}
+            {% set sale_totals.overdue = sale_totals.overdue + (sale.total - sale.paid_amount) %}
+        {% endif %}
+    {% endfor %}
+
     <div class="row mb-4">
-        <div class="col-xl-4 col-md-6 mb-4">
-            <div class="card border-left-primary shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Total Sales</div>
-                    <div class="h5 mb-0 font-weight-bold text-gray-800">PKR{{ "{:,.2f}".format(total_amount if total_amount is defined else 0) }}</div>
+        <!-- Total Collected -->
+        <div class="col-xl col-md-4 mb-4">
+            <div class="card-stats shadow-sm h-100" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+                <div class="d-flex justify-content-between align-items-center text-white">
+                    <div>
+                        <h6 class="text-white-50 small mb-1">Total Paid</h6>
+                        <h3 class="mb-0">PKR{{ "{:,.2f}".format(sale_totals.collected) }}</h3>
+                        <small class="text-white-50">Fully + Partially Paid amt</small>
+                    </div>
+                    <div class="stats-icon opacity-50">
+                        <i class="fas fa-hand-holding-usd fa-2x"></i>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="col-xl-4 col-md-6 mb-4">
-            <div class="card border-left-success shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Total Collected</div>
-                    <div class="h5 mb-0 font-weight-bold text-gray-800">PKR{{ "{:,.2f}".format(total_paid if total_paid is defined else 0) }}</div>
+        <!-- Partial Total -->
+        <div class="col-xl col-md-4 mb-4">
+            <div class="card-stats shadow-sm h-100" style="background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%);">
+                <div class="d-flex justify-content-between align-items-center text-white">
+                    <div>
+                        <h6 class="text-white-50 small mb-1">Total Partial</h6>
+                        <h3 class="mb-0">PKR{{ "{:,.2f}".format(sale_totals.partial_total) }}</h3>
+                        <small class="text-white-50">Total of partial invoices</small>
+                    </div>
+                    <div class="stats-icon opacity-50">
+                        <i class="fas fa-file-invoice-dollar fa-2x"></i>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="col-xl-4 col-md-6 mb-4">
-            <div class="card border-left-warning shadow h-100 py-2">
-                <div class="card-body">
-                    <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">Outstanding Balance</div>
-                    <div class="h5 mb-0 font-weight-bold text-gray-800 text-danger">PKR{{ "{:,.2f}".format(total_balance if total_balance is defined else 0) }}</div>
+        <!-- Partial Unpaid -->
+        <div class="col-xl col-md-4 mb-4">
+            <div class="card-stats shadow-sm h-100" style="background: linear-gradient(135deg, #8E2DE2 0%, #4A00E0 100%);">
+                <div class="d-flex justify-content-between align-items-center text-white">
+                    <div>
+                        <h6 class="text-white-50 small mb-1">Partial Unpaid</h6>
+                        <h3 class="mb-0">PKR{{ "{:,.2f}".format(sale_totals.partial_unpaid) }}</h3>
+                        <small class="text-white-50">Balance of partials</small>
+                    </div>
+                    <div class="stats-icon opacity-50">
+                        <i class="fas fa-hourglass-half fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Total Unpaid -->
+        <div class="col-xl col-md-6 mb-4">
+            <div class="card-stats shadow-sm h-100" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <div class="d-flex justify-content-between align-items-center text-white">
+                    <div>
+                        <h6 class="text-white-50 small mb-1">Total Unpaid</h6>
+                        <h3 class="mb-0">PKR{{ "{:,.2f}".format(sale_totals.unpaid) }}</h3>
+                        <small class="text-white-50">Fully unpaid amount</small>
+                    </div>
+                    <div class="stats-icon opacity-50">
+                        <i class="fas fa-times-circle fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Total Overdue -->
+        <div class="col-xl col-md-6 mb-4">
+            <div class="card-stats shadow-sm h-100" style="background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);">
+                <div class="d-flex justify-content-between align-items-center text-white">
+                    <div>
+                        <h6 class="text-white-50 small mb-1">Total Overdue</h6>
+                        <h3 class="mb-0">PKR{{ "{:,.2f}".format(sale_totals.overdue) }}</h3>
+                        <small class="text-white-50">Balance after due date</small>
+                    </div>
+                    <div class="stats-icon opacity-50">
+                        <i class="fas fa-exclamation-triangle fa-2x"></i>
+                    </div>
                 </div>
             </div>
         </div>
@@ -125,10 +195,10 @@
     <div class="card shadow mb-4">
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover mb-0">
+                <table class="table table-hover mb-0 datatable-export" data-export-title="Sales Invoices">
                     <thead class="table-light">
                         <tr>
-                            <th style="width: 40px;" class="text-center">
+                            <th style="width: 40px;" class="text-center no-export">
                                 <input type="checkbox" id="selectAll" class="form-check-input">
                             </th>
                             <th>Invoice #</th>
@@ -140,13 +210,13 @@
                             <th class="text-end">Paid</th>
                             <th class="text-end text-danger">Balance</th>
                             <th class="text-center">Status</th>
-                            <th class="text-center">Actions</th>
+                            <th class="text-center no-export">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for sale in sales %}
                         <tr>
-                            <td class="text-center">
+                            <td class="text-center no-export">
                                 <input type="checkbox" class="form-check-input invoice-checkbox" value="{{ sale.id }}">
                             </td>
                             <td class="fw-bold">{{ sale.invoice_number }}</td>
@@ -168,24 +238,30 @@
                                 <span class="badge bg-danger">Unpaid</span>
                                 {% endif %}
                             </td>
-                            <td class="text-center">
+                            <td class="text-center no-export">
                                 <div class="btn-group btn-group-sm">
                                     <a href="{{ url_for('sales.invoice_detail', id=sale.id) }}"
                                         class="btn btn-outline-primary" title="View"><i class="fas fa-eye"></i></a>
-                                    <a href="{{ url_for('sales.edit_invoice', id=sale.id) }}"
+                                                                        {% if current_user.has_permission('sales', 'edit') %}
+<a href="{{ url_for('sales.edit_invoice', id=sale.id) }}"
                                         class="btn btn-outline-secondary" title="Edit"><i class="fas fa-edit"></i></a>
+{% endif %}                                    
                                     <a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}"
                                         class="btn btn-outline-info" title="PDF" target="_blank"><i
                                             class="fas fa-file-pdf"></i></a>
-                                    <a href="{{ url_for('returns.create_return', sale_id=sale.id) }}"
+                                                                        {% if current_user.has_permission('returns', 'add') %}
+<a href="{{ url_for('returns.create_return', sale_id=sale.id) }}"
                                         class="btn btn-outline-warning" title="Create Return"><i
                                             class="fas fa-undo"></i></a>
-                                    <form action="{{ url_for('sales.delete_invoice', id=sale.id) }}" method="POST"
+{% endif %}                                    
+                                                                        {% if current_user.has_permission('sales', 'delete') %}
+<form action="{{ url_for('sales.delete_invoice', id=sale.id) }}" method="POST"
                                         class="d-inline"
                                         onsubmit="return confirm('Delete this invoice? This will decrease product stock.');">
                                         <button type="submit" class="btn btn-outline-danger" title="Delete"><i
                                                 class="fas fa-trash"></i></button>
                                     </form>
+{% endif %}                                    
                                 </div>
                             </td>
 

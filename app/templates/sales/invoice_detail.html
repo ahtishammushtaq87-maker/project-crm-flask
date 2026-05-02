@@ -71,15 +71,20 @@
             <a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" class="btn btn-info" target="_blank">
                 <i class="fas fa-file-pdf me-1"></i>PDF
             </a>
-            <a href="{{ url_for('sales.edit_invoice', id=sale.id) }}" class="btn btn-warning">
+                        {% if current_user.has_permission('sales', 'edit') %}
+<a href="{{ url_for('sales.edit_invoice', id=sale.id) }}" class="btn btn-warning">
                 <i class="fas fa-edit me-1"></i>Edit
             </a>
+{% endif %}            
             {% if sale.customer and sale.customer.phone %}
             {% set phone = sale.customer.phone|replace('+', '')|replace(' ', '')|replace('-', '')|replace('(',
             '')|replace(')', '') %}
             {% if phone|length >= 10 %}
-            <button type="button" class="btn btn-success"
-                onclick="shareInvoicePDF({{ sale.id }}, '{{ phone }}', '{{ sale.invoice_number }}')">
+            <button type="button" class="btn btn-success share-pdf-btn"
+                data-pdf-url="{{ url_for('sales.invoice_pdf', id=sale.id) }}"
+                data-phone="{{ phone }}"
+                data-invoice="{{ sale.invoice_number }}"
+                onclick="shareInvoicePDF(this)">
                 <i class="fab fa-whatsapp me-1"></i>Share PDF
             </button>
             {% endif %}
@@ -89,12 +94,16 @@
                 <i class="fas fa-tag me-1"></i>Discount
             </button>
             {% endif %}
-            <a href="{{ url_for('returns.create_return', sale_id=sale.id) }}" class="btn btn-danger">
+                        {% if current_user.has_permission('returns', 'add') %}
+<a href="{{ url_for('returns.create_return', sale_id=sale.id) }}" class="btn btn-danger">
                 <i class="fas fa-undo me-1"></i>Return
             </a>
-            <a href="{{ url_for('sales.create_invoice') }}" class="btn btn-outline-primary">
+{% endif %}            
+                        {% if current_user.has_permission('sales', 'add') %}
+<a href="{{ url_for('sales.create_invoice') }}" class="btn btn-outline-primary">
                 <i class="fas fa-plus me-1"></i>New Invoice
             </a>
+{% endif %}            
             <a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left me-1"></i>Back
             </a>
@@ -500,15 +509,17 @@
                                             data-bs-toggle="modal" data-bs-target="#editPaymentModal{{ payment.id }}">
                                             <i class="fas fa-edit"></i>
                                         </button>
-                                        <form method="POST"
+                                                                                {% if current_user.has_permission('sales', 'delete') %}
+<form method="POST"
                                             action="{{ url_for('sales.delete_payment', id=sale.id, pay_id=payment.id) }}"
                                             class="d-inline" style="display: inline-block;">
                                             <button type="submit"
                                                 class="btn btn-sm btn-outline-danger delete-payment-btn"
-                                                onclick="return confirm('Delete this payment? Balance will increase by PKR {{ '{:,.2f}'.format(payment.amount) }}')">
+                                                data-amount="PKR {{ '{:,.2f}'.format(payment.amount) }}">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         </form>
+{% endif %}                                        
                                     </td>
                                 </tr>
                                 {% endfor %}
@@ -597,7 +608,8 @@
 <div class="modal fade" id="editPaymentModal{{ payment.id }}" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
-            <form method="POST" action="{{ url_for('sales.edit_payment', id=sale.id, pay_id=payment.id) }}"
+                        {% if current_user.has_permission('sales', 'edit') %}
+<form method="POST" action="{{ url_for('sales.edit_payment', id=sale.id, pay_id=payment.id) }}"
                 enctype="multipart/form-data">
                 <div class="modal-header bg-info text-white">
                     <h5 class="modal-title">Edit Payment #{{ payment.payment_number if payment.payment_number else
@@ -653,12 +665,35 @@
                     <button type="submit" class="btn btn-primary">Update Payment</button>
                 </div>
             </form>
+{% endif %}            
         </div>
     </div>
 </div>
 {% endfor %}
 
 <script>
+    function shareInvoicePDF(btn) {
+        const pdfUrl = btn.getAttribute('data-pdf-url');
+        const phone = btn.getAttribute('data-phone');
+        const invoiceNumber = btn.getAttribute('data-invoice');
+
+        // Generate the absolute URL based on the current domain
+        // This will always use whatever URL the CRM is running on (localhost or a live domain)
+        const fullPdfUrl = window.location.origin + pdfUrl;
+        
+        // Craft a friendly WhatsApp message containing the link
+        const message = `Hi! Here is your Invoice ${invoiceNumber}. You can view and securely download your PDF directly here:\n\n${fullPdfUrl}\n\nThank you for your business!`;
+        const waText = encodeURIComponent(message);
+        const whatsappUrl = `https://wa.me/${phone}?text=${waText}`;
+        
+        // Open WhatsApp instantly without any backend or popup blocker issues
+        const newWin = window.open(whatsappUrl, '_blank');
+        
+        if (!newWin) {
+            alert("Please allow popups to open WhatsApp automatically.");
+        }
+    }
+
     function previewPayImage(input) {
         const preview = document.getElementById('payImagePreview');
         const img = document.getElementById('payImgThumb');
@@ -690,7 +725,8 @@
         document.querySelectorAll('.delete-payment-btn').forEach(btn => {
             btn.addEventListener('click', function (e) {
                 e.preventDefault();
-                if (confirm('Delete this payment? Balance will increase by the payment amount.')) {
+                const amount = this.getAttribute('data-amount') || 'the payment amount';
+                if (confirm(`Delete this payment? Balance will increase by ${amount}.`)) {
                     const form = this.closest('form');
                     fetch(form.action, {
                         method: 'POST',

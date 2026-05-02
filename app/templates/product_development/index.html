@@ -5,9 +5,11 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="fas fa-flask me-2"></i>Product Development</h2>
-    <a href="{{ url_for('product_development.create') }}" class="btn btn-primary">
+        {% if current_user.has_permission('product_dev', 'add') %}
+<a href="{{ url_for('product_development.create') }}" class="btn btn-primary">
         <i class="fas fa-plus me-1"></i> New Project
     </a>
+{% endif %}    
 </div>
 
 <div class="row mb-4">
@@ -137,9 +139,11 @@
                             <a href="{{ url_for('product_development.view', project_id=project.id) }}" class="btn btn-sm btn-info">
                                 <i class="fas fa-eye"></i>
                             </a>
-                            <a href="{{ url_for('product_development.edit', project_id=project.id) }}" class="btn btn-sm btn-warning">
+                                                        {% if current_user.has_permission('product_dev', 'edit') %}
+<a href="{{ url_for('product_development.edit', project_id=project.id) }}" class="btn btn-sm btn-warning">
                                 <i class="fas fa-edit"></i>
                             </a>
+{% endif %}                            
                         </td>
                     </tr>
                     {% else %}

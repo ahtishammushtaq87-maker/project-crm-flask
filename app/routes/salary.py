@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, send_file
+from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
 from app.models import Staff, SalaryAdvance, SalaryPayment
@@ -19,6 +20,7 @@ def staff_list():
 
 @bp.route('/staff/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('salary', action='add')
 def add_staff():
     form = StaffForm()
     if form.validate_on_submit():
@@ -38,6 +40,7 @@ def add_staff():
 
 @bp.route('/staff/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
+@permission_required('salary', action='edit')
 def edit_staff(id):
     staff = Staff.query.get_or_404(id)
     form = StaffForm(obj=staff)
@@ -55,6 +58,7 @@ def edit_staff(id):
 
 @bp.route('/staff/delete/<int:id>', methods=['POST'])
 @login_required
+@permission_required('salary', action='delete')
 def delete_staff(id):
     staff = Staff.query.get_or_404(id)
     db.session.delete(staff)
@@ -79,6 +83,7 @@ def advance_list():
 
 @bp.route('/advances/add', methods=['GET', 'POST'])
 @login_required
+@permission_required('salary', action='add')
 def add_advance():
     form = SalaryAdvanceForm()
     form.staff_id.choices = [(s.id, s.name) for s in Staff.query.filter_by(is_active=True).all()]
@@ -97,6 +102,7 @@ def add_advance():
 
 @bp.route('/advances/delete/<int:id>', methods=['POST'])
 @login_required
+@permission_required('salary', action='delete')
 def delete_advance(id):
     advance = SalaryAdvance.query.get_or_404(id)
     if advance.is_deducted:
@@ -191,6 +197,7 @@ def pay_salary(staff_id):
 
 @bp.route('/payments/delete/<int:id>', methods=['POST'])
 @login_required
+@permission_required('salary', action='delete')
 def delete_payment(id):
     payment = SalaryPayment.query.get_or_404(id)
     # Revert advances

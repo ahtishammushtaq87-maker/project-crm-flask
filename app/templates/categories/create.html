@@ -16,7 +16,8 @@
             <h6 class="m-0 font-weight-bold text-primary">Category Information</h6>
         </div>
         <div class="card-body">
-            <form method="POST" action="{{ url_for('categories.create_category') }}">
+                        {% if current_user.has_permission('categories', 'add') %}
+<form method="POST" action="{{ url_for('categories.create_category') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 
                 <div class="mb-3">
@@ -36,6 +37,7 @@
                     <a href="{{ url_for('categories.categories') }}" class="btn btn-secondary">Cancel</a>
                 </div>
             </form>
+{% endif %}            
         </div>
     </div>
 </div>
