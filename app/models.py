@@ -187,11 +187,11 @@ class Vendor(db.Model):
     
     @property
     def total_purchases(self):
-        return sum(bill.total for bill in self.bills)
+        return sum(bill.total - bill.shipping_charge for bill in self.bills)
     
     @property
     def outstanding_balance(self):
-        return sum(bill.total - bill.paid_amount for bill in self.bills if bill.status != 'paid')
+        return sum(bill.balance_due for bill in self.bills if bill.status != 'paid')
 
     @property
     def total_shipping_charges(self):
@@ -586,8 +586,22 @@ class PurchaseBill(db.Model):
     
     @property
     def balance_due(self):
-        """Calculate remaining balance"""
-        return self.total - self.paid_amount
+        """Calculate remaining balance owed to vendor (excludes shipping)"""
+        vendor_payable = self.total - self.shipping_charge
+        balance = vendor_payable - self.paid_amount
+        return max(0, balance)
+    
+    @property
+    def shipping_due(self):
+        """Calculate remaining shipping charge not yet paid"""
+        vendor_payable = self.total - self.shipping_charge
+        if self.paid_amount > vendor_payable:
+            shipping_paid = self.paid_amount - vendor_payable
+            if shipping_paid > self.shipping_charge:
+                shipping_paid = self.shipping_charge
+        else:
+            shipping_paid = 0
+        return max(0, self.shipping_charge - shipping_paid)
     
     @property
     def is_overdue(self):
@@ -597,8 +611,9 @@ class PurchaseBill(db.Model):
         return False
     
     def update_status(self):
-        """Update payment status based on paid amount"""
-        if self.paid_amount >= self.total:
+        """Update payment status based on paid amount towards vendor (excludes shipping)"""
+        vendor_payable = self.total - self.shipping_charge
+        if self.paid_amount >= vendor_payable:
             self.status = 'paid'
         elif self.paid_amount > 0:
             self.status = 'partial'
@@ -1622,6 +1637,7 @@ class CostPriceHistory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
     purchase_bill_id = db.Column(db.Integer, db.ForeignKey('purchase_bills.id'), index=True)
+    bill_receive_item_id = db.Column(db.Integer, db.ForeignKey('bill_receive_items.id'), nullable=True, index=True)
     old_price = db.Column(db.Float)  # Previous cost price (None if first entry)
     new_price = db.Column(db.Float, nullable=False)  # New cost price
     quantity_at_old_price = db.Column(db.Float, default=0)  # Quantity still available at old price
@@ -1633,6 +1649,7 @@ class CostPriceHistory(db.Model):
     
     product = db.relationship('Product', backref='cost_price_changes')
     purchase_bill = db.relationship('PurchaseBill', backref='cost_price_changes')
+    bill_receive_item = db.relationship('BillReceiveItem', backref='cost_price_change', lazy=True)
     
     @property
     def remaining_at_old_price(self):

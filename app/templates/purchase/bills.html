@@ -34,20 +34,21 @@
     </div>
 
     <!-- Summary Boxes -->
-    {% set bill_totals = namespace(paid_total=0, partial_total=0, partial_unpaid=0, unpaid_total=0, overdue_total=0) %}
+    {% set bill_totals = namespace(paid_total=0, partial_total=0, partial_unpaid=0, unpaid_total=0, overdue_total=0, total_shipping=0) %}
     {% for bill in bills %}
+        {% set bill_totals.total_shipping = bill_totals.total_shipping + bill.shipping_charge %}
         {% if bill.status == 'paid' %}
-            {% set bill_totals.paid_total = bill_totals.paid_total + bill.total %}
+            {% set bill_totals.paid_total = bill_totals.paid_total + bill.paid_amount %}
         {% elif bill.status == 'partial' %}
             {% set bill_totals.paid_total = bill_totals.paid_total + bill.paid_amount %}
-            {% set bill_totals.partial_total = bill_totals.partial_total + bill.total %}
-            {% set bill_totals.partial_unpaid = bill_totals.partial_unpaid + (bill.total - bill.paid_amount) %}
+            {% set bill_totals.partial_total = bill_totals.partial_total + (bill.total - bill.shipping_charge) %}
+            {% set bill_totals.partial_unpaid = bill_totals.partial_unpaid + bill.balance_due %}
         {% else %}
-            {% set bill_totals.unpaid_total = bill_totals.unpaid_total + bill.total %}
+            {% set bill_totals.unpaid_total = bill_totals.unpaid_total + (bill.total - bill.shipping_charge) %}
         {% endif %}
         
         {% if bill.is_overdue %}
-            {% set bill_totals.overdue_total = bill_totals.overdue_total + (bill.total - bill.paid_amount) %}
+            {% set bill_totals.overdue_total = bill_totals.overdue_total + bill.balance_due %}
         {% endif %}
     {% endfor %}
 
@@ -98,7 +99,7 @@
             </div>
         </div>
         <!-- Total Unpaid -->
-        <div class="col-xl col-md-6 mb-4">
+        <div class="col-xl col-md-4 mb-4">
             <div class="card-stats shadow-sm h-100" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
                 <div class="d-flex justify-content-between align-items-center text-white">
                     <div>
@@ -113,7 +114,7 @@
             </div>
         </div>
         <!-- Total Overdue -->
-        <div class="col-xl col-md-6 mb-4">
+        <div class="col-xl col-md-4 mb-4">
             <div class="card-stats shadow-sm h-100" style="background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);">
                 <div class="d-flex justify-content-between align-items-center text-white">
                     <div>
@@ -127,7 +128,22 @@
                 </div>
             </div>
         </div>
-    </div>
+        <!-- Total Shipping -->
+        <div class="col-xl col-md-4 mb-4">
+            <div class="card-stats shadow-sm h-100" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                <div class="d-flex justify-content-between align-items-center text-white">
+                    <div>
+                        <h6 class="text-white-50 small mb-1">Total Shipping</h6>
+                        <h3 class="mb-0">PKR{{ "{:,.2f}".format(bill_totals.total_shipping) }}</h3>
+                        <small class="text-white-50">All shipping charges</small>
+                    </div>
+                    <div class="stats-icon opacity-50">
+                        <i class="fas fa-truck fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+     </div>
 
     <!-- Filter Bar -->
     <div class="card shadow mb-4">
@@ -265,7 +281,7 @@
                             </td>
 
                             <!-- Payment Modal -->
-                            {% if bill.status != 'paid' %}
+                            {% if bill.paid_amount < bill.total %}
                             <div class="modal fade" id="payModal{{ bill.id }}" tabindex="-1"
                                 aria-labelledby="payModalLabel{{ bill.id }}" aria-hidden="true">
                                 <div class="modal-dialog">
@@ -279,14 +295,14 @@
                                             </div>
                                             <div class="modal-body">
                                                 <div class="mb-3">
-                                                    <label class="form-label">Balance Due</label>
+                                                    <label class="form-label">Total Due</label>
                                                     <input type="text" class="form-control" value="PKR{{ "
-                                                        {:,.2f}".format(bill.balance_due) }}" readonly>
+                                                        {:,.2f}".format(bill.total - bill.paid_amount) }}" readonly>
                                                 </div>
                                                 <div class="mb-3">
                                                     <label class="form-label">Amount to Pay</label>
                                                     <input type="number" name="amount" class="form-control" step="0.01"
-                                                        max="{{ bill.balance_due }}" value="{{ bill.balance_due }}"
+                                                        max="{{ bill.total - bill.paid_amount }}" value="{{ bill.total - bill.paid_amount }}"
                                                         required>
                                                 </div>
                                             </div>

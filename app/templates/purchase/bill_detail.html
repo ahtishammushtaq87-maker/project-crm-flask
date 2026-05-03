@@ -93,9 +93,9 @@
             </button>
             {% endif %}
             {% endif %}
-            {% if bill.status != 'paid' %}
-            <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#discountModal">
-                <i class="fas fa-tag me-1"></i>Discount
+            {% if bill.paid_amount < bill.total %}
+            <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#payModal">
+                <i class="fas fa-plus me-1"></i>Pay
             </button>
             {% endif %}
             <!-- Receive Quantity Button -->
@@ -363,9 +363,9 @@
                                 <div class="input-group">
                                     <span class="input-group-text">PKR</span>
                                     <input type="number" step="0.01" min="0.01" name="amount" id="paymentAmount"
-                                        class="form-control" placeholder="0.00" max="{{ bill.balance_due }}">
+                                        class="form-control" placeholder="0.00" max="{{ bill.total - bill.paid_amount }}">
                                 </div>
-                                <small class="text-muted">Balance Due: PKR {{ "{:,.2f}".format(bill.balance_due)
+                                <small class="text-muted">Total Due: PKR {{ "{:,.2f}".format(bill.total - bill.paid_amount)
                                     }}</small>
                             </div>
 
@@ -477,7 +477,7 @@
                 <div class="card-header py-3 d-flex justify-content-between align-items-center">
                     <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-rupee-sign me-2"></i>Payment Summary
                     </h6>
-                    {% if bill.status != 'paid' %}
+                    {% if bill.paid_amount < bill.total %}
                     <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal"
                         data-bs-target="#payModal">
                         <i class="fas fa-plus me-1"></i>Pay
@@ -559,6 +559,14 @@
                                 PKR {{ "{:,.2f}".format(bill.balance_due) }}
                             </td>
                         </tr>
+                        {% if bill.shipping_charge > 0 and bill.shipping_due > 0 %}
+                        <tr>
+                            <td class="text-info"><i class="fas fa-truck me-1"></i>Shipping</td>
+                            <td class="text-end text-info fw-semibold">
+                                PKR {{ "{:,.2f}".format(bill.shipping_due) }}
+                            </td>
+                        </tr>
+                        {% endif %}
                     </table>
                     <div class="text-center mt-3">
                         <span
@@ -712,8 +720,9 @@
                                         <thead class="table-light">
                                             <tr>
                                                 <th>Product</th>
-                                                <th class="text-center">Received Qty</th>
-                                            </tr>
+                                            <th class="text-center">Received Qty</th>
+                                            <th class="text-center">Action</th>
+                                        </tr>
                                         </thead>
                                         <tbody>
                                             {% for ri in recv.receive_items %}
@@ -724,6 +733,18 @@
                                                 </td>
                                                 <td class="text-center text-success fw-bold">{{
                                                     '{:,.2f}'.format(ri.quantity_received) }}</td>
+                                            <td class="text-center">
+                                                {% if current_user.has_permission('purchases', 'delete') %}
+                                                <form method="POST" action="{{ url_for('purchase.delete_receive', id=recv.id) }}"
+                                                    onsubmit="return confirm('Reverse this receive? This will restore product stock to previous levels and remove cost price adjustment.');"
+                                                    style="display:inline;">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                        title="Reverse Receive">
+                                                        <i class="fas fa-undo"></i> Undo
+                                                    </button>
+                                                </form>
+                                                {% endif %}
+                                            </td>
                                             </tr>
                                             {% endfor %}
                                         </tbody>
@@ -1041,6 +1062,7 @@
     const billTotal = {{ bill.total }};
     const billPaidAmount = {{ bill.paid_amount }};
     const billBalanceDue = {{ bill.balance_due }};
+    const billTotalDue = billTotal - billPaidAmount;
     const vendorId = {{ bill.vendor.id }};
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -1193,7 +1215,7 @@
         const pa = document.getElementById('paymentAmount');
         if (pa) {
             pa.addEventListener('input', function () {
-                if (parseFloat(this.value) > billBalanceDue) this.value = billBalanceDue;
+                if (parseFloat(this.value) > billTotalDue) this.value = billTotalDue;
             });
         }
     });

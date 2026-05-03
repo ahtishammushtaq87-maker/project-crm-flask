@@ -217,12 +217,7 @@ def create_bill():
         else:
             bill.paid_amount = 0
 
-        if bill.paid_amount >= bill.total:
-            bill.status = 'paid'
-        elif bill.paid_amount > 0:
-            bill.status = 'partial'
-        else:
-            bill.status = 'unpaid'
+        bill.update_status()
 
         # Handle bill image upload
         if 'bill_image' in request.files:
@@ -348,11 +343,7 @@ def edit_bill(id):
         # Cap paid amount if it now exceeds total
         if bill.paid_amount > bill.total:
             bill.paid_amount = bill.total
-            bill.status = 'paid'
-        elif bill.paid_amount > 0 and bill.paid_amount < bill.total:
-            bill.status = 'partial'
-        else:
-            bill.status = 'unpaid'
+        bill.update_status()
 
         # Handle bill image upload on edit
         if 'bill_image' in request.files:
@@ -453,6 +444,7 @@ def update_shipping(id):
                         except Exception as e:
                             print(f"Error updating BOM for shipping change: {e}")
         
+        bill.update_status()
         db.session.commit()
         flash(f'Shipping charge updated to PKR {new_shipping:,.2f}. Product costs recalculated!', 'success')
         
@@ -541,6 +533,7 @@ def update_tax(id):
                         except Exception as e:
                             print(f"Error updating BOM for tax change: {e}")
         
+        bill.update_status()
         db.session.commit()
         flash(f'Tax rate updated to {new_tax_rate}%. Product costs recalculated!', 'success')
         
@@ -690,37 +683,33 @@ def pay_bill(id):
         elif payment_method == 'mixed':
             advance_ids = request.form.getlist('value')
             cash_amount = float(request.form.get('cash_amount', 0))
-            remaining_to_apply = bill.balance_due
 
+            # Apply advances limited to vendor payable portion (balance_due)
             for advance_id in advance_ids:
-                if remaining_to_apply <= 0:
+                # Stop if vendor balance cleared
+                if bill.balance_due <= 0:
                     break
                 advance = VendorAdvance.query.get(int(advance_id))
                 if advance and advance.vendor_id == vendor.id:
-                    can_apply = min(advance.remaining_balance, remaining_to_apply)
+                    can_apply = min(advance.remaining_balance, bill.balance_due)
                     if can_apply > 0:
                         advance.applied_amount += can_apply
                         bill.paid_amount += can_apply
+                        total_payment += can_apply
                         if advance.applied_amount >= advance.amount:
                             advance.is_adjusted = True
                             advance.adjusted_bill_id = bill.id
                         else:
                             advance.adjusted_bill_id = bill.id
-                        total_payment += can_apply
-                        remaining_to_apply -= can_apply
 
-            if cash_amount > 0 and remaining_to_apply > 0:
-                cash_to_apply = min(cash_amount, remaining_to_apply)
+            # After advances, determine remaining total due (including shipping)
+            remaining_total = bill.total - bill.paid_amount
+            if cash_amount > 0 and remaining_total > 0:
+                cash_to_apply = min(cash_amount, remaining_total)
                 bill.paid_amount += cash_to_apply
                 total_payment += cash_to_apply
 
-        # Update bill status
-        if bill.paid_amount >= bill.total:
-            bill.status = 'paid'
-        elif bill.paid_amount > 0:
-            bill.status = 'partial'
-        else:
-            bill.status = 'unpaid'
+        bill.update_status()
 
         # ── Save BillPayment record ──────────────────────────────────────
         if total_payment > 0:
@@ -927,6 +916,7 @@ def receive_quantity(id):
                 quantity_received=qty_to_receive
             )
             db.session.add(bri)
+            db.session.flush()  # Get bri.id for cost history link
 
             # Update inventory
             product = Product.query.get(item.product_id)
@@ -947,6 +937,7 @@ def receive_quantity(id):
                 cost_history = CostPriceHistory(
                     product_id=item.product_id,
                     purchase_bill_id=bill.id,
+                    bill_receive_item_id=bri.id,
                     old_price=old_price if old_price > 0 else None,
                     new_price=new_unit_cost,
                     quantity_at_old_price=old_qty,
@@ -997,6 +988,71 @@ def apply_discount(id):
         
         db.session.commit()
         flash(f'Discount of PKR {discount_amount} applied successfully!', 'success')
+    
+    return redirect(request.referrer or url_for('purchase.bill_detail', id=bill.id))
+
+@bp.route('/bill/receive/<int:id>/delete', methods=['POST'])
+@login_required
+@permission_required('purchases', action='delete')
+def delete_receive(id):
+    """Reverse a receive entry: restore inventory and revert cost price if applicable"""
+    receive = BillReceive.query.get_or_404(id)
+    bill = receive.bill
+    
+    try:
+        # Track affected products and their old costs
+        affected_products = {}
+        product_prev_cost = {}  # product_id -> old_price from deactivated entry
+        
+        for bri in receive.receive_items:
+            product = Product.query.get(bri.product_id)
+            if product:
+                # Restore inventory (subtract received quantity)
+                product.update_quantity(-bri.quantity_received)
+                affected_products[product.id] = product
+            
+            # Deactivate cost price history entries linked to this BillReceiveItem
+            cost_entries = CostPriceHistory.query.filter_by(bill_receive_item_id=bri.id).all()
+            for ch in cost_entries:
+                ch.is_active = False
+                ch.bill_receive_item_id = None  # break link to allow BillReceiveItem deletion
+                # Capture old_price for product if not already stored
+                if product and product.id not in product_prev_cost:
+                    product_prev_cost[product.id] = ch.old_price
+        
+        # For each affected product, set cost price to latest active cost history (if any)
+        for product in affected_products.values():
+            latest_active = CostPriceHistory.query.filter_by(product_id=product.id, is_active=True)\
+                .order_by(CostPriceHistory.change_date.desc()).first()
+            if latest_active:
+                product.cost_price = latest_active.new_price
+            elif product.id in product_prev_cost and product_prev_cost[product.id] is not None:
+                product.cost_price = product_prev_cost[product.id]
+            # else: keep current cost
+            
+            # Trigger BOM versioning if cost changed
+            try:
+                user_id = current_user.id if current_user.is_authenticated else 1
+                BOMVersioningService.check_and_update_bom_for_cost_changes(
+                    product_id=product.id,
+                    created_by_id=user_id
+                )
+            except Exception as e:
+                print(f"BOM versioning error on reverse receive: {e}")
+        
+        # Delete the receive (cascades to BillReceiveItems)
+        db.session.delete(receive)
+        
+        # If no more receives for this bill, update flag
+        remaining = BillReceive.query.filter_by(bill_id=bill.id).count()
+        if remaining == 0:
+            bill.inventory_received = False
+        
+        db.session.commit()
+        flash('Receive entry reversed successfully!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error reversing receive: {str(e)}', 'danger')
     
     return redirect(request.referrer or url_for('purchase.bill_detail', id=bill.id))
 
@@ -2269,13 +2325,7 @@ def delete_purchase_return(id):
         bill.tax += purchase_return.tax
         bill.total += purchase_return.total
         
-        # Recalculate bill status based on paid amount vs total
-        if bill.paid_amount >= bill.total and bill.total > 0:
-            bill.status = 'paid'
-        elif bill.paid_amount > 0 and bill.paid_amount < bill.total:
-            bill.status = 'partial'
-        else:
-            bill.status = 'unpaid'
+        bill.update_status()
     
     return_number = purchase_return.return_number
     db.session.delete(purchase_return)
