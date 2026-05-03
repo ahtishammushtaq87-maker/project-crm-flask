@@ -332,6 +332,9 @@
                 <button type="submit" class="btn-filter">
                     <i class="fas fa-search me-2"></i> Apply Filter
                 </button>
+                <button type="button" class="btn-filter bg-info" style="background: #11cdef;" data-bs-toggle="modal" data-bs-target="#advancedFilterModal">
+                    <i class="fas fa-filter me-2"></i> Advanced
+                </button>
                 <a href="{{ url_for('reports_attendance.attendance_report') }}" class="btn-filter">
                     <i class="fas fa-redo me-2"></i> Reset
                 </a>
@@ -387,6 +390,13 @@
         </div>
     </div>
 
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof initBulkActions === 'function') {
+                initBulkActions('attendance');
+            }
+        });
+    </script>
     <!-- Report Data -->
     {% if report_type == 'summary' %}
         <!-- Summary Report -->
@@ -431,6 +441,9 @@
             <table class="table table-hover mb-0 datatable-export" data-export-title="Detailed Attendance">
                 <thead>
                     <tr>
+                        <th class="text-center no-export" style="width: 40px;">
+                            <input type="checkbox" id="selectAll" class="form-check-input">
+                        </th>
                         <th>📅 Date</th>
                         <th>👤 Staff</th>
                         <th>📍 In</th>
@@ -445,6 +458,9 @@
                     {% if attendance_records %}
                         {% for record in attendance_records %}
                         <tr>
+                            <td class="text-center no-export">
+                                <input type="checkbox" class="form-check-input attendance-checkbox" value="{{ record.id }}">
+                            </td>
                             <td><strong>{{ record.date.strftime('%Y-%m-%d') }}</strong></td>
                             <td>{{ record.staff.name }}</td>
                             <td class="text-center">

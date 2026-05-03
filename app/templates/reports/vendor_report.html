@@ -120,7 +120,7 @@
     <!-- Filters -->
     <div class="filter-section">
         <form method="GET" action="{{ url_for('reports.vendor_report') }}" class="row g-3">
-            <div class="col-md-10">
+            <div class="col-md-7">
                 <label class="form-label small font-weight-bold">Search Vendor / GST</label>
                 <div class="input-group">
                     <span class="input-group-text bg-light border-0"><i class="fas fa-search"></i></span>
@@ -130,10 +130,22 @@
             <div class="col-md-2 d-flex align-items-end">
                 <button type="submit" class="btn btn-primary w-100 shadow-sm">Filter</button>
             </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="button" class="btn btn-info w-100 shadow-sm" data-bs-toggle="modal" data-bs-target="#advancedFilterModal">
+                    <i class="fas fa-filter me-2"></i> Advanced Filter
+                </button>
+            </div>
         </form>
     </div>
 
     <!-- Vendor Table -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof initBulkActions === 'function') {
+                initBulkActions('vendor');
+            }
+        });
+    </script>
     <div class="card report-card">
         <div class="card-header bg-transparent border-0 pt-4 px-4">
             <h5 class="mb-0">Vendor Summaries</h5>
@@ -143,6 +155,9 @@
                 <table class="table align-items-center table-flush datatable-export" data-export-title="Vendor Report">
                     <thead>
                         <tr>
+                            <th class="text-center no-export" style="width: 40px;">
+                                <input type="checkbox" id="selectAll" class="form-check-input">
+                            </th>
                             <th class="px-4">Vendor Name</th>
                             <th>GST Number</th>
                             <th>Phone</th>
@@ -155,6 +170,9 @@
                     <tbody>
                         {% for vendor in vendors %}
                         <tr>
+                            <td class="text-center no-export">
+                                <input type="checkbox" class="form-check-input vendor-checkbox" value="{{ vendor.id }}">
+                            </td>
                             <td class="px-4 font-weight-bold">{{ vendor.name }}</td>
                             <td>{{ vendor.gst_number or 'N/A' }}</td>
                             <td>{{ vendor.phone or 'N/A' }}</td>

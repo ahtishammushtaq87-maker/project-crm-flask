@@ -469,3 +469,27 @@ def get_staff_names():
         'success': True,
         'options': [{'id': i.name, 'text': i.name} for i in items if i.name]
     })
+
+
+@bp.route('/options/return_numbers')
+@login_required
+def get_return_numbers():
+    """Returns a list of sales return numbers for lookup."""
+    from app.models import SaleReturn
+    items = SaleReturn.query.order_by(SaleReturn.return_number.desc()).limit(500).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.return_number, 'text': i.return_number} for i in items if i.return_number]
+    })
+
+
+@bp.route('/options/purchase_return_numbers')
+@login_required
+def get_purchase_return_numbers():
+    """Returns a list of purchase return numbers for lookup."""
+    from app.models import PurchaseReturn
+    items = PurchaseReturn.query.order_by(PurchaseReturn.return_number.desc()).limit(500).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.return_number, 'text': i.return_number} for i in items if i.return_number]
+    })

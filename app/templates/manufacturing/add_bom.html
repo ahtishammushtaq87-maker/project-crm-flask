@@ -100,8 +100,8 @@
         </a>
     </div>
 
-        {% if current_user.has_permission('manufacturing', 'add') %}
-<form method="POST" action="{{ url_for('manufacturing.add_bom') }}">
+    {% if current_user.has_permission('manufacturing', 'add') %}
+    <form method="POST" action="{{ url_for('manufacturing.add_bom') }}">
         {{ form.hidden_tag() }}
         <div class="row">
             <!-- Left Column: BOM Details -->
@@ -201,7 +201,7 @@
             </div>
         </div>
     </form>
-{% endif %}    
+    {% endif %}
 </div>
 
 <script>
@@ -338,5 +338,11 @@
         // Component selects - initialize all with select2
         initSelect2('.component-select', '— Search or Select Component —');
     });
+</script>
+{% endblock %} initSelect2('#product_id_select', '— Search or Select Finished Product —');
+
+// Component selects - initialize all with select2
+initSelect2('.component-select', '— Search or Select Component —');
+});
 </script>
 {% endblock %}

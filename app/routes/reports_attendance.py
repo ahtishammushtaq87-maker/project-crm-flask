@@ -54,6 +54,9 @@ def attendance_report():
     if staff_id_filter:
         query = query.filter(Attendance.staff_id == staff_id_filter)
     
+    from app.routes.filters import apply_saved_filter_to_query
+    query = apply_saved_filter_to_query(query, 'attendance_report', request.args)
+    
     attendance_records = query.order_by(Attendance.date.desc(), Attendance.staff_id).all()
     
     # Calculate summary statistics
@@ -82,7 +85,9 @@ def attendance_report():
                          department_filter=department_filter,
                          report_type=report_type,
                          summary_stats=summary_stats,
-                         report_data=report_data)
+                         report_data=report_data,
+                         active_module='attendance_report',
+                         filter_id=request.args.get('filter_id'))
 
 
 # --- Helper Functions for Report Calculations ---

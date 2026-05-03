@@ -162,10 +162,22 @@
             <div class="col-md-1 d-flex align-items-end">
                 <button type="submit" class="btn btn-primary w-100 shadow-sm">Filter</button>
             </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="button" class="btn btn-info w-100 shadow-sm" data-bs-toggle="modal" data-bs-target="#advancedFilterModal">
+                    <i class="fas fa-filter me-2"></i> Advanced
+                </button>
+            </div>
         </form>
     </div>
 
     <!-- Returns Table -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof initBulkActions === 'function') {
+                initBulkActions('return');
+            }
+        });
+    </script>
     <div class="card report-card">
         <div class="card-header bg-transparent border-0 pt-4 px-4">
             <h5 class="mb-0">Return Details</h5>
@@ -175,6 +187,9 @@
                 <table class="table align-items-center table-flush datatable-export" data-export-title="Return Report">
                     <thead>
                         <tr>
+                            <th class="text-center no-export" style="width: 40px;">
+                                <input type="checkbox" id="selectAll" class="form-check-input">
+                            </th>
                             <th class="px-4">Return #</th>
                             <th>Date</th>
                             <th>Invoice #</th>
@@ -189,6 +204,9 @@
                     <tbody>
                         {% for ret in returns %}
                         <tr>
+                            <td class="text-center no-export">
+                                <input type="checkbox" class="form-check-input return-checkbox" value="{{ ret.id }}">
+                            </td>
                             <td class="px-4 font-weight-bold">{{ ret.return_number }}</td>
                             <td>{{ ret.date.strftime('%Y-%m-%d') }}</td>
                             <td>{{ ret.sale.invoice_number if ret.sale else '-' }}</td>

@@ -162,13 +162,25 @@
                     <option value="high" {% if stock_filter == 'high' %}selected{% endif %}>Above Maximum</option>
                 </select>
             </div>
-            <div class="col-md-2 d-flex align-items-end">
+            <div class="col-md-1 d-flex align-items-end">
                 <button type="submit" class="btn btn-primary w-100 shadow-sm">Filter</button>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="button" class="btn btn-info w-100 shadow-sm" data-bs-toggle="modal" data-bs-target="#advancedFilterModal">
+                    <i class="fas fa-filter me-2"></i> Advanced
+                </button>
             </div>
         </form>
     </div>
 
     <!-- Inventory Table -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof initBulkActions === 'function') {
+                initBulkActions('inventory');
+            }
+        });
+    </script>
     <div class="card report-card">
         <div class="card-header bg-transparent border-0 pt-4 px-4">
             <h5 class="mb-0">Inventory Details</h5>
@@ -178,6 +190,9 @@
                 <table class="table align-items-center table-flush datatable-export" data-export-title="Inventory Report">
                     <thead>
                         <tr>
+                            <th class="text-center no-export" style="width: 40px;">
+                                <input type="checkbox" id="selectAll" class="form-check-input">
+                            </th>
                             <th class="px-4">SKU</th>
                             <th>Product Name</th>
                             <th>Category</th>
@@ -193,6 +208,9 @@
                     <tbody>
                         {% for product in products %}
                         <tr>
+                            <td class="text-center no-export">
+                                <input type="checkbox" class="form-check-input inventory-checkbox" value="{{ product.id }}">
+                            </td>
                             <td class="px-4 font-weight-bold">{{ product.sku }}</td>
                             <td>{{ product.name }}</td>
                             <td><span class="badge bg-light text-dark">{{ product.category.name if product.category else '-' }}</span></td>

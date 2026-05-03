@@ -147,10 +147,22 @@
             <div class="col-md-1 d-flex align-items-end">
                 <button type="submit" class="btn btn-primary w-100 shadow-sm">Filter</button>
             </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="button" class="btn btn-info w-100 shadow-sm" data-bs-toggle="modal" data-bs-target="#advancedFilterModal">
+                    <i class="fas fa-filter me-2"></i> Advanced
+                </button>
+            </div>
         </form>
     </div>
 
     <!-- Expense Table -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof initBulkActions === 'function') {
+                initBulkActions('expense');
+            }
+        });
+    </script>
     <div class="card report-card">
         <div class="card-header bg-transparent border-0 pt-4 px-4">
             <h5 class="mb-0">Expense Details</h5>
@@ -160,6 +172,9 @@
                 <table class="table align-items-center table-flush datatable-export" data-export-title="Expense Report">
                     <thead>
                         <tr>
+                            <th class="text-center no-export" style="width: 40px;">
+                                <input type="checkbox" id="selectAll" class="form-check-input">
+                            </th>
                             <th class="px-4">Type</th>
                             <th>Number</th>
                             <th>Date</th>
@@ -173,6 +188,9 @@
                     <tbody>
                         {% for expense in expenses %}
                         <tr>
+                            <td class="text-center no-export">
+                                <input type="checkbox" class="form-check-input expense-checkbox" value="{{ expense.id }}">
+                            </td>
                             <td class="px-4">
                                 <span class="badge {% if expense.type == 'Expense' %}bg-primary{% elif expense.type == 'Salary' %}bg-success{% else %}bg-info{% endif %}">
                                     {{ expense.type }}

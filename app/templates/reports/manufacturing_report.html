@@ -56,9 +56,12 @@
                         <option value="Completed" {% if status == 'Completed' %}selected{% endif %}>Completed</option>
                     </select>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-2 d-flex gap-2">
                     <button type="submit" class="btn btn-primary w-100">
                         <i class="fas fa-filter me-1"></i> Filter
+                    </button>
+                    <button type="button" class="btn btn-info w-100" data-bs-toggle="modal" data-bs-target="#advancedFilterModal">
+                        <i class="fas fa-filter"></i>
                     </button>
                 </div>
             </form>
@@ -102,12 +105,22 @@
     </div>
 
     <!-- Orders Table -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof initBulkActions === 'function') {
+                initBulkActions('manufacturing');
+            }
+        });
+    </script>
     <div class="card shadow-sm">
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover mb-0 datatable-export" data-export-title="Manufacturing Report">
                     <thead class="table-light">
                         <tr>
+                            <th class="text-center no-export" style="width: 40px;">
+                                <input type="checkbox" id="selectAll" class="form-check-input">
+                            </th>
                             <th>Order #</th>
                             <th>Date</th>
                             <th>Product</th>
@@ -122,6 +135,9 @@
                     <tbody>
                         {% for o in orders %}
                         <tr>
+                            <td class="text-center no-export">
+                                <input type="checkbox" class="form-check-input manufacturing-checkbox" value="{{ o.id }}">
+                            </td>
                             <td><span class="fw-bold">{{ o.order_number }}</span></td>
                             <td>{{ o.start_date.strftime('%Y-%m-%d') if o.start_date else 'N/A' }}</td>
                             <td>{{ o.bom.product.name }}</td>

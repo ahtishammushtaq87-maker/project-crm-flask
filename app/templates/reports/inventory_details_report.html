@@ -118,19 +118,32 @@
                 <label class="form-label small font-weight-bold">Search</label>
                 <input type="text" name="search" class="form-control" placeholder="Product name or SKU..." value="{{ search }}">
             </div>
-            <div class="col-md-2 d-flex align-items-end">
+            <div class="col-md-2 d-flex align-items-end gap-2">
                 <button type="submit" class="btn btn-primary w-100">Filter</button>
+                <button type="button" class="btn btn-info w-100" data-bs-toggle="modal" data-bs-target="#advancedFilterModal">
+                    <i class="fas fa-filter"></i>
+                </button>
             </div>
         </form>
     </div>
 
     <!-- Report Table -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof initBulkActions === 'function') {
+                initBulkActions('inventory-details');
+            }
+        });
+    </script>
     <div class="card report-card">
         <div class="card-body">
             <div class="table-responsive">
                 <table class="table table-hover datatable-export" data-export-title="Inventory Details Report">
                     <thead>
                         <tr>
+                            <th class="text-center no-export" style="width: 40px;">
+                                <input type="checkbox" id="selectAll" class="form-check-input">
+                            </th>
                             <th>SKU</th>
                             <th>Product Name</th>
                             <th>Category</th>
@@ -145,6 +158,9 @@
                     <tbody>
                         {% for pm in product_movements %}
                         <tr>
+                            <td class="text-center no-export">
+                                <input type="checkbox" class="form-check-input inventory-details-checkbox" value="{{ pm.product.id }}">
+                            </td>
                             <td>{{ pm.product.sku }}</td>
                             <td><strong>{{ pm.product.name }}</strong></td>
                             <td>{{ pm.product.category.name if pm.product.category else '-' }}</td>

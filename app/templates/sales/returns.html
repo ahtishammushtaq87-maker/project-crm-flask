@@ -80,6 +80,9 @@
                 <table class="table table-hover mb-0 datatable-export" data-export-title="Sales Returns">
                     <thead class="table-light">
                         <tr>
+                            <th style="width: 40px;" class="text-center no-export">
+                                <input type="checkbox" id="selectAll" class="form-check-input">
+                            </th>
                             <th>Return #</th>
                             <th>Date</th>
                             <th>Invoice #</th>
@@ -89,12 +92,15 @@
                             <th>Total</th>
                             <th>Status</th>
                             <th>Inventory</th>
-                            <th class="no-export">Actions</th>
+                            <th class="no-export text-center">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for ret in returns %}
                         <tr>
+                            <td class="text-center no-export">
+                                <input type="checkbox" class="form-check-input return-checkbox" value="{{ ret.id }}">
+                            </td>
                             <td>{{ ret.return_number }}</td>
                             <td>{{ ret.date.strftime('%Y-%m-%d') }}</td>
                             <td>
@@ -127,14 +133,14 @@
                                     <a href="{{ url_for('returns.return_detail', id=ret.id) }}" class="btn btn-outline-primary" title="View">
                                         <i class="fas fa-eye"></i>
                                     </a>
-                                                                        {% if current_user.has_permission('returns', 'delete') %}
-<form method="POST" action="{{ url_for('returns.delete_return', id=ret.id) }}"
+                                    {% if current_user.has_permission('returns', 'delete') %}
+                                    <form method="POST" action="{{ url_for('returns.delete_return', id=ret.id) }}"
                                         class="d-inline" onsubmit="return confirm('Delete this return?');">
                                         <button class="btn btn-outline-danger" type="submit" title="Delete">
                                             <i class="fas fa-trash"></i>
                                         </button>
                                     </form>
-{% endif %}                                    
+                                    {% endif %}
                                 </div>
                             </td>
                         </tr>
@@ -148,11 +154,13 @@
                     {% if returns %}
                     <tfoot class="table-light">
                         <tr>
+                            <th class="no-export"></th>
                             <th colspan="4" class="text-end">Total:</th>
                             <th colspan="2"></th>
                             <th><strong>PKR{{ "%.2f"|format(total_returns) }}</strong></th>
                             <th>{{ total_count }} returns</th>
                             <th></th>
+                            <th class="no-export"></th>
                         </tr>
                     </tfoot>
                     {% endif %}
@@ -163,22 +171,30 @@
 </div>
 
 <script>
-    document.getElementById('from_date').addEventListener('change', function () {
-        const fromDate = this.value;
-        const toDateInput = document.getElementById('to_date');
-        if (fromDate && toDateInput.value && fromDate > toDateInput.value) {
-            toDateInput.value = fromDate;
-        }
-        toDateInput.min = fromDate;
-    });
+    document.addEventListener('DOMContentLoaded', function() {
+        initBulkActions({
+            selectAllId: 'selectAll',
+            checkboxClass: 'return-checkbox',
+            entityName: 'sales returns'
+        });
 
-    document.getElementById('to_date').addEventListener('change', function () {
-        const toDate = this.value;
-        const fromDateInput = document.getElementById('from_date');
-        if (toDate && fromDateInput.value && toDate < fromDateInput.value) {
-            alert('To date cannot be before from date');
-            this.value = fromDateInput.value;
-        }
+        document.getElementById('from_date').addEventListener('change', function () {
+            const fromDate = this.value;
+            const toDateInput = document.getElementById('to_date');
+            if (fromDate && toDateInput.value && fromDate > toDateInput.value) {
+                toDateInput.value = fromDate;
+            }
+            toDateInput.min = fromDate;
+        });
+
+        document.getElementById('to_date').addEventListener('change', function () {
+            const toDate = this.value;
+            const fromDateInput = document.getElementById('from_date');
+            if (toDate && fromDateInput.value && toDate < fromDateInput.value) {
+                alert('To date cannot be before from date');
+                this.value = fromDateInput.value;
+            }
+        });
     });
 </script>
 {% endblock %}

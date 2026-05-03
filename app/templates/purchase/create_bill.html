@@ -55,31 +55,41 @@
         position: absolute !important;
         width: 1px !important;
     }
+
     /* Mobile-friendly Select2 adjustments */
     @media (max-width: 768px) {
         .select2-container--bootstrap-5 .select2-selection {
-            height: 38px !important; /* Balanced size */
+            height: 38px !important;
+            /* Balanced size */
             display: flex;
             align-items: center;
             font-size: 14px !important;
         }
+
         .select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered {
             line-height: 38px !important;
             padding-left: 10px !important;
         }
+
         .select2-container--bootstrap-5 .select2-selection--single .select2-selection__arrow {
             height: 36px !important;
         }
+
         .select2-search__field {
-            font-size: 16px !important; /* Keep 16px to prevent auto-zoom jump */
+            font-size: 16px !important;
+            /* Keep 16px to prevent auto-zoom jump */
             padding: 6px 10px !important;
         }
+
         .select2-results__option {
-            padding: 10px 12px !important; /* Standard touch targets */
+            padding: 10px 12px !important;
+            /* Standard touch targets */
             font-size: 14px;
         }
+
         #itemsTable {
-            min-width: 800px; /* Reduced width to minimize scrolling jitter */
+            min-width: 800px;
+            /* Reduced width to minimize scrolling jitter */
         }
     }
 </style>
@@ -104,8 +114,10 @@
         <div class="alert alert-warning d-flex align-items-center gap-3 mb-4" role="alert">
             <i class="fas fa-info-circle fa-lg text-warning flex-shrink-0"></i>
             <div>
-                <strong>Note on Inventory:</strong> Creating this bill will <strong>not</strong> immediately update inventory quantities.
-                After saving, open the bill detail page and click <strong>"Receive Qty"</strong> to record when goods are physically received — that is when stock levels and cost prices will be updated.
+                <strong>Note on Inventory:</strong> Creating this bill will <strong>not</strong> immediately update
+                inventory quantities.
+                After saving, open the bill detail page and click <strong>"Receive Qty"</strong> to record when goods
+                are physically received — that is when stock levels and cost prices will be updated.
             </div>
         </div>
 
@@ -188,9 +200,11 @@
 
                         <!-- Bill Image -->
                         <div class="mb-3">
-                            <label class="form-label fw-semibold"><i class="fas fa-image me-1 text-info"></i>Bill Image</label>
+                            <label class="form-label fw-semibold"><i class="fas fa-image me-1 text-info"></i>Bill
+                                Image</label>
                             {{ form.bill_image(class="form-control", accept=".png,.jpg,.jpeg,.gif,.pdf,.webp") }}
-                            <div class="form-text text-muted">Upload a photo or PDF of the vendor bill (optional). Max 5MB.</div>
+                            <div class="form-text text-muted">Upload a photo or PDF of the vendor bill (optional). Max
+                                5MB.</div>
                         </div>
 
                         <!-- Notes -->
@@ -297,7 +311,8 @@
                     </div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
-                            <table class="table table-bordered mb-0" id="itemsTable" style="table-layout: fixed; width: 100%;">
+                            <table class="table table-bordered mb-0" id="itemsTable"
+                                style="table-layout: fixed; width: 100%;">
                                 <thead class="table-light">
                                     <tr>
                                         <th style="width: 35%;">Product</th>
@@ -315,7 +330,8 @@
                                                 onchange="onProductChange(this)">
                                                 <option value="">— Select Product —</option>
                                                 {% for p in products %}
-                                                <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.sku }} - {{ p.name }}
+                                                <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.sku }} -
+                                                    {{ p.name }}
                                                 </option>
                                                 {% endfor %}
                                             </select>
@@ -324,8 +340,9 @@
                                                 min="1" step="1" oninput="calcRow(this)"></td>
                                         <td><input type="text" class="form-control currentCost" readonly
                                                 style="background-color: #f8f9fa;"></td>
-                                        <td><input type="number" name="price[]" class="form-control price newCost" value="0"
-                                                step="0.01" oninput="calcRow(this); updatePriceIndicator(this)"></td>
+                                        <td><input type="number" name="price[]" class="form-control price newCost"
+                                                value="0" step="0.01"
+                                                oninput="calcRow(this); updatePriceIndicator(this)"></td>
                                         <td><input type="text" class="form-control amount" readonly></td>
                                         <td><button type="button" class="btn btn-sm btn-outline-danger"
                                                 onclick="removeRow(this)"><i class="fas fa-times"></i></button></td>
@@ -523,7 +540,7 @@
     function addRow() {
         const firstRow = document.querySelector('#itemsBody tr');
         const row = firstRow.cloneNode(true);
-        
+
         // --- CLEAN UP SELECT2 FROM CLONE ---
         // Remove any existing Select2 containers and resets classes to prevent "duplicate label" bug
         $(row).find('.select2-container').remove();
@@ -537,11 +554,11 @@
         row.querySelectorAll('input').forEach(i => { i.value = i.type === 'number' ? '0' : ''; });
         row.querySelector('.qty').value = '1';
         row.querySelector('.product-select').selectedIndex = 0;
-        
+
         // Remove any price change badges from clone
         const badge = row.querySelector('.priceChangeBadge');
         if (badge) badge.remove();
-        
+
         document.getElementById('itemsBody').appendChild(row);
 
         // Initialize Select2 on new row's product select
@@ -675,7 +692,7 @@
         });
 
         // Auto-focus search field when opened
-        $el.on('select2:open', function() {
+        $el.on('select2:open', function () {
             const openedEl = this;
             setTimeout(() => {
                 const searchField = document.querySelector('.select2-container--open .select2-search__field');

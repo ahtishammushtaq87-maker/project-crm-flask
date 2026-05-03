@@ -7,6 +7,7 @@
     .table>:not(caption)>*>* {
         padding: .5rem 1.5rem;
     }
+
     #universal-filter-trigger-wrapper {
         display: none !important;
     }
@@ -243,8 +244,13 @@
                     </div>
                     <div class="progress" style="height: 8px;">
                         {% set exp_pct = (total_expenses / gross_profit * 100) if gross_profit > 0 else 100 %}
-                        <div class="progress-bar bg-danger" role="progressbar" style="width: {{ [exp_pct, 100]|min }}%">
-                        </div>
+                        {% set bar_width = exp_pct if exp_pct < 100 else 100 %}
+                        <div id="operatingExpensesBar" class="progress-bar bg-danger" role="progressbar"></div>
+                        <script>
+                            document.addEventListener('DOMContentLoaded', function() {
+                                document.getElementById('operatingExpensesBar').style.width = '{{ bar_width }}%';
+                            });
+                        </script>
                     </div>
                 </div>
             </div>

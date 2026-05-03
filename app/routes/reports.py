@@ -190,6 +190,8 @@ def inventory_details_report():
     if search:
         query = query.filter(or_(Product.name.ilike(f'%{search}%'), Product.sku.ilike(f'%{search}%')))
     
+    query = apply_saved_filter_to_query(query, 'inventory_details_report', request.args)
+    
     products = query.order_by(Product.name).all()
     
     product_movements = []
@@ -250,11 +252,13 @@ def inventory_details_report():
                          product_movements=product_movements,
                          warehouses=warehouses,
                          categories=categories,
-                         from_date=from_date,
-                         to_date=to_date,
-                         current_warehouse_id=warehouse_id,
-                         current_category=category,
-                         search=search)
+                          from_date=from_date,
+                          to_date=to_date,
+                          current_warehouse_id=warehouse_id,
+                          current_category=category,
+                          search=search,
+                          active_module='inventory_details_report',
+                          filter_id=request.args.get('filter_id'))
 
 
 @bp.route('/cogs-report')
@@ -294,6 +298,7 @@ def cogs_report():
 
         if prod.id not in product_stats:
             product_stats[prod.id] = {
+                'product_id': prod.id,
                 'product_name': prod.name,
                 'sku': prod.sku,
                 'category': prod.category.name if prod.category else 'Uncategorized',
@@ -364,6 +369,7 @@ def expense_report():
     # Add regular expenses
     for e in expenses:
         unified_expenses.append({
+            'id': e.id,
             'date': e.date,
             'number': e.expense_number,
             'category': e.expense_category.name if e.expense_category else 'Other',
@@ -384,6 +390,7 @@ def expense_report():
         
         for p in pay_query.all():
             unified_expenses.append({
+                'id': p.id,
                 'date': p.payment_date,
                 'number': f"PAY-{p.id}",
                 'category': 'Payroll',
@@ -402,6 +409,7 @@ def expense_report():
         
         for a in adv_query.all():
             unified_expenses.append({
+                'id': a.id,
                 'date': a.date,
                 'number': f"ADV-{a.id}",
                 'category': 'Payroll Advance',

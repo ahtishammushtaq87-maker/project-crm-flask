@@ -61,6 +61,8 @@ def _get_model_classes():
         'customer_report': Customer,
         'cogs_report': SaleItem,  # COGS filters via SaleItem
         'profit_loss_report': Sale,  # P&L primary model
+        'inventory_details_report': Product,
+        'attendance_report': Attendance,
     }
 
 
@@ -73,7 +75,7 @@ def _build_field_registry():
         Vendor, Customer, Staff, ManufacturingOrder, BOM,
         SaleReturn, PurchaseReturn, PurchaseOrder, ProductionLog,
         SalaryPayment, ProductCategory, SaleItem, Salesman, SalesmanGroup, CustomerGroup,
-        Warehouse
+        Warehouse, Attendance
     )
     return {
         # === EXPENSE MODULE ===
@@ -178,7 +180,7 @@ def _build_field_registry():
         },
         # === SALE RETURN MODULE ===
         'sale_return': {
-            'return_number': {'expr': lambda: SaleReturn.return_number, 'type': 'string'},
+            'return_number': {'expr': lambda: SaleReturn.return_number, 'type': 'string', 'options_route': 'filters.get_return_numbers'},
             'date':          {'expr': lambda: SaleReturn.date,          'type': 'date'},
             'year':          {'expr': lambda: func.extract('year', SaleReturn.date), 'type': 'number'},
             'subtotal':      {'expr': lambda: SaleReturn.subtotal,      'type': 'number'},
@@ -188,7 +190,7 @@ def _build_field_registry():
         },
         # === PURCHASE RETURN MODULE ===
         'purchase_return': {
-            'return_number': {'expr': lambda: PurchaseReturn.return_number, 'type': 'string'},
+            'return_number': {'expr': lambda: PurchaseReturn.return_number, 'type': 'string', 'options_route': 'filters.get_purchase_return_numbers'},
             'date':          {'expr': lambda: PurchaseReturn.date,          'type': 'date'},
             'year':          {'expr': lambda: func.extract('year', PurchaseReturn.date), 'type': 'number'},
             'subtotal':      {'expr': lambda: PurchaseReturn.subtotal,      'type': 'number'},
@@ -305,7 +307,7 @@ def _build_field_registry():
             'recurring':    {'expr': lambda: Expense.is_monthly_divided, 'type': 'boolean'},
         },
         'return_report': {
-            'return_number': {'expr': lambda: SaleReturn.return_number, 'type': 'string'},
+            'return_number': {'expr': lambda: SaleReturn.return_number, 'type': 'string', 'options_route': 'filters.get_return_numbers'},
             'date':          {'expr': lambda: SaleReturn.date,          'type': 'date'},
             'year':          {'expr': lambda: func.extract('year', SaleReturn.date), 'type': 'number'},
             'subtotal':      {'expr': lambda: SaleReturn.subtotal,      'type': 'number'},
@@ -356,6 +358,18 @@ def _build_field_registry():
             'gst_number': {'expr': lambda: Customer.gst_number, 'type': 'string'},
             'is_active': {'expr': lambda: Customer.is_active, 'type': 'boolean'},
             'customer_group': {'expr': lambda: CustomerGroup.name, 'type': 'string', 'join': CustomerGroup, 'options_route': 'filters.get_customer_groups'},
+        },
+        'inventory_details_report': {
+            'name':     {'expr': lambda: Product.name,       'type': 'string', 'options_route': 'filters.get_product_names'},
+            'sku':      {'expr': lambda: Product.sku,        'type': 'string', 'options_route': 'filters.get_product_skus'},
+            'category': {'expr': lambda: ProductCategory.name, 'type': 'string', 'join': ProductCategory},
+            'warehouse':{'expr': lambda: Warehouse.name,       'type': 'string', 'join': Warehouse},
+        },
+        'attendance_report': {
+            'staff':         {'expr': lambda: Staff.name, 'type': 'string', 'join': Staff, 'options_route': 'filters.get_staff_names'},
+            'date':          {'expr': lambda: Attendance.date, 'type': 'date'},
+            'hours_worked':  {'expr': lambda: Attendance.hours_worked, 'type': 'number'},
+            'earned_amount': {'expr': lambda: Attendance.earned_amount, 'type': 'number'},
         },
     }
 

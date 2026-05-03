@@ -68,17 +68,30 @@
                 <label class="form-label">Product Search</label>
                 <input type="text" name="search" class="form-control" value="{{ search }}" placeholder="Product name or SKU">
             </div>
-            <div class="col-md-1 d-flex align-items-end">
+            <div class="col-md-2 d-flex align-items-end gap-2">
                 <button type="submit" class="btn btn-primary w-100">Filter</button>
+                <button type="button" class="btn btn-info w-100" data-bs-toggle="modal" data-bs-target="#advancedFilterModal">
+                    <i class="fas fa-filter"></i>
+                </button>
             </div>
         </form>
     </div>
 
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof initBulkActions === 'function') {
+                initBulkActions('cogs');
+            }
+        });
+    </script>
     <div class="card report-card">
         <div class="table-responsive">
             <table class="table table-hover align-middle datatable-export" data-export-title="COGS Report">
                 <thead>
                     <tr>
+                        <th class="text-center no-export" style="width: 40px;">
+                            <input type="checkbox" id="selectAll" class="form-check-input">
+                        </th>
                         <th>Product</th>
                         <th>SKU</th>
                         <th>Category</th>
@@ -92,6 +105,9 @@
                 <tbody>
                     {% for p in products %}
                     <tr>
+                        <td class="text-center no-export">
+                            <input type="checkbox" class="form-check-input cogs-checkbox" value="{{ p.product_id }}">
+                        </td>
                         <td>{{ p.product_name }}</td>
                         <td>{{ p.sku }}</td>
                         <td>{{ p.category }}</td>
