@@ -39,6 +39,42 @@
         });
     });
 </script>
+<script>
+        // Add drag-scrolling to table (matches inventory module)
+        document.addEventListener('DOMContentLoaded', function () {
+            const container = document.getElementById('tableContainer');
+            if (container) {
+                let isDown = false;
+                let startX;
+                let scrollLeft;
+
+                container.addEventListener('mousedown', function (e) {
+                    isDown = true;
+                    container.style.cursor = 'grabbing';
+                    startX = e.pageX - container.offsetLeft;
+                    scrollLeft = container.scrollLeft;
+                });
+
+                container.addEventListener('mouseleave', function () {
+                    isDown = false;
+                    container.style.cursor = 'grab';
+                });
+
+                container.addEventListener('mouseup', function () {
+                    isDown = false;
+                    container.style.cursor = 'grab';
+                });
+
+                container.addEventListener('mousemove', function (e) {
+                    if (!isDown) return;
+                    e.preventDefault();
+                    const x = e.pageX - container.offsetLeft;
+                    const walk = (x - startX) * 2;
+                    container.scrollLeft = scrollLeft - walk;
+                });
+            }
+        });
+</script>
 
 {% if current_user.is_admin %}
 <script>
@@ -229,7 +265,7 @@
                 </div>
             </form>
             
-            <div class="table-responsive expenses-table-responsive">
+            <div class="table-responsive expenses-table-responsive" id="tableContainer" style="cursor: grab; overflow-x: auto;">
                 <table class="table table-striped datatable-export" data-export-title="Expenses">
                     <thead>
                         <tr>

@@ -1,24 +1,12 @@
-# Fix Purchase Bill Payment Edit Modal (Dashboard in Popup Bug)
+# TODO: Make Customer and Expense Tables Scrollable like Inventory Module
 
-## Status: ✅ COMPLETE
+**Current Progress:** 3/4 steps complete
 
-### Plan Execution Summary:
-1. ✅ **Created TODO.md** - Progress tracking
-2. ✅ **Updated app/templates/purchase/edit_bill_payment.html** 
-   - Removed `{% extends "base.html" %}` 
-   - Converted to standalone modal-dialog structure
-   - Fixed form action: `{{ url_for('purchase.edit_bill_payment', id=bill.id, pay_id=payment.id) }}`
-   - Fixed title reference: `payment.id`
-3. ✅ **Updated app/routes/purchase.py** 
-   - Simplified `render_template` call (removed unused `form_data`)
-4. ✅ **Verified changes** - Template now renders clean modal form only
+## Steps:
+1. ✅ Create TODO.md with plan breakdown
+2. ✅ Update sales/customers.html table container and add JS
+3. ✅ Update accounting/expenses.html table container and add JS  
+4. ✅ Test scrolling functionality
+5. ✅ Verify no breakage and attempt completion
 
-**Result:** Fixed bug where editing payment opened full dashboard in popup. Now shows only clean edit form modal.
-
-**Testing:** Navigate to any purchase bill detail → click edit payment button → Clean form appears (no navbar/sidebar). Submit works correctly.
-
-**Files Modified:**
-- `app/templates/purchase/edit_bill_payment.html`
-- `app/routes/purchase.py`
-
-Ready for production use.
+**Status:** Ready to implement file edits
