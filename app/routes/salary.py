@@ -10,13 +10,17 @@ import io
 
 bp = Blueprint('salary', __name__)
 
+from app.routes.filters import apply_saved_filter_to_query
+
 # --- Staff Management ---
 
 @bp.route('/staff')
 @login_required
 def staff_list():
-    staff_members = Staff.query.all()
-    return render_template('salary/staff_list.html', staff_members=staff_members)
+    query = Staff.query
+    query = apply_saved_filter_to_query(query, 'staff', request.args)
+    staff_members = query.all()
+    return render_template('salary/staff_list.html', staff_members=staff_members, active_module='staff')
 
 @bp.route('/staff/add', methods=['GET', 'POST'])
 @login_required
@@ -73,6 +77,117 @@ def staff_payments(id):
     payments = SalaryPayment.query.filter_by(staff_id=id).order_by(SalaryPayment.year.desc(), SalaryPayment.month.desc()).all()
     return render_template('salary/staff_payments.html', staff=staff, payments=payments)
 
+@bp.route('/staff/bulk-upload', methods=['GET', 'POST'])
+@login_required
+@permission_required('salary', action='add')
+def bulk_upload_staff():
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            flash('No file uploaded', 'error')
+            return redirect(url_for('salary.bulk_upload_staff'))
+            
+        file = request.files['file']
+        if file.filename == '':
+            flash('No file selected', 'error')
+            return redirect(url_for('salary.bulk_upload_staff'))
+            
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            flash('Please upload an Excel file (.xlsx or .xls)', 'error')
+            return redirect(url_for('salary.bulk_upload_staff'))
+            
+        try:
+            from openpyxl import load_workbook
+            from io import BytesIO
+            import datetime
+            file_content = file.read()
+            wb = load_workbook(filename=BytesIO(file_content), data_only=True, read_only=True)
+            ws = wb.active
+            rows = list(ws.values)
+            if not rows:
+                flash('File is empty', 'error')
+                return redirect(url_for('salary.bulk_upload_staff'))
+            headers = [str(h).strip().lower() if h else '' for h in rows[0]]
+            
+            required_columns = ['name', 'monthly_salary']
+            missing = [col for col in required_columns if col not in headers]
+            if missing:
+                flash(f'Missing required columns: {", ".join(missing)}', 'error')
+                return redirect(url_for('salary.bulk_upload_staff'))
+                
+            added = 0
+            errors = []
+            
+            for idx, row in enumerate(rows[1:], start=2):
+                try:
+                    row_dict = {}
+                    for i, val in enumerate(row):
+                        if i < len(headers):
+                            row_dict[headers[i]] = val
+                            
+                    name = str(row_dict.get('name', '')).strip()
+                    if not name:
+                        errors.append(f'Row {idx}: Missing name')
+                        continue
+                        
+                    monthly_salary = float(row_dict.get('monthly_salary', 0))
+                    
+                    staff = Staff(
+                        name=name,
+                        designation=str(row_dict.get('designation', '')).strip() if row_dict.get('designation') else None,
+                        monthly_salary=monthly_salary,
+                        is_active=bool(str(row_dict.get('is_active', '1')).strip().lower() in ['yes', '1', 'true', 't', 'active'])
+                    )
+                    staff.calculate_daily_salary()
+                    db.session.add(staff)
+                    added += 1
+                except Exception as e:
+                    errors.append(f'Row {idx}: {str(e)}')
+
+            
+            db.session.commit()
+            if added > 0:
+                flash(f'Successfully added {added} staff members!', 'success')
+            if errors:
+                flash(f'Errors: {"; ".join(errors[:10])}', 'warning')
+            return redirect(url_for('salary.staff_list'))
+        except Exception as e:
+            flash(f'Error reading file: {str(e)}', 'error')
+            return redirect(url_for('salary.bulk_upload_staff'))
+            
+    return render_template('salary/staff_bulk_upload.html')
+
+@bp.route('/staff/download-sample')
+@login_required
+def download_sample_staff():
+    try:
+        from openpyxl import Workbook
+        from io import BytesIO
+        from flask import send_file
+        
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Staff'
+        
+        headers = ['name', 'designation', 'monthly_salary', 'is_active']
+        ws.append(headers)
+        
+        sample_data = [
+            ['John Doe', 'Manager', 50000, 'yes'],
+            ['Jane Smith', 'Operator', 30000, 'yes']
+        ]
+        
+        for row in sample_data:
+            ws.append(row)
+
+            
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return send_file(output, download_name='sample_staff.xlsx', as_attachment=True)
+    except Exception as e:
+        flash(f'Error creating sample: {str(e)}', 'error')
+        return redirect(url_for('salary.bulk_upload_staff'))
+
 # --- Salary Advances ---
 
 @bp.route('/advances')
@@ -118,8 +233,10 @@ def delete_advance(id):
 @bp.route('/payments')
 @login_required
 def payment_list():
-    payments = SalaryPayment.query.order_by(SalaryPayment.year.desc(), SalaryPayment.month.desc()).all()
-    return render_template('salary/payment_list.html', payments=payments, auto_download_id=None)
+    query = SalaryPayment.query
+    query = apply_saved_filter_to_query(query, 'salary_payment', request.args)
+    payments = query.order_by(SalaryPayment.year.desc(), SalaryPayment.month.desc()).all()
+    return render_template('salary/payment_list.html', payments=payments, auto_download_id=None, active_module='salary_payment')
 
 @bp.route('/payments/<int:paid>')
 @login_required
@@ -323,6 +440,154 @@ def download_latest_pay_stub(staff_id):
         as_attachment=True,
         download_name=filename
     )
+
+@bp.route('/payments/bulk-upload', methods=['GET', 'POST'])
+@login_required
+@permission_required('salary', action='add')
+def bulk_upload_payment():
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            flash('No file uploaded', 'error')
+            return redirect(url_for('salary.bulk_upload_payment'))
+            
+        file = request.files['file']
+        if file.filename == '':
+            flash('No file selected', 'error')
+            return redirect(url_for('salary.bulk_upload_payment'))
+            
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            flash('Please upload an Excel file (.xlsx or .xls)', 'error')
+            return redirect(url_for('salary.bulk_upload_payment'))
+            
+        try:
+            from openpyxl import load_workbook
+            from io import BytesIO
+            from datetime import datetime
+            file_content = file.read()
+            wb = load_workbook(filename=BytesIO(file_content), read_only=True)
+            ws = wb.active
+            rows = list(ws.values)
+            if not rows:
+                flash('File is empty', 'error')
+                return redirect(url_for('salary.bulk_upload_payment'))
+            headers = [str(h).strip().lower() if h else '' for h in rows[0]]
+            
+            required_columns = ['staff_id', 'month', 'year', 'base_salary', 'net_salary']
+            missing = [col for col in required_columns if col not in headers]
+            if missing:
+                flash(f'Missing required columns: {", ".join(missing)}', 'error')
+                return redirect(url_for('salary.bulk_upload_payment'))
+                
+            added = 0
+            errors = []
+            
+            for idx, row in enumerate(rows[1:], start=2):
+                try:
+                    row_dict = {}
+                    for i, val in enumerate(row):
+                        if i < len(headers):
+                            row_dict[headers[i]] = val
+                            
+                    staff_id = row_dict.get('staff_id')
+                    try:
+                        staff_id = int(str(staff_id).strip())
+                    except ValueError:
+                        errors.append(f'Row {idx}: staff_id must be a number')
+                        continue
+                        
+                    staff = Staff.query.get(staff_id)
+                    if not staff:
+                        errors.append(f'Row {idx}: Staff ID {staff_id} not found')
+                        continue
+                        
+                    month = int(row_dict.get('month', 1))
+                    year = int(row_dict.get('year', 2024))
+                    base_salary = float(row_dict.get('base_salary', 0))
+                    net_salary = float(row_dict.get('net_salary', 0))
+                    
+                    existing = SalaryPayment.query.filter_by(staff_id=staff.id, month=month, year=year).first()
+                    if existing:
+                        errors.append(f'Row {idx}: Payment for staff {staff.name} for {month}/{year} already exists')
+                        continue
+                        
+                    payment_date_val = row_dict.get('payment_date')
+                    if isinstance(payment_date_val, datetime):
+                        payment_date = payment_date_val.date()
+                    elif payment_date_val:
+                        payment_date = datetime.strptime(str(payment_date_val), '%Y-%m-%d').date()
+                    else:
+                        payment_date = datetime.utcnow().date()
+                        
+                    payment = SalaryPayment(
+                        staff_id=staff.id,
+                        month=month,
+                        year=year,
+                        base_salary=base_salary,
+                        advance_deduction=float(row_dict.get('advance_deduction', 0) or 0),
+                        bonus=float(row_dict.get('bonus', 0) or 0),
+                        other_deductions=float(row_dict.get('other_deductions', 0) or 0),
+                        net_salary=net_salary,
+                        payment_date=payment_date,
+                        payment_method=str(row_dict.get('payment_method', 'cash')).strip(),
+                        status=str(row_dict.get('status', 'paid')).strip().lower(),
+                        notes=str(row_dict.get('notes', '')).strip() if row_dict.get('notes') else None
+                    )
+                    db.session.add(payment)
+                    added += 1
+                except Exception as e:
+                    errors.append(f'Row {idx}: {str(e)}')
+            
+            db.session.commit()
+            if added > 0:
+                flash(f'Successfully added {added} payments!', 'success')
+            if errors:
+                flash(f'Errors: {"; ".join(errors[:10])}', 'warning')
+            return redirect(url_for('salary.payment_list'))
+        except Exception as e:
+            flash(f'Error reading file: {str(e)}', 'error')
+            return redirect(url_for('salary.bulk_upload_payment'))
+            
+    return render_template('salary/payment_bulk_upload.html')
+
+@bp.route('/payments/download-sample')
+@login_required
+def download_sample_payment():
+    try:
+        from openpyxl import Workbook
+        from io import BytesIO
+        from flask import send_file
+        
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Payments'
+        
+        headers = ['staff_id', 'month', 'year', 'base_salary', 'advance_deduction', 'bonus', 'other_deductions', 'net_salary', 'payment_date', 'payment_method', 'status', 'notes']
+        ws.append(headers)
+        
+        staff = Staff.query.first()
+        staff_id = staff.id if staff else 1
+        
+        now = datetime.utcnow()
+        current_month = now.month
+        current_year = now.year
+        current_date_str = now.strftime('%Y-%m-%d')
+        
+        sample_data = [
+            [staff_id, current_month, current_year, 50000, 0, 2000, 0, 52000, current_date_str, 'Bank', 'paid', 'Monthly salary'],
+            [staff_id, current_month, current_year, 50000, 5000, 0, 0, 45000, current_date_str, 'Cash', 'paid', 'Monthly salary with deduction']
+        ]
+        
+        for row in sample_data:
+            ws.append(row)
+
+            
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return send_file(output, download_name='sample_payments.xlsx', as_attachment=True)
+    except Exception as e:
+        flash(f'Error creating sample: {str(e)}', 'error')
+        return redirect(url_for('salary.bulk_upload_payment'))
 
 # --- API for dynamic updates ---
 @bp.route('/api/get_staff_info/<int:staff_id>')

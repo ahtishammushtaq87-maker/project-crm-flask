@@ -361,3 +361,111 @@ def get_product_categories():
         'success': True,
         'options': [{'id': i.name, 'text': i.name} for i in items]
     })
+
+
+@bp.route('/options/product_names')
+@login_required
+def get_product_names():
+    """Returns a list of product names for lookup."""
+    from app.models import Product
+    items = Product.query.order_by(Product.name).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.name, 'text': i.name} for i in items]
+    })
+
+
+@bp.route('/options/product_skus')
+@login_required
+def get_product_skus():
+    """Returns a list of product SKUs for lookup."""
+    from app.models import Product
+    items = Product.query.order_by(Product.sku).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.sku, 'text': i.sku} for i in items if i.sku]
+    })
+
+
+@bp.route('/options/invoice_numbers')
+@login_required
+def get_invoice_numbers():
+    """Returns a list of invoice numbers for lookup."""
+    from app.models import Sale
+    items = Sale.query.order_by(Sale.invoice_number.desc()).limit(500).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.invoice_number, 'text': i.invoice_number} for i in items if i.invoice_number]
+    })
+
+
+@bp.route('/options/bill_numbers')
+@login_required
+def get_bill_numbers():
+    """Returns a list of bill numbers for lookup."""
+    from app.models import PurchaseBill
+    items = PurchaseBill.query.order_by(PurchaseBill.bill_number.desc()).limit(500).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.bill_number, 'text': i.bill_number} for i in items if i.bill_number]
+    })
+
+
+@bp.route('/options/bom_names')
+@login_required
+def get_bom_names():
+    """Returns a list of BOM names for lookup."""
+    from app.models import BOM
+    items = BOM.query.order_by(BOM.name).limit(500).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.name, 'text': i.name} for i in items if i.name]
+    })
+
+
+@bp.route('/options/mo_numbers')
+@login_required
+def get_mo_numbers():
+    """Returns a list of Manufacturing Order numbers for lookup."""
+    from app.models import ManufacturingOrder
+    items = ManufacturingOrder.query.order_by(ManufacturingOrder.order_number.desc()).limit(500).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.order_number, 'text': i.order_number} for i in items if i.order_number]
+    })
+
+
+@bp.route('/options/warehouse_names')
+@login_required
+def get_warehouse_names():
+    """Returns a list of warehouse names for lookup."""
+    from app.models import Warehouse
+    items = Warehouse.query.order_by(Warehouse.name).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.name, 'text': i.name} for i in items if i.name]
+    })
+
+
+@bp.route('/options/warehouse_codes')
+@login_required
+def get_warehouse_codes():
+    """Returns a list of warehouse codes for lookup."""
+    from app.models import Warehouse
+    items = Warehouse.query.order_by(Warehouse.code).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.code, 'text': i.code} for i in items if i.code]
+    })
+
+
+@bp.route('/options/staff_names')
+@login_required
+def get_staff_names():
+    """Returns a list of staff names for lookup."""
+    from app.models import Staff
+    items = Staff.query.order_by(Staff.name).all()
+    return jsonify({
+        'success': True,
+        'options': [{'id': i.name, 'text': i.name} for i in items if i.name]
+    })

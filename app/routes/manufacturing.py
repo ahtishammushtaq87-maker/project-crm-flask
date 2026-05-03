@@ -7,6 +7,7 @@ from app.forms import BOMForm, ManufacturingOrderForm
 from app.services.bom_versioning import BOMVersioningService
 from datetime import datetime
 from sqlalchemy import inspect, or_
+from app.routes.filters import apply_saved_filter_to_query
 
 bp = Blueprint('manufacturing', __name__)
 
@@ -20,8 +21,10 @@ def has_column(table_name, column_name):
 @bp.route('/boms')
 @login_required
 def boms():
-    boms = BOM.query.all()
-    return render_template('manufacturing/boms.html', boms=boms)
+    query = BOM.query
+    query = apply_saved_filter_to_query(query, 'bom', request.args)
+    boms = query.all()
+    return render_template('manufacturing/boms.html', boms=boms, active_module='bom')
 
 @bp.route('/bom/add', methods=['GET', 'POST'])
 @login_required
@@ -296,8 +299,10 @@ def delete_bom(id):
 @bp.route('/orders')
 @login_required
 def orders():
-    orders = ManufacturingOrder.query.order_by(ManufacturingOrder.created_at.desc()).all()
-    return render_template('manufacturing/orders.html', orders=orders)
+    query = ManufacturingOrder.query
+    query = apply_saved_filter_to_query(query, 'manufacturing_order', request.args)
+    orders = query.order_by(ManufacturingOrder.created_at.desc()).all()
+    return render_template('manufacturing/orders.html', orders=orders, active_module='manufacturing_order')
 
 @bp.route('/order/add', methods=['GET', 'POST'])
 @login_required

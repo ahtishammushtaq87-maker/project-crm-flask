@@ -3,14 +3,18 @@
 {% block title %}Staff Management{% endblock %}
 
 {% block content %}
+<div id="module-context" data-module="staff" style="display:none;"></div>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="fas fa-users-cog me-2"></i>Staff Management</h2>
     <div class="btn-group">
                 {% if current_user.has_permission('salary', 'add') %}
-<a href="{{ url_for('salary.add_staff') }}" class="btn btn-primary">
+        <a href="{{ url_for('salary.bulk_upload_staff') }}" class="btn btn-outline-primary">
+            <i class="fas fa-file-upload me-2"></i> Bulk Add
+        </a>
+        <a href="{{ url_for('salary.add_staff') }}" class="btn btn-primary">
             <i class="fas fa-plus me-2"></i>Add Staff
         </a>
-{% endif %}        
+        {% endif %}        
         <a href="{{ url_for('salary.advance_list') }}" class="btn btn-info text-white">
             <i class="fas fa-hand-holding-usd me-2"></i>Advances
         </a>
@@ -59,7 +63,10 @@
             <table class="table table-hover align-middle mb-0 datatable-export" data-export-title="Staff List">
                 <thead class="bg-light text-muted small text-uppercase">
                     <tr>
-                        <th class="px-4">Staff Name</th>
+                        <th style="width: 40px;" class="text-center no-export border-0 px-3">
+                            <input type="checkbox" id="selectAll" class="form-check-input" onclick="document.querySelectorAll('.staff-checkbox').forEach(cb => cb.checked = this.checked)">
+                        </th>
+                        <th class="px-4 border-0">Staff Name</th>
                         <th>Designation</th>
                         <th>Monthly Salary</th>
                         <th>Pending Advance</th>
@@ -70,6 +77,9 @@
                 <tbody>
                     {% for staff in staff_members %}
                     <tr>
+                        <td class="text-center px-3 no-export">
+                            <input type="checkbox" class="form-check-input staff-checkbox" value="{{ staff.id }}">
+                        </td>
                         <td class="px-4">
                             <div class="d-flex align-items-center">
                                 <div class="avatar-sm bg-primary-soft text-primary rounded-circle me-3 p-2">

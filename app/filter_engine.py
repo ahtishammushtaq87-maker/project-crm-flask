@@ -28,7 +28,8 @@ def _get_model_classes():
         Expense, ExpenseCategory, Sale, PurchaseBill, Product,
         Vendor, Customer, Staff, ManufacturingOrder, BOM,
         SaleReturn, PurchaseReturn, PurchaseOrder, ProductionLog,
-        SalaryPayment, ProductCategory, SaleItem, Salesman, SalesmanGroup, CustomerGroup
+        SalaryPayment, ProductCategory, SaleItem, Salesman, SalesmanGroup, CustomerGroup,
+        Warehouse, Attendance
     )
     return {
         'expense': Expense,
@@ -45,6 +46,8 @@ def _get_model_classes():
         'purchase_order': PurchaseOrder,
         'production_log': ProductionLog,
         'salary_payment': SalaryPayment,
+        'warehouse': Warehouse,
+        'attendance': Attendance,
         # Report aliases (map to same models)
         'sales_report': Sale,
         'purchase_report': PurchaseBill,
@@ -69,7 +72,8 @@ def _build_field_registry():
         Expense, ExpenseCategory, Sale, PurchaseBill, Product,
         Vendor, Customer, Staff, ManufacturingOrder, BOM,
         SaleReturn, PurchaseReturn, PurchaseOrder, ProductionLog,
-        SalaryPayment, ProductCategory, SaleItem, Salesman, SalesmanGroup, CustomerGroup
+        SalaryPayment, ProductCategory, SaleItem, Salesman, SalesmanGroup, CustomerGroup,
+        Warehouse
     )
     return {
         # === EXPENSE MODULE ===
@@ -86,7 +90,7 @@ def _build_field_registry():
         },
         # === SALE MODULE (invoices + sales report) ===
         'sale': {
-            'invoice_number': {'expr': lambda: Sale.invoice_number, 'type': 'string'},
+            'invoice_number': {'expr': lambda: Sale.invoice_number, 'type': 'string', 'options_route': 'filters.get_invoice_numbers'},
             'date':           {'expr': lambda: Sale.date,            'type': 'date'},
             'year':           {'expr': lambda: func.extract('year', Sale.date), 'type': 'number'},
             'amount':         {'expr': lambda: Sale.total,           'type': 'number'},
@@ -102,7 +106,7 @@ def _build_field_registry():
         },
         # === PURCHASE MODULE (bills + purchase report) ===
         'purchase': {
-            'bill_number':  {'expr': lambda: PurchaseBill.bill_number, 'type': 'string'},
+            'bill_number':  {'expr': lambda: PurchaseBill.bill_number, 'type': 'string', 'options_route': 'filters.get_bill_numbers'},
             'date':         {'expr': lambda: PurchaseBill.date,        'type': 'date'},
             'year':         {'expr': lambda: func.extract('year', PurchaseBill.date), 'type': 'number'},
             'amount':       {'expr': lambda: PurchaseBill.total,       'type': 'number'},
@@ -115,8 +119,8 @@ def _build_field_registry():
         },
         # === PRODUCT / INVENTORY MODULE ===
         'product': {
-            'name':     {'expr': lambda: Product.name,       'type': 'string'},
-            'sku':      {'expr': lambda: Product.sku,        'type': 'string'},
+            'name':     {'expr': lambda: Product.name,       'type': 'string', 'options_route': 'filters.get_product_names'},
+            'sku':      {'expr': lambda: Product.sku,        'type': 'string', 'options_route': 'filters.get_product_skus'},
             'price':    {'expr': lambda: Product.unit_price, 'type': 'number'},
             'cost':     {'expr': lambda: Product.cost_price, 'type': 'number'},
             'quantity': {'expr': lambda: Product.quantity,   'type': 'number'},
@@ -127,7 +131,7 @@ def _build_field_registry():
         },
         # === VENDOR MODULE ===
         'vendor': {
-            'name':     {'expr': lambda: Vendor.name,  'type': 'string'},
+            'name':     {'expr': lambda: Vendor.name,  'type': 'string', 'options_route': 'filters.get_vendors'},
             'email':    {'expr': lambda: Vendor.email, 'type': 'string'},
             'phone':    {'expr': lambda: Vendor.phone, 'type': 'string'},
             'gst_number': {'expr': lambda: Vendor.gst_number, 'type': 'string'},
@@ -135,7 +139,7 @@ def _build_field_registry():
         },
         # === CUSTOMER MODULE ===
         'customer': {
-            'name':     {'expr': lambda: Customer.name,  'type': 'string'},
+            'name':     {'expr': lambda: Customer.name,  'type': 'string', 'options_route': 'filters.get_customers'},
             'email':    {'expr': lambda: Customer.email, 'type': 'string'},
             'phone':    {'expr': lambda: Customer.phone, 'type': 'string'},
             'gst_number': {'expr': lambda: Customer.gst_number, 'type': 'string'},
@@ -144,7 +148,7 @@ def _build_field_registry():
         },
         # === STAFF MODULE ===
         'staff': {
-            'name':       {'expr': lambda: Staff.name,         'type': 'string'},
+            'name':       {'expr': lambda: Staff.name,         'type': 'string', 'options_route': 'filters.get_staff_names'},
             'designation':{'expr': lambda: Staff.designation,  'type': 'string'},
             'phone':      {'expr': lambda: Staff.phone,        'type': 'string'},
             'monthly_salary': {'expr': lambda: Staff.monthly_salary, 'type': 'number'},
@@ -152,7 +156,7 @@ def _build_field_registry():
         },
         # === MANUFACTURING ORDER MODULE ===
         'manufacturing_order': {
-            'order_number':     {'expr': lambda: ManufacturingOrder.order_number,     'type': 'string'},
+            'order_number':     {'expr': lambda: ManufacturingOrder.order_number,     'type': 'string', 'options_route': 'filters.get_mo_numbers'},
             'start_date':       {'expr': lambda: ManufacturingOrder.start_date,       'type': 'date'},
             'end_date':         {'expr': lambda: ManufacturingOrder.end_date,         'type': 'date'},
             'year':             {'expr': lambda: func.extract('year', ManufacturingOrder.start_date), 'type': 'number'},
@@ -165,7 +169,7 @@ def _build_field_registry():
         },
         # === BOM MODULE ===
         'bom': {
-            'name':       {'expr': lambda: BOM.name,       'type': 'string'},
+            'name':       {'expr': lambda: BOM.name,       'type': 'string', 'options_route': 'filters.get_bom_names'},
             'version':    {'expr': lambda: BOM.version,    'type': 'string'},
             'labor_cost': {'expr': lambda: BOM.labor_cost, 'type': 'number'},
             'overhead_cost': {'expr': lambda: BOM.overhead_cost, 'type': 'number'},
@@ -200,6 +204,13 @@ def _build_field_registry():
             'total':      {'expr': lambda: PurchaseOrder.total,      'type': 'number'},
             'status':     {'expr': lambda: PurchaseOrder.status,     'type': 'string'},
         },
+        # === WAREHOUSE MODULE ===
+        'warehouse': {
+            'name':       {'expr': lambda: Warehouse.name,       'type': 'string', 'options_route': 'filters.get_warehouse_names'},
+            'code':       {'expr': lambda: Warehouse.code,       'type': 'string', 'options_route': 'filters.get_warehouse_codes'},
+            'city':       {'expr': lambda: Warehouse.city,       'type': 'string'},
+            'is_active':  {'expr': lambda: Warehouse.is_active,  'type': 'boolean'},
+        },
         # === PRODUCTION LOG MODULE ===
         'production_log': {
             'date':       {'expr': lambda: ProductionLog.date,       'type': 'date'},
@@ -211,6 +222,7 @@ def _build_field_registry():
         },
         # === SALARY PAYMENT MODULE ===
         'salary_payment': {
+            'staff':        {'expr': lambda: Staff.name, 'type': 'string', 'join': Staff, 'options_route': 'filters.get_staff_names'},
             'payment_date': {'expr': lambda: SalaryPayment.payment_date, 'type': 'date'},
             'year':         {'expr': lambda: func.extract('year', SalaryPayment.payment_date), 'type': 'number'},
             'month':        {'expr': lambda: SalaryPayment.month,      'type': 'number'},
@@ -219,10 +231,17 @@ def _build_field_registry():
             'net_salary':   {'expr': lambda: SalaryPayment.net_salary, 'type': 'number'},
             'status':       {'expr': lambda: SalaryPayment.status,     'type': 'string'},
         },
+        # === ATTENDANCE MODULE ===
+        'attendance': {
+            'staff':         {'expr': lambda: Staff.name, 'type': 'string', 'join': Staff, 'options_route': 'filters.get_staff_names'},
+            'date':          {'expr': lambda: Attendance.date, 'type': 'date'},
+            'hours_worked':  {'expr': lambda: Attendance.hours_worked, 'type': 'number'},
+            'earned_amount': {'expr': lambda: Attendance.earned_amount, 'type': 'number'},
+        },
         # === COGS REPORT MODULE (filters SaleItem via Sale/Product joins) ===
         'cogs_report': {
-            'product_name': {'expr': lambda: Product.name, 'type': 'string', 'join': Product},
-            'sku':          {'expr': lambda: Product.sku, 'type': 'string', 'join': Product},
+            'product_name': {'expr': lambda: Product.name, 'type': 'string', 'join': Product, 'options_route': 'filters.get_product_names'},
+            'sku':          {'expr': lambda: Product.sku, 'type': 'string', 'join': Product, 'options_route': 'filters.get_product_skus'},
             'category':     {'expr': lambda: ProductCategory.name, 'type': 'string', 'join': ProductCategory},
             'date':         {'expr': lambda: Sale.date, 'type': 'date', 'join': Sale},
             'amount':       {'expr': lambda: SaleItem.total, 'type': 'number'},
@@ -230,15 +249,15 @@ def _build_field_registry():
         },
         # === PROFIT & LOSS REPORT MODULE (primary: Sale model) ===
         'profit_loss_report': {
-            'invoice_number': {'expr': lambda: Sale.invoice_number, 'type': 'string'},
+            'invoice_number': {'expr': lambda: Sale.invoice_number, 'type': 'string', 'options_route': 'filters.get_invoice_numbers'},
             'date':           {'expr': lambda: Sale.date, 'type': 'date'},
             'amount':         {'expr': lambda: Sale.total, 'type': 'number'},
-            'customer':       {'expr': lambda: Customer.name, 'type': 'string', 'join': Customer},
+            'customer':       {'expr': lambda: Customer.name, 'type': 'string', 'join': Customer, 'options_route': 'filters.get_customers'},
             'status':         {'expr': lambda: Sale.status, 'type': 'string'},
         },
         # === REPORT MODULE ALIASES (mirror base model fields) ===
         'sales_report': {
-            'invoice_number': {'expr': lambda: Sale.invoice_number, 'type': 'string'},
+            'invoice_number': {'expr': lambda: Sale.invoice_number, 'type': 'string', 'options_route': 'filters.get_invoice_numbers'},
             'date':           {'expr': lambda: Sale.date,            'type': 'date'},
             'year':           {'expr': lambda: func.extract('year', Sale.date), 'type': 'number'},
             'amount':         {'expr': lambda: Sale.total,           'type': 'number'},
@@ -253,7 +272,7 @@ def _build_field_registry():
             'customer_group': {'expr': lambda: CustomerGroup.name,      'type': 'string', 'join': [Customer, CustomerGroup], 'options_route': 'filters.get_customer_groups'},
         },
         'purchase_report': {
-            'bill_number':  {'expr': lambda: PurchaseBill.bill_number, 'type': 'string'},
+            'bill_number':  {'expr': lambda: PurchaseBill.bill_number, 'type': 'string', 'options_route': 'filters.get_bill_numbers'},
             'date':         {'expr': lambda: PurchaseBill.date,        'type': 'date'},
             'year':         {'expr': lambda: func.extract('year', PurchaseBill.date), 'type': 'number'},
             'amount':       {'expr': lambda: PurchaseBill.total,       'type': 'number'},
@@ -261,12 +280,12 @@ def _build_field_registry():
             'tax':          {'expr': lambda: PurchaseBill.tax,         'type': 'number'},
             'paid_amount':  {'expr': lambda: PurchaseBill.paid_amount, 'type': 'number'},
             'balance_due':  {'expr': lambda: PurchaseBill.balance_due, 'type': 'number'},
-            'vendor':       {'expr': lambda: Vendor.name,              'type': 'string', 'join': Vendor},
+            'vendor':       {'expr': lambda: Vendor.name,              'type': 'string', 'join': Vendor, 'options_route': 'filters.get_vendors'},
             'status':       {'expr': lambda: PurchaseBill.status,      'type': 'string'},
         },
         'inventory_report': {
-            'name':     {'expr': lambda: Product.name,       'type': 'string'},
-            'sku':      {'expr': lambda: Product.sku,        'type': 'string'},
+            'name':     {'expr': lambda: Product.name,       'type': 'string', 'options_route': 'filters.get_product_names'},
+            'sku':      {'expr': lambda: Product.sku,        'type': 'string', 'options_route': 'filters.get_product_skus'},
             'price':    {'expr': lambda: Product.unit_price, 'type': 'number'},
             'cost':     {'expr': lambda: Product.cost_price, 'type': 'number'},
             'quantity': {'expr': lambda: Product.quantity,   'type': 'number'},
@@ -324,14 +343,14 @@ def _build_field_registry():
             'status':       {'expr': lambda: SalaryPayment.status,     'type': 'string'},
         },
         'vendor_report': {
-            'name':     {'expr': lambda: Vendor.name,  'type': 'string'},
+            'name':     {'expr': lambda: Vendor.name,  'type': 'string', 'options_route': 'filters.get_vendors'},
             'email':    {'expr': lambda: Vendor.email, 'type': 'string'},
             'phone':    {'expr': lambda: Vendor.phone, 'type': 'string'},
             'gst_number': {'expr': lambda: Vendor.gst_number, 'type': 'string'},
             'is_active': {'expr': lambda: Vendor.is_active, 'type': 'boolean'},
         },
         'customer_report': {
-            'name':     {'expr': lambda: Customer.name,  'type': 'string'},
+            'name':     {'expr': lambda: Customer.name,  'type': 'string', 'options_route': 'filters.get_customers'},
             'email':    {'expr': lambda: Customer.email, 'type': 'string'},
             'phone':    {'expr': lambda: Customer.phone, 'type': 'string'},
             'gst_number': {'expr': lambda: Customer.gst_number, 'type': 'string'},

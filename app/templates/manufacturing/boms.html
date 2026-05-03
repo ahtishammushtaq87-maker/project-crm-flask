@@ -3,6 +3,7 @@
 {% block title %}Bills of Material{% endblock %}
 
 {% block content %}
+<div id="module-context" data-module="bom" style="display:none;"></div>
 <div class="container-fluid">
     <div class="d-sm-flex align-items-center justify-content-between mb-4">
         <h1 class="h3 mb-0 text-gray-800">Bills of Material (BOM)</h1>
@@ -23,6 +24,9 @@
                 <table class="table table-bordered datatable-export" id="dataTable" width="100%" cellspacing="0" data-export-title="Bills of Material">
                     <thead>
                         <tr>
+                            <th style="width: 40px;" class="text-center no-export">
+                                <input type="checkbox" id="selectAll" class="form-check-input" onclick="document.querySelectorAll('.bom-checkbox').forEach(cb => cb.checked = this.checked)">
+                            </th>
                             <th>BOM Name</th>
                             <th>Finished Product</th>
                             <th>Version</th>
@@ -35,6 +39,9 @@
                     <tbody>
                         {% for bom in boms %}
                         <tr>
+                            <td class="text-center no-export">
+                                <input type="checkbox" class="form-check-input bom-checkbox" value="{{ bom.id }}">
+                            </td>
                             <td>{{ bom.name }}</td>
                             <td>
                                 <strong>{{ bom.product.name }}</strong><br>

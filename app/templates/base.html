@@ -1602,6 +1602,22 @@
                 $(selector).DataTable().destroy();
             }
             
+            const exportOpts = {
+                columns: ':not(.no-export)',
+                rows: function(idx, data, node) {
+                    if (!node) return true;
+                    // Find all checkboxes in the table
+                    const $table = $(node).closest('table');
+                    const anyChecked = $table.find("tbody input[type='checkbox']:checked").length > 0;
+                    
+                    // If no rows are selected, export everything
+                    if (!anyChecked) return true;
+                    
+                    // Otherwise, only export rows that are checked
+                    return $(node).find("input[type='checkbox']").is(':checked');
+                }
+            };
+            
             return $(selector).DataTable({
                 dom: '<"d-flex justify-content-between align-items-center mb-3"Bf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
                 buttons: [
@@ -1610,14 +1626,14 @@
                         text: '<i class="fas fa-file-excel"></i> Excel',
                         className: 'btn dt-button buttons-excel',
                         title: title,
-                        exportOptions: { columns: ':not(.no-export)' }
+                        exportOptions: exportOpts
                     },
                     {
                         extend: 'csvHtml5',
                         text: '<i class="fas fa-file-csv"></i> CSV',
                         className: 'btn dt-button buttons-csv',
                         title: title,
-                        exportOptions: { columns: ':not(.no-export)' }
+                        exportOptions: exportOpts
                     },
                     {
                         extend: 'pdfHtml5',
@@ -1626,14 +1642,14 @@
                         title: title,
                         orientation: 'landscape',
                         pageSize: 'A4',
-                        exportOptions: { columns: ':not(.no-export)' }
+                        exportOptions: exportOpts
                     },
                     {
                         extend: 'print',
                         text: '<i class="fas fa-print"></i> Print',
                         className: 'btn dt-button buttons-print',
                         title: title,
-                        exportOptions: { columns: ':not(.no-export)' }
+                        exportOptions: exportOpts
                     }
                 ],
                 paging: false,

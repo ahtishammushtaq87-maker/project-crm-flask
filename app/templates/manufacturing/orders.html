@@ -3,6 +3,7 @@
 {% block title %}Manufacturing Orders{% endblock %}
 
 {% block content %}
+<div id="module-context" data-module="manufacturing_order" style="display:none;"></div>
 <div class="container-fluid">
     <div class="d-sm-flex align-items-center justify-content-between mb-4">
         <h1 class="h3 mb-0 text-gray-800">Manufacturing Orders</h1>
@@ -23,6 +24,9 @@
                 <table class="table table-bordered datatable-export" id="dataTable" width="100%" cellspacing="0" data-export-title="Manufacturing Orders">
                     <thead>
                         <tr>
+                            <th style="width: 40px;" class="text-center no-export">
+                                <input type="checkbox" id="selectAll" class="form-check-input" onclick="document.querySelectorAll('.order-checkbox').forEach(cb => cb.checked = this.checked)">
+                            </th>
                             <th>Order No</th>
                             <th>Target Product</th>
                             <th>Status</th>
@@ -37,6 +41,9 @@
                     <tbody>
                         {% for ord in orders %}
                         <tr>
+                            <td class="text-center no-export">
+                                <input type="checkbox" class="form-check-input order-checkbox" value="{{ ord.id }}">
+                            </td>
                             <td><strong>{{ ord.order_number }}</strong></td>
                             <td>
                                 {{ ord.bom.product.name }}<br>
