@@ -7,6 +7,8 @@ from app.forms import StaffForm, SalaryAdvanceForm, SalaryPaymentForm
 from datetime import datetime
 from sqlalchemy import extract
 import io
+import os
+from werkzeug.utils import secure_filename
 
 bp = Blueprint('salary', __name__)
 
@@ -33,8 +35,23 @@ def add_staff():
             designation=form.designation.data,
             monthly_salary=form.monthly_salary.data,
             joining_date=form.joining_date.data or datetime.utcnow().date(),
+            joining_advance=form.joining_advance.data or 0,
+            remaining_joining_advance=form.joining_advance.data or 0,
             is_active=form.is_active.data
         )
+        
+        # Handle agreement letter upload
+        if form.agreement_letter.data:
+            file = form.agreement_letter.data
+            filename = secure_filename(f"staff_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+            upload_folder = os.path.join('app', 'static', 'uploads', 'staff_agreements')
+            if not os.path.exists(upload_folder):
+                os.makedirs(upload_folder)
+            file.save(os.path.join(upload_folder, filename))
+            staff.agreement_letter = f"uploads/staff_agreements/{filename}"
+            
+        staff.joining_advance = form.joining_advance.data or 0
+        staff.remaining_joining_advance = form.joining_advance.data or 0
         staff.calculate_daily_salary()  # Calculate daily salary
         db.session.add(staff)
         db.session.commit()
@@ -53,7 +70,28 @@ def edit_staff(id):
         staff.designation = form.designation.data
         staff.monthly_salary = form.monthly_salary.data
         staff.joining_date = form.joining_date.data
+        # If this is the first time joining advance is set, or if it's being increased
+        old_ja = staff.joining_advance or 0
+        new_ja = form.joining_advance.data or 0
+        if new_ja != old_ja:
+            # Adjust remaining amount by the difference
+            diff = new_ja - old_ja
+            staff.remaining_joining_advance = (staff.remaining_joining_advance or 0) + diff
+            if staff.remaining_joining_advance < 0:
+                staff.remaining_joining_advance = 0
+            staff.joining_advance = new_ja
         staff.is_active = form.is_active.data
+        
+        # Handle agreement letter upload
+        if form.agreement_letter.data:
+            file = form.agreement_letter.data
+            filename = secure_filename(f"staff_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+            upload_folder = os.path.join('app', 'static', 'uploads', 'staff_agreements')
+            if not os.path.exists(upload_folder):
+                os.makedirs(upload_folder)
+            file.save(os.path.join(upload_folder, filename))
+            staff.agreement_letter = f"uploads/staff_agreements/{filename}"
+            
         staff.calculate_daily_salary()  # Recalculate daily salary
         db.session.commit()
         flash('Staff details updated!', 'success')
@@ -279,7 +317,8 @@ def pay_salary(staff_id):
             flash(f'Salary already processed for {staff.name} for {form.month.data}/{form.year.data}', 'warning')
             return redirect(url_for('salary.payment_list'))
 
-        net_salary = form.base_salary.data + form.bonus.data - form.advance_deduction.data - form.other_deductions.data
+        joining_adv_deduct = form.joining_advance_deduction.data or 0
+        net_salary = form.base_salary.data + form.bonus.data - form.advance_deduction.data - joining_adv_deduct - form.other_deductions.data
         
         payment = SalaryPayment(
             staff_id=staff.id,
@@ -287,6 +326,7 @@ def pay_salary(staff_id):
             year=form.year.data,
             base_salary=form.base_salary.data,
             advance_deduction=form.advance_deduction.data,
+            joining_advance_deduction=joining_adv_deduct,
             bonus=form.bonus.data,
             other_deductions=form.other_deductions.data,
             net_salary=net_salary,
@@ -297,6 +337,12 @@ def pay_salary(staff_id):
         )
         db.session.add(payment)
         db.session.flush() # Get payment.id
+
+        # Update remaining joining advance
+        if joining_adv_deduct > 0:
+            staff.remaining_joining_advance = (staff.remaining_joining_advance or 0) - joining_adv_deduct
+            if staff.remaining_joining_advance < 0:
+                staff.remaining_joining_advance = 0
 
         # Mark advances as deducted
         if form.advance_deduction.data > 0:
@@ -324,9 +370,18 @@ def delete_payment(id):
         advance.is_deducted = False
         advance.salary_payment_id = None
     
+    # Revert joining advance
+    if payment.joining_advance_deduction > 0:
+        staff = Staff.query.get(payment.staff_id)
+        if staff:
+            staff.remaining_joining_advance = (staff.remaining_joining_advance or 0) + payment.joining_advance_deduction
+            # Safety check to not exceed initial advance
+            if staff.remaining_joining_advance > (staff.joining_advance or 0):
+                staff.remaining_joining_advance = staff.joining_advance
+
     db.session.delete(payment)
     db.session.commit()
-    flash('Salary payment deleted and advances reverted.', 'info')
+    flash('Salary payment deleted. Regular and joining advances have been reverted.', 'info')
     return redirect(url_for('salary.payment_list'))
 
 @bp.route('/payments/download/<int:id>')

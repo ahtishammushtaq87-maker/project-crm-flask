@@ -4,12 +4,15 @@
 
 {% block content %}
 <style>
-    .col-md-6{width: 33%;}
+    .bg-info-soft { background-color: rgba(66, 153, 225, 0.25); }
+    .bg-primary-soft { background-color: rgba(102, 126, 234, 0.25); }
+    .bg-success-soft { background-color: rgba(72, 187, 120, 0.25); }
+    .bg-warning-soft { background-color: rgba(236, 201, 75, 0.25); }
+    .bg-secondary-soft { background-color: rgba(160, 174, 192, 0.25); }
     .bg-warning1{background-color: rgba(236, 201, 75, 0.25) !important; color: red !important;}
     @media (max-width: 767px) {
        .btn {font-size: 12px; padding: 6px 10px;}
        .h2, h2 {font-size: calc(1.25rem + -1.1vw);} 
-       .col-md-6 {width: 50%;}
        .fa-3x {font-size: 2em;}
     }
 </style>
@@ -35,7 +38,7 @@
 </div>
 
 <div class="row mb-4">
-    <div class="col-md-6 mb-3 mb-md-0">
+    <div class="col-lg-4 col-md-6 mb-3">
         <div class="card shadow-sm border-0 bg-primary text-white h-100">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
@@ -50,12 +53,46 @@
             </div>
         </div>
     </div>
-    <div class="col-md-6">
+    <div class="col-lg-4 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-secondary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Initial Joining Advance</div>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='joining_advance')) }}</h3>
+                    </div>
+                    <div class="opacity-50">
+                        <i class="fas fa-handshake fa-3x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-success text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Total Advance Deducted</div>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='total_paid_advance')) }}</h3>
+                        <div class="mt-2 small opacity-75">
+                            Regular: {{ "%.2f"|format(staff_members | sum(attribute='total_paid_regular_advance')) }} | 
+                            J.A: {{ "%.2f"|format(staff_members | sum(attribute='joining_advance_paid')) }}
+                        </div>
+                    </div>
+                    <div class="opacity-50">
+                        <i class="fas fa-minus-circle fa-3x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4 col-md-6 mb-3">
         <div class="card shadow-sm border-0 bg-warning text-dark h-100">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Total Pending Advance</div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Regular Pending Advance</div>
                         <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='total_outstanding_advance')) }}</h3>
                     </div>
                     <div class="opacity-50">
@@ -65,17 +102,49 @@
             </div>
         </div>
     </div>
-    <!--Sallery remaininf-->
-    <div class="col-md-6">
-        <div class="card shadow-sm border-0 bg-warning1 text-dark h-100">
+    <div class="col-lg-4 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-info text-white h-100">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Total Salary Remaining</div>
-                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='monthly_salary') - staff_members | sum(attribute='total_outstanding_advance')) }}</h3>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Remaining Joining Advance</div>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='remaining_joining_advance')) }}</h3>
                     </div>
                     <div class="opacity-50">
                         <i class="fas fa-hand-holding-usd fa-3x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!--Bonus block-->
+    <div class="col-lg-4 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-success-soft text-success h-100 border-start border-success border-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Total Bonus Paid</div>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='total_bonus_paid')) }}</h3>
+                    </div>
+                    <div class="opacity-50">
+                        <i class="fas fa-gift fa-3x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!--Net Paid block-->
+    <div class="col-lg-4 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-dark text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Total Net Salary Paid</div>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | map(attribute='salary_payments') | map('sum', attribute='net_salary') | sum) }}</h3>
+                    </div>
+                    <div class="opacity-50">
+                        <i class="fas fa-wallet fa-3x"></i>
                     </div>
                 </div>
             </div>
@@ -94,8 +163,16 @@
                         </th>
                         <th class="px-4 border-0">Staff Name</th>
                         <th>Designation</th>
-                        <th>Monthly Salary</th>
-                        <th>Pending Advance</th>
+                        <th>Base Salary</th>
+                        <th>J.A. Initial</th>
+                        <th>J.A. Remain</th>
+                        <th>J.A. Paid</th>
+                        <th>Bonus</th>
+                        <th>Adv. Deduct</th>
+                        <th>Adv. Pending</th>
+                        <th>Other Deduct</th>
+                        <th>Net Paid</th>
+                        <th>Agreement</th>
                         <th>Status</th>
                         <th class="text-end px-4 no-export">Actions</th>
                     </tr>
@@ -118,12 +195,28 @@
                             </div>
                         </td>
                         <td>{{ staff.designation or '---' }}</td>
-                        <td><strong>{{ "%.2f" % staff.monthly_salary }}</strong></td>
+                        <td>{{ "%.2f" % staff.monthly_salary }}</td>
+                        <td>{{ "%.2f" % (staff.joining_advance or 0) }}</td>
+                        <td class="text-info">{{ "%.2f" % (staff.remaining_joining_advance or 0) }}</td>
+                        <td class="text-success">{{ "%.2f" % staff.joining_advance_paid }}</td>
+                        <td class="text-success">+{{ "%.2f" % staff.total_bonus_paid }}</td>
+                        <td class="text-danger">-{{ "%.2f" % staff.total_paid_regular_advance }}</td>
                         <td>
                             {% set outstanding = staff.total_outstanding_advance %}
                             <span class="badge {% if outstanding > 0 %}bg-warning text-dark{% else %}bg-light text-muted{% endif %} px-2 py-1">
                                 {{ "%.2f" % outstanding }}
                             </span>
+                        </td>
+                        <td class="text-danger">-{{ "%.2f" % staff.total_other_deductions }}</td>
+                        <td><strong class="text-primary">{{ "%.2f" % (staff.salary_payments | sum(attribute='net_salary')) }}</strong></td>
+                        <td>
+                            {% if staff.agreement_letter %}
+                            <a href="{{ url_for('static', filename=staff.agreement_letter) }}" target="_blank" class="btn btn-sm btn-outline-info">
+                                <i class="fas fa-file-download"></i> View
+                            </a>
+                            {% else %}
+                            <span class="text-muted small">No letter</span>
+                            {% endif %}
                         </td>
                         <td>
                             <span class="badge {% if staff.is_active %}bg-success-soft text-success{% else %}bg-secondary-soft text-secondary{% endif %} px-2 py-1">

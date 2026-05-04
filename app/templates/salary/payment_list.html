@@ -43,7 +43,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         <th class="px-4 border-0">Month/Year</th>
                         <th>Staff Name</th>
                         <th>Base Salary</th>
-                        <th>Advance Deduct.</th>
+                        <th>J.A. Initial</th>
+                        <th>J.A. Remain</th>
+                        <th>J.A. Paid</th>
+                        <th>Bonus</th>
+                        <th>Adv. Deduct.</th>
+                        <th>Other Deduct.</th>
                         <th>Net Paid</th>
                         <th>Date</th>
                         <th>Method</th>
@@ -64,7 +69,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         </td>
                         <td>{{ payment.staff.name }}</td>
                         <td>{{ "%.2f" % payment.base_salary }}</td>
-                        <td class="text-danger">-{{ "%.2f" % payment.advance_deduction }}</td>
+                        <td>{{ "%.2f" % (payment.staff.joining_advance or 0) }}</td>
+                        <td class="text-info">{{ "%.2f" % (payment.staff.remaining_joining_advance or 0) }}</td>
+                        <td class="text-success">{{ "%.2f" % payment.joining_advance_deduction }}</td>
+                        <td class="text-success">{{ "%.2f" % payment.bonus }}</td>
+                        <td class="text-danger">{{ "%.2f" % payment.advance_deduction }}</td>
+                        <td class="text-danger">{{ "%.2f" % payment.other_deductions }}</td>
                         <td><strong class="text-success">{{ "%.2f" % payment.net_salary }}</strong></td>
                         <td><small class="text-muted">{{ payment.payment_date.strftime('%d %b, %y') }}</small></td>
                         <td><span class="badge bg-light text-dark px-2 py-1 border small">{{ payment.payment_method }}</span></td>

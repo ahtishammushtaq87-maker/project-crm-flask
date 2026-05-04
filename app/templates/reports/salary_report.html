@@ -65,35 +65,43 @@
 
 <!-- Summary Cards -->
 <div class="row g-4 mb-4 text-center">
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card border-0 shadow-sm rounded-4 h-100">
             <div class="card-body">
-                <p class="text-muted small text-uppercase fw-bold mb-1">Total Base Salary</p>
-                <h4 class="mb-0 fw-bold">PKR {{ total_base | round(2) }}</h4>
+                <p class="text-muted small text-uppercase fw-bold mb-1">Base Salary</p>
+                <h5 class="mb-0 fw-bold">PKR {{ total_base | round(2) }}</h5>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card border-0 shadow-sm rounded-4 h-100">
             <div class="card-body text-success">
-                <p class="text-muted small text-uppercase fw-bold mb-1 font-weight-normal">Total Bonus</p>
-                <h4 class="mb-0 fw-bold">+ PKR {{ total_bonus | round(2) }}</h4>
+                <p class="text-muted small text-uppercase fw-bold mb-1">Total Bonus</p>
+                <h5 class="mb-0 fw-bold">+ PKR {{ total_bonus | round(2) }}</h5>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card border-0 shadow-sm rounded-4 h-100">
             <div class="card-body text-danger">
-                <p class="text-muted small text-uppercase fw-bold mb-1 font-weight-normal">Total Deductions</p>
-                <h4 class="mb-0 fw-bold">- PKR {{ total_deductions | round(2) }}</h4>
+                <p class="text-muted small text-uppercase fw-bold mb-1">Adv. Deduct</p>
+                <h5 class="mb-0 fw-bold">- PKR {{ total_deductions | round(2) }}</h5>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
+        <div class="card border-0 shadow-sm rounded-4 h-100">
+            <div class="card-body text-info">
+                <p class="text-muted small text-uppercase fw-bold mb-1">J.A. Paid</p>
+                <h5 class="mb-0 fw-bold">PKR {{ payments | sum(attribute='joining_advance_deduction') | round(2) }}</h5>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
         <div class="card border-0 shadow-sm rounded-4 bg-primary text-white h-100">
             <div class="card-body">
                 <p class="small text-uppercase fw-bold mb-1 opacity-75">Net Payable</p>
-                <h4 class="mb-0 fw-bold">PKR {{ total_net | round(2) }}</h4>
+                <h5 class="mb-0 fw-bold">PKR {{ total_net | round(2) }}</h5>
             </div>
         </div>
     </div>
@@ -119,9 +127,12 @@
                         <th class="px-4">Staff</th>
                         <th>Month/Year</th>
                         <th>Base Salary</th>
+                        <th>J.A. Initial</th>
+                        <th>J.A. Remain</th>
+                        <th>J.A. Paid</th>
                         <th>Bonus</th>
-                        <th>Adv. Deduction</th>
-                        <th>Other Deductions</th>
+                        <th>Adv. Deduct</th>
+                        <th>Other Deduct</th>
                         <th>Net Paid</th>
                         <th>Date</th>
                         <th>Method</th>
@@ -140,6 +151,9 @@
                         </td>
                         <td>{{ payment.month }}/{{ payment.year }}</td>
                         <td>{{ payment.base_salary | round(2) }}</td>
+                        <td>{{ payment.staff.joining_advance | round(2) }}</td>
+                        <td class="text-info">{{ payment.staff.remaining_joining_advance | round(2) }}</td>
+                        <td class="text-success">{{ payment.joining_advance_deduction | round(2) }}</td>
                         <td class="text-success">+{{ payment.bonus | round(2) }}</td>
                         <td class="text-danger">-{{ payment.advance_deduction | round(2) }}</td>
                         <td class="text-danger">-{{ payment.other_deductions | round(2) }}</td>

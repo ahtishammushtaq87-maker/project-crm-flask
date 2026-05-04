@@ -1227,6 +1227,9 @@ class Staff(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    agreement_letter = db.Column(db.String(255))
+    joining_advance = db.Column(db.Float, default=0)
+    remaining_joining_advance = db.Column(db.Float, default=0)
     
     # Monthly divided salary fields
     daily_salary = db.Column(db.Float, default=0)  # Calculated daily salary (monthly ÷ 30)
@@ -1240,6 +1243,41 @@ class Staff(db.Model):
         """Calculate total non-deducted advances"""
         return sum(advance.amount for advance in self.advances if not advance.is_deducted)
     
+    @property
+    def total_paid_regular_advance(self):
+        """Calculate total deducted regular advances"""
+        return sum(advance.amount for advance in self.advances if advance.is_deducted)
+    
+    @property
+    def joining_advance_paid(self):
+        """Calculate joining advance already paid/deducted"""
+        return (self.joining_advance or 0) - (self.remaining_joining_advance or 0)
+
+    @property
+    def total_paid_advance(self):
+        """Sum of all paid advances (Joining + Regular)"""
+        return self.total_paid_regular_advance + self.joining_advance_paid
+    
+    @property
+    def total_bonus_paid(self):
+        """Total sum of all bonuses across all payments"""
+        return sum(p.bonus for p in self.salary_payments if p.bonus)
+
+    @property
+    def total_other_deductions(self):
+        """Total sum of all other deductions across all payments"""
+        return sum(p.other_deductions for p in self.salary_payments if p.other_deductions)
+    
+    @property
+    def total_salary_remaining(self):
+        """User formula: (advance_deduction - J.A advance paid - netpay - other deduction + Bonus)"""
+        p_adv = sum(p.advance_deduction for p in self.salary_payments if p.advance_deduction)
+        p_ja = self.joining_advance_paid
+        p_net = sum(p.net_salary for p in self.salary_payments if p.net_salary)
+        p_other = sum(p.other_deductions for p in self.salary_payments if p.other_deductions)
+        p_bonus = sum(p.bonus for p in self.salary_payments if p.bonus)
+        return p_ja - p_net - p_other + p_bonus
+
     def calculate_daily_salary(self, reference_date=None):
         """
         Calculate daily salary based on actual days in the month.
@@ -1369,6 +1407,7 @@ class SalaryPayment(db.Model):
     year = db.Column(db.Integer, nullable=False)
     base_salary = db.Column(db.Float, nullable=False)
     advance_deduction = db.Column(db.Float, default=0)
+    joining_advance_deduction = db.Column(db.Float, default=0)
     bonus = db.Column(db.Float, default=0)
     other_deductions = db.Column(db.Float, default=0)
     net_salary = db.Column(db.Float, nullable=False)

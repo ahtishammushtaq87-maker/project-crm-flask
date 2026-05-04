@@ -345,6 +345,8 @@ class StaffForm(FlaskForm):
     designation = StringField('Designation')
     monthly_salary = FloatField('Monthly Salary', validators=[DataRequired(), NumberRange(min=0)])
     joining_date = DateField('Joining Date', validators=[Optional()])
+    joining_advance = FloatField('Joining Advance', validators=[Optional(), NumberRange(min=0)])
+    agreement_letter = FileField('Agreement Letter', validators=[Optional()])
     is_active = BooleanField('Active', default=True)
 
 class SalaryAdvanceForm(FlaskForm):
@@ -359,6 +361,7 @@ class SalaryPaymentForm(FlaskForm):
     year = IntegerField('Year', validators=[DataRequired()])
     base_salary = FloatField('Base Salary', validators=[DataRequired(), NumberRange(min=0)])
     advance_deduction = FloatField('Advance Deduction', default=0)
+    joining_advance_deduction = FloatField('Use Joining Advance', default=0)
     bonus = FloatField('Bonus', default=0)
     other_deductions = FloatField('Other Deductions', default=0)
     payment_date = DateField('Payment Date', validators=[DataRequired()])

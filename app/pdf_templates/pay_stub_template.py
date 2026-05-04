@@ -301,14 +301,20 @@ class PayStubPDFGenerator:
 
         # ── DEDUCTIONS TABLE ────────────────────────────────────────────────────
         adv_ded   = payment.get('advance_deduction', 0)
+        ja_ded    = payment.get('joining_advance_deduction', 0)
         other_ded = payment.get('other_deductions', 0)
-        total_ded = adv_ded + other_ded
+        total_ded = adv_ded + ja_ded + other_ded
 
         ded_rows = []
         if adv_ded > 0:
             ded_rows.append([
-                Paragraph("Advance Deduction", S['RowLabel']),
+                Paragraph("Monthly Advance Deduction", S['RowLabel']),
                 Paragraph(f"-{self.fmt(adv_ded)}", S['RowValNeg'])
+            ])
+        if ja_ded > 0:
+            ded_rows.append([
+                Paragraph("Joining Advance Deduction", S['RowLabel']),
+                Paragraph(f"-{self.fmt(ja_ded)}", S['RowValNeg'])
             ])
         if other_ded > 0:
             ded_rows.append([
@@ -428,6 +434,25 @@ class PayStubPDFGenerator:
             [sum_tbl],
         ]
 
+        # Joining Advance Summary
+        if payment.get('staff_ja_initial', 0) > 0 or payment.get('staff_adv_remain', 0) > 0:
+            ja_sum_rows = []
+            if payment.get('staff_ja_initial', 0) > 0:
+                ja_sum_rows.append([Paragraph("J.A. Initial Total", S['RowLabel']), Paragraph(self.fmt(payment.get('staff_ja_initial',0)), S['RowValue'])])
+                ja_sum_rows.append([Paragraph("J.A. To Date Recovered", S['RowLabel']), Paragraph(self.fmt(payment.get('staff_ja_paid',0)), S['RowValPos'])])
+                ja_sum_rows.append([Paragraph("J.A. Remaining Balance", S['TotLabel']), Paragraph(self.fmt(payment.get('staff_ja_remain',0)), S['TotValue'])])
+            
+            if payment.get('staff_adv_remain', 0) > 0:
+                ja_sum_rows.append([Paragraph("Regular Advance Balance", S['TotLabel']), Paragraph(self.fmt(payment.get('staff_adv_remain',0)), S['RowValAmb'])])
+
+            ja_tbl = Table(ja_sum_rows, colWidths=[RLBL_W, RVAL_W])
+            ja_tbl.setStyle(self._table_style(len(ja_sum_rows), stripe=False))
+            right_parts += [
+                [Spacer(1, 10)],
+                [self._section_hdr("ADVANCE LIABILITIES STATUS", C_ATT_HEAD, RIGHT_COL)],
+                [ja_tbl],
+            ]
+
         right_col_tbl = Table(right_parts, colWidths=[RIGHT_COL])
         right_col_tbl.setStyle(TableStyle([
             ('VALIGN',       (0,0), (-1,-1), 'TOP'),
@@ -492,6 +517,7 @@ class PayStubPDFGenerator:
         pay_data = {
             'base_salary':       payment.base_salary,
             'advance_deduction': payment.advance_deduction,
+            'joining_advance_deduction': getattr(payment, 'joining_advance_deduction', 0) or 0,
             'bonus':             payment.bonus,
             'other_deductions':  payment.other_deductions,
             'payment_date':      payment.payment_date.strftime('%d %b %Y') if payment.payment_date else 'N/A',
@@ -499,6 +525,11 @@ class PayStubPDFGenerator:
             'month_name':        MONTHS[payment.month] if 1 <= payment.month <= 12 else '',
             'year':              payment.year,
             'notes':             payment.notes or '',
+            # Staff metrics for summary
+            'staff_ja_initial':  getattr(staff, 'joining_advance', 0) or 0,
+            'staff_ja_remain':   getattr(staff, 'remaining_joining_advance', 0) or 0,
+            'staff_ja_paid':     getattr(staff, 'joining_advance_paid', 0) or 0,
+            'staff_adv_remain':  getattr(staff, 'total_outstanding_advance', 0) or 0,
         }
         self.generate_pay_stub(staff, pay_data, attendance_data, advances)
         self.buffer.seek(0)

@@ -1238,13 +1238,20 @@ def download_report(format, report_type):
         
         payments = query.order_by(SalaryPayment.payment_date.desc()).all()
         title = "Salary Payment Report"
-        headers = ['Staff', 'Designation', 'Month/Year', 'Base Salary', 'Bonus', 'Adv. Deduction', 'Other Deductions', 'Net Paid', 'Date', 'Method', 'Status']
+        headers = [
+            'Staff', 'Designation', 'Month/Year', 'Base Salary', 'Bonus', 
+            'J.A. Initial', 'J.A. Remain', 'J.A. Paid',
+            'Adv. Deduction', 'Other Deductions', 'Net Paid', 'Date', 'Method', 'Status'
+        ]
         data = [{
             'Staff': p.staff.name,
             'Designation': p.staff.designation or 'N/A',
             'Month/Year': f"{p.month}/{p.year}",
             'Base Salary': f"{p.base_salary:.2f}",
             'Bonus': f"{p.bonus:.2f}",
+            'J.A. Initial': f"{(p.staff.joining_advance or 0):.2f}",
+            'J.A. Remain': f"{(p.staff.remaining_joining_advance or 0):.2f}",
+            'J.A. Paid': f"{p.joining_advance_deduction:.2f}",
             'Adv. Deduction': f"{p.advance_deduction:.2f}",
             'Other Deductions': f"{p.other_deductions:.2f}",
             'Net Paid': f"{p.net_salary:.2f}",

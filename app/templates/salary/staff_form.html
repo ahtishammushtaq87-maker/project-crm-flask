@@ -10,33 +10,50 @@
                 <h4 class="mb-0"><i class="fas fa-user-plus me-2"></i>{{ title }}</h4>
             </div>
             <div class="card-body p-4 bg-light">
-                <form method="POST">
+                <form method="POST" enctype="multipart/form-data">
                     {{ form.hidden_tag() }}
                     <div class="mb-3">
                         <label class="form-label fw-bold small text-muted text-uppercase">Full Name</label>
-                        {{ form.name(class="form-control form-control-lg", placeholder="Enter staff name") }}
+                        {{ form.name(class="form-control", placeholder="Enter staff name") }}
                         {% if form.name.errors %}
                         <div class="text-danger small mt-1">{% for error in form.name.errors %}{{ error }}{% endfor %}</div>
                         {% endif %}
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold small text-muted text-uppercase">Designation</label>
-                        {{ form.designation(class="form-control", placeholder="e.g. Sales Manager, Accountant") }}
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold small text-muted text-uppercase">Designation</label>
+                            {{ form.designation(class="form-control", placeholder="e.g. Manager") }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold small text-muted text-uppercase">Joining Date</label>
+                            {{ form.joining_date(class="form-control", type="date") }}
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold small text-muted text-uppercase">Monthly Salary</label>
-                        {{ form.monthly_salary(class="form-control form-control-lg", placeholder="0.00") }}
+                        {{ form.monthly_salary(class="form-control", placeholder="0.00") }}
                         {% if form.monthly_salary.errors %}
                         <div class="text-danger small mt-1">{% for error in form.monthly_salary.errors %}{{ error }}{% endfor %}</div>
                         {% endif %}
                     </div>
                     <div class="mb-3">
-                        <label class="form-label fw-bold small text-muted text-uppercase">Joining Date</label>
-                        {{ form.joining_date(class="form-control", type="date") }}
+                        <label class="form-label fw-bold small text-muted text-uppercase">Joining Advance (Optional)</label>
+                        {{ form.joining_advance(class="form-control", placeholder="0.00") }}
                     </div>
-                    <div class="mb-3 form-check form-switch p-3 bg-white rounded-3 border">
-                        {{ form.is_active(class="form-check-input ms-0 me-2") }}
-                        <label class="form-check-label fw-bold text-muted small text-uppercase">Currently Active</label>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted text-uppercase">Agreement Letter (PDF, Image, Excel)</label>
+                        {{ form.agreement_letter(class="form-control") }}
+                        {% if staff and staff.agreement_letter %}
+                        <div class="mt-2 text-primary small">
+                            <i class="fas fa-file-alt me-1"></i> Current Letter: <a href="{{ url_for('static', filename=staff.agreement_letter) }}" target="_blank">View File</a>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="mb-3 form-check form-switch p-3 bg-white rounded-3 border ms-0">
+                        <div class="ms-4">
+                            {{ form.is_active(class="form-check-input") }}
+                            <label class="form-check-label fw-bold text-muted small text-uppercase">Currently Active</label>
+                        </div>
                     </div>
                     <div class="d-grid mt-4">
                         <button type="submit" class="btn btn-primary btn-lg shadow-sm">
