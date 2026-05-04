@@ -558,6 +558,7 @@ def update_approval(project_id):
 
 @bp.route('/activate/<int:project_id>', methods=['POST'])
 @login_required
+@permission_required('product_dev', action='edit')
 def activate_production(project_id):
     """Activate production - finalize BOM and mark product as production ready"""
     project = PDProject.query.get_or_404(project_id)
@@ -639,6 +640,7 @@ def delete_asset(asset_id):
 
 @bp.route('/asset/activate/<int:asset_id>')
 @login_required
+@permission_required('product_dev', action='edit')
 def activate_asset(asset_id):
     """Activate an asset"""
     asset = PDAsset.query.get_or_404(asset_id)

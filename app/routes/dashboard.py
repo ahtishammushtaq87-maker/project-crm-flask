@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request
 from app.utils import permission_required
-from flask_login import login_required
+from flask_login import login_required, current_user
 from app.models import Sale, Product, PurchaseBill, Expense, db, SaleItem, Vendor, Customer, Staff, Attendance
 from datetime import datetime, timedelta
 from sqlalchemy import func, inspect
@@ -18,6 +18,13 @@ def has_column(table_name, column_name):
 @bp.route('/')
 @login_required
 def index():
+    # Only Admin or users with specific permission can view the main dashboard
+    from flask import redirect, url_for, flash
+    if current_user.role != 'admin' and not getattr(current_user, 'can_view_dashboard', False):
+        flash('General Dashboard is restricted to Admin only.', 'info')
+        # Redirect to a module they are likely to have access to, or just purchase list
+        return redirect(url_for('purchase.purchase_orders'))
+
     # Get date filters from request
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')

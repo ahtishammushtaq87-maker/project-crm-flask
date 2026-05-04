@@ -62,18 +62,19 @@
 <div class="container-fluid">
 	<div class="d-flex justify-content-between align-items-center mb-4">
 		<h2>Vendors</h2>
-		<div>
+			{% if current_user.has_permission('vendors', 'delete') %}
 			<button id="bulkDeleteBtn" class="btn btn-danger d-none me-2">
 				<i class="fas fa-trash me-1"></i> Delete Selected
 			</button>
-			<a href="{{ url_for('purchase.bulk_upload_vendor') }}" class="btn btn-success">
+			{% endif %}
+			
+			{% if current_user.has_permission('vendors', 'add') %}
+			<a href="{{ url_for('purchase.bulk_upload_vendor') }}" class="btn btn-success me-2">
 				<i class="fas fa-file-excel"></i> Bulk Upload
 			</a>
-			{% if current_user.has_permission('purchases', 'add') %}
 			<a href="{{ url_for('purchase.add_vendor') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Add
 				Vendor</a>
 			{% endif %}
-		</div>
 	</div>
 
 	<!-- Filters Section -->
@@ -172,10 +173,12 @@
 									<a href="{{ url_for('purchase.edit_vendor', id=vendor.id) }}"
 										class="btn btn-sm btn-outline-info" title="Edit"><i class="fas fa-edit"></i></a>
 									{% endif %}
+									{% if current_user.has_permission('vendors', 'delete') %}
 									<button type="button" class="btn btn-sm btn-outline-danger" title="Delete"
 										data-bs-toggle="modal" data-bs-target="#deleteModal{{ vendor.id }}">
 										<i class="fas fa-trash"></i>
 									</button>
+									{% endif %}
 								</div>
 
 								<!-- Delete Confirmation Modal -->

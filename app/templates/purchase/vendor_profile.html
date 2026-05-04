@@ -64,9 +64,11 @@
                     </a></li>
                 </ul>
             </div>
+            {% if current_user.has_permission('vendors', 'add') %}
             <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#advanceModal">
                 <i class="fas fa-hand-holding-usd me-1"></i> Give Advance
             </button>
+            {% endif %}
                         {% if current_user.has_permission('purchases', 'edit') %}
 <a href="{{ url_for('purchase.edit_vendor', id=vendor.id) }}" class="btn btn-outline-warning">
                 <i class="fas fa-edit me-1"></i> Edit
@@ -258,9 +260,11 @@
                 <span class="badge bg-warning text-dark ms-2">PKR {{ '{:,.0f}'.format(vendor.remaining_advance_balance) }} Remaining</span>
                 {% endif %}
             </h6>
+            {% if current_user.has_permission('vendors', 'add') %}
             <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#advanceModal">
                 <i class="fas fa-plus me-1"></i> Give Advance
             </button>
+            {% endif %}
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
@@ -315,6 +319,7 @@
                                     <span class="badge bg-success">Adjusted</span>
                                     {% endif %}
                                     <!-- Delete Button -->
+                                    {% if current_user.has_permission('vendors', 'delete') %}
                                     <form action="{{ url_for('purchase.vendor_delete_advance', id=vendor.id, adv_id=adv.id) }}"
                                           method="POST" class="d-inline">
                                         <button type="submit" class="btn btn-outline-danger"
@@ -323,6 +328,7 @@
                                             <i class="fas fa-trash"></i> Delete
                                         </button>
                                     </form>
+                                    {% endif %}
                                 </div>
 
                                 <!-- Adjust Modal -->

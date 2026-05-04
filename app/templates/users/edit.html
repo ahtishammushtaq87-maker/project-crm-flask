@@ -66,8 +66,12 @@
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <h5 class="mb-0"><i class="fas fa-lock me-2"></i>Module Permissions</h5>
                             <div class="btn-group btn-group-sm">
-                                <button type="button" class="btn btn-outline-primary" onclick="togglePermissions(true)">Check All</button>
-                                <button type="button" class="btn btn-outline-secondary" onclick="togglePermissions(false)">Uncheck All</button>
+                                <button type="button" class="btn btn-outline-primary" onclick="togglePermissions(true)">
+                                    <i class="fas fa-check-double me-1"></i> Check All
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="togglePermissions(false)">
+                                    <i class="fas fa-square me-1"></i> Uncheck All
+                                </button>
                             </div>
                         </div>
                         <div class="text-muted small mb-3">Admin role has full access regardless of settings.</div>
@@ -520,8 +524,8 @@
                             });
                         }
 
-                        document.getElementById('userForm').addEventListener('change', function() {
-                            const roleSelect = document.querySelector('#role');
+                        document.getElementById('role').addEventListener('change', function() {
+                            const roleSelect = this;
                             if (roleSelect && roleSelect.value === 'admin') {
                                 document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
                                     checkbox.checked = true;
@@ -531,9 +535,19 @@
                                 document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
                                     checkbox.disabled = false;
                                 });
+                                // Auto-uncheck dashboard for non-admins if switching
+                                if (roleSelect.value !== 'admin') {
+                                    const dashboardAccess = document.querySelector('input[name="can_view_dashboard"]');
+                                    if (dashboardAccess) {
+                                        // Only auto-uncheck if it was checked before switching roles to something else?
+                                        // User specifically complained about staff getting dashboard access.
+                                        // dashboardAccess.checked = false; // Actually in Edit we might want to keep current if it's already set?
+                                        // But most likely if they are NOT admin, user wants it OFF by default or specifically controlled.
+                                    }
+                                }
                             }
                         });
-                        document.getElementById('userForm').dispatchEvent(new Event('change'));
+                        document.getElementById('role').dispatchEvent(new Event('change'));
                     </script>
                 </div>
             </div>

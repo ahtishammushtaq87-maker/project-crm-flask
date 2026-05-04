@@ -649,6 +649,7 @@ def purchase_settings_page():
 
 @bp.route('/bill/<int:id>/pay', methods=['POST'])
 @login_required
+@permission_required('purchases', action='add')
 def pay_bill(id):
     bill = PurchaseBill.query.get_or_404(id)
     payment_method = request.form.get('payment_method', 'cash')
@@ -1291,7 +1292,7 @@ def vendor_profile(id):
 
 @bp.route('/vendor/add', methods=['GET', 'POST'])
 @login_required
-@permission_required('purchases', action='add')
+@permission_required('vendors', action='add')
 def add_vendor():
     form = VendorForm()
     if form.validate_on_submit():
@@ -1329,6 +1330,7 @@ def add_vendor():
 
 @bp.route('/vendor/<int:id>/advance', methods=['POST'])
 @login_required
+@permission_required('vendors', action='add')
 def vendor_give_advance(id):
     """Record a quick advance payment given to a vendor against material."""
     vendor = Vendor.query.get_or_404(id)
@@ -1360,6 +1362,7 @@ def vendor_give_advance(id):
 
 @bp.route('/vendor/<int:id>/advance/<int:adv_id>/adjust', methods=['POST'])
 @login_required
+@permission_required('vendors', action='edit')
 def vendor_adjust_advance(id, adv_id):
     """Apply a vendor advance against a specific bill."""
     advance = VendorAdvance.query.get_or_404(adv_id)
@@ -1398,7 +1401,7 @@ def vendor_adjust_advance(id, adv_id):
 
 @bp.route('/vendor/<int:id>/advance/<int:adv_id>/delete', methods=['POST'])
 @login_required
-@permission_required('purchases', action='delete')
+@permission_required('vendors', action='delete')
 def vendor_delete_advance(id, adv_id):
     """Delete a vendor advance (reverses applied amount from bill if any was applied)."""
     advance = VendorAdvance.query.get_or_404(adv_id)
@@ -1420,7 +1423,7 @@ def vendor_delete_advance(id, adv_id):
 
 @bp.route('/vendor/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
-@permission_required('purchases', action='edit')
+@permission_required('vendors', action='edit')
 def edit_vendor(id):
     vendor = Vendor.query.get_or_404(id)
     form = VendorForm(obj=vendor)
@@ -1456,7 +1459,7 @@ def edit_vendor(id):
 
 @bp.route('/vendor/<int:id>/delete', methods=['POST'])
 @login_required
-@permission_required('purchases', action='delete')
+@permission_required('vendors', action='delete')
 def delete_vendor(id):
     vendor = Vendor.query.get_or_404(id)
     
@@ -1472,6 +1475,7 @@ def delete_vendor(id):
 
 @bp.route('/vendors/bulk-delete', methods=['POST'])
 @login_required
+@permission_required('vendors', action='delete')
 def bulk_delete_vendors():
     ids = request.json.get('ids', [])
     if not ids:

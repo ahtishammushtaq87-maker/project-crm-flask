@@ -76,6 +76,7 @@ def index():
 
 @bp.route('/clock-in/<int:staff_id>', methods=['POST'])
 @login_required
+@permission_required('attendance', action='add')
 def clock_in(staff_id):
     """Staff clock in"""
     staff = Staff.query.get_or_404(staff_id)
@@ -110,6 +111,7 @@ def clock_in(staff_id):
 
 @bp.route('/clock-out/<int:staff_id>', methods=['POST'])
 @login_required
+@permission_required('attendance', action='edit')
 def clock_out(staff_id):
     """Staff clock out"""
     staff = Staff.query.get_or_404(staff_id)
@@ -194,6 +196,7 @@ def delete_attendance(attendance_id):
 
 @bp.route('/api/quick-clock/<int:staff_id>/<action>', methods=['POST'])
 @login_required
+@permission_required('attendance', action='edit')
 def quick_clock(staff_id, action):
     """Quick clock in/out via API"""
     try:

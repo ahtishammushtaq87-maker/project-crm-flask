@@ -231,6 +231,7 @@ def return_detail(id):
 
 @bp.route('/<int:id>/return-to-inventory', methods=['POST'])
 @login_required
+@permission_required('returns', action='edit')
 def return_to_inventory(id):
     sale_return = SaleReturn.query.get_or_404(id)
     
@@ -320,6 +321,7 @@ def get_sale_details(sale_id):
 
 @bp.route('/settings', methods=['GET', 'POST'])
 @login_required
+@permission_required('returns', action='edit')
 def sale_return_settings():
     settings = SaleReturnSettings.query.first()
     form = SaleReturnSettingsForm(obj=settings)

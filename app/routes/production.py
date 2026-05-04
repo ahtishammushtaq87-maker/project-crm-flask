@@ -193,6 +193,7 @@ def index():
 
 @bp.route('/set-target', methods=['GET', 'POST'])
 @login_required
+@permission_required('production', action='add')
 def set_target():
     """Set monthly production targets for products"""
     target_id = request.args.get('id', type=int)

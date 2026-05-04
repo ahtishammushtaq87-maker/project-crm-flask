@@ -291,6 +291,7 @@ def delete_product(id):
 
 @bp.route('/products/bulk-delete', methods=['POST'])
 @login_required
+@permission_required('inventory', action='delete')
 def bulk_delete_products():
     ids = request.json.get('ids', [])
     if not ids:
@@ -331,6 +332,7 @@ def bulk_delete_products():
 
 @bp.route('/products/bulk-assign-warehouse', methods=['POST'])
 @login_required
+@permission_required('inventory', action='edit')
 def bulk_assign_warehouse():
     ids = request.json.get('ids', [])
     warehouse_id = request.json.get('warehouse_id')
@@ -407,6 +409,7 @@ def stock_report():
 
 @bp.route('/product/bulk-upload', methods=['GET', 'POST'])
 @login_required
+@permission_required('inventory', action='add')
 def bulk_upload():
     if request.method == 'POST':
         if 'file' not in request.files:

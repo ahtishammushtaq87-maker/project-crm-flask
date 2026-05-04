@@ -246,12 +246,14 @@ def payment_list_with_download(paid):
 
 @bp.route('/payments/process', methods=['GET', 'POST'])
 @login_required
+@permission_required('salary', action='add')
 def process_salary_select():
     staff_members = Staff.query.filter_by(is_active=True).all()
     return render_template('salary/process_salary_select.html', staff_members=staff_members)
 
 @bp.route('/payments/pay/<int:staff_id>', methods=['GET', 'POST'])
 @login_required
+@permission_required('salary', action='add')
 def pay_salary(staff_id):
     staff = Staff.query.get_or_404(staff_id)
     form = SalaryPaymentForm()

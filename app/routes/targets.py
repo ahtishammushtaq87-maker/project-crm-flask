@@ -27,6 +27,7 @@ def index():
 
 @bp.route('/set', methods=['GET', 'POST'])
 @login_required
+@permission_required('targets', action='add')
 def set_target():
     """Set or update a monthly target"""
     if not (current_user.is_admin or current_user.can_view_settings):

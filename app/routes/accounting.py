@@ -1315,6 +1315,7 @@ def delete_expense(id):
 
 @bp.route('/expenses/bulk-delete', methods=['POST'])
 @login_required
+@permission_required('accounting', action='delete')
 def bulk_delete_expenses():
     from app.models import BOM
     from app.services.bom_versioning import BOMVersioningService
@@ -1401,6 +1402,7 @@ def bulk_delete_expenses():
 
 @bp.route('/expenses/bulk-confirm', methods=['POST'])
 @login_required
+@permission_required('accounting', action='edit')
 def bulk_confirm_expenses():
     if not current_user.is_admin:
         return jsonify({'success': False, 'message': 'Only admins can confirm expenses.'}), 403
@@ -1717,6 +1719,7 @@ def add_expense_category():
 
 @bp.route('/expense/<int:id>/confirm', methods=['POST'])
 @login_required
+@permission_required('accounting', action='edit')
 def confirm_expense(id):
     if not current_user.is_admin:
         flash('Only admins can confirm expenses.', 'danger')
@@ -1767,6 +1770,7 @@ def confirm_expense(id):
 
 @bp.route('/expense/<int:id>/reject', methods=['POST'])
 @login_required
+@permission_required('accounting', action='edit')
 def reject_expense(id):
     if not current_user.is_admin:
         flash('Only admins can reject expenses.', 'danger')
@@ -1909,6 +1913,7 @@ def delete_payment_method(id):
 
 @bp.route('/bom/<int:bom_id>/reset-overhead', methods=['POST'])
 @login_required
+@permission_required('accounting', action='edit')
 def reset_bom_overhead(bom_id):
     """Reset BOM overhead by marking all overhead expenses as non-overhead"""
     from app.models import BOM, Expense

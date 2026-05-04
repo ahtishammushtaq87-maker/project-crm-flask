@@ -448,6 +448,7 @@ def order_details(id):
 
 @bp.route('/order/<int:id>/complete', methods=['POST'])
 @login_required
+@permission_required('manufacturing', action='edit')
 def complete_order(id):
     order = ManufacturingOrder.query.get_or_404(id)
     
@@ -559,6 +560,7 @@ def complete_order(id):
 
 @bp.route('/order/<int:id>/partial_complete', methods=['POST'])
 @login_required
+@permission_required('manufacturing', action='edit')
 def partial_complete_order(id):
     order = ManufacturingOrder.query.get_or_404(id)
     

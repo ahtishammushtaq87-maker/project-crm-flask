@@ -519,20 +519,30 @@
                             });
                         }
 
-                        document.getElementById('userForm').addEventListener('change', function() {
-                            const roleSelect = document.querySelector('#role');
-                            if (roleSelect && roleSelect.value === 'admin') {
+                        document.getElementById('role').addEventListener('change', function() {
+                            const roleSelect = this;
+                            if (roleSelect.value === 'admin') {
                                 document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
                                     checkbox.checked = true;
                                     checkbox.disabled = true;
                                 });
-                            } else if (roleSelect) {
+                            } else {
                                 document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
                                     checkbox.disabled = false;
                                 });
+                                // Automatically uncheck Dashboard Access for staff/manager if switching from admin
+                                // or as a safe default for non-admins
+                                if (roleSelect.value !== 'admin') {
+                                    const dashboardAccess = document.querySelector('input[name="can_view_dashboard"]');
+                                    if (dashboardAccess) {
+                                        dashboardAccess.checked = false;
+                                        toggleSubPermissions(dashboardAccess, 'dashboard');
+                                    }
+                                }
                             }
                         });
-                        document.getElementById('userForm').dispatchEvent(new Event('change'));
+                        // Trigger initial state
+                        document.getElementById('role').dispatchEvent(new Event('change'));
                     </script>
                 </div>
             </div>

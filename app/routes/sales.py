@@ -406,6 +406,7 @@ def bulk_delete_invoices():
 
 @bp.route('/invoice/<int:id>/pay', methods=['POST'])
 @login_required
+@permission_required('sales', action='add')
 def pay_invoice(id):
     sale = Sale.query.get_or_404(id)
     amount = float(request.form.get('amount', 0))
@@ -563,6 +564,7 @@ def payment_image(payment_id):
 
 @bp.route('/invoice/<int:id>/discount', methods=['POST'])
 @login_required
+@permission_required('sales', action='edit')
 def apply_discount(id):
     sale = Sale.query.get_or_404(id)
     discount_amount = float(request.form.get('discount_amount', 0))
@@ -620,6 +622,7 @@ def customers():
 
 @bp.route('/customer/bulk-upload', methods=['GET', 'POST'])
 @login_required
+@permission_required('customers', action='add')
 def bulk_upload_customer():
     if request.method == 'POST':
         if 'file' not in request.files:
@@ -767,7 +770,7 @@ def customer_advances_json(id):
 
 @bp.route('/customer/add', methods=['GET', 'POST'])
 @login_required
-@permission_required('sales', action='add')
+@permission_required('customers', action='add')
 def add_customer():
     form = CustomerForm()
     groups = CustomerGroup.query.filter_by(is_active=True).all()
@@ -793,7 +796,7 @@ def add_customer():
 
 @bp.route('/customer/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
-@permission_required('sales', action='edit')
+@permission_required('customers', action='edit')
 def edit_customer(id):
     customer = Customer.query.get_or_404(id)
     form = CustomerForm(obj=customer)
@@ -817,7 +820,7 @@ def edit_customer(id):
 
 @bp.route('/customer/<int:id>/delete', methods=['POST'])
 @login_required
-@permission_required('sales', action='delete')
+@permission_required('customers', action='delete')
 def delete_customer(id):
     customer = Customer.query.get_or_404(id)
     
@@ -833,6 +836,7 @@ def delete_customer(id):
 
 @bp.route('/customers/bulk-delete', methods=['POST'])
 @login_required
+@permission_required('customers', action='delete')
 def bulk_delete_customers():
     ids = request.json.get('ids', [])
     if not ids:
@@ -1084,6 +1088,7 @@ def invoice_settings():
 
 @bp.route('/customer/<int:id>/advance', methods=['POST'])
 @login_required
+@permission_required('customers', action='add')
 def customer_receive_advance(id):
     """Record a quick advance payment received from a customer against material."""
     customer = Customer.query.get_or_404(id)
@@ -1115,6 +1120,7 @@ def customer_receive_advance(id):
 
 @bp.route('/customer/<int:customer_id>/advance/<int:adv_id>/apply', methods=['POST'])
 @login_required
+@permission_required('customers', action='edit')
 def customer_apply_advance(customer_id, adv_id):
     """Apply a customer advance against a specific invoice."""
     advance = CustomerAdvance.query.get_or_404(adv_id)
@@ -1161,7 +1167,7 @@ def customer_apply_advance(customer_id, adv_id):
 
 @bp.route('/customer/<int:customer_id>/advance/<int:adv_id>/delete', methods=['POST'])
 @login_required
-@permission_required('sales', action='delete')
+@permission_required('customers', action='delete')
 def customer_delete_advance(customer_id, adv_id):
     """Delete a customer advance. If applied, first unapplies from invoices."""
     advance = CustomerAdvance.query.get_or_404(adv_id)
@@ -1206,6 +1212,7 @@ def customer_delete_advance(customer_id, adv_id):
 
 @bp.route('/customer/<int:customer_id>/advance/<int:adv_id>/unapply', methods=['POST'])
 @login_required
+@permission_required('customers', action='edit')
 def customer_unapply_advance(customer_id, adv_id):
     """Unapply/reverse an advance that was applied to an invoice."""
     advance = CustomerAdvance.query.get_or_404(adv_id)
@@ -1259,7 +1266,7 @@ def salesmen_list():
 
 @bp.route('/salesman/add', methods=['GET', 'POST'])
 @login_required
-@permission_required('sales', action='add')
+@permission_required('salesmen', action='add')
 def add_salesman():
     form = SalesmanForm()
     groups = SalesmanGroup.query.filter_by(is_active=True).all()
@@ -1283,7 +1290,7 @@ def add_salesman():
 
 @bp.route('/salesman/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
-@permission_required('sales', action='edit')
+@permission_required('salesmen', action='edit')
 def edit_salesman(id):
     salesman = Salesman.query.get_or_404(id)
     form = SalesmanForm(obj=salesman)
@@ -1305,7 +1312,7 @@ def edit_salesman(id):
 
 @bp.route('/salesman/delete/<int:id>', methods=['POST'])
 @login_required
-@permission_required('sales', action='delete')
+@permission_required('salesmen', action='delete')
 def delete_salesman(id):
     salesman = Salesman.query.get_or_404(id)
     if salesman.sales:
@@ -1318,6 +1325,7 @@ def delete_salesman(id):
 
 @bp.route('/salesman/quick-add', methods=['POST'])
 @login_required
+@permission_required('salesmen', action='add')
 def quick_add_salesman():
     name = request.form.get('name')
     if not name:
@@ -1339,6 +1347,7 @@ def quick_add_salesman():
 
 @bp.route('/salesman/group/quick-add', methods=['POST'])
 @login_required
+@permission_required('salesmen', action='add')
 def quick_add_salesman_group():
     name = request.form.get('name')
     if not name:
@@ -1369,7 +1378,7 @@ def customer_groups_list():
 
 @bp.route('/customer-group/add', methods=['GET', 'POST'])
 @login_required
-@permission_required('sales', action='add')
+@permission_required('customer_groups', action='add')
 def add_customer_group():
     form = CustomerGroupForm()
     if form.validate_on_submit():
@@ -1385,7 +1394,7 @@ def add_customer_group():
 
 @bp.route('/customer-group/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
-@permission_required('sales', action='edit')
+@permission_required('customer_groups', action='edit')
 def edit_customer_group(id):
     group = CustomerGroup.query.get_or_404(id)
     form = CustomerGroupForm(obj=group)
@@ -1399,7 +1408,7 @@ def edit_customer_group(id):
 
 @bp.route('/customer-group/delete/<int:id>', methods=['POST'])
 @login_required
-@permission_required('sales', action='delete')
+@permission_required('customer_groups', action='delete')
 def delete_customer_group(id):
     group = CustomerGroup.query.get_or_404(id)
     if group.customers:
@@ -1412,6 +1421,7 @@ def delete_customer_group(id):
 
 @bp.route('/customer-group/quick-add', methods=['POST'])
 @login_required
+@permission_required('customer_groups', action='add')
 def quick_add_customer_group():
     name = request.form.get('name')
     if not name:
