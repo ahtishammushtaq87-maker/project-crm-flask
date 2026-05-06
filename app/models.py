@@ -471,6 +471,8 @@ class Sale(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    access_token = db.Column(db.String(100), unique=True, nullable=True, index=True)
+    token_expiry = db.Column(db.DateTime, nullable=True)
     
     # Relationships
     items = db.relationship('SaleItem', backref='sale', lazy=True, cascade='all, delete-orphan')
@@ -518,6 +520,17 @@ class Sale(db.Model):
         # Ensure total is not negative
         if self.total < 0:
             self.total = 0
+            
+    @property
+    def valid_access_token(self):
+        import uuid
+        from datetime import datetime, timedelta
+        from app import db
+        if not self.access_token or not self.token_expiry or self.token_expiry < datetime.utcnow():
+            self.access_token = str(uuid.uuid4())
+            self.token_expiry = datetime.utcnow() + timedelta(days=7)
+            db.session.commit()
+        return self.access_token
     
     def __repr__(self):
         return f'<Sale {self.invoice_number}>'
@@ -576,6 +589,8 @@ class PurchaseBill(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    access_token = db.Column(db.String(100), unique=True, nullable=True, index=True)
+    token_expiry = db.Column(db.DateTime, nullable=True)
     
     # Relationships
     items = db.relationship('PurchaseItem', backref='bill', lazy=True, cascade='all, delete-orphan')
@@ -640,6 +655,17 @@ class PurchaseBill(db.Model):
         # Ensure total is not negative
         if self.total < 0:
             self.total = 0
+            
+    @property
+    def valid_access_token(self):
+        import uuid
+        from datetime import datetime, timedelta
+        from app import db
+        if not self.access_token or not self.token_expiry or self.token_expiry < datetime.utcnow():
+            self.access_token = str(uuid.uuid4())
+            self.token_expiry = datetime.utcnow() + timedelta(days=7)
+            db.session.commit()
+        return self.access_token
     
     def __repr__(self):
         return f'<PurchaseBill {self.bill_number}>'

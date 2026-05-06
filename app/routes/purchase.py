@@ -2578,3 +2578,32 @@ def vendor_export_pdf(id):
         as_attachment=True,
         download_name=f"vendor_{vendor.id}_{vendor.name}_profile.pdf"
     )
+
+@bp.route('/public/purchase/<token>')
+def public_purchase(token):
+    from datetime import datetime
+    from app.models import Company, PurchaseSettings
+    from app.pdf_utils import generate_professional_pdf
+    from flask import make_response
+    
+    bill = PurchaseBill.query.filter_by(access_token=token).first_or_404()
+    
+    # Check expiry
+    if bill.token_expiry and bill.token_expiry < datetime.utcnow():
+        return "Link expired", 403
+        
+    company = Company.query.first()
+    settings = PurchaseSettings.query.first()
+    
+    try:
+        buffer = generate_professional_pdf('purchase', bill, company, settings)
+        
+        response = make_response(buffer)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'inline; filename="bill_{bill.bill_number or "unknown"}.pdf"'
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+    except Exception as e:
+        return f"Error generating PDF: {str(e)}", 500

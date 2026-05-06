@@ -1408,6 +1408,30 @@
                 this.attachItemHandlers();
             },
 
+            updateBadge: function () {
+                const badge = document.querySelector('.notification-badge');
+                if (!badge) {
+                    const bell = document.querySelector('.notification-bell-wrapper');
+                    if (bell) {
+                        const unread = this.messages.filter(m => !m.read).length;
+                        if (unread > 0) {
+                            const newBadge = document.createElement('span');
+                            newBadge.className = 'notification-badge';
+                            newBadge.textContent = unread;
+                            bell.appendChild(newBadge);
+                        }
+                    }
+                    return;
+                }
+                const unread = this.messages.filter(m => !m.read).length;
+                if (unread > 0) {
+                    badge.textContent = unread;
+                    badge.style.display = 'flex';
+                } else {
+                    badge.style.display = 'none';
+                }
+            },
+
             attachItemHandlers: function () {
                 const list = document.getElementById('notificationList');
                 if (!list) return;

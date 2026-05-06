@@ -1441,3 +1441,29 @@ def quick_add_customer_group():
             'name': group.name
         }
     })
+
+@bp.route('/public/invoice/<token>')
+def public_invoice(token):
+    from datetime import datetime
+    from app.models import Company, InvoiceSettings
+    sale = Sale.query.filter_by(access_token=token).first_or_404()
+    
+    # Check expiry
+    if sale.token_expiry and sale.token_expiry < datetime.utcnow():
+        return "Link expired", 403
+        
+    company = Company.query.first()
+    invoice_settings = InvoiceSettings.query.first()
+    
+    try:
+        buffer = generate_professional_pdf('invoice', sale, company, invoice_settings)
+        
+        response = make_response(buffer)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'inline; filename="invoice_{sale.invoice_number or "unknown"}.pdf"'
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+    except Exception as e:
+        return f"Error generating PDF: {str(e)}", 500

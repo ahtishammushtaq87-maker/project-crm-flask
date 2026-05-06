@@ -139,8 +139,52 @@
                         </div>
                         <div class="mb-3">
                             <label for="bill_image" class="form-label">Bill Image</label>
-                            {{ form.bill_image(class="form-control", accept="image/*", id="billImageInput") }}
-                            <div class="form-text">Upload a new bill/receipt image (JPG, PNG, GIF) - Optional</div>
+                            <div class="input-group">
+                                <button type="button" class="btn btn-outline-info d-flex align-items-center" id="webcamBtn">
+                                    <i class="fas fa-camera me-1"></i>Camera Capture
+                                </button>
+                                {{ form.bill_image(class="form-control", accept="image/*", id="billImageInput") }}
+                            </div>
+                            <!-- Hidden input for file transfer -->
+                            <input type="file" id="hiddenCameraInput" accept="image/*" capture="environment" style="position: absolute; width: 0.1px; height: 0.1px; opacity: 0; overflow: hidden; z-index: -1;">
+                            <div class="form-text">Directly capture from camera (Webcam) or upload a file - Optional</div>
+
+                            <!-- Camera Capture Modal -->
+                            <div class="modal fade" id="cameraModal" tabindex="-1" aria-labelledby="cameraModalLabel" aria-hidden="true" data-bs-backdrop="static">
+                                <div class="modal-dialog modal-lg">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title" id="cameraModalLabel">Capture Receipt from Camera</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="stopCameraBtn1"></button>
+                                        </div>
+                                        <div class="modal-body text-center">
+                                            <div id="cameraStreamContainer">
+                                                <video id="webcamVideo" autoplay playsinline class="w-100 rounded border bg-dark" style="max-height: 400px; transform: scaleX(-1);"></video>
+                                                <canvas id="captureCanvas" style="display:none;"></canvas>
+                                                <div class="mt-3">
+                                                    <button type="button" class="btn btn-primary btn-lg" id="snapBtn">
+                                                        <i class="fas fa-camera"></i> Take Photo
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div id="cameraResultContainer" style="display:none;">
+                                                <img id="capturePreview" class="img-fluid rounded border mb-3">
+                                                <div class="d-flex justify-content-center gap-2">
+                                                    <button type="button" class="btn btn-warning" id="retakeBtn">
+                                                        <i class="fas fa-redo"></i> Retake
+                                                    </button>
+                                                    <button type="button" class="btn btn-success" id="confirmPhotoBtn">
+                                                        <i class="fas fa-check"></i> Use Photo
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="stopCameraBtn2">Cancel</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                             {% if expense.bill_image_path %}
                             <div class="mt-2">
                                 <strong>Current Bill:</strong>
@@ -251,7 +295,7 @@
                             <a href="{{ url_for('accounting.expenses') }}" class="btn btn-secondary">Cancel</a>
                         </div>
                     </form>
-                </div>
+                </div>                </div>
             </div>
         </div>
     </div>
@@ -262,18 +306,15 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Single-select
+    // Select2 Initializations
     $('select[name="category_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Category —', allowClear: true, width: '100%' });
     $('select[name="payment_method"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Payment Method —', allowClear: true, width: '100%' });
     $('select[name="vendor_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Vendor (Optional) —', allowClear: true, width: '100%' });
-
-    // MO multi-select
     $('#mo_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select In Progress Manufacturing Order(s) —', allowClear: true, width: '100%', closeOnSelect: false });
-
-    // Bulk multi-selects
     $('#product_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select Finished Products —', allowClear: true, width: '100%', closeOnSelect: false });
     $('#bom_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select BOMs —', allowClear: true, width: '100%', closeOnSelect: false });
 
+    // DOM Elements
     const isBomOverheadCheckbox = document.getElementById('is_bom_overhead');
     const isMonthlyDividedCheckbox = document.getElementById('is_monthly_divided');
     const overheadContainer = document.getElementById('overhead_targets_container');
@@ -284,30 +325,37 @@ document.addEventListener('DOMContentLoaded', function() {
     const modeBulkRadio     = document.getElementById('mode_bulk');
     const modeMoCard        = document.getElementById('mode_mo_card');
     const modeBulkCard      = document.getElementById('mode_bulk_card');
-
-    // Determine initial mode from pre-selected values
-    function getInitialMode() {
-        const moVals = $('#mo_id_select').val();
-        const prodVals = $('#product_id_select').val();
-        const bomVals = $('#bom_id_select').val();
-        // If any MO is selected -> MO mode, else bulk mode
-        return (moVals && moVals.length > 0) ? 'mo' : 'bulk';
-    }
+    
+    // Camera Elements
+    const webcamBtn = document.getElementById('webcamBtn');
+    const mainBillInput = document.getElementById('billImageInput');
+    const hiddenCameraInput = document.getElementById('hiddenCameraInput');
+    const webcamVideo = document.getElementById('webcamVideo');
+    const captureCanvas = document.getElementById('captureCanvas');
+    const capturePreview = document.getElementById('capturePreview');
+    const cameraStreamContainer = document.getElementById('cameraStreamContainer');
+    const cameraResultContainer = document.getElementById('cameraResultContainer');
+    let videoStream = null;
+    let cameraModal = null;
 
     function applyModeSwitch() {
+        if (!modeMoRadio) return;
         const isMoMode = modeMoRadio.checked;
-        moSection.style.display   = isMoMode ? 'block' : 'none';
-        bulkSection.style.display = isMoMode ? 'none'  : 'block';
-        // Highlight active card
-        modeMoCard.style.borderColor   = isMoMode ? '#fd7e14' : '';
-        modeMoCard.style.background    = isMoMode ? '#fff8f0' : '#fff';
-        modeBulkCard.style.borderColor = !isMoMode ? '#0d6efd' : '';
-        modeBulkCard.style.background  = !isMoMode ? '#f0f5ff' : '#fff';
-        // Clear irrelevant fields
+        if (moSection) moSection.style.display   = isMoMode ? 'block' : 'none';
+        if (bulkSection) bulkSection.style.display = isMoMode ? 'none'  : 'block';
+        if (modeMoCard) {
+            modeMoCard.style.borderColor   = isMoMode ? '#fd7e14' : '';
+            modeMoCard.style.background    = isMoMode ? '#fff8f0' : '#fff';
+        }
+        if (modeBulkCard) {
+            modeBulkCard.style.borderColor = !isMoMode ? '#0d6efd' : '';
+            modeBulkCard.style.background  = !isMoMode ? '#f0f5ff' : '#fff';
+        }
         if (isMoMode) {
             $('#product_id_select').val(null).trigger('change');
             $('#bom_id_select').val(null).trigger('change');
-            document.getElementById('allocation_preview').style.display = 'none';
+            const preview = document.getElementById('allocation_preview');
+            if (preview) preview.style.display = 'none';
         } else {
             $('#mo_id_select').val(null).trigger('change');
         }
@@ -315,105 +363,184 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function toggleOverheadSection() {
-        overheadContainer.style.display = isBomOverheadCheckbox.checked ? 'block' : 'none';
-        if (!isBomOverheadCheckbox.checked) {
-            $('#product_id_select').val(null).trigger('change');
-            $('#bom_id_select').val(null).trigger('change');
-            $('#mo_id_select').val(null).trigger('change');
-            moSection.style.display = 'none';
-            bulkSection.style.display = 'none';
+        if (overheadContainer && isBomOverheadCheckbox) {
+            overheadContainer.style.display = isBomOverheadCheckbox.checked ? 'block' : 'none';
         }
     }
 
     function toggleMonthlyDivision() {
-        const checked = isMonthlyDividedCheckbox.checked;
-        monthlyContainer.style.display = checked ? 'block' : 'none';
-        if (checked) {
-            const today = new Date();
-            const s = document.querySelector('input[name="monthly_start_date"]');
-            const e = document.querySelector('input[name="monthly_end_date"]');
-            if (s && !s.value) s.value = today.toISOString().split('T')[0];
-            if (e && !e.value) e.value = today.toISOString().split('T')[0];
+        if (monthlyContainer && isMonthlyDividedCheckbox) {
+            monthlyContainer.style.display = isMonthlyDividedCheckbox.checked ? 'block' : 'none';
         }
     }
 
     function updateAllocationPreview() {
-        const summaryEl = document.getElementById('allocation_summary');
-        const prodVals = $('#product_id_select').val() || [];
-        const bomVals = $('#bom_id_select').val() || [];
-        if (prodVals.length > 0 || bomVals.length > 0) {
-            let html = '';
-            if (prodVals.length > 0) {
-                html += `<div><strong>Products (${prodVals.length}):</strong> `;
-                prodVals.forEach(id => {
-                    const txt = $('#product_id_select option[value="'+id+'"]').text();
-                    html += `<span class="badge bg-secondary me-1">${txt}</span>`;
-                });
-                html += '</div>';
-            }
-            if (bomVals.length > 0) {
-                html += `<div><strong>BOMs (${bomVals.length}):</strong> `;
-                bomVals.forEach(id => {
-                    const txt = $('#bom_id_select option[value="'+id+'"]').text();
-                    html += `<span class="badge bg-secondary me-1">${txt}</span>`;
-                });
-                html += '</div>';
-            }
-            summaryEl.innerHTML = html;
-            document.getElementById('allocation_preview').style.display = 'block';
-        } else {
-            document.getElementById('allocation_preview').style.display = 'none';
+        const amountInput = document.querySelector('input[name="amount"]');
+        const amount = parseFloat(amountInput ? amountInput.value : 0) || 0;
+        const p = ($('#product_id_select').val() || []).filter(v => v && v != '0');
+        const b = ($('#bom_id_select').val() || []).filter(v => v && v != '0');
+        const total = p.length + b.length;
+        const preview = document.getElementById('allocation_preview');
+        const summary = document.getElementById('allocation_summary');
+        
+        if (preview && summary && total > 0 && amount > 0) {
+            const per = (amount / total).toFixed(2);
+            summary.innerHTML = total > 1
+                ? ` <strong>PKR ${amount.toFixed(2)}</strong> ÷ ${total} targets = <strong>PKR ${per}</strong> each.`
+                : ` Full amount <strong>PKR ${amount.toFixed(2)}</strong> to 1 target.`;
+            preview.style.display = 'block';
+        } else if (preview) {
+            preview.style.display = 'none';
         }
     }
 
-    // Event listeners
-    modeMoRadio.addEventListener('change', applyModeSwitch);
-    modeBulkRadio.addEventListener('change', applyModeSwitch);
-    // Make whole card clickable
-    modeMoCard.addEventListener('click', () => { modeMoRadio.checked = true; applyModeSwitch(); });
-    modeBulkCard.addEventListener('click', () => { modeBulkRadio.checked = true; applyModeSwitch(); });
-    isBomOverheadCheckbox.addEventListener('change', toggleOverheadSection);
-    isMonthlyDividedCheckbox.addEventListener('change', toggleMonthlyDivision);
+    // Unified Preview Logic
+    function updateDirectPreview(file) {
+        const preview = document.getElementById('billImagePreview');
+        if (!preview) return;
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                preview.innerHTML = `
+                    <div class="alert alert-success p-2 mb-2 d-inline-block">
+                        <i class="fas fa-check-circle me-1"></i> New Image Ready
+                    </div>
+                    <div>
+                        <img src="${e.target.result}" class="img-thumbnail shadow-sm" style="max-width:250px; max-height:250px;">
+                        <p class="text-muted small mt-1"><i class="fas fa-file-image me-1"></i>${file.name}</p>
+                    </div>
+                `;
+            };
+            reader.readAsDataURL(file);
+        } else {
+            preview.innerHTML = '';
+        }
+    }
+
+    // Camera Logic
+    async function startWebcam() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert("Your browser or connection (non-HTTPS) does not support camera access.");
+            return;
+        }
+        try {
+            videoStream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
+            });
+            if (webcamVideo) webcamVideo.srcObject = videoStream;
+            if (cameraStreamContainer) cameraStreamContainer.style.display = 'block';
+            if (cameraResultContainer) cameraResultContainer.style.display = 'none';
+        } catch (err) {
+            alert("Could not access camera: " + err.message);
+            if (cameraModal) cameraModal.hide();
+        }
+    }
+
+    function stopWebcam() {
+        if (videoStream) {
+            videoStream.getTracks().forEach(track => track.stop());
+            videoStream = null;
+        }
+    }
+
+    if (webcamBtn) {
+        webcamBtn.addEventListener('click', function() {
+            try {
+                if (!cameraModal) {
+                    const modalEl = document.getElementById('cameraModal');
+                    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                        cameraModal = new bootstrap.Modal(modalEl);
+                    } else if (window.bootstrap && window.bootstrap.Modal) {
+                        cameraModal = new window.bootstrap.Modal(modalEl);
+                    } else {
+                        cameraModal = {
+                            show: function() { $(modalEl).modal('show'); },
+                            hide: function() { $(modalEl).modal('hide'); }
+                        };
+                    }
+                }
+                cameraModal.show();
+                startWebcam();
+            } catch (e) {
+                alert("Error opening camera: " + e.message);
+            }
+        });
+    }
+
+    const stopBtn1 = document.getElementById('stopCameraBtn1');
+    const stopBtn2 = document.getElementById('stopCameraBtn2');
+    if (stopBtn1) stopBtn1.addEventListener('click', stopWebcam);
+    if (stopBtn2) stopBtn2.addEventListener('click', stopWebcam);
+
+    const snapBtn = document.getElementById('snapBtn');
+    if (snapBtn) {
+        snapBtn.addEventListener('click', function() {
+            const context = captureCanvas.getContext('2d');
+            captureCanvas.width = webcamVideo.videoWidth;
+            captureCanvas.height = webcamVideo.videoHeight;
+            context.translate(captureCanvas.width, 0);
+            context.scale(-1, 1);
+            context.drawImage(webcamVideo, 0, 0, captureCanvas.width, captureCanvas.height);
+            capturePreview.src = captureCanvas.toDataURL('image/jpeg');
+            cameraStreamContainer.style.display = 'none';
+            cameraResultContainer.style.display = 'block';
+        });
+    }
+
+    const retakeBtn = document.getElementById('retakeBtn');
+    if (retakeBtn) {
+        retakeBtn.addEventListener('click', function() {
+            cameraStreamContainer.style.display = 'block';
+            cameraResultContainer.style.display = 'none';
+        });
+    }
+
+    const confirmBtn = document.getElementById('confirmPhotoBtn');
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', function() {
+            captureCanvas.toBlob((blob) => {
+                const fileName = `captured_receipt_${Date.now()}.jpg`;
+                const file = new File([blob], fileName, { type: 'image/jpeg' });
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                mainBillInput.files = dataTransfer.files;
+                updateDirectPreview(file);
+                stopWebcam();
+                if (cameraModal) cameraModal.hide();
+            }, 'image/jpeg', 0.9);
+        });
+    }
+
+    // Event Listeners
+    if (isBomOverheadCheckbox) isBomOverheadCheckbox.addEventListener('change', toggleOverheadSection);
+    if (isMonthlyDividedCheckbox) isMonthlyDividedCheckbox.addEventListener('change', toggleMonthlyDivision);
+    if (modeMoRadio) modeMoRadio.addEventListener('change', applyModeSwitch);
+    if (modeBulkRadio) modeBulkRadio.addEventListener('change', applyModeSwitch);
+    if (modeMoCard) modeMoCard.addEventListener('click', () => { if (modeMoRadio) { modeMoRadio.checked = true; applyModeSwitch(); } });
+    if (modeBulkCard) modeBulkCard.addEventListener('click', () => { if (modeBulkRadio) { modeBulkRadio.checked = true; applyModeSwitch(); } });
     $('#product_id_select').on('change', updateAllocationPreview);
     $('#bom_id_select').on('change', updateAllocationPreview);
     const amountEl = document.querySelector('input[name="amount"]');
     if (amountEl) amountEl.addEventListener('input', updateAllocationPreview);
 
-    // Initialise
-    const initialMode = getInitialMode();
-    if (initialMode === 'mo') {
-        modeMoRadio.checked = true;
-        modeBulkRadio.checked = false;
-        $('#mo_id_select').prop('disabled', false);
-        $('#product_id_select, #bom_id_select').prop('disabled', true);
-    } else {
-        modeMoRadio.checked = false;
-        modeBulkRadio.checked = true;
-        $('#mo_id_select').prop('disabled', true);
-        $('#product_id_select, #bom_id_select').prop('disabled', false);
+    if (hiddenCameraInput && mainBillInput) {
+        hiddenCameraInput.addEventListener('change', function() {
+            if (this.files && this.files[0]) {
+                mainBillInput.files = this.files;
+                updateDirectPreview(this.files[0]);
+            }
+        });
     }
+
+    if (mainBillInput) {
+        mainBillInput.addEventListener('change', function(e) {
+            updateDirectPreview(e.target.files[0]);
+        });
+    }
+
+    // Init
     toggleOverheadSection();
-    toggleMonthlyDivision();
     applyModeSwitch();
-    updateAllocationPreview();
-});
-
-document.getElementById('billImageInput').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    const preview = document.getElementById('billImagePreview');
-
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            preview.innerHTML = `
-                <img src="${e.target.result}" class="img-thumbnail" style="max-width: 200px; max-height: 200px;">
-                <p class="text-muted small mt-1">${file.name}</p>
-            `;
-        };
-        reader.readAsDataURL(file);
-    } else {
-        preview.innerHTML = '';
-    }
 });
 </script>
 {% endblock %}

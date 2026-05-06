@@ -122,9 +122,53 @@
                         </div>
                         <div class="mb-3">
                             <label for="bill_image" class="form-label">Bill Image</label>
-                            {{ form.bill_image(class="form-control", accept="image/*", id="billImageInput") }}
-                            <div class="form-text">Upload a bill/receipt image (JPG, PNG, GIF) - Optional</div>
+                            <div class="input-group">
+                                <button type="button" class="btn btn-outline-info d-flex align-items-center" id="webcamBtn">
+                                    <i class="fas fa-camera me-1"></i>Camera Capture
+                                </button>
+                                {{ form.bill_image(class="form-control", accept="image/*", id="billImageInput") }}
+                            </div>
+                            <!-- Hidden input for file transfer -->
+                            <input type="file" id="hiddenCameraInput" accept="image/*" capture="environment" style="position: absolute; width: 0.1px; height: 0.1px; opacity: 0; overflow: hidden; z-index: -1;">
+                            <div class="form-text">Directly capture from camera (Webcam) or upload a file - Optional</div>
                             <div id="billImagePreview" class="mt-2"></div>
+                        </div>
+
+                        <!-- Camera Capture Modal -->
+                        <div class="modal fade" id="cameraModal" tabindex="-1" aria-labelledby="cameraModalLabel" aria-hidden="true" data-bs-backdrop="static">
+                            <div class="modal-dialog modal-lg">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title" id="cameraModalLabel">Capture Receipt from Camera</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="stopCameraBtn1"></button>
+                                    </div>
+                                    <div class="modal-body text-center">
+                                        <div id="cameraStreamContainer">
+                                            <video id="webcamVideo" autoplay playsinline class="w-100 rounded border bg-dark" style="max-height: 400px; transform: scaleX(-1);"></video>
+                                            <canvas id="captureCanvas" style="display:none;"></canvas>
+                                            <div class="mt-3">
+                                                <button type="button" class="btn btn-primary btn-lg" id="snapBtn">
+                                                    <i class="fas fa-camera"></i> Take Photo
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div id="cameraResultContainer" style="display:none;">
+                                            <img id="capturePreview" class="img-fluid rounded border mb-3">
+                                            <div class="d-flex justify-content-center gap-2">
+                                                <button type="button" class="btn btn-warning" id="retakeBtn">
+                                                    <i class="fas fa-redo"></i> Retake
+                                                </button>
+                                                <button type="button" class="btn btn-success" id="confirmPhotoBtn">
+                                                    <i class="fas fa-check"></i> Use Photo
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="stopCameraBtn2">Cancel</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Notes</label>
@@ -263,19 +307,25 @@ document.addEventListener('DOMContentLoaded', function() {
     const modeBulkCard      = document.getElementById('mode_bulk_card');
 
     function applyModeSwitch() {
+        if (!modeMoRadio) return;
         const isMoMode = modeMoRadio.checked;
-        moSection.style.display   = isMoMode ? 'block' : 'none';
-        bulkSection.style.display = isMoMode ? 'none'  : 'block';
+        if (moSection) moSection.style.display   = isMoMode ? 'block' : 'none';
+        if (bulkSection) bulkSection.style.display = isMoMode ? 'none'  : 'block';
         // Highlight active card
-        modeMoCard.style.borderColor   = isMoMode ? '#fd7e14' : '';
-        modeMoCard.style.background    = isMoMode ? '#fff8f0' : '#fff';
-        modeBulkCard.style.borderColor = !isMoMode ? '#0d6efd' : '';
-        modeBulkCard.style.background  = !isMoMode ? '#f0f5ff' : '#fff';
+        if (modeMoCard) {
+            modeMoCard.style.borderColor   = isMoMode ? '#fd7e14' : '';
+            modeMoCard.style.background    = isMoMode ? '#fff8f0' : '#fff';
+        }
+        if (modeBulkCard) {
+            modeBulkCard.style.borderColor = !isMoMode ? '#0d6efd' : '';
+            modeBulkCard.style.background  = !isMoMode ? '#f0f5ff' : '#fff';
+        }
         // Clear irrelevant fields
         if (isMoMode) {
             $('#product_id_select').val(null).trigger('change');
             $('#bom_id_select').val(null).trigger('change');
-            document.getElementById('allocation_preview').style.display = 'none';
+            const preview = document.getElementById('allocation_preview');
+            if (preview) preview.style.display = 'none';
         } else {
             $('#mo_id_select').val(null).trigger('change');
         }
@@ -337,19 +387,153 @@ document.addEventListener('DOMContentLoaded', function() {
 
     toggleOverheadSection();
     applyModeSwitch();
-});
 
-document.getElementById('billImageInput').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    const preview = document.getElementById('billImagePreview');
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            preview.innerHTML = `<img src="${e.target.result}" class="img-thumbnail" style="max-width:200px;max-height:200px;"><p class="text-muted small mt-1">${file.name}</p>`;
-        };
-        reader.readAsDataURL(file);
-    } else {
-        preview.innerHTML = '';
+    // Camera Capture Logic (Webcam API)
+    const webcamBtn = document.getElementById('webcamBtn');
+    const mainBillInput = document.getElementById('billImageInput');
+    const hiddenCameraInput = document.getElementById('hiddenCameraInput');
+    const webcamVideo = document.getElementById('webcamVideo');
+    const captureCanvas = document.getElementById('captureCanvas');
+    const capturePreview = document.getElementById('capturePreview');
+    const cameraStreamContainer = document.getElementById('cameraStreamContainer');
+    const cameraResultContainer = document.getElementById('cameraResultContainer');
+    let videoStream = null;
+    let cameraModal = null;
+
+    async function startWebcam() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert("Your browser or connection (non-HTTPS) does not support camera access.");
+            return;
+        }
+        try {
+            videoStream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
+            });
+            const webcamVideo = document.getElementById('webcamVideo');
+            if (webcamVideo) webcamVideo.srcObject = videoStream;
+            document.getElementById('cameraStreamContainer').style.display = 'block';
+            document.getElementById('cameraResultContainer').style.display = 'none';
+        } catch (err) {
+            alert("Could not access camera: " + err.message);
+            if (cameraModal) cameraModal.hide();
+        }
+    }
+
+    function stopWebcam() {
+        if (videoStream) {
+            videoStream.getTracks().forEach(track => track.stop());
+            videoStream = null;
+        }
+    }
+
+    if (webcamBtn) {
+        webcamBtn.addEventListener('click', function() {
+            try {
+                // Initialize modal on first click to be safe
+                if (!cameraModal) {
+                    const modalEl = document.getElementById('cameraModal');
+                    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                        cameraModal = new bootstrap.Modal(modalEl);
+                    } else if (window.bootstrap && window.bootstrap.Modal) {
+                        cameraModal = new window.bootstrap.Modal(modalEl);
+                    } else {
+                        // JQuery Fallback
+                        cameraModal = {
+                            show: function() { $(modalEl).modal('show'); },
+                            hide: function() { $(modalEl).modal('hide'); }
+                        };
+                    }
+                }
+                cameraModal.show();
+                startWebcam();
+            } catch (e) {
+                alert("Error opening camera window: " + e.message);
+            }
+        });
+    }
+
+    const stopBtn1 = document.getElementById('stopCameraBtn1');
+    const stopBtn2 = document.getElementById('stopCameraBtn2');
+    if (stopBtn1) stopBtn1.addEventListener('click', stopWebcam);
+    if (stopBtn2) stopBtn2.addEventListener('click', stopWebcam);
+
+    document.getElementById('snapBtn').addEventListener('click', function() {
+        const context = captureCanvas.getContext('2d');
+        captureCanvas.width = webcamVideo.videoWidth;
+        captureCanvas.height = webcamVideo.videoHeight;
+        
+        // Mirror back for the capture if needed, or just draw plain
+        context.translate(captureCanvas.width, 0);
+        context.scale(-1, 1);
+        context.drawImage(webcamVideo, 0, 0, captureCanvas.width, captureCanvas.height);
+        
+        capturePreview.src = captureCanvas.toDataURL('image/jpeg');
+        cameraStreamContainer.style.display = 'none';
+        cameraResultContainer.style.display = 'block';
+    });
+
+    document.getElementById('retakeBtn').addEventListener('click', function() {
+        cameraStreamContainer.style.display = 'block';
+        cameraResultContainer.style.display = 'none';
+    });
+
+    // Unified Preview Logic
+    function updateDirectPreview(file) {
+        const preview = document.getElementById('billImagePreview');
+        if (!preview) return;
+        
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                preview.innerHTML = `
+                    <div class="alert alert-success p-2 mb-2 d-inline-block">
+                        <i class="fas fa-check-circle me-1"></i> New Image Ready
+                    </div>
+                    <div>
+                        <img src="${e.target.result}" class="img-thumbnail shadow-sm" style="max-width:250px; max-height:250px;">
+                        <p class="text-muted small mt-1"><i class="fas fa-file-image me-1"></i>${file.name}</p>
+                    </div>
+                `;
+            };
+            reader.readAsDataURL(file);
+        } else {
+            preview.innerHTML = '';
+        }
+    }
+
+    // Bill Image Preview Logic (Manual File Pick)
+    if (mainBillInput) {
+        mainBillInput.addEventListener('change', function(e) {
+            updateDirectPreview(e.target.files[0]);
+        });
+    }
+
+    document.getElementById('confirmPhotoBtn').addEventListener('click', function() {
+        captureCanvas.toBlob((blob) => {
+            const fileName = `captured_receipt_${Date.now()}.jpg`;
+            const file = new File([blob], fileName, { type: 'image/jpeg' });
+            
+            // Set to main input
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            mainBillInput.files = dataTransfer.files;
+            
+            // Show preview directly
+            updateDirectPreview(file);
+            
+            stopWebcam();
+            if (cameraModal) cameraModal.hide();
+        }, 'image/jpeg', 0.9);
+    });
+
+    // File Synchronization (for standard mobile capture)
+    if (hiddenCameraInput && mainBillInput) {
+        hiddenCameraInput.addEventListener('change', function() {
+            if (this.files && this.files[0]) {
+                mainBillInput.files = this.files;
+                updateDirectPreview(this.files[0]);
+            }
+        });
     }
 });
 </script>
