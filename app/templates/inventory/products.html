@@ -2,6 +2,8 @@
 
 {% block title %}Products{% endblock %}
 
+
+
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -324,18 +326,18 @@
                             </td>
                             <td style="width: 80px;" class="no-export">
                                 {% if product.image_path %}
-                                {% if current_user.has_permission('inventory', 'edit') %}
-                                <a href="{{ url_for('inventory.edit_product', id=product.id) }}"
-                                    data-bs-toggle="tooltip" title="Click to edit">
+                                <div class="product-image-container position-relative">
                                     {% set normalized_path = product.image_path.replace('\\', '/') %}
-                                    {% set img_src = normalized_path.replace('app/static/', '') if 'app/static/' in
-                                    normalized_path else normalized_path %}
+                                    {% set img_src = normalized_path.replace('app/static/', '') if 'app/static/' in normalized_path else normalized_path %}
                                     <img src="{{ url_for('static', filename=img_src) }}" alt="{{ product.name }}"
-                                        class="img-thumbnail"
-                                        style="width: 60px; height: 60px; object-fit: cover; cursor: pointer;"
+                                        class="img-thumbnail img-preview-trigger"
+                                        style="width: 60px; height: 60px; object-fit: cover; cursor: zoom-in;"
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#imagePreviewModal"
+                                        data-img-src="{{ url_for('static', filename=img_src) }}"
+                                        data-product-name="{{ product.name }}"
                                         onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 font-size=%2214%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E'">
-                                </a>
-                                {% endif %}
+                                </div>
                                 {% else %}
                                 <div class="text-center text-muted p-2"
                                     style="border: 1px solid #dee2e6; border-radius: 4px; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center;">
@@ -766,4 +768,41 @@
         </div>
     </div>
 </div>
+
+<!-- Modal: Image Preview -->
+<div class="modal fade" id="imagePreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content overflow-hidden border-0 shadow-lg" style="border-radius: 15px;">
+            <div class="modal-header border-0 bg-dark text-white p-3">
+                <h5 class="modal-title fw-bold" id="imagePreviewName">Product Image</h5>
+                <button type="button" class="btn-close btn-close-white shadow-none" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0 bg-black d-flex align-items-center justify-content-center" style="min-height: 300px;">
+                <img id="imagePreviewContent" src="" class="img-fluid" style="max-height: 80vh; object-fit: contain;">
+            </div>
+            <div class="modal-footer border-0 bg-dark py-2">
+                <button type="button" class="btn btn-outline-light btn-sm rounded-pill px-4" data-bs-dismiss="modal">Close Preview</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const previewImage = document.getElementById('imagePreviewContent');
+        const previewName = document.getElementById('imagePreviewName');
+
+        // Use event delegation for images inside DataTables or dynamic rows
+        document.addEventListener('click', function(e) {
+            const trigger = e.target.closest('.img-preview-trigger');
+            if (trigger) {
+                const src = trigger.dataset.imgSrc;
+                const name = trigger.dataset.productName;
+                
+                previewImage.src = src;
+                previewName.textContent = name;
+            }
+        });
+    });
+</script>
 {% endblock %}

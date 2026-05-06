@@ -189,7 +189,11 @@
                                     <i class="fas fa-user"></i>
                                 </div>
                                 <div>
-                                    <h6 class="mb-0">{{ staff.name }}</h6>
+                                    <h6 class="mb-0">
+                                        <a href="javascript:void(0)" class="staff-history-trigger text-decoration-none text-dark hover-primary" data-staff-id="{{ staff.id }}" title="Click to view history">
+                                            {{ staff.name }}
+                                        </a>
+                                    </h6>
                                     <small class="text-muted">Joined: {{ staff.joining_date }}</small>
                                 </div>
                             </div>
@@ -257,12 +261,242 @@
     </div>
 </div>
 
+<!-- Staff History Modal -->
+<div class="modal fade" id="staffHistoryModal" tabindex="-1" aria-labelledby="staffHistoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden;">
+            <div class="modal-header border-0 pb-0" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); backdrop-filter: blur(10px);">
+                <div class="d-flex align-items-center w-100">
+                    <div class="avatar-md bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3 shadow-sm" style="width: 50px; height: 50px;">
+                        <i class="fas fa-user-tie fa-lg"></i>
+                    </div>
+                    <div>
+                        <h4 class="modal-title fw-bold mb-0" id="staffHistoryModalLabel">Staff History</h4>
+                        <p class="text-muted small mb-0" id="modalStaffSubtext"></p>
+                    </div>
+                    <div class="ms-auto d-flex align-items-center">
+                        <div id="modalAgreementContainer" class="me-3"></div>
+                        <button type="button" class="btn-close shadow-none" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-body p-4 pt-4">
+                <!-- Summary Stats in Modal -->
+                <div class="row g-3 mb-4" id="modalSummaryStats">
+                    <!-- Dynamic Summary Content -->
+                </div>
+
+                <!-- History Table -->
+                <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+                    <div class="card-header bg-light-soft border-0 py-3">
+                        <h6 class="mb-0 fw-bold"><i class="fas fa-history me-2"></i>Payment History</h6>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0" id="modalHistoryTable">
+                            <thead class="bg-light text-muted small text-uppercase">
+                                <tr>
+                                    <th class="ps-4">Month/Year</th>
+                                    <th>Base Salary</th>
+                                    <th>Bonus</th>
+                                    <th>J.A. Initial</th>
+                                    <th>J.A. Remain</th>
+                                    <th>Reg. Adv. Rem</th>
+                                    <th>Advances</th>
+                                    <th>Other Deduct</th>
+                                    <th>Net Paid</th>
+                                    <th>Date</th>
+                                    <th>Method</th>
+                                    <th class="pe-4 text-center">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="modalHistoryBody">
+                                <!-- Dynamic Payments Content -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-0 bg-light p-3">
+                <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
-    .bg-primary-soft { background-color: rgba(102, 126, 234, 0.25); }
-    .bg-success-soft { background-color: rgba(72, 187, 120, 0.25); }
-    .bg-warning-soft { background-color: rgba(236, 201, 75, 0.25); }
-    .bg-secondary-soft { background-color: rgba(160, 174, 192, 0.25); }
-    .text-success { color: #276749 !important; }
-    .text-primary { color: #4c51bf !important; }
+    .bg-light-soft { background-color: rgba(248, 249, 250, 0.7); }
+    .hover-primary:hover { color: #4c51bf !important; text-decoration: underline !important; }
+    
+    #staffHistoryModal .modal-content {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(5px);
+    }
+    
+    .stat-card-inner {
+        padding: 15px;
+        border-radius: 15px;
+        background: white;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        height: 100%;
+        border-left: 4px solid #4c51bf;
+    }
+    
+    .stat-label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: #718096; margin-bottom: 5px; }
+    .stat-value { font-size: 1.1rem; font-weight: 800; color: #2d3748; }
+
+    @media (max-width: 576px) {
+        .stat-card-inner { padding: 10px; }
+        .stat-value { font-size: 0.9rem; }
+    }
 </style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const historyTriggers = document.querySelectorAll('.staff-history-trigger');
+    const historyModal = new bootstrap.Modal(document.getElementById('staffHistoryModal'));
+    
+    historyTriggers.forEach(trigger => {
+        trigger.addEventListener('click', function() {
+            const staffId = this.dataset.staffId;
+            fetchStaffHistory(staffId);
+        });
+    });
+
+    function fetchStaffHistory(staffId) {
+        // Show loading state or at least find the elements
+        const bodyContent = document.getElementById('modalHistoryBody');
+        bodyContent.innerHTML = '<tr><td colspan="9" class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></td></tr>';
+        
+        // Pass current URL parameters to respect filters
+        const currentParams = window.location.search;
+        const apiUrl = `/salary/api/staff-history/${staffId}${currentParams}`;
+
+        fetch(apiUrl)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    populateModal(data);
+                    historyModal.show();
+                } else {
+                    alert('Error: ' + (data.message || 'Could not fetch history'));
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching staff history:', error);
+                alert('An error occurred while fetching staff history.');
+            });
+    }
+
+    function populateModal(data) {
+        const staff = data.staff_info;
+        const payments = data.payments;
+        
+        // Header
+        document.getElementById('staffHistoryModalLabel').innerText = staff.name;
+        document.getElementById('modalStaffSubtext').innerText = `${staff.designation} | Joined: ${staff.joining_date}`;
+        
+        // Agreement Button
+        const agreementContainer = document.getElementById('modalAgreementContainer');
+        if (staff.agreement_letter) {
+            agreementContainer.innerHTML = `
+                <a href="/static/${staff.agreement_letter}" target="_blank" class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm">
+                    <i class="fas fa-file-contract me-2"></i>View Agreement
+                </a>
+            `;
+        } else {
+            agreementContainer.innerHTML = `
+                <button class="btn btn-light btn-sm rounded-pill px-3 border" disabled>
+                    <i class="fas fa-file-contract me-2 text-muted"></i>No Agreement
+                </button>
+            `;
+        }
+        
+        // Summary Stats
+        const summaryHtml = `
+            <div class="col-6 col-md-3">
+                <div class="stat-card-inner border-primary">
+                    <div class="stat-label">Base Salary</div>
+                    <div class="stat-value">₨ ${staff.monthly_salary.toLocaleString()}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card-inner border-success">
+                    <div class="stat-label">Total Net Paid</div>
+                    <div class="stat-value text-success">₨ ${staff.total_net_paid.toLocaleString()}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card-inner border-info">
+                    <div class="stat-label">Joining Adv. (Rem)</div>
+                    <div class="stat-value text-info">₨ ${staff.joining_advance_remaining.toLocaleString()}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card-inner border-warning">
+                    <div class="stat-label">Regular Adv (Pen)</div>
+                    <div class="stat-value text-warning">₨ ${staff.pending_regular_advance.toLocaleString()}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card-inner border-secondary">
+                    <div class="stat-label">Joining Adv (Paid)</div>
+                    <div class="stat-value">₨ ${staff.joining_advance_paid.toLocaleString()}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card-inner border-danger">
+                    <div class="stat-label">Reg Adv (Paid)</div>
+                    <div class="stat-value text-danger">-₨ ${staff.total_regular_adv_deducted.toLocaleString()}</div>
+                </div>
+            </div>
+             <div class="col-6 col-md-3">
+                <div class="stat-card-inner border-primary">
+                    <div class="stat-label">Total Bonus</div>
+                    <div class="stat-value text-primary">+₨ ${staff.total_bonus.toLocaleString()}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card-inner border-dark">
+                    <div class="stat-label">Total Rem. Formula</div>
+                    <div class="stat-value">₨ ${staff.total_salary_remaining.toLocaleString()}</div>
+                </div>
+            </div>
+        `;
+        document.getElementById('modalSummaryStats').innerHTML = summaryHtml;
+        
+        // History Table
+        let rowsHtml = '';
+        if (payments.length === 0) {
+            rowsHtml = '<tr><td colspan="9" class="text-center py-4 text-muted">No payment history found.</td></tr>';
+        } else {
+            payments.forEach(p => {
+                rowsHtml += `
+                    <tr>
+                        <td class="ps-4 fw-bold text-dark">${p.month}/${p.year}</td>
+                        <td>${p.base_salary.toLocaleString()}</td>
+                        <td class="text-success">+${p.bonus.toLocaleString()}</td>
+                        <td class="text-muted">₨ ${staff.joining_advance.toLocaleString()}</td>
+                        <td class="text-info">₨ ${staff.joining_advance_remaining.toLocaleString()}</td>
+                        <td class="text-warning">₨ ${staff.pending_regular_advance.toLocaleString()}</td>
+                        <td class="text-danger">
+                            <div class="small">Reg: ${p.advance_deduction.toLocaleString()}</div>
+                            <div class="small text-muted">J.A: ${p.joining_advance_deduction.toLocaleString()}</div>
+                        </td>
+                        <td class="text-danger">-${p.other_deductions.toLocaleString()}</td>
+                        <td><span class="badge bg-primary px-2 py-1" style="font-size: 0.9rem;">₨ ${p.net_salary.toLocaleString()}</span></td>
+                        <td><small class="text-muted">${p.payment_date}</small></td>
+                        <td><span class="badge bg-light text-dark border px-2 py-1">${p.payment_method}</span></td>
+                        <td class="pe-4 text-center">
+                            <span class="badge ${p.status === 'paid' ? 'bg-success-soft text-success' : 'bg-warning-soft text-warning'} px-2 py-1">
+                                ${p.status.toUpperCase()}
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+        document.getElementById('modalHistoryBody').innerHTML = rowsHtml;
+    }
+});
+</script>
 {% endblock %}

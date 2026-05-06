@@ -656,3 +656,65 @@ def get_staff_info(staff_id):
         'monthly_salary': staff.monthly_salary,
         'outstanding_advance': outstanding_advance
     })
+
+@bp.route('/api/staff-history/<int:staff_id>')
+@login_required
+def get_staff_history(staff_id):
+    staff = Staff.query.get_or_404(staff_id)
+    
+    # Base query for payments
+    payments_query = SalaryPayment.query.filter_by(staff_id=staff_id)
+    
+    # Support for advanced filtering if passed (e.g. from the staff list page context)
+    # Note: If the user filters staff by date, we might want to respect that for payments too.
+    from app.routes.filters import apply_saved_filter_to_query
+    
+    # Try to apply filters if they are applicable to salary_payment
+    # In some cases, we might want to transform 'staff' filters into 'salary_payment' filters
+    # but for now we'll just try to apply the raw args and handle mismatches gracefully
+    payments_query = apply_saved_filter_to_query(payments_query, 'salary_payment', request.args)
+    
+    payments = payments_query.order_by(SalaryPayment.year.desc(), SalaryPayment.month.desc()).all()
+    
+    # Calculate summaries
+    total_net_paid = sum(p.net_salary for p in payments)
+    total_bonus = sum(p.bonus for p in payments)
+    total_other_deductions = sum(p.other_deductions for p in payments)
+    total_regular_adv_deducted = sum(p.advance_deduction for p in payments)
+    total_joining_adv_deducted = sum(p.joining_advance_deduction for p in payments)
+    
+    pending_regular_advance = sum(a.amount for a in staff.advances if not a.is_deducted)
+    
+    return jsonify({
+        'success': True,
+        'staff_info': {
+            'name': staff.name,
+            'designation': staff.designation or 'No Designation',
+            'joining_date': staff.joining_date.strftime('%Y-%m-%d') if staff.joining_date else 'N/A',
+            'monthly_salary': staff.monthly_salary,
+            'joining_advance': staff.joining_advance or 0,
+            'joining_advance_paid': staff.joining_advance_paid,
+            'joining_advance_remaining': staff.remaining_joining_advance or 0,
+            'pending_regular_advance': pending_regular_advance,
+            'total_regular_adv_deducted': total_regular_adv_deducted,
+            'total_net_paid': total_net_paid,
+            'total_bonus': total_bonus,
+            'total_other_deductions': total_other_deductions,
+            'total_salary_remaining': staff.total_salary_remaining,
+            'agreement_letter': staff.agreement_letter
+        },
+        'payments': [{
+            'id': p.id,
+            'month': p.month,
+            'year': p.year,
+            'base_salary': p.base_salary,
+            'bonus': p.bonus,
+            'advance_deduction': p.advance_deduction,
+            'joining_advance_deduction': p.joining_advance_deduction,
+            'other_deductions': p.other_deductions,
+            'net_salary': p.net_salary,
+            'payment_date': p.payment_date.strftime('%d %b, %Y') if p.payment_date else 'N/A',
+            'payment_method': p.payment_method,
+            'status': p.status
+        } for p in payments]
+    })
