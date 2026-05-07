@@ -25,36 +25,37 @@
             <a href="{{ url_for('sales.invoice_settings') }}" class="btn btn-outline-secondary">
                 <i class="fas fa-cog me-1"></i> Settings
             </a>
-                        {% if current_user.has_permission('sales', 'add') %}
-<a href="{{ url_for('sales.create_invoice') }}" class="btn btn-primary">
+            {% if current_user.has_permission('sales', 'add') %}
+            <a href="{{ url_for('sales.create_invoice') }}" class="btn btn-primary">
                 <i class="fas fa-plus me-1"></i> Create New Invoice
             </a>
-{% endif %}            
+            {% endif %}
         </div>
     </div>
 
     <!-- Summary Boxes -->
     {% set sale_totals = namespace(collected=0, partial_total=0, partial_unpaid=0, unpaid=0, overdue=0) %}
     {% for sale in sales %}
-        {% if sale.status == 'paid' %}
-            {% set sale_totals.collected = sale_totals.collected + sale.total %}
-        {% elif sale.status == 'partial' %}
-            {% set sale_totals.collected = sale_totals.collected + sale.paid_amount %}
-            {% set sale_totals.partial_total = sale_totals.partial_total + sale.total %}
-            {% set sale_totals.partial_unpaid = sale_totals.partial_unpaid + (sale.total - sale.paid_amount) %}
-        {% else %}
-            {% set sale_totals.unpaid = sale_totals.unpaid + sale.total %}
-        {% endif %}
-        
-        {% if sale.is_overdue %}
-            {% set sale_totals.overdue = sale_totals.overdue + (sale.total - sale.paid_amount) %}
-        {% endif %}
+    {% if sale.status == 'paid' %}
+    {% set sale_totals.collected = sale_totals.collected + sale.total %}
+    {% elif sale.status == 'partial' %}
+    {% set sale_totals.collected = sale_totals.collected + sale.paid_amount %}
+    {% set sale_totals.partial_total = sale_totals.partial_total + sale.total %}
+    {% set sale_totals.partial_unpaid = sale_totals.partial_unpaid + (sale.total - sale.paid_amount) %}
+    {% else %}
+    {% set sale_totals.unpaid = sale_totals.unpaid + sale.total %}
+    {% endif %}
+
+    {% if sale.is_overdue %}
+    {% set sale_totals.overdue = sale_totals.overdue + (sale.total - sale.paid_amount) %}
+    {% endif %}
     {% endfor %}
 
     <div class="row mb-4">
         <!-- Total Collected -->
         <div class="col-xl col-md-4 mb-4">
-            <div class="card-stats shadow-sm h-100" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+            <div class="card-stats shadow-sm h-100"
+                style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
                 <div class="d-flex justify-content-between align-items-center text-white">
                     <div>
                         <h6 class="text-white-50 small mb-1">Total Paid</h6>
@@ -69,7 +70,8 @@
         </div>
         <!-- Partial Total -->
         <div class="col-xl col-md-4 mb-4">
-            <div class="card-stats shadow-sm h-100" style="background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%);">
+            <div class="card-stats shadow-sm h-100"
+                style="background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%);">
                 <div class="d-flex justify-content-between align-items-center text-white">
                     <div>
                         <h6 class="text-white-50 small mb-1">Total Partial</h6>
@@ -84,7 +86,8 @@
         </div>
         <!-- Partial Unpaid -->
         <div class="col-xl col-md-4 mb-4">
-            <div class="card-stats shadow-sm h-100" style="background: linear-gradient(135deg, #8E2DE2 0%, #4A00E0 100%);">
+            <div class="card-stats shadow-sm h-100"
+                style="background: linear-gradient(135deg, #8E2DE2 0%, #4A00E0 100%);">
                 <div class="d-flex justify-content-between align-items-center text-white">
                     <div>
                         <h6 class="text-white-50 small mb-1">Partial Unpaid</h6>
@@ -98,12 +101,29 @@
             </div>
         </div>
         <!-- Total Unpaid -->
-        <div class="col-xl col-md-6 mb-4">
-            <div class="card-stats shadow-sm h-100" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+        <div class="col-xl col-md-3 mb-4">
+            <div class="card-stats shadow-sm h-100"
+                style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
                 <div class="d-flex justify-content-between align-items-center text-white">
                     <div>
                         <h6 class="text-white-50 small mb-1">Total Unpaid</h6>
                         <h3 class="mb-0">PKR{{ "{:,.2f}".format(sale_totals.unpaid) }}</h3>
+                        <small class="text-white-50">Unpaid amount</small>
+                    </div>
+                    <div class="stats-icon opacity-50">
+                        <i class="fas fa-times-circle fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Total Unpaid+ Partial Unpaid -->
+        <div class="col-xl col-md-4 mb-4">
+            <div class="card-stats shadow-sm h-100"
+                style="background: linear-gradient(135deg, #fd0000 0%, #c44545 100%);">
+                <div class="d-flex justify-content-between align-items-center text-white">
+                    <div>
+                        <h6 class="text-white-50 small mb-1">Total Unpaid + Partial Unpaid </h6>
+                        <h3 class="mb-0">PKR{{"{:,.2f}".format(sale_totals.unpaid + sale_totals.partial_unpaid) }}</h3>
                         <small class="text-white-50">Fully unpaid amount</small>
                     </div>
                     <div class="stats-icon opacity-50">
@@ -113,8 +133,9 @@
             </div>
         </div>
         <!-- Total Overdue -->
-        <div class="col-xl col-md-6 mb-4">
-            <div class="card-stats shadow-sm h-100" style="background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);">
+        <div class="col-xl col-md-3 mb-4">
+            <div class="card-stats shadow-sm h-100"
+                style="background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);">
                 <div class="d-flex justify-content-between align-items-center text-white">
                     <div>
                         <h6 class="text-white-50 small mb-1">Total Overdue</h6>
@@ -138,10 +159,12 @@
                         value="{{ search if search is defined else '' }}">
                 </div>
                 <div class="col-6 col-sm-4 col-md-2">
-                    <input type="date" name="from_date" class="form-control" value="{{ from_date if from_date is defined else '' }}" title="From Date">
+                    <input type="date" name="from_date" class="form-control"
+                        value="{{ from_date if from_date is defined else '' }}" title="From Date">
                 </div>
                 <div class="col-6 col-sm-4 col-md-2">
-                    <input type="date" name="to_date" class="form-control" value="{{ to_date if to_date is defined else '' }}" title="To Date">
+                    <input type="date" name="to_date" class="form-control"
+                        value="{{ to_date if to_date is defined else '' }}" title="To Date">
                 </div>
                 <div class="col-6 col-sm-4 col-md-3">
                     <button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter"></i> Filter</button>
@@ -160,31 +183,31 @@
             <ul class="nav nav-tabs card-header-tabs">
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'all' %}active{% endif %}"
-                       href="{{ url_for('sales.invoices', status='all', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search) }}">
+                        href="{{ url_for('sales.invoices', status='all', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search) }}">
                         All
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'paid' %}active{% endif %}"
-                       href="{{ url_for('sales.invoices', status='paid', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search) }}">
+                        href="{{ url_for('sales.invoices', status='paid', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search) }}">
                         Paid
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'unpaid' %}active{% endif %}"
-                       href="{{ url_for('sales.invoices', status='unpaid', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search) }}">
+                        href="{{ url_for('sales.invoices', status='unpaid', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search) }}">
                         Unpaid
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'partial' %}active{% endif %}"
-                       href="{{ url_for('sales.invoices', status='partial', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search) }}">
+                        href="{{ url_for('sales.invoices', status='partial', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search) }}">
                         Partial
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link text-danger {% if current_status == 'overdue' %}active{% endif %}"
-                       href="{{ url_for('sales.invoices', status='overdue', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search) }}">
+                        href="{{ url_for('sales.invoices', status='overdue', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search) }}">
                         <i class="fas fa-exclamation-triangle"></i> Overdue
                     </a>
                 </li>
@@ -226,7 +249,8 @@
                             <td class="text-end text-muted small">PKR{{ "{:,.2f}".format(sale.delivery_charge) }}</td>
                             <td class="text-end">PKR{{ "{:,.2f}".format(sale.total) }}</td>
                             <td class="text-end">PKR{{ "{:,.2f}".format(sale.paid_amount) }}</td>
-                            <td class="text-end text-danger fw-bold">PKR{{ "{:,.2f}".format(sale.total - sale.paid_amount) }}</td>
+                            <td class="text-end text-danger fw-bold">PKR{{ "{:,.2f}".format(sale.total -
+                                sale.paid_amount) }}</td>
                             <td class="text-center">
                                 {% if sale.is_overdue %}
                                 <span class="badge bg-danger">Overdue</span>
@@ -242,26 +266,26 @@
                                 <div class="btn-group btn-group-sm">
                                     <a href="{{ url_for('sales.invoice_detail', id=sale.id) }}"
                                         class="btn btn-outline-primary" title="View"><i class="fas fa-eye"></i></a>
-                                                                        {% if current_user.has_permission('sales', 'edit') %}
-<a href="{{ url_for('sales.edit_invoice', id=sale.id) }}"
+                                    {% if current_user.has_permission('sales', 'edit') %}
+                                    <a href="{{ url_for('sales.edit_invoice', id=sale.id) }}"
                                         class="btn btn-outline-secondary" title="Edit"><i class="fas fa-edit"></i></a>
-{% endif %}                                    
+                                    {% endif %}
                                     <a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}"
                                         class="btn btn-outline-info" title="PDF" target="_blank"><i
                                             class="fas fa-file-pdf"></i></a>
-                                                                        {% if current_user.has_permission('returns', 'add') %}
-<a href="{{ url_for('returns.create_return', sale_id=sale.id) }}"
+                                    {% if current_user.has_permission('returns', 'add') %}
+                                    <a href="{{ url_for('returns.create_return', sale_id=sale.id) }}"
                                         class="btn btn-outline-warning" title="Create Return"><i
                                             class="fas fa-undo"></i></a>
-{% endif %}                                    
-                                                                        {% if current_user.has_permission('sales', 'delete') %}
-<form action="{{ url_for('sales.delete_invoice', id=sale.id) }}" method="POST"
+                                    {% endif %}
+                                    {% if current_user.has_permission('sales', 'delete') %}
+                                    <form action="{{ url_for('sales.delete_invoice', id=sale.id) }}" method="POST"
                                         class="d-inline"
                                         onsubmit="return confirm('Delete this invoice? This will decrease product stock.');">
                                         <button type="submit" class="btn btn-outline-danger" title="Delete"><i
                                                 class="fas fa-trash"></i></button>
                                     </form>
-{% endif %}                                    
+                                    {% endif %}
                                 </div>
                             </td>
 
@@ -273,20 +297,23 @@
                                     <div class="modal-content">
                                         <form action="{{ url_for('sales.pay_invoice', id=sale.id) }}" method="POST">
                                             <div class="modal-header bg-success text-white">
-                                                <h5 class="modal-title" id="payModalLabel{{ sale.id }}">Record Payment: {{ sale.invoice_number }}</h5>
-                                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
-                                                    aria-label="Close"></button>
+                                                <h5 class="modal-title" id="payModalLabel{{ sale.id }}">Record Payment:
+                                                    {{ sale.invoice_number }}</h5>
+                                                <button type="button" class="btn-close btn-close-white"
+                                                    data-bs-dismiss="modal" aria-label="Close"></button>
                                             </div>
                                             <div class="modal-body">
                                                 <div class="mb-3">
                                                     <label class="form-label">Balance Due</label>
-                                                    <input type="text" class="form-control" value="PKR{{ '{:,.2f}'.format(sale.total - sale.paid_amount) }}" readonly>
+                                                    <input type="text" class="form-control"
+                                                        value="PKR{{ '{:,.2f}'.format(sale.total - sale.paid_amount) }}"
+                                                        readonly>
                                                 </div>
                                                 <div class="mb-3">
                                                     <label class="form-label">Amount to Pay</label>
                                                     <input type="number" name="amount" class="form-control" step="0.01"
-                                                        max="{{ sale.total - sale.paid_amount }}" value="{{ sale.total - sale.paid_amount }}"
-                                                        required>
+                                                        max="{{ sale.total - sale.paid_amount }}"
+                                                        value="{{ sale.total - sale.paid_amount }}" required>
                                                 </div>
                                             </div>
                                             <div class="modal-footer">
