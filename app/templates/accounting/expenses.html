@@ -4,7 +4,7 @@
 
 {% block extra_js %}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function () {
         initBulkActions({
             selectAllId: 'selectAll',
             checkboxClass: 'expense-checkbox',
@@ -20,7 +20,7 @@
         const filterForm = document.querySelector('form'); // the filter form
 
         dateCells.forEach(cell => {
-            cell.addEventListener('click', function() {
+            cell.addEventListener('click', function () {
                 const dateStr = this.getAttribute('data-date'); // format YYYY-MM-DD
                 if (!dateStr) return;
                 const [year, month, day] = dateStr.split('-').map(Number);
@@ -30,7 +30,7 @@
                 const nextMonth = month === 12 ? 1 : month + 1;
                 const nextYear = month === 12 ? year + 1 : year;
                 const endDate = new Date(nextYear, nextMonth - 1, 0); // last day of current month
-                const endDateStr = `${endDate.getFullYear()}-${String(endDate.getMonth()+1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+                const endDateStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
 
                 if (startDateInput) startDateInput.value = startDate;
                 if (endDateInput) endDateInput.value = endDateStr;
@@ -40,45 +40,45 @@
     });
 </script>
 <script>
-        // Add drag-scrolling to table (matches inventory module)
-        document.addEventListener('DOMContentLoaded', function () {
-            const container = document.getElementById('tableContainer');
-            if (container) {
-                let isDown = false;
-                let startX;
-                let scrollLeft;
+    // Add drag-scrolling to table (matches inventory module)
+    document.addEventListener('DOMContentLoaded', function () {
+        const container = document.getElementById('tableContainer');
+        if (container) {
+            let isDown = false;
+            let startX;
+            let scrollLeft;
 
-                container.addEventListener('mousedown', function (e) {
-                    isDown = true;
-                    container.style.cursor = 'grabbing';
-                    startX = e.pageX - container.offsetLeft;
-                    scrollLeft = container.scrollLeft;
-                });
+            container.addEventListener('mousedown', function (e) {
+                isDown = true;
+                container.style.cursor = 'grabbing';
+                startX = e.pageX - container.offsetLeft;
+                scrollLeft = container.scrollLeft;
+            });
 
-                container.addEventListener('mouseleave', function () {
-                    isDown = false;
-                    container.style.cursor = 'grab';
-                });
+            container.addEventListener('mouseleave', function () {
+                isDown = false;
+                container.style.cursor = 'grab';
+            });
 
-                container.addEventListener('mouseup', function () {
-                    isDown = false;
-                    container.style.cursor = 'grab';
-                });
+            container.addEventListener('mouseup', function () {
+                isDown = false;
+                container.style.cursor = 'grab';
+            });
 
-                container.addEventListener('mousemove', function (e) {
-                    if (!isDown) return;
-                    e.preventDefault();
-                    const x = e.pageX - container.offsetLeft;
-                    const walk = (x - startX) * 2;
-                    container.scrollLeft = scrollLeft - walk;
-                });
-            }
-        });
+            container.addEventListener('mousemove', function (e) {
+                if (!isDown) return;
+                e.preventDefault();
+                const x = e.pageX - container.offsetLeft;
+                const walk = (x - startX) * 2;
+                container.scrollLeft = scrollLeft - walk;
+            });
+        }
+    });
 </script>
 
 {% if current_user.is_admin %}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function () {
         // Initialize Bulk Confirm for Admin
         const bulkConfirmBtn = document.getElementById('bulkConfirmBtn');
         const checkboxes = document.querySelectorAll('.expense-checkbox');
@@ -104,7 +104,7 @@
         });
 
         if (bulkConfirmBtn) {
-            bulkConfirmBtn.addEventListener('click', function() {
+            bulkConfirmBtn.addEventListener('click', function () {
                 const selectedIds = Array.from(document.querySelectorAll('.expense-checkbox:checked'))
                     .map(cb => cb.value);
 
@@ -118,19 +118,19 @@
                         },
                         body: JSON.stringify({ ids: selectedIds })
                     })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            Toast.show(data.message, 'success');
-                            setTimeout(() => location.reload(), 1500);
-                        } else {
-                            Toast.show('Error: ' + data.message, 'danger');
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        Toast.show('An error occurred during bulk confirmation.', 'danger');
-                    });
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                Toast.show(data.message, 'success');
+                                setTimeout(() => location.reload(), 1500);
+                            } else {
+                                Toast.show('Error: ' + data.message, 'danger');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            Toast.show('An error occurred during bulk confirmation.', 'danger');
+                        });
                 }
             });
         }
@@ -155,25 +155,26 @@
                 <i class="fas fa-check me-1"></i> Confirm Selected
             </button>
             {% endif %}
-           <!-- <button type="button" class="btn btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#universalFilterModal" data-module="expense">
+            <!-- <button type="button" class="btn btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#universalFilterModal" data-module="expense">
                 <i class="fas fa-filter me-1"></i> Advanced Filter
             </button>-->
-                        {% if current_user.has_permission('accounting', 'add') %}
-<a href="{{ url_for('accounting.add_expense') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Add Expense</a>
-{% endif %}            
+            {% if current_user.has_permission('accounting', 'add') %}
+            <a href="{{ url_for('accounting.add_expense') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Add
+                Expense</a>
+            {% endif %}
         </div>
     </div>
 
     <!-- Summary Boxes -->
     {% set totals = namespace(op=0, divided=0, mo_overhead=0) %}
     {% for exp in expenses if exp.status == 'confirmed' %}
-        {% if exp.is_bom_overhead %}
-            {% set totals.mo_overhead = totals.mo_overhead + exp.amount %}
-        {% elif exp.is_monthly_divided %}
-            {% set totals.divided = totals.divided + exp.amount %}
-        {% else %}
-            {% set totals.op = totals.op + exp.amount %}
-        {% endif %}
+    {% if exp.is_bom_overhead %}
+    {% set totals.mo_overhead = totals.mo_overhead + exp.amount %}
+    {% elif exp.is_monthly_divided %}
+    {% set totals.divided = totals.divided + exp.amount %}
+    {% else %}
+    {% set totals.op = totals.op + exp.amount %}
+    {% endif %}
     {% endfor %}
 
     <div class="row mb-4">
@@ -229,7 +230,8 @@
                     <select name="vendor_id" id="vendor_id" class="form-select">
                         <option value="">All Vendors</option>
                         {% for vendor in vendors %}
-                        <option value="{{ vendor.id }}" {% if selected_vendor == vendor.id %}selected{% endif %}>{{ vendor.name }}</option>
+                        <option value="{{ vendor.id }}" {% if selected_vendor==vendor.id %}selected{% endif %}>{{
+                            vendor.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -238,7 +240,8 @@
                     <select name="category_id" id="category_id" class="form-select">
                         <option value="">All Categories</option>
                         {% for category in categories %}
-                        <option value="{{ category.id }}" {% if selected_category == category.id %}selected{% endif %}>{{ category.name }}</option>
+                        <option value="{{ category.id }}" {% if selected_category==category.id %}selected{% endif %}>{{
+                            category.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -247,25 +250,30 @@
                     <select name="mo_id" id="mo_id" class="form-select">
                         <option value="">All MOs</option>
                         {% for mo in manufacturing_orders %}
-                        <option value="{{ mo.id }}" {% if selected_mo_id == mo.id %}selected{% endif %}>{{ mo.order_number }} - {{ mo.bom.product.name if mo.bom and mo.bom.product else 'N/A' }}</option>
+                        <option value="{{ mo.id }}" {% if selected_mo_id==mo.id %}selected{% endif %}>{{ mo.order_number
+                            }} - {{ mo.bom.product.name if mo.bom and mo.bom.product else 'N/A' }}</option>
                         {% endfor %}
                     </select>
                 </div>
                 <div class="col-md-2">
                     <label for="start_date" class="form-label">From Date</label>
-                    <input type="date" name="start_date" id="start_date" class="form-control" value="{{ selected_start_date or '' }}">
+                    <input type="date" name="start_date" id="start_date" class="form-control"
+                        value="{{ selected_start_date or '' }}">
                 </div>
                 <div class="col-md-2">
                     <label for="end_date" class="form-label">To Date</label>
-                    <input type="date" name="end_date" id="end_date" class="form-control" value="{{ selected_end_date or '' }}">
+                    <input type="date" name="end_date" id="end_date" class="form-control"
+                        value="{{ selected_end_date or '' }}">
                 </div>
                 <div class="col-md-2 d-flex align-items-end">
                     <button type="submit" class="btn btn-primary me-2"><i class="fas fa-filter"></i> Filter</button>
-                    <a href="{{ url_for('accounting.expenses') }}" class="btn btn-secondary"><i class="fas fa-times"></i> Clear</a>
+                    <a href="{{ url_for('accounting.expenses') }}" class="btn btn-secondary"><i
+                            class="fas fa-times"></i> Clear</a>
                 </div>
             </form>
-            
-            <div class="table-responsive expenses-table-responsive" id="tableContainer" style="cursor: grab; overflow-x: auto;">
+
+            <div class="table-responsive expenses-table-responsive" id="tableContainer"
+                style="cursor: grab; overflow-x: auto;">
                 <table class="table table-striped datatable-export" data-export-title="Expenses">
                     <thead>
                         <tr>
@@ -292,27 +300,36 @@
                                 <input type="checkbox" class="form-check-input expense-checkbox" value="{{ exp.id }}">
                             </td>
                             <td>
-                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="expense" data-entity-id="{{ exp.id }}">
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal"
+                                    data-bs-target="#entityHistoryModal" data-entity-type="expense"
+                                    data-entity-id="{{ exp.id }}">
                                     {{ exp.expense_number }}
                                 </a>
                                 {% if exp.is_bom_overhead %}
-                                <span class="badge bg-info text-dark ms-1" style="font-size: 0.7rem;" title="Linked to: {% if exp.mo_id and exp.manufacturing_order %}MO: {{ exp.manufacturing_order.order_number }}{% elif exp.product %}Product: {{ exp.product.name }}{% else %}None{% endif %}">
-                                    BOM Overhead {% if exp.mo_id and exp.manufacturing_order %}({{ exp.manufacturing_order.order_number }}){% elif exp.product %}({{ exp.product.name }}){% endif %}
+                                <span class="badge bg-info text-dark ms-1" style="font-size: 0.7rem;"
+                                    title="Linked to: {% if exp.mo_id and exp.manufacturing_order %}MO: {{ exp.manufacturing_order.order_number }}{% elif exp.product %}Product: {{ exp.product.name }}{% else %}None{% endif %}">
+                                    BOM Overhead {% if exp.mo_id and exp.manufacturing_order %}({{
+                                    exp.manufacturing_order.order_number }}){% elif exp.product %}({{ exp.product.name
+                                    }}){% endif %}
                                 </span>
                                 {% endif %}
                                 {% if exp.is_monthly_divided %}
-                                <span class="badge bg-success ms-1" style="font-size: 0.7rem;" title="Divided from {{ exp.monthly_start_date }} to {{ exp.monthly_end_date }}">
+                                <span class="badge bg-success ms-1" style="font-size: 0.7rem;"
+                                    title="Divided from {{ exp.monthly_start_date }} to {{ exp.monthly_end_date }}">
                                     Divided
                                 </span>
                                 {% endif %}
                             </td>
-                            <td class="clickable-date" data-date="{{ exp.date.strftime('%Y-%m-%d') }}" style="cursor: pointer; color: #0d6efd;" title="Click to filter by this month">
+                            <td class="clickable-date" data-date="{{ exp.date.strftime('%Y-%m-%d') }}"
+                                style="cursor: pointer; color: #000000;" title="Click to filter by this month">
                                 {{ exp.date.strftime(date_format) }}
                             </td>
                             <td>{{ exp.expense_category.name if exp.expense_category else 'N/A' }}</td>
                             <td>
                                 {% if exp.vendor %}
-                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="vendor" data-entity-id="{{ exp.vendor.id }}">
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal"
+                                    data-bs-target="#entityHistoryModal" data-entity-type="vendor"
+                                    data-entity-id="{{ exp.vendor.id }}">
                                     {{ exp.vendor.name }}
                                 </a>
                                 {% else %}
@@ -344,11 +361,12 @@
                             <td class="no-export">
                                 {% if exp.bill_image_path %}
                                 <div class="btn-group" role="group">
-                                    <button type="button" class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#billModal{{ exp.id }}" title="Preview Bill">
+                                    <button type="button" class="btn btn-sm btn-info" data-bs-toggle="modal"
+                                        data-bs-target="#billModal{{ exp.id }}" title="Preview Bill">
                                         <i class="fas fa-eye"></i>
                                     </button>
-                                    <a href="{{ url_for('static', filename=exp.bill_image_path.replace('app/static/', '')) }}" 
-                                       target="_blank" class="btn btn-sm btn-secondary" title="View Full Bill">
+                                    <a href="{{ url_for('static', filename=exp.bill_image_path.replace('app/static/', '')) }}"
+                                        target="_blank" class="btn btn-sm btn-secondary" title="View Full Bill">
                                         <i class="fas fa-external-link-alt"></i>
                                     </a>
                                 </div>
@@ -370,27 +388,32 @@
                             <td class="no-export">
                                 <div class="btn-group" role="group">
                                     {% if current_user.is_admin and exp.status == 'pending' %}
-                                    <form method="POST" action="{{ url_for('accounting.confirm_expense', id=exp.id) }}" style="display:inline;" class="me-1">
+                                    <form method="POST" action="{{ url_for('accounting.confirm_expense', id=exp.id) }}"
+                                        style="display:inline;" class="me-1">
                                         <button type="submit" class="btn btn-sm btn-success" title="Confirm">
                                             <i class="fas fa-check"></i>
                                         </button>
                                     </form>
-                                    <form method="POST" action="{{ url_for('accounting.reject_expense', id=exp.id) }}" style="display:inline;" class="me-1">
+                                    <form method="POST" action="{{ url_for('accounting.reject_expense', id=exp.id) }}"
+                                        style="display:inline;" class="me-1">
                                         <button type="submit" class="btn btn-sm btn-outline-danger" title="Reject">
                                             <i class="fas fa-times"></i>
                                         </button>
                                     </form>
                                     {% endif %}
-                                                                        {% if current_user.has_permission('accounting', 'edit') %}
-<a href="{{ url_for('accounting.edit_expense', id=exp.id) }}" class="btn btn-sm btn-warning" title="Edit">
+                                    {% if current_user.has_permission('accounting', 'edit') %}
+                                    <a href="{{ url_for('accounting.edit_expense', id=exp.id) }}"
+                                        class="btn btn-sm btn-warning" title="Edit">
                                         <i class="fas fa-edit"></i>
                                     </a>
-{% endif %}                                    
-                                                                        {% if current_user.has_permission('accounting', 'delete') %}
-<form method="POST" action="{{ url_for('accounting.delete_expense', id=exp.id) }}" style="display:inline;" onsubmit="return confirm('Delete this expense?');">
-                                        <button type="submit" class="btn btn-sm btn-danger" title="Delete">Delete</button>
+                                    {% endif %}
+                                    {% if current_user.has_permission('accounting', 'delete') %}
+                                    <form method="POST" action="{{ url_for('accounting.delete_expense', id=exp.id) }}"
+                                        style="display:inline;" onsubmit="return confirm('Delete this expense?');">
+                                        <button type="submit" class="btn btn-sm btn-danger"
+                                            title="Delete">Delete</button>
                                     </form>
-{% endif %}                                    
+                                    {% endif %}
                                 </div>
                             </td>
                         </tr>
@@ -415,7 +438,8 @@
 <!-- Bill Preview Modals -->
 {% for exp in expenses %}
 {% if exp.bill_image_path %}
-<div class="modal fade" id="billModal{{ exp.id }}" tabindex="-1" aria-labelledby="billModalLabel{{ exp.id }}" aria-hidden="true">
+<div class="modal fade" id="billModal{{ exp.id }}" tabindex="-1" aria-labelledby="billModalLabel{{ exp.id }}"
+    aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
@@ -423,12 +447,12 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body text-center">
-                <img src="{{ url_for('static', filename=exp.bill_image_path.replace('app/static/', '')) }}" 
-                     class="img-fluid" alt="Bill Image" style="max-height: 70vh;">
+                <img src="{{ url_for('static', filename=exp.bill_image_path.replace('app/static/', '')) }}"
+                    class="img-fluid" alt="Bill Image" style="max-height: 70vh;">
             </div>
             <div class="modal-footer">
-                <a href="{{ url_for('static', filename=exp.bill_image_path.replace('app/static/', '')) }}" 
-                   target="_blank" class="btn btn-primary">View Full Size</a>
+                <a href="{{ url_for('static', filename=exp.bill_image_path.replace('app/static/', '')) }}"
+                    target="_blank" class="btn btn-primary">View Full Size</a>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>

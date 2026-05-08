@@ -42,14 +42,13 @@ def add_bom():
     all_products = Product.query.all()
 
     if form.validate_on_submit():
-        bom = BOM(
-            name=form.name.data,
-            product_id=form.product_id.data,
-            labor_cost=form.labor_cost.data or 0,
-            overhead_cost=form.overhead_cost.data or 0,
-            version='v1',
-            is_active=True
-        )
+        bom = BOM()
+        bom.name = form.name.data
+        bom.product_id = form.product_id.data
+        bom.labor_cost = form.labor_cost.data or 0
+        bom.overhead_cost = form.overhead_cost.data or 0
+        bom.version = 'v1'
+        bom.is_active = True
         db.session.add(bom)
         db.session.flush() # Get bom.id
         
@@ -66,14 +65,13 @@ def add_bom():
                     qty_float = float(qty)
                     total_cost = unit_cost * qty_float
                     
-                    item = BOMItem(
-                        bom_id=bom.id,
-                        component_id=comp_id,
-                        quantity=qty_float,
-                        unit_cost=unit_cost,
-                        shipping_per_unit=0,  # Will be updated when purchase happens
-                        total_cost=total_cost
-                    )
+                    item = BOMItem()
+                    item.bom_id = bom.id
+                    item.component_id = comp_id
+                    item.quantity = qty_float
+                    item.unit_cost = unit_cost
+                    item.shipping_per_unit = 0
+                    item.total_cost = total_cost
                     db.session.add(item)
                     
         # Update total cost of BOM after items are added
@@ -184,14 +182,13 @@ def edit_bom(id):
                     qty_float = float(qty)
                     total_cost = unit_cost * qty_float
                     
-                    new_item = BOMItem(
-                        bom_id=bom.id,
-                        component_id=comp_id,
-                        quantity=qty_float,
-                        unit_cost=unit_cost,
-                        shipping_per_unit=0,
-                        total_cost=total_cost
-                    )
+                    new_item = BOMItem()
+                    new_item.bom_id = bom.id
+                    new_item.component_id = comp_id
+                    new_item.quantity = qty_float
+                    new_item.unit_cost = unit_cost
+                    new_item.shipping_per_unit = 0
+                    new_item.total_cost = total_cost
                     db.session.add(new_item)
                     
         db.session.commit()
@@ -333,15 +330,14 @@ def add_order():
         
         bom = BOM.query.get(form.bom_id.data)
         
-        mo = ManufacturingOrder(
-            order_number=order_number,
-            bom_id=bom.id,
-            quantity_to_produce=form.quantity_to_produce.data,
-            start_date=form.start_date.data,
-            end_date=form.end_date.data,
-            status='In Progress',
-            created_by=current_user.id
-        )
+        mo = ManufacturingOrder()
+        mo.order_number = order_number
+        mo.bom_id = bom.id
+        mo.quantity_to_produce = form.quantity_to_produce.data
+        mo.start_date = form.start_date.data
+        mo.end_date = form.end_date.data
+        mo.status = 'In Progress'
+        mo.created_by = current_user.id
         db.session.add(mo)
         db.session.flush()
         
@@ -351,13 +347,12 @@ def add_order():
             req_qty = bom_item.quantity * multiplier
             comp_cost = bom_item.component.cost_price * req_qty
             
-            mo_item = ManufacturingOrderItem(
-                mo_id=mo.id,
-                component_id=bom_item.component_id,
-                quantity_required=req_qty,
-                quantity_consumed=0, # Consumed when completed
-                cost=comp_cost
-            )
+            mo_item = ManufacturingOrderItem()
+            mo_item.mo_id = mo.id
+            mo_item.component_id = bom_item.component_id
+            mo_item.quantity_required = req_qty
+            mo_item.quantity_consumed = 0
+            mo_item.cost = comp_cost
             db.session.add(mo_item)
 
         # Collect and link unassigned overhead expenses for this order
@@ -418,13 +413,12 @@ def edit_order(id):
                 req_qty = bom_item.quantity * multiplier
                 comp_cost = bom_item.component.cost_price * req_qty
                 
-                mo_item = ManufacturingOrderItem(
-                    mo_id=order.id,
-                    component_id=bom_item.component_id,
-                    quantity_required=req_qty,
-                    quantity_consumed=0,
-                    cost=comp_cost
-                )
+                mo_item = ManufacturingOrderItem()
+                mo_item.mo_id = order.id
+                mo_item.component_id = bom_item.component_id
+                mo_item.quantity_required = req_qty
+                mo_item.quantity_consumed = 0
+                mo_item.cost = comp_cost
                 db.session.add(mo_item)
             
             order.actual_labor_cost = new_bom.labor_cost * multiplier
@@ -456,80 +450,113 @@ def complete_order(id):
         flash('Order is already completed.', 'warning')
         return redirect(url_for('manufacturing.order_details', id=order.id))
         
-    # Check component inventory
+    # Calculate remaining quantity
+    remaining_to_produce = order.quantity_to_produce - (order.produced_qty or 0)
+    
+    if remaining_to_produce <= 0 and order.status != 'Completed':
+        order.status = 'Completed'
+        order.produced_qty = order.quantity_to_produce
+        order.end_date = datetime.now().date()
+        db.session.commit()
+        flash('Order marked as completed.', 'success')
+        return redirect(url_for('manufacturing.order_details', id=order.id))
+
+    # If some quantity is still remaining to be produced
+    qty_to_process = max(0, remaining_to_produce)
+    
+    # Check component inventory for the REMAINING batch
     for item in order.items:
-        if item.component.quantity < item.quantity_required:
-            flash(f'Insufficient stock for component {item.component.name}. Required: {item.quantity_required}, Available: {item.component.quantity}', 'danger')
+        # Calculate remaining needed for this component
+        needed_now = item.quantity_required - item.quantity_consumed
+        if needed_now > 0 and item.component.quantity < needed_now:
+            flash(f'Insufficient stock for component {item.component.name}. Required: {needed_now}, Available: {item.component.quantity}', 'danger')
             return redirect(url_for('manufacturing.order_details', id=order.id))
             
-    # Consume components and record stock movements
-    total_material_cost = 0
+    # Consume components and record stock movements for the remaining batch
+    total_batch_material_cost = 0
     for item in order.items:
-        item.quantity_consumed = item.quantity_required
-        item.component.quantity -= item.quantity_consumed
-        
-        movement_out = StockMovement(
-            product_id=item.component_id,
-            movement_type='out',
-            reference_type='manufacturing_usage',
-            reference_id=order.id,
-            quantity=item.quantity_consumed,
-            previous_quantity=item.component.quantity + item.quantity_consumed,
-            new_quantity=item.component.quantity,
-            reason=f'Consumed in MO {order.order_number}',
-            created_by=current_user.id
-        )
-        db.session.add(movement_out)
-        total_material_cost += item.component.cost_price * item.quantity_consumed
+        consume_qty = max(0, item.quantity_required - item.quantity_consumed)
+        if consume_qty > 0:
+            item.component.quantity -= consume_qty
+            item.quantity_consumed += consume_qty
+            
+            movement_out = StockMovement()
+            movement_out.product_id = item.component_id
+            movement_out.movement_type = 'out'
+            movement_out.reference_type = 'manufacturing_usage'
+            movement_out.reference_id = order.id
+            movement_out.quantity = consume_qty
+            movement_out.previous_quantity = item.component.quantity + consume_qty
+            movement_out.new_quantity = item.component.quantity
+            movement_out.reason = f'Consumed (Final) in MO {order.order_number}'
+            movement_out.created_by = current_user.id
+            db.session.add(movement_out)
+            total_batch_material_cost += item.component.cost_price * consume_qty
 
-    # Add finished good and record stock movement
+    # Add finished good and record stock movement for the remaining batch
     finished_good = order.bom.product
-    completed_qty = order.quantity_to_produce
-    finished_good.quantity += completed_qty
+    finished_good.quantity += qty_to_process
     
-    movement_in = StockMovement(
-        product_id=finished_good.id,
-        movement_type='in',
-        reference_type='manufacturing_finish',
-        reference_id=order.id,
-        quantity=completed_qty,
-        previous_quantity=finished_good.quantity - completed_qty,
-        new_quantity=finished_good.quantity,
-        reason=f'Produced from MO {order.order_number}',
-        created_by=current_user.id
-    )
-    db.session.add(movement_in)
+    if qty_to_process > 0:
+        movement_in = StockMovement()
+        movement_in.product_id = finished_good.id
+        movement_in.movement_type = 'in'
+        movement_in.reference_type = 'manufacturing_finish'
+        movement_in.reference_id = order.id
+        movement_in.quantity = qty_to_process
+        movement_in.previous_quantity = finished_good.quantity - qty_to_process
+        movement_in.new_quantity = finished_good.quantity
+        movement_in.reason = f'Produced (Final) from MO {order.order_number}'
+        movement_in.created_by = current_user.id
+        db.session.add(movement_in)
     
-    # Calculate costs
+    # Calculate costs for the whole order
+    # material cost is now correctly the sum in item.quantity_consumed * cost_price
+    total_material_cost = sum(item.component.cost_price * item.quantity_consumed for item in order.items)
     order.actual_material_cost = total_material_cost
-    # Keep labor cost as set during creation (based on BOM)
-    order.total_cost = order.actual_material_cost + order.actual_labor_cost + order.actual_overhead_cost
     
-    # Update product cost price based on actual production cost per unit
-    if completed_qty > 0:
-        finished_good.cost_price = order.total_cost / completed_qty
+    # Update total cost of order
+    order.total_cost = order.actual_material_cost + (order.actual_labor_cost or 0) + (order.actual_overhead_cost or 0)
     
-    # Update standard cost of finished good (Weighted Average or straight replacement based on latest production)
-    # Simple replacement for this implementation
-    if completed_qty > 0:
-        unit_cost = order.total_cost / completed_qty
-        finished_good.cost_price = unit_cost
+    # Add a history record for the final batch
+    if qty_to_process > 0:
+        batch_labor_cost = (order.actual_labor_cost / order.quantity_to_produce) * qty_to_process if order.quantity_to_produce > 0 else 0
+        # For Final Complete (All), we apply whatever is left in actual_overhead_cost
+        batch_overhead_cost = order.actual_overhead_cost or 0
+        
+        history = ManufacturingOrderHistory()
+        history.mo_id = order.id
+        history.quantity_produced = qty_to_process
+        history.material_cost = total_batch_material_cost
+        history.labor_cost = batch_labor_cost
+        history.overhead_cost = batch_overhead_cost
+        history.is_manual_overhead = False
+        history.total_cost = total_batch_material_cost + batch_labor_cost + batch_overhead_cost
+        history.created_by = current_user.id
+        db.session.add(history)
+        
+        # Reset overhead bucket after applying all to final batch
+        order.actual_overhead_cost = 0
+
+    # Update product cost price based on total production cost per unit
+    if order.quantity_to_produce > 0:
+        finished_good.cost_price = order.total_cost / order.quantity_to_produce
         
     order.status = 'Completed'
+    order.produced_qty = order.quantity_to_produce
     order.end_date = datetime.now().date()
     
     # Auto-create production log entry
     from app.models import ProductionLog
-    production_log = ProductionLog(
-        date=order.end_date,
-        sku_id=finished_good.id,
-        shift='Production Order',
-        operator=f'MO: {order.order_number}',
-        qty_produced=completed_qty,
-        rejected_qty=0,
-        notes=f'Auto-created from Manufacturing Order {order.order_number}',
-        created_by=current_user.id
-    )
+    production_log = ProductionLog()
+    production_log.date = order.end_date
+    production_log.sku_id = finished_good.id
+    production_log.shift = 'Production Order'
+    production_log.operator = f'MO: {order.order_number}'
+    production_log.qty_produced = qty_to_process
+    production_log.rejected_qty = 0
+    production_log.notes = f'Auto-created from Manufacturing Order {order.order_number}'
+    production_log.created_by = current_user.id
     db.session.add(production_log)
     
     # Update Production Target Produced Qty if exists (Stateful Running Total)
@@ -552,7 +579,7 @@ def complete_order(id):
             ).scalar() or 0
             target.produced_qty = log_sum
         else:
-            target.produced_qty += completed_qty
+            target.produced_qty += qty_to_process
     
     db.session.commit()
     flash('Manufacturing Order completed successfully. Stock adjusted and product cost updated.', 'success')
@@ -603,17 +630,16 @@ def partial_complete_order(id):
         item.component.quantity -= batch_consume_qty
         item.quantity_consumed += batch_consume_qty
         
-        movement_out = StockMovement(
-            product_id=item.component_id,
-            movement_type='out',
-            reference_type='manufacturing_usage',
-            reference_id=order.id,
-            quantity=batch_consume_qty,
-            previous_quantity=item.component.quantity + batch_consume_qty,
-            new_quantity=item.component.quantity,
-            reason=f'Consumed (Partial) in MO {order.order_number}',
-            created_by=current_user.id
-        )
+        movement_out = StockMovement()
+        movement_out.product_id = item.component_id
+        movement_out.movement_type = 'out'
+        movement_out.reference_type = 'manufacturing_usage'
+        movement_out.reference_id = order.id
+        movement_out.quantity = batch_consume_qty
+        movement_out.previous_quantity = item.component.quantity + batch_consume_qty
+        movement_out.new_quantity = item.component.quantity
+        movement_out.reason = f'Consumed (Partial) in MO {order.order_number}'
+        movement_out.created_by = current_user.id
         db.session.add(movement_out)
         total_material_cost += item.component.cost_price * batch_consume_qty
 
@@ -621,17 +647,16 @@ def partial_complete_order(id):
     finished_good = order.bom.product
     finished_good.quantity += qty_produced
     
-    movement_in = StockMovement(
-        product_id=finished_good.id,
-        movement_type='in',
-        reference_type='manufacturing_finish',
-        reference_id=order.id,
-        quantity=qty_produced,
-        previous_quantity=finished_good.quantity - qty_produced,
-        new_quantity=finished_good.quantity,
-        reason=f'Produced (Partial) from MO {order.order_number}',
-        created_by=current_user.id
-    )
+    movement_in = StockMovement()
+    movement_in.product_id = finished_good.id
+    movement_in.movement_type = 'in'
+    movement_in.reference_type = 'manufacturing_finish'
+    movement_in.reference_id = order.id
+    movement_in.quantity = qty_produced
+    movement_in.previous_quantity = finished_good.quantity - qty_produced
+    movement_in.new_quantity = finished_good.quantity
+    movement_in.reason = f'Produced (Partial) from MO {order.order_number}'
+    movement_in.created_by = current_user.id
     db.session.add(movement_in)
     
     # Calculate costs for this batch
@@ -659,16 +684,15 @@ def partial_complete_order(id):
         finished_good.cost_price = unit_cost
         
     # Record history
-    history = ManufacturingOrderHistory(
-        mo_id=order.id,
-        quantity_produced=qty_produced,
-        material_cost=total_material_cost,
-        labor_cost=batch_labor_cost,
-        overhead_cost=batch_overhead_cost,
-        is_manual_overhead=(overhead_mode == 'per_unit' or overhead_mode == 'total_keep'),
-        total_cost=batch_total_cost,
-        created_by=current_user.id
-    )
+    history = ManufacturingOrderHistory()
+    history.mo_id = order.id
+    history.quantity_produced = qty_produced
+    history.material_cost = total_material_cost
+    history.labor_cost = batch_labor_cost
+    history.overhead_cost = batch_overhead_cost
+    history.is_manual_overhead = (overhead_mode == 'per_unit' or overhead_mode == 'total_keep')
+    history.total_cost = batch_total_cost
+    history.created_by = current_user.id
     db.session.add(history)
     
     # Update Order
@@ -686,16 +710,15 @@ def partial_complete_order(id):
         order.status = 'In Progress'
 
     # Production Log Entry
-    production_log = ProductionLog(
-        date=datetime.now().date(),
-        sku_id=finished_good.id,
-        shift='Production Order',
-        operator=f'MO: {order.order_number}',
-        qty_produced=qty_produced,
-        rejected_qty=0,
-        notes=f'Partial completion from MO {order.order_number}',
-        created_by=current_user.id
-    )
+    production_log = ProductionLog()
+    production_log.date = datetime.now().date()
+    production_log.sku_id = finished_good.id
+    production_log.shift = 'Production Order'
+    production_log.operator = f'MO: {order.order_number}'
+    production_log.qty_produced = qty_produced
+    production_log.rejected_qty = 0
+    production_log.notes = f'Partial completion from MO {order.order_number}'
+    production_log.created_by = current_user.id
     db.session.add(production_log)
     
     # Target Updates
@@ -757,17 +780,16 @@ def delete_history_batch(id):
         finished_good = order.bom.product
         finished_good.quantity -= batch.quantity_produced
         
-        movement_out = StockMovement(
-            product_id=finished_good.id,
-            movement_type='out',
-            reference_type='manufacturing_finish_reversal',
-            reference_id=order.id,
-            quantity=batch.quantity_produced,
-            previous_quantity=finished_good.quantity + batch.quantity_produced,
-            new_quantity=finished_good.quantity,
-            reason=f'Reversal of Batch {batch.id} from MO {order.order_number}',
-            created_by=current_user.id
-        )
+        movement_out = StockMovement()
+        movement_out.product_id = finished_good.id
+        movement_out.movement_type = 'out'
+        movement_out.reference_type = 'manufacturing_finish_reversal'
+        movement_out.reference_id = order.id
+        movement_out.quantity = batch.quantity_produced
+        movement_out.previous_quantity = finished_good.quantity + batch.quantity_produced
+        movement_out.new_quantity = finished_good.quantity
+        movement_out.reason = f'Reversal of Batch {batch.id} from MO {order.order_number}'
+        movement_out.created_by = current_user.id
         db.session.add(movement_out)
         
         # 2. Reverse Component Consumption
@@ -779,17 +801,16 @@ def delete_history_batch(id):
             item.component.quantity += batch_consume_qty
             item.quantity_consumed -= batch_consume_qty
             
-            movement_in = StockMovement(
-                product_id=item.component_id,
-                movement_type='in',
-                reference_type='manufacturing_usage_reversal',
-                reference_id=order.id,
-                quantity=batch_consume_qty,
-                previous_quantity=item.component.quantity - batch_consume_qty,
-                new_quantity=item.component.quantity,
-                reason=f'Reversal of component usage for Batch {batch.id} MO {order.order_number}',
-                created_by=current_user.id
-            )
+            movement_in = StockMovement()
+            movement_in.product_id = item.component_id
+            movement_in.movement_type = 'in'
+            movement_in.reference_type = 'manufacturing_usage_reversal'
+            movement_in.reference_id = order.id
+            movement_in.quantity = batch_consume_qty
+            movement_in.previous_quantity = item.component.quantity - batch_consume_qty
+            movement_in.new_quantity = item.component.quantity
+            movement_in.reason = f'Reversal of component usage for Batch {batch.id} MO {order.order_number}'
+            movement_in.created_by = current_user.id
             db.session.add(movement_in)
             
         # 3. Reverse Overhead to MO Bucket (ONLY if it was NOT a manual per-unit entry)
