@@ -2,8 +2,8 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
-from app.models import Product, User, Warehouse, ProductCategory
-from app.forms import ProductForm
+from app.models import Product, User, Warehouse, ProductCategory, Unit
+from app.forms import ProductForm, UnitForm
 from sqlalchemy import func, inspect
 from io import BytesIO
 import os
@@ -89,6 +89,7 @@ def add_product():
         unit_price = request.form.get('unit_price')
         cost_price = request.form.get('cost_price')
         quantity = request.form.get('quantity')
+        unit = request.form.get('unit')
         reorder_level = request.form.get('reorder_level')
         category_id = request.form.get('category_id')
         is_manufactured = 'is_manufactured' in request.form
@@ -116,6 +117,7 @@ def add_product():
                 unit_price=final_unit_price,
                 cost_price=float(cost_price) if cost_price else 0.0,
                 quantity=float(quantity) if quantity else 0,
+                unit=unit,
                 reorder_level=float(reorder_level) if reorder_level else 0,
                 category_id=int(category_id) if category_id and category_id != '0' else None,
                 warehouse_id=int(warehouse_id) if warehouse_id and warehouse_id != '0' else None
@@ -148,8 +150,9 @@ def add_product():
     
     # Fetch categories for the dropdown
     categories = ProductCategory.query.filter_by(is_active=True).order_by(ProductCategory.name).all()
+    units = Unit.query.filter_by(is_active=True).order_by(Unit.name).all()
     
-    return render_template('inventory/add_product.html', form=form, categories=categories, warehouses=warehouses)
+    return render_template('inventory/add_product.html', form=form, categories=categories, warehouses=warehouses, units=units)
 
 
 @bp.route('/product/<int:id>/edit', methods=['GET', 'POST'])
@@ -190,6 +193,7 @@ def edit_product(id):
             product.unit_price = form.unit_price.data
         
         product.cost_price = form.cost_price.data if form.cost_price.data is not None else 0.0
+        product.unit = request.form.get('unit')
         product.reorder_level = form.reorder_level.data
         category_id = request.form.get('category_id')
         product.category_id = int(category_id) if category_id and category_id != '0' else None
@@ -265,8 +269,9 @@ def edit_product(id):
     
     # Fetch categories for the dropdown
     categories = ProductCategory.query.filter_by(is_active=True).order_by(ProductCategory.name).all()
+    units = Unit.query.filter_by(is_active=True).order_by(Unit.name).all()
     
-    return render_template('inventory/edit_product.html', form=form, product=product, categories=categories, warehouses=warehouses)
+    return render_template('inventory/edit_product.html', form=form, product=product, categories=categories, warehouses=warehouses, units=units)
 
 @bp.route('/product/<int:id>/delete', methods=['GET', 'POST'])
 @login_required
@@ -528,6 +533,32 @@ def download_sample():
     except Exception as e:
         flash(f'Error creating sample: {str(e)}', 'error')
         return redirect(url_for('inventory.bulk_upload'))
+
+@bp.route('/units/add', methods=['POST'])
+@login_required
+@permission_required('inventory', action='add')
+def add_unit():
+    name = request.form.get('name')
+    if not name:
+        return jsonify({'success': False, 'message': 'Unit name is required'})
+    
+    # Check if unit already exists (case-insensitive)
+    existing = Unit.query.filter(func.lower(Unit.name) == func.lower(name)).first()
+    if existing:
+        return jsonify({'success': False, 'message': f'Unit "{name}" already exists'})
+    
+    try:
+        unit = Unit(name=name)
+        db.session.add(unit)
+        db.session.commit()
+        return jsonify({
+            'success': True, 
+            'message': 'Unit added successfully',
+            'unit': {'id': unit.id, 'name': unit.name}
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)})
 
 @bp.route('/api/product/<int:id>')
 @login_required

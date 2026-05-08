@@ -259,9 +259,17 @@
                             <td class="text-center no-export">
                                 <input type="checkbox" class="form-check-input bill-checkbox" value="{{ bill.id }}">
                             </td>
-                            <td class="fw-bold">{{ bill.bill_number }}</td>
+                            <td class="fw-bold">
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="purchase" data-entity-id="{{ bill.id }}">
+                                    {{ bill.bill_number }}
+                                </a>
+                            </td>
                             <td>{{ bill.date.strftime(date_format) }}</td>
-                            <td>{{ bill.vendor.name }}</td>
+                            <td>
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="vendor" data-entity-id="{{ bill.vendor.id }}">
+                                    {{ bill.vendor.name }}
+                                </a>
+                            </td>
                             <td class="text-end text-muted small">PKR{{ "{:,.2f}".format(bill.shipping_charge) }}</td>
                             <td class="text-end">PKR{{ "{:,.2f}".format(bill.total) }}</td>
                             <td class="text-end">PKR{{ "{:,.2f}".format(bill.paid_amount) }}</td>

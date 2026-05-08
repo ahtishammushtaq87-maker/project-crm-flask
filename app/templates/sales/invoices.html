@@ -242,9 +242,21 @@
                             <td class="text-center no-export">
                                 <input type="checkbox" class="form-check-input invoice-checkbox" value="{{ sale.id }}">
                             </td>
-                            <td class="fw-bold">{{ sale.invoice_number }}</td>
+                            <td class="fw-bold">
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="sale" data-entity-id="{{ sale.id }}">
+                                    {{ sale.invoice_number }}
+                                </a>
+                            </td>
                             <td>{{ sale.date.strftime(date_format) }}</td>
-                            <td>{{ sale.customer.name if sale.customer else 'Walk-in Customer' }}</td>
+                            <td>
+                                {% if sale.customer %}
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="customer" data-entity-id="{{ sale.customer.id }}">
+                                    {{ sale.customer.name }}
+                                </a>
+                                {% else %}
+                                Walk-in Customer
+                                {% endif %}
+                            </td>
                             <td>{{ sale.salesman.name if sale.salesman else '-' }}</td>
                             <td class="text-end text-muted small">PKR{{ "{:,.2f}".format(sale.delivery_charge) }}</td>
                             <td class="text-end">PKR{{ "{:,.2f}".format(sale.total) }}</td>

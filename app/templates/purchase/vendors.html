@@ -163,7 +163,11 @@
 								</div>
 								{% endif %}
 							</td>
-							<td>{{ vendor.name }}</td>
+							<td>
+								<a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="vendor" data-entity-id="{{ vendor.id }}">
+									{{ vendor.name }}
+								</a>
+							</td>
 							<td>{{ vendor.email or '-' }}</td>
 							<td>{{ vendor.phone or '-' }}</td>
 							<td>PKR{{ '%.2f'|format(vendor.total_purchases) }}</td>

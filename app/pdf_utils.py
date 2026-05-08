@@ -351,7 +351,19 @@ class ProfessionalPDFGenerator:
                 row.append(Paragraph(item.get('sku', '-'), self.styles['TblCell']))
             if show_item_code:
                 row.append(Paragraph(item.get('item_code', '-'), self.styles['TblCell']))
-            row += [Paragraph(str(item.get('quantity', 0)), self.styles['TblCell']),
+            qty = item.get('quantity', 0)
+            unit = item.get('unit', '')
+            qty_str = f"{qty:,.3f}" if isinstance(qty, (int, float)) else str(qty)
+            
+            # Show unit in quantity column if it's a purchase bill
+            if getattr(self, 'is_purchase', False):
+                # For pieces/pcs, show as integer without decimal points
+                if unit and unit.lower() in ['pcs', 'pieces', 'pc', 'piece']:
+                    qty_str = f"{int(qty):,}" if isinstance(qty, (int, float)) else str(qty)
+                
+                if unit and unit != '-':
+                    qty_str = f"{qty_str} {unit}"
+            row += [Paragraph(qty_str, self.styles['TblCell']),
                     Paragraph(item.get('rate', '-'),        self.styles['TblCell']),
                     Paragraph(item.get('amount', '-'),      self.styles['TblCell'])]
             table_data.append(row)
@@ -601,6 +613,7 @@ class ProfessionalPDFGenerator:
                            ship_to_label=None, bill_to_label=None,
                            customer_name=None, amount_due=None, due_date_str=None,
                            is_purchase=False, is_invoice=False):
+        self.is_purchase = is_purchase
         elements = []
         
         # Set custom ship_to label if provided (e.g., "SHIP FROM" for purchase docs)
@@ -728,7 +741,7 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
         for item in obj.items:
             entry = {
                 'description': item.product.name if item.product else "Unknown Product",
-                'quantity':    int(item.quantity) if item.quantity.is_integer() else item.quantity,
+                'quantity':    item.quantity,
                 'rate':        f"{currency}{item.unit_price:,.2f}",
                 'amount':      f"{currency}{item.total:,.2f}",
             }
@@ -807,10 +820,15 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
 
         items = []
         for item in obj.items:
+            # Get unit from item if it exists, otherwise from product
+            unit_val = getattr(item, 'unit', None)
+            if (not unit_val or unit_val == '-') and item.product:
+                unit_val = getattr(item.product, 'unit', '-')
+                
             entry = {
                 'description': item.product.name if item.product else "Unknown Product",
-                'quantity':    int(item.quantity) if item.quantity.is_integer() else item.quantity,
-                'unit':        getattr(item, 'unit', '-'),
+                'quantity':    item.quantity,
+                'unit':        unit_val or '-',
                 'rate':        f"{currency}{item.unit_price:,.2f}",
                 'amount':      f"{currency}{item.total:,.2f}",
             }
@@ -876,10 +894,15 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
 
         items = []
         for item in obj.items:
+            # Get unit from item if it exists, otherwise from product
+            unit_val = getattr(item, 'unit', None)
+            if (not unit_val or unit_val == '-') and item.product:
+                unit_val = getattr(item.product, 'unit', '-')
+                
             entry = {
                 'description': item.product.name if item.product else "Unknown Product",
-                'quantity':    int(item.quantity) if item.quantity.is_integer() else item.quantity,
-                'unit':        getattr(item, 'unit', '-'),
+                'quantity':    item.quantity,
+                'unit':        unit_val or '-',
                 'rate':        f"{currency}{item.unit_price:,.2f}",
                 'amount':      f"{currency}{item.total:,.2f}",
             }

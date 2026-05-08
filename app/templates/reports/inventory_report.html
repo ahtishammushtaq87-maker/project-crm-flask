@@ -215,7 +215,7 @@
                             <td>{{ product.name }}</td>
                             <td><span class="badge bg-light text-dark">{{ product.category.name if product.category else '-' }}</span></td>
                             <td>{{ product.warehouse.name if product.warehouse else '-' }}</td>
-                            <td>{{ product.quantity }} {{ product.unit }}</td>
+                            <td>{{ product.quantity | format_qty(product.unit) }} {{ product.unit }}</td>
                             <td>{{ product.reorder_level }}</td>
                             <td>PKR{{ "%.2f"|format(product.cost_price) }}</td>
                             <td>PKR{{ "%.2f"|format(product.unit_price) }}</td>

@@ -441,6 +441,18 @@ class ProductCategory(db.Model):
     def __repr__(self):
         return f'<ProductCategory {self.name}>'
 
+class Unit(db.Model):
+    """Unit of Measure model"""
+    __tablename__ = 'units'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False, unique=True, index=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<Unit {self.name}>'
+
 
 class Sale(db.Model):
     """Sales/Invoice model"""

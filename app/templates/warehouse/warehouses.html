@@ -78,8 +78,16 @@
                             <td class="text-center no-export">
                                 <input type="checkbox" class="form-check-input warehouse-checkbox" value="{{ w.id }}">
                             </td>
-                            <td><strong>{{ w.code }}</strong></td>
-                            <td>{{ w.name }}</td>
+                            <td>
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="warehouse" data-entity-id="{{ w.id }}">
+                                    <strong>{{ w.code }}</strong>
+                                </a>
+                            </td>
+                            <td>
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="warehouse" data-entity-id="{{ w.id }}">
+                                    {{ w.name }}
+                                </a>
+                            </td>
                             <td>{{ w.city or '-' }}</td>
                             <td>{{ w.phone or '-' }}</td>
                             <td>{{ w.manager or '-' }}</td>

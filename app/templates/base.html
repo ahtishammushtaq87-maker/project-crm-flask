@@ -746,6 +746,7 @@
             padding: 4px 24px 4px 12px;
         }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/entity_modal.css') }}">
     {% block extra_css %}{% endblock %}
 </head>
 
@@ -1745,6 +1746,25 @@
             });
         });
     </script>
+    <!-- Global Entity History Modal -->
+    <div class="modal fade" id="entityHistoryModal" tabindex="-1" aria-labelledby="entityHistoryModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="entityHistoryModalLabel">Entity Details</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Dynamic Content -->
+                </div>
+                <div class="modal-footer">
+                    <!-- Dynamic Buttons -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/entity_handler.js') }}"></script>
     {% block extra_js %}{% endblock %}
 </body>
 

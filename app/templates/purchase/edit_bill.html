@@ -216,8 +216,8 @@
                                             </select>
                                         </td>
                                         <td><input type="number" name="quantity[]" class="form-control qty"
-                                                value="{{ item.quantity }}" min="0.01" step="0.01"
-                                                oninput="calcRow(this)"></td>
+                                                value="{{ item.quantity }}" min="0" step="any" oninput="calcRow(this)">
+                                        </td>
                                         <td><input type="text" class="form-control currentCost" readonly
                                                 style="background-color: #f8f9fa;"
                                                 value="{% if item.product %}{{ '%.2f'|format(item.product.cost_price) }}{% else %}—{% endif %}">
@@ -243,7 +243,7 @@
 
 <script>
     function fmt(n) {
-        return n.toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        return n.toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
     }
 
     function addRow() {

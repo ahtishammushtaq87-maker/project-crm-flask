@@ -145,7 +145,7 @@
             <div class="card summary-card-stats bg-gradient-info-stats h-100">
                 <div class="card-body">
                     <div class="stat-label">Total Stock Items</div>
-                    <div class="stat-value">{{ "{:,.0f}".format(ns.total_qty) }} units</div>
+                    <div class="stat-value">{{ ns.total_qty | format_qty }} units</div>
                     <i class="fas fa-boxes stat-icon"></i>
                 </div>
             </div>
@@ -311,6 +311,7 @@
                             <th>Quantity</th>
                             <th>Cost Price</th>
                             <th>Selling Price</th>
+                            <th>Unit</th>
                             <th>Stock Value</th>
                             <th>Status</th>
                             <th class="no-export">Price History</th>
@@ -328,12 +329,12 @@
                                 {% if product.image_path %}
                                 <div class="product-image-container position-relative">
                                     {% set normalized_path = product.image_path.replace('\\', '/') %}
-                                    {% set img_src = normalized_path.replace('app/static/', '') if 'app/static/' in normalized_path else normalized_path %}
+                                    {% set img_src = normalized_path.replace('app/static/', '') if 'app/static/' in
+                                    normalized_path else normalized_path %}
                                     <img src="{{ url_for('static', filename=img_src) }}" alt="{{ product.name }}"
                                         class="img-thumbnail img-preview-trigger"
                                         style="width: 60px; height: 60px; object-fit: cover; cursor: zoom-in;"
-                                        data-bs-toggle="modal" 
-                                        data-bs-target="#imagePreviewModal"
+                                        data-bs-toggle="modal" data-bs-target="#imagePreviewModal"
                                         data-img-src="{{ url_for('static', filename=img_src) }}"
                                         data-product-name="{{ product.name }}"
                                         onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 font-size=%2214%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3ENo Image%3C/text%3E%3C/svg%3E'">
@@ -345,18 +346,26 @@
                                 </div>
                                 {% endif %}
                             </td>
-                            <td>{{ product.sku }}</td>
+                            <td>
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal"
+                                    data-bs-target="#entityHistoryModal" data-entity-type="inventory"
+                                    data-entity-id="{{ product.id }}">
+                                    {{ product.sku }}
+                                </a>
+                            </td>
                             <td><strong>{{ product.name }}</strong></td>
                             <td>{{ product.category.name if product.category else '-' }}</td>
                             <td>{{ product.warehouse.name if product.warehouse else '-' }}</td>
                             <td>
-                                {{ product.quantity }}
-                                {% if product.quantity <= product.reorder_level %} <span class="badge bg-warning">Low
+                                {{ product.quantity | format_qty(product.unit) }}
+{% if product.quantity <= product.reorder_level %} <span class="badge bg-warning">Low
                                     Stock</span>
                                     {% endif %}
                             </td>
                             <td>PKR{{ "%.2f"|format(product.cost_price) }}</td>
                             <td>PKR{{ "%.2f"|format(product.unit_price) }}</td>
+                            <td><span class="badge bg-light text-dark border">{{ product.unit|capitalize if product.unit
+                                    else 'Pieces' }}</span></td>
                             <td>PKR{{ "%.2f"|format(product.quantity * product.cost_price) }}</td>
                             <td>
                                 {% if product.quantity == 0 %}
@@ -368,11 +377,9 @@
                                     {% endif %}
                             </td>
                             <td class="no-export">
-                                <button type="button" class="btn btn-sm btn-info btn-show-history" 
-                                    data-bs-toggle="modal"
-                                    data-bs-target="#priceHistoryModal"
-                                    data-id="{{ product.id }}"
-                                    data-name="{{ product.name }}">
+                                <button type="button" class="btn btn-sm btn-info btn-show-history"
+                                    data-bs-toggle="modal" data-bs-target="#priceHistoryModal"
+                                    data-id="{{ product.id }}" data-name="{{ product.name }}">
                                     <i class="fas fa-history me-1"></i>History
                                 </button>
                             </td>
@@ -384,9 +391,8 @@
                                 </a>
                                 {% endif %}
                                 {% if current_user.has_permission('inventory', 'delete') %}
-                                <button type="button" class="btn btn-sm btn-danger btn-delete-product" 
-                                    data-id="{{ product.id }}"
-                                    title="Delete">
+                                <button type="button" class="btn btn-sm btn-danger btn-delete-product"
+                                    data-id="{{ product.id }}" title="Delete">
                                     <i class="fas fa-trash"></i>
                                 </button>
                                 {% endif %}
@@ -402,7 +408,7 @@
 
 <script>
     // Event Delegation for History and Delete buttons
-    document.addEventListener('click', function(e) {
+    document.addEventListener('click', function (e) {
         const historyBtn = e.target.closest('.btn-show-history');
         if (historyBtn) {
             showPriceHistory(historyBtn.dataset.id, historyBtn.dataset.name);
@@ -520,7 +526,7 @@
     });
 
     function fmt(n) {
-        return n.toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+        return n.toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
     }
 
     function showPriceHistory(productId, productName) {
@@ -775,30 +781,36 @@
         <div class="modal-content overflow-hidden border-0 shadow-lg" style="border-radius: 15px;">
             <div class="modal-header border-0 bg-dark text-white p-3">
                 <h5 class="modal-title fw-bold" id="imagePreviewName">Product Image</h5>
-                <button type="button" class="btn-close btn-close-white shadow-none" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close btn-close-white shadow-none" data-bs-dismiss="modal"
+                    aria-label="Close"></button>
             </div>
-            <div class="modal-body p-0 bg-black d-flex align-items-center justify-content-center" style="min-height: 300px;">
+            <div class="modal-body p-0 bg-black d-flex align-items-center justify-content-center"
+                style="min-height: 300px;">
                 <img id="imagePreviewContent" src="" class="img-fluid" style="max-height: 80vh; object-fit: contain;">
             </div>
             <div class="modal-footer border-0 bg-dark py-2">
-                <button type="button" class="btn btn-outline-light btn-sm rounded-pill px-4" data-bs-dismiss="modal">Close Preview</button>
+                <button type="button" class="btn btn-outline-light btn-sm rounded-pill px-4"
+                    data-bs-dismiss="modal">Close Preview</button>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function () {
         const previewImage = document.getElementById('imagePreviewContent');
         const previewName = document.getElementById('imagePreviewName');
 
         // Use event delegation for images inside DataTables or dynamic rows
-        document.addEventListener('click', function(e) {
+        document.addEventListener('click', function (e) {
+            const historyTrigger = e.target.closest('.entity-history-trigger');
+            if (historyTrigger) return; // Let the entity handler handle this
+
             const trigger = e.target.closest('.img-preview-trigger');
             if (trigger) {
                 const src = trigger.dataset.imgSrc;
                 const name = trigger.dataset.productName;
-                
+
                 previewImage.src = src;
                 previewName.textContent = name;
             }

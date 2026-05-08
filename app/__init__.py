@@ -36,7 +36,7 @@ def create_app(config_class=Config):
             PurchaseOrder, PurchaseOrderItem, CostPriceHistory, BOMVersion,
             BOMVersionItem, ProductionTarget, ProductionLog, PDProject,
             PDProjectBOM, PDComponent, PDTooling, PDTesting, PDApproval, PDAsset,
-            PurchaseReturn, PurchaseReturnItem
+            PurchaseReturn, PurchaseReturnItem, Unit
         )
         from app.filter_models import SavedFilter
         
@@ -95,7 +95,8 @@ def create_app(config_class=Config):
             'pd_assets': PDAsset,
             'purchase_returns': PurchaseReturn,
             'purchase_return_items': PurchaseReturnItem,
-            'saved_filters': SavedFilter
+            'saved_filters': SavedFilter,
+            'units': Unit
         }
         
         try:
@@ -218,6 +219,7 @@ def create_app(config_class=Config):
     from app.routes.product_development import bp as pd_bp
     from app.routes.categories import bp as categories_bp
     from app.routes.filters import bp as filters_bp
+    from app.routes.api import bp as api_bp
 
     app.register_blueprint(dashboard_bp, url_prefix='/')
     app.register_blueprint(accounting_bp, url_prefix='/accounting')
@@ -238,6 +240,7 @@ def create_app(config_class=Config):
     app.register_blueprint(pd_bp, url_prefix='/product-development')
     app.register_blueprint(categories_bp, url_prefix='/categories')
     app.register_blueprint(filters_bp, url_prefix='/api/filters')
+    app.register_blueprint(api_bp, url_prefix='/api')
     
     @app.context_processor
     def inject_company():
@@ -390,4 +393,8 @@ def create_app(config_class=Config):
         flash(user_message, 'danger')
         return redirect(request.referrer or url_for('dashboard.index'))
     
+    # Register custom filters
+    from app.utils import format_qty
+    app.jinja_env.filters['format_qty'] = format_qty
+
     return app

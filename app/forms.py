@@ -14,6 +14,7 @@ class ProductForm(FlaskForm):
     name = StringField('Product Name', validators=[DataRequired()])
     sku = StringField('SKU', validators=[DataRequired()])
     description = TextAreaField('Description')
+    unit = StringField('Unit', default='pieces')
     unit_price = FloatField('Selling Price', validators=[DataRequired(), NumberRange(min=0)])
     cost_price = FloatField('Cost Price', validators=[Optional(), NumberRange(min=0)])
     quantity = FloatField('Initial Quantity', default=0)
@@ -21,6 +22,10 @@ class ProductForm(FlaskForm):
     category = StringField('Category')
     is_manufactured = BooleanField('Manufactured Product')
     image = FileField('Product Image', validators=[Optional()])
+
+class UnitForm(FlaskForm):
+    name = StringField('Unit Name', validators=[DataRequired()])
+    submit = SubmitField('Save Unit')
 
 class WarehouseForm(FlaskForm):
     name = StringField('Warehouse Name', validators=[DataRequired()])

@@ -96,13 +96,12 @@
             </a>
             {% endif %}
             {% if bill.vendor and bill.vendor.phone %}
-            {% set phone = bill.vendor.phone|replace('+', '')|replace(' ', '')|replace('-', '')|replace('(', '')|replace(')', '') %}
+            {% set phone = bill.vendor.phone|replace('+', '')|replace(' ', '')|replace('-', '')|replace('(',
+            '')|replace(')', '') %}
             {% if phone|length >= 10 %}
             <button type="button" class="btn btn-success"
                 data-pdf-url="{{ url_for('purchase.public_purchase', token=bill.valid_access_token) }}"
-                data-phone="{{ phone }}"
-                data-bill="{{ bill.bill_number }}"
-                onclick="shareBillPDF(this)">
+                data-phone="{{ phone }}" data-bill="{{ bill.bill_number }}" onclick="shareBillPDF(this)">
                 <i class="fab fa-whatsapp me-1"></i>Share PDF
             </button>
             {% endif %}
@@ -179,17 +178,17 @@
                                             {% if item.product.sku %}<br><small class="text-muted">{{ item.product.sku
                                                 }}</small>{% endif %}
                                         </td>
-                                        <td class="text-center">{{ '{:,.2f}'.format(item.quantity) }}</td>
+                                        <td class="text-center">{{ '{:,.3f}'.format(item.quantity) }}</td>
                                         <td class="text-center text-success fw-semibold">{{
-                                            '{:,.2f}'.format(already_received) }}</td>
+                                            '{:,.3f}'.format(already_received) }}</td>
                                         <td
                                             class="text-center {% if pending > 0 %}text-warning fw-bold{% else %}text-muted{% endif %}">
-                                            {{ '{:,.2f}'.format(pending) }}
+                                            {{ '{:,.3f}'.format(pending) }}
                                         </td>
                                         <td class="text-center">
                                             <input type="number" name="qty_{{ item.id }}"
                                                 class="form-control form-control-sm text-center receive-qty-input"
-                                                min="0" max="{{ pending }}" step="0.01" placeholder="0"
+                                                min="0" max="{{ pending }}" step="any" placeholder="0"
                                                 data-max="{{ pending }}" {% if pending <=0 %}disabled{% endif %}>
                                         </td>
                                     </tr>
@@ -649,10 +648,10 @@
                                         {% if item.product.sku %}<br><small class="text-muted">{{ item.product.sku
                                             }}</small>{% endif %}
                                     </td>
-                                    <td class="text-center">{{ '{:,.2f}'.format(item.quantity) }}</td>
+                                    <td class="text-center">{{ '{:,.3f}'.format(item.quantity) }}</td>
                                     <td class="text-center">
                                         {% if already_received > 0 %}
-                                        <span class="badge bg-success">{{ '{:,.2f}'.format(already_received) }}</span>
+                                        <span class="badge bg-success">{{ '{:,.3f}'.format(already_received) }}</span>
                                         {% else %}
                                         <span class="badge bg-secondary">0</span>
                                         {% endif %}
@@ -673,7 +672,7 @@
                                     <th colspan="{% if bill.shipping_charge > 0 %}4{% else %}3{% endif %}"
                                         class="text-end">
                                         Subtotal</th>
-                                    <th class="text-end">{{ '{:,.2f}'.format(bill.items | sum(attribute='quantity')) }}
+                                    <th class="text-end">{{ '{:,.3f}'.format(bill.items | sum(attribute='quantity')) }}
                                     </th>
                                     <th class="text-end"></th>
                                     <th class="text-end">PKR {{ "{:,.2f}".format(bill.subtotal) }}</th>
@@ -754,7 +753,7 @@
                                                         <small class="text-muted ms-1">{{ ri.product.sku }}</small>
                                                     </td>
                                                     <td class="text-center text-success fw-bold">{{
-                                                        '{:,.2f}'.format(ri.quantity_received) }}</td>
+                                                        '{:,.3f}'.format(ri.quantity_received) }}</td>
                                                     <td class="text-center">
                                                         {% if current_user.has_permission('purchases', 'delete') %}
                                                         <form method="POST"
@@ -858,7 +857,7 @@
                                                 class="d-inline" style="display: inline-block;">
                                                 <button type="submit"
                                                     class="btn btn-sm btn-outline-danger delete-payment-btn"
-                                                    data-pay-amount="{{ "{:,.2f}".format(pay.amount) }}"
+                                                    data-pay-amount="{{ " {:,.2f}".format(pay.amount) }}"
                                                     onclick="return confirm('Delete this payment? Balance will increase by PKR ' + this.dataset.payAmount)">
                                                     <i class="fas fa-trash"></i>
                                                 </button>

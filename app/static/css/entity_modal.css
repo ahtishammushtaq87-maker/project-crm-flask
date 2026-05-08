@@ -1,0 +1,179 @@
+/* Entity History Modal Premium Styles */
+#entityHistoryModal .modal-content {
+    border: none;
+    border-radius: 15px;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    overflow: hidden;
+}
+
+#entityHistoryModal .modal-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-bottom: none;
+    padding: 1.5rem;
+}
+
+#entityHistoryModal .modal-title {
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+#entityHistoryModal .modal-body {
+    padding: 1.5rem;
+}
+
+.entity-summary-card {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1rem;
+    border-left: 5px solid #667eea;
+}
+
+.summary-item label {
+    display: block;
+    font-size: 0.75rem;
+    color: #6c757d;
+    text-transform: uppercase;
+    margin-bottom: 0.25rem;
+    font-weight: 600;
+}
+
+.summary-item span {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #2d3436;
+}
+
+/* History Timeline */
+.history-timeline {
+    position: relative;
+    padding-left: 30px;
+    margin-top: 1rem;
+}
+
+.history-timeline::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #e9ecef;
+}
+
+.timeline-item {
+    position: relative;
+    margin-bottom: 1.5rem;
+}
+
+.timeline-item::after {
+    content: '';
+    position: absolute;
+    left: -25px;
+    top: 5px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #667eea;
+    border: 3px solid #fff;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+.timeline-item.payment::after { background: #10ac84; }
+.timeline-item.return::after { background: #ee5253; }
+.timeline-item.create::after { background: #667eea; }
+
+.timeline-content {
+    background: #fff;
+    padding: 0.75rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.timeline-date {
+    font-size: 0.7rem;
+    color: #adb5bd;
+    margin-bottom: 0.25rem;
+}
+
+.timeline-event {
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+/* Action Buttons */
+#entityHistoryModal .modal-footer {
+    border-top: 1px solid #f1f3f5;
+    padding: 1.25rem;
+    background: #f8f9fa;
+}
+
+.btn-premium {
+    border-radius: 8px;
+    padding: 0.5rem 1.25rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.btn-premium:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+/* Trigger elements decoration */
+.entity-history-trigger {
+    cursor: pointer;
+    color: #000000;
+    border-bottom: 1px dashed #667eea;
+    transition: all 0.2s;
+    text-decoration: none !important;
+}
+
+.entity-history-trigger:hover {
+    color: #4834d4;
+    border-bottom-style: solid;
+    background: rgba(102, 126, 234, 0.05);
+}
+
+/* Image Preview */
+.entity-image-wrapper {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+}
+
+.entity-image-container {
+    width: 120px;
+    height: 120px;
+    border-radius: 15px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+    border: 3px solid #fff;
+}
+
+.entity-image-container img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.image-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0,0,0,0.6);
+    color: white;
+    padding: 3px;
+    text-align: center;
+    font-size: 0.65rem;
+    font-weight: 600;
+}

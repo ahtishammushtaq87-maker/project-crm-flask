@@ -292,7 +292,9 @@
                                 <input type="checkbox" class="form-check-input expense-checkbox" value="{{ exp.id }}">
                             </td>
                             <td>
-                                {{ exp.expense_number }}
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="expense" data-entity-id="{{ exp.id }}">
+                                    {{ exp.expense_number }}
+                                </a>
                                 {% if exp.is_bom_overhead %}
                                 <span class="badge bg-info text-dark ms-1" style="font-size: 0.7rem;" title="Linked to: {% if exp.mo_id and exp.manufacturing_order %}MO: {{ exp.manufacturing_order.order_number }}{% elif exp.product %}Product: {{ exp.product.name }}{% else %}None{% endif %}">
                                     BOM Overhead {% if exp.mo_id and exp.manufacturing_order %}({{ exp.manufacturing_order.order_number }}){% elif exp.product %}({{ exp.product.name }}){% endif %}
@@ -308,7 +310,15 @@
                                 {{ exp.date.strftime(date_format) }}
                             </td>
                             <td>{{ exp.expense_category.name if exp.expense_category else 'N/A' }}</td>
-                            <td>{{ exp.vendor.name if exp.vendor else '-' }}</td>
+                            <td>
+                                {% if exp.vendor %}
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="vendor" data-entity-id="{{ exp.vendor.id }}">
+                                    {{ exp.vendor.name }}
+                                </a>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
                             <td>
                                 {% if exp.mo_id and exp.manufacturing_order %}
                                 <span class="badge bg-primary">{{ exp.manufacturing_order.order_number }}</span>

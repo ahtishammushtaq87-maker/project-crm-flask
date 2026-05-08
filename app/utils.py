@@ -79,7 +79,7 @@ def permission_required(module, action='view'):
             # Admins have full access
             if getattr(current_user, 'role', '') == 'admin':
                 return f(*args, **kwargs)
-                
+            
             # Check specific permission
             attr_name = f'can_{action}_{module}'
             has_permission = getattr(current_user, attr_name, False)
@@ -91,3 +91,29 @@ def permission_required(module, action='view'):
             return f(*args, **kwargs)
         return decorated_function
     return decorator
+
+
+def format_qty(value, unit=''):
+    """
+    Format quantity values. 
+    Shows as integer if unit is pieces/pcs or if value is a whole number.
+    Otherwise shows with 3 decimal places.
+    """
+    if value is None:
+        return '0'
+    
+    try:
+        qty = float(value)
+    except (ValueError, TypeError):
+        return str(value)
+    
+    # Check if it's a piece-like unit
+    is_pieces = False
+    if unit and str(unit).lower() in ['pcs', 'pieces', 'pc', 'piece']:
+        is_pieces = True
+    
+    # Format based on unit or if it's a whole number
+    if is_pieces or qty == int(qty):
+        return f"{int(qty):,}"
+    
+    return f"{qty:,.3f}"

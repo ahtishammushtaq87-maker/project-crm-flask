@@ -139,54 +139,17 @@ def create_bill():
         )
         
         db.session.add(bill)
-
-        # First, collect all items and calculate totals
-        items_data = []
-        total_items_cost = 0
         
         for i in range(len(product_ids)):
             if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
-                prod_id = int(product_ids[i])
-                qty = float(quantities[i])
-                price = float(prices[i])
-                item_total = qty * price
-                
-                items_data.append({
-                    'product_id': prod_id,
-                    'quantity': qty,
-                    'unit_price': price,
-                    'total': item_total
-                })
-                total_items_cost += item_total
+                item = PurchaseItem(
+                    product_id=int(product_ids[i]),
+                    quantity=float(quantities[i]),
+                    unit_price=float(prices[i]),
+                    total=float(quantities[i]) * float(prices[i])
+                )
+                bill.items.append(item)
         
-        # Get shipping and tax
-        shipping_charge = float(request.form.get('shipping_charge', 0))
-        tax_rate = float(request.form.get('tax_rate', 0))
-        
-        # Calculate tax on items + shipping
-        taxable_amount = total_items_cost + shipping_charge
-        tax_amount = (taxable_amount * tax_rate) / 100 if tax_rate > 0 else 0
-        
-        # Total additional cost to allocate (shipping + tax)
-        total_additional_cost = shipping_charge + tax_amount
-        
-        # Add items WITHOUT updating inventory (deferred to Receive Quantity step)
-        for item_data in items_data:
-            prod_id = item_data['product_id']
-            qty = item_data['quantity']
-            price = item_data['unit_price']
-            item_total = item_data['total']
-
-            item = PurchaseItem(
-                product_id=prod_id,
-                quantity=qty,
-                unit_price=price,
-                total=item_total
-            )
-            bill.items.append(item)
-            # NOTE: inventory & cost price are NOT updated on bill creation.
-            # They update when user clicks "Receive Quantity" on the bill detail page.
-
         bill.calculate_totals()
 
         # Update paid amount from "Advance Paid" field in template
@@ -237,7 +200,7 @@ def create_bill():
                     flash('Invalid file type for bill image. Allowed: png, jpg, jpeg, gif, pdf, webp', 'warning')
 
         db.session.commit()
-        flash('Purchase bill created successfully! Use "Receive Quantity" on the bill detail page to update inventory.', 'success')
+        flash('Purchase bill created successfully! Inventory and cost prices have been updated.', 'success')
         return redirect(url_for('purchase.bill_detail', id=bill.id))
     
     return render_template('purchase/create_bill.html', form=form, products=products, vendors=vendors, currencies=currencies)
@@ -361,7 +324,7 @@ def edit_bill(id):
                     bill.bill_image_path = os.path.join('uploads', 'bills', filename).replace('\\', '/')
 
         db.session.commit()
-        flash('Purchase bill updated successfully! Use "Receive Quantity" to re-update inventory.', 'success')
+        flash('Purchase bill updated successfully! Inventory and cost prices have been updated.', 'success')
         return redirect(url_for('purchase.bill_detail', id=bill.id))
 
     return render_template('purchase/edit_bill.html', form=form, bill=bill,
@@ -931,7 +894,7 @@ def receive_quantity(id):
                     allocated_additional = total_additional_cost * allocation_ratio
                 else:
                     allocated_additional = 0
-                new_unit_cost = item.unit_price + (allocated_additional / qty_to_receive) if qty_to_receive > 0 else item.unit_price
+                new_unit_cost = item.unit_price + (allocated_additional / item.quantity) if item.quantity > 0 else item.unit_price
 
                 # Record cost price history
                 old_price = product.cost_price

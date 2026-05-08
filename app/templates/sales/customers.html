@@ -187,7 +187,11 @@
                                 <input type="checkbox" class="form-check-input customer-checkbox"
                                     value="{{ customer.id }}">
                             </td>
-                            <td>{{ customer.name }}</td>
+                            <td>
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="customer" data-entity-id="{{ customer.id }}">
+                                    {{ customer.name }}
+                                </a>
+                            </td>
                             <td>{{ customer.company_name or '-' }}</td>
                             <td>
                                 {% if customer.group %}

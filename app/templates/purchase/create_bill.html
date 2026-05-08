@@ -110,16 +110,7 @@
     <form method="POST" id="billForm" enctype="multipart/form-data">
         {{ form.hidden_tag() }}
 
-        <!-- Inventory Notice -->
-        <div class="alert alert-warning d-flex align-items-center gap-3 mb-4" role="alert">
-            <i class="fas fa-info-circle fa-lg text-warning flex-shrink-0"></i>
-            <div>
-                <strong>Note on Inventory:</strong> Creating this bill will <strong>not</strong> immediately update
-                inventory quantities.
-                After saving, open the bill detail page and click <strong>"Receive Qty"</strong> to record when goods
-                are physically received — that is when stock levels and cost prices will be updated.
-            </div>
-        </div>
+
 
         <div class="row">
             <!-- ── Left: Header + Totals ───────────────────────────────── -->
@@ -337,7 +328,7 @@
                                             </select>
                                         </td>
                                         <td><input type="number" name="quantity[]" class="form-control qty" value="1"
-                                                min="1" step="1" oninput="calcRow(this)"></td>
+                                                min="0" step="any" oninput="calcRow(this)"></td>
                                         <td><input type="text" class="form-control currentCost" readonly
                                                 style="background-color: #f8f9fa;"></td>
                                         <td><input type="number" name="price[]" class="form-control price newCost"
@@ -362,7 +353,7 @@
     let pendingAdvance = 0;
 
     function fmt(n) {
-        return n.toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        return n.toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
     }
 
     // ── Vendor change: load advances + POs ──────────────────────────────────
@@ -522,7 +513,7 @@
                 {% endfor %}
             </select>
         </td>
-        <td><input type="number" name="quantity[]" class="form-control qty" value="${qty}" min="0.01" step="0.01" oninput="calcRow(this)"></td>
+        <td><input type="number" name="quantity[]" class="form-control qty" value="${qty}" min="0" step="any" oninput="calcRow(this)"></td>
         <td><input type="text" class="form-control currentCost" readonly style="background-color: #f8f9fa;"></td>
         <td><input type="number" name="price[]" class="form-control price newCost" value="${price}" step="0.01" oninput="calcRow(this); updatePriceIndicator(this)"></td>
         <td><input type="text" class="form-control amount" value="${total.toFixed(2)}" readonly></td>

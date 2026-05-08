@@ -49,8 +49,32 @@
                         </div>
                     </div>
                     <div class="col-md-6">
+                        <label for="unit" class="form-label">Unit *</label>
+                        <div class="input-group">
+                            <select name="unit" id="unit" class="form-control select2" required>
+                                <option value="pieces" {% if product.unit == 'pieces' %}selected{% endif %}>Pieces</option>
+                                <option value="kg" {% if product.unit == 'kg' %}selected{% endif %}>kg</option>
+                                <option value="meter" {% if product.unit == 'meter' %}selected{% endif %}>Meter</option>
+                                <option value="dozen" {% if product.unit == 'dozen' %}selected{% endif %}>Dozen</option>
+                                <option value="box" {% if product.unit == 'box' %}selected{% endif %}>Box</option>
+                                <option value="pair" {% if product.unit == 'pair' %}selected{% endif %}>Pair</option>
+                                {% for unit in units %}
+                                    {% if unit.name not in ['pieces', 'kg', 'meter', 'dozen', 'box', 'pair'] %}
+                                        <option value="{{ unit.name }}" {% if product.unit == unit.name %}selected{% endif %}>{{ unit.name|capitalize }}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addUnitModal" title="Add New Unit">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-12">
                         <label class="form-label">Quantity</label>
-                        <input type="number" name="quantity" class="form-control" value="{{ product.quantity }}" step="1" min="0">
+                        <input type="number" name="quantity" class="form-control" value="{{ product.quantity }}" step="any" min="0">
                         <small class="text-muted">Current stock quantity</small>
                     </div>
                 </div>
@@ -165,6 +189,12 @@ document.getElementById('imageInput').addEventListener('change', function(e) {
 });
 
 document.addEventListener('DOMContentLoaded', function() {
+    // Initialize Select2
+    $('.select2').select2({
+        theme: 'bootstrap-5',
+        width: '100%'
+    });
+
     const isManufacturedCheckbox = document.getElementById('is_manufactured');
     const costPriceContainer = document.getElementById('cost_price_container');
     const costPriceInput = document.getElementById('cost_price');
@@ -193,6 +223,71 @@ document.addEventListener('DOMContentLoaded', function() {
         isManufacturedCheckbox.addEventListener('change', togglePriceFields);
         togglePriceFields();
     }
+
+    // Handle Add Unit Form
+    const addUnitForm = document.getElementById('addUnitForm');
+    const addUnitModalElement = document.getElementById('addUnitModal');
+    const addUnitModal = new bootstrap.Modal(addUnitModalElement);
+
+    addUnitForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        
+        fetch("{{ url_for('inventory.add_unit') }}", {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': "{{ csrf_token }}"
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Add new option to select
+                const newOption = new Option(data.unit.name, data.unit.name, true, true);
+                const unitSelect = $('#unit');
+                unitSelect.append(newOption).trigger('change');
+                
+                // Reset and close
+                addUnitForm.reset();
+                addUnitModal.hide();
+                
+                // Show success alert
+                alert('Unit added successfully!');
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while adding the unit.');
+        });
+    });
 });
 </script>
-{% endblock %}
+
+<!-- Add Unit Modal -->
+<div class="modal fade" id="addUnitModal" tabindex="-1" aria-labelledby="addUnitModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addUnitModalLabel">Add New Unit</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="addUnitForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="new_unit_name" class="form-label">Unit Name (e.g. Kg, Pieces, Meter)</label>
+                        <input type="text" class="form-control" id="new_unit_name" name="name" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-primary">Save Unit</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

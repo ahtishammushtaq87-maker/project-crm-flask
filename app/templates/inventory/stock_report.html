@@ -67,7 +67,7 @@
                             <td>{{ product.sku }}</td>
                             <td>{{ product.name }}</td>
                             <td>{{ product.category or '-' }}</td>
-                            <td class="text-end">{{ "{:,.0f}".format(product.quantity) }}</td>
+                            <td class="text-end">{{ product.quantity | format_qty(product.unit) }}</td>
                             <td class="text-end">PKR{{ "{:,.2f}".format(product.cost_price) }}</td>
                             <td class="text-end">PKR{{ "{:,.2f}".format(product.unit_price) }}</td>
                             <td class="text-end">PKR{{ "{:,.2f}".format(product.stock_value) }}</td>
