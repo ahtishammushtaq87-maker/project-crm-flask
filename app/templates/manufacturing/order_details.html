@@ -188,9 +188,12 @@
             <div class="card-body">
                 {% if order.history %}
                 <div class="table-responsive">
-                    <table class="table table-bordered table-hover">
+                    <table class="table table-bordered table-hover datatable-export" data-export-title="Production History: {{ order.order_number }}">
                         <thead class="table-light">
                             <tr>
+                                <th style="width: 40px;" class="text-center no-export">
+                                    <input type="checkbox" id="selectAllHistory" class="form-check-input">
+                                </th>
                                 <th>Date</th>
                                 <th>Quantity</th>
                                 <th>Material (Total/Unit)</th>
@@ -199,12 +202,15 @@
                                 <th>Total Batch Cost</th>
                                 <th>Final Unit Cost</th>
                                 <th>Entered By</th>
-                                <th class="text-center">Actions</th>
+                                <th class="text-center no-export">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for h in order.history|sort(attribute='completion_date', reverse=True) %}
                             <tr>
+                                <td class="text-center no-export">
+                                    <input type="checkbox" class="form-check-input history-checkbox" value="{{ h.id }}">
+                                </td>
                                 <td>{{ h.completion_date.strftime('%d-%m-%Y %H:%M') }}</td>
                                 <td class="fw-bold">{{ h.quantity_produced }}</td>
                                 <td>
@@ -226,7 +232,7 @@
                                 <td class="text-info fw-bold">PKR {{ "%.2f"|format(h.total_cost / h.quantity_produced if
                                     h.quantity_produced > 0 else 0) }}</td>
                                 <td>{{ h.creator.username if h.creator else 'System' }}</td>
-                                <td class="text-center">
+                                <td class="text-center no-export">
                                                                         {% if current_user.has_permission('manufacturing', 'delete') %}
 <form action="{{ url_for('manufacturing.delete_history_batch', id=h.id) }}"
                                         method="POST"
@@ -333,6 +339,14 @@
                     if (modePerUnitDetail.checked) document.getElementById('per_unit_overhead_detail').required = true;
                     else document.getElementById('per_unit_overhead_detail').required = false;
                 });
+            });
+        }
+
+        // Initialize table bulk selection
+        if (typeof initBulkActions === 'function') {
+            initBulkActions({
+                selectAllId: 'selectAllHistory',
+                checkboxClass: 'history-checkbox'
             });
         }
     });
