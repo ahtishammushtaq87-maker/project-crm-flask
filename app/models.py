@@ -1361,6 +1361,12 @@ class Attendance(db.Model):
     notes = db.Column(db.Text)  # Optional notes (e.g., half day, late, etc.)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    def __init__(self, staff_id, date, clock_in=None, clock_out=None, notes=None):
+        self.staff_id = staff_id
+        self.date = date
+        self.clock_in = clock_in
+        self.clock_out = clock_out
+        self.notes = notes
     
     # Relationship
     staff = db.relationship('Staff', backref=db.backref('attendance_records', lazy=True, cascade='all, delete-orphan'))

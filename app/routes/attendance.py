@@ -154,29 +154,41 @@ def edit_attendance(attendance_id):
     attendance = Attendance.query.get_or_404(attendance_id)
     
     if request.method == 'POST':
-        # Parse clock in time
+        # Get values from form
+        date_str = request.form.get('date')
         clock_in_str = request.form.get('clock_in')
         clock_out_str = request.form.get('clock_out')
         notes = request.form.get('notes')
         
         try:
+            # 1. Update the main date field
+            if date_str:
+                attendance.date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            
+            # 2. Update clock in/out (ensuring they use the correct date)
+            # Use provided date or keep existing date
+            current_date_str = date_str or str(attendance.date)
+            
             if clock_in_str:
-                date_str = request.form.get('date', str(attendance.date))
-                attendance.clock_in = datetime.strptime(f"{date_str} {clock_in_str}", '%Y-%m-%d %H:%M')
+                attendance.clock_in = datetime.strptime(f"{current_date_str} {clock_in_str}", '%Y-%m-%d %H:%M')
+            else:
+                attendance.clock_in = None
             
             if clock_out_str:
-                date_str = request.form.get('date', str(attendance.date))
-                attendance.clock_out = datetime.strptime(f"{date_str} {clock_out_str}", '%Y-%m-%d %H:%M')
+                attendance.clock_out = datetime.strptime(f"{current_date_str} {clock_out_str}", '%Y-%m-%d %H:%M')
+            else:
+                attendance.clock_out = None
             
+            # 3. Update notes and recalculate
             attendance.notes = notes
             attendance.calculate_hours_worked()
-            attendance.calculate_earned_amount()
+            attendance.calculate_earned_amount() # This also recalculates hourly rate based on the date
             
             db.session.commit()
             flash('Attendance record updated!', 'success')
             return redirect(url_for('attendance.index'))
         except ValueError as e:
-            flash(f'Invalid time format: {e}', 'danger')
+            flash(f'Invalid format: {e}', 'danger')
     
     return render_template('salary/edit_attendance.html', attendance=attendance)
 
