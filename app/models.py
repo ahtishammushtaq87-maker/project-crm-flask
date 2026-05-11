@@ -1268,6 +1268,18 @@ class Staff(db.Model):
     agreement_letter = db.Column(db.String(255))
     joining_advance = db.Column(db.Float, default=0)
     remaining_joining_advance = db.Column(db.Float, default=0)
+    def __init__(self, name, designation=None, monthly_salary=0,
+                 joining_date=None, joining_advance=0,
+                 remaining_joining_advance=0, is_active=True,
+                 agreement_letter=None):
+        self.name = name
+        self.designation = designation
+        self.monthly_salary = monthly_salary
+        self.joining_date = joining_date
+        self.joining_advance = joining_advance
+        self.remaining_joining_advance = remaining_joining_advance
+        self.is_active = is_active
+        self.agreement_letter = agreement_letter
     
     # Monthly divided salary fields
     daily_salary = db.Column(db.Float, default=0)  # Calculated daily salary (monthly ÷ 30)
@@ -1437,6 +1449,12 @@ class SalaryAdvance(db.Model):
     is_deducted = db.Column(db.Boolean, default=False)
     salary_payment_id = db.Column(db.Integer, db.ForeignKey('salary_payments.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    def __init__(self,staff_id,amount,date,description ):
+     self.staff_id=staff_id
+     self.amount=amount
+     self.date=date
+     self.description=description
+        
     
     def __repr__(self):
         return f'<SalaryAdvance {self.staff_id} - {self.amount}>'
@@ -1460,6 +1478,20 @@ class SalaryPayment(db.Model):
     status = db.Column(Enum('paid', 'pending', name='salary_payment_status'), default='paid', index=True)
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    def __init__(self,staff_id,month,year,base_salary,advance_deduction,joining_advance_deduction,bonus,other_deductions,net_salary,payment_date,payment_method,status,notes):
+        self.staff_id=staff_id
+        self.month=month
+        self.year=year
+        self.base_salary=base_salary
+        self.advance_deduction=advance_deduction
+        self.joining_advance_deduction=joining_advance_deduction
+        self.bonus=bonus
+        self.other_deductions=other_deductions
+        self.net_salary=net_salary
+        self.payment_date=payment_date
+        self.payment_method=payment_method
+        self.status=status
+        self.notes=notes
     
     # Back-relationship for advances deducted in this payment
     deducted_advances = db.relationship('SalaryAdvance', backref='salary_payment', foreign_keys=[SalaryAdvance.salary_payment_id], lazy=True)

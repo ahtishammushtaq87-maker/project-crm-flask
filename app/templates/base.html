@@ -1758,6 +1758,43 @@
                 initExportDataTable(this, title);
             });
 
+            // Universal Drag-to-Scroll for Responsive Tables (Supports dynamic content)
+            $(document).on('mousedown', '.table-responsive', function (e) {
+                const container = this;
+                let isDown = true;
+                $(container).css('cursor', 'grabbing');
+                
+                const startX = e.pageX - container.offsetLeft;
+                const scrollLeft = container.scrollLeft;
+
+                const mouseMoveHandler = (e) => {
+                    if (!isDown) return;
+                    e.preventDefault();
+                    const x = e.pageX - container.offsetLeft;
+                    const walk = (x - startX) * 2;
+                    container.scrollLeft = scrollLeft - walk;
+                };
+
+                const mouseUpHandler = () => {
+                    isDown = false;
+                    $(container).css('cursor', 'grab');
+                    $(document).off('mousemove', mouseMoveHandler);
+                    $(document).off('mouseup', mouseUpHandler);
+                };
+
+                $(document).on('mousemove', mouseMoveHandler);
+                $(document).on('mouseup', mouseUpHandler);
+            });
+
+            // Set initial grab cursor for all responsive tables
+            $(document).on('mouseenter', '.table-responsive', function () {
+                $(this).css({
+                    'cursor': 'grab',
+                    'overflow-x': 'auto',
+                    '-webkit-overflow-scrolling': 'touch'
+                });
+            });
+
             // Universal Enhancement: Initialize other tables that aren't already DataTables
             $('.table-responsive .table:not(.dataTable):not(.no-datatable)').each(function() {
                 // Only auto-init if table has more than 5 rows to avoid affecting small UI elements

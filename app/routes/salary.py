@@ -231,8 +231,59 @@ def download_sample_staff():
 @bp.route('/advances')
 @login_required
 def advance_list():
-    advances = SalaryAdvance.query.order_by(SalaryAdvance.date.desc()).all()
-    return render_template('salary/advance_list.html', advances=advances)
+    query = SalaryAdvance.query
+
+    # Staff dropdown filter
+    staff_id = request.args.get('staff_id', type=int)
+    if staff_id:
+        query = query.filter(SalaryAdvance.staff_id == staff_id)
+
+    # Date range filter
+    date_from = request.args.get('date_from')
+    date_to = request.args.get('date_to')
+    if date_from:
+        try:
+            query = query.filter(SalaryAdvance.date >= datetime.strptime(date_from, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            query = query.filter(SalaryAdvance.date <= datetime.strptime(date_to, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+
+    # Advanced filter engine (additional filters)
+    query = apply_saved_filter_to_query(query, 'salary_advance', request.args)
+
+    advances = query.order_by(SalaryAdvance.date.desc()).all()
+    all_staff = Staff.query.filter_by(is_active=True).order_by(Staff.name).all()
+    return render_template('salary/advance_list.html', advances=advances, all_staff=all_staff)
+
+
+@bp.route('/advances/bulk-delete', methods=['POST'])
+@login_required
+@permission_required('salary', action='delete')
+def bulk_delete_advances():
+    from flask import jsonify
+    data = request.get_json()
+    ids = data.get('ids', []) if data else []
+    if not ids:
+        return jsonify({'success': False, 'message': 'No items selected.'})
+    deleted = 0
+    skipped = 0
+    for adv_id in ids:
+        advance = SalaryAdvance.query.get(adv_id)
+        if advance and not advance.is_deducted:
+            db.session.delete(advance)
+            deleted += 1
+        else:
+            skipped += 1
+    db.session.commit()
+    msg = f'Deleted {deleted} advance(s).'
+    if skipped:
+        msg += f' {skipped} skipped (already deducted).'
+    return jsonify({'success': True, 'message': msg})
+
 
 @bp.route('/advances/add', methods=['GET', 'POST'])
 @login_required

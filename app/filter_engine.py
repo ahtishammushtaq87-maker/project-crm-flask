@@ -29,7 +29,7 @@ def _get_model_classes():
         Vendor, Customer, Staff, ManufacturingOrder, BOM,
         SaleReturn, PurchaseReturn, PurchaseOrder, ProductionLog,
         SalaryPayment, ProductCategory, SaleItem, Salesman, SalesmanGroup, CustomerGroup,
-        Warehouse, Attendance
+        Warehouse, Attendance, SalaryAdvance
     )
     return {
         'expense': Expense,
@@ -48,6 +48,7 @@ def _get_model_classes():
         'salary_payment': SalaryPayment,
         'warehouse': Warehouse,
         'attendance': Attendance,
+        'salary_advance': SalaryAdvance,
         # Report aliases (map to same models)
         'sales_report': Sale,
         'purchase_report': PurchaseBill,
@@ -75,7 +76,7 @@ def _build_field_registry():
         Vendor, Customer, Staff, ManufacturingOrder, BOM,
         SaleReturn, PurchaseReturn, PurchaseOrder, ProductionLog,
         SalaryPayment, ProductCategory, SaleItem, Salesman, SalesmanGroup, CustomerGroup,
-        Warehouse, Attendance
+        Warehouse, Attendance, SalaryAdvance
     )
     return {
         # === EXPENSE MODULE ===
@@ -239,6 +240,14 @@ def _build_field_registry():
             'date':          {'expr': lambda: Attendance.date, 'type': 'date'},
             'hours_worked':  {'expr': lambda: Attendance.hours_worked, 'type': 'number'},
             'earned_amount': {'expr': lambda: Attendance.earned_amount, 'type': 'number'},
+        },
+        # === SALARY ADVANCE MODULE ===
+        'salary_advance': {
+            'staff':       {'expr': lambda: Staff.name, 'type': 'string', 'join': Staff, 'options_route': 'filters.get_staff_names'},
+            'amount':      {'expr': lambda: SalaryAdvance.amount, 'type': 'number'},
+            'date':        {'expr': lambda: SalaryAdvance.date,   'type': 'date'},
+            'description': {'expr': lambda: SalaryAdvance.description, 'type': 'string'},
+            'is_deducted': {'expr': lambda: SalaryAdvance.is_deducted, 'type': 'boolean'},
         },
         # === COGS REPORT MODULE (filters SaleItem via Sale/Product joins) ===
         'cogs_report': {
