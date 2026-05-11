@@ -744,6 +744,16 @@
             border: 1px solid #ced4da;
             border-radius: 8px;
             padding: 4px 24px 4px 12px;
+            background-color: #fff;
+            margin: 0 8px;
+            cursor: pointer;
+        }
+
+        .dataTables_length label {
+            font-weight: 600;
+            color: #4a5568;
+            display: flex;
+            align-items: center;
         }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/entity_modal.css') }}">
@@ -1696,7 +1706,7 @@
             };
 
             return $(selector).DataTable({
-                dom: '<"d-flex justify-content-between align-items-center mb-3"Bf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
+                dom: '<"d-flex justify-content-between align-items-center mb-3"Blf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
                 buttons: [
                     {
                         extend: 'excelHtml5',
@@ -1729,20 +1739,42 @@
                         exportOptions: exportOpts
                     }
                 ],
-                paging: false,
+                paging: true,
+                lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+                pageLength: 25,
                 language: {
                     search: "_INPUT_",
-                    searchPlaceholder: "Search records..."
+                    searchPlaceholder: "Search records...",
+                    lengthMenu: "Show _MENU_ entries"
                 },
                 order: []
             });
         }
 
-        // Auto-initialize tables with .datatable-export class
+        // Auto-initialize tables with .datatable-export class or any .table inside .table-responsive
         $(document).ready(function () {
             $('.datatable-export').each(function () {
                 const title = $(this).data('export-title') || 'Export';
                 initExportDataTable(this, title);
+            });
+
+            // Universal Enhancement: Initialize other tables that aren't already DataTables
+            $('.table-responsive .table:not(.dataTable):not(.no-datatable)').each(function() {
+                // Only auto-init if table has more than 5 rows to avoid affecting small UI elements
+                if ($(this).find('tbody tr').length > 5) {
+                    $(this).DataTable({
+                        dom: '<"d-flex justify-content-between align-items-center mb-3"lf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
+                        paging: true,
+                        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+                        pageLength: 10,
+                        language: {
+                            search: "_INPUT_",
+                            searchPlaceholder: "Search...",
+                            lengthMenu: "Show _MENU_ entries"
+                        },
+                        order: []
+                    });
+                }
             });
         });
     </script>
