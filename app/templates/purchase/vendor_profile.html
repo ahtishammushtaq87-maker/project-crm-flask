@@ -53,7 +53,7 @@
                     <i class="fas fa-download me-1"></i> Export
                 </button>
                 <ul class="dropdown-menu">
-                    <li><a class="dropdown-item" href="{{ url_for('purchase.vendor_export_pdf', id=vendor.id) }}">
+                    <li><a class="dropdown-item" href="{{ url_for('purchase.vendor_export_pdf', id=vendor.id, date_from=date_from, date_to=date_to) }}">
                         <i class="fas fa-file-pdf text-danger me-2"></i> PDF
                     </a></li>
                     <li><a class="dropdown-item" href="{{ url_for('purchase.vendor_export_excel', id=vendor.id) }}">
@@ -134,6 +134,42 @@
                     {% endif %}
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Date Filter Bar -->
+    <div class="card shadow mb-3">
+        <div class="card-body py-2">
+            <form method="GET" action="{{ url_for('purchase.vendor_profile', id=vendor.id) }}" class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label small fw-semibold mb-1"><i class="fas fa-calendar-alt me-1 text-primary"></i>From Date</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+                </div>
+                <div class="col-auto">
+                    <label class="form-label small fw-semibold mb-1"><i class="fas fa-calendar-alt me-1 text-primary"></i>To Date</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="fas fa-filter me-1"></i>Filter Bills
+                    </button>
+                    {% if date_from or date_to %}
+                    <a href="{{ url_for('purchase.vendor_profile', id=vendor.id) }}" class="btn btn-sm btn-outline-secondary ms-1">
+                        <i class="fas fa-times me-1"></i>Clear
+                    </a>
+                    {% endif %}
+                </div>
+                {% if date_from or date_to %}
+                <div class="col-auto align-self-end">
+                    <span class="badge bg-info text-dark">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Showing {{ bills|length }} bill(s)
+                        {% if date_from %} from {{ date_from }}{% endif %}
+                        {% if date_to %} to {{ date_to }}{% endif %}
+                    </span>
+                </div>
+                {% endif %}
+            </form>
         </div>
     </div>
 

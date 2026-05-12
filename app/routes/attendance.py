@@ -179,7 +179,8 @@ def edit_attendance(attendance_id):
             else:
                 attendance.clock_out = None
             
-            # 3. Update notes and recalculate
+            # 3. Update break status, notes and recalculate
+            attendance.used_break = True if request.form.get('used_break') else False
             attendance.notes = notes
             attendance.calculate_hours_worked()
             attendance.calculate_earned_amount() # This also recalculates hourly rate based on the date

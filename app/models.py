@@ -454,6 +454,24 @@ class Unit(db.Model):
         return f'<Unit {self.name}>'
 
 
+class ActivityLog(db.Model):
+    """Model for tracking user activities across the dashboard"""
+    __tablename__ = 'activity_logs'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    module = db.Column(db.String(50), nullable=False, index=True)  # e.g., 'Sales', 'Purchase', 'Inventory'
+    action = db.Column(db.String(100), nullable=False) # e.g., 'Created Sale', 'Updated Vendor'
+    details = db.Column(db.Text)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    ip_address = db.Column(db.String(45))
+    
+    user = db.relationship('User', backref=db.backref('activity_logs', lazy=True))
+
+    def __repr__(self):
+        return f'<ActivityLog {self.module}:{self.action} by User {self.user_id}>'
+
+
 class Sale(db.Model):
     """Sales/Invoice model"""
     __tablename__ = 'sales'
@@ -1371,6 +1389,7 @@ class Attendance(db.Model):
     hourly_rate = db.Column(db.Float, default=0)  # Calculated hourly rate (monthly ÷ 30 ÷ 8)
     earned_amount = db.Column(db.Float, default=0)  # Amount earned (hours_worked × hourly_rate + minutes contribution)
     notes = db.Column(db.Text)  # Optional notes (e.g., half day, late, etc.)
+    used_break = db.Column(db.Boolean, default=True)  # Whether to subtract 1 hour break
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     def __init__(self, staff_id, date, clock_in=None, clock_out=None, notes=None):
@@ -1384,13 +1403,20 @@ class Attendance(db.Model):
     staff = db.relationship('Staff', backref=db.backref('attendance_records', lazy=True, cascade='all, delete-orphan'))
     
     def calculate_hours_worked(self):
-        """Calculate hours and minutes worked from clock in/out times"""
+        """Calculate hours and minutes worked from clock in/out times, optionally subtracting 1 hour break"""
         if self.clock_in and self.clock_out:
             time_diff = self.clock_out - self.clock_in
             total_seconds = time_diff.total_seconds()
             
-            # Calculate hours and minutes
+            # Calculate total minutes from raw difference
             total_minutes = int(total_seconds / 60)
+            
+            # Subtract 1 hour break (60 minutes) ONLY if used_break is True and duration is >= 60 minutes
+            if self.used_break and total_minutes >= 60:
+                total_minutes -= 60
+            elif total_minutes < 0:
+                total_minutes = 0
+            
             self.hours_worked = total_minutes // 60
             self.minutes_worked = total_minutes % 60
         else:

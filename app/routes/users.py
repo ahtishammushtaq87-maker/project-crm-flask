@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, abort
-from app.utils import permission_required
+from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
 from app.models import User, Task
@@ -153,6 +153,9 @@ def create_user():
             user.set_password('password123')  # Fallback only if form somehow passes empty
         db.session.add(user)
         db.session.commit()
+        
+        log_activity('Users', f'Created User: {user.username}', f'Role: {user.role}, Email: {user.email}')
+        
         flash(f'User "{user.username}" created successfully with password: {form.password.data or "password123"}', 'success')
         return redirect(url_for('users.list_users'))
     return render_template('users/create.html', form=form)
@@ -271,6 +274,9 @@ def edit_user(id):
         if form.password.data and form.password.data.strip():
             user.set_password(form.password.data)
         db.session.commit()
+        
+        log_activity('Users', f'Updated User: {user.username}', f'Role: {user.role}, Active: {user.is_active}')
+        
         flash('User updated successfully.', 'success')
         return redirect(url_for('users.list_users'))
     elif request.method == 'GET':
@@ -405,6 +411,9 @@ def create_task():
         )
         db.session.add(task)
         db.session.commit()
+        
+        log_activity('Tasks', f'Created Task: {task.title}', f'Assigned to: {task.assigned_to.username}, Priority: {task.priority}')
+        
         flash('Task assigned successfully.', 'success')
         return redirect(url_for('users.list_tasks'))
     return render_template('tasks/create.html', form=form)
@@ -428,6 +437,9 @@ def delete_user(id):
     username = user.username
     db.session.delete(user)
     db.session.commit()
+    
+    log_activity('Users', f'Deleted User: {username}', 'User account removed from system')
+    
     flash(f'User "{username}" has been deleted successfully.', 'success')
     return redirect(url_for('users.list_users'))
 
@@ -439,6 +451,9 @@ def delete_task(id):
     task_title = task.title
     db.session.delete(task)
     db.session.commit()
+    
+    log_activity('Tasks', f'Deleted Task: {task_title}', f'Removed task: {task_title}')
+    
     flash(f'Task "{task_title}" has been deleted successfully.', 'success')
     return redirect(url_for('users.list_tasks'))
 

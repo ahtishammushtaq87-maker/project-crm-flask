@@ -117,3 +117,34 @@ def format_qty(value, unit=''):
         return f"{int(qty):,}"
     
     return f"{qty:,.3f}"
+
+
+def log_activity(module, action, details=None):
+    """
+    Log user activity to the database.
+    
+    Args:
+        module: Name of the module (e.g., 'Sales', 'Purchase')
+        action: Description of the action (e.g., 'Created Invoice #INV-001')
+        details: Optional additional text details
+    """
+    from flask_login import current_user
+    from flask import request
+    from app.models import ActivityLog
+    from app import db
+    
+    user_id = current_user.id if current_user.is_authenticated else None
+    ip_address = request.remote_addr
+    
+    log = ActivityLog(
+        user_id=user_id,
+        module=module,
+        action=action,
+        details=details,
+        ip_address=ip_address
+    )
+    db.session.add(log)
+    try:
+        db.session.commit()
+    except:
+        db.session.rollback()

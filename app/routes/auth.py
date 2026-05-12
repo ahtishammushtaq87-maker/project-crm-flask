@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_user, logout_user, login_required, current_user
+from app.utils import log_activity
 from werkzeug.security import check_password_hash
 from app import db
 from app.models import User
@@ -20,6 +21,7 @@ def login():
                 flash('Your account is inactive. Please contact admin to activate your account.', 'warning')
             else:
                 login_user(user)
+                log_activity('Auth', 'Login', f'User logged into the system')
                 next_page = request.args.get('next')
                 return redirect(next_page) if next_page else redirect(url_for('dashboard.index'))
         else:
@@ -30,5 +32,6 @@ def login():
 @bp.route('/logout')
 @login_required
 def logout():
+    log_activity('Auth', 'Logout', f'User logged out from the system')
     logout_user()
     return redirect(url_for('auth.login'))

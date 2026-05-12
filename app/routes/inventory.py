@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
-from app.utils import permission_required
 from flask_login import login_required, current_user
+from app.utils import permission_required, log_activity
 from app import db
 from app.models import Product, User, Warehouse, ProductCategory, Unit
 from app.forms import ProductForm, UnitForm
@@ -139,6 +139,10 @@ def add_product():
             try:
                 db.session.add(product)
                 db.session.commit()
+                
+                log_activity('Inventory', f'Added Product: {product.name}', 
+                            f'SKU: {product.sku}, Qty: {product.quantity}, Price: {product.unit_price}')
+                
                 flash('Product added successfully!', 'success')
                 return redirect(url_for('inventory.products'))
             except Exception as e:
@@ -220,6 +224,10 @@ def edit_product(id):
         
         try:
             db.session.commit()
+            
+            log_activity('Inventory', f'Updated Product: {product.name}', 
+                        f'SKU: {product.sku}, New Qty: {product.quantity}, New Price: {product.unit_price}')
+            
             print(f"\n[DEBUG] Product {product.id} ({product.name}) updated")
             print(f"[DEBUG] Old cost: {old_cost}, New cost: {product.cost_price}")
             print(f"[DEBUG] Costs equal? {old_cost == product.cost_price}")
@@ -287,6 +295,9 @@ def delete_product(id):
     try:
         db.session.delete(product)
         db.session.commit()
+        
+        log_activity('Inventory', f'Deleted Product: {product.name}', f'SKU: {product.sku}')
+        
         flash(f'Product "{product.name}" deleted successfully!', 'success')
     except Exception as e:
         db.session.rollback()

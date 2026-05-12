@@ -12,10 +12,11 @@ A complete, production-ready attendance system with professional time tracking, 
 - Automatic timestamp recording
 - Timezone-aware datetime handling
 
-### 2. **Automatic Time Calculation**
-- Hours worked: Calculated from clock in/out times
-- Minutes worked: Extracted as remainder (0-59 minutes)
-- Time format: Professional "Xh Ym" display (e.g., "8h 30m")
+### 2. **Automatic Time Calculation & Break Deduction**
+- **Hours worked**: Calculated from clock in/out times. By default, **1 hour is deducted automatically** for the lunch/break (only if shift is ≥ 60 minutes).
+- **Manual Toggle**: In the "Edit Attendance" screen, administrators can uncheck the **"Used 1-Hour Break"** toggle to prevent the 1-hour deduction for specific records.
+- **Minutes worked**: Remaining minutes (0-59 minutes)
+- **Time format**: Professional "Xh Ym" display (e.g., a 9-hour span shows as "8h 0m" by default)
 
 ### 3. **Hourly Wage Calculation**
 - **Formula**: Monthly Salary ÷ 30 days ÷ 8 hours/day = Hourly Rate
@@ -201,9 +202,9 @@ Delete an attendance record (for mistakes/duplicates).
 **Attendance**:
 ```
 Clock In:  09:00 AM
-Clock Out: 05:30 PM
-Duration:  8h 30m
-Earned:    8.5 hours × Rs 125 = Rs 1,062.50
+Clock Out: 05:30 PM (8h 30m span)
+Duration:  7h 30m (after 1h break deduction)
+Earned:    7.5 hours × Rs 125 = Rs 937.50
 ```
 
 ### Example 2: Half Day
@@ -281,7 +282,7 @@ Displays:
 ### Step 1: Calculate Hours and Minutes
 ```
 Time Difference = Clock Out - Clock In
-Total Minutes = Time Difference ÷ 60
+Total Minutes = (Time Difference ÷ 60) - 60  # Auto-deduct 60 mins break
 Hours = Total Minutes ÷ 60 (integer division)
 Minutes = Total Minutes % 60 (remainder)
 ```
@@ -301,15 +302,16 @@ Earned Amount = Hours in Decimal × Hourly Rate
 ```
 Clock In:  09:00:00
 Clock Out: 17:30:00
-Difference: 8 hours 30 minutes
+Total Span: 8 hours 30 minutes
+Adjusted Duration (minus 1h break): 7 hours 30 minutes
 
-Hours: 8
+Hours: 7
 Minutes: 30
 
 Hourly Rate: Rs 30,000 ÷ 30 ÷ 8 = Rs 125/hour
 
-Hours Decimal: 8 + (30 ÷ 60) = 8.5
-Earned: 8.5 × 125 = Rs 1,062.50
+Hours Decimal: 7.5
+Earned: 7.5 × 125 = Rs 937.50
 ```
 
 ---

@@ -41,6 +41,18 @@
                     <label class="form-label">Notes (Optional)</label>
                     <textarea name="notes" class="form-control" rows="3" placeholder="e.g., Half day, Late, Medical leave, etc.">{{ attendance.notes or '' }}</textarea>
                 </div>
+
+                <div class="mb-4">
+                    <div class="form-check form-switch p-3 border rounded bg-light">
+                        <input class="form-check-input ms-0" type="checkbox" name="used_break" id="usedBreak" {% if attendance.used_break %}checked{% endif %}>
+                        <label class="form-check-label ms-2 fw-bold" for="usedBreak">
+                            🍴 Used 1-Hour Break (Subtract 60 mins)
+                        </label>
+                        <div class="form-text mt-1">
+                            If checked, the system will subtract 1 hour from the total duration.
+                        </div>
+                    </div>
+                </div>
                 
                 <!-- Display Information -->
                 <div class="alert alert-info">

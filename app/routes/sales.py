@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response, current_app
 from flask_login import login_required, current_user
-from app.utils import permission_required
+from app.utils import permission_required, log_activity
 from app import db
 from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman, CustomerGroup, Payment, PaymentMethod, SalesmanGroup
 from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm, SalesmanForm, CustomerGroupForm
@@ -10,6 +10,16 @@ from app.pdf_utils import generate_professional_pdf
 import os
 from werkzeug.utils import secure_filename
 from app.routes.filters import apply_saved_filter_to_query
+import os
+import io
+import csv
+import openpyxl
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.units import inch
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 
 bp = Blueprint('sales', __name__)
 
@@ -223,6 +233,10 @@ def create_invoice():
             product.update_quantity(-item['quantity'])
         
         db.session.commit()
+        
+        log_activity('Sales', f'Created Invoice #{sale.invoice_number}', 
+                    f'Customer: {sale.customer.name if sale.customer else "Walk-in Customer"}, Total: {sale.total}')
+        
         flash('Invoice created successfully!', 'success')
         return redirect(url_for('sales.invoice_detail', id=sale.id))
     
@@ -343,6 +357,10 @@ def edit_invoice(id):
         sale.updated_at = datetime.utcnow()
 
         db.session.commit()
+        
+        log_activity('Sales', f'Updated Invoice #{sale.invoice_number}', 
+                    f'Customer: {sale.customer.name if sale.customer else "Walk-in Customer"}, New Total: {sale.total}')
+        
         flash('Invoice updated successfully!', 'success')
         return redirect(url_for('sales.invoice_detail', id=sale.id))
 
@@ -362,8 +380,15 @@ def delete_invoice(id):
         if product:
             product.update_quantity(item.quantity)
 
+    invoice_num = sale.invoice_number
+    cust_name = sale.customer.name if sale.customer else "Walk-in Customer"
+    total = sale.total
+    
     db.session.delete(sale)
     db.session.commit()
+    
+    log_activity('Sales', f'Deleted Invoice #{invoice_num}', f'Customer: {cust_name}, Total: {total}')
+    
     flash('Invoice deleted successfully.', 'success')
     return redirect(url_for('sales.invoices'))
 
@@ -398,6 +423,7 @@ def bulk_delete_invoices():
             
     if deleted_count > 0:
         db.session.commit()
+        log_activity('Sales', f'Bulk Deleted Invoices', f'Deleted {deleted_count} invoices.')
         
     message = f'Successfully deleted {deleted_count} invoices.'
     if errors:
@@ -743,16 +769,359 @@ def download_customer_sample():
 @bp.route('/customer/<int:id>')
 @login_required
 def customer_profile(id):
+    from datetime import datetime as _dt
     customer = Customer.query.get_or_404(id)
-    # Sort sales newest first
-    sales = sorted(customer.sales, key=lambda s: s.date, reverse=True)
-    # Sort advances newest first
+    
+    # ── Date filter ────────────────────────────────────────────────────────
+    date_from_str = request.args.get('date_from', '').strip()
+    date_to_str   = request.args.get('date_to',   '').strip()
+    date_from = None
+    date_to   = None
+    try:
+        if date_from_str:
+            date_from = _dt.strptime(date_from_str, '%Y-%m-%d')
+        if date_to_str:
+            date_to = _dt.strptime(date_to_str, '%Y-%m-%d').replace(
+                hour=23, minute=59, second=59)
+    except ValueError:
+        pass
+
+    all_sales = sorted(customer.sales, key=lambda s: s.date, reverse=True)
+    if date_from or date_to:
+        filtered_sales = [
+            s for s in all_sales
+            if (date_from is None or s.date >= date_from)
+            and (date_to   is None or s.date <= date_to)
+        ]
+    else:
+        filtered_sales = all_sales
+
     advances = sorted(customer.advances, key=lambda a: a.date, reverse=True)
+    
     return render_template('sales/customer_profile.html', 
                           customer=customer, 
-                          sales=sales, 
+                          sales=filtered_sales, 
                           advances=advances,
+                          date_from=date_from_str,
+                          date_to=date_to_str,
                           now=datetime.now())
+
+@bp.route('/customer/<int:id>/export/pdf')
+@login_required
+def customer_export_pdf(id):
+    """Export customer profile to PDF - Professional design with summary boxes"""
+    from datetime import datetime as _dt
+
+    customer = Customer.query.get_or_404(id)
+    # ── Date filter from query params ─────────────────────────────────────
+    date_from_str = request.args.get('date_from', '').strip()
+    date_to_str   = request.args.get('date_to',   '').strip()
+    date_from_f = None
+    date_to_f   = None
+    try:
+        if date_from_str:
+            date_from_f = _dt.strptime(date_from_str, '%Y-%m-%d')
+        if date_to_str:
+            date_to_f = _dt.strptime(date_to_str, '%Y-%m-%d').replace(
+                hour=23, minute=59, second=59)
+    except ValueError:
+        pass
+
+    all_sales = sorted(customer.sales, key=lambda s: s.date, reverse=True)
+    if date_from_f or date_to_f:
+        sales = [
+            s for s in all_sales
+            if (date_from_f is None or s.date >= date_from_f)
+            and (date_to_f   is None or s.date <= date_to_f)
+        ]
+    else:
+        sales = all_sales
+    advances = sorted(customer.advances, key=lambda a: a.date, reverse=True)
+
+    output = io.BytesIO()
+    doc = SimpleDocTemplate(
+        output, pagesize=A4,
+        topMargin=0.4*inch, bottomMargin=0.5*inch,
+        leftMargin=0.5*inch, rightMargin=0.5*inch
+    )
+    elements = []
+    styles = getSampleStyleSheet()
+
+    # ── Color palette ─────────────────────────────────────────────────────────
+    C_DARK_NAVY  = colors.HexColor("#1e3a5f")
+    C_BLUE       = colors.HexColor("#2563eb")
+    C_LIGHT_BLUE = colors.HexColor("#dbeafe")
+    C_RED        = colors.HexColor("#dc2626")
+    C_GREEN      = colors.HexColor("#16a34a")
+    C_ORANGE     = colors.HexColor("#d97706")
+    C_PURPLE     = colors.HexColor("#7c3aed")
+    C_TEAL       = colors.HexColor("#0891b2")
+    C_LIGHT_GRAY = colors.HexColor("#f8fafc")
+    C_MID_GRAY   = colors.HexColor("#e2e8f0")
+    C_DARK_GRAY  = colors.HexColor("#374151")
+    C_WHITE      = colors.white
+
+    PAGE_W = A4[0] - inch  # usable width
+
+    def pkr(val):
+        return f"PKR {val:,.0f}"
+
+    # ── Paragraph styles ──────────────────────────────────────────────────────
+    s_hdr_title = ParagraphStyle("hdr_title", parent=styles["Normal"],
+        fontSize=18, leading=22, textColor=C_WHITE, fontName="Helvetica-Bold",
+        alignment=TA_CENTER)
+    s_hdr_customer = ParagraphStyle("hdr_customer", parent=styles["Normal"],
+        fontSize=13, leading=16, textColor=colors.HexColor("#93c5fd"),
+        fontName="Helvetica-Bold", alignment=TA_CENTER)
+    s_hdr_sub = ParagraphStyle("hdr_sub", parent=styles["Normal"],
+        fontSize=8, leading=11, textColor=colors.HexColor("#bfdbfe"),
+        fontName="Helvetica", alignment=TA_CENTER)
+    s_label = ParagraphStyle("lbl", parent=styles["Normal"],
+        fontSize=7.5, leading=10, textColor=colors.HexColor("#6b7280"),
+        fontName="Helvetica-Bold")
+    s_value = ParagraphStyle("val", parent=styles["Normal"],
+        fontSize=9, leading=11, textColor=C_DARK_GRAY, fontName="Helvetica")
+    s_section = ParagraphStyle("sec", parent=styles["Normal"],
+        fontSize=10, leading=13, textColor=C_WHITE, fontName="Helvetica-Bold")
+    s_kpi_lbl = ParagraphStyle("kpi_lbl", parent=styles["Normal"],
+        fontSize=7, leading=9, textColor=C_WHITE, fontName="Helvetica-Bold",
+        alignment=TA_CENTER)
+    s_kpi_val = ParagraphStyle("kpi_val", parent=styles["Normal"],
+        fontSize=12, leading=15, textColor=C_WHITE, fontName="Helvetica-Bold",
+        alignment=TA_CENTER)
+    s_th = ParagraphStyle("th", parent=styles["Normal"],
+        fontSize=8, leading=10, textColor=C_WHITE, fontName="Helvetica-Bold",
+        alignment=TA_CENTER)
+    s_td_c = ParagraphStyle("tdc", parent=styles["Normal"],
+        fontSize=8, leading=10, textColor=C_DARK_GRAY, fontName="Helvetica",
+        alignment=TA_CENTER)
+    s_td_r = ParagraphStyle("tdr", parent=styles["Normal"],
+        fontSize=8, leading=10, textColor=C_DARK_GRAY, fontName="Helvetica",
+        alignment=TA_RIGHT)
+    s_td_l = ParagraphStyle("tdl", parent=styles["Normal"],
+        fontSize=8, leading=10, textColor=C_DARK_GRAY, fontName="Helvetica",
+        alignment=TA_LEFT)
+    s_foot_r = ParagraphStyle("footr", parent=styles["Normal"],
+        fontSize=8, leading=10, textColor=C_WHITE, fontName="Helvetica-Bold",
+        alignment=TA_RIGHT)
+    s_foot_c = ParagraphStyle("footc", parent=styles["Normal"],
+        fontSize=8, leading=10, textColor=C_WHITE, fontName="Helvetica-Bold",
+        alignment=TA_CENTER)
+    s_footnote = ParagraphStyle("fnote", parent=styles["Normal"],
+        fontSize=7, textColor=colors.HexColor("#9ca3af"), alignment=TA_CENTER)
+
+    # 1. HEADER BANNER
+    contact_parts = []
+    if customer.email:   contact_parts.append(f"Email: {customer.email}")
+    if customer.phone:   contact_parts.append(f"Phone: {customer.phone}")
+    if customer.address: contact_parts.append(f"Address: {customer.address}")
+    contact_line = "   |   ".join(contact_parts)
+
+    hdr_rows = [
+        [Paragraph("Customer Profile Report", s_hdr_title)],
+        [Paragraph(customer.name, s_hdr_customer)],
+    ]
+    if contact_line:
+        hdr_rows.append([Paragraph(contact_line, s_hdr_sub)])
+
+    hdr_tbl = Table(hdr_rows, colWidths=[PAGE_W])
+    hdr_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), C_DARK_NAVY),
+        ("TOPPADDING",    (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 10),
+    ]))
+    elements.append(hdr_tbl)
+    elements.append(Spacer(1, 8))
+
+    # 2. CUSTOMER DETAILS
+    def drow(lbl, val):
+        return [Paragraph(lbl, s_label), Paragraph(str(val) if val else "—", s_value)]
+
+    left_rows = [
+        drow("COMPANY NAME",   customer.company_name or customer.name),
+        drow("EMAIL",          customer.email),
+        drow("PHONE",          customer.phone),
+        drow("ADDRESS",        customer.address),
+    ]
+    right_rows = [
+        drow("GST NUMBER",      customer.gst_number),
+        drow("PAYMENT METHOD",  customer.payment_method),
+        drow("CUSTOMER GROUP",  customer.group.name if customer.group else "—"),
+    ]
+
+    HALF = (PAGE_W - 4) / 2
+
+    def make_detail_block(rows, bg_color):
+        t = Table(rows, colWidths=[1.15*inch, HALF - 1.15*inch])
+        t.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), bg_color),
+            ("TOPPADDING",    (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+            ("LINEBELOW",     (0, 0), (0, -2), 0.3, C_MID_GRAY),
+        ]))
+        return t
+
+    detail_tbl = Table(
+        [[make_detail_block(left_rows, C_LIGHT_BLUE),
+          make_detail_block(right_rows, colors.HexColor("#f0fdf4"))]],
+        colWidths=[HALF + 2, HALF + 2]
+    )
+    detail_tbl.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("LINEAFTER",     (0, 0), (0, -1), 0.5, C_MID_GRAY),
+        ("BOX",           (0, 0), (-1, -1), 0.5, C_MID_GRAY),
+    ]))
+    elements.append(detail_tbl)
+    elements.append(Spacer(1, 10))
+
+    # 3. KPI BOXES
+    kpis = [
+        ("Total Sales",          pkr(customer.total_sales),             C_BLUE),
+        ("Outstanding Balance",  pkr(customer.outstanding_balance),     C_RED),
+        ("Total Advances",       pkr(customer.total_advances_received), C_ORANGE),
+        ("Advances Applied",     pkr(customer.total_advances_adjusted), C_GREEN),
+        ("Remaining Advance",    pkr(customer.remaining_advance_balance), C_PURPLE),
+    ]
+    BOX_W = PAGE_W / 5
+    kpi_cells = []
+    for lbl, val, clr in kpis:
+        inner = Table(
+            [[Paragraph(lbl, s_kpi_lbl)],
+             [Paragraph(val, s_kpi_val)]],
+            colWidths=[BOX_W - 8]
+        )
+        inner.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), clr),
+            ("TOPPADDING",    (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+        ]))
+        kpi_cells.append(inner)
+
+    kpi_row = Table([kpi_cells], colWidths=[BOX_W] * 5)
+    kpi_row.setStyle(TableStyle([
+        ("LEFTPADDING",   (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 3),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    elements.append(kpi_row)
+    elements.append(Spacer(1, 12))
+
+    # 4. SALES INVOICES TABLE
+    inv_sec_tbl = Table([[Paragraph("  Sales Invoices", s_section)]], colWidths=[PAGE_W])
+    inv_sec_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), C_BLUE),
+        ("TOPPADDING",    (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+    ]))
+    elements.append(inv_sec_tbl)
+    elements.append(Spacer(1, 4))
+
+    # col widths: Invoice#, Date, Amount, Delivery, AdvApplied, Paid, Balance, Status
+    Cols = [0.95*inch, 0.75*inch, 0.9*inch, 0.85*inch, 0.9*inch, 0.85*inch, 0.85*inch, 0.6*inch]
+
+    def status_p(st):
+        cmap = {"paid": C_GREEN, "partial": C_ORANGE, "unpaid": C_RED}
+        sst = ParagraphStyle("sst", parent=styles["Normal"], fontSize=7,
+                             leading=9, textColor=cmap.get(st, C_DARK_GRAY),
+                             fontName="Helvetica-Bold", alignment=TA_CENTER)
+        return Paragraph(st.title(), sst)
+
+    inv_rows = [[
+        Paragraph("Invoice #",   s_th),
+        Paragraph("Date",        s_th),
+        Paragraph("Amount",      s_th),
+        Paragraph("Delivery",    s_th),
+        Paragraph("Adv Applied", s_th),
+        Paragraph("Paid",        s_th),
+        Paragraph("Balance",     s_th),
+        Paragraph("Status",      s_th),
+    ]]
+    for sale in sales:
+        inv_rows.append([
+            Paragraph(sale.invoice_number,              s_td_l),
+            Paragraph(sale.date.strftime("%d-%m-%Y"),   s_td_c),
+            Paragraph(pkr(sale.total),                  s_td_r),
+            Paragraph(pkr(sale.delivery_charge),        s_td_r),
+            Paragraph(pkr(sale.advance_applied),        s_td_r),
+            Paragraph(pkr(sale.paid_amount),            s_td_r),
+            Paragraph(pkr(sale.balance_due),            s_td_r),
+            status_p(sale.status),
+        ])
+    
+    if sales:
+        inv_rows.append([
+            Paragraph("TOTALS", s_foot_c),
+            Paragraph("", s_td_c),
+            Paragraph(pkr(sum(s.total for s in sales)),             s_foot_r),
+            Paragraph(pkr(sum(s.delivery_charge for s in sales)),   s_foot_r),
+            Paragraph(pkr(sum(s.advance_applied for s in sales)),   s_foot_r),
+            Paragraph(pkr(sum(s.paid_amount for s in sales)),       s_foot_r),
+            Paragraph(pkr(sum(s.balance_due for s in sales)),       s_foot_r),
+            Paragraph("", s_td_c),
+        ])
+
+    if len(inv_rows) > 1:
+        n = len(inv_rows)
+        bstyle = [
+            ("BACKGROUND",    (0, 0), (-1, 0),    C_DARK_NAVY),
+            ("TOPPADDING",    (0, 0), (-1, 0),    5),
+            ("BOTTOMPADDING", (0, 0), (-1, 0),    5),
+            ("FONTNAME",      (0, 1), (-1, -1),   "Helvetica"),
+            ("FONTSIZE",      (0, 1), (-1, -1),   8),
+            ("TOPPADDING",    (0, 1), (-1, -1),   4),
+            ("BOTTOMPADDING", (0, 1), (-1, -1),   4),
+            ("LEFTPADDING",   (0, 0), (-1, -1),   4),
+            ("RIGHTPADDING",  (0, 0), (-1, -1),   4),
+            ("GRID",          (0, 0), (-1, -1),   0.3, C_MID_GRAY),
+            ("VALIGN",        (0, 0), (-1, -1),   "MIDDLE"),
+        ]
+        for i in range(2, n - (1 if sales else 0), 2):
+            bstyle.append(("BACKGROUND", (0, i), (-1, i), C_LIGHT_GRAY))
+        if sales:
+            bstyle += [
+                ("BACKGROUND", (0, n-1), (-1, n-1), C_DARK_NAVY),
+                ("LINEABOVE",  (0, n-1), (-1, n-1), 1.0, C_BLUE),
+            ]
+        inv_tbl = Table(inv_rows, colWidths=Cols, repeatRows=1)
+        inv_tbl.setStyle(TableStyle(bstyle))
+        elements.append(inv_tbl)
+    else:
+        elements.append(Paragraph("No sales invoices found.",
+            ParagraphStyle("nb", parent=styles["Normal"], fontSize=9,
+                           textColor=C_DARK_GRAY, leftIndent=8)))
+
+    elements.append(Spacer(1, 14))
+
+    # ── Generation footer ─────────────────────────────────────────────────────
+    elements.append(Spacer(1, 12))
+    elements.append(Paragraph(
+        f"Generated on {_dt.now().strftime('%d %B %Y at %I:%M %p')}  —  {customer.name} Customer Profile",
+        s_footnote
+    ))
+
+    doc.build(elements)
+    output.seek(0)
+
+    return send_file(
+        output,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"customer_{customer.id}_{customer.name.replace(' ', '_')}_profile.pdf"
+    )
 
 @bp.route('/customer/<int:id>/advances-json')
 @login_required
@@ -789,6 +1158,10 @@ def add_customer():
         )
         db.session.add(customer)
         db.session.commit()
+        
+        log_activity('Customers', f'Added Customer: {customer.name}', 
+                    f'Company: {customer.company_name or "N/A"}')
+        
         flash('Customer added successfully!', 'success')
         return redirect(url_for('sales.customers'))
     

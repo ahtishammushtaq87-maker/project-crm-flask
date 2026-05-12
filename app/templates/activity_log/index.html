@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+
+{% block title %}Activity Log{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-0">Activity Log</h2>
+            <p class="text-muted small mb-0">Track all actions performed across the dashboard</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('activity_log.index') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-sync-alt me-1"></i> Refresh
+            </a>
+        </div>
+    </div>
+
+    <!-- Filter Card -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body p-3">
+            <form method="GET" action="{{ url_for('activity_log.index') }}" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">Search Action/Details</label>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
+                        <input type="text" name="search" class="form-control border-start-0" placeholder="Keywords..." value="{{ search }}">
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold text-muted mb-1">User (Searchable)</label>
+                    <select name="user_id" class="form-select form-select-sm select2-searchable">
+                        <option value="">- All Users -</option>
+                        {% for user in users %}
+                        <option value="{{ user.id }}" {% if selected_user_id == user.id %}selected{% endif %}>
+                            {{ user.username }} ({{ user.role }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold text-muted mb-1">Module</label>
+                    <select name="module" class="form-select form-select-sm">
+                        <option value="">- All Modules -</option>
+                        {% for mod in modules %}
+                        <option value="{{ mod }}" {% if selected_module == mod %}selected{% endif %}>{{ mod }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold text-muted mb-1">From Date</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold text-muted mb-1">To Date</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-primary px-3">
+                        <i class="fas fa-filter me-1"></i>Filter
+                    </button>
+                    {% if selected_user_id or selected_module or date_from or date_to or search %}
+                    <a href="{{ url_for('activity_log.index') }}" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-times me-1"></i>Clear
+                    </a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Logs Table -->
+    <div class="card shadow-sm border-0 rounded-3">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 datatable-export" id="logsTable" data-export-title="Activity Log">
+                    <thead class="bg-light text-muted small text-uppercase">
+                        <tr>
+                            <th style="width: 40px;" class="text-center no-export border-0 px-3">
+                                <input type="checkbox" id="selectAll" class="form-check-input" onclick="document.querySelectorAll('.log-checkbox').forEach(cb => cb.checked = this.checked)">
+                            </th>
+                            <th style="width: 180px;">Timestamp</th>
+                            <th style="width: 150px;">User</th>
+                            <th style="width: 150px;">Module</th>
+                            <th>Action</th>
+                            <th>Details</th>
+                            <th style="width: 140px;">IP Address</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in logs %}
+                        <tr>
+                            <td class="text-center px-3 no-export">
+                                <input type="checkbox" class="form-check-input log-checkbox" value="{{ log.id }}">
+                            </td>
+                            <td>
+                                <span class="small fw-bold text-dark d-block">
+                                    {{ log.timestamp.strftime('%d %b, %Y') }}
+                                </span>
+                                <span class="small text-muted">
+                                    {{ log.timestamp.strftime('%I:%M %p') }}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="avatar-sm bg-primary-soft text-primary rounded-circle me-2 d-flex align-items-center justify-content-center" style="width: 30px; height: 30px; background-color: #e7f1ff;">
+                                        <i class="fas fa-user small"></i>
+                                    </div>
+                                    <span class="small fw-semibold">{{ log.user.username if log.user else 'System' }}</span>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="badge rounded-pill bg-light text-dark border px-3">
+                                    {{ log.module }}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="fw-bold text-primary small">{{ log.action }}</span>
+                            </td>
+                            <td>
+                                <span class="text-muted small text-truncate d-inline-block" style="max-width: 300px;" title="{{ log.details }}">
+                                    {{ log.details or '—' }}
+                                </span>
+                                {% if log.details and log.details|length > 50 %}
+                                <button class="btn btn-link btn-sm p-0 ms-1" data-bs-toggle="modal" data-bs-target="#detailsModal{{ log.id }}">
+                                    <i class="fas fa-external-link-alt" style="font-size: 0.7rem;"></i>
+                                </button>
+                                
+                                <!-- Details Modal -->
+                                <div class="modal fade" id="detailsModal{{ log.id }}" tabindex="-1">
+                                    <div class="modal-dialog modal-dialog-centered">
+                                        <div class="modal-content border-0 shadow">
+                                            <div class="modal-header bg-light">
+                                                <h6 class="modal-title fw-bold">Activity Details</h6>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <div class="p-3 bg-light rounded small text-break" style="white-space: pre-wrap;">{{ log.details }}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <code class="small text-muted">{{ log.ip_address or '—' }}</code>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center py-5">
+                                <div class="text-muted">
+                                    <i class="fas fa-history fa-3x mb-3 opacity-25"></i>
+                                    <p>No activity logs found matching your criteria.</p>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function() {
+        // Initialize Searchable User Dropdown
+        $('.select2-searchable').select2({
+            theme: 'bootstrap-5',
+            placeholder: '- Search User -',
+            allowClear: true,
+            width: '100%'
+        });
+
+        // Initialize DataTable with export buttons
+        var table = $('#logsTable').DataTable({
+            "order": [[1, "desc"]], // Column index 1 because index 0 is checkbox
+            "pageLength": 25,
+            "lengthMenu": [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+            "dom": '<"d-flex justify-content-between align-items-center mb-3"<"d-flex align-items-center"lB>f>rtip',
+            "buttons": [
+                {
+                    extend: 'print',
+                    text: '<i class="fas fa-print me-1"></i> Print',
+                    className: 'btn btn-sm btn-outline-secondary',
+                    exportOptions: { columns: ':not(.no-export)' }
+                },
+                {
+                    extend: 'pdf',
+                    text: '<i class="fas fa-file-pdf me-1"></i> PDF',
+                    className: 'btn btn-sm btn-outline-danger',
+                    exportOptions: { columns: ':not(.no-export)' }
+                },
+                {
+                    extend: 'excel',
+                    text: '<i class="fas fa-file-excel me-1"></i> Excel',
+                    className: 'btn btn-sm btn-outline-success',
+                    exportOptions: { columns: ':not(.no-export)' }
+                },
+                {
+                    extend: 'csv',
+                    text: '<i class="fas fa-file-csv me-1"></i> CSV',
+                    className: 'btn btn-sm btn-outline-info',
+                    exportOptions: { columns: ':not(.no-export)' }
+                }
+            ],
+            "language": {
+                "search": "Quick search in current view:"
+            },
+            "columnDefs": [
+                { "orderable": false, "targets": [0, 5] }, // Checkbox and Details not sortable
+                { "className": "no-export", "targets": [0] }
+            ]
+        });
+
+        // Re-align search and buttons
+        $('.dt-buttons').addClass('me-3');
+    });
+</script>
+<style>
+    .bg-primary-soft { background-color: #e7f1ff; }
+    .table-hover tbody tr:hover { background-color: #f8faff; }
+    .select2-container--bootstrap-5 .select2-selection--single { height: 31px !important; font-size: 0.875rem !important; }
+    .select2-container--bootstrap-5 .select2-selection__rendered { line-height: 29px !important; }
+</style>
+{% endblock %}

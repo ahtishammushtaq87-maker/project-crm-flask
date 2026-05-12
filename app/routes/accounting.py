@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash
-from app.utils import permission_required
+from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
 from app.models import Sale, PurchaseBill, Transaction, Expense, ExpenseCategory, Vendor, Account, Payment, TaxRate, Currency, RecurringExpense, Staff, Attendance, ExpenseSettings
@@ -1231,6 +1231,10 @@ def add_expense():
         
         try:
             db.session.commit()
+            
+            log_activity('Accounting', f'Added Expense: {flash_msg}', 
+                        f'Total: {base_amount}, Mode: {mode}, Status: {target_status}')
+            
             flash(flash_msg, 'success')
             return redirect(url_for('accounting.expenses'))
         except Exception as e:
@@ -1310,6 +1314,8 @@ def delete_expense(id):
             except Exception as e:
                 print(f"Error updating BOM after deleting expense: {e}")
     
+    log_activity('Accounting', f'Deleted Expense: {expense.expense_number}', f'Description: {description}, Amount: {amount_to_reduce}')
+    
     flash('Expense removed', 'success')
     return redirect(url_for('accounting.expenses'))
 
@@ -1363,6 +1369,7 @@ def bulk_delete_expenses():
             
     if deleted_count > 0:
         db.session.commit()
+        log_activity('Accounting', f'Bulk Deleted Expenses', f'Deleted {deleted_count} expenses.')
         
         # Recalculate BOMs if needed
         for type, id in boms_to_update:

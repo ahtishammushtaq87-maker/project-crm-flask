@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response, current_app
-from app.utils import permission_required
+from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
 from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory, PurchaseReturn, PurchaseReturnItem, PurchaseSettings, PurchaseReturnSettings, BillPayment, BillReceive, BillReceiveItem
@@ -200,7 +200,11 @@ def create_bill():
                     flash('Invalid file type for bill image. Allowed: png, jpg, jpeg, gif, pdf, webp', 'warning')
 
         db.session.commit()
-        flash('Purchase bill created successfully! Inventory and cost prices have been updated.', 'success')
+        
+        log_activity('Purchase', f'Created Bill #{bill.bill_number}', 
+                    f'Vendor: {bill.vendor.name}, Total: {bill.total}')
+        
+        flash('Purchase bill created successfully!', 'success')
         return redirect(url_for('purchase.bill_detail', id=bill.id))
     
     return render_template('purchase/create_bill.html', form=form, products=products, vendors=vendors, currencies=currencies)
@@ -1243,15 +1247,41 @@ def download_vendor_sample():
 @bp.route('/vendor/<int:id>')
 @login_required
 def vendor_profile(id):
+    from datetime import datetime as _dt
     vendor = Vendor.query.get_or_404(id)
-    # Sort bills newest first
-    bills = sorted(vendor.bills, key=lambda b: b.date, reverse=True)
-    # Sort advances newest first
+
+    # ── Date filter ────────────────────────────────────────────────────────
+    date_from_str = request.args.get('date_from', '').strip()
+    date_to_str   = request.args.get('date_to',   '').strip()
+    date_from = None
+    date_to   = None
+    try:
+        if date_from_str:
+            date_from = _dt.strptime(date_from_str, '%Y-%m-%d')
+        if date_to_str:
+            date_to = _dt.strptime(date_to_str, '%Y-%m-%d').replace(
+                hour=23, minute=59, second=59)
+    except ValueError:
+        pass
+
+    all_bills = sorted(vendor.bills, key=lambda b: b.date, reverse=True)
+    if date_from or date_to:
+        filtered_bills = [
+            b for b in all_bills
+            if (date_from is None or b.date >= date_from)
+            and (date_to   is None or b.date <= date_to)
+        ]
+    else:
+        filtered_bills = all_bills
+
     advances = sorted(vendor.advances, key=lambda a: a.date, reverse=True)
+
     return render_template('purchase/vendor_profile.html',
                            vendor=vendor,
-                           bills=bills,
-                           advances=advances)
+                           bills=filtered_bills,
+                           advances=advances,
+                           date_from=date_from_str,
+                           date_to=date_to_str)
 
 @bp.route('/vendor/add', methods=['GET', 'POST'])
 @login_required
@@ -1285,6 +1315,10 @@ def add_vendor():
         
         db.session.add(vendor)
         db.session.commit()
+        
+        log_activity('Vendors', f'Added Vendor: {vendor.name}', 
+                    f'Company: {vendor.company_name or "N/A"}')
+        
         flash('Vendor added successfully!', 'success')
         return redirect(url_for('purchase.vendors'))
     
@@ -2444,97 +2478,425 @@ def vendor_export_excel(id):
 @bp.route("/vendor/<int:id>/export/pdf")
 @login_required
 def vendor_export_pdf(id):
-    """Export vendor profile to PDF"""
+    """Export vendor profile to PDF - Professional design with summary boxes"""
+    from reportlab.lib.enums import TA_LEFT, TA_RIGHT
+    from datetime import datetime as _dt
+
     vendor = Vendor.query.get_or_404(id)
-    bills = sorted(vendor.bills, key=lambda b: b.date, reverse=True)
+    # ── Date filter from query params ─────────────────────────────────────
+    date_from_str = request.args.get('date_from', '').strip()
+    date_to_str   = request.args.get('date_to',   '').strip()
+    date_from_f = None
+    date_to_f   = None
+    try:
+        if date_from_str:
+            date_from_f = _dt.strptime(date_from_str, '%Y-%m-%d')
+        if date_to_str:
+            date_to_f = _dt.strptime(date_to_str, '%Y-%m-%d').replace(
+                hour=23, minute=59, second=59)
+    except ValueError:
+        pass
+
+    all_bills = sorted(vendor.bills, key=lambda b: b.date, reverse=True)
+    if date_from_f or date_to_f:
+        bills = [
+            b for b in all_bills
+            if (date_from_f is None or b.date >= date_from_f)
+            and (date_to_f   is None or b.date <= date_to_f)
+        ]
+    else:
+        bills = all_bills
     advances = sorted(vendor.advances, key=lambda a: a.date, reverse=True)
-    
+
     output = io.BytesIO()
-    doc = SimpleDocTemplate(output, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
-    
+    doc = SimpleDocTemplate(
+        output, pagesize=A4,
+        topMargin=0.4*inch, bottomMargin=0.5*inch,
+        leftMargin=0.5*inch, rightMargin=0.5*inch
+    )
     elements = []
     styles = getSampleStyleSheet()
-    
-    # Title
-    title_style = ParagraphStyle("CustomTitle", parent=styles["Heading1"], fontSize=16, textColor=colors.HexColor("#366092"), spaceAfter=12, alignment=TA_CENTER)
-    title = Paragraph(f"Vendor Profile: {vendor.name}", title_style)
-    elements.append(title)
-    
-    # Vendor Info
-    info_data = [
-        ["Name:", vendor.name],
-        ["Email:", vendor.email or ""],
-        ["Phone:", vendor.phone or ""],
-        ["Address:", vendor.address or ""],
-        ["Payment Method:", vendor.payment_method or ""],
-        ["Bank Name:", vendor.bank_name or ""],
-        ["Account Holder:", vendor.account_holder_name or ""],
-        ["Account Number:", vendor.account_number or ""],
-        ["IFSC Code:", vendor.ifsc_code or ""],
-        ["SWIFT Code:", vendor.swift_code or ""]
+
+    # ── Color palette ─────────────────────────────────────────────────────────
+    C_DARK_NAVY  = colors.HexColor("#1e3a5f")
+    C_BLUE       = colors.HexColor("#2563eb")
+    C_LIGHT_BLUE = colors.HexColor("#dbeafe")
+    C_RED        = colors.HexColor("#dc2626")
+    C_GREEN      = colors.HexColor("#16a34a")
+    C_ORANGE     = colors.HexColor("#d97706")
+    C_PURPLE     = colors.HexColor("#7c3aed")
+    C_TEAL       = colors.HexColor("#0891b2")
+    C_LIGHT_GRAY = colors.HexColor("#f8fafc")
+    C_MID_GRAY   = colors.HexColor("#e2e8f0")
+    C_DARK_GRAY  = colors.HexColor("#374151")
+    C_WHITE      = colors.white
+
+    PAGE_W = A4[0] - inch  # usable width (7 inch with 0.5 margins each side)
+
+    def pkr(val):
+        return f"PKR {val:,.0f}"
+
+    # ── Paragraph styles ──────────────────────────────────────────────────────
+    s_hdr_title = ParagraphStyle("hdr_title", parent=styles["Normal"],
+        fontSize=18, leading=22, textColor=C_WHITE, fontName="Helvetica-Bold",
+        alignment=TA_CENTER)
+    s_hdr_vendor = ParagraphStyle("hdr_vendor", parent=styles["Normal"],
+        fontSize=13, leading=16, textColor=colors.HexColor("#93c5fd"),
+        fontName="Helvetica-Bold", alignment=TA_CENTER)
+    s_hdr_sub = ParagraphStyle("hdr_sub", parent=styles["Normal"],
+        fontSize=8, leading=11, textColor=colors.HexColor("#bfdbfe"),
+        fontName="Helvetica", alignment=TA_CENTER)
+    s_label = ParagraphStyle("lbl", parent=styles["Normal"],
+        fontSize=7.5, leading=10, textColor=colors.HexColor("#6b7280"),
+        fontName="Helvetica-Bold")
+    s_value = ParagraphStyle("val", parent=styles["Normal"],
+        fontSize=9, leading=11, textColor=C_DARK_GRAY, fontName="Helvetica")
+    s_section = ParagraphStyle("sec", parent=styles["Normal"],
+        fontSize=10, leading=13, textColor=C_WHITE, fontName="Helvetica-Bold")
+    s_kpi_lbl = ParagraphStyle("kpi_lbl", parent=styles["Normal"],
+        fontSize=7, leading=9, textColor=C_WHITE, fontName="Helvetica-Bold",
+        alignment=TA_CENTER)
+    s_kpi_val = ParagraphStyle("kpi_val", parent=styles["Normal"],
+        fontSize=12, leading=15, textColor=C_WHITE, fontName="Helvetica-Bold",
+        alignment=TA_CENTER)
+    s_th = ParagraphStyle("th", parent=styles["Normal"],
+        fontSize=8, leading=10, textColor=C_WHITE, fontName="Helvetica-Bold",
+        alignment=TA_CENTER)
+    s_td_c = ParagraphStyle("tdc", parent=styles["Normal"],
+        fontSize=8, leading=10, textColor=C_DARK_GRAY, fontName="Helvetica",
+        alignment=TA_CENTER)
+    s_td_r = ParagraphStyle("tdr", parent=styles["Normal"],
+        fontSize=8, leading=10, textColor=C_DARK_GRAY, fontName="Helvetica",
+        alignment=TA_RIGHT)
+    s_td_l = ParagraphStyle("tdl", parent=styles["Normal"],
+        fontSize=8, leading=10, textColor=C_DARK_GRAY, fontName="Helvetica",
+        alignment=TA_LEFT)
+    s_foot_r = ParagraphStyle("footr", parent=styles["Normal"],
+        fontSize=8, leading=10, textColor=C_WHITE, fontName="Helvetica-Bold",
+        alignment=TA_RIGHT)
+    s_foot_c = ParagraphStyle("footc", parent=styles["Normal"],
+        fontSize=8, leading=10, textColor=C_WHITE, fontName="Helvetica-Bold",
+        alignment=TA_CENTER)
+    s_footnote = ParagraphStyle("fnote", parent=styles["Normal"],
+        fontSize=7, textColor=colors.HexColor("#9ca3af"), alignment=TA_CENTER)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 1. HEADER BANNER
+    # ══════════════════════════════════════════════════════════════════════════
+    contact_parts = []
+    if vendor.email:   contact_parts.append(f"Email: {vendor.email}")
+    if vendor.phone:   contact_parts.append(f"Phone: {vendor.phone}")
+    if vendor.address: contact_parts.append(f"Address: {vendor.address}")
+    contact_line = "   |   ".join(contact_parts)
+
+    hdr_rows = [
+        [Paragraph("Vendor Profile Report", s_hdr_title)],
+        [Paragraph(vendor.name, s_hdr_vendor)],
     ]
-    info_table = Table(info_data, colWidths=[2*inch, 4*inch])
-    info_table.setStyle(TableStyle([
-        ("FONTNAME", (0,0), (-1,-1), "Helvetica"),
-        ("FONTSIZE", (0,0), (-1,-1), 10),
-        ("FONTNAME", (0,0), (0,-1), "Helvetica-Bold"),
+    if contact_line:
+        hdr_rows.append([Paragraph(contact_line, s_hdr_sub)])
+
+    hdr_tbl = Table(hdr_rows, colWidths=[PAGE_W])
+    hdr_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), C_DARK_NAVY),
+        ("TOPPADDING",    (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 10),
     ]))
-    elements.append(info_table)
-    elements.append(Spacer(1, 0.3*inch))
-    
-    # Bills Table
-    elements.append(Paragraph("Purchase Bills", styles["Heading2"]))
-    bill_data = [["Bill #", "Date", "Total", "Paid", "Balance", "Status"]]
+    elements.append(hdr_tbl)
+    elements.append(Spacer(1, 8))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 2. VENDOR DETAILS (two-column)
+    # ══════════════════════════════════════════════════════════════════════════
+    def drow(lbl, val):
+        return [Paragraph(lbl, s_label), Paragraph(str(val) if val else "—", s_value)]
+
+    left_rows = [
+        drow("COMPANY NAME",   vendor.company_name or vendor.name),
+        drow("CONTACT PERSON", vendor.contact_person),
+        drow("EMAIL",          vendor.email),
+        drow("PHONE",          vendor.phone),
+        drow("ADDRESS",        vendor.address),
+        drow("PAYMENT METHOD", vendor.payment_method),
+    ]
+    right_rows = [
+        drow("BANK NAME",       vendor.bank_name),
+        drow("ACCOUNT HOLDER",  vendor.account_holder_name),
+        drow("ACCOUNT NUMBER",  vendor.account_number),
+        drow("IFSC CODE",       vendor.ifsc_code),
+        drow("SWIFT CODE",      vendor.swift_code),
+        drow("PAYMENT TERMS",   f"{vendor.payment_terms} days" if vendor.payment_terms else None),
+    ]
+
+    HALF = (PAGE_W - 4) / 2
+
+    def make_detail_block(rows, bg_color):
+        t = Table(rows, colWidths=[1.15*inch, HALF - 1.15*inch])
+        t.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), bg_color),
+            ("TOPPADDING",    (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+            ("LINEBELOW",     (0, 0), (-1, -2), 0.3, C_MID_GRAY),
+        ]))
+        return t
+
+    detail_tbl = Table(
+        [[make_detail_block(left_rows, C_LIGHT_BLUE),
+          make_detail_block(right_rows, colors.HexColor("#f0fdf4"))]],
+        colWidths=[HALF + 2, HALF + 2]
+    )
+    detail_tbl.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("LINEAFTER",     (0, 0), (0, -1), 0.5, C_MID_GRAY),
+        ("BOX",           (0, 0), (-1, -1), 0.5, C_MID_GRAY),
+    ]))
+    elements.append(detail_tbl)
+    elements.append(Spacer(1, 10))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 3. FIVE KPI SUMMARY BOXES
+    # ══════════════════════════════════════════════════════════════════════════
+    kpis = [
+        ("Total Purchases",      pkr(vendor.total_purchases),           C_BLUE),
+        ("Outstanding Balance",  pkr(vendor.outstanding_balance),       C_RED),
+        ("Total Advances Given", pkr(vendor.total_advances_given),      C_ORANGE),
+        ("Advances Adjusted",    pkr(vendor.total_advances_adjusted),   C_GREEN),
+        ("Remaining Advance",    pkr(vendor.remaining_advance_balance), C_PURPLE),
+    ]
+    BOX_W = PAGE_W / 5
+    kpi_cells = []
+    for lbl, val, clr in kpis:
+        inner = Table(
+            [[Paragraph(lbl, s_kpi_lbl)],
+             [Paragraph(val, s_kpi_val)]],
+            colWidths=[BOX_W - 8]
+        )
+        inner.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), clr),
+            ("TOPPADDING",    (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+        ]))
+        kpi_cells.append(inner)
+
+    kpi_row = Table([kpi_cells], colWidths=[BOX_W] * 5)
+    kpi_row.setStyle(TableStyle([
+        ("LEFTPADDING",   (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 3),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    elements.append(kpi_row)
+    elements.append(Spacer(1, 12))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 4. PURCHASE BILLS TABLE
+    # ══════════════════════════════════════════════════════════════════════════
+    bill_sec_tbl = Table([[Paragraph("  Purchase Bills", s_section)]], colWidths=[PAGE_W])
+    bill_sec_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), C_BLUE),
+        ("TOPPADDING",    (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+    ]))
+    elements.append(bill_sec_tbl)
+    elements.append(Spacer(1, 4))
+
+    # col widths: Bill#, Date, Subtotal, Tax, Discount, GrandTotal, Paid, Balance, Status
+    B = [0.88*inch, 0.78*inch, 0.92*inch, 0.78*inch, 0.78*inch,
+         0.95*inch, 0.82*inch, 0.82*inch, 0.67*inch]
+
+    def status_p(st):
+        cmap = {"paid": C_GREEN, "partial": C_ORANGE, "unpaid": C_RED,
+                "return": C_TEAL, "partial_return": C_TEAL}
+        sst = ParagraphStyle("sst", parent=styles["Normal"], fontSize=7,
+                             leading=9, textColor=cmap.get(st, C_DARK_GRAY),
+                             fontName="Helvetica-Bold", alignment=TA_CENTER)
+        return Paragraph(st.replace("_", " ").title(), sst)
+
+    bill_rows = [[
+        Paragraph("Bill #",      s_th),
+        Paragraph("Date",        s_th),
+        Paragraph("Subtotal",    s_th),
+        Paragraph("Tax",         s_th),
+        Paragraph("Discount",    s_th),
+        Paragraph("Grand Total", s_th),
+        Paragraph("Paid",        s_th),
+        Paragraph("Balance",     s_th),
+        Paragraph("Status",      s_th),
+    ]]
     for bill in bills:
-        bill_data.append([
-            bill.bill_number,
-            bill.date.strftime("%Y-%m-%d"),
-            f"PKR {bill.total:,.2f}",
-            f"PKR {bill.paid_amount:,.2f}",
-            f"PKR {bill.balance_due:,.2f}",
-            bill.status.title()
+        bill_rows.append([
+            Paragraph(bill.bill_number,                 s_td_l),
+            Paragraph(bill.date.strftime("%d-%m-%Y"),   s_td_c),
+            Paragraph(pkr(bill.subtotal),               s_td_r),
+            Paragraph(pkr(bill.tax) if bill.tax > 0 else "—",         s_td_r),
+            Paragraph(pkr(bill.discount) if bill.discount > 0 else "—", s_td_r),
+            Paragraph(pkr(bill.total),                  s_td_r),
+            Paragraph(pkr(bill.paid_amount),            s_td_r),
+            Paragraph(pkr(bill.balance_due),            s_td_r),
+            status_p(bill.status),
         ])
-    
-    if len(bill_data) > 1:
-        bill_table = Table(bill_data, colWidths=[1.2*inch, 1*inch, 1*inch, 1*inch, 1*inch, 0.8*inch])
-        bill_table.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#366092")),
-            ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),
-            ("FONTNAME", (0,0), (-1,-1), "Helvetica"),
-            ("FONTSIZE", (0,0), (-1,-1), 9),
-            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.lightgrey]),
-            ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
-        ]))
-        elements.append(bill_table)
-    
-    elements.append(Spacer(1, 0.3*inch))
-    
-    # Advances Table
-    elements.append(Paragraph("Advances", styles["Heading2"]))
-    adv_data = [["Date", "Description", "Amount", "Status"]]
-    for adv in advances:
-        adv_data.append([
-            adv.date.strftime("%Y-%m-%d"),
-            adv.description or "",
-            f"PKR {adv.amount:,.2f}",
-            "Adjusted" if adv.is_adjusted else "Pending"
+    if bills:
+        bill_rows.append([
+            Paragraph("TOTALS", s_foot_c),
+            Paragraph("", s_td_c),
+            Paragraph(pkr(sum(b.subtotal for b in bills)),    s_foot_r),
+            Paragraph(pkr(sum(b.tax for b in bills)),         s_foot_r),
+            Paragraph(pkr(sum(b.discount for b in bills)),    s_foot_r),
+            Paragraph(pkr(sum(b.total for b in bills)),       s_foot_r),
+            Paragraph(pkr(sum(b.paid_amount for b in bills)), s_foot_r),
+            Paragraph(pkr(sum(b.balance_due for b in bills)), s_foot_r),
+            Paragraph("", s_td_c),
         ])
-    
-    if len(adv_data) > 1:
-        adv_table = Table(adv_data, colWidths=[1*inch, 2.5*inch, 1*inch, 1*inch])
-        adv_table.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#366092")),
-            ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),
-            ("FONTNAME", (0,0), (-1,-1), "Helvetica"),
-            ("FONTSIZE", (0,0), (-1,-1), 9),
-            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.lightgrey]),
-            ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
-        ]))
-        elements.append(adv_table)
-    
+
+    if len(bill_rows) > 1:
+        n = len(bill_rows)
+        bstyle = [
+            ("BACKGROUND",    (0, 0), (-1, 0),    C_DARK_NAVY),
+            ("TOPPADDING",    (0, 0), (-1, 0),    5),
+            ("BOTTOMPADDING", (0, 0), (-1, 0),    5),
+            ("FONTNAME",      (0, 1), (-1, -1),   "Helvetica"),
+            ("FONTSIZE",      (0, 1), (-1, -1),   8),
+            ("TOPPADDING",    (0, 1), (-1, -1),   4),
+            ("BOTTOMPADDING", (0, 1), (-1, -1),   4),
+            ("LEFTPADDING",   (0, 0), (-1, -1),   4),
+            ("RIGHTPADDING",  (0, 0), (-1, -1),   4),
+            ("GRID",          (0, 0), (-1, -1),   0.3, C_MID_GRAY),
+            ("VALIGN",        (0, 0), (-1, -1),   "MIDDLE"),
+        ]
+        for i in range(2, n - (1 if bills else 0), 2):
+            bstyle.append(("BACKGROUND", (0, i), (-1, i), C_LIGHT_GRAY))
+        if bills:
+            bstyle += [
+                ("BACKGROUND", (0, n-1), (-1, n-1), C_DARK_NAVY),
+                ("LINEABOVE",  (0, n-1), (-1, n-1), 1.0, C_BLUE),
+            ]
+        bill_tbl = Table(bill_rows, colWidths=B, repeatRows=1)
+        bill_tbl.setStyle(TableStyle(bstyle))
+        elements.append(bill_tbl)
+    else:
+        elements.append(Paragraph("No purchase bills found.",
+            ParagraphStyle("nb", parent=styles["Normal"], fontSize=9,
+                           textColor=C_DARK_GRAY, leftIndent=8)))
+
+    elements.append(Spacer(1, 14))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 5. ADVANCES TABLE
+    # ══════════════════════════════════════════════════════════════════════════
+    adv_sec_tbl = Table(
+        [[Paragraph("  Advances (Against Material)", s_section)]], colWidths=[PAGE_W])
+    adv_sec_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), C_ORANGE),
+        ("TOPPADDING",    (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+    ]))
+    elements.append(adv_sec_tbl)
+    elements.append(Spacer(1, 4))
+
+    # col widths: #, Date, Description, Amount, Status, Adjusted Against
+    A = [0.3*inch, 0.78*inch, 2.9*inch, 1.05*inch, 0.78*inch, 1.19*inch]
+
+    s_adv_th = ParagraphStyle("advth", parent=styles["Normal"], fontSize=8,
+        leading=10, textColor=C_WHITE, fontName="Helvetica-Bold",
+        alignment=TA_CENTER, backColor=colors.HexColor("#78350f"))
+
+    adv_rows = [[
+        Paragraph("#",               s_th),
+        Paragraph("Date",            s_th),
+        Paragraph("Description / Purpose", s_th),
+        Paragraph("Amount (PKR)",    s_th),
+        Paragraph("Status",          s_th),
+        Paragraph("Adjusted Against",s_th),
+    ]]
+    for idx, adv in enumerate(advances, 1):
+        adj_lbl = adv.adjusted_bill.bill_number if adv.adjusted_bill else "—"
+        adj_clr = C_GREEN if adv.is_adjusted else C_ORANGE
+        adj_lbl_text = "Adjusted" if adv.is_adjusted else "Pending"
+        s_ast = ParagraphStyle("ast", parent=styles["Normal"], fontSize=7.5,
+            leading=9, textColor=adj_clr, fontName="Helvetica-Bold",
+            alignment=TA_CENTER)
+        s_amt = ParagraphStyle("aamt", parent=styles["Normal"], fontSize=8,
+            leading=10, textColor=C_DARK_GRAY if adv.is_adjusted else C_ORANGE,
+            fontName="Helvetica-Bold", alignment=TA_RIGHT)
+        adv_rows.append([
+            Paragraph(str(idx),                        s_td_c),
+            Paragraph(adv.date.strftime("%d-%m-%Y"),   s_td_c),
+            Paragraph(adv.description or "—",          s_td_l),
+            Paragraph(pkr(adv.amount),                 s_amt),
+            Paragraph(adj_lbl_text,                    s_ast),
+            Paragraph(adj_lbl,                         s_td_c),
+        ])
+    if advances:
+        s_rem = ParagraphStyle("rem", parent=styles["Normal"], fontSize=8,
+            leading=10, textColor=colors.HexColor("#e9d5ff"),
+            fontName="Helvetica-Bold", alignment=TA_CENTER)
+        s_adj = ParagraphStyle("adjf", parent=styles["Normal"], fontSize=8,
+            leading=10, textColor=colors.HexColor("#bbf7d0"),
+            fontName="Helvetica-Bold", alignment=TA_CENTER)
+        adv_rows.append([
+            Paragraph("", s_td_c),
+            Paragraph("TOTALS", s_foot_c),
+            Paragraph("", s_td_c),
+            Paragraph(pkr(vendor.total_advances_given), s_foot_r),
+            Paragraph(pkr(vendor.total_advances_adjusted), s_adj),
+            Paragraph(f"Rem: {pkr(vendor.remaining_advance_balance)}", s_rem),
+        ])
+
+    if len(adv_rows) > 1:
+        na = len(adv_rows)
+        astyle = [
+            ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#78350f")),
+            ("TOPPADDING",    (0, 0), (-1, 0),  5),
+            ("BOTTOMPADDING", (0, 0), (-1, 0),  5),
+            ("FONTNAME",      (0, 1), (-1, -1), "Helvetica"),
+            ("FONTSIZE",      (0, 1), (-1, -1), 8),
+            ("TOPPADDING",    (0, 1), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+            ("GRID",          (0, 0), (-1, -1), 0.3, C_MID_GRAY),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ]
+        for i in range(2, na - (1 if advances else 0), 2):
+            astyle.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor("#fffbeb")))
+        if advances:
+            astyle += [
+                ("BACKGROUND", (0, na-1), (-1, na-1), colors.HexColor("#1c1917")),
+                ("LINEABOVE",  (0, na-1), (-1, na-1), 1.0, C_ORANGE),
+            ]
+        adv_tbl = Table(adv_rows, colWidths=A, repeatRows=1)
+        adv_tbl.setStyle(TableStyle(astyle))
+        elements.append(adv_tbl)
+    else:
+        elements.append(Paragraph("No advances recorded for this vendor.",
+            ParagraphStyle("nb2", parent=styles["Normal"], fontSize=9,
+                           textColor=C_DARK_GRAY, leftIndent=8)))
+
+    # ── Generation footer ─────────────────────────────────────────────────────
+    elements.append(Spacer(1, 12))
+    elements.append(Paragraph(
+        f"Generated on {_dt.now().strftime('%d %B %Y at %I:%M %p')}  —  {vendor.name} Vendor Profile",
+        s_footnote
+    ))
+
     doc.build(elements)
     output.seek(0)
-    
+
     return send_file(
         output,
         mimetype="application/pdf",
