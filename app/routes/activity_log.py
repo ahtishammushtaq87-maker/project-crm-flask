@@ -9,11 +9,8 @@ bp = Blueprint('activity_log', __name__)
 
 @bp.route('/')
 @login_required
-@permission_required('dashboard', action='view') # Usually admins only
+@permission_required('activity_logs', action='view')
 def index():
-    if current_user.role != 'admin':
-        flash('Activity Log is restricted to Admin only.', 'danger')
-        return redirect(url_for('dashboard.index'))
 
     # Filters
     user_id = request.args.get('user_id')

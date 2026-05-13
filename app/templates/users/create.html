@@ -216,6 +216,36 @@
     </div>
 </div>
                                         <div class="form-check mb-2">
+    {{ form.can_view_receiving(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'receiving')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_receiving.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-receiving" id="sub_receiving">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_receiving(class="form-check-input sub-cb-receiving") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_receiving(class="form-check-input sub-cb-receiving") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_receiving(class="form-check-input sub-cb-receiving") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
+                                        <div class="form-check mb-2">
+    {{ form.can_view_delivering(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'delivering')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_delivering.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-delivering" id="sub_delivering">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_delivering(class="form-check-input sub-cb-delivering") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_delivering(class="form-check-input sub-cb-delivering") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_delivering(class="form-check-input sub-cb-delivering") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
+                                        <div class="form-check mb-2">
     {{ form.can_view_product_dev(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'product_dev')") }}
     <label class="form-check-label fw-semibold">{{ form.can_view_product_dev.label.text }}</label>
     <div class="ms-4 mt-1 border-start ps-3 sub-permissions-product_dev" id="sub_product_dev">
@@ -458,7 +488,7 @@
         </div>
     </div>
 </div>
-                                        <div class="form-checkNone">
+                                        <div class="form-check mb-2">
     {{ form.can_view_users(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'users')") }}
     <label class="form-check-label fw-semibold">{{ form.can_view_users.label.text }}</label>
     <div class="ms-4 mt-1 border-start ps-3 sub-permissions-users" id="sub_users">
@@ -470,6 +500,15 @@
         </div>
         <div class="form-check form-check-inline">
             {{ form.can_delete_users(class="form-check-input sub-cb-users") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
+                                        <div class="form-check mb-2">
+    {{ form.can_view_activity_logs(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'activity_logs')") }}
+    <label class="form-check-label fw-semibold">{{ form.can_view_activity_logs.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-activity_logs" id="sub_activity_logs">
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_activity_logs(class="form-check-input sub-cb-activity_logs") }} <label class="form-check-label small text-muted">Delete/Clear</label>
         </div>
     </div>
 </div>

@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request
 from app.utils import permission_required
 from flask_login import login_required, current_user
-from app.models import Sale, Product, PurchaseBill, Expense, db, SaleItem, Vendor, Customer, Staff, Attendance
+from app.models import Sale, Product, PurchaseBill, Expense, ExpenseCategory, db, SaleItem, Vendor, Customer, Staff, Attendance
 from datetime import datetime, timedelta
 from sqlalchemy import func, inspect
 from calendar import monthrange
@@ -139,6 +139,18 @@ def index():
                     # Add proportional amount
                     divided_expenses_for_period += exp.daily_amount * overlap_days
     
+    # Calculate Tools Expenses separately
+    tools_expenses = db.session.query(func.sum(Expense.amount)).join(ExpenseCategory).filter(
+        ExpenseCategory.name == 'Tools Expense',
+        Expense.date >= start_datetime,
+        Expense.date <= end_datetime,
+        Expense.status == 'confirmed'
+    ).scalar() or 0
+    
+    # Subtract tools_expenses from operating_expenses to avoid double counting in display
+    # (operating_expenses already contains ALL non-BOM, non-divided expenses)
+    operating_expenses = operating_expenses - tools_expenses
+    
     # Calculate Daily Payroll (Active staff daily salary × days in period + Attendance-based salary)
     daily_payroll_for_period = 0
     
@@ -222,15 +234,15 @@ def index():
                 else:
                     break
     
-    # Total expenses = operating + manufacturing overhead + daily payroll + divided (proportional)
-    total_expenses = operating_expenses + manufacturing_overhead + daily_payroll_for_period + divided_expenses_for_period
+    # Total expenses = operating + tools + manufacturing overhead + daily payroll + divided (proportional)
+    total_expenses = operating_expenses + tools_expenses + manufacturing_overhead + daily_payroll_for_period + divided_expenses_for_period
 
     # Gross Profit = Sales - COGS
     gross_profit = total_sales - total_cogs
 
-    # Net Profit = Gross Profit - all expenses (operating + divided proportional + payroll)
+    # Net Profit = Gross Profit - all expenses (operating + tools + divided proportional + payroll)
     # (BOM overhead is already in COGS)
-    net_profit = gross_profit - operating_expenses - divided_expenses_for_period - daily_payroll_for_period
+    net_profit = gross_profit - operating_expenses - tools_expenses - divided_expenses_for_period - daily_payroll_for_period
 
     # Outstanding Payments
     outstanding = db.session.query(func.sum(Sale.total - Sale.paid_amount)).filter(
@@ -279,6 +291,7 @@ def index():
                          total_cogs=total_cogs,
                          total_expenses=total_expenses,
                          operating_expenses=operating_expenses,
+                         tools_expenses=tools_expenses,
                          manufacturing_overhead=manufacturing_overhead,
                          daily_payroll_for_period=daily_payroll_for_period,
                          divided_expenses_for_period=divided_expenses_for_period,

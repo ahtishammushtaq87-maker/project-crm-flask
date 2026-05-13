@@ -36,7 +36,8 @@ def create_app(config_class=Config):
             PurchaseOrder, PurchaseOrderItem, CostPriceHistory, BOMVersion,
             BOMVersionItem, ProductionTarget, ProductionLog, PDProject,
             PDProjectBOM, PDComponent, PDTooling, PDTesting, PDApproval, PDAsset,
-            PurchaseReturn, PurchaseReturnItem, Unit, ActivityLog
+            PurchaseReturn, PurchaseReturnItem, Unit, ActivityLog,
+            ToolReceiving, ToolReceivingItem, ToolDelivering, ToolDeliveringItem, ToolSettings
         )
         from app.filter_models import SavedFilter
         
@@ -97,7 +98,12 @@ def create_app(config_class=Config):
             'purchase_return_items': PurchaseReturnItem,
             'saved_filters': SavedFilter,
             'units': Unit,
-            'activity_logs': ActivityLog
+            'activity_logs': ActivityLog,
+            'tool_receiving': ToolReceiving,
+            'tool_receiving_items': ToolReceivingItem,
+            'tool_delivering': ToolDelivering,
+            'tool_delivering_items': ToolDeliveringItem,
+            'tool_settings': ToolSettings
         }
         
         try:
@@ -222,6 +228,7 @@ def create_app(config_class=Config):
     from app.routes.filters import bp as filters_bp
     from app.routes.api import bp as api_bp
     from app.routes.activity_log import bp as activity_log_bp
+    from app.routes.tools import bp as tools_bp
 
     app.register_blueprint(dashboard_bp, url_prefix='/')
     app.register_blueprint(accounting_bp, url_prefix='/accounting')
@@ -244,6 +251,7 @@ def create_app(config_class=Config):
     app.register_blueprint(filters_bp, url_prefix='/api/filters')
     app.register_blueprint(api_bp, url_prefix='/api')
     app.register_blueprint(activity_log_bp, url_prefix='/activity-log')
+    app.register_blueprint(tools_bp, url_prefix='/tools')
     
     @app.context_processor
     def inject_company():

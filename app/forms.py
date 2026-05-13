@@ -147,6 +147,10 @@ class UserForm(FlaskForm):
     can_view_tasks = BooleanField('Tasks Access', default=False)
     can_view_profit_loss = BooleanField('Profit & Loss Access', default=False)
     can_view_users = BooleanField('User Management Access', default=False)
+    can_view_receiving = BooleanField('Tools Receiving Access', default=False)
+    can_view_delivering = BooleanField('Tools Delivering Access', default=False)
+
+    can_view_activity_logs = BooleanField('Activity Log Access', default=False)
     can_add_sales = BooleanField('Add Sales', default=False)
     can_add_purchases = BooleanField('Add Purchases', default=False)
     can_add_inventory = BooleanField('Add Inventory', default=False)
@@ -171,6 +175,9 @@ class UserForm(FlaskForm):
     can_add_tasks = BooleanField('Add Tasks', default=False)
     can_add_profit_loss = BooleanField('Add Profit Loss', default=False)
     can_add_users = BooleanField('Add Users', default=False)
+    can_add_receiving = BooleanField('Add Receiving', default=False)
+    can_add_delivering = BooleanField('Add Delivering', default=False)
+
     can_edit_sales = BooleanField('Edit Sales', default=False)
     can_edit_purchases = BooleanField('Edit Purchases', default=False)
     can_edit_inventory = BooleanField('Edit Inventory', default=False)
@@ -195,6 +202,9 @@ class UserForm(FlaskForm):
     can_edit_tasks = BooleanField('Edit Tasks', default=False)
     can_edit_profit_loss = BooleanField('Edit Profit Loss', default=False)
     can_edit_users = BooleanField('Edit Users', default=False)
+    can_edit_receiving = BooleanField('Edit Receiving', default=False)
+    can_edit_delivering = BooleanField('Edit Delivering', default=False)
+
     can_delete_sales = BooleanField('Delete Sales', default=False)
     can_delete_purchases = BooleanField('Delete Purchases', default=False)
     can_delete_inventory = BooleanField('Delete Inventory', default=False)
@@ -219,6 +229,10 @@ class UserForm(FlaskForm):
     can_delete_tasks = BooleanField('Delete Tasks', default=False)
     can_delete_profit_loss = BooleanField('Delete Profit Loss', default=False)
     can_delete_users = BooleanField('Delete Users', default=False)
+    can_delete_receiving = BooleanField('Delete Receiving', default=False)
+    can_delete_delivering = BooleanField('Delete Delivering', default=False)
+
+    can_delete_activity_logs = BooleanField('Delete Activity Logs', default=False)
 
 
 class UserEditForm(FlaskForm):
@@ -251,6 +265,9 @@ class UserEditForm(FlaskForm):
     can_view_tasks = BooleanField('Tasks Access', default=False)
     can_view_profit_loss = BooleanField('Profit & Loss Access', default=False)
     can_view_users = BooleanField('User Management Access', default=False)
+    can_view_receiving = BooleanField('Tools Receiving Access', default=False)
+    can_view_delivering = BooleanField('Tools Delivering Access', default=False)
+    can_view_activity_logs = BooleanField('Activity Log Access', default=False)
     can_add_sales = BooleanField('Add Sales', default=False)
     can_add_purchases = BooleanField('Add Purchases', default=False)
     can_add_inventory = BooleanField('Add Inventory', default=False)
@@ -275,6 +292,9 @@ class UserEditForm(FlaskForm):
     can_add_tasks = BooleanField('Add Tasks', default=False)
     can_add_profit_loss = BooleanField('Add Profit Loss', default=False)
     can_add_users = BooleanField('Add Users', default=False)
+    can_add_receiving = BooleanField('Add Receiving', default=False)
+    can_add_delivering = BooleanField('Add Delivering', default=False)
+
     can_edit_sales = BooleanField('Edit Sales', default=False)
     can_edit_purchases = BooleanField('Edit Purchases', default=False)
     can_edit_inventory = BooleanField('Edit Inventory', default=False)
@@ -299,6 +319,9 @@ class UserEditForm(FlaskForm):
     can_edit_tasks = BooleanField('Edit Tasks', default=False)
     can_edit_profit_loss = BooleanField('Edit Profit Loss', default=False)
     can_edit_users = BooleanField('Edit Users', default=False)
+    can_edit_receiving = BooleanField('Edit Receiving', default=False)
+    can_edit_delivering = BooleanField('Edit Delivering', default=False)
+
     can_delete_sales = BooleanField('Delete Sales', default=False)
     can_delete_purchases = BooleanField('Delete Purchases', default=False)
     can_delete_inventory = BooleanField('Delete Inventory', default=False)
@@ -323,6 +346,9 @@ class UserEditForm(FlaskForm):
     can_delete_tasks = BooleanField('Delete Tasks', default=False)
     can_delete_profit_loss = BooleanField('Delete Profit Loss', default=False)
     can_delete_users = BooleanField('Delete Users', default=False)
+    can_delete_receiving = BooleanField('Delete Receiving', default=False)
+    can_delete_delivering = BooleanField('Delete Delivering', default=False)
+    can_delete_activity_logs = BooleanField('Delete Activity Logs', default=False)
 
 
 class TaskForm(FlaskForm):

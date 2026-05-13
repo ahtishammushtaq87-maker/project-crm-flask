@@ -41,6 +41,9 @@ class User(UserMixin, db.Model):
     can_view_tasks = db.Column(db.Boolean, default=True)
     can_view_profit_loss = db.Column(db.Boolean, default=True)
     can_view_users = db.Column(db.Boolean, default=False)
+    can_view_receiving = db.Column(db.Boolean, default=True)
+    can_view_delivering = db.Column(db.Boolean, default=True)
+    can_view_activity_logs = db.Column(db.Boolean, default=False)
 
     # Permissions - Add
     can_add_sales = db.Column(db.Boolean, default=False)
@@ -67,6 +70,8 @@ class User(UserMixin, db.Model):
     can_add_tasks = db.Column(db.Boolean, default=False)
     can_add_profit_loss = db.Column(db.Boolean, default=False)
     can_add_users = db.Column(db.Boolean, default=False)
+    can_add_receiving = db.Column(db.Boolean, default=False)
+    can_add_delivering = db.Column(db.Boolean, default=False)
 
     # Permissions - Edit
     can_edit_sales = db.Column(db.Boolean, default=False)
@@ -93,6 +98,8 @@ class User(UserMixin, db.Model):
     can_edit_tasks = db.Column(db.Boolean, default=False)
     can_edit_profit_loss = db.Column(db.Boolean, default=False)
     can_edit_users = db.Column(db.Boolean, default=False)
+    can_edit_receiving = db.Column(db.Boolean, default=False)
+    can_edit_delivering = db.Column(db.Boolean, default=False)
 
     # Permissions - Delete
     can_delete_sales = db.Column(db.Boolean, default=False)
@@ -119,6 +126,9 @@ class User(UserMixin, db.Model):
     can_delete_tasks = db.Column(db.Boolean, default=False)
     can_delete_profit_loss = db.Column(db.Boolean, default=False)
     can_delete_users = db.Column(db.Boolean, default=False)
+    can_delete_receiving = db.Column(db.Boolean, default=False)
+    can_delete_delivering = db.Column(db.Boolean, default=False)
+    can_delete_activity_logs = db.Column(db.Boolean, default=False)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -2110,3 +2120,58 @@ class PDAsset(db.Model):
     
     def __repr__(self):
         return f'<PDAsset {self.project_id} - {self.asset_name}>'
+
+class ToolReceiving(db.Model):
+    __tablename__ = 'tool_receiving'
+    id = db.Column(db.Integer, primary_key=True)
+    receiving_number = db.Column(db.String(50), unique=True, index=True)
+    tool_name = db.Column(db.String(100))
+    date = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    description = db.Column(db.Text)
+    shipping_charges = db.Column(db.Float, default=0)
+    total_amount = db.Column(db.Float, default=0)
+    expense_id = db.Column(db.Integer, db.ForeignKey('expenses.id'), nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    items = db.relationship('ToolReceivingItem', backref='receiving', lazy=True, cascade='all, delete-orphan')
+    expense = db.relationship('Expense', backref='tool_receiving', lazy=True)
+
+class ToolReceivingItem(db.Model):
+    __tablename__ = 'tool_receiving_items'
+    id = db.Column(db.Integer, primary_key=True)
+    receiving_id = db.Column(db.Integer, db.ForeignKey('tool_receiving.id'), nullable=False, index=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    quantity = db.Column(db.Float, nullable=False)
+    unit_price = db.Column(db.Float, nullable=False)
+    total = db.Column(db.Float, nullable=False)
+    
+    product = db.relationship('Product', backref='tool_receivings', lazy=True)
+
+class ToolDelivering(db.Model):
+    __tablename__ = 'tool_delivering'
+    id = db.Column(db.Integer, primary_key=True)
+    delivering_number = db.Column(db.String(50), unique=True, index=True)
+    date = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    description = db.Column(db.Text)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    items = db.relationship('ToolDeliveringItem', backref='delivering', lazy=True, cascade='all, delete-orphan')
+
+class ToolDeliveringItem(db.Model):
+    __tablename__ = 'tool_delivering_items'
+    id = db.Column(db.Integer, primary_key=True)
+    delivering_id = db.Column(db.Integer, db.ForeignKey('tool_delivering.id'), nullable=False, index=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    quantity = db.Column(db.Float, nullable=False)
+    
+    product = db.relationship('Product', backref='tool_deliverings', lazy=True)
+
+class ToolSettings(db.Model):
+    __tablename__ = 'tool_settings'
+    id = db.Column(db.Integer, primary_key=True)
+    receiving_prefix = db.Column(db.String(10), default='TREC-')
+    delivering_prefix = db.Column(db.String(10), default='TDEL-')
+    next_receiving_number = db.Column(db.Integer, default=1)
+    next_delivering_number = db.Column(db.Integer, default=1)

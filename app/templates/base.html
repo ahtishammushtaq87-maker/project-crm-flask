@@ -829,6 +829,20 @@
                     <i class="fas fa-warehouse me-2"></i> Warehouses
                 </a>
                 {% endif %}
+                {% if current_user.is_admin or current_user.can_view_receiving or current_user.can_view_delivering %}
+                <a class="nav-link" data-bs-toggle="collapse" href="#mobileToolsSubmenu" role="button"
+                    aria-expanded="false" aria-controls="mobileToolsSubmenu">
+                    <i class="fas fa-tools me-2"></i> Tools ︾
+                </a>
+                <div class="collapse" id="mobileToolsSubmenu">
+                    {% if current_user.is_admin or current_user.can_view_receiving %}
+                    <a class="nav-link ps-4" href="{{ url_for('tools.receiving_list') }}">Receiving Tools</a>
+                    {% endif %}
+                    {% if current_user.is_admin or current_user.can_view_delivering %}
+                    <a class="nav-link ps-4" href="{{ url_for('tools.delivering_list') }}">Delivering Tools</a>
+                    {% endif %}
+                </div>
+                {% endif %}
                 {% if current_user.is_admin or current_user.can_view_categories %}
                 <a class="nav-link" href="{{ url_for('categories.categories') }}">
                     <i class="fas fa-tags me-2"></i> Product Categories
@@ -948,6 +962,11 @@
                     <i class="fas fa-clipboard-list me-2"></i> Tasks
                 </a>
                 {% endif %}
+                {% if current_user.is_admin or current_user.can_view_activity_logs %}
+                <a class="nav-link" href="{{ url_for('activity_log.index') }}">
+                    <i class="fas fa-history me-2"></i> Activity Log
+                </a>
+                {% endif %}
                 <hr class="bg-white">
                 <a class="nav-link" href="{{ url_for('auth.logout') }}">
                     <i class="fas fa-sign-out-alt me-2"></i> Logout
@@ -1016,6 +1035,20 @@
                         <a class="nav-link" href="{{ url_for('warehouse.warehouses') }}">
                             <i class="fas fa-warehouse me-2"></i> Warehouses
                         </a>
+                        {% endif %}
+                        {% if current_user.is_admin or current_user.can_view_receiving or current_user.can_view_delivering %}
+                        <a class="nav-link" data-bs-toggle="collapse" href="#toolsSubmenu" role="button"
+                            aria-expanded="false" aria-controls="toolsSubmenu">
+                            <i class="fas fa-tools me-2"></i> Tools ︾
+                        </a>
+                        <div class="collapse" id="toolsSubmenu">
+                            {% if current_user.is_admin or current_user.can_view_receiving %}
+                            <a class="nav-link ps-4" href="{{ url_for('tools.receiving_list') }}">Receiving Tools</a>
+                            {% endif %}
+                            {% if current_user.is_admin or current_user.can_view_delivering %}
+                            <a class="nav-link ps-4" href="{{ url_for('tools.delivering_list') }}">Delivering Tools</a>
+                            {% endif %}
+                        </div>
                         {% endif %}
                         {% if current_user.is_admin or current_user.can_view_categories %}
                         <a class="nav-link" href="{{ url_for('categories.categories') }}">
@@ -1118,7 +1151,7 @@
                             <i class="fas fa-users-cog me-2"></i> Users
                         </a>
                         {% endif %}
-                        {% if current_user.is_admin %}
+                        {% if current_user.is_admin or current_user.can_view_activity_logs %}
                         <a class="nav-link" href="{{ url_for('activity_log.index') }}">
                             <i class="fas fa-history me-2"></i> Activity Log
                         </a>

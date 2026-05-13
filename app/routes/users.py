@@ -73,6 +73,9 @@ def create_user():
             can_view_tasks=form.can_view_tasks.data,
             can_view_profit_loss=form.can_view_profit_loss.data,
             can_view_users=form.can_view_users.data,
+            can_view_receiving=form.can_view_receiving.data,
+            can_view_delivering=form.can_view_delivering.data,
+            can_view_activity_logs=form.can_view_activity_logs.data,
             can_add_sales=form.can_add_sales.data,
             can_add_purchases=form.can_add_purchases.data,
             can_add_inventory=form.can_add_inventory.data,
@@ -97,6 +100,8 @@ def create_user():
             can_add_tasks=form.can_add_tasks.data,
             can_add_profit_loss=form.can_add_profit_loss.data,
             can_add_users=form.can_add_users.data,
+            can_add_receiving=form.can_add_receiving.data,
+            can_add_delivering=form.can_add_delivering.data,
             can_edit_sales=form.can_edit_sales.data,
             can_edit_purchases=form.can_edit_purchases.data,
             can_edit_inventory=form.can_edit_inventory.data,
@@ -121,6 +126,8 @@ def create_user():
             can_edit_tasks=form.can_edit_tasks.data,
             can_edit_profit_loss=form.can_edit_profit_loss.data,
             can_edit_users=form.can_edit_users.data,
+            can_edit_receiving=form.can_edit_receiving.data,
+            can_edit_delivering=form.can_edit_delivering.data,
             can_delete_sales=form.can_delete_sales.data,
             can_delete_purchases=form.can_delete_purchases.data,
             can_delete_inventory=form.can_delete_inventory.data,
@@ -145,6 +152,9 @@ def create_user():
             can_delete_tasks=form.can_delete_tasks.data,
             can_delete_profit_loss=form.can_delete_profit_loss.data,
             can_delete_users=form.can_delete_users.data,
+            can_delete_receiving=form.can_delete_receiving.data,
+            can_delete_delivering=form.can_delete_delivering.data,
+            can_delete_activity_logs=form.can_delete_activity_logs.data,
         )
         # Set password - form is now required to have a password
         if form.password.data and form.password.data.strip():
@@ -199,6 +209,9 @@ def edit_user(id):
         user.can_view_tasks = form.can_view_tasks.data
         user.can_view_profit_loss = form.can_view_profit_loss.data
         user.can_view_users = form.can_view_users.data
+        user.can_view_receiving = form.can_view_receiving.data
+        user.can_view_delivering = form.can_view_delivering.data
+        user.can_view_activity_logs = form.can_view_activity_logs.data
         user.can_add_sales = form.can_add_sales.data
         user.can_add_purchases = form.can_add_purchases.data
         user.can_add_inventory = form.can_add_inventory.data
@@ -223,6 +236,8 @@ def edit_user(id):
         user.can_add_tasks = form.can_add_tasks.data
         user.can_add_profit_loss = form.can_add_profit_loss.data
         user.can_add_users = form.can_add_users.data
+        user.can_add_receiving = form.can_add_receiving.data
+        user.can_add_delivering = form.can_add_delivering.data
         user.can_edit_sales = form.can_edit_sales.data
         user.can_edit_purchases = form.can_edit_purchases.data
         user.can_edit_inventory = form.can_edit_inventory.data
@@ -247,6 +262,8 @@ def edit_user(id):
         user.can_edit_tasks = form.can_edit_tasks.data
         user.can_edit_profit_loss = form.can_edit_profit_loss.data
         user.can_edit_users = form.can_edit_users.data
+        user.can_edit_receiving = form.can_edit_receiving.data
+        user.can_edit_delivering = form.can_edit_delivering.data
         user.can_delete_sales = form.can_delete_sales.data
         user.can_delete_purchases = form.can_delete_purchases.data
         user.can_delete_inventory = form.can_delete_inventory.data
@@ -271,6 +288,9 @@ def edit_user(id):
         user.can_delete_tasks = form.can_delete_tasks.data
         user.can_delete_profit_loss = form.can_delete_profit_loss.data
         user.can_delete_users = form.can_delete_users.data
+        user.can_delete_receiving = form.can_delete_receiving.data
+        user.can_delete_delivering = form.can_delete_delivering.data
+        user.can_delete_activity_logs = form.can_delete_activity_logs.data
         if form.password.data and form.password.data.strip():
             user.set_password(form.password.data)
         db.session.commit()
@@ -307,6 +327,9 @@ def edit_user(id):
         form.can_view_tasks.data = getattr(user, 'can_view_tasks', True)
         form.can_view_profit_loss.data = getattr(user, 'can_view_profit_loss', True)
         form.can_view_users.data = getattr(user, 'can_view_users', False)
+        form.can_view_receiving.data = getattr(user, 'can_view_receiving', False)
+        form.can_view_delivering.data = getattr(user, 'can_view_delivering', False)
+        form.can_view_activity_logs.data = getattr(user, 'can_view_activity_logs', False)
         form.can_add_sales.data = getattr(user, 'can_add_sales', False)
         form.can_add_purchases.data = getattr(user, 'can_add_purchases', False)
         form.can_add_inventory.data = getattr(user, 'can_add_inventory', False)
@@ -331,6 +354,8 @@ def edit_user(id):
         form.can_add_tasks.data = getattr(user, 'can_add_tasks', False)
         form.can_add_profit_loss.data = getattr(user, 'can_add_profit_loss', False)
         form.can_add_users.data = getattr(user, 'can_add_users', False)
+        form.can_add_receiving.data = getattr(user, 'can_add_receiving', False)
+        form.can_add_delivering.data = getattr(user, 'can_add_delivering', False)
         form.can_edit_sales.data = getattr(user, 'can_edit_sales', False)
         form.can_edit_purchases.data = getattr(user, 'can_edit_purchases', False)
         form.can_edit_inventory.data = getattr(user, 'can_edit_inventory', False)
@@ -355,6 +380,8 @@ def edit_user(id):
         form.can_edit_tasks.data = getattr(user, 'can_edit_tasks', False)
         form.can_edit_profit_loss.data = getattr(user, 'can_edit_profit_loss', False)
         form.can_edit_users.data = getattr(user, 'can_edit_users', False)
+        form.can_edit_receiving.data = getattr(user, 'can_edit_receiving', False)
+        form.can_edit_delivering.data = getattr(user, 'can_edit_delivering', False)
         form.can_delete_sales.data = getattr(user, 'can_delete_sales', False)
         form.can_delete_purchases.data = getattr(user, 'can_delete_purchases', False)
         form.can_delete_inventory.data = getattr(user, 'can_delete_inventory', False)
@@ -379,6 +406,9 @@ def edit_user(id):
         form.can_delete_tasks.data = getattr(user, 'can_delete_tasks', False)
         form.can_delete_profit_loss.data = getattr(user, 'can_delete_profit_loss', False)
         form.can_delete_users.data = getattr(user, 'can_delete_users', False)
+        form.can_delete_receiving.data = getattr(user, 'can_delete_receiving', False)
+        form.can_delete_delivering.data = getattr(user, 'can_delete_delivering', False)
+        form.can_delete_activity_logs.data = getattr(user, 'can_delete_activity_logs', False)
     return render_template('users/edit.html', form=form, user=user)
 
 # Task Management Routes
