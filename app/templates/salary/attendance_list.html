@@ -185,6 +185,8 @@
                         <th>Clock In</th>
                         <th>Clock Out</th>
                         <th>Duration</th>
+                        <th>Break</th>
+                        <th>Deduction</th>
                         <th>Hourly Rate</th>
                         <th>Earned</th>
                         <th>Notes</th>
@@ -217,6 +219,23 @@
                             <td>
                                 <span class="time-badge">{{ record.get_time_summary() }}</span>
                             </td>
+                            <td>
+                                {% if record.used_break %}
+                                    <span class="badge bg-info text-white">1h</span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if record.deduct_hours > 0 or record.deduct_minutes > 0 %}
+                                    <span class="badge bg-danger text-white">{{ record.deduct_hours|int }}h {{ record.deduct_minutes }}m</span>
+                                    {% if record.deduct_reason %}
+                                        <i class="fas fa-comment-dots ms-1 text-primary" title="{{ record.deduct_reason }}" data-bs-toggle="tooltip"></i>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
                             <td>PKR {{ "%.2f"|format(record.hourly_rate) }}/h</td>
                             <td>
                                 <span class="earned-badge">PKR {{ "%.2f"|format(record.earned_amount) }}</span>
@@ -246,7 +265,7 @@
                         {% endfor %}
                     {% else %}
                         <tr>
-                            <td colspan="9" class="text-center py-4 text-muted">
+                            <td colspan="11" class="text-center py-4 text-muted">
                                 No attendance records found for the selected period.
                             </td>
                         </tr>

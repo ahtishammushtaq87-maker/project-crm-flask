@@ -179,8 +179,11 @@ def edit_attendance(attendance_id):
             else:
                 attendance.clock_out = None
             
-            # 3. Update break status, notes and recalculate
+            # 3. Update break status, custom deductions, notes and recalculate
             attendance.used_break = True if request.form.get('used_break') else False
+            attendance.deduct_hours = float(request.form.get('deduct_hours') or 0)
+            attendance.deduct_minutes = int(request.form.get('deduct_minutes') or 0)
+            attendance.deduct_reason = request.form.get('deduct_reason')
             attendance.notes = notes
             attendance.calculate_hours_worked()
             attendance.calculate_earned_amount() # This also recalculates hourly rate based on the date

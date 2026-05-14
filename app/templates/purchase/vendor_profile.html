@@ -53,7 +53,7 @@
                     <i class="fas fa-download me-1"></i> Export
                 </button>
                 <ul class="dropdown-menu">
-                    <li><a class="dropdown-item" href="{{ url_for('purchase.vendor_export_pdf', id=vendor.id, date_from=date_from, date_to=date_to) }}">
+                    <li><a class="dropdown-item" href="{{ url_for('purchase.vendor_export_pdf', id=vendor.id, date_from=date_from, date_to=date_to) }}" target="_blank">
                         <i class="fas fa-file-pdf text-danger me-2"></i> PDF
                     </a></li>
                     <li><a class="dropdown-item" href="{{ url_for('purchase.vendor_export_excel', id=vendor.id) }}">

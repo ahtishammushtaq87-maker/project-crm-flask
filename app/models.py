@@ -1400,6 +1400,9 @@ class Attendance(db.Model):
     earned_amount = db.Column(db.Float, default=0)  # Amount earned (hours_worked × hourly_rate + minutes contribution)
     notes = db.Column(db.Text)  # Optional notes (e.g., half day, late, etc.)
     used_break = db.Column(db.Boolean, default=True)  # Whether to subtract 1 hour break
+    deduct_hours = db.Column(db.Float, default=0)
+    deduct_minutes = db.Column(db.Integer, default=0)
+    deduct_reason = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     def __init__(self, staff_id, date, clock_in=None, clock_out=None, notes=None):
@@ -1413,7 +1416,7 @@ class Attendance(db.Model):
     staff = db.relationship('Staff', backref=db.backref('attendance_records', lazy=True, cascade='all, delete-orphan'))
     
     def calculate_hours_worked(self):
-        """Calculate hours and minutes worked from clock in/out times, optionally subtracting 1 hour break"""
+        """Calculate hours and minutes worked from clock in/out times, optionally subtracting 1 hour break and custom deductions"""
         if self.clock_in and self.clock_out:
             time_diff = self.clock_out - self.clock_in
             total_seconds = time_diff.total_seconds()
@@ -1421,10 +1424,22 @@ class Attendance(db.Model):
             # Calculate total minutes from raw difference
             total_minutes = int(total_seconds / 60)
             
-            # Subtract 1 hour break (60 minutes) ONLY if used_break is True and duration is >= 60 minutes
+            # 1. Standard 1-hour break (60 minutes)
             if self.used_break and total_minutes >= 60:
                 total_minutes -= 60
-            elif total_minutes < 0:
+            
+            # 2. Custom deductions (hours + minutes)
+            # Use getattr to safely handle cases where the object might not have the attributes yet
+            d_hours = getattr(self, 'deduct_hours', 0) or 0
+            d_mins = getattr(self, 'deduct_minutes', 0) or 0
+            custom_deduction_total_mins = int(d_hours * 60) + int(d_mins)
+            
+            if total_minutes >= custom_deduction_total_mins:
+                total_minutes -= custom_deduction_total_mins
+            else:
+                total_minutes = 0
+            
+            if total_minutes < 0:
                 total_minutes = 0
             
             self.hours_worked = total_minutes // 60

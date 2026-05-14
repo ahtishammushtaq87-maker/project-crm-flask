@@ -42,14 +42,33 @@
                     <textarea name="notes" class="form-control" rows="3" placeholder="e.g., Half day, Late, Medical leave, etc.">{{ attendance.notes or '' }}</textarea>
                 </div>
 
-                <div class="mb-4">
-                    <div class="form-check form-switch p-3 border rounded bg-light">
-                        <input class="form-check-input ms-0" type="checkbox" name="used_break" id="usedBreak" {% if attendance.used_break %}checked{% endif %}>
-                        <label class="form-check-label ms-2 fw-bold" for="usedBreak">
-                            🍴 Used 1-Hour Break (Subtract 60 mins)
-                        </label>
-                        <div class="form-text mt-1">
-                            If checked, the system will subtract 1 hour from the total duration.
+                <div class="card mb-4 border-0 shadow-sm">
+                    <div class="card-header bg-light border-0">
+                        <h6 class="mb-0 text-primary"><i class="fas fa-minus-circle me-1"></i> Deductions & Breaks</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-check form-switch mb-3 p-2 border rounded bg-white">
+                            <input class="form-check-input ms-0" type="checkbox" name="used_break" id="usedBreak" {% if attendance.used_break %}checked{% endif %}>
+                            <label class="form-check-label ms-2 fw-bold" for="usedBreak">
+                                🍴 Standard 1-Hour Break
+                            </label>
+                            <div class="form-text mt-1">Subtracts exactly 60 minutes.</div>
+                        </div>
+
+                        <div class="row g-2 align-items-center mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold">Custom Deduction (Hours)</label>
+                                <input type="number" name="deduct_hours" class="form-control" value="{{ attendance.deduct_hours or 0 }}" min="0" step="1">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold">Custom Deduction (Minutes)</label>
+                                <input type="number" name="deduct_minutes" class="form-control" value="{{ attendance.deduct_minutes or 0 }}" min="0" max="59" step="1">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="form-label small fw-bold">Deduction Reason</label>
+                            <textarea name="deduct_reason" class="form-control form-control-sm" rows="2" placeholder="e.g., Personal errand, specialized break, etc.">{{ attendance.deduct_reason or '' }}</textarea>
                         </div>
                     </div>
                 </div>
