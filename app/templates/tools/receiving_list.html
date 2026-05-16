@@ -89,7 +89,7 @@
                     <div>
                         <h6 class="text-white-50 small mb-1">Total Receiving Amount</h6>
                         <h3 class="mb-0">PKR{{ "{:,.2f}".format(stats.total_amount) }}</h3>
-                        <small class="text-white-50">Recorded as Tools Expense</small>
+                        <small class="text-white-50">Inventory Addition Value</small>
                     </div>
                     <div class="stats-icon opacity-50">
                         <i class="fas fa-tools fa-2x"></i>
@@ -125,6 +125,9 @@
                             <th>Receiving #</th>
                             <th>Date</th>
                             <th>Batch Name</th>
+                            <th>Buyer</th>
+                            <th>Vendor</th>
+                            <th>Requester</th>
                             <th>Tools / SKU</th>
                             <th class="text-end">Shipping</th>
                             <th class="text-end">Total Amount</th>
@@ -144,6 +147,9 @@
                             </td>
                             <td>{{ rec.date.strftime(date_format) }}</td>
                             <td>{{ rec.tool_name }}</td>
+                            <td class="small">{{ rec.buyer.name if rec.buyer else '-' }}</td>
+                            <td class="small">{{ rec.vendor_rel.name if rec.vendor_rel else '-' }}</td>
+                            <td class="small">{{ rec.requester.name if rec.requester else '-' }}</td>
                             <td>
                                 <div class="d-flex flex-wrap gap-1" style="max-width: 300px;">
                                     {% for item in rec.items %}

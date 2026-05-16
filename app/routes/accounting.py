@@ -1531,9 +1531,12 @@ def edit_expense(id):
                     form.mo_id.choices.append((linked_mo.id, f"{linked_mo.order_number} — {linked_mo.bom.product.name} (Not In Progress)"))
             else:
                 form.mo_id.choices.append((original_mo_id, f"MO ID {original_mo_id} (Deleted)"))
-        # Set the data to include the original mo_id
-        form.mo_id.data = [original_mo_id]
-    
+                
+    if request.method == 'GET':
+        if original_mo_id:
+            # Set the data to include the original mo_id
+            form.mo_id.data = [original_mo_id]
+        
     # Populate Payment Method choices
     from app.models import PaymentMethod
     methods = PaymentMethod.query.filter_by(is_active=True).order_by(PaymentMethod.name).all()
@@ -1543,22 +1546,23 @@ def edit_expense(id):
     if expense.payment_method and expense.payment_method not in [c[0] for c in form.payment_method.choices]:
         form.payment_method.choices.append((expense.payment_method, expense.payment_method + " (Inactive)"))
     
-    # Set current vendor selection
-    if expense.vendor_id:
-        form.vendor_id.data = expense.vendor_id
-    else:
-        form.vendor_id.data = 0
+    if request.method == 'GET':
+        # Set current vendor selection
+        if expense.vendor_id:
+            form.vendor_id.data = expense.vendor_id
+        else:
+            form.vendor_id.data = 0
+            
+        # product_id, bom_id, mo_id are SelectMultipleField — must be set as lists
+        if has_column('expenses', 'product_id') and expense.product_id:
+            form.product_id.data = [expense.product_id]
+        else:
+            form.product_id.data = []
         
-    # product_id, bom_id, mo_id are SelectMultipleField — must be set as lists
-    if has_column('expenses', 'product_id') and expense.product_id:
-        form.product_id.data = [expense.product_id]
-    else:
-        form.product_id.data = []
-    
-    if has_column('expenses', 'bom_id') and expense.bom_id:
-        form.bom_id.data = [expense.bom_id]
-    else:
-        form.bom_id.data = []
+        if has_column('expenses', 'bom_id') and expense.bom_id:
+            form.bom_id.data = [expense.bom_id]
+        else:
+            form.bom_id.data = []
         
     if form.validate_on_submit():
         # Store old overhead state to detect changes
@@ -1573,33 +1577,137 @@ def edit_expense(id):
         expense.category_id = form.category_id.data
         expense.vendor_id = form.vendor_id.data if form.vendor_id.data != 0 else None
         expense.description = form.description.data
-        expense.amount = form.amount.data
-        new_amount = expense.amount
-        expense.payment_method = form.payment_method.data
-        expense.reference = form.reference.data
-        expense.notes = form.notes.data
-        
+        # Track if we are dealing with overhead and multiple targets
         if has_column('expenses', 'is_bom_overhead'):
             expense.is_bom_overhead = form.is_bom_overhead.data
-            new_is_overhead = expense.is_bom_overhead
+            
+        new_is_overhead = expense.is_bom_overhead if has_column('expenses', 'is_bom_overhead') else False
+        pid_list = [p for p in (form.product_id.data or []) if p and p != 0]
+        bid_list = [b for b in (form.bom_id.data or []) if b and b != 0]
+        mo_list = [m for m in (form.mo_id.data or []) if m and m != 0]
+        
+        overhead_mode = request.form.get('overhead_mode', 'mo')
+        targets = []
+        if new_is_overhead:
+            if overhead_mode == 'mo': targets = [('mo', m) for m in mo_list]
+            elif overhead_mode == 'bulk': targets = [('product', p) for p in pid_list] + [('bom', b) for b in bid_list]
 
-        if has_column('expenses', 'product_id'):
-            # SelectMultipleField returns a list — take the first non-zero value for single-record edit
-            pid_list = [p for p in (form.product_id.data or []) if p and p != 0]
-            expense.product_id = pid_list[0] if pid_list else None
-        if has_column('expenses', 'bom_id'):
-            bid_list = [b for b in (form.bom_id.data or []) if b and b != 0]
-            expense.bom_id = bid_list[0] if bid_list else None
-        if has_column('expenses', 'mo_id'):
-            mo_list = [m for m in (form.mo_id.data or []) if m and m != 0]
-            expense.mo_id = mo_list[0] if mo_list else None
-            new_mo_id = expense.mo_id
+        num_targets = len(targets)
+        created_expenses = []
+
+        if new_is_overhead and num_targets > 1:
+            divided_amount = form.amount.data / num_targets
+            expense.amount = divided_amount
+            new_amount = divided_amount
+            
+            # Apply first target to original expense
+            first_type, first_id = targets[0]
+            if has_column('expenses', 'product_id'): expense.product_id = first_id if first_type == 'product' else None
+            if has_column('expenses', 'bom_id'): expense.bom_id = first_id if first_type == 'bom' else None
+            if has_column('expenses', 'mo_id'): expense.mo_id = first_id if first_type == 'mo' else None
+            
+            # Handle bill image upload (Must be done before duplicating for New Expenses)
+            if 'bill_image' in request.files:
+                bill_file = request.files['bill_image']
+                if bill_file and bill_file.filename:
+                    filename = secure_filename(bill_file.filename)
+                    bill_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
+                    os.makedirs(os.path.dirname(bill_path), exist_ok=True)
+                    bill_file.save(bill_path)
+                    expense.bill_image_path = bill_path.replace('\\', '/')
+                    
+            # Handle monthly division
+            if has_column('expenses', 'is_monthly_divided'):
+                expense.is_monthly_divided = form.is_monthly_divided.data
+                if form.is_monthly_divided.data:
+                    expense.monthly_start_date = form.monthly_start_date.data
+                    expense.monthly_end_date = form.monthly_end_date.data
+                    expense.calculate_daily_amount()
+                else:
+                    expense.daily_amount = 0
+            
+            db.session.flush() # flush to save changes to current expense first
+            
+            # Create rest of expenses
+            from app.routes.accounting import get_unique_expense_number
+            from app.models import ExpenseSettings
+            acc_settings = ExpenseSettings.query.first()
+            if not acc_settings:
+                acc_settings = ExpenseSettings()
+                db.session.add(acc_settings)
+                db.session.flush()
+            next_expense_num = acc_settings.next_number
+            
+            for i in range(1, num_targets):
+                t_type, t_id = targets[i]
+                exp_num, next_expense_num = get_unique_expense_number(acc_settings, next_expense_num)
+                
+                exp_kwargs = {
+                    'expense_number': exp_num,
+                    'amount': divided_amount,
+                    'is_bom_overhead': True,
+                    'status': expense.status,
+                    'created_by': current_user.id,
+                    'date': expense.date,
+                    'category_id': expense.category_id,
+                    'vendor_id': expense.vendor_id,
+                    'description': f"{expense.description} (Allocation {i+1}/{num_targets})",
+                    'payment_method': expense.payment_method,
+                    'reference': expense.reference,
+                    'notes': expense.notes,
+                }
+                if has_column('expenses', 'product_id'): exp_kwargs['product_id'] = t_id if t_type == 'product' else None
+                if has_column('expenses', 'bom_id'): exp_kwargs['bom_id'] = t_id if t_type == 'bom' else None
+                if has_column('expenses', 'mo_id'): exp_kwargs['mo_id'] = t_id if t_type == 'mo' else None
+                if has_column('expenses', 'bill_image_path'): exp_kwargs['bill_image_path'] = getattr(expense, 'bill_image_path', None)
+                
+                new_exp = Expense(**exp_kwargs)
+                if has_column('expenses', 'is_monthly_divided') and expense.is_monthly_divided:
+                    new_exp.is_monthly_divided = True
+                    new_exp.monthly_start_date = expense.monthly_start_date
+                    new_exp.monthly_end_date = expense.monthly_end_date
+                    new_exp.calculate_daily_amount()
+                db.session.add(new_exp)
+                created_expenses.append((new_exp, t_type, t_id))
+            acc_settings.next_number = next_expense_num
+            
+            # Update original expense description to show it's allocation 1
+            expense.description = f"{form.description.data} (Allocation 1/{num_targets})"
+            new_mo_id_val = expense.mo_id if has_column('expenses', 'mo_id') else None
+
+        else:
+            expense.amount = form.amount.data
+            new_amount = expense.amount
+            if has_column('expenses', 'product_id'):
+                expense.product_id = pid_list[0] if (pid_list and (not new_is_overhead or overhead_mode == 'bulk')) else None
+            if has_column('expenses', 'bom_id'):
+                expense.bom_id = bid_list[0] if (bid_list and (not new_is_overhead or overhead_mode == 'bulk')) else None
+            if has_column('expenses', 'mo_id'):
+                expense.mo_id = mo_list[0] if (mo_list and (not new_is_overhead or overhead_mode == 'mo')) else None
+            new_mo_id_val = expense.mo_id if has_column('expenses', 'mo_id') else None
+            
+            # Handle bill image upload
+            if 'bill_image' in request.files:
+                bill_file = request.files['bill_image']
+                if bill_file and bill_file.filename:
+                    filename = secure_filename(bill_file.filename)
+                    bill_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
+                    os.makedirs(os.path.dirname(bill_path), exist_ok=True)
+                    bill_file.save(bill_path)
+                    expense.bill_image_path = bill_path.replace('\\', '/')
+            
+            # Handle monthly division
+            if has_column('expenses', 'is_monthly_divided'):
+                expense.is_monthly_divided = form.is_monthly_divided.data
+                if form.is_monthly_divided.data:
+                    expense.monthly_start_date = form.monthly_start_date.data
+                    expense.monthly_end_date = form.monthly_end_date.data
+                    expense.calculate_daily_amount()
+                else:
+                    expense.daily_amount = 0
 
         # Update Manufacturing Order costs if MO association or amount changed
         from app.models import ManufacturingOrder
-        
-        new_is_overhead = expense.is_bom_overhead if has_column('expenses', 'is_bom_overhead') else False
-        new_mo_id_val = expense.mo_id if has_column('expenses', 'mo_id') else None
         
         # 1. Revert from old MO if it was overhead, had an MO, and was confirmed
         if old_is_overhead and old_mo_id and is_confirmed:
@@ -1608,36 +1716,21 @@ def edit_expense(id):
                 old_mo.actual_overhead_cost = max(0, (old_mo.actual_overhead_cost or 0) - old_amount)
                 old_mo.total_cost = (old_mo.actual_material_cost or 0) + (old_mo.actual_labor_cost or 0) + old_mo.actual_overhead_cost
 
-        # 2. Add to new MO if it is currently overhead, has an MO, and is confirmed
+        # 2. Add to new MO if it is currently overhead, has an MO, and is confirmed (For Original Expense)
         if new_is_overhead and new_mo_id_val and is_confirmed:
             new_mo = ManufacturingOrder.query.get(new_mo_id_val)
             if new_mo:
                 new_mo.actual_overhead_cost = (new_mo.actual_overhead_cost or 0) + new_amount
                 new_mo.total_cost = (new_mo.actual_material_cost or 0) + (new_mo.actual_labor_cost or 0) + new_mo.actual_overhead_cost
 
-        
-        # Handle bill image upload
-        if 'bill_image' in request.files:
-            bill_file = request.files['bill_image']
-            if bill_file and bill_file.filename:
-                filename = secure_filename(bill_file.filename)
-                bill_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
-                os.makedirs(os.path.dirname(bill_path), exist_ok=True)
-                bill_file.save(bill_path)
-                # Normalize path to use forward slashes for consistency
-                expense.bill_image_path = bill_path.replace('\\', '/')
-        
-        # Handle monthly division
-        if has_column('expenses', 'is_monthly_divided'):
-            expense.is_monthly_divided = form.is_monthly_divided.data
-            if form.is_monthly_divided.data:
-                expense.monthly_start_date = form.monthly_start_date.data
-                expense.monthly_end_date = form.monthly_end_date.data
-                # Recalculate daily amount
-                expense.calculate_daily_amount()
-            else:
-                expense.daily_amount = 0
-        
+        # 3. Add to new MOs for dynamically created expenses
+        for new_exp, target_type, target_id in created_expenses:
+            if target_type == 'mo' and new_exp.status == 'confirmed':
+                new_mo = ManufacturingOrder.query.get(target_id)
+                if new_mo:
+                    new_mo.actual_overhead_cost = (new_mo.actual_overhead_cost or 0) + new_exp.amount
+                    new_mo.total_cost = (new_mo.actual_material_cost or 0) + (new_mo.actual_labor_cost or 0) + new_mo.actual_overhead_cost
+                    
         db.session.commit()
         
         # Trigger BOM versioning if overhead status changed or if currently set as overhead

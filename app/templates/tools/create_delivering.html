@@ -13,9 +13,40 @@
                         <h5 class="mb-0">Delivery Details</h5>
                     </div>
                     <div class="card-body">
-                        <div class="mb-3">
-                            <label class="form-label">Date</label>
-                            <input type="date" name="date" class="form-control" value="{{ now.strftime('%Y-%m-%d') }}" required>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Date</label>
+                                <input type="date" name="date" class="form-control" value="{{ now.strftime('%Y-%m-%d') }}" required>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Buyer Name (Staff)</label>
+                                <select name="buyer_id" class="form-select searchable-select">
+                                    <option value="">Select Buyer</option>
+                                    {% for s in staff %}
+                                    <option value="{{ s.id }}">{{ s.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Vendor Name</label>
+                                <select name="vendor_id" class="form-select searchable-select">
+                                    <option value="">Select Vendor</option>
+                                    {% for v in vendors %}
+                                    <option value="{{ v.id }}">{{ v.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Requester Name (Staff)</label>
+                                <select name="requester_id" class="form-select searchable-select">
+                                    <option value="">Select Requester</option>
+                                    {% for s in staff %}
+                                    <option value="{{ s.id }}">{{ s.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Description / Reason</label>
@@ -26,7 +57,7 @@
 
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">Select Tools</h5>
+                        <h5 class="mb-0">Select Tools & Costs</h5>
                         <button type="button" class="btn btn-sm btn-primary" onclick="addItem()">
                             <i class="fas fa-plus"></i> Add Tool
                         </button>
@@ -34,10 +65,12 @@
                     <div class="card-body">
                         <div class="table-responsive">
                             <table class="table table-bordered mb-0" id="itemsTable">
-                                <thead class="table-light">
+                                <thead class="table-light text-center">
                                     <tr>
-                                        <th class="product-select-col">Tool / Product</th>
-                                        <th style="width: 30%;">Qty</th>
+                                        <th style="width: 45%;">Tool / Product</th>
+                                        <th style="width: 15%;">Qty</th>
+                                        <th style="width: 20%;">Price</th>
+                                        <th style="width: 20%;">Total</th>
                                         <th style="width: 50px;"></th>
                                     </tr>
                                 </thead>
@@ -47,14 +80,20 @@
                                             <select name="product_id[]" class="form-select product-select" required>
                                                 <option value="">Select Tool</option>
                                                 {% for product in products %}
-                                                <option value="{{ product.id }}">
+                                                <option value="{{ product.id }}" data-price="{{ product.unit_price or 0 }}">
                                                     {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity }})
                                                 </option>
                                                 {% endfor %}
                                             </select>
                                         </td>
                                         <td>
-                                            <input type="number" name="quantity[]" class="form-control" step="0.01" value="1" required>
+                                            <input type="number" name="quantity[]" class="form-control qty-input text-center" step="0.01" value="1" required onchange="calculateRow(this)">
+                                        </td>
+                                        <td>
+                                            <input type="number" name="price[]" class="form-control price-input text-end" step="0.01" value="0" required onchange="calculateRow(this)">
+                                        </td>
+                                        <td>
+                                            <input type="number" name="total[]" class="form-control total-input text-end" step="0.01" value="0.00" readonly>
                                         </td>
                                         <td>
                                             <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)">
@@ -70,12 +109,38 @@
             </div>
 
             <div class="col-md-4">
+                <div class="card shadow-sm border-danger mb-3">
+                    <div class="card-header bg-danger text-white">
+                        <h5 class="mb-0">Cost Summary (Expense)</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Shipping Charges</label>
+                            <input type="number" name="shipping_charges" id="shippingCharges" class="form-control" step="0.01" value="0" onchange="calculateGrandTotal()">
+                        </div>
+                        <div class="border-top pt-3">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="text-muted">Subtotal:</span>
+                                <span id="subtotalLabel" class="fw-bold">0.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h4 class="mb-0">Grand Total:</h4>
+                                <h4 class="mb-0 text-primary" id="grandTotalLabel">0.00</h4>
+                            </div>
+                        </div>
+                        <p class="text-muted small">
+                            <i class="fas fa-info-circle me-1"></i>
+                            This amount will be recorded as a <strong>Tools Expense</strong>.
+                        </p>
+                    </div>
+                </div>
+
                 <div class="card shadow-sm border-danger">
                     <div class="card-body text-center">
                         <i class="fas fa-exclamation-triangle text-danger fa-3x mb-3"></i>
                         <h5>Confirm Stock Deduction</h5>
                         <p class="text-muted">
-                            Proceeding will immediately reduce the selected tool quantities from your inventory records.
+                            Proceeding will immediately reduce the selected tool quantities and record the expense.
                         </p>
                         <button type="submit" class="btn btn-danger w-100 py-2 fw-bold">
                             <i class="fas fa-check-circle me-2"></i> Confirm Delivery
@@ -123,16 +188,42 @@
         const $select = $(newRow).find('.product-select');
         $select.removeClass('select2-hidden-accessible').removeAttr('data-select2-id').removeAttr('aria-hidden').val('');
         
-        newRow.querySelector('input').value = '1';
+        newRow.querySelector('.qty-input').value = '1';
+        newRow.querySelector('.price-input').value = '0';
+        newRow.querySelector('.total-input').value = '0.00';
         
         document.getElementById('itemsBody').appendChild(newRow);
         initSelect2($select, '— Search or Select Tool —');
+        calculateGrandTotal();
     }
 
     function removeItem(btn) {
         if (document.querySelectorAll('.item-row').length > 1) {
             btn.closest('.item-row').remove();
+            calculateGrandTotal();
         }
+    }
+
+    function calculateRow(input) {
+        const row = input.closest('.item-row');
+        const qty = parseFloat(row.querySelector('.qty-input').value) || 0;
+        const price = parseFloat(row.querySelector('.price-input').value) || 0;
+        const total = qty * price;
+        row.querySelector('.total-input').value = total.toFixed(2);
+        calculateGrandTotal();
+    }
+
+    function calculateGrandTotal() {
+        let subtotal = 0;
+        document.querySelectorAll('.total-input').forEach(input => {
+            subtotal += parseFloat(input.value) || 0;
+        });
+        
+        const shipping = parseFloat(document.getElementById('shippingCharges').value) || 0;
+        const grandTotal = subtotal + shipping;
+        
+        document.getElementById('subtotalLabel').innerText = subtotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('grandTotalLabel').innerText = grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
 
     function initSelect2(selector, placeholder) {
@@ -147,6 +238,16 @@
 
     $(document).ready(function() {
         initSelect2('.product-select', '— Search or Select Tool —');
+        initSelect2('.searchable-select', '— Search or Select —');
+        
+        $(document).on('change', '.product-select', function() {
+            const price = $(this).find(':selected').data('price') || 0;
+            const row = $(this).closest('.item-row');
+            row.find('.price-input').val(price);
+            calculateRow(row.find('.price-input')[0]);
+        });
+        
+        calculateGrandTotal();
     });
 </script>
 {% endblock %}

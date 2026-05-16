@@ -1,8 +1,44 @@
 {% extends "base.html" %}
+
 {% block title %}Receive Tools{% endblock %}
 
 {% block extra_css %}
 <style>
+    .select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__rendered {
+        display: flex;
+        flex-wrap: wrap;
+        padding: 0;
+        margin: 0;
+        gap: 4px;
+        width: 100%;
+    }
+    .select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__choice {
+        background-color: #e9ecef;
+        border: 1px solid #ced4da;
+        border-radius: 0.25rem;
+        padding: 2px 8px;
+        margin: 0;
+        font-size: 0.75rem;
+        display: flex;
+        align-items: center;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__choice__remove {
+        margin-right: 5px;
+        border: none;
+        background: transparent;
+        color: #dc3545;
+        font-weight: bold;
+        padding: 0;
+    }
+    /* Ensure dropdown doesn't get cut off */
+    .select2-container {
+        z-index: 9999;
+    }
+
     @media (max-width: 768px) {
         #itemsTable { min-width: 600px; }
     }
@@ -45,6 +81,35 @@
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Date</label>
                                 <input type="date" name="date" class="form-control" value="{{ now.strftime('%Y-%m-%d') }}" required>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Buyer Name (Staff)</label>
+                                <select name="buyer_id" class="form-select searchable-select">
+                                    <option value="">Select Buyer</option>
+                                    {% for s in staff %}
+                                    <option value="{{ s.id }}">{{ s.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Vendor Name</label>
+                                <select name="vendor_id" class="form-select searchable-select">
+                                    <option value="">Select Vendor</option>
+                                    {% for v in vendors %}
+                                    <option value="{{ v.id }}">{{ v.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Requester Name (Staff)</label>
+                                <select name="requester_id" class="form-select searchable-select">
+                                    <option value="">Select Requester</option>
+                                    {% for s in staff %}
+                                    <option value="{{ s.id }}">{{ s.name }}</option>
+                                    {% endfor %}
+                                </select>
                             </div>
                         </div>
                         <div class="mb-3">
@@ -118,6 +183,82 @@
                             <input type="number" name="shipping_charges" id="shippingChargesInput" class="form-control" step="0.01" value="0">
                         </div>
                         <hr>
+                        
+                        <!-- BOM Overhead Section -->
+                        <div class="mb-3">
+                            <div class="form-check form-switch p-2 border rounded bg-light d-flex align-items-center">
+                                <input class="form-check-input ms-2 me-3" type="checkbox" name="is_bom_overhead" id="is_bom_overhead">
+                                <label class="form-check-label fw-bold" for="is_bom_overhead">BOM Overhead Expense</label>
+                            </div>
+                            <div class="form-text small px-2">Check this if this expense should be counted towards manufacturing/BOM overhead costs.</div>
+                        </div>
+
+                        <div id="overhead_targets_container" style="display: none;">
+                            <div class="p-3 border rounded mb-3" style="background: #f8f9ff;">
+                                <h6 class="fw-bold mb-3 small">
+                                    <i class="fas fa-sitemap me-1"></i> How to allocate this overhead?
+                                </h6>
+
+                                <!-- Mode selector -->
+                                <div class="d-flex gap-2 mb-3">
+                                    <div class="form-check flex-fill border rounded p-2 bg-white overhead-mode-card" id="mode_mo_card" style="cursor:pointer;">
+                                        <input class="form-check-input" type="radio" name="overhead_mode" id="mode_mo" value="mo" checked>
+                                        <label class="form-check-label fw-bold small mb-0" for="mode_mo" style="cursor:pointer;">
+                                            <i class="fas fa-industry text-warning me-1"></i>
+                                            Manufacturing Order
+                                        </label>
+                                        <div class="smallest text-muted mt-1">Select one or multiple MOs.</div>
+                                    </div>
+                                    <div class="form-check flex-fill border rounded p-2 bg-white overhead-mode-card" id="mode_bulk_card" style="cursor:pointer;">
+                                        <input class="form-check-input" type="radio" name="overhead_mode" id="mode_bulk" value="bulk">
+                                        <label class="form-check-label fw-bold small mb-0" for="mode_bulk" style="cursor:pointer;">
+                                            <i class="fas fa-cubes text-primary me-1"></i>
+                                            Bulk Split
+                                        </label>
+                                        <div class="smallest text-muted mt-1">Split across Products/BOMs.</div>
+                                    </div>
+                                </div>
+
+                                <!-- Mode 1: MO picker -->
+                                <div id="mo_mode_section">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <label class="form-label small fw-semibold mb-0">
+                                            Manufacturing Orders 
+                                            <span id="mo_selection_summary" class="badge bg-info text-white ms-1" style="display:none;"></span>
+                                        </label>
+                                        <button type="button" class="btn btn-link btn-sm p-0 smallest text-decoration-none" id="selectAllMOs">Select All</button>
+                                    </div>
+                                    <select name="mo_ids[]" id="mo_ids" class="form-select select2-multi" multiple="multiple">
+                                        {% for mo in in_progress_mos %}
+                                        <option value="{{ mo.id }}">{{ mo.order_number }} - {{ mo.bom.product.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <div class="form-text smallest mt-1"><span class="badge bg-warning text-dark">In Progress Only</span></div>
+                                </div>
+
+                                <!-- Mode 2: Bulk product/BOM -->
+                                <div id="bulk_mode_section" style="display:none;">
+                                    <div class="mb-3">
+                                        <label class="form-label small fw-semibold">Products</label>
+                                        <select name="product_ids[]" id="product_ids" class="form-select select2-multi" multiple="multiple">
+                                            {% for p in manufactured_products %}
+                                            <option value="{{ p.id }}">{{ p.sku }} - {{ p.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="mb-0">
+                                        <label class="form-label small fw-semibold">BOMs</label>
+                                        <select name="bom_ids[]" id="bom_ids" class="form-select select2-multi" multiple="multiple">
+                                            {% for b in boms %}
+                                            <option value="{{ b.id }}">{{ b.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr>
                         <div class="d-flex justify-content-between mb-2">
                             <span>Items Total:</span>
                             <span id="itemsSubtotal">PKR 0.00</span>
@@ -131,10 +272,6 @@
                             <h4 class="mb-0">Total:</h4>
                             <h4 class="mb-0 text-primary" id="grandTotal">PKR 0.00</h4>
                         </div>
-                        <p class="text-muted small mt-2">
-                            <i class="fas fa-info-circle me-1"></i>
-                            This total will be recorded as a confirmed expense under "Tools Expense" category.
-                        </p>
                     </div>
                     <div class="card-footer">
                         <button type="submit" class="btn btn-success w-100">Create Receiving</button>
@@ -151,6 +288,72 @@
 <script>
     function updateGlobals() {
         initSelect2('.product-select', '— Search or Select Tool —');
+        initSelect2('.searchable-select', '— Search or Select —');
+        initSelect2('.select2-multi', '— Select Multi —');
+    }
+
+    // Overhead Allocation Logic
+    const isOverheadCheckbox = document.getElementById('is_bom_overhead');
+    const overheadContainer = document.getElementById('overhead_targets_container');
+    const modeMoRadio = document.getElementById('mode_mo');
+    const modeBulkRadio = document.getElementById('mode_bulk');
+    const moSection = document.getElementById('mo_mode_section');
+    const bulkSection = document.getElementById('bulk_mode_section');
+
+    const modeMoCard = document.getElementById('mode_mo_card');
+    const modeBulkCard = document.getElementById('mode_bulk_card');
+    const selectAllMOsBtn = document.getElementById('selectAllMOs');
+
+    // Multi-select summary update logic
+    $('#mo_ids').on('change', function() {
+        const count = $(this).val() ? $(this).val().length : 0;
+        const $summary = $('#mo_selection_summary');
+        if (count > 0) {
+            $summary.text(count + ' Selected').show();
+        } else {
+            $summary.hide();
+        }
+    });
+
+    // Trigger initial state
+    $('#mo_ids').trigger('change');
+
+    function toggleOverhead() {
+        overheadContainer.style.display = isOverheadCheckbox.checked ? 'block' : 'none';
+        if (!isOverheadCheckbox.checked) {
+            $('.select2-multi').val(null).trigger('change');
+        }
+    }
+
+    function toggleMode() {
+        const isMo = modeMoRadio.checked;
+        moSection.style.display = isMo ? 'block' : 'none';
+        bulkSection.style.display = isMo ? 'none' : 'block';
+        
+        // Update card styles
+        if (isMo) {
+            modeMoCard.classList.add('border-primary', 'bg-light');
+            modeBulkCard.classList.remove('border-primary', 'bg-light');
+            $('#product_ids, #bom_ids').val(null).trigger('change');
+        } else {
+            modeBulkCard.classList.add('border-primary', 'bg-light');
+            modeMoCard.classList.remove('border-primary', 'bg-light');
+            $('#mo_ids').val(null).trigger('change');
+        }
+    }
+
+    isOverheadCheckbox.addEventListener('change', toggleOverhead);
+    modeMoRadio.addEventListener('change', toggleMode);
+    modeBulkRadio.addEventListener('change', toggleMode);
+
+    modeMoCard.addEventListener('click', () => { modeMoRadio.checked = true; toggleMode(); });
+    modeBulkCard.addEventListener('click', () => { modeBulkRadio.checked = true; toggleMode(); });
+
+    if (selectAllMOsBtn) {
+        selectAllMOsBtn.addEventListener('click', function() {
+            const allOptions = Array.from(document.querySelectorAll('#mo_ids option')).map(opt => opt.value);
+            $('#mo_ids').val(allOptions).trigger('change');
+        });
     }
 
     function addItem() {
@@ -180,14 +383,16 @@
     function attachEvents(row) {
         const $select = $(row).find('.product-select');
         const $qty = row.querySelector('.quantity');
+        const $priceInput = row.querySelector('.price');
         
         $select.on('change', function() {
             const price = $(this).find(':selected').data('price') || 0;
-            row.querySelector('.price').value = price;
+            $priceInput.value = price;
             calculateItemTotal(row);
         });
         
         $qty.addEventListener('input', () => calculateItemTotal(row));
+        $priceInput.addEventListener('input', () => calculateItemTotal(row));
     }
 
     function calculateItemTotal(row) {
@@ -228,6 +433,10 @@
         updateGlobals();
         document.querySelectorAll('.item-row').forEach(attachEvents);
         document.getElementById('shippingChargesInput').addEventListener('input', calculateGrandTotal);
+        
+        // Ensure initial state
+        toggleOverhead();
+        toggleMode();
     });
 </script>
 {% endblock %}

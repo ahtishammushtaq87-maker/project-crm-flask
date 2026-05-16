@@ -2146,11 +2146,22 @@ class ToolReceiving(db.Model):
     shipping_charges = db.Column(db.Float, default=0)
     total_amount = db.Column(db.Float, default=0)
     expense_id = db.Column(db.Integer, db.ForeignKey('expenses.id'), nullable=True)
+    buyer_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=True)
+    vendor_id = db.Column(db.Integer, db.ForeignKey('vendors.id'), nullable=True)
+    requester_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # BOM Overhead Allocation fields
+    is_bom_overhead = db.Column(db.Boolean, default=False)
+    overhead_type = db.Column(db.String(20)) # 'mo', 'bulk'
+    allocated_ids = db.Column(db.Text) # Stored as comma-separated or JSON list for pre-filling UI
     
     items = db.relationship('ToolReceivingItem', backref='receiving', lazy=True, cascade='all, delete-orphan')
     expense = db.relationship('Expense', backref='tool_receiving', lazy=True)
+    buyer = db.relationship('Staff', foreign_keys=[buyer_id], backref='tool_purchases', lazy=True)
+    vendor_rel = db.relationship('Vendor', foreign_keys=[vendor_id], backref='tool_supplies', lazy=True)
+    requester = db.relationship('Staff', foreign_keys=[requester_id], backref='tool_requests', lazy=True)
 
 class ToolReceivingItem(db.Model):
     __tablename__ = 'tool_receiving_items'
@@ -2169,10 +2180,20 @@ class ToolDelivering(db.Model):
     delivering_number = db.Column(db.String(50), unique=True, index=True)
     date = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     description = db.Column(db.Text)
+    shipping_charges = db.Column(db.Float, default=0.0)
+    total_amount = db.Column(db.Float, default=0.0)
+    expense_id = db.Column(db.Integer, db.ForeignKey('expenses.id'), nullable=True)
+    buyer_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=True)
+    vendor_id = db.Column(db.Integer, db.ForeignKey('vendors.id'), nullable=True)
+    requester_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     items = db.relationship('ToolDeliveringItem', backref='delivering', lazy=True, cascade='all, delete-orphan')
+    expense = db.relationship('Expense', backref='tool_deliveries', lazy=True)
+    buyer = db.relationship('Staff', foreign_keys=[buyer_id], backref='tool_delivery_buys', lazy=True)
+    vendor_rel = db.relationship('Vendor', foreign_keys=[vendor_id], backref='tool_delivery_vendors', lazy=True)
+    requester = db.relationship('Staff', foreign_keys=[requester_id], backref='tool_delivery_requests', lazy=True)
 
 class ToolDeliveringItem(db.Model):
     __tablename__ = 'tool_delivering_items'
@@ -2180,6 +2201,8 @@ class ToolDeliveringItem(db.Model):
     delivering_id = db.Column(db.Integer, db.ForeignKey('tool_delivering.id'), nullable=False, index=True)
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
     quantity = db.Column(db.Float, nullable=False)
+    unit_price = db.Column(db.Float, default=0.0)
+    total = db.Column(db.Float, default=0.0)
     
     product = db.relationship('Product', backref='tool_deliverings', lazy=True)
 

@@ -832,14 +832,14 @@
                 {% if current_user.is_admin or current_user.can_view_receiving or current_user.can_view_delivering %}
                 <a class="nav-link" data-bs-toggle="collapse" href="#mobileToolsSubmenu" role="button"
                     aria-expanded="false" aria-controls="mobileToolsSubmenu">
-                    <i class="fas fa-tools me-2"></i> Tools ︾
+                    <i class="fas fa-tools me-2"></i> Vouchers ︾
                 </a>
                 <div class="collapse" id="mobileToolsSubmenu">
                     {% if current_user.is_admin or current_user.can_view_receiving %}
-                    <a class="nav-link ps-4" href="{{ url_for('tools.receiving_list') }}">Receiving Tools</a>
+                    <a class="nav-link ps-4" href="{{ url_for('tools.receiving_list') }}">Receiving Voucher</a>
                     {% endif %}
                     {% if current_user.is_admin or current_user.can_view_delivering %}
-                    <a class="nav-link ps-4" href="{{ url_for('tools.delivering_list') }}">Delivering Tools</a>
+                    <a class="nav-link ps-4" href="{{ url_for('tools.delivering_list') }}">Delivering Voucher</a>
                     {% endif %}
                 </div>
                 {% endif %}
@@ -1036,17 +1036,19 @@
                             <i class="fas fa-warehouse me-2"></i> Warehouses
                         </a>
                         {% endif %}
-                        {% if current_user.is_admin or current_user.can_view_receiving or current_user.can_view_delivering %}
+                        {% if current_user.is_admin or current_user.can_view_receiving or
+                        current_user.can_view_delivering %}
                         <a class="nav-link" data-bs-toggle="collapse" href="#toolsSubmenu" role="button"
                             aria-expanded="false" aria-controls="toolsSubmenu">
-                            <i class="fas fa-tools me-2"></i> Tools ︾
+                            <i class="fas fa-tools me-2"></i> Vouchers︾
                         </a>
                         <div class="collapse" id="toolsSubmenu">
                             {% if current_user.is_admin or current_user.can_view_receiving %}
-                            <a class="nav-link ps-4" href="{{ url_for('tools.receiving_list') }}">Receiving Tools</a>
+                            <a class="nav-link ps-4" href="{{ url_for('tools.receiving_list') }}">Receiving Voucher</a>
                             {% endif %}
                             {% if current_user.is_admin or current_user.can_view_delivering %}
-                            <a class="nav-link ps-4" href="{{ url_for('tools.delivering_list') }}">Delivering Tools</a>
+                            <a class="nav-link ps-4" href="{{ url_for('tools.delivering_list') }}">Delivering
+                                Voucher</a>
                             {% endif %}
                         </div>
                         {% endif %}
@@ -1801,7 +1803,7 @@
                 const container = this;
                 let isDown = true;
                 $(container).css('cursor', 'grabbing');
-                
+
                 const startX = e.pageX - container.offsetLeft;
                 const scrollLeft = container.scrollLeft;
 
@@ -1834,7 +1836,7 @@
             });
 
             // Universal Enhancement: Initialize other tables that aren't already DataTables
-            $('.table-responsive .table:not(.dataTable):not(.no-datatable)').each(function() {
+            $('.table-responsive .table:not(.dataTable):not(.no-datatable)').each(function () {
                 // Only auto-init if table has more than 5 rows to avoid affecting small UI elements
                 if ($(this).find('tbody tr').length > 5) {
                     $(this).DataTable({
@@ -1854,12 +1856,14 @@
         });
     </script>
     <!-- Global Entity History Modal -->
-    <div class="modal fade" id="entityHistoryModal" tabindex="-1" aria-labelledby="entityHistoryModalLabel" aria-hidden="true">
+    <div class="modal fade" id="entityHistoryModal" tabindex="-1" aria-labelledby="entityHistoryModalLabel"
+        aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="entityHistoryModalLabel">Entity Details</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <!-- Dynamic Content -->

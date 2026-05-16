@@ -83,8 +83,11 @@
                             <th>Delivering #</th>
                             <th>Date</th>
                             <th>Description</th>
+                            <th>Buyer</th>
+                            <th>Vendor</th>
+                            <th>Requester</th>
                             <th>Tools / SKU</th>
-                            <th>Total Items</th>
+                            <th>Total Amount</th>
                             <th class="text-center no-export">Actions</th>
                         </tr>
                     </thead>
@@ -101,6 +104,9 @@
                             </td>
                             <td>{{ del.date.strftime(date_format) }}</td>
                             <td>{{ del.description }}</td>
+                            <td class="small">{{ del.buyer.name if del.buyer else '-' }}</td>
+                            <td class="small">{{ del.vendor_rel.name if del.vendor_rel else '-' }}</td>
+                            <td class="small">{{ del.requester.name if del.requester else '-' }}</td>
                             <td>
                                 <div class="d-flex flex-wrap gap-1" style="max-width: 300px;">
                                     {% for item in del.items %}
@@ -110,7 +116,10 @@
                                     {% endfor %}
                                 </div>
                             </td>
-                            <td>{{ del.items|length }} items</td>
+                            <td>
+                                <div class="fw-bold text-primary">{{ "{:,.2f}".format(del.total_amount or 0) }}</div>
+                                <small class="text-muted">{{ del.items|length }} items</small>
+                            </td>
                             <td class="text-center no-export">
                                 <div class="btn-group btn-group-sm">
                                     <a href="{{ url_for('tools.delivering_detail', id=del.id) }}" class="btn btn-outline-primary" title="View"><i class="fas fa-eye"></i></a>

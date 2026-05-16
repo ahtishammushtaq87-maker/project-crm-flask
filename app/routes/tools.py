@@ -4,7 +4,8 @@ from app.utils import permission_required, log_activity
 from app import db
 from app.models import (
     ToolReceiving, ToolReceivingItem, ToolDelivering, ToolDeliveringItem, 
-    ToolSettings, Product, Expense, ExpenseCategory, Company
+    ToolSettings, Product, Expense, ExpenseCategory, Company, Staff, Vendor,
+    ManufacturingOrder, BOM
 )
 from datetime import datetime
 
@@ -63,6 +64,10 @@ def create_receiving():
         description = request.form.get('description')
         shipping_charges = float(request.form.get('shipping_charges') or 0)
         
+        buyer_id = request.form.get('buyer_id')
+        vendor_id = request.form.get('vendor_id')
+        requester_id = request.form.get('requester_id')
+        
         product_ids = request.form.getlist('product_id[]')
         quantities = request.form.getlist('quantity[]')
         prices = request.form.getlist('price[]') # selling price
@@ -93,27 +98,11 @@ def create_receiving():
         receiving_number = f"{settings.receiving_prefix}{settings.next_receiving_number}"
         settings.next_receiving_number += 1
         
-        # 1. Create Expense record
-        # Find or create "Tools Expense" category
-        category = ExpenseCategory.query.filter_by(name='Tools Expense').first()
-        if not category:
-            category = ExpenseCategory(name='Tools Expense', description='Expenses related to internal tools')
-            db.session.add(category)
-            db.session.flush()
-            
-        expense = Expense(
-            expense_number=f"EXP-TOOL-{receiving_number}",
-            description=f"Tool Receiving #{receiving_number}: {tool_name}",
-            amount=grand_total,
-            date=date,
-            category_id=category.id,
-            status='confirmed', # Auto-confirm to reflect in P&L
-            created_by=current_user.id
-        )
-        db.session.add(expense)
-        db.session.flush()
+        # BOM Overhead Allocation logic
+        is_bom_overhead = request.form.get('is_bom_overhead') == 'on'
+        overhead_mode = request.form.get('overhead_mode', 'mo')
         
-        # 2. Create ToolReceiving
+        # 1. Create ToolReceiving
         receiving = ToolReceiving(
             receiving_number=receiving_number,
             tool_name=tool_name,
@@ -121,11 +110,113 @@ def create_receiving():
             description=description,
             shipping_charges=shipping_charges,
             total_amount=grand_total,
-            expense_id=expense.id,
-            created_by=current_user.id
+            expense_id=None,
+            buyer_id=int(buyer_id) if buyer_id else None,
+            vendor_id=int(vendor_id) if vendor_id else None,
+            requester_id=int(requester_id) if requester_id else None,
+            created_by=current_user.id,
+            is_bom_overhead=is_bom_overhead,
+            overhead_type=overhead_mode if is_bom_overhead else None
         )
+        
         db.session.add(receiving)
         db.session.flush()
+
+        # Handle Expense Creation for BOM Overhead
+        if is_bom_overhead and grand_total > 0:
+            # Prepare common expense data
+            from app.routes.accounting import get_unique_expense_number
+            from app.models import ExpenseSettings
+            acc_settings = ExpenseSettings.query.first()
+            if not acc_settings:
+                acc_settings = ExpenseSettings()
+                db.session.add(acc_settings)
+                db.session.commit()
+            
+            next_num = acc_settings.next_number
+            category = ExpenseCategory.query.filter_by(name='BOM Overhead').first()
+            if not category:
+                category = ExpenseCategory(name='BOM Overhead', description='Automatically created for BOM overhead costs')
+                db.session.add(category)
+                db.session.commit()
+
+            common_kwargs = {
+                'category_id': category.id,
+                'vendor_id': receiving.vendor_id,
+                'date': receiving.date,
+                'description': f"BOM Overhead from Tool Receiving #{receiving_number}",
+                'payment_method': 'Cash', # Default
+                'reference': receiving_number,
+                'is_bom_overhead': True
+            }
+
+            allocated_ids = []
+            if overhead_mode == 'mo':
+                mo_ids = request.form.getlist('mo_ids[]')
+                valid_mos = ManufacturingOrder.query.filter(ManufacturingOrder.id.in_(mo_ids)).all()
+                allocated_ids = [str(mo.id) for mo in valid_mos]
+                
+                if valid_mos:
+                    amount_per_mo = grand_total / len(valid_mos)
+                    for mo in valid_mos:
+                        exp_num, next_num = get_unique_expense_number(acc_settings, next_num)
+                        exp = Expense(
+                            expense_number=exp_num,
+                            amount=amount_per_mo,
+                            status='confirmed',
+                            mo_id=mo.id,
+                            created_by=current_user.id,
+                            **common_kwargs
+                        )
+                        db.session.add(exp)
+                        # Update MO overhead
+                        mo.actual_overhead_cost = (mo.actual_overhead_cost or 0) + amount_per_mo
+                        mo.total_cost = (mo.actual_material_cost or 0) + (mo.actual_labor_cost or 0) + mo.actual_overhead_cost
+                else:
+                    # No MOs selected, create one unassigned expense
+                    exp_num, next_num = get_unique_expense_number(acc_settings, next_num)
+                    exp = Expense(expense_number=exp_num, amount=grand_total, status='confirmed', created_by=current_user.id, **common_kwargs)
+                    db.session.add(exp)
+            else:
+                # Bulk Split mode
+                product_ids = request.form.getlist('product_ids[]')
+                bom_ids = request.form.getlist('bom_ids[]')
+                
+                targets = []
+                for pid in product_ids:
+                    if pid: targets.append(('product', int(pid)))
+                for bid in bom_ids:
+                    if bid: targets.append(('bom', int(bid)))
+                
+                allocated_ids = [f"{t}:{id}" for t, id in targets]
+                
+                if targets:
+                    num_targets = len(targets)
+                    amount_per = grand_total / num_targets
+                    for target_type, target_id in targets:
+                        exp_num, next_num = get_unique_expense_number(acc_settings, next_num)
+                        exp_kwargs = dict(common_kwargs)
+                        if target_type == 'product':
+                            exp_kwargs['product_id'] = target_id
+                        else:
+                            exp_kwargs['bom_id'] = target_id
+                            
+                        exp = Expense(
+                            expense_number=exp_num,
+                            amount=amount_per,
+                            status='confirmed',
+                            created_by=current_user.id,
+                            **exp_kwargs
+                        )
+                        db.session.add(exp)
+                else:
+                    # Unassigned
+                    exp_num, next_num = get_unique_expense_number(acc_settings, next_num)
+                    exp = Expense(expense_number=exp_num, amount=grand_total, status='confirmed', created_by=current_user.id, **common_kwargs)
+                    db.session.add(exp)
+            
+            receiving.allocated_ids = ",".join(allocated_ids)
+            acc_settings.next_number = next_num
         
         # 3. Create Items and Update Inventory
         for item in valid_items:
@@ -149,7 +240,22 @@ def create_receiving():
         flash(f'Tool Receiving #{receiving_number} created successfully!', 'success')
         return redirect(url_for('tools.receiving_list'))
         
-    return render_template('tools/create_receiving.html', products=products, now=datetime.now())
+    staff = Staff.query.filter_by(is_active=True).all()
+    vendors = Vendor.query.filter_by(is_active=True).all()
+    
+    # BOM Overhead Allocation data
+    in_progress_mos = ManufacturingOrder.query.filter_by(status='In Progress').order_by(ManufacturingOrder.order_number).all()
+    manufactured_products = Product.query.filter_by(is_active=True).order_by(Product.name).all() # Could filter by is_manufactured
+    boms = BOM.query.filter_by(is_active=True).order_by(BOM.name).all()
+    
+    return render_template('tools/create_receiving.html', 
+                          products=products, 
+                          staff=staff, 
+                          vendors=vendors, 
+                          now=datetime.now(),
+                          in_progress_mos=in_progress_mos,
+                          manufactured_products=manufactured_products,
+                          boms=boms)
 
 @bp.route('/delivering')
 @login_required
@@ -194,28 +300,68 @@ def create_delivering():
         date = datetime.strptime(date_str, '%Y-%m-%d') if date_str else datetime.utcnow()
         description = request.form.get('description')
         
+        buyer_id = request.form.get('buyer_id')
+        vendor_id = request.form.get('vendor_id')
+        requester_id = request.form.get('requester_id')
+        shipping_charges = float(request.form.get('shipping_charges') or 0)
+        
         product_ids = request.form.getlist('product_id[]')
         quantities = request.form.getlist('quantity[]')
+        prices = request.form.getlist('price[]')
         
         valid_items = []
+        grand_total = 0
         for i in range(len(product_ids)):
             if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
+                qty = float(quantities[i])
+                price = float(prices[i] if i < len(prices) else 0)
+                total = qty * price
                 valid_items.append({
                     'product_id': int(product_ids[i]),
-                    'quantity': float(quantities[i])
+                    'quantity': qty,
+                    'unit_price': price,
+                    'total': total
                 })
+                grand_total += total
                 
         if not valid_items:
             flash('Please add at least one item.', 'danger')
             return redirect(url_for('tools.create_delivering'))
             
+        grand_total += shipping_charges
         delivering_number = f"{settings.delivering_prefix}{settings.next_delivering_number}"
         settings.next_delivering_number += 1
         
+        # 1. Create Expense record
+        category = ExpenseCategory.query.filter_by(name='Tools Expense').first()
+        if not category:
+            category = ExpenseCategory(name='Tools Expense', description='Expenses related to internal tools')
+            db.session.add(category)
+            db.session.flush()
+            
+        expense = Expense(
+            expense_number=f"EXP-TOOL-DEL-{delivering_number}",
+            description=f"Tool Delivery #{delivering_number}: {description[:50]}",
+            amount=grand_total,
+            date=date,
+            category_id=category.id,
+            status='confirmed',
+            created_by=current_user.id
+        )
+        db.session.add(expense)
+        db.session.flush()
+        
+        # 2. Create ToolDelivering
         delivering = ToolDelivering(
             delivering_number=delivering_number,
             date=date,
             description=description,
+            shipping_charges=shipping_charges,
+            total_amount=grand_total,
+            expense_id=expense.id,
+            buyer_id=int(buyer_id) if buyer_id else None,
+            vendor_id=int(vendor_id) if vendor_id else None,
+            requester_id=int(requester_id) if requester_id else None,
             created_by=current_user.id
         )
         db.session.add(delivering)
@@ -225,7 +371,9 @@ def create_delivering():
             del_item = ToolDeliveringItem(
                 delivering_id=delivering.id,
                 product_id=item['product_id'],
-                quantity=item['quantity']
+                quantity=item['quantity'],
+                unit_price=item['unit_price'],
+                total=item['total']
             )
             db.session.add(del_item)
             
@@ -240,7 +388,9 @@ def create_delivering():
         flash(f'Tool Delivering #{delivering_number} successful!', 'success')
         return redirect(url_for('tools.delivering_list'))
         
-    return render_template('tools/create_delivering.html', products=products, now=datetime.now())
+    staff = Staff.query.filter_by(is_active=True).all()
+    vendors = Vendor.query.filter_by(is_active=True).all()
+    return render_template('tools/create_delivering.html', products=products, staff=staff, vendors=vendors, now=datetime.now())
 
 @bp.route('/receiving/<int:id>/delete', methods=['POST'])
 @login_required
@@ -255,11 +405,15 @@ def delete_receiving(id):
         if product:
             product.update_quantity(-item.quantity)
             
-    # 2. Delete linked expense
-    if receiving.expense_id:
-        expense = Expense.query.get(receiving.expense_id)
-        if expense:
-            db.session.delete(expense)
+    # 2. Delete linked overhead expenses and update MO costs
+    expenses = Expense.query.filter_by(reference=receiving.receiving_number).all()
+    for exp in expenses:
+        if exp.is_bom_overhead and exp.mo_id:
+            mo = ManufacturingOrder.query.get(exp.mo_id)
+            if mo and exp.status == 'confirmed':
+                mo.actual_overhead_cost = max(0, (mo.actual_overhead_cost or 0) - exp.amount)
+                mo.total_cost = (mo.actual_material_cost or 0) + (mo.actual_labor_cost or 0) + mo.actual_overhead_cost
+        db.session.delete(exp)
             
     db.session.delete(receiving)
     db.session.commit()
@@ -279,6 +433,10 @@ def delete_delivering(id):
         product = Product.query.get(item.product_id)
         if product:
             product.update_quantity(item.quantity)
+            
+    # 2. Delete linked expense
+    if delivering.expense:
+        db.session.delete(delivering.expense)
             
     db.session.delete(delivering)
     db.session.commit()
@@ -319,6 +477,10 @@ def edit_receiving(id):
         receiving.description = request.form.get('description')
         receiving.shipping_charges = float(request.form.get('shipping_charges') or 0)
         
+        receiving.buyer_id = int(request.form.get('buyer_id')) if request.form.get('buyer_id') else None
+        receiving.vendor_id = int(request.form.get('vendor_id')) if request.form.get('vendor_id') else None
+        receiving.requester_id = int(request.form.get('requester_id')) if request.form.get('requester_id') else None
+        
         product_ids = request.form.getlist('product_id[]')
         quantities = request.form.getlist('quantity[]')
         prices = request.form.getlist('price[]')
@@ -347,17 +509,127 @@ def edit_receiving(id):
         
         receiving.total_amount = total_items_amount + receiving.shipping_charges
         
-        # Update linked expense
-        if receiving.expense:
-            receiving.expense.amount = receiving.total_amount
-            receiving.expense.date = receiving.date
-            receiving.expense.description = f"Tool Receiving #{receiving.receiving_number}: {receiving.tool_name}"
+        # BOM Overhead Allocation logic
+        is_bom_overhead = request.form.get('is_bom_overhead') == 'on'
+        overhead_mode = request.form.get('overhead_mode', 'mo')
+        
+        # Update Receiving overhead fields
+        receiving.is_bom_overhead = is_bom_overhead
+        receiving.overhead_type = overhead_mode if is_bom_overhead else None
+        
+        # Cleanup old expenses and revert MO costs
+        old_expenses = Expense.query.filter_by(reference=receiving.receiving_number).all()
+        for exp in old_expenses:
+            if exp.is_bom_overhead and exp.mo_id:
+                mo = ManufacturingOrder.query.get(exp.mo_id)
+                if mo and exp.status == 'confirmed':
+                    mo.actual_overhead_cost = max(0, (mo.actual_overhead_cost or 0) - exp.amount)
+                    mo.total_cost = (mo.actual_material_cost or 0) + (mo.actual_labor_cost or 0) + mo.actual_overhead_cost
+            db.session.delete(exp)
+        
+        # Re-create Expenses if needed
+        if is_bom_overhead and receiving.total_amount > 0:
+            from app.routes.accounting import get_unique_expense_number
+            from app.models import ExpenseSettings
+            acc_settings = ExpenseSettings.query.first() or ExpenseSettings()
+            if not acc_settings.id: db.session.add(acc_settings); db.session.flush()
             
+            next_num = acc_settings.next_number
+            category = ExpenseCategory.query.filter_by(name='BOM Overhead').first()
+            if not category:
+                category = ExpenseCategory(name='BOM Overhead', description='Automatically created for BOM overhead costs')
+                db.session.add(category)
+                db.session.flush()
+
+            common_kwargs = {
+                'category_id': category.id,
+                'vendor_id': receiving.vendor_id,
+                'date': receiving.date,
+                'description': f"BOM Overhead from Tool Receiving #{receiving.receiving_number} (Updated)",
+                'payment_method': 'Cash',
+                'reference': receiving.receiving_number,
+                'is_bom_overhead': True
+            }
+
+            allocated_ids = []
+            if overhead_mode == 'mo':
+                mo_ids = request.form.getlist('mo_ids[]')
+                valid_mos = ManufacturingOrder.query.filter(ManufacturingOrder.id.in_(mo_ids)).all()
+                allocated_ids = [str(mo.id) for mo in valid_mos]
+                
+                if valid_mos:
+                    amount_per_mo = receiving.total_amount / len(valid_mos)
+                    for mo in valid_mos:
+                        exp_num, next_num = get_unique_expense_number(acc_settings, next_num)
+                        exp = Expense(
+                            expense_number=exp_num,
+                            amount=amount_per_mo,
+                            status='confirmed',
+                            mo_id=mo.id,
+                            created_by=current_user.id,
+                            **common_kwargs
+                        )
+                        db.session.add(exp)
+                        mo.actual_overhead_cost = (mo.actual_overhead_cost or 0) + amount_per_mo
+                        mo.total_cost = (mo.actual_material_cost or 0) + (mo.actual_labor_cost or 0) + mo.actual_overhead_cost
+                else:
+                    exp_num, next_num = get_unique_expense_number(acc_settings, next_num)
+                    exp = Expense(expense_number=exp_num, amount=receiving.total_amount, status='confirmed', created_by=current_user.id, **common_kwargs)
+                    db.session.add(exp)
+            else:
+                # Bulk Split mode
+                product_ids = request.form.getlist('product_ids[]')
+                bom_ids = request.form.getlist('bom_ids[]')
+                targets = []
+                for pid in product_ids:
+                    if pid: targets.append(('product', int(pid)))
+                for bid in bom_ids:
+                    if bid: targets.append(('bom', int(bid)))
+                
+                allocated_ids = [f"{t}:{id}" for t, id in targets]
+                
+                if targets:
+                    num_targets = len(targets)
+                    amount_per = receiving.total_amount / num_targets
+                    for target_type, target_id in targets:
+                        exp_num, next_num = get_unique_expense_number(acc_settings, next_num)
+                        exp_kwargs = dict(common_kwargs)
+                        if target_type == 'product': exp_kwargs['product_id'] = target_id
+                        else: exp_kwargs['bom_id'] = target_id
+                        exp = Expense(expense_number=exp_num, amount=amount_per, status='confirmed', created_by=current_user.id, **exp_kwargs)
+                        db.session.add(exp)
+                else:
+                    exp_num, next_num = get_unique_expense_number(acc_settings, next_num)
+                    exp = Expense(expense_number=exp_num, amount=receiving.total_amount, status='confirmed', created_by=current_user.id, **common_kwargs)
+                    db.session.add(exp)
+            
+            receiving.allocated_ids = ",".join(allocated_ids)
+            acc_settings.next_number = next_num
+
         db.session.commit()
         flash('Tool Receiving updated successfully!', 'success')
         return redirect(url_for('tools.receiving_list'))
         
-    return render_template('tools/edit_receiving.html', receiving=receiving, products=products)
+    staff = Staff.query.filter_by(is_active=True).all()
+    vendors = Vendor.query.filter_by(is_active=True).all()
+    
+    # BOM Overhead Allocation data
+    in_progress_mos = ManufacturingOrder.query.filter_by(status='In Progress').order_by(ManufacturingOrder.order_number).all()
+    manufactured_products = Product.query.filter_by(is_active=True).order_by(Product.name).all()
+    boms = BOM.query.filter_by(is_active=True).order_by(BOM.name).all()
+    
+    # Pre-process allocated_ids for the template (already stored as comma separated string)
+    allocated_list = receiving.allocated_ids.split(',') if receiving.allocated_ids else []
+    
+    return render_template('tools/edit_receiving.html', 
+                          receiving=receiving, 
+                          products=products, 
+                          staff=staff, 
+                          vendors=vendors,
+                          in_progress_mos=in_progress_mos,
+                          manufactured_products=manufactured_products,
+                          boms=boms,
+                          allocated_list=allocated_list)
 
 @bp.route('/delivering/<int:id>')
 @login_required
@@ -388,18 +660,30 @@ def edit_delivering(id):
         # Update details
         date_str = request.form.get('date')
         delivering.date = datetime.strptime(date_str, '%Y-%m-%d') if date_str else delivering.date
-        delivering.description = request.form.get('description')
+        delivering.shipping_charges = float(request.form.get('shipping_charges') or 0)
+        
+        delivering.buyer_id = int(request.form.get('buyer_id')) if request.form.get('buyer_id') else None
+        delivering.vendor_id = int(request.form.get('vendor_id')) if request.form.get('vendor_id') else None
+        delivering.requester_id = int(request.form.get('requester_id')) if request.form.get('requester_id') else None
         
         product_ids = request.form.getlist('product_id[]')
         quantities = request.form.getlist('quantity[]')
+        prices = request.form.getlist('price[]')
         
+        total_items_amount = 0
         for i in range(len(product_ids)):
             if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
                 qty = float(quantities[i])
+                price = float(prices[i] if i < len(prices) else 0)
+                total = qty * price
+                total_items_amount += total
+                
                 item = ToolDeliveringItem(
                     delivering_id=delivering.id,
                     product_id=int(product_ids[i]),
-                    quantity=qty
+                    quantity=qty,
+                    unit_price=price,
+                    total=total
                 )
                 db.session.add(item)
                 
@@ -407,12 +691,41 @@ def edit_delivering(id):
                 product = Product.query.get(int(product_ids[i]))
                 if product:
                     product.update_quantity(-qty)
-                    
+        
+        delivering.total_amount = total_items_amount + delivering.shipping_charges
+        
+        # Update or create linked expense
+        if not delivering.expense:
+            category = ExpenseCategory.query.filter_by(name='Tools Expense').first()
+            if not category:
+                category = ExpenseCategory(name='Tools Expense', description='Expenses related to internal tools')
+                db.session.add(category)
+                db.session.flush()
+                
+            expense = Expense(
+                expense_number=f"EXP-TOOL-DEL-{delivering.delivering_number}",
+                description=f"Tool Delivery #{delivering.delivering_number}: {delivering.description[:50]}",
+                amount=delivering.total_amount,
+                date=delivering.date,
+                category_id=category.id,
+                status='confirmed',
+                created_by=current_user.id
+            )
+            db.session.add(expense)
+            db.session.flush()
+            delivering.expense_id = expense.id
+        else:
+            delivering.expense.amount = delivering.total_amount
+            delivering.expense.date = delivering.date
+            delivering.expense.description = f"Tool Delivery #{delivering.delivering_number}: {delivering.description[:50]}"
+            
         db.session.commit()
         flash('Tool Delivering updated successfully!', 'success')
         return redirect(url_for('tools.delivering_list'))
         
-    return render_template('tools/edit_delivering.html', delivering=delivering, products=products)
+    staff = Staff.query.filter_by(is_active=True).all()
+    vendors = Vendor.query.filter_by(is_active=True).all()
+    return render_template('tools/edit_delivering.html', delivering=delivering, products=products, staff=staff, vendors=vendors)
 
 @bp.route('/receiving/bulk-delete', methods=['POST'])
 @login_required
@@ -427,10 +740,14 @@ def bulk_delete_receiving():
                 product = Product.query.get(item.product_id)
                 if product:
                     product.update_quantity(-item.quantity)
-            if receiving.expense_id:
-                expense = Expense.query.get(receiving.expense_id)
-                if expense:
-                    db.session.delete(expense)
+            expenses = Expense.query.filter_by(reference=receiving.receiving_number).all()
+            for exp in expenses:
+                if exp.is_bom_overhead and exp.mo_id:
+                    mo = ManufacturingOrder.query.get(exp.mo_id)
+                    if mo and exp.status == 'confirmed':
+                        mo.actual_overhead_cost = max(0, (mo.actual_overhead_cost or 0) - exp.amount)
+                        mo.total_cost = (mo.actual_material_cost or 0) + (mo.actual_labor_cost or 0) + mo.actual_overhead_cost
+                db.session.delete(exp)
             db.session.delete(receiving)
     db.session.commit()
     return jsonify({'success': True, 'message': f'Deleted {len(ids)} receiving records.'})
@@ -448,6 +765,8 @@ def bulk_delete_delivering():
                 product = Product.query.get(item.product_id)
                 if product:
                     product.update_quantity(item.quantity)
+            if delivering.expense:
+                db.session.delete(delivering.expense)
             db.session.delete(delivering)
     db.session.commit()
     return jsonify({'success': True, 'message': f'Deleted {len(ids)} delivering records.'})

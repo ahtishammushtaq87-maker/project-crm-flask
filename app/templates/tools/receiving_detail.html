@@ -39,15 +39,31 @@
                         <label class="text-muted small d-block">Description</label>
                         <p class="mb-0">{{ receiving.description or 'No description' }}</p>
                     </div>
+                    {% if receiving.is_bom_overhead %}
+                    <div class="mb-0 mt-3 p-2 border rounded bg-light">
+                        <label class="text-muted small d-block mb-1">
+                            <i class="fas fa-industry me-1"></i> BOM Overhead
+                        </label>
+                        <span class="badge bg-warning text-dark">
+                            {% if receiving.overhead_type == 'mo' %}Linked to MOs{% else %}Bulk Split{% endif %}
+                        </span>
+                        {% if receiving.allocated_ids %}
+                        <div class="mt-2 small text-muted">
+                            <strong>Allocation:</strong> {{ receiving.allocated_ids }}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
                     {% if receiving.expense %}
                     <hr>
                     <div class="mb-0">
-                        <label class="text-muted small d-block">Linked Expense</label>
+                        <label class="text-muted small d-block">Linked Expenses</label>
                         <span class="badge bg-success">Confirmed</span>
                         <div class="mt-1">
-                            <small class="text-primary fw-bold">{{ receiving.expense.expense_number }}</small>
+                            <small class="text-primary fw-bold">Manual/Reference: {{ receiving.receiving_number }}</small>
                             <br>
-                            <small>Amt: PKR {{ "{:,.2f}".format(receiving.expense.amount) }}</small>
+                            <small>Total Cost: PKR {{ "{:,.2f}".format(receiving.total_amount) }}</small>
                         </div>
                     </div>
                     {% endif %}
