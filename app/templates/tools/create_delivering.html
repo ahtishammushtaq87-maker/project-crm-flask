@@ -3,9 +3,9 @@
 
 {% block content %}
 <div class="container-fluid">
-    <h2 class="mb-4">Deliver Tools (Deduct Quantity)</h2>
+    <h2 class="mb-4">Deliver Voucher (Deduct Quantity)</h2>
 
-    <form method="POST" id="deliveringForm">
+    <form method="POST" id="deliveringForm" enctype="multipart/form-data">
         <div class="row">
             <div class="col-md-8">
                 <div class="card mb-3">
@@ -16,7 +16,8 @@
                         <div class="row mb-3">
                             <div class="col-md-6">
                                 <label class="form-label">Date</label>
-                                <input type="date" name="date" class="form-control" value="{{ now.strftime('%Y-%m-%d') }}" required>
+                                <input type="date" name="date" class="form-control"
+                                    value="{{ now.strftime('%Y-%m-%d') }}" required>
                             </div>
                         </div>
                         <div class="row">
@@ -50,16 +51,17 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Description / Reason</label>
-                            <textarea name="description" class="form-control" rows="3" placeholder="Why are these tools being delivered? (e.g. Scrapped, Lost, Out for maintenance)..." required></textarea>
+                            <textarea name="description" class="form-control" rows="3"
+                                placeholder="Reason for Delivering Voucher" required></textarea>
                         </div>
                     </div>
                 </div>
 
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">Select Tools & Costs</h5>
+                        <h5 class="mb-0">Select Items & Costs</h5>
                         <button type="button" class="btn btn-sm btn-primary" onclick="addItem()">
-                            <i class="fas fa-plus"></i> Add Tool
+                            <i class="fas fa-plus"></i> Add Items
                         </button>
                     </div>
                     <div class="card-body">
@@ -67,7 +69,7 @@
                             <table class="table table-bordered mb-0" id="itemsTable">
                                 <thead class="table-light text-center">
                                     <tr>
-                                        <th style="width: 45%;">Tool / Product</th>
+                                        <th style="width: 45%;">Items / Product</th>
                                         <th style="width: 15%;">Qty</th>
                                         <th style="width: 20%;">Price</th>
                                         <th style="width: 20%;">Total</th>
@@ -78,25 +80,34 @@
                                     <tr class="item-row">
                                         <td>
                                             <select name="product_id[]" class="form-select product-select" required>
-                                                <option value="">Select Tool</option>
+                                                <option value="">Select Item</option>
                                                 {% for product in products %}
-                                                <option value="{{ product.id }}" data-price="{{ product.unit_price or 0 }}">
-                                                    {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity }})
+                                                <option value="{{ product.id }}"
+                                                    data-price="{{ '%.2f'|format(product.cost_price or 0) }}">
+                                                    {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity
+                                                    }})
                                                 </option>
                                                 {% endfor %}
                                             </select>
                                         </td>
                                         <td>
-                                            <input type="number" name="quantity[]" class="form-control qty-input text-center" step="0.01" value="1" required onchange="calculateRow(this)">
+                                            <input type="number" name="quantity[]"
+                                                class="form-control qty-input text-center" step="0.01" value="1"
+                                                required onchange="calculateRow(this)">
                                         </td>
                                         <td>
-                                            <input type="number" name="price[]" class="form-control price-input text-end" step="0.01" value="0" required onchange="calculateRow(this)">
+                                            <input type="number" name="price[]"
+                                                class="form-control price-input text-end" step="0.01" value="0" required
+                                                onchange="calculateRow(this)">
                                         </td>
                                         <td>
-                                            <input type="number" name="total[]" class="form-control total-input text-end" step="0.01" value="0.00" readonly>
+                                            <input type="number" name="total[]"
+                                                class="form-control total-input text-end" step="0.01" value="0.00"
+                                                readonly>
                                         </td>
                                         <td>
-                                            <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)">
+                                            <button type="button" class="btn btn-sm btn-danger"
+                                                onclick="removeItem(this)">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         </td>
@@ -116,7 +127,18 @@
                     <div class="card-body">
                         <div class="mb-3">
                             <label class="form-label">Shipping Charges</label>
-                            <input type="number" name="shipping_charges" id="shippingCharges" class="form-control" step="0.01" value="0" onchange="calculateGrandTotal()">
+                            <input type="number" name="shipping_charges" id="shippingCharges" class="form-control"
+                                step="0.01" value="0" onchange="calculateGrandTotal()">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Upload Bill/Receipt</label>
+                            <input type="file" name="bill_image" class="form-control" accept="image/*,.pdf" onchange="previewBill(this)">
+                            <div id="billPreviewContainer" class="mt-2 text-center" style="display: none;">
+                                <img id="billPreviewImg" src="" class="img-thumbnail img-fluid" style="max-height: 200px; display: none;" alt="Preview">
+                                <span id="billPreviewPdf" class="badge bg-info p-2 mt-1" style="display: none;">
+                                    <i class="fas fa-file-pdf me-1"></i> PDF File Selected
+                                </span>
+                            </div>
                         </div>
                         <div class="border-top pt-3">
                             <div class="d-flex justify-content-between align-items-center mb-1">
@@ -130,7 +152,7 @@
                         </div>
                         <p class="text-muted small">
                             <i class="fas fa-info-circle me-1"></i>
-                            This amount will be recorded as a <strong>Tools Expense</strong>.
+                            This amount will be recorded as a <strong>Expense</strong>.
                         </p>
                     </div>
                 </div>
@@ -140,12 +162,13 @@
                         <i class="fas fa-exclamation-triangle text-danger fa-3x mb-3"></i>
                         <h5>Confirm Stock Deduction</h5>
                         <p class="text-muted">
-                            Proceeding will immediately reduce the selected tool quantities and record the expense.
+                            Proceeding will immediately reduce the selected item quantities and record the expense.
                         </p>
                         <button type="submit" class="btn btn-danger w-100 py-2 fw-bold">
                             <i class="fas fa-check-circle me-2"></i> Confirm Delivery
                         </button>
-                        <a href="{{ url_for('tools.delivering_list') }}" class="btn btn-outline-secondary w-100 mt-2">Cancel</a>
+                        <a href="{{ url_for('tools.delivering_list') }}"
+                            class="btn btn-outline-secondary w-100 mt-2">Cancel</a>
                     </div>
                 </div>
             </div>
@@ -157,20 +180,26 @@
 {% block extra_css %}
 <style>
     @media (max-width: 768px) {
-        #itemsTable { min-width: 600px; }
+        #itemsTable {
+            min-width: 600px;
+        }
     }
+
     .product-select-col {
         width: 60% !important;
     }
+
     #itemsTable {
         table-layout: fixed;
         width: 100%;
     }
+
     #itemsTable td {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
+
     .select2-container {
         width: 100% !important;
         max-width: 100%;
@@ -180,18 +209,39 @@
 
 {% block extra_js %}
 <script>
+    function previewBill(input) {
+        const file = input.files[0];
+        const container = document.getElementById('billPreviewContainer');
+        const img = document.getElementById('billPreviewImg');
+        const pdf = document.getElementById('billPreviewPdf');
+        
+        if (file) {
+            container.style.display = 'block';
+            if (file.type === 'application/pdf') {
+                img.style.display = 'none';
+                pdf.style.display = 'inline-block';
+            } else if (file.type.startsWith('image/')) {
+                pdf.style.display = 'none';
+                img.style.display = 'inline-block';
+                img.src = URL.createObjectURL(file);
+            }
+        } else {
+            container.style.display = 'none';
+        }
+    }
+
     function addItem() {
         const firstRow = document.querySelector('.item-row');
         const newRow = firstRow.cloneNode(true);
-        
+
         $(newRow).find('.select2-container').remove();
         const $select = $(newRow).find('.product-select');
         $select.removeClass('select2-hidden-accessible').removeAttr('data-select2-id').removeAttr('aria-hidden').val('');
-        
+
         newRow.querySelector('.qty-input').value = '1';
         newRow.querySelector('.price-input').value = '0';
         newRow.querySelector('.total-input').value = '0.00';
-        
+
         document.getElementById('itemsBody').appendChild(newRow);
         initSelect2($select, '— Search or Select Tool —');
         calculateGrandTotal();
@@ -218,12 +268,12 @@
         document.querySelectorAll('.total-input').forEach(input => {
             subtotal += parseFloat(input.value) || 0;
         });
-        
+
         const shipping = parseFloat(document.getElementById('shippingCharges').value) || 0;
         const grandTotal = subtotal + shipping;
-        
-        document.getElementById('subtotalLabel').innerText = subtotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        document.getElementById('grandTotalLabel').innerText = grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+        document.getElementById('subtotalLabel').innerText = subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        document.getElementById('grandTotalLabel').innerText = grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
     function initSelect2(selector, placeholder) {
@@ -236,17 +286,17 @@
         });
     }
 
-    $(document).ready(function() {
+    $(document).ready(function () {
         initSelect2('.product-select', '— Search or Select Tool —');
         initSelect2('.searchable-select', '— Search or Select —');
-        
-        $(document).on('change', '.product-select', function() {
+
+        $(document).on('change', '.product-select', function () {
             const price = $(this).find(':selected').data('price') || 0;
             const row = $(this).closest('.item-row');
             row.find('.price-input').val(price);
             calculateRow(row.find('.price-input')[0]);
         });
-        
+
         calculateGrandTotal();
     });
 </script>

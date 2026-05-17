@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Tool Settings{% endblock %}
+{% block title %}Voucher Settings{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
-        <h2 class="h3 mb-0 text-gray-800">Tool Settings</h2>
+        <h2 class="h3 mb-0 text-gray-800">Voucher Settings</h2>
         <a href="{{ url_for('tools.receiving_list') }}" class="btn btn-outline-secondary">
             <i class="fas fa-arrow-left me-1"></i> Back to Tools
         </a>
@@ -22,11 +22,13 @@
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Prefix</label>
-                                <input type="text" name="receiving_prefix" class="form-control" value="{{ settings.receiving_prefix }}">
+                                <input type="text" name="receiving_prefix" class="form-control"
+                                    value="{{ settings.receiving_prefix }}">
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Next Number</label>
-                                <input type="number" name="next_receiving_number" class="form-control" value="{{ settings.next_receiving_number }}">
+                                <input type="number" name="next_receiving_number" class="form-control"
+                                    value="{{ settings.next_receiving_number }}">
                             </div>
                         </div>
 
@@ -36,11 +38,13 @@
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Prefix</label>
-                                <input type="text" name="delivering_prefix" class="form-control" value="{{ settings.delivering_prefix }}">
+                                <input type="text" name="delivering_prefix" class="form-control"
+                                    value="{{ settings.delivering_prefix }}">
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Next Number</label>
-                                <input type="number" name="next_delivering_number" class="form-control" value="{{ settings.next_delivering_number }}">
+                                <input type="number" name="next_delivering_number" class="form-control"
+                                    value="{{ settings.next_delivering_number }}">
                             </div>
                         </div>
 

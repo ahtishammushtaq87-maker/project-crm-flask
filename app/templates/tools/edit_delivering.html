@@ -4,23 +4,33 @@
 {% block extra_css %}
 <style>
     @media (max-width: 768px) {
-        #itemsTable { min-width: 600px; }
+        #itemsTable {
+            min-width: 600px;
+        }
     }
+
     .product-select-col {
         width: 60% !important;
     }
+
     #itemsTable {
         table-layout: fixed;
         width: 100%;
     }
+
     #itemsTable td {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
+
     .select2-container {
         width: 100% !important;
         max-width: 100%;
+    }
+
+    .hidden-on-load {
+        display: none;
     }
 </style>
 {% endblock %}
@@ -28,13 +38,13 @@
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
-        <h2 class="h3 mb-0 text-gray-800">Edit Tool Delivery: {{ delivering.delivering_number }}</h2>
+        <h2 class="h3 mb-0 text-gray-800">Edit Delivery Voucher: {{ delivering.delivering_number }}</h2>
         <a href="{{ url_for('tools.delivering_list') }}" class="btn btn-outline-secondary">
             <i class="fas fa-times me-1"></i> Cancel
         </a>
     </div>
 
-    <form method="POST" id="deliveringForm">
+    <form method="POST" id="deliveringForm" enctype="multipart/form-data">
         <div class="row">
             <div class="col-md-8">
                 <div class="card mb-3">
@@ -45,7 +55,8 @@
                         <div class="row mb-3">
                             <div class="col-md-6">
                                 <label class="form-label">Date</label>
-                                <input type="date" name="date" class="form-control" value="{{ delivering.date.strftime('%Y-%m-%d') }}" required>
+                                <input type="date" name="date" class="form-control"
+                                    value="{{ delivering.date.strftime('%Y-%m-%d') }}" required>
                             </div>
                         </div>
                         <div class="row">
@@ -54,7 +65,8 @@
                                 <select name="buyer_id" class="form-select searchable-select">
                                     <option value="">Select Buyer</option>
                                     {% for s in staff %}
-                                    <option value="{{ s.id }}" {% if delivering.buyer_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+                                    <option value="{{ s.id }}" {% if delivering.buyer_id==s.id %}selected{% endif %}>{{
+                                        s.name }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
@@ -63,7 +75,8 @@
                                 <select name="vendor_id" class="form-select searchable-select">
                                     <option value="">Select Vendor</option>
                                     {% for v in vendors %}
-                                    <option value="{{ v.id }}" {% if delivering.vendor_id == v.id %}selected{% endif %}>{{ v.name }}</option>
+                                    <option value="{{ v.id }}" {% if delivering.vendor_id==v.id %}selected{% endif %}>{{
+                                        v.name }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
@@ -72,14 +85,16 @@
                                 <select name="requester_id" class="form-select searchable-select">
                                     <option value="">Select Requester</option>
                                     {% for s in staff %}
-                                    <option value="{{ s.id }}" {% if delivering.requester_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+                                    <option value="{{ s.id }}" {% if delivering.requester_id==s.id %}selected{% endif
+                                        %}>{{ s.name }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Description / Reason</label>
-                            <textarea name="description" class="form-control" rows="3" required>{{ delivering.description }}</textarea>
+                            <textarea name="description" class="form-control" rows="3"
+                                required>{{ delivering.description }}</textarea>
                         </div>
                     </div>
                 </div>
@@ -96,7 +111,7 @@
                             <table class="table table-bordered mb-0" id="itemsTable">
                                 <thead class="table-light text-center">
                                     <tr>
-                                        <th style="width: 45%;">Tool / Product</th>
+                                        <th style="width: 45%;">Item / Product</th>
                                         <th style="width: 15%;">Qty</th>
                                         <th style="width: 20%;">Price</th>
                                         <th style="width: 20%;">Total</th>
@@ -110,23 +125,34 @@
                                             <select name="product_id[]" class="form-select product-select" required>
                                                 <option value="">Select Tool</option>
                                                 {% for product in products %}
-                                                <option value="{{ product.id }}" data-price="{{ product.unit_price or 0 }}" {% if product.id == item.product_id %}selected{% endif %}>
-                                                    {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity }})
+                                                <option value="{{ product.id }}"
+                                                    data-price="{{ '%.2f'|format(product.cost_price or 0) }}" {% if
+                                                    product.id==item.product_id %}selected{% endif %}>
+                                                    {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity
+                                                    }})
                                                 </option>
                                                 {% endfor %}
                                             </select>
                                         </td>
                                         <td>
-                                            <input type="number" name="quantity[]" class="form-control qty-input text-center" step="0.01" value="{{ item.quantity }}" required onchange="calculateRow(this)">
+                                            <input type="number" name="quantity[]"
+                                                class="form-control qty-input text-center" step="0.01"
+                                                value="{{ item.quantity }}" required onchange="calculateRow(this)">
                                         </td>
                                         <td>
-                                            <input type="number" name="price[]" class="form-control price-input text-end" step="0.01" value="{{ item.unit_price or 0 }}" required onchange="calculateRow(this)">
+                                            <input type="number" name="price[]"
+                                                class="form-control price-input text-end" step="0.01"
+                                                value="{{ item.unit_price or 0 }}" required
+                                                onchange="calculateRow(this)">
                                         </td>
                                         <td>
-                                            <input type="number" name="total[]" class="form-control total-input text-end" step="0.01" value="{{ item.total or 0.00 }}" readonly>
+                                            <input type="number" name="total[]"
+                                                class="form-control total-input text-end" step="0.01"
+                                                value="{{ item.total or 0.00 }}" readonly>
                                         </td>
                                         <td>
-                                            <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)">
+                                            <button type="button" class="btn btn-sm btn-danger"
+                                                onclick="removeItem(this)">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         </td>
@@ -147,7 +173,23 @@
                     <div class="card-body">
                         <div class="mb-3">
                             <label class="form-label">Shipping Charges</label>
-                            <input type="number" name="shipping_charges" id="shippingCharges" class="form-control" step="0.01" value="{{ delivering.shipping_charges or 0 }}" onchange="calculateGrandTotal()">
+                            <input type="number" name="shipping_charges" id="shippingCharges" class="form-control"
+                                step="0.01" value="{{ delivering.shipping_charges or 0 }}"
+                                onchange="calculateGrandTotal()">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Upload Bill/Receipt</label>
+                            <input type="file" name="bill_image" class="form-control" accept="image/*,.pdf" onchange="previewBill(this)">
+                            {% set is_pdf = delivering.bill_image_path and delivering.bill_image_path.endswith('.pdf') %}
+                            <div id="billPreviewContainer" class="mt-2 text-center {% if not delivering.bill_image_path %}hidden-on-load{% endif %}">
+                                <img id="billPreviewImg" src="{% if delivering.bill_image_path and not is_pdf %}{{ url_for('static', filename=delivering.bill_image_path.replace('app/static/', '')) }}{% endif %}" class="img-thumbnail img-fluid {% if not delivering.bill_image_path or is_pdf %}hidden-on-load{% endif %}" style="max-height: 200px;" alt="Preview">
+                                <span id="billPreviewPdf" class="badge bg-info p-2 mt-1 {% if not delivering.bill_image_path or not is_pdf %}hidden-on-load{% endif %}">
+                                    <i class="fas fa-file-pdf me-1"></i> PDF File Selected/Uploaded
+                                </span>
+                                {% if delivering.bill_image_path %}
+                                <div class="mt-1 small text-muted" id="currentFileText"><i class="fas fa-paperclip"></i> Current file uploaded</div>
+                                {% endif %}
+                            </div>
                         </div>
                         <div class="border-top pt-3">
                             <div class="d-flex justify-content-between align-items-center mb-1">
@@ -171,7 +213,8 @@
                         <i class="fas fa-exclamation-triangle text-danger fa-3x mb-3"></i>
                         <h5>Confirm Stock Update</h5>
                         <p class="text-muted">
-                            Editing will revert the previous deduction and apply the new one, updating the expense amount.
+                            Editing will revert the previous deduction and apply the new one, updating the expense
+                            amount.
                         </p>
                         <button type="submit" class="btn btn-danger w-100 py-2 fw-bold">
                             <i class="fas fa-check-circle me-2"></i> Update Delivery
@@ -186,20 +229,45 @@
 
 {% block extra_js %}
 <script>
-    function addItem() {
+    function previewBill(input) {
+        const file = input.files[0];
+        const container = document.getElementById('billPreviewContainer');
+        const img = document.getElementById('billPreviewImg');
+        const pdf = document.getElementById('billPreviewPdf');
+        const currentText = document.getElementById('currentFileText');
+        
+        if (file) {
+            container.style.display = 'block';
+            if (currentText) currentText.style.display = 'none';
+            if (file.type === 'application/pdf') {
+                img.style.display = 'none';
+                pdf.style.display = 'inline-block';
+                pdf.innerHTML = '<i class="fas fa-file-pdf me-1"></i> New PDF Selected';
+            } else if (file.type.startsWith('image/')) {
+                pdf.style.display = 'none';
+                img.style.display = 'inline-block';
+                img.src = URL.createObjectURL(file);
+            }
+        } else {
+            // Revert logic is complex, just hiding if no file was loaded originally
+            if (!currentText) container.style.display = 'none';
+        }
+    }
+
+    function updateGlobals() {
         const firstRow = document.querySelector('.item-row');
         const newRow = firstRow.cloneNode(true);
-        
+
         $(newRow).find('.select2-container').remove();
         const $select = $(newRow).find('.product-select');
         $select.removeClass('select2-hidden-accessible').removeAttr('data-select2-id').removeAttr('aria-hidden').val('');
-        
+
         newRow.querySelector('.qty-input').value = '1';
         newRow.querySelector('.price-input').value = '0';
         newRow.querySelector('.total-input').value = '0.00';
-        
+
         document.getElementById('itemsBody').appendChild(newRow);
-        initSelect2($select, '— Search or Select Tool —');
+        initSelect2($select, '— Search or Select Item —');
         calculateGrandTotal();
     }
 
@@ -224,12 +292,12 @@
         document.querySelectorAll('.total-input').forEach(input => {
             subtotal += parseFloat(input.value) || 0;
         });
-        
+
         const shipping = parseFloat(document.getElementById('shippingCharges').value) || 0;
         const grandTotal = subtotal + shipping;
-        
-        document.getElementById('subtotalLabel').innerText = subtotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        document.getElementById('grandTotalLabel').innerText = grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+        document.getElementById('subtotalLabel').innerText = subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        document.getElementById('grandTotalLabel').innerText = grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
     function initSelect2(selector, placeholder) {
@@ -242,17 +310,17 @@
         });
     }
 
-    $(document).ready(function() {
-        initSelect2('.product-select', '— Search or Select Tool —');
+    $(document).ready(function () {
+        initSelect2('.product-select', '— Search or Select Item —');
         initSelect2('.searchable-select', '— Search or Select —');
-        
-        $(document).on('change', '.product-select', function() {
+
+        $(document).on('change', '.product-select', function () {
             const price = $(this).find(':selected').data('price') || 0;
             const row = $(this).closest('.item-row');
             row.find('.price-input').val(price);
             calculateRow(row.find('.price-input')[0]);
         });
-        
+
         // Initial calculation for existing items
         document.querySelectorAll('.item-row').forEach(row => {
             calculateRow(row.querySelector('.qty-input'));

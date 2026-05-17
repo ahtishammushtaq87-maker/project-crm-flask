@@ -9,7 +9,7 @@
             checkboxClass: 'delivering-checkbox',
             bulkDeleteBtnId: 'bulkDeleteBtn',
             deleteUrl: "{{ url_for('tools.bulk_delete_delivering') }}",
-            entityName: 'tool deliverings'
+            entityName: 'item deliverings'
         });
         $('.select2-filter').select2({
             theme: 'bootstrap-5',
@@ -40,18 +40,21 @@
             <form method="GET" action="{{ url_for('tools.delivering_list') }}" class="row g-3 align-items-end">
                 <div class="col-md-3">
                     <label class="form-label small fw-bold">From Date</label>
-                    <input type="date" name="from_date" class="form-control form-control-sm" value="{{ filters.from_date }}">
+                    <input type="date" name="from_date" class="form-control form-control-sm"
+                        value="{{ filters.from_date }}">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label small fw-bold">To Date</label>
-                    <input type="date" name="to_date" class="form-control form-control-sm" value="{{ filters.to_date }}">
+                    <input type="date" name="to_date" class="form-control form-control-sm"
+                        value="{{ filters.to_date }}">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label small fw-bold">Filter by Tool</label>
                     <select name="product_id" class="form-select form-select-sm select2-filter">
                         <option value="">— All Tools —</option>
                         {% for product in products %}
-                        <option value="{{ product.id }}" {% if filters.product_id|string == product.id|string %}selected{% endif %}>
+                        <option value="{{ product.id }}" {% if filters.product_id|string==product.id|string %}selected{%
+                            endif %}>
                             {{ product.sku }} - {{ product.name }}
                         </option>
                         {% endfor %}
@@ -95,7 +98,8 @@
                         {% for del in deliverings %}
                         <tr>
                             <td class="text-center no-export">
-                                <input type="checkbox" class="form-check-input delivering-checkbox" value="{{ del.id }}">
+                                <input type="checkbox" class="form-check-input delivering-checkbox"
+                                    value="{{ del.id }}">
                             </td>
                             <td class="fw-bold">
                                 <a href="{{ url_for('tools.delivering_detail', id=del.id) }}">
@@ -122,13 +126,25 @@
                             </td>
                             <td class="text-center no-export">
                                 <div class="btn-group btn-group-sm">
-                                    <a href="{{ url_for('tools.delivering_detail', id=del.id) }}" class="btn btn-outline-primary" title="View"><i class="fas fa-eye"></i></a>
+                                    {% if del.bill_image_path %}
+                                    <button type="button" class="btn btn-outline-info" title="View Bill"
+                                        data-bill-url="{{ url_for('static', filename=del.bill_image_path.replace('app/static/', '')) }}"
+                                        onclick="showBillPreview(this.getAttribute('data-bill-url'))">
+                                        <i class="fas fa-file-invoice"></i>
+                                    </button>
+                                    {% endif %}
+                                    <a href="{{ url_for('tools.delivering_detail', id=del.id) }}"
+                                        class="btn btn-outline-primary" title="View"><i class="fas fa-eye"></i></a>
                                     {% if current_user.has_permission('delivering', 'edit') %}
-                                    <a href="{{ url_for('tools.edit_delivering', id=del.id) }}" class="btn btn-outline-secondary" title="Edit"><i class="fas fa-edit"></i></a>
+                                    <a href="{{ url_for('tools.edit_delivering', id=del.id) }}"
+                                        class="btn btn-outline-secondary" title="Edit"><i class="fas fa-edit"></i></a>
                                     {% endif %}
                                     {% if current_user.has_permission('delivering', 'delete') %}
-                                    <form action="{{ url_for('tools.delete_delivering', id=del.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Delete this tool delivering? Inventory will be reverted.');">
-                                        <button type="submit" class="btn btn-outline-danger" title="Delete"><i class="fas fa-trash"></i></button>
+                                    <form action="{{ url_for('tools.delete_delivering', id=del.id) }}" method="POST"
+                                        class="d-inline"
+                                        onsubmit="return confirm('Delete this item delivering? Inventory will be reverted.');">
+                                        <button type="submit" class="btn btn-outline-danger" title="Delete"><i
+                                                class="fas fa-trash"></i></button>
                                     </form>
                                     {% endif %}
                                 </div>
@@ -136,7 +152,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="7" class="text-center py-4 text-muted">No tool delivering records found.</td>
+                            <td colspan="7" class="text-center py-4 text-muted">No item delivering records found.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -145,4 +161,42 @@
         </div>
     </div>
 </div>
+
+<!-- Bill Preview Modal -->
+<div class="modal fade" id="billPreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Bill / Receipt Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="billPreviewImage" src="" alt="Bill Preview" class="img-fluid"
+                    style="max-height: 70vh; display: none;">
+                <iframe id="billPreviewPdf" src="" style="width: 100%; height: 70vh; display: none;"
+                    frameborder="0"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function showBillPreview(url) {
+        const isPdf = url.toLowerCase().endsWith('.pdf');
+        const imgEl = document.getElementById('billPreviewImage');
+        const pdfEl = document.getElementById('billPreviewPdf');
+
+        if (isPdf) {
+            imgEl.style.display = 'none';
+            pdfEl.style.display = 'block';
+            pdfEl.src = url;
+        } else {
+            pdfEl.style.display = 'none';
+            imgEl.style.display = 'block';
+            imgEl.src = url;
+        }
+
+        new bootstrap.Modal(document.getElementById('billPreviewModal')).show();
+    }
+</script>
 {% endblock %}

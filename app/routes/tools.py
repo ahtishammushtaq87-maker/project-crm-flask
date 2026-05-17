@@ -102,6 +102,18 @@ def create_receiving():
         is_bom_overhead = request.form.get('is_bom_overhead') == 'on'
         overhead_mode = request.form.get('overhead_mode', 'mo')
         
+        bill_image_path = None
+        if 'bill_image' in request.files:
+            bill_file = request.files['bill_image']
+            if bill_file and bill_file.filename:
+                import os
+                from werkzeug.utils import secure_filename
+                filename = secure_filename(bill_file.filename)
+                bill_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
+                os.makedirs(os.path.dirname(bill_path), exist_ok=True)
+                bill_file.save(bill_path)
+                bill_image_path = bill_path.replace('\\', '/')
+
         # 1. Create ToolReceiving
         receiving = ToolReceiving(
             receiving_number=receiving_number,
@@ -110,6 +122,7 @@ def create_receiving():
             description=description,
             shipping_charges=shipping_charges,
             total_amount=grand_total,
+            bill_image_path=bill_image_path,
             expense_id=None,
             buyer_id=int(buyer_id) if buyer_id else None,
             vendor_id=int(vendor_id) if vendor_id else None,
@@ -233,6 +246,7 @@ def create_receiving():
             product = Product.query.get(item['product_id'])
             if product:
                 product.update_quantity(item['quantity'])
+                product.cost_price = item['unit_price']
         
         db.session.commit()
         
@@ -332,6 +346,18 @@ def create_delivering():
         delivering_number = f"{settings.delivering_prefix}{settings.next_delivering_number}"
         settings.next_delivering_number += 1
         
+        bill_image_path = None
+        if 'bill_image' in request.files:
+            bill_file = request.files['bill_image']
+            if bill_file and bill_file.filename:
+                import os
+                from werkzeug.utils import secure_filename
+                filename = secure_filename(bill_file.filename)
+                bill_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
+                os.makedirs(os.path.dirname(bill_path), exist_ok=True)
+                bill_file.save(bill_path)
+                bill_image_path = bill_path.replace('\\', '/')
+        
         # 1. Create Expense record
         category = ExpenseCategory.query.filter_by(name='Tools Expense').first()
         if not category:
@@ -358,6 +384,7 @@ def create_delivering():
             description=description,
             shipping_charges=shipping_charges,
             total_amount=grand_total,
+            bill_image_path=bill_image_path,
             expense_id=expense.id,
             buyer_id=int(buyer_id) if buyer_id else None,
             vendor_id=int(vendor_id) if vendor_id else None,
@@ -506,8 +533,20 @@ def edit_receiving(id):
                 product = Product.query.get(int(product_ids[i]))
                 if product:
                     product.update_quantity(qty)
+                    product.cost_price = price
         
         receiving.total_amount = total_items_amount + receiving.shipping_charges
+        
+        if 'bill_image' in request.files:
+            bill_file = request.files['bill_image']
+            if bill_file and bill_file.filename:
+                import os
+                from werkzeug.utils import secure_filename
+                filename = secure_filename(bill_file.filename)
+                bill_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
+                os.makedirs(os.path.dirname(bill_path), exist_ok=True)
+                bill_file.save(bill_path)
+                receiving.bill_image_path = bill_path.replace('\\', '/')
         
         # BOM Overhead Allocation logic
         is_bom_overhead = request.form.get('is_bom_overhead') == 'on'
@@ -694,6 +733,17 @@ def edit_delivering(id):
         
         delivering.total_amount = total_items_amount + delivering.shipping_charges
         
+        if 'bill_image' in request.files:
+            bill_file = request.files['bill_image']
+            if bill_file and bill_file.filename:
+                import os
+                from werkzeug.utils import secure_filename
+                filename = secure_filename(bill_file.filename)
+                bill_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
+                os.makedirs(os.path.dirname(bill_path), exist_ok=True)
+                bill_file.save(bill_path)
+                delivering.bill_image_path = bill_path.replace('\\', '/')
+        
         # Update or create linked expense
         if not delivering.expense:
             category = ExpenseCategory.query.filter_by(name='Tools Expense').first()
@@ -732,7 +782,11 @@ def edit_delivering(id):
 @permission_required('receiving', action='delete')
 
 def bulk_delete_receiving():
-    ids = request.form.getlist('ids[]')
+    if request.is_json:
+        ids = request.json.get('ids', [])
+    else:
+        ids = request.form.getlist('ids[]')
+    
     for id in ids:
         receiving = ToolReceiving.query.get(id)
         if receiving:
@@ -757,7 +811,11 @@ def bulk_delete_receiving():
 @permission_required('delivering', action='delete')
 
 def bulk_delete_delivering():
-    ids = request.form.getlist('ids[]')
+    if request.is_json:
+        ids = request.json.get('ids', [])
+    else:
+        ids = request.form.getlist('ids[]')
+        
     for id in ids:
         delivering = ToolDelivering.query.get(id)
         if delivering:
