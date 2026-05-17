@@ -95,6 +95,8 @@ class CustomerForm(FlaskForm):
     address = TextAreaField('Address')
     gst_number = StringField('GST Number')
     payment_method = StringField('Payment Method', validators=[Optional()])
+    sub_customers = StringField('Sub Customers', validators=[Optional()])
+
 
 class PurchaseForm(FlaskForm):
     vendor_id = SelectField('Vendor', coerce=int, validators=[DataRequired()])

@@ -628,12 +628,23 @@ def customers():
         query = query.filter(
             (Customer.name.ilike(search_filter)) |
             (Customer.email.ilike(search_filter)) |
-            (Customer.phone.ilike(search_filter))
+            (Customer.phone.ilike(search_filter)) |
+            (Customer.sub_customers.ilike(search_filter))
         )
     
     query = apply_saved_filter_to_query(query, 'customer', request.args)
     
+    import json
     customers = query.order_by(Customer.name.asc()).all()
+    for cust in customers:
+        if cust.sub_customers:
+            try:
+                cust.sub_customers_list = json.loads(cust.sub_customers)
+            except:
+                cust.sub_customers_list = []
+        else:
+            cust.sub_customers_list = []
+            
     # List of all customers for the searchable dropdown
     all_customers = Customer.query.order_by(Customer.name.asc()).all()
     
@@ -1343,7 +1354,8 @@ def add_customer():
             phone=form.phone.data,
             address=form.address.data,
             gst_number=form.gst_number.data,
-            payment_method=form.payment_method.data
+            payment_method=form.payment_method.data,
+            sub_customers=form.sub_customers.data
         )
         db.session.add(customer)
         db.session.commit()
@@ -1374,6 +1386,7 @@ def edit_customer(id):
         customer.address = form.address.data
         customer.gst_number = form.gst_number.data
         customer.payment_method = form.payment_method.data
+        customer.sub_customers = form.sub_customers.data
         db.session.commit()
         flash('Customer updated successfully!', 'success')
         return redirect(url_for('sales.customers'))

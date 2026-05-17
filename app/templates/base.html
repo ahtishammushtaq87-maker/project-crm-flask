@@ -1732,15 +1732,18 @@
             const exportOpts = {
                 columns: ':not(.no-export)',
                 rows: function (idx, data, node) {
-                    if (!node) return true;
-                    // Find all checkboxes in the table
-                    const $table = $(node).closest('table');
-                    const anyChecked = $table.find("tbody input[type='checkbox']:checked").length > 0;
+                    const table = $(selector).DataTable();
+                    
+                    // Optimization: check for any checked items in the whole table
+                    // We can't easily cache this during a single export run without external state,
+                    // but we can check if there are any checked checkboxes in the entire table data.
+                    const anyChecked = table.rows().nodes().to$().find("input[type='checkbox']:checked").length > 0;
 
-                    // If no rows are selected, export everything
+                    // If no rows are checked, export everything
                     if (!anyChecked) return true;
 
-                    // Otherwise, only export rows that are checked
+                    // Otherwise, only export rows that have a checked checkbox
+                    if (!node) return false; // Row not rendered, presumably not checked
                     return $(node).find("input[type='checkbox']").is(':checked');
                 }
             };

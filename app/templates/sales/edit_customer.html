@@ -112,8 +112,24 @@ $(document).ready(function() {
                             <label class="form-label fw-bold">Payment Method (Optional)</label>
                             {{ form.payment_method(class="form-control", placeholder="e.g. Cash, Bank Transfer") }}
                         </div>
+
+                        <hr>
+                        <div class="mb-4">
+                            <label class="form-label fw-bold d-flex justify-content-between align-items-center">
+                                Sub Customers (Display Only)
+                                <button type="button" class="btn btn-sm btn-success" id="add-sub-btn">
+                                    <i class="fas fa-plus"></i> Add Sub Customer
+                                </button>
+                            </label>
+                            <div id="sub-customers-wrap" class="mt-2">
+                                <!-- Dynamic rows here -->
+                            </div>
+                            {{ form.sub_customers(type="hidden", id="sub_customers_data") }}
+                        </div>
+                        <hr>
+
                         <div class="d-flex gap-2">
-                            <button type="submit" class="btn btn-primary px-4"><i class="fas fa-save me-1"></i> Update Customer</button>
+                            <button type="submit" id="submit-btn" class="btn btn-primary px-4"><i class="fas fa-save me-1"></i> Update Customer</button>
                             <a href="{{ url_for('sales.customers') }}" class="btn btn-outline-secondary px-4"><i class="fas fa-times me-1"></i> Cancel</a>
                         </div>
                     </form>
@@ -122,4 +138,67 @@ $(document).ready(function() {
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const wrapper = document.getElementById('sub-customers-wrap');
+    const addBtn = document.getElementById('add-sub-btn');
+    const hiddenInput = document.getElementById('sub_customers_data');
+    const form = hiddenInput.closest('form');
+
+    function createRow(name = '', phone = '') {
+        const div = document.createElement('div');
+        div.className = 'row mb-2 sub-customer-row';
+        div.innerHTML = `
+            <div class="col-md-5">
+                <input type="text" class="form-control sub-name" placeholder="Sub Customer Name" value="${name}">
+            </div>
+            <div class="col-md-5">
+                <input type="text" class="form-control sub-phone" placeholder="Phone Number" value="${phone}">
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-outline-danger remove-sub-btn w-100">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        `;
+        
+        div.querySelector('.remove-sub-btn').addEventListener('click', function() {
+            div.remove();
+        });
+        
+        wrapper.appendChild(div);
+    }
+
+    // Populate existing rows
+    const existingVal = hiddenInput.value;
+    if (existingVal) {
+        try {
+            const data = JSON.parse(existingVal);
+            if (Array.isArray(data)) {
+                data.forEach(item => createRow(item.name, item.phone));
+            }
+        } catch (e) {
+            console.error("Error parsing sub_customers:", e);
+        }
+    }
+
+    addBtn.addEventListener('click', function() {
+        createRow();
+    });
+
+    form.addEventListener('submit', function() {
+        const rows = wrapper.querySelectorAll('.sub-customer-row');
+        const data = [];
+        rows.forEach(row => {
+            const name = row.querySelector('.sub-name').value.trim();
+            const phone = row.querySelector('.sub-phone').value.trim();
+            if (name || phone) {
+                data.push({ name, phone });
+            }
+        });
+        hiddenInput.value = data.length > 0 ? JSON.stringify(data) : '';
+    });
+});
+</script>
 {% endblock %}

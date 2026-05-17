@@ -22,7 +22,7 @@
 {% block content %}
 <div class="container-fluid list-page">
     <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
-        <h2 class="h3 mb-0 text-gray-800">Receiving Tools</h2>
+        <h2 class="h3 mb-0 text-gray-800">Receiving Voucher</h2>
         <div class="btn-group">
             <button id="bulkDeleteBtn" class="btn btn-danger d-none me-2">
                 <i class="fas fa-trash me-1"></i> Delete Selected
@@ -34,7 +34,7 @@
             {% endif %}
             {% if current_user.has_permission('receiving', 'add') %}
             <a href="{{ url_for('tools.create_receiving') }}" class="btn btn-primary">
-                <i class="fas fa-plus me-1"></i> Receive Tools
+                <i class="fas fa-plus me-1"></i> Receive Item
             </a>
             {% endif %}
         </div>
@@ -133,7 +133,7 @@
                             <th>Buyer</th>
                             <th>Vendor</th>
                             <th>Requester</th>
-                            <th>Tools / SKU</th>
+                            <th>Items / SKU</th>
                             <th class="text-end">Shipping</th>
                             <th class="text-end">Total Amount</th>
                             <th class="text-center no-export">Actions</th>

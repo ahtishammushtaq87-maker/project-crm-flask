@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Delivering Tools{% endblock %}
+{% block title %}Delivering Voucher{% endblock %}
 
 {% block extra_js %}
 <script>
@@ -22,14 +22,14 @@
 {% block content %}
 <div class="container-fluid list-page">
     <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
-        <h2 class="h3 mb-0 text-gray-800">Delivering Tools</h2>
+        <h2 class="h3 mb-0 text-gray-800">Delivering Voucher</h2>
         <div class="btn-group">
             <button id="bulkDeleteBtn" class="btn btn-danger d-none me-2">
                 <i class="fas fa-trash me-1"></i> Delete Selected
             </button>
             {% if current_user.has_permission('delivering', 'add') %}
             <a href="{{ url_for('tools.create_delivering') }}" class="btn btn-primary">
-                <i class="fas fa-minus me-1"></i> Deliver Tools
+                <i class="fas fa-minus me-1"></i> Deliver Item
             </a>
             {% endif %}
         </div>
@@ -89,7 +89,7 @@
                             <th>Buyer</th>
                             <th>Vendor</th>
                             <th>Requester</th>
-                            <th>Tools / SKU</th>
+                            <th>Items / SKU</th>
                             <th>Total Amount</th>
                             <th class="text-center no-export">Actions</th>
                         </tr>

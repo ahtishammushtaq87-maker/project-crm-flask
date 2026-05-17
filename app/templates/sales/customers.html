@@ -140,6 +140,7 @@
                             <th>Group</th>
                             <th>Email</th>
                             <th>Phone</th>
+                            <th>Sub Customers</th>
                             <th>GST Number</th>
                             <th>Total Sales</th>
                             <th>Outstanding</th>
@@ -170,6 +171,17 @@
                             </td>
                             <td>{{ customer.email or '-' }}</td>
                             <td>{{ customer.phone or '-' }}</td>
+                            <td>
+                                {% if customer.sub_customers_list %}
+                                <ul class="list-unstyled mb-0 small">
+                                    {% for sub in customer.sub_customers_list %}
+                                    <li><i class="fas fa-user-circle text-muted me-1"></i>{{ sub.name }} ({{ sub.phone }})</li>
+                                    {% endfor %}
+                                </ul>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
                             <td>{{ customer.gst_number or '-' }}</td>
                             <td>PKR{{ "%.2f"|format(customer.total_sales) }}</td>
                             <td>PKR{{ "%.2f"|format(customer.outstanding_balance) }}</td>
