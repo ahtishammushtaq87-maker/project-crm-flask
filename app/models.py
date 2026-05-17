@@ -555,8 +555,8 @@ class Sale(db.Model):
         else:
             discount_amount = self.discount
         
-        # Calculate total = subtotal + tax + delivery - discount - advance
-        self.total = self.subtotal + self.tax + self.delivery_charge - discount_amount - self.advance_applied
+        # Calculate total = subtotal + tax + delivery - discount
+        self.total = self.subtotal + self.tax + self.delivery_charge - discount_amount
         
         # Ensure total is not negative
         if self.total < 0:

@@ -152,7 +152,7 @@ def create_invoice():
         delivery_charge = float(request.form.get('delivery_charge', 0))
         advance_applied = float(request.form.get('advance_applied', 0))
 
-        total = subtotal + tax + delivery_charge - discount - advance_applied
+        total = subtotal + tax + delivery_charge - discount
 
         # Generate invoice number using settings
         settings = InvoiceSettings.query.first()
@@ -178,7 +178,7 @@ def create_invoice():
             currency_id=request.form.get('currency_id', None),
             exchange_rate=float(request.form.get('exchange_rate', 1)),
             salesman_id=salesman_id if salesman_id and salesman_id != '0' else None,
-            paid_amount=0,
+            paid_amount=advance_applied,
             created_by=current_user.id
         )
 
@@ -817,12 +817,12 @@ def customer_profile(id):
                           date_to=date_to_str,
                           now=datetime.now())
 
-@bp.route('/customer/<int:id>/export/pdf')
+@bp.route('/customer/<int:id>/ledger-pdf')
 @login_required
 def customer_export_pdf(id):
-    """Export customer profile to PDF - Mirroring Invoice design"""
-    from datetime import datetime as _dt
-    from app.models import Company, InvoiceSettings
+    """Export customer detailed ledger to PDF"""
+    from datetime import datetime as _dt, time as _time
+    from app.models import Company, InvoiceSettings, Sale, CustomerAdvance, SaleReturn, Payment, Customer
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -833,32 +833,89 @@ def customer_export_pdf(id):
     from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 
     customer = Customer.query.get_or_404(id)
-    company  = Company.query.first() if 'Company' in globals() else None
+    company  = Company.query.first()
     settings = InvoiceSettings.query.first()
+    
+    selected_ids = request.args.get('ids', '').split(',') if request.args.get('ids') else []
 
-    # Date filter from query params
-    date_from_str = request.args.get('date_from', '').strip()
-    date_to_str   = request.args.get('date_to',   '').strip()
-    date_from_f = None
-    date_to_f   = None
-    try:
-        if date_from_str:
-            date_from_f = _dt.strptime(date_from_str, '%Y-%m-%d')
-        if date_to_str:
-            date_to_f = _dt.strptime(date_to_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
-    except ValueError:
-        pass
-
-    all_sales = sorted(customer.sales, key=lambda s: s.date, reverse=True)
-    if date_from_f or date_to_f:
-        sales = [
-            s for s in all_sales
-            if (date_from_f is None or s.date >= date_from_f)
-            and (date_to_f   is None or s.date <= date_to_f)
-        ]
-    else:
-        sales = all_sales
-
+    # Opening balance
+    opening_balance = float(customer.opening_balance or 0)
+    
+    sales_q = Sale.query.filter_by(customer_id=id).order_by(Sale.date.asc()).all()
+    advances = CustomerAdvance.query.filter_by(customer_id=id).order_by(CustomerAdvance.date.asc()).all()
+    returns = SaleReturn.query.filter_by(customer_id=id).order_by(SaleReturn.date.asc()).all()
+    
+    sale_ids = [s.id for s in sales_q]
+    payments = Payment.query.filter(Payment.invoice_id.in_(sale_ids)).order_by(Payment.date.asc()).all() if sale_ids else []
+    
+    events = []
+    for s in sales_q:
+        if selected_ids and s.invoice_number not in selected_ids:
+            continue
+            
+        events.append({
+            'date': s.date,
+            'type': 'sale',
+            'desc': f"Invoice #{s.invoice_number}",
+            'inv': s.invoice_number,
+            'debit': float(s.subtotal or 0) + float(s.tax or 0) + float(s.delivery_charge or 0),
+            'credit': 0
+        })
+        if float(s.discount or 0) > 0:
+            events.append({
+                'date': s.date,
+                'type': 'discount',
+                'desc': f"Discount (Inv #{s.invoice_number})",
+                'inv': s.invoice_number,
+                'debit': 0,
+                'credit': float(s.discount or 0)
+            })
+            
+    for p in payments:
+        if selected_ids and (not p.invoice or p.invoice.invoice_number not in selected_ids):
+            continue
+            
+        events.append({
+            'date': p.date,
+            'type': 'payment',
+            'desc': f"Payment ({p.method or 'Cash'})",
+            'inv': p.invoice.invoice_number if p.invoice else '-',
+            'debit': 0,
+            'credit': float(p.amount or 0)
+        })
+        
+    for a in advances:
+        # Advances don't have invoice numbers to filter by in this logic easily, 
+        # but if we are filtering, we might want to skip them or include them. 
+        # For now, let's include them unless we have a specific ID scheme for them.
+        if selected_ids: continue # Skip advances if specific invoices are selected
+        
+        # Convert date to datetime for sorting
+        dt = _dt.combine(a.date, _time.min)
+        events.append({
+            'date': dt,
+            'type': 'advance',
+            'desc': f"Advance Received: {a.description or ''}",
+            'inv': '-',
+            'debit': 0,
+            'credit': float(a.amount or 0)
+        })
+        
+    for r in returns:
+        if selected_ids and r.return_number not in selected_ids:
+            continue
+            
+        events.append({
+            'date': r.date,
+            'type': 'return',
+            'desc': f"Sales Return #{r.return_number}",
+            'inv': r.return_number,
+            'debit': 0,
+            'credit': float(r.total or 0)
+        })
+        
+    events.sort(key=lambda x: x['date'])
+    
     output = io.BytesIO()
     doc = SimpleDocTemplate(
         output, pagesize=A4, rightMargin=36, leftMargin=36, topMargin=28, bottomMargin=72
@@ -989,7 +1046,8 @@ def customer_export_pdf(id):
     logo = None
     if company and getattr(company, 'logo_path', None) and os.path.exists(company.logo_path):
         try:
-            img = Image(company.logo_path)
+            from reportlab.platypus import Image as RLImage
+            img = RLImage(company.logo_path)
             aspect = img.imageHeight / float(img.imageWidth)
             w = 1.0 * inch
             img.drawWidth  = w
@@ -1035,7 +1093,7 @@ def customer_export_pdf(id):
     ]))
 
     right_rows = [
-        [Paragraph("CUSTOMER PROFILE", s_Title)],
+        [Paragraph("CUSTOMER LEDGER", s_Title)],
         [Spacer(1, 22)],
         [meta_tbl],
     ]
@@ -1100,44 +1158,50 @@ def customer_export_pdf(id):
     elements.append(outer)
     elements.append(Spacer(1, 15))
 
-    # INVOICES TABLE
-    headers = ['Invoice #', 'Date', 'Amount', 'Discount', 'Adv Applied', 'Paid', 'Balance', 'Status']
+    # LEDGER TABLE
+    headers = ['Date', 'Description', 'Invoice #', 'Debit', 'Credit', 'Balance']
     header_row = [Paragraph(f"<b>{h}</b>", s_TblHeader) for h in headers]
     table_data = [header_row]
 
     TABLE_WIDTH = 7.5 * inch
-    # Weights for the 8 columns: 3, 2, 3, 3, 3, 3, 3, 2 (Total = 22)
-    Cols = [(w/22.0)*TABLE_WIDTH for w in [3.2, 2.3, 3, 2.5, 3, 3, 3, 2]]
+    # Weights: 2, 4, 1.5, 2.1, 2.2, 2.2 (Total = 14)
+    Cols = [(w/14.0)*TABLE_WIDTH for w in [2, 4, 1.5, 2.1, 2.2, 2.2]]
 
     def pkr(val):
-        return f"PKR{val:,.0f}"
+        return f"PKR {val:,.2f}"
 
-    def status_p(st):
-        cmap = {
-            "paid": colors.HexColor("#16a34a"),
-            "partial": colors.HexColor("#d97706"),
-            "unpaid": colors.HexColor("#dc2626")
-        }
-        sst = ParagraphStyle("sst", parent=styles["Normal"], fontSize=7,
-                             leading=9, textColor=cmap.get(st, TEXT_COLOR),
-                             alignment=TA_CENTER)
-        return Paragraph(st.title(), sst)
+    # Opening Balance
+    running_balance = opening_balance
+    table_data.append([
+        Paragraph("-", s_TblCellC),
+        Paragraph("Opening Balance", s_TblCellL),
+        Paragraph("-", s_TblCellC),
+        Paragraph(pkr(opening_balance) if opening_balance > 0 else "0.00", s_TblCell),
+        Paragraph(pkr(abs(opening_balance)) if opening_balance < 0 else "0.00", s_TblCell),
+        Paragraph(pkr(running_balance), s_TblCell)
+    ])
 
-    for sale in sales:
+    total_sales = 0
+    total_discounts = 0
+    total_paid = 0
+
+    for e in events:
+        debit = e['debit']
+        credit = e['credit']
+        running_balance += (debit - credit)
+        
+        if e['type'] == 'sale': total_sales += debit
+        elif e['type'] == 'discount': total_discounts += credit
+        elif e['type'] == 'payment': total_paid += credit
+
         table_data.append([
-            Paragraph(sale.invoice_number, s_TblCellL),
-            Paragraph(sale.date.strftime("%d/%m/%Y"), s_TblCellC),
-            Paragraph(pkr(sale.total), s_TblCell),
-            Paragraph(pkr(sale.discount), s_TblCell),
-            Paragraph(pkr(sale.advance_applied), s_TblCell),
-            Paragraph(pkr(sale.paid_amount), s_TblCell),
-            Paragraph(pkr(sale.balance_due), s_TblCell),
-            status_p(sale.status)
+            Paragraph(e['date'].strftime("%d/%m/%Y"), s_TblCellC),
+            Paragraph(e['desc'], s_TblCellL),
+            Paragraph(e['inv'], s_TblCellC),
+            Paragraph(pkr(debit), s_TblCell),
+            Paragraph(pkr(credit), s_TblCell),
+            Paragraph(pkr(running_balance), s_TblCell)
         ])
-
-    if not sales:
-        empty = [Paragraph('No sales found', s_TblCellL)] + [Paragraph('-', s_TblCellC)] * 7
-        table_data.append(empty)
 
     tbl = Table(table_data, colWidths=Cols, repeatRows=1)
     tbl.setStyle(TableStyle([
@@ -1145,173 +1209,81 @@ def customer_export_pdf(id):
         ('TEXTCOLOR',     (0,0),  (-1,0),  WHITE),
         ('TOPPADDING',    (0,0),  (-1,0),  5),
         ('BOTTOMPADDING', (0,0),  (-1,0),  5),
-        ('LEFTPADDING',   (0,0),  (-1,0),  6),
-        ('RIGHTPADDING',  (0,0),  (-1,0),  6),
-        ('TOPPADDING',    (0,1),  (-1,-1), 4),
-        ('BOTTOMPADDING', (0,1),  (-1,-1), 4),
-        ('LEFTPADDING',   (0,1),  (-1,-1), 6),
-        ('RIGHTPADDING',  (0,1),  (-1,-1), 6),
-        ('ROWBACKGROUNDS',(0,1),  (-1,-1), [WHITE, ACCENT_COLOR]),
+        ('GRID',          (0,0),  (-1,-1), 0.5, BORDER_GREY),
         ('VALIGN',        (0,0),  (-1,-1), 'MIDDLE'),
-        ('ALIGN',         (0,0),  (-1,0),  'CENTER'),
-        ('LINEBELOW',     (0,0),  (-1,0),  1.0, PRIMARY_COLOR),
-        ('GRID',          (0,0),  (-1,-1), 0.3, LIGHT_GREY),
-        ('LINEBELOW',     (0,-1), (-1,-1), 0.5, BORDER_GREY),
     ]))
     elements.append(tbl)
-    elements.append(Spacer(1, 10))
+    elements.append(Spacer(1, 20))
 
-    # BOTTOM SECTION (Totals on the right)
-    tot_sales = sum(s.total for s in sales)
-    tot_disc = sum(s.discount for s in sales)
-    out_bal = customer.outstanding_balance
-    tot_adv = customer.total_advances_received
-    adv_appl = customer.total_advances_adjusted
-    rem_adv = customer.remaining_advance_balance
-
-    totals = [
-        ("Total Sales",          pkr(tot_sales)),
-        ("Total Discount",       pkr(tot_disc)),
-        ("Outstanding Balance",  pkr(out_bal)),
-        ("Total Advances",       pkr(tot_adv)),
-        ("Advances Applied",     pkr(adv_appl)),
-        ("Remaining Advance",    pkr(rem_adv)),
-    ]
-
-    DANGER_RED = colors.HexColor("#c0392b")
-    s_GrandLabelRed = ParagraphStyle('GrandLabelRed', parent=styles['Normal'], fontSize=9,
-                                      textColor=DANGER_RED, fontName='Helvetica-Bold', alignment=TA_LEFT)
-    s_GrandValueRed = ParagraphStyle('GrandValueRed', parent=styles['Normal'], fontSize=9,
-                                      textColor=DANGER_RED, fontName='Helvetica-Bold', alignment=TA_RIGHT)
-
-    tot_rows = []
-    for i, (label, value) in enumerate(totals):
-        if label == "Outstanding Balance":
-            lp = Paragraph(f"<b>{label}</b>", s_GrandLabelRed)
-            vp = Paragraph(f"<b>{value}</b>", s_GrandValueRed)
-        else:
-            lp = Paragraph(f"<b>{label}</b>", s_GrandLabel)
-            vp = Paragraph(f"<b>{value}</b>", s_GrandValue)
-        tot_rows.append([lp, vp])
-
-    tot_tbl = Table(tot_rows, colWidths=[2.0 * inch, 1.7 * inch])
-    tot_style = [
-        ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
-        ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
-        ('TOPPADDING',    (0,0), (-1,-1), 3),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-        ('LEFTPADDING',   (0,0), (-1,-1), 8),
-        ('RIGHTPADDING',  (0,0), (-1,-1), 5),
-        ('LINEBELOW',     (0,-1),(-1,-1), 0.5, BORDER_GREY),
-    ]
-    for i, (label, _) in enumerate(totals):
-        bg = colors.HexColor("#fdecea") if label == "Outstanding Balance" else ACCENT_COLOR
-        tot_style += [
-            ('LINEABOVE',  (0,i), (-1,i), 0.8, BORDER_GREY),
-            ('BACKGROUND', (0,i), (-1,i), bg)
-        ]
-    tot_tbl.setStyle(TableStyle(tot_style))
-
-    # Company bank details box (LEFT side of totals) — mirror of invoice PDF
-    s_BankTitle = ParagraphStyle('BankTitle', parent=styles['Normal'], fontSize=8,
-                                  textColor=PRIMARY_COLOR, fontName='Helvetica-Bold', spaceAfter=4)
-    s_BankText  = ParagraphStyle('BankText',  parent=styles['Normal'], fontSize=7.5,
-                                  textColor=TEXT_COLOR, leading=11)
-
-    # Prefer InvoiceSettings bank info, fall back to Company
-    bank_fields_map = [
-        ('payment_terms',       'Payment Terms'),
-        ('bank_name',           'Bank'),
-        ('account_holder_name', 'A/C Holder'),
-        ('account_number',      'A/C No'),
-        ('ifsc_code',           'IFSC'),
-        ('swift_code',          'SWIFT'),
-    ]
+    # Prepare Bank Details Table
     bank_src = settings if settings else company
-    bank_content = [[Paragraph("PAYMENT DETAILS", s_BankTitle)]]
+    bank_content = [[Paragraph("PAYMENT DETAILS", s_BoxTitle)]]
     has_bank = False
-    for attr, label in bank_fields_map:
-        val = getattr(bank_src, attr, None) if bank_src else None
+    for attr, label in [('bank_name','Bank'), ('account_holder_name','A/C Holder'), ('account_number','A/C No'), ('ifsc_code','IFSC')]:
+        val = getattr(bank_src, attr, None)
         if val:
             has_bank = True
-            bank_content.append([Paragraph(f"<b>{label}:</b> {val}", s_BankText)])
+            bank_content.append([Paragraph(f"<b>{label}:</b> {val}", s_BoxValue)])
 
+    bank_tbl = Spacer(1, 1)
     if has_bank:
-        bank_tbl = Table(bank_content, colWidths=[3.5 * inch])
+        bank_tbl = Table(bank_content, colWidths=[3.2 * inch])
         bank_tbl.setStyle(TableStyle([
             ('VALIGN',        (0,0), (-1,-1), 'TOP'),
-            ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
-            ('TOPPADDING',    (0,0), (-1,-1), 4),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-            ('LEFTPADDING',   (0,0), (-1,-1), 8),
-            ('RIGHTPADDING',  (0,0), (-1,-1), 6),
-            ('BACKGROUND',    (0,0), (-1,-1), WHITE),
             ('BOX',           (0,0), (-1,-1), 0.5, BORDER_GREY),
+            ('TOPPADDING',    (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('LEFTPADDING',   (0,0), (-1,-1), 8),
+            ('BACKGROUND',    (0,0), (-1,-1), WHITE),
         ]))
-        left_cell = bank_tbl
-    else:
-        left_cell = ''
 
-    row1 = Table([[left_cell, tot_tbl]], colWidths=[3.75*inch, 3.75*inch])
-    row1.setStyle(TableStyle([
-        ('VALIGN',        (0,0), (-1,-1), 'TOP'),
-        ('ALIGN',         (1,0), (1,-1),  'RIGHT'),
+    # Prepare Summary Table
+    summary_data = [
+        [Paragraph("<b>LEDGER SUMMARY</b>", s_BoxTitle), ""],
+        [Paragraph("Total Sales (Invoices Gross)", s_TotalLabel), Paragraph(pkr(total_sales), s_TotalValue)],
+        [Paragraph("Total Discounts Given", s_TotalLabel), Paragraph(pkr(total_discounts), s_TotalValue)],
+        [Paragraph("Total Payments Received", s_TotalLabel), Paragraph(pkr(total_paid), s_TotalValue)],
+        [Paragraph("Total Advances Received", s_TotalLabel), Paragraph(pkr(float(customer.total_advances_received or 0)), s_TotalValue)],
+        [Paragraph("<b>Closing Balance / Outstanding</b>", s_GrandLabel), Paragraph(pkr(running_balance), s_GrandValue)],
+    ]
+    
+    sum_w = 4.0 * inch
+    summary_tbl = Table(summary_data, colWidths=[sum_w * 0.6, sum_w * 0.4])
+    summary_tbl.setStyle(TableStyle([
+        ('ALIGN', (1,0), (1,-1), 'RIGHT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('LINEBELOW', (0,-1), (-1,-1), 1, BLACK),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('BACKGROUND', (0,-1), (-1,-1), LIGHT_GREY),
+    ]))
+    
+    # Combined row for Bank (Left) and Summary (Right)
+    combined_tbl = Table([[bank_tbl, summary_tbl]], colWidths=[TABLE_WIDTH - sum_w, sum_w])
+    combined_tbl.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('ALIGN', (0,0), (0,0),   'LEFT'),
+        ('ALIGN', (1,0), (1,0),   'RIGHT'),
         ('LEFTPADDING',   (0,0), (-1,-1), 0),
         ('RIGHTPADDING',  (0,0), (-1,-1), 0),
-        ('TOPPADDING',    (0,0), (-1,-1), 0),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
     ]))
-    elements.append(row1)
+    
+    elements.append(combined_tbl)
+    elements.append(Spacer(1, 15))
 
-    s_NotesTitle = ParagraphStyle('NotesTitle', parent=styles['Normal'], fontSize=8, textColor=PRIMARY_COLOR, fontName='Helvetica-Bold', spaceAfter=3)
-    s_NotesText  = ParagraphStyle('NotesText', parent=styles['Normal'], fontSize=7, textColor=TEXT_COLOR, leading=10)
-    s_ExtraThankYou = ParagraphStyle(
-        'ExtraThankYou',
-        parent=styles['Normal'],
-        fontSize=9,
-        alignment=TA_LEFT,
-        textColor=TEXT_COLOR,
-        spaceAfter=6,
-        leading=14,
-        leftIndent=0
-    )
-
-    settings = InvoiceSettings.query.first()
-    terms_text = settings.default_terms if settings and settings.default_terms else ""
-
-    if terms_text:
-        terms_content = [Paragraph("TERMS & CONDITIONS", s_NotesTitle)]
-        for line in terms_text.split('\n'):
+    if settings and settings.default_terms:
+        terms_content = [Paragraph("TERMS & CONDITIONS", s_BoxTitle)]
+        for line in settings.default_terms.split('\n'):
             if line.strip():
-                terms_content.append(Paragraph(line.strip(), s_NotesText))
-        
-        terms_tbl = Table([[item] for item in terms_content], colWidths=[7.4 * inch])
+                terms_content.append(Paragraph(line.strip(), s_BoxValue))
+        terms_tbl = Table([[c] for c in terms_content], colWidths=[7.3 * inch])
         terms_tbl.setStyle(TableStyle([
-            ('VALIGN',        (0,0), (-1,-1), 'TOP'),
-            ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
-            ('TOPPADDING',    (0,0), (-1,-1), 3),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 2),
-            ('LEFTPADDING',   (0,0), (-1,-1), 8),
-            ('RIGHTPADDING',  (0,0), (-1,-1), 6),
-            ('BOX',           (0,0), (-1,-1), 0.5, BORDER_GREY),
-            ('BACKGROUND',    (0,0), (-1,-1), WHITE),
+            ('BOX', (0,0), (-1,-1), 0.5, BORDER_GREY),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('LEFTPADDING', (0,0), (-1,-1), 8),
         ]))
-        
-        elements.append(Spacer(1, 10))
         elements.append(terms_tbl)
-
-    amount_due_fmt = f'PKR{out_bal:,.2f}'
-
-    extra_thank = Paragraph(
-        f"<br/>Thank you, <b>{customer.company_name or customer.name}</b>, for your continued business. "
-        f"Your current outstanding balance is <b>{amount_due_fmt}</b>. "
-        f"If you have any questions about this summary, please let us know.<br/>"
-        f"Best regards,<br/>"
-        f"We look forward to serving you again in the future.",
-        s_ExtraThankYou
-    )
-    elements.append(Spacer(1, 6))
-    elements.append(extra_thank)
 
     doc.build(elements, onFirstPage=_draw_page_decorations, onLaterPages=_draw_page_decorations)
     output.seek(0)
@@ -1320,7 +1292,7 @@ def customer_export_pdf(id):
         output,
         mimetype="application/pdf",
         as_attachment=False,
-        download_name=f"customer_{customer.id}_{customer.name.replace(' ', '_')}_profile.pdf"
+        download_name=f"Ledger_{customer.name.replace(' ', '_')}_{_dt.now().strftime('%Y%m%d')}.pdf"
     )
 
 @bp.route('/customer/<int:id>/advances-json')
@@ -2042,3 +2014,339 @@ def public_invoice(token):
         return response
     except Exception as e:
         return f"Error generating PDF: {str(e)}", 500
+
+@bp.route('/customer/<int:id>/ledger-json')
+@login_required
+def customer_ledger_json(id):
+    customer = Customer.query.get_or_404(id)
+    
+    # Opening balance
+    opening_balance = float(customer.opening_balance or 0)
+    
+    # Get all components
+    sales = Sale.query.filter_by(customer_id=id).order_by(Sale.date.asc()).all()
+    advances = CustomerAdvance.query.filter_by(customer_id=id).order_by(CustomerAdvance.date.asc()).all()
+    returns = SaleReturn.query.filter_by(customer_id=id).order_by(SaleReturn.date.asc()).all()
+    
+    # In this system, payments are linked to sales. 
+    # We should get all payments for this customer's sales.
+    sale_ids = [s.id for s in sales]
+    payments = Payment.query.filter(Payment.invoice_id.in_(sale_ids)).order_by(Payment.date.asc()).all() if sale_ids else []
+    
+    ledger_entries = []
+    running_balance = opening_balance
+    
+    # Initial entry for Opening Balance
+    ledger_entries.append({
+        'date': '-',
+        'invoice_number': 'Opening Balance',
+        'customer_name': customer.name,
+        'debit': opening_balance if opening_balance > 0 else 0,
+        'credit': abs(opening_balance) if opening_balance < 0 else 0,
+        'invoice_balance': 0,
+        'running_balance': running_balance,
+        'status': '-',
+        'aging': '-'
+    })
+    
+    today = datetime.utcnow().date()
+    
+    # Combine all events into a single sorted list
+    events = []
+    
+    for s in sales:
+        # Gross Sale (Debit)
+        events.append({
+            'date': s.date,
+            'type': 'sale',
+            'invoice_number': s.invoice_number,
+            'desc': f"Invoice #{s.invoice_number}",
+            'debit': float(s.subtotal or 0) + float(s.tax or 0) + float(s.delivery_charge or 0),
+            'credit': 0,
+            'status': (s.status or 'unpaid').capitalize(),
+            'obj': s
+        })
+        # Discount (Credit)
+        if float(s.discount or 0) > 0:
+            events.append({
+                'date': s.date,
+                'type': 'discount',
+                'invoice_number': s.invoice_number,
+                'desc': f"Discount (Inv #{s.invoice_number})",
+                'debit': 0,
+                'credit': float(s.discount or 0),
+                'status': '-',
+                'obj': s
+            })
+    
+    for p in payments:
+        events.append({
+            'date': p.date,
+            'type': 'payment',
+            'invoice_number': p.invoice.invoice_number if p.invoice else '-',
+            'desc': f"Payment Received ({p.method or 'Cash'})",
+            'debit': 0,
+            'credit': float(p.amount or 0),
+            'status': '-',
+            'obj': p
+        })
+        
+    for a in advances:
+        # Convert date to datetime for sorting if necessary
+        dt = datetime.combine(a.date, datetime.min.time())
+        events.append({
+            'date': dt,
+            'type': 'advance',
+            'invoice_number': '-',
+            'desc': f"Advance Received: {a.description or ''}",
+            'debit': 0,
+            'credit': float(a.amount or 0),
+            'status': '-',
+            'obj': a
+        })
+        
+    for r in returns:
+        events.append({
+            'date': r.date,
+            'type': 'return',
+            'invoice_number': r.return_number,
+            'desc': f"Sales Return #{r.return_number}",
+            'debit': 0,
+            'credit': float(r.total or 0),
+            'status': (r.status or 'completed').capitalize(),
+            'obj': r
+        })
+        
+    # Sort events by date
+    events.sort(key=lambda x: x['date'])
+    
+    # Calculate Aging Buckets (on current unpaid invoices only)
+    aging_buckets = {'0-30': 0, '31-60': 0, '61-90': 0, '91-180': 0, '>180': 0}
+    for s in sales:
+        if s.status != 'paid':
+            invoice_date = s.date.date()
+            days_old = (today - invoice_date).days
+            bucket = '>180'
+            if days_old <= 30: bucket = '0-30'
+            elif days_old <= 60: bucket = '31-60'
+            elif days_old <= 90: bucket = '61-90'
+            elif days_old <= 180: bucket = '91-180'
+            aging_buckets[bucket] += float(s.total - s.paid_amount)
+
+    total_sales = 0
+    total_discounts = 0
+    total_paid = 0
+    
+    for e in events:
+        debit = e['debit']
+        credit = e['credit']
+        running_balance += (debit - credit)
+        
+        if e['type'] == 'sale':
+            total_sales += debit
+        elif e['type'] == 'discount':
+            total_discounts += credit
+        elif e['type'] == 'payment':
+            total_paid += credit
+            
+        ledger_entries.append({
+            'date': e['date'].strftime('%d/%m/%Y'),
+            'invoice_number': e['desc'],
+            'customer_name': customer.name,
+            'debit': debit,
+            'credit': credit,
+            'invoice_balance': 0, # Not applicable in detailed ledger
+            'running_balance': running_balance,
+            'status': e['status'],
+            'aging': '-' if e['type'] != 'sale' else '-' # Bucket calculation could be added here
+        })
+
+    summary = {
+        'total_sales': total_sales,
+        'total_discounts': total_discounts,
+        'total_advances': float(customer.total_advances_received or 0),
+        'remaining_advance': float(customer.remaining_advance_balance or 0),
+        'total_paid': total_paid,
+        'total_outstanding': running_balance,
+        'aging_buckets': aging_buckets
+    }
+    
+    return jsonify({
+        'customer_name': customer.name,
+        'entries': ledger_entries,
+        'summary': summary
+    })
+
+@bp.route('/customer/<int:id>/ledger-excel')
+@login_required
+def customer_ledger_excel(id):
+    customer = Customer.query.get_or_404(id)
+    
+    # Filter selected IDs if provided
+    selected_ids = request.args.get('ids', '').split(',') if request.args.get('ids') else []
+    
+    # Opening balance
+    opening_balance = float(customer.opening_balance or 0)
+    
+    sales = Sale.query.filter_by(customer_id=id).order_by(Sale.date.asc()).all()
+    advances = CustomerAdvance.query.filter_by(customer_id=id).order_by(CustomerAdvance.date.asc()).all()
+    returns = SaleReturn.query.filter_by(customer_id=id).order_by(SaleReturn.date.asc()).all()
+    
+    sale_ids = [s.id for s in sales]
+    payments = Payment.query.filter(Payment.invoice_id.in_(sale_ids)).order_by(Payment.date.asc()).all() if sale_ids else []
+    
+    events = []
+    for s in sales:
+        events.append({
+            'date': s.date,
+            'type': 'sale',
+            'desc': f"Invoice #{s.invoice_number}",
+            'inv': s.invoice_number,
+            'debit': float(s.subtotal or 0) + float(s.tax or 0) + float(s.delivery_charge or 0),
+            'credit': 0,
+            'status': (s.status or 'unpaid').capitalize()
+        })
+        if float(s.discount or 0) > 0:
+            events.append({
+                'date': s.date,
+                'type': 'discount',
+                'desc': f"Discount (Inv #{s.invoice_number})",
+                'inv': s.invoice_number,
+                'debit': 0,
+                'credit': float(s.discount or 0),
+                'status': '-'
+            })
+            
+    for p in payments:
+        events.append({
+            'date': p.date,
+            'type': 'payment',
+            'desc': f"Payment ({p.method or 'Cash'})",
+            'inv': p.invoice.invoice_number if p.invoice else '-',
+            'debit': 0,
+            'credit': float(p.amount or 0),
+            'status': '-'
+        })
+        
+    for a in advances:
+        dt = datetime.combine(a.date, datetime.min.time())
+        events.append({
+            'date': dt,
+            'type': 'advance',
+            'desc': f"Advance Received: {a.description or ''}",
+            'inv': '-',
+            'debit': 0,
+            'credit': float(a.amount or 0),
+            'status': '-'
+        })
+        
+    for r in returns:
+        events.append({
+            'date': r.date,
+            'type': 'return',
+            'desc': f"Sales Return #{r.return_number}",
+            'inv': r.return_number,
+            'debit': 0,
+            'credit': float(r.total or 0),
+            'status': (r.status or 'completed').capitalize()
+        })
+        
+    events.sort(key=lambda x: x['date'])
+    
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Customer Ledger"
+    
+    # Headers
+    headers = ['Date', 'Description', 'Invoice #', 'Debit', 'Credit', 'Balance']
+    ws.append(headers)
+    
+    # Styles
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    header_fill = PatternFill(start_color="D7E4BC", end_color="D7E4BC", fill_type="solid")
+    bold_font = Font(bold=True)
+    
+    for cell in ws[1]:
+        cell.font = bold_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+    
+    # Opening Balance Row
+    running_balance = opening_balance
+    ws.append([
+        '-', 
+        'Opening Balance', 
+        '-', 
+        opening_balance if opening_balance > 0 else 0, 
+        abs(opening_balance) if opening_balance < 0 else 0, 
+        running_balance
+    ])
+    ws.cell(row=2, column=6).font = bold_font
+    
+    total_sales_sum = 0
+    total_discounts_sum = 0
+    total_paid_sum = 0
+    total_advances_sum = float(customer.total_advances_received or 0)
+
+    # Data Rows
+    row_idx = 3
+    for e in events:
+        if selected_ids and e['inv'] not in selected_ids and e['inv'] != '-':
+            continue
+            
+        debit = e['debit']
+        credit = e['credit']
+        running_balance += (debit - credit)
+        
+        if e['type'] == 'sale': total_sales_sum += debit
+        elif e['type'] == 'discount': total_discounts_sum += credit
+        elif e['type'] == 'payment': total_paid_sum += credit
+        
+        d_str = e['date'].strftime('%d/%m/%Y') if hasattr(e['date'], 'strftime') else str(e['date'])
+        
+        ws.append([
+            d_str,
+            e['desc'],
+            e['inv'],
+            debit,
+            credit,
+            running_balance
+        ])
+        ws.cell(row=row_idx, column=6).font = bold_font
+        row_idx += 1
+
+    # Summary Section
+    ws.append([]) # Empty row
+    row_idx += 1
+    
+    summary_rows = [
+        ("Total Sales", total_sales_sum),
+        ("Total Discounts", total_discounts_sum),
+        ("Total Advances", total_advances_sum),
+        ("Total Paid", total_paid_sum),
+        ("Outstanding Balance", running_balance)
+    ]
+    
+    for label, val in summary_rows:
+        ws.append(["", "", "", "", label, val])
+        ws.cell(row=row_idx, column=5).font = bold_font
+        ws.cell(row=row_idx, column=5).alignment = Alignment(horizontal='right')
+        ws.cell(row=row_idx, column=6).font = bold_font
+        ws.cell(row=row_idx, column=6).alignment = Alignment(horizontal='right')
+        ws.cell(row=row_idx, column=6).number_format = '"PKR "#,##0.00'
+        row_idx += 1
+        
+    # Column Widths
+    ws.column_dimensions['A'].width = 12
+    ws.column_dimensions['B'].width = 40
+    ws.column_dimensions['C'].width = 15
+    ws.column_dimensions['D'].width = 15
+    ws.column_dimensions['E'].width = 25
+    ws.column_dimensions['F'].width = 25
+    
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    filename = f"Ledger_{customer.name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    return send_file(output, as_attachment=True, download_name=filename)

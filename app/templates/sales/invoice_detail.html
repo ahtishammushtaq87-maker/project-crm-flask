@@ -390,8 +390,15 @@
                                     <td>{{ loop.index }}</td>
                                     <td>
                                         <strong>{{ item.product.name if item.product else 'Deleted Product' }}</strong>
-                                        {% if item.product and item.product.sku %}<br><small class="text-muted">{{
-                                            item.product.sku }}</small>{% endif %}
+                                        {% if item.product and item.product.sku %}<br>
+                                        <small class="text-muted">
+                                            <a href="javascript:void(0)" class="entity-history-trigger text-decoration-none text-muted" 
+                                               data-bs-toggle="modal" data-bs-target="#entityHistoryModal" 
+                                               data-entity-type="inventory" data-entity-id="{{ item.product.id }}">
+                                                {{ item.product.sku }}
+                                            </a>
+                                        </small>
+                                        {% endif %}
                                     </td>
                                     <td class="text-center">{{ '{:,.2f}'.format(item.quantity) }}</td>
                                     <td class="text-end">PKR {{ "{:,.2f}".format(item.unit_price) }}</td>

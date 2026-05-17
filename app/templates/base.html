@@ -1859,26 +1859,263 @@
         });
     </script>
     <!-- Global Entity History Modal -->
-    <div class="modal fade" id="entityHistoryModal" tabindex="-1" aria-labelledby="entityHistoryModalLabel"
-        aria-hidden="true">
+    <div class="modal fade" id="entityHistoryModal" tabindex="-1" aria-labelledby="entityHistoryModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="entityHistoryModalLabel">Entity Details</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
-                        aria-label="Close"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body">
-                    <!-- Dynamic Content -->
+                <div class="modal-body"></div>
+                <div class="modal-footer"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Customer Ledger Modal -->
+    <div class="modal fade" id="customerLedgerModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content shadow-lg border-0">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title font-monospace"><i class="fas fa-file-invoice-dollar me-2"></i>Customer Ledger: <span id="ledgerCustomerName"></span></h5>
+                    <div class="ms-auto me-3 d-flex gap-2">
+                        <a id="downloadLedgerExcel" href="#" class="btn btn-sm btn-light shadow-sm">
+                            <i class="fas fa-file-excel me-1 text-success"></i> Excel
+                        </a>
+                        <a id="downloadLedgerPDF" href="#" target="_blank" class="btn btn-sm btn-light shadow-sm">
+                            <i class="fas fa-file-pdf me-1 text-danger"></i> PDF
+                        </a>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
                 </div>
-                <div class="modal-footer">
-                    <!-- Dynamic Buttons -->
+                <div class="modal-body p-0 bg-light" style="min-height: 400px;">
+                    <div id="ledgerSpinner" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2 text-muted">Generating Ledger...</p>
+                    </div>
+                    <div id="ledgerContent" class="p-4" style="display:none;">
+                        <div class="table-responsive bg-white rounded shadow-sm mb-4">
+                            <table class="table table-hover align-middle mb-0" id="ledgerTable">
+                                <thead class="table-light">
+                                    <tr class="text-nowrap">
+                                        <th class="text-center no-export" style="width: 40px;">
+                                            <input type="checkbox" id="ledgerSelectAll" class="form-check-input">
+                                        </th>
+                                        <th>Date</th>
+                                        <th>Invoice #</th>
+                                        <th>Customer</th>
+                                        <th class="text-end">Debit / Sale</th>
+                                        <th class="text-end">Credit / Paid</th>
+                                        <th class="text-end">Balance</th>
+                                        <th class="text-end">Running Balance</th>
+                                        <th class="text-center">Status</th>
+                                        <th class="text-center">Aging</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ledgerBody"></tbody>
+                            </table>
+                        </div>
+
+                        <div class="row g-4">
+                            <div class="col-md-6">
+                                <div class="card h-100 border-0 shadow-sm overflow-hidden">
+                                    <div class="card-header bg-info bg-opacity-10 py-3">
+                                        <h6 class="mb-0 text-info font-monospace fw-bold">Aging Bucket Summary</h6>
+                                    </div>
+                                    <div class="card-body p-0">
+                                        <table class="table table-sm table-borderless mb-0">
+                                            <thead>
+                                                <tr class="bg-light text-muted small uppercase">
+                                                    <th class="ps-3 py-2">Customer</th>
+                                                    <th class="text-center py-2">0-30</th>
+                                                    <th class="text-center py-2">31-60</th>
+                                                    <th class="text-center py-2">61-90</th>
+                                                    <th class="text-center py-2">91-180</th>
+                                                    <th class="text-center py-2">>180</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr class="fw-bold border-top">
+                                                    <td class="ps-3 py-3" id="agingCustomerName"></td>
+                                                    <td class="text-center text-primary py-3" id="bucket-0-30"></td>
+                                                    <td class="text-center text-warning py-3" id="bucket-31-60"></td>
+                                                    <td class="text-center text-danger py-3" id="bucket-61-90"></td>
+                                                    <td class="text-center text-dark py-3" id="bucket-91-180"></td>
+                                                    <td class="text-center text-muted py-3" id="bucket-above-180"></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card h-100 border-0 shadow-sm">
+                                    <div class="card-body p-4">
+                                        <div class="d-flex justify-content-between mb-2">
+                                            <span class="text-muted">Total Sales:</span>
+                                            <span class="fw-bold fs-5" id="summaryTotalSales"></span>
+                                        </div>
+                                        <div class="d-flex justify-content-between mb-2">
+                                            <span class="text-muted">Total Discounts:</span>
+                                            <span class="text-danger fw-bold fs-5" id="summaryTotalDiscounts"></span>
+                                        </div>
+                                        <div class="d-flex justify-content-between mb-2">
+                                            <span class="text-muted">Total Advances:</span>
+                                            <span class="text-info fw-bold fs-5" id="summaryTotalAdvances"></span>
+                                        </div>
+                                        <div class="d-flex justify-content-between mb-2 pb-2 border-bottom">
+                                            <span class="text-muted">Total Paid:</span>
+                                            <span class="text-success fw-bold fs-5" id="summaryTotalPaid"></span>
+                                        </div>
+                                        <div class="d-flex justify-content-between mt-3">
+                                            <span class="h5 mb-0 text-primary fw-bold">Outstanding Balance:</span>
+                                            <span class="h4 mb-0 text-primary fw-bold" id="summaryOutstanding"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <script src="{{ url_for('static', filename='js/entity_handler.js') }}"></script>
+    <script>
+        function updateLedgerDownloadLink(targetId) {
+            const selected = Array.from(document.querySelectorAll('.ledger-item-checkbox:checked'))
+                .map(cb => cb.value);
+            
+            const excelLink = document.getElementById('downloadLedgerExcel');
+            const pdfLink = document.getElementById('downloadLedgerPDF');
+            
+            let excelUrl = `/sales/customer/${targetId}/ledger-excel`;
+            let pdfUrl = `/sales/customer/${targetId}/ledger-pdf`;
+            
+            if (selected.length > 0) {
+                const query = `?ids=${encodeURIComponent(selected.join(','))}`;
+                excelUrl += query;
+                pdfUrl += query;
+            }
+            
+            excelLink.href = excelUrl;
+            pdfLink.href = pdfUrl;
+        }
+
+        function showCustomerLedger(customerId) {
+            let targetId = customerId;
+            if (!targetId || targetId == '0') {
+                const select = document.getElementById('customerSelect');
+                if (select) targetId = select.value;
+            }
+
+            if (!targetId || targetId == '0') {
+                alert('Please select a valid customer first.');
+                return;
+            }
+
+            const modalEl = document.getElementById('customerLedgerModal');
+            if (window.bootstrap && window.bootstrap.Modal) {
+                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                modal.show();
+            } else if (typeof jQuery !== 'undefined' && typeof jQuery.fn.modal !== 'undefined') {
+                $(modalEl).modal('show');
+            } else {
+                alert('System error: UI Modal controller not found.');
+                return;
+            }
+
+            const spinner = document.getElementById('ledgerSpinner');
+            const content = document.getElementById('ledgerContent');
+            const ledgerBody = document.getElementById('ledgerBody');
+            
+            spinner.style.display = 'block';
+            content.style.display = 'none';
+
+            // Reset select all checkbox
+            document.getElementById('ledgerSelectAll').checked = false;
+
+            fetch(`/sales/customer/${targetId}/ledger-json`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('ledgerCustomerName').textContent = data.customer_name;
+                    document.getElementById('agingCustomerName').textContent = data.customer_name;
+                    
+                    // Initialize download links
+                    document.getElementById('downloadLedgerExcel').href = `/sales/customer/${targetId}/ledger-excel`;
+                    document.getElementById('downloadLedgerPDF').href = `/sales/customer/${targetId}/ledger-pdf`;
+                    
+                    ledgerBody.innerHTML = '';
+                    data.entries.forEach(entry => {
+                        const tr = document.createElement('tr');
+                        tr.className = entry.invoice_number === 'Opening Balance' ? 'table-secondary fw-bold' : '';
+                        
+                        let statusClass = 'bg-secondary';
+                        if(entry.status === 'Paid') statusClass = 'bg-success';
+                        else if(entry.status === 'Partial') statusClass = 'bg-warning text-dark';
+                        else if(entry.status === 'Unpaid') statusClass = 'bg-danger';
+
+                        tr.innerHTML = `
+                            <td class="text-center no-export">
+                                <input type="checkbox" class="form-check-input ledger-item-checkbox" value="${entry.invoice_number}">
+                            </td>
+                            <td>${entry.date}</td>
+                            <td class="fw-bold">${entry.invoice_number}</td>
+                            <td>${entry.customer_name}</td>
+                            <td class="text-end fw-bold text-dark">PKR${entry.debit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td class="text-end fw-bold text-success">PKR${entry.credit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td class="text-end fw-bold text-danger">PKR${entry.invoice_balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td class="text-end fw-bold">PKR${entry.running_balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td class="text-center"><span class="badge ${statusClass}">${entry.status}</span></td>
+                            <td class="text-center"><span class="small font-monospace">${entry.aging}</span></td>
+                        `;
+                        ledgerBody.appendChild(tr);
+                    });
+
+                    // Add event listeners for checkboxes
+                    document.querySelectorAll('.ledger-item-checkbox').forEach(cb => {
+                        cb.addEventListener('change', () => updateLedgerDownloadLink(targetId));
+                    });
+
+                    // Select All logic
+                    document.getElementById('ledgerSelectAll').onchange = function() {
+                        const isChecked = this.checked;
+                        document.querySelectorAll('.ledger-item-checkbox').forEach(cb => {
+                            cb.checked = isChecked;
+                        });
+                        updateLedgerDownloadLink(targetId);
+                    };
+
+                    // Summary
+                    document.getElementById('bucket-0-30').textContent = `PKR${data.summary.aging_buckets['0-30'].toLocaleString()}`;
+                    document.getElementById('bucket-31-60').textContent = `PKR${data.summary.aging_buckets['31-60'].toLocaleString()}`;
+                    document.getElementById('bucket-61-90').textContent = `PKR${data.summary.aging_buckets['61-90'].toLocaleString()}`;
+                    document.getElementById('bucket-91-180').textContent = `PKR${data.summary.aging_buckets['91-180'].toLocaleString()}`;
+                    document.getElementById('bucket-above-180').textContent = `PKR${data.summary.aging_buckets['>180'].toLocaleString()}`;
+
+                    document.getElementById('summaryTotalSales').textContent = `PKR${data.summary.total_sales.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                    document.getElementById('summaryTotalDiscounts').textContent = `PKR${data.summary.total_discounts.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                    document.getElementById('summaryTotalAdvances').textContent = `PKR${data.summary.total_advances.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                    document.getElementById('summaryTotalPaid').textContent = `PKR${data.summary.total_paid.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                    document.getElementById('summaryOutstanding').textContent = `PKR${data.summary.total_outstanding.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+                    spinner.style.display = 'none';
+                    content.style.display = 'block';
+                })
+                .catch(error => {
+                    console.error('Error fetching ledger:', error);
+                    alert('Failed to load ledger data.');
+                    if (window.bootstrap && window.bootstrap.Modal) {
+                        bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+                    } else {
+                        $(modalEl).modal('hide');
+                    }
+                });
+        }
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 

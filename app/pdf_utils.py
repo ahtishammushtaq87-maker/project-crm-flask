@@ -12,6 +12,10 @@ from reportlab.platypus import (
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import arabic_reshaper
+from bidi.algorithm import get_display
 
 def load_template_config(doc_type):
     try:
@@ -66,6 +70,17 @@ class ProfessionalPDFGenerator:
         self.company = company
         self.settings = invoice_settings
         self.template = template_config
+        
+        # Register Font for Urdu/Unicode support
+        self.urdu_font = 'Helvetica'
+        try:
+            font_path = "C:\\Windows\\Fonts\\arial.ttf"
+            if os.path.exists(font_path):
+                pdfmetrics.registerFont(TTFont('Arial-Unicode', font_path))
+                self.urdu_font = 'Arial-Unicode'
+        except Exception:
+            pass
+
         self.setup_custom_styles()
         self._apply_template_settings()
 
@@ -508,7 +523,7 @@ class ProfessionalPDFGenerator:
 
         # Place thank-you message outside (below) the terms box
         if extra_thank:
-            elements.append(Spacer(1, 6))
+            elements.append(Spacer(1, 15))
             elements.append(extra_thank)
 
         return elements
@@ -648,7 +663,8 @@ class ProfessionalPDFGenerator:
                 'ExtraThankYou',
                 parent=self.styles['Normal'],
                 fontSize=9,
-                alignment=TA_LEFT,
+                fontName=self.urdu_font,
+                alignment=TA_RIGHT,
                 textColor=TEXT_COLOR,
                 spaceAfter=6,
                 leading=14,
@@ -656,16 +672,48 @@ class ProfessionalPDFGenerator:
             )
             amount_due_fmt = f'{currency}{amount_due:,.2f}' if amount_due is not None else 'N/A'
             due_date_fmt = due_date_str if due_date_str else 'N/A'
-            # ── CORRECT: Use <br/> for line breaks, NEVER <p> tags ──────────
-            extra_thank = Paragraph(
-                f"<br/>Thank you, <b>{customer_name}</b>, for your recent purchase."
-                f"Your amount due is <b>{amount_due_fmt}</b>, due by <b>{due_date_fmt}</b>."
-                f"Any discount is valid only if paid by the due date."
-                f"If you have any questions, please let us know.<br/>"
-                f"Best regards,<br/>"
-                f"We look forward to serving you again in the future.",
-                extra_thank_style
+            
+            # ── English Message (Left Aligned) ──
+            eng_style = ParagraphStyle(
+                'ExtraThankYouEng',
+                parent=self.styles['Normal'],
+                fontSize=8.5,
+                fontName='Helvetica',
+                alignment=TA_LEFT,
+                textColor=TEXT_COLOR,
+                leading=12
             )
+            eng_text = (
+                f"Thank you, <b>{customer_name}</b>, for your recent purchase.<br/>"
+                f"Your amount due is <b>{amount_due_fmt}</b>, due by <b>{due_date_fmt}</b>.<br/>"
+                f"Any discount is valid only if paid by the due date.<br/>"
+                f"If you have any questions, please let us know.<br/><br/>"
+                f"Best regards,<br/>"
+                f"We look forward to serving you again in the future."
+            )
+            eng_p = Paragraph(eng_text, eng_style)
+
+            # ── Urdu Message (Shaped & Right Aligned) ──
+            u_text = (
+                f"شکریہ، <b>{customer_name}</b>، آپ کی حالیہ خریداری کے لیے۔\n"
+                f"آپ کی قابلِ ادائیگی رقم <b>{amount_due_fmt}</b> ہے، جس کی آخری تاریخ <b>{due_date_fmt}</b> ہے۔\n"
+                f"کوئی بھی رعایت صرف مقررہ تاریخ تک ادائیگی کی صورت میں ہی قابلِ قبول ہوگی۔\n"
+                f"اگر آپ کے کوئی سوالات ہوں تو براہِ کرم ہمیں آگاہ کریں۔\n"
+                f"نیک تمناؤں کے ساتھ،\n"
+                f"ہم مستقبل میں دوبارہ آپ کی خدمت کرنے کے منتظر ہیں۔"
+            )
+            reshaped_text = arabic_reshaper.reshape(u_text)
+            bidi_text = get_display(reshaped_text)
+            bidi_text = bidi_text.replace('\n', '<br/>')
+            urdu_p = Paragraph(bidi_text, extra_thank_style)
+            
+            # Combine in a two-column table
+            extra_thank = Table([[eng_p, urdu_p]], colWidths=[3.7 * inch, 3.7 * inch])
+            extra_thank.setStyle(TableStyle([
+                ('VALIGN',      (0,0), (-1,-1), 'TOP'),
+                ('LEFTPADDING', (0,0), (-1,-1), 0),
+                ('RIGHTPADDING',(0,0), (-1,-1), 0),
+            ]))
 
         elements.extend(self._build_bottom_section(totals, payment_info, terms, notes, extra_thank=extra_thank, is_purchase=is_purchase))
 

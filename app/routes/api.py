@@ -44,11 +44,15 @@ def get_entity_details(entity_type, entity_id):
                 data['history'].append({'date': r.date, 'event': f"Return Created: {r.return_number}", 'type': 'return'})
 
             # Actions
-            data['actions'] = [
+            data['actions'] = []
+            if entity.customer_id:
+                data['actions'].append({'label': 'Ledger()', 'url': 'javascript:void(0)', 'btn_class': 'btn-outline-primary', 'onclick': f"showCustomerLedger({entity.customer_id}); bootstrap.Modal.getInstance(document.getElementById('entityHistoryModal')).hide();"})
+
+            data['actions'].extend([
                 {'label': 'View Full', 'url': url_for('sales.invoice_detail', id=entity.id), 'btn_class': 'btn-primary'},
                 {'label': 'Edit', 'url': url_for('sales.edit_invoice', id=entity.id), 'btn_class': 'btn-info', 'permission': 'sales.edit'},
                 {'label': 'Delete', 'url': url_for('sales.delete_invoice', id=entity.id), 'btn_class': 'btn-danger', 'permission': 'sales.delete', 'is_form': True}
-            ]
+            ])
             if entity.status != 'paid':
                 data['actions'].append({'label': 'Return', 'url': url_for('returns.create_return', sale_id=entity.id), 'btn_class': 'btn-warning', 'permission': 'returns.add'})
 
@@ -108,6 +112,7 @@ def get_entity_details(entity_type, entity_id):
                 data['history'].append({'date': s.date, 'event': f"Invoice {s.invoice_number}: PKR {s.total:,.2f}", 'type': 'sale'})
 
             data['actions'] = [
+                {'label': 'Ledger()', 'url': 'javascript:void(0)', 'btn_class': 'btn-outline-primary', 'onclick': f"showCustomerLedger({entity.id}); bootstrap.Modal.getInstance(document.getElementById('entityHistoryModal')).hide();"},
                 {'label': 'Edit', 'url': url_for('sales.edit_customer', id=entity.id), 'btn_class': 'btn-info', 'permission': 'customers.edit'},
                 {'label': 'Full Profile', 'url': url_for('sales.customer_profile', id=entity.id), 'btn_class': 'btn-primary'}
             ]
