@@ -73,13 +73,28 @@ class ProfessionalPDFGenerator:
         
         # Register Font for Urdu/Unicode support
         self.urdu_font = 'Helvetica'
-        try:
-            font_path = "C:\\Windows\\Fonts\\arial.ttf"
-            if os.path.exists(font_path):
-                pdfmetrics.registerFont(TTFont('Arial-Unicode', font_path))
-                self.urdu_font = 'Arial-Unicode'
-        except Exception:
-            pass
+        
+        # Possible paths for Urdu-supporting fonts (like Arial)
+        possible_paths = [
+            # Local project path (Recommended for VPS deployment)
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'app', 'static', 'fonts', 'arial.ttf'),
+            # Linux common paths
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/TTF/arial.ttf",
+            # Windows path
+            "C:\\Windows\\Fonts\\arial.ttf"
+        ]
+        
+        for font_path in possible_paths:
+            try:
+                if os.path.exists(font_path):
+                    font_name = 'Urdu-Font-' + os.path.basename(font_path).split('.')[0]
+                    pdfmetrics.registerFont(TTFont(font_name, font_path))
+                    self.urdu_font = font_name
+                    break
+            except Exception:
+                continue
 
         self.setup_custom_styles()
         self._apply_template_settings()
