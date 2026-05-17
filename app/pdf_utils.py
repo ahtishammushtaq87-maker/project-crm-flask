@@ -143,25 +143,28 @@ class ProfessionalPDFGenerator:
     # ── Typography ─────────────────────────────────────────────────────────
     def setup_custom_styles(self):
         add = self.styles.add
-        add(ParagraphStyle('InvoiceTitle',   parent=self.styles['Normal'], fontSize=26, textColor=BLACK,         fontName='Helvetica-Bold', alignment=TA_RIGHT, spaceAfter=1))
+        u_f = self.urdu_font
+        u_f_b = self.urdu_font # Since we might not have a separate bold font, we use the same one
+        
+        add(ParagraphStyle('InvoiceTitle',   parent=self.styles['Normal'], fontSize=26, textColor=BLACK,         fontName=u_f_b, alignment=TA_RIGHT, spaceAfter=1))
         add(ParagraphStyle('InvoiceSub',     parent=self.styles['Normal'], fontSize=8,  textColor=MUTED_TEXT,    alignment=TA_RIGHT, spaceAfter=1))
         add(ParagraphStyle('MetaLabel',      parent=self.styles['Normal'], fontSize=7.5,textColor=MUTED_TEXT,    alignment=TA_RIGHT))
-        add(ParagraphStyle('MetaValue',      parent=self.styles['Normal'], fontSize=8,  textColor=TEXT_COLOR,    fontName='Helvetica-Bold', alignment=TA_RIGHT))
-        add(ParagraphStyle('StatusBadge',    parent=self.styles['Normal'], fontSize=7.5,textColor=PRIMARY_COLOR, fontName='Helvetica-Bold', alignment=TA_RIGHT))
-        add(ParagraphStyle('CompanyName',    parent=self.styles['Normal'], fontSize=11, textColor=TEXT_COLOR,    fontName='Helvetica-Bold', spaceAfter=1))
+        add(ParagraphStyle('MetaValue',      parent=self.styles['Normal'], fontSize=8,  textColor=TEXT_COLOR,    fontName=u_f_b, alignment=TA_RIGHT))
+        add(ParagraphStyle('StatusBadge',    parent=self.styles['Normal'], fontSize=7.5,textColor=PRIMARY_COLOR, fontName=u_f_b, alignment=TA_RIGHT))
+        add(ParagraphStyle('CompanyName',    parent=self.styles['Normal'], fontSize=11, textColor=TEXT_COLOR,    fontName=u_f_b, spaceAfter=1))
         add(ParagraphStyle('CompanyInfo',    parent=self.styles['Normal'], fontSize=7,  textColor=MUTED_TEXT,    leading=10))
-        add(ParagraphStyle('BoxTitle',       parent=self.styles['Normal'], fontSize=8,  textColor=PRIMARY_COLOR, fontName='Helvetica-Bold', spaceAfter=3, leftIndent=0))
-        add(ParagraphStyle('BoxValue',       parent=self.styles['Normal'], fontSize=7.5,textColor=TEXT_COLOR,    leading=10, alignment=TA_LEFT, leftIndent=0))
-        add(ParagraphStyle('TblHeader',      parent=self.styles['Normal'], fontSize=7.5,textColor=WHITE,         fontName='Helvetica-Bold'))
-        add(ParagraphStyle('TblCell',        parent=self.styles['Normal'], fontSize=7.5,textColor=TEXT_COLOR,    leading=10))
-        add(ParagraphStyle('TblCellSub',     parent=self.styles['Normal'], fontSize=6.5,textColor=MUTED_TEXT,    leading=9))
-        add(ParagraphStyle('TotalLabel',     parent=self.styles['Normal'], fontSize=8,  textColor=TEXT_COLOR,    alignment=TA_LEFT))
-        add(ParagraphStyle('TotalValue',     parent=self.styles['Normal'], fontSize=8,  textColor=TEXT_COLOR,    alignment=TA_RIGHT))
-        add(ParagraphStyle('GrandLabel',     parent=self.styles['Normal'], fontSize=9,  textColor=TEXT_COLOR,    fontName='Helvetica-Bold', alignment=TA_LEFT))
-        add(ParagraphStyle('GrandValue',     parent=self.styles['Normal'], fontSize=9,  textColor=TEXT_COLOR,    fontName='Helvetica-Bold', alignment=TA_RIGHT))
-        add(ParagraphStyle('NotesTitle',     parent=self.styles['Normal'], fontSize=8,  textColor=PRIMARY_COLOR, fontName='Helvetica-Bold', spaceAfter=3))
-        add(ParagraphStyle('NotesText',      parent=self.styles['Normal'], fontSize=7,  textColor=TEXT_COLOR,    leading=10))
-        add(ParagraphStyle('SectionHeader',  parent=self.styles['Normal'], fontSize=8,  textColor=PRIMARY_COLOR, fontName='Helvetica-Bold', spaceBefore=6, spaceAfter=3))
+        add(ParagraphStyle('BoxTitle',       parent=self.styles['Normal'], fontSize=8,  textColor=PRIMARY_COLOR, fontName=u_f_b, spaceAfter=3, leftIndent=0))
+        add(ParagraphStyle('BoxValue',       parent=self.styles['Normal'], fontSize=7.5,textColor=TEXT_COLOR,    leading=10, alignment=TA_LEFT, leftIndent=0, fontName=u_f))
+        add(ParagraphStyle('TblHeader',      parent=self.styles['Normal'], fontSize=7.5,textColor=WHITE,         fontName=u_f_b))
+        add(ParagraphStyle('TblCell',        parent=self.styles['Normal'], fontSize=7.5,textColor=TEXT_COLOR,    leading=10, fontName=u_f))
+        add(ParagraphStyle('TblCellSub',     parent=self.styles['Normal'], fontSize=6.5,textColor=MUTED_TEXT,    leading=9, fontName=u_f))
+        add(ParagraphStyle('TotalLabel',     parent=self.styles['Normal'], fontSize=8,  textColor=TEXT_COLOR,    alignment=TA_LEFT, fontName=u_f))
+        add(ParagraphStyle('TotalValue',     parent=self.styles['Normal'], fontSize=8,  textColor=TEXT_COLOR,    alignment=TA_RIGHT, fontName=u_f))
+        add(ParagraphStyle('GrandLabel',     parent=self.styles['Normal'], fontSize=9,  textColor=TEXT_COLOR,    fontName=u_f_b, alignment=TA_LEFT))
+        add(ParagraphStyle('GrandValue',     parent=self.styles['Normal'], fontSize=9,  textColor=TEXT_COLOR,    fontName=u_f_b, alignment=TA_RIGHT))
+        add(ParagraphStyle('NotesTitle',     parent=self.styles['Normal'], fontSize=8,  textColor=PRIMARY_COLOR, fontName=u_f_b, spaceAfter=3))
+        add(ParagraphStyle('NotesText',      parent=self.styles['Normal'], fontSize=7,  textColor=TEXT_COLOR,    leading=10, fontName=u_f))
+        add(ParagraphStyle('SectionHeader',  parent=self.styles['Normal'], fontSize=8,  textColor=PRIMARY_COLOR, fontName=u_f_b, spaceBefore=6, spaceAfter=3))
 
     # ── Logo ───────────────────────────────────────────────────────────────
     def _get_logo(self):
@@ -614,9 +617,21 @@ class ProfessionalPDFGenerator:
         # ── Center: FOOTER MESSAGE ─────────────────────────────────────────
         if self.footer_message:
             msg_y = divider_y - 11 - 20
-            c.setFont('Helvetica-Bold', 7.5)
+            # Use Urdu font if available, otherwise fallback to Helvetica-Bold
+            f_name = self.urdu_font if self.urdu_font != 'Helvetica' else 'Helvetica-Bold'
+            c.setFont(f_name, 7.5)
             c.setFillColor(TEXT_COLOR)
-            c.drawCentredString(w / 2, msg_y, str(self.footer_message))
+            
+            # Shape Urdu text for canvas drawing if needed
+            display_msg = str(self.footer_message)
+            try:
+                # If it looks like Urdu/Arabic, reshape it
+                reshaped = arabic_reshaper.reshape(display_msg)
+                display_msg = get_display(reshaped)
+            except Exception:
+                pass
+                
+            c.drawCentredString(w / 2, msg_y, display_msg)
 
         # ── Right: CUSTOMER SUPPORT ────────────────────────────────────────
         if self.footer_show_company_info:
