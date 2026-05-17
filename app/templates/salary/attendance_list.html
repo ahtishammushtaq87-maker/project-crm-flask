@@ -11,51 +11,51 @@
         font-weight: 600;
         transition: all 0.3s ease;
     }
-    
+
     .clock-in-btn {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
     }
-    
+
     .clock-in-btn:hover {
         background: linear-gradient(135deg, #5a67d8 0%, #6b3fa0 100%);
         transform: translateY(-2px);
         box-shadow: 0 8px 15px rgba(102, 126, 234, 0.4);
     }
-    
+
     .clock-out-btn {
         background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
         color: white;
     }
-    
+
     .clock-out-btn:hover {
         background: linear-gradient(135deg, #ef82f7 0%, #f34361 100%);
         transform: translateY(-2px);
         box-shadow: 0 8px 15px rgba(245, 87, 108, 0.4);
     }
-    
+
     .status-badge {
         padding: 0.35rem 0.75rem;
         border-radius: 20px;
         font-size: 0.85rem;
         font-weight: 600;
     }
-    
+
     .status-clocked-in {
         background: #d4edda;
         color: #155724;
     }
-    
+
     .status-clocked-out {
         background: #d1ecf1;
         color: #0c5460;
     }
-    
+
     .status-idle {
         background: #e2e3e5;
         color: #383d41;
     }
-    
+
     .time-badge {
         background: #fff3cd;
         color: #856404;
@@ -64,7 +64,7 @@
         font-weight: 600;
         font-size: 0.95rem;
     }
-    
+
     .earned-badge {
         background: #d4edda;
         color: #155724;
@@ -73,7 +73,7 @@
         font-weight: 600;
         font-size: 0.95rem;
     }
-    
+
     .staff-card {
         border: 1px solid #e0e0e0;
         border-radius: 8px;
@@ -81,17 +81,29 @@
         margin-bottom: 1rem;
         transition: all 0.3s ease;
     }
-    
+
     .staff-card:hover {
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     }
-    
+
     .filter-section {
         background: white;
         padding: 1.5rem;
         border-radius: 8px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
         margin-bottom: 2rem;
+    }
+
+    .quick-clock-inputs label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #6c757d;
+        margin-bottom: 2px;
+    }
+
+    .quick-clock-inputs .form-control {
+        font-size: 0.85rem;
+        padding: 0.3rem 0.6rem;
     }
 </style>
 {% endblock %}
@@ -109,7 +121,7 @@
             {% endif %}
         </div>
     </div>
-    
+
     <!-- Filter Section -->
     <div class="filter-section">
         <form method="GET" class="row g-3 align-items-end">
@@ -126,7 +138,7 @@
                 <select name="staff_id" class="form-select">
                     <option value="">-- All Staff --</option>
                     {% for staff in all_staff %}
-                    <option value="{{ staff.id }}" {% if staff_id_filter|string == staff.id|string %}selected{% endif %}>
+                    <option value="{{ staff.id }}" {% if staff_id_filter|string==staff.id|string %}selected{% endif %}>
                         {{ staff.name }}
                     </option>
                     {% endfor %}
@@ -139,7 +151,7 @@
             </div>
         </form>
     </div>
-    
+
     <!-- Summary Cards -->
     <div class="row mb-4">
         <div class="col-md-4">
@@ -167,7 +179,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Attendance Records Table -->
     <div class="card">
         <div class="card-header bg-white">
@@ -178,7 +190,8 @@
                 <thead class="table-light">
                     <tr>
                         <th style="width: 40px;" class="text-center no-export border-0 px-3">
-                            <input type="checkbox" id="selectAll" class="form-check-input" onclick="document.querySelectorAll('.attendance-checkbox').forEach(cb => cb.checked = this.checked)">
+                            <input type="checkbox" id="selectAll" class="form-check-input"
+                                onclick="document.querySelectorAll('.attendance-checkbox').forEach(cb => cb.checked = this.checked)">
                         </th>
                         <th>Date</th>
                         <th>Staff Member</th>
@@ -195,86 +208,92 @@
                 </thead>
                 <tbody>
                     {% if attendance_records %}
-                        {% for record in attendance_records %}
-                        <tr>
-                            <td class="text-center px-3 no-export">
-                                <input type="checkbox" class="form-check-input attendance-checkbox" value="{{ record.id }}">
-                            </td>
-                            <td><strong>{{ record.date.strftime('%Y-%m-%d') }}</strong></td>
-                            <td>{{ record.staff.name }}</td>
-                            <td>
-                                {% if record.clock_in %}
-                                    <span class="time-badge">{{ record.clock_in.strftime('%H:%M:%S') }}</span>
-                                {% else %}
-                                    <span class="badge bg-light text-dark">—</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if record.clock_out %}
-                                    <span class="time-badge">{{ record.clock_out.strftime('%H:%M:%S') }}</span>
-                                {% else %}
-                                    <span class="badge bg-warning">Active</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                <span class="time-badge">{{ record.get_time_summary() }}</span>
-                            </td>
-                            <td>
-                                {% if record.used_break %}
-                                    <span class="badge bg-info text-white">1h</span>
-                                {% else %}
-                                    <span class="text-muted">—</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if record.deduct_hours > 0 or record.deduct_minutes > 0 %}
-                                    <span class="badge bg-danger text-white">{{ record.deduct_hours|int }}h {{ record.deduct_minutes }}m</span>
-                                    {% if record.deduct_reason %}
-                                        <i class="fas fa-comment-dots ms-1 text-primary" title="{{ record.deduct_reason }}" data-bs-toggle="tooltip"></i>
-                                    {% endif %}
-                                {% else %}
-                                    <span class="text-muted">—</span>
-                                {% endif %}
-                            </td>
-                            <td>PKR {{ "%.2f"|format(record.hourly_rate) }}/h</td>
-                            <td>
-                                <span class="earned-badge">PKR {{ "%.2f"|format(record.earned_amount) }}</span>
-                            </td>
-                            <td>
-                                {% if record.notes %}
-                                    <small>{{ record.notes[:30] }}</small>
-                                {% else %}
-                                    <small class="text-muted">—</small>
-                                {% endif %}
-                            </td>
-                            <td class="no-export">
-                                                                {% if current_user.has_permission('attendance', 'edit') %}
-<a href="{{ url_for('attendance.edit_attendance', attendance_id=record.id) }}" class="btn btn-sm btn-outline-primary">
-                                    <i class="fas fa-edit"></i>
-                                </a>
-{% endif %}                                
-                                                                {% if current_user.has_permission('attendance', 'delete') %}
-<form method="POST" action="{{ url_for('attendance.delete_attendance', attendance_id=record.id) }}" style="display:inline;">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this record?')">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </form>
-{% endif %}                                
-                            </td>
-                        </tr>
-                        {% endfor %}
+                    {% for record in attendance_records %}
+                    <tr>
+                        <td class="text-center px-3 no-export">
+                            <input type="checkbox" class="form-check-input attendance-checkbox" value="{{ record.id }}">
+                        </td>
+                        <td><strong>{{ record.date.strftime('%Y-%m-%d') }}</strong></td>
+                        <td>{{ record.staff.name }}</td>
+                        <td>
+                            {% if record.clock_in %}
+                            <span class="time-badge">{{ record.clock_in.strftime('%H:%M:%S') }}</span>
+                            {% else %}
+                            <span class="badge bg-light text-dark">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if record.clock_out %}
+                            <span class="time-badge">{{ record.clock_out.strftime('%H:%M:%S') }}</span>
+                            {% else %}
+                            <span class="badge bg-warning">Active</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="time-badge">{{ record.get_current_duration() }}</span>
+                        </td>
+                        <td>
+                            {% if record.used_break %}
+                            <span class="badge bg-info text-white">1h</span>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if record.deduct_hours > 0 or record.deduct_minutes > 0 %}
+                            <span class="badge bg-danger text-white">{{ record.deduct_hours|int }}h {{
+                                record.deduct_minutes }}m</span>
+                            {% if record.deduct_reason %}
+                            <i class="fas fa-comment-dots ms-1 text-primary" title="{{ record.deduct_reason }}"
+                                data-bs-toggle="tooltip"></i>
+                            {% endif %}
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>PKR {{ "%.2f"|format(record.hourly_rate) }}/h</td>
+                        <td>
+                            <span class="earned-badge">PKR {{ "%.2f"|format(record.earned_amount) }}</span>
+                        </td>
+                        <td>
+                            {% if record.notes %}
+                            <small>{{ record.notes[:30] }}</small>
+                            {% else %}
+                            <small class="text-muted">—</small>
+                            {% endif %}
+                        </td>
+                        <td class="no-export">
+                            {% if current_user.has_permission('attendance', 'edit') %}
+                            <a href="{{ url_for('attendance.edit_attendance', attendance_id=record.id) }}"
+                                class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                            {% endif %}
+                            {% if current_user.has_permission('attendance', 'delete') %}
+                            <form method="POST"
+                                action="{{ url_for('attendance.delete_attendance', attendance_id=record.id) }}"
+                                style="display:inline;">
+                                <button type="submit" class="btn btn-sm btn-outline-danger"
+                                    onclick="return confirm('Delete this record?')">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
                     {% else %}
-                        <tr>
-                            <td colspan="11" class="text-center py-4 text-muted">
-                                No attendance records found for the selected period.
-                            </td>
-                        </tr>
+                    <tr>
+                        <td colspan="11" class="text-center py-4 text-muted">
+                            No attendance records found for the selected period.
+                        </td>
+                    </tr>
                     {% endif %}
                 </tbody>
             </table>
         </div>
     </div>
-    
+
     <!-- Quick Clock In/Out Section -->
     <div class="mt-5 mb-5">
         <h4 class="mb-4">⏱️ Quick Clock In/Out</h4>
@@ -289,20 +308,96 @@
                         </div>
                         <span class="badge bg-success">PKR {{ "%.2f"|format(staff.daily_salary) }}/day</span>
                     </div>
-                    
+
                     <div class="mb-3">
                         <small class="text-muted">Hourly Rate:</small>
-                        <p class="mb-0"><strong>PKR {{ "%.2f"|format(staff.daily_salary / 8) }}/hour</strong></p>
+                        <p class="mb-1"><strong>PKR {{ "%.2f"|format(staff.daily_salary / 8) }}/hour</strong></p>
+
+                        {% set today_att = today_attendance.get(staff.id) %}
+                        {% if today_att %}
+                        <div class="mt-2 text-primary">
+                            <small><i class="fas fa-clock"></i> In: {{ today_att.clock_in.strftime('%H:%M') if
+                                today_att.clock_in }}</small>
+                            {% if today_att.clock_out %}
+                            <small class="ms-2"><i class="fas fa-sign-out-alt"></i> Out: {{
+                                today_att.clock_out.strftime('%H:%M') }}</small>
+                            {% else %}
+                            <small class="ms-2 text-warning"><i class="fas fa-spinner fa-spin"></i> Live: {{ today_att.get_current_duration() }}</small>
+                            {% endif %}
+                        </div>
+                        {% endif %}
                     </div>
-                    
+
+                    <div class="quick-clock-inputs mb-3">
+                        {% set today_att = today_attendance.get(staff.id) %}
+                        <div class="form-check form-switch mb-2 p-2 border rounded bg-white">
+                            <input class="form-check-input ms-0" type="checkbox" name="used_break_shared_{{ staff.id }}" id="break_{{ staff.id }}" {% if today_att and today_att.used_break %}checked{% endif %} onchange="updateSharedInputs('{{ staff.id }}')">
+                            <label class="form-check-label ms-2 fw-bold" for="break_{{ staff.id }}">
+                                🍴 Take 1-Hour Break
+                            </label>
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-6">
+                                <label>Deduct Hours</label>
+                                <input type="number" name="deduct_hours_shared_{{ staff.id }}" class="form-control"
+                                    value="{{ today_att.deduct_hours if today_att else 0 }}" step="0.5" min="0"
+                                    onchange="updateSharedInputs('{{ staff.id }}')">
+                            </div>
+                            <div class="col-6">
+                                <label>Deduct Mins</label>
+                                <input type="number" name="deduct_minutes_shared_{{ staff.id }}" class="form-control"
+                                    value="{{ today_att.deduct_minutes if today_att else 0 }}" min="0" max="59"
+                                    onchange="updateSharedInputs('{{ staff.id }}')">
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <label>Deduction Reason</label>
+                            <input type="text" name="deduct_reason_shared_{{ staff.id }}" class="form-control"
+                                value="{{ today_att.deduct_reason if today_att and today_att.deduct_reason else '' }}"
+                                placeholder="Reason..." onchange="updateSharedInputs('{{ staff.id }}')">
+                        </div>
+                        <div class="mb-0">
+                            <label>Notes</label>
+                            <input type="text" name="notes_shared_{{ staff.id }}" class="form-control"
+                                value="{{ today_att.notes if today_att and today_att.notes else '' }}"
+                                placeholder="Shift notes..." onchange="updateSharedInputs('{{ staff.id }}')">
+                        </div>
+                    </div>
+
                     <div class="d-grid gap-2">
-                        <form method="POST" action="{{ url_for('attendance.clock_in', staff_id=staff.id) }}" style="display:inline;">
+                        <form method="POST" action="{{ url_for('attendance.clock_in', staff_id=staff.id) }}"
+                            id="clockInForm_{{ staff.id }}" style="display:inline;">
+                            <input type="hidden" name="used_break" value="{{ 'true' if today_att and today_att.used_break else 'false' }}">
+                            <input type="hidden" name="deduct_hours"
+                                value="{{ today_att.deduct_hours if today_att else 0 }}">
+                            <input type="hidden" name="deduct_minutes"
+                                value="{{ today_att.deduct_minutes if today_att else 0 }}">
+                            <input type="hidden" name="deduct_reason"
+                                value="{{ today_att.deduct_reason if today_att and today_att.deduct_reason else '' }}">
+                            <input type="hidden" name="notes"
+                                value="{{ today_att.notes if today_att and today_att.notes else '' }}">
                             <button type="submit" class="btn clock-button clock-in-btn w-100">
-                                <i class="fas fa-sign-in-alt"></i> Clock In
+                                <i class="fas fa-sign-in-alt"></i>
+                                {% if today_att and today_att.clock_in and not today_att.clock_out %}
+                                Update Status
+                                {% else %}
+                                Clock In
+                                {% endif %}
                             </button>
                         </form>
-                        <form method="POST" action="{{ url_for('attendance.clock_out', staff_id=staff.id) }}" style="display:inline;">
-                            <button type="submit" class="btn clock-button clock-out-btn w-100">
+                        <form method="POST" action="{{ url_for('attendance.clock_out', staff_id=staff.id) }}"
+                            id="clockOutForm_{{ staff.id }}" style="display:inline;">
+                            <input type="hidden" name="used_break" value="{{ 'true' if today_att and today_att.used_break else 'false' }}">
+                            <input type="hidden" name="deduct_hours"
+                                value="{{ today_att.deduct_hours if today_att else 0 }}">
+                            <input type="hidden" name="deduct_minutes"
+                                value="{{ today_att.deduct_minutes if today_att else 0 }}">
+                            <input type="hidden" name="deduct_reason"
+                                value="{{ today_att.deduct_reason if today_att and today_att.deduct_reason else '' }}">
+                            <input type="hidden" name="notes"
+                                value="{{ today_att.notes if today_att and today_att.notes else '' }}">
+                            <button type="submit" class="btn clock-button clock-out-btn w-100" {% if not today_att or
+                                (today_att and today_att.clock_out) %}disabled{% endif %}>
                                 <i class="fas fa-sign-out-alt"></i> Clock Out
                             </button>
                         </form>
@@ -313,4 +408,30 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function updateSharedInputs(staffId) {
+        // Get values from visible inputs
+        const breakUsed = document.querySelector(`[name="used_break_shared_${staffId}"]`).checked;
+        const h = document.querySelector(`[name="deduct_hours_shared_${staffId}"]`).value;
+        const m = document.querySelector(`[name="deduct_minutes_shared_${staffId}"]`).value;
+        const r = document.querySelector(`[name="deduct_reason_shared_${staffId}"]`).value;
+        const n = document.querySelector(`[name="notes_shared_${staffId}"]`).value;
+ 
+        // Update hidden inputs in both forms
+        const forms = [`clockInForm_${staffId}`, `clockOutForm_${staffId}`];
+        forms.forEach(formId => {
+            const form = document.getElementById(formId);
+            if (form) {
+                form.querySelector('[name="used_break"]').value = breakUsed ? 'true' : 'false';
+                form.querySelector('[name="deduct_hours"]').value = h;
+                form.querySelector('[name="deduct_minutes"]').value = m;
+                form.querySelector('[name="deduct_reason"]').value = r;
+                form.querySelector('[name="notes"]').value = n;
+            }
+        });
+    }
+</script>
 {% endblock %}

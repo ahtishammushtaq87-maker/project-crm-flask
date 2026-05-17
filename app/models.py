@@ -1399,7 +1399,7 @@ class Attendance(db.Model):
     hourly_rate = db.Column(db.Float, default=0)  # Calculated hourly rate (monthly ÷ 30 ÷ 8)
     earned_amount = db.Column(db.Float, default=0)  # Amount earned (hours_worked × hourly_rate + minutes contribution)
     notes = db.Column(db.Text)  # Optional notes (e.g., half day, late, etc.)
-    used_break = db.Column(db.Boolean, default=True)  # Whether to subtract 1 hour break
+    used_break = db.Column(db.Boolean, default=False)  # Whether to subtract 1 hour break
     deduct_hours = db.Column(db.Float, default=0)
     deduct_minutes = db.Column(db.Integer, default=0)
     deduct_reason = db.Column(db.Text)
@@ -1425,7 +1425,8 @@ class Attendance(db.Model):
             total_minutes = int(total_seconds / 60)
             
             # 1. Standard 1-hour break (60 minutes)
-            if self.used_break and total_minutes >= 60:
+            # Only subtract if Shift is at least 4 hours (240 mins) to avoid zeroing out short shifts
+            if self.used_break and total_minutes >= 240:
                 total_minutes -= 60
             
             # 2. Custom deductions (hours + minutes)
@@ -1479,10 +1480,54 @@ class Attendance(db.Model):
         else:
             self.earned_amount = 0
     
+    def get_current_duration(self):
+        """Return live duration for active shifts or saved duration for completed shifts"""
+        if self.clock_in and not self.clock_out:
+            diff = datetime.now() - self.clock_in
+            total_mins = int(diff.total_seconds() / 60)
+            
+            # Subtraction logic (matching calculate_hours_worked)
+            if self.used_break and total_mins >= 240:
+                total_mins -= 60
+            
+            # Custom deductions
+            d_hours = getattr(self, 'deduct_hours', 0) or 0
+            d_mins = getattr(self, 'deduct_minutes', 0) or 0
+            total_mins -= int(d_hours * 60 + d_mins)
+            
+            if total_mins < 0: total_mins = 0
+            
+            h = total_mins // 60
+            m = total_mins % 60
+            return f"{h}h {m}m"
+        return self.get_time_summary()
+
+    def get_current_earned(self):
+        """Return live earnings for active shifts or saved earnings for completed shifts"""
+        if self.clock_in and not self.clock_out:
+            diff = datetime.now() - self.clock_in
+            total_mins = int(diff.total_seconds() / 60)
+            
+            if self.used_break and total_mins >= 240:
+                total_mins -= 60
+            
+            d_hours = getattr(self, 'deduct_hours', 0) or 0
+            d_mins = getattr(self, 'deduct_minutes', 0) or 0
+            total_mins -= int(d_hours * 60 + d_mins)
+            
+            if total_mins < 0: total_mins = 0
+            
+            # Ensure hourly rate is calculated
+            if not self.hourly_rate:
+                self.calculate_hourly_rate()
+                
+            return (total_mins / 60.0) * self.hourly_rate
+        return self.earned_amount
+
     def get_time_summary(self):
         """Return formatted time summary (e.g., '8h 30m')"""
         if self.hours_worked > 0 or self.minutes_worked > 0:
-            return f"{self.hours_worked}h {self.minutes_worked}m"
+            return f"{int(self.hours_worked)}h {int(self.minutes_worked)}m"
         return "0h 0m"
     
     def __repr__(self):

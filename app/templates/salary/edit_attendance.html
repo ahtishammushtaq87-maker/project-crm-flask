@@ -93,6 +93,14 @@
                 </div>
                 {% endif %}
                 
+                <div id="dynamic-preview" class="alert alert-primary" style="display: none;">
+                    <strong><i class="fas fa-calculator me-2"></i>New Calculation (Preview):</strong>
+                    <ul class="mb-0 mt-2">
+                        <li>New Duration: <span id="preview-duration">0h 0m</span></li>
+                        <li>New Earned Amount: <span id="preview-earned">PKR 0.00</span></li>
+                    </ul>
+                </div>
+                
                 <div class="d-grid gap-2">
                     <button type="submit" class="btn btn-primary">
                         <i class="fas fa-save"></i> Update Record
@@ -105,4 +113,65 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const clockInInput = document.querySelector('input[name="clock_in"]');
+        const clockOutInput = document.querySelector('input[name="clock_out"]');
+        const usedBreakInput = document.getElementById('usedBreak');
+        const deductHoursInput = document.querySelector('input[name="deduct_hours"]');
+        const deductMinutesInput = document.querySelector('input[name="deduct_minutes"]');
+        const previewDiv = document.getElementById('dynamic-preview');
+        const previewDuration = document.getElementById('preview-duration');
+        const previewEarned = document.getElementById('preview-earned');
+        
+        const hourlyRate = parseFloat('{{ attendance.hourly_rate or (attendance.staff.daily_salary / 8) }}');
+        
+        function calculatePreview() {
+            if (!clockInInput.value || !clockOutInput.value) {
+                previewDiv.style.display = 'none';
+                return;
+            }
+            
+            const [inH, inM] = clockInInput.value.split(':').map(Number);
+            const [outH, outM] = clockOutInput.value.split(':').map(Number);
+            
+            let totalMins = (outH * 60 + outM) - (inH * 60 + inM);
+            
+            // Handle cross-day shifts
+            if (totalMins < 0) totalMins += 24 * 60;
+            
+            // 1. Break
+            if (usedBreakInput.checked && totalMins >= 240) {
+                totalMins -= 60;
+            }
+            
+            // 2. Custom deductions
+            const dH = parseFloat(deductHoursInput.value || 0);
+            const dM = parseInt(deductMinutesInput.value || 0);
+            totalMins -= (dH * 60 + dM);
+            
+            if (totalMins < 0) totalMins = 0;
+            
+            const h = Math.floor(totalMins / 60);
+            const m = totalMins % 60;
+            
+            previewDuration.textContent = `${h}h ${m}m`;
+            
+            const earned = (totalMins / 60) * hourlyRate;
+            previewEarned.textContent = `PKR ${earned.toFixed(2)}`;
+            
+            previewDiv.style.display = 'block';
+        }
+        
+        [clockInInput, clockOutInput, usedBreakInput, deductHoursInput, deductMinutesInput].forEach(el => {
+            el.addEventListener('change', calculatePreview);
+            el.addEventListener('input', calculatePreview);
+        });
+        
+        calculatePreview(); // Initial run
+    });
+</script>
 {% endblock %}

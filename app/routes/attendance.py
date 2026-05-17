@@ -51,9 +51,31 @@ def index():
     total_earned = 0
     
     for record in attendance_records:
-        total_hours += record.hours_worked
-        total_minutes += record.minutes_worked
-        total_earned += record.earned_amount
+        if record.clock_in and not record.clock_out:
+            # Active shift (Live estimate)
+            diff = datetime.now() - record.clock_in
+            cur_total_mins = int(diff.total_seconds() / 60)
+            
+            if record.used_break and cur_total_mins >= 240:
+                cur_total_mins -= 60
+            
+            d_hours = getattr(record, 'deduct_hours', 0) or 0
+            d_mins = getattr(record, 'deduct_minutes', 0) or 0
+            cur_total_mins -= int(d_hours * 60 + d_mins)
+            
+            if cur_total_mins < 0: cur_total_mins = 0
+            
+            total_hours += cur_total_mins // 60
+            total_minutes += cur_total_mins % 60
+            
+            if not record.hourly_rate:
+                record.calculate_hourly_rate()
+            total_earned += (cur_total_mins / 60.0) * record.hourly_rate
+        else:
+            # Completed shift
+            total_hours += record.hours_worked
+            total_minutes += record.minutes_worked
+            total_earned += record.earned_amount
     
     # Convert minutes to hours
     total_hours += total_minutes // 60
@@ -62,9 +84,15 @@ def index():
     # Get all staff for filter dropdown
     all_staff = Staff.query.filter_by(is_active=True).all()
     
+    # Get today's attendance for quick status/prefill
+    today = datetime.now().date()
+    today_records = Attendance.query.filter_by(date=today).all()
+    today_attendance = {a.staff_id: a for a in today_records}
+    
     return render_template('salary/attendance_list.html',
                          attendance_records=attendance_records,
                          all_staff=all_staff,
+                         today_attendance=today_attendance,
                          date_from=date_from_str or date_from.strftime('%Y-%m-%d'),
                          date_to=date_to_str or date_to.strftime('%Y-%m-%d'),
                          total_hours=total_hours,
@@ -78,9 +106,15 @@ def index():
 @login_required
 @permission_required('attendance', action='add')
 def clock_in(staff_id):
-    """Staff clock in"""
+    """Staff clock in or update status"""
     staff = Staff.query.get_or_404(staff_id)
     today = datetime.now().date()
+    
+    used_break = request.form.get('used_break') == 'true'
+    deduct_hours = float(request.form.get('deduct_hours') or 0)
+    deduct_minutes = int(request.form.get('deduct_minutes') or 0)
+    deduct_reason = request.form.get('deduct_reason')
+    notes = request.form.get('notes')
     
     # Check if already clocked in today
     existing = Attendance.query.filter_by(
@@ -89,7 +123,14 @@ def clock_in(staff_id):
     ).first()
     
     if existing and existing.clock_in and not existing.clock_out:
-        flash(f'{staff.name} is already clocked in!', 'warning')
+        # Update existing record (Update deductions/notes during shift)
+        existing.used_break = used_break
+        existing.deduct_hours = deduct_hours
+        existing.deduct_minutes = deduct_minutes
+        existing.deduct_reason = deduct_reason
+        existing.notes = notes
+        db.session.commit()
+        flash(f'{staff.name}\'s deduction/notes updated.', 'success')
         return redirect(url_for('attendance.index'))
     
     if not existing:
@@ -97,13 +138,23 @@ def clock_in(staff_id):
         attendance = Attendance(
             staff_id=staff_id,
             date=today,
-            clock_in=datetime.now()
+            clock_in=datetime.now(),
+            notes=notes
         )
+        attendance.used_break = used_break
+        attendance.deduct_hours = deduct_hours
+        attendance.deduct_minutes = deduct_minutes
+        attendance.deduct_reason = deduct_reason
         attendance.calculate_hourly_rate()
         db.session.add(attendance)
     else:
-        # Update existing record (if they clocked out earlier)
+        # Update existing record (if they clocked out earlier and re-clocking in)
         existing.clock_in = datetime.now()
+        existing.used_break = used_break
+        existing.deduct_hours = deduct_hours
+        existing.deduct_minutes = deduct_minutes
+        existing.deduct_reason = deduct_reason
+        existing.notes = notes
     
     db.session.commit()
     flash(f'{staff.name} clocked in at {datetime.now().strftime("%H:%M:%S")}', 'success')
@@ -134,6 +185,13 @@ def clock_out(staff_id):
     if attendance.clock_out:
         flash(f'{staff.name} has already clocked out!', 'info')
         return redirect(url_for('attendance.index'))
+    
+    # Update deductions/notes at clock out
+    attendance.used_break = request.form.get('used_break') == 'true'
+    attendance.deduct_hours = float(request.form.get('deduct_hours') or 0)
+    attendance.deduct_minutes = int(request.form.get('deduct_minutes') or 0)
+    attendance.deduct_reason = request.form.get('deduct_reason')
+    attendance.notes = request.form.get('notes') or attendance.notes
     
     # Set clock out time and calculate
     attendance.clock_out = datetime.now()
