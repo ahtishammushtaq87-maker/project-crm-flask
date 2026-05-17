@@ -74,27 +74,33 @@ class ProfessionalPDFGenerator:
         # Register Font for Urdu/Unicode support
         self.urdu_font = 'Helvetica'
         
-        # Possible paths for Urdu-supporting fonts (like Arial)
+        # Possible paths for Urdu-supporting fonts
+        base_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
         possible_paths = [
-            # Local project path (Recommended for VPS deployment)
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'app', 'static', 'fonts', 'arial.ttf'),
-            # Linux common paths
+            os.path.join(base_dir, 'app', 'static', 'fonts', 'arial.ttf'),
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
             "/usr/share/fonts/TTF/arial.ttf",
-            # Windows path
             "C:\\Windows\\Fonts\\arial.ttf"
         ]
         
+        print(f"DEBUG: Starting font search. Base directory: {base_dir}")
         for font_path in possible_paths:
             try:
                 if os.path.exists(font_path):
-                    font_name = 'Urdu-Font-' + os.path.basename(font_path).split('.')[0]
+                    font_name = 'UrduFont'  # Hardcoded simple name for reliability
                     pdfmetrics.registerFont(TTFont(font_name, font_path))
                     self.urdu_font = font_name
+                    print(f"DEBUG: Successfully loaded font: {font_path}")
                     break
-            except Exception:
+                else:
+                    print(f"DEBUG: Font path not found: {font_path}")
+            except Exception as e:
+                print(f"DEBUG: Error loading font {font_path}: {str(e)}")
                 continue
+        
+        if self.urdu_font == 'Helvetica':
+            print("DEBUG: WARNING: Failed to load any Urdu-supporting font. Falling back to Helvetica.")
 
         self.setup_custom_styles()
         self._apply_template_settings()
