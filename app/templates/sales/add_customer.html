@@ -3,34 +3,35 @@
 
 {% block extra_css %}
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
+<link rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
-$(document).ready(function() {
-    $('.select2').select2({
-        theme: 'bootstrap-5',
-        width: '100%'
-    });
+    $(document).ready(function () {
+        $('.select2').select2({
+            theme: 'bootstrap-5',
+            width: '100%'
+        });
 
-    $('#saveGroupBtn').on('click', function() {
-        const name = $('#newGroupName').val();
-        if (!name) return alert('Name is required');
-        
-        $.post("{{ url_for('sales.quick_add_customer_group') }}", { name: name }, function(data) {
-            if (data.success) {
-                const newOption = new Option(data.group.name, data.group.id, true, true);
-                $('#groupSelect').append(newOption).trigger('change');
-                $('#quickAddGroupModal').modal('hide');
-                $('#newGroupName').val('');
-            } else {
-                alert(data.message);
-            }
+        $('#saveGroupBtn').on('click', function () {
+            const name = $('#newGroupName').val();
+            if (!name) return alert('Name is required');
+
+            $.post("{{ url_for('sales.quick_add_customer_group') }}", { name: name }, function (data) {
+                if (data.success) {
+                    const newOption = new Option(data.group.name, data.group.id, true, true);
+                    $('#groupSelect').append(newOption).trigger('change');
+                    $('#quickAddGroupModal').modal('hide');
+                    $('#newGroupName').val('');
+                } else {
+                    alert(data.message);
+                }
+            });
         });
     });
-});
 </script>
 
 <div class="modal fade" id="quickAddGroupModal" tabindex="-1">
@@ -60,28 +61,32 @@ $(document).ready(function() {
     <div class="row justify-content-center">
         <div class="col-md-8">
             <div class="card shadow-sm border-0">
-                <div class="card-header bg-white py-3"><h4>Add New Customer</h4></div>
+                <div class="card-header bg-white py-3">
+                    <h4>Add New Customer</h4>
+                </div>
                 <div class="card-body p-4">
                     <form method="POST">
                         {{ form.hidden_tag() }}
 
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label class="form-label fw-bold">Customer Name *</label>
+                                <label class="form-label fw-bold">Company Name *</label>
                                 {{ form.name(class="form-control", placeholder="Enter name") }}
-                                {% for error in form.name.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                                {% for error in form.name.errors %}<div class="text-danger small">{{ error }}</div>{%
+                                endfor %}
                             </div>
-                            <div class="col-md-6 mb-3">
+                            <!--<div class="col-md-6 mb-3">
                                 <label class="form-label fw-bold">Company Name</label>
                                 {{ form.company_name(class="form-control", placeholder="Employer or Business name") }}
-                            </div>
+                            </div>-->
                         </div>
                         <div class="row">
                             <div class="col-md-12 mb-3">
                                 <label class="form-label fw-bold">Customer Group</label>
                                 <div class="input-group">
                                     {{ form.group_id(class="form-control select2", id="groupSelect") }}
-                                    <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#quickAddGroupModal">
+                                    <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal"
+                                        data-bs-target="#quickAddGroupModal">
                                         <i class="fas fa-plus"></i>
                                     </button>
                                 </div>
@@ -91,7 +96,8 @@ $(document).ready(function() {
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-bold">Email</label>
                                 {{ form.email(class="form-control", placeholder="email@example.com") }}
-                                {% for error in form.email.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                                {% for error in form.email.errors %}<div class="text-danger small">{{ error }}</div>{%
+                                endfor %}
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-bold">Phone</label>
@@ -116,9 +122,9 @@ $(document).ready(function() {
                         <hr>
                         <div class="mb-4">
                             <label class="form-label fw-bold d-flex justify-content-between align-items-center">
-                                Sub Customers (Display Only)
+                                Customers name:
                                 <button type="button" class="btn btn-sm btn-success" id="add-sub-btn">
-                                    <i class="fas fa-plus"></i> Add Sub Customer
+                                    <i class="fas fa-plus"></i> Add Customer
                                 </button>
                             </label>
                             <div id="sub-customers-wrap" class="mt-2">
@@ -129,8 +135,10 @@ $(document).ready(function() {
                         <hr>
 
                         <div class="d-flex gap-2">
-                            <button type="submit" id="submit-btn" class="btn btn-primary px-4"><i class="fas fa-save me-1"></i> Save Customer</button>
-                            <a href="{{ url_for('sales.customers') }}" class="btn btn-outline-secondary px-4"><i class="fas fa-times me-1"></i> Cancel</a>
+                            <button type="submit" id="submit-btn" class="btn btn-primary px-4"><i
+                                    class="fas fa-save me-1"></i> Save Customer</button>
+                            <a href="{{ url_for('sales.customers') }}" class="btn btn-outline-secondary px-4"><i
+                                    class="fas fa-times me-1"></i> Cancel</a>
                         </div>
                     </form>
                 </div>
@@ -140,16 +148,16 @@ $(document).ready(function() {
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const wrapper = document.getElementById('sub-customers-wrap');
-    const addBtn = document.getElementById('add-sub-btn');
-    const hiddenInput = document.getElementById('sub_customers_data');
-    const form = hiddenInput.closest('form');
+    document.addEventListener('DOMContentLoaded', function () {
+        const wrapper = document.getElementById('sub-customers-wrap');
+        const addBtn = document.getElementById('add-sub-btn');
+        const hiddenInput = document.getElementById('sub_customers_data');
+        const form = hiddenInput.closest('form');
 
-    function createRow(name = '', phone = '') {
-        const div = document.createElement('div');
-        div.className = 'row mb-2 sub-customer-row';
-        div.innerHTML = `
+        function createRow(name = '', phone = '') {
+            const div = document.createElement('div');
+            div.className = 'row mb-2 sub-customer-row';
+            div.innerHTML = `
             <div class="col-md-5">
                 <input type="text" class="form-control sub-name" placeholder="Sub Customer Name" value="${name}">
             </div>
@@ -162,30 +170,30 @@ document.addEventListener('DOMContentLoaded', function() {
                 </button>
             </div>
         `;
-        
-        div.querySelector('.remove-sub-btn').addEventListener('click', function() {
-            div.remove();
-        });
-        
-        wrapper.appendChild(div);
-    }
 
-    addBtn.addEventListener('click', function() {
-        createRow();
-    });
+            div.querySelector('.remove-sub-btn').addEventListener('click', function () {
+                div.remove();
+            });
 
-    form.addEventListener('submit', function() {
-        const rows = wrapper.querySelectorAll('.sub-customer-row');
-        const data = [];
-        rows.forEach(row => {
-            const name = row.querySelector('.sub-name').value.trim();
-            const phone = row.querySelector('.sub-phone').value.trim();
-            if (name || phone) {
-                data.push({ name, phone });
-            }
+            wrapper.appendChild(div);
+        }
+
+        addBtn.addEventListener('click', function () {
+            createRow();
         });
-        hiddenInput.value = data.length > 0 ? JSON.stringify(data) : '';
+
+        form.addEventListener('submit', function () {
+            const rows = wrapper.querySelectorAll('.sub-customer-row');
+            const data = [];
+            rows.forEach(row => {
+                const name = row.querySelector('.sub-name').value.trim();
+                const phone = row.querySelector('.sub-phone').value.trim();
+                if (name || phone) {
+                    data.push({ name, phone });
+                }
+            });
+            hiddenInput.value = data.length > 0 ? JSON.stringify(data) : '';
+        });
     });
-});
 </script>
 {% endblock %}

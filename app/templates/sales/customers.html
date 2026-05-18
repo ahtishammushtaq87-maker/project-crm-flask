@@ -135,12 +135,12 @@
                             <th style="width: 40px;" class="text-center no-export">
                                 <input type="checkbox" id="selectAll" class="form-check-input">
                             </th>
-                            <th>Name</th>
-                            <th>Company</th>
+                            <th>Company Name</th>
+                            <th></th>
                             <th>Group</th>
                             <th>Email</th>
                             <th>Phone</th>
-                            <th>Sub Customers</th>
+                            <th>Customers Name</th>
                             <th>GST Number</th>
                             <th>Total Sales</th>
                             <th>Outstanding</th>
@@ -156,7 +156,9 @@
                                     value="{{ customer.id }}">
                             </td>
                             <td>
-                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="customer" data-entity-id="{{ customer.id }}">
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal"
+                                    data-bs-target="#entityHistoryModal" data-entity-type="customer"
+                                    data-entity-id="{{ customer.id }}">
                                     {{ customer.name }}
                                 </a>
                             </td>
@@ -175,7 +177,8 @@
                                 {% if customer.sub_customers_list %}
                                 <ul class="list-unstyled mb-0 small">
                                     {% for sub in customer.sub_customers_list %}
-                                    <li><i class="fas fa-user-circle text-muted me-1"></i>{{ sub.name }} ({{ sub.phone }})</li>
+                                    <li><i class="fas fa-user-circle text-muted me-1"></i>{{ sub.name }} ({{ sub.phone
+                                        }})</li>
                                     {% endfor %}
                                 </ul>
                                 {% else %}
