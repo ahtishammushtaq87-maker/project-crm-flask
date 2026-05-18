@@ -243,14 +243,18 @@
                                 <input type="checkbox" class="form-check-input invoice-checkbox" value="{{ sale.id }}">
                             </td>
                             <td class="fw-bold">
-                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="sale" data-entity-id="{{ sale.id }}">
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal"
+                                    data-bs-target="#entityHistoryModal" data-entity-type="sale"
+                                    data-entity-id="{{ sale.id }}">
                                     {{ sale.invoice_number }}
                                 </a>
                             </td>
                             <td>{{ sale.date.strftime(date_format) }}</td>
                             <td>
                                 {% if sale.customer %}
-                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="customer" data-entity-id="{{ sale.customer.id }}">
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal"
+                                    data-bs-target="#entityHistoryModal" data-entity-type="customer"
+                                    data-entity-id="{{ sale.customer.id }}">
                                     {{ sale.customer.name }}
                                 </a>
                                 {% else %}

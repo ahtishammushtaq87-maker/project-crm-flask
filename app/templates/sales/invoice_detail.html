@@ -244,6 +244,9 @@
                         Walk-in Customer
                         {% endif %}
                     </p>
+                    {% if sale.customer and sale.customer.company_name %}
+                    <p class="mb-1"><strong>Company:</strong> {{ sale.customer.company_name }}</p>
+                    {% endif %}
                     <p class="mb-1"><strong>Phone:</strong> {{ sale.customer.phone if sale.customer else 'N/A' }}</p>
                     <p class="mb-1"><strong>Email:</strong> {{ sale.customer.email if sale.customer else 'N/A' }}</p>
                     <p class="mb-1"><strong>Address:</strong> {{ sale.customer.address if sale.customer else 'N/A' }}

@@ -4,19 +4,19 @@
     <div class="modal-content">
 
       <!-- Header -->
-      <div class="modal-header">
+      <div class="modal-header bg-primary text-white">
         <h5 class="modal-title" id="universalFilterModalLabel">
           <i class="fas fa-filter me-2"></i>Advanced Filter
         </h5>
-        <div class="d-flex align-items-center gap-2">
-          <select id="ufm-saved-filters" class="form-select form-select-sm" style="min-width: 140px; max-width: 200px;">
+        <div class="ms-auto d-flex align-items-center gap-2 me-2">
+          <select id="ufm-saved-filters" class="form-select form-select-sm" style="min-width: 140px; max-width: 200px; background-color: rgba(255,255,255,0.9);">
             <option value="">-- Saved Filters --</option>
           </select>
-          <button type="button" id="ufm-btn-delete-saved" class="btn btn-sm btn-outline-danger d-none" title="Delete saved filter">
-            <i class="fas fa-trash"></i>
+          <button type="button" id="ufm-btn-delete-saved" class="btn btn-sm btn-light d-none" title="Delete saved filter">
+            <i class="fas fa-trash text-danger"></i>
           </button>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
 
       <!-- Body -->
@@ -103,24 +103,10 @@
   </div>
 </div>
 
-<!-- Universal Filter Button (floating, shown on pages that opt-in) -->
-<div id="universal-filter-trigger-wrapper" class="d-none">
-  <button type="button" id="universal-filter-trigger-btn" class="btn btn-primary btn-sm shadow"
-          data-bs-toggle="modal" data-bs-target="#universalFilterModal">
-    <i class="fas fa-filter me-1"></i>Advanced Filter
-  </button>
-</div>
+<!-- The floating trigger button is now centrally managed in base.html and moved via JS -->
 
 <style>
-  /* Floating trigger button */
-  #universal-filter-trigger-wrapper {
-    position: absolute !important;
-    top: 30px !important;
-    width: 20% !important;
-    left: 647px;
-    right: 0px;
-    z-index: 1040;
-  }
+  /* Base styles for trigger button — will be moved into dataTable-buttons via JS */
   #universal-filter-trigger-btn {
     border-radius: 25px;
     padding: 3px 8px;
@@ -153,14 +139,13 @@
   /* Mobile responsive adjustments */
   @media (max-width: 767px) {
     #universal-filter-trigger-wrapper {
-      display: none !important;
-      top: auto;
-      bottom: 80px;
-      right: 10px;
+      margin-top: 10px;
+      width: 100%;
     }
     #universal-filter-trigger-btn {
-      padding: 10px 14px;
-      font-size: 0.85rem;
+      width: 100%;
+      justify-content: center;
+      border-radius: 8px;
     }
     .ufm-rule-row {
       padding: 0.5rem;

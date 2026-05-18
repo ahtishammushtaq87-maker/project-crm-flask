@@ -137,15 +137,21 @@
 
             // Priority 2: page-level context div
             if (!mod) {
-                mod = $('#module-context').attr('data-module');
+                mod = $('#module-context').data('module');
             }
 
-            // Priority 3: body data-module
+            // Priority 3: URL based detection (Fallback)
             if (!mod) {
-                mod = $('body').attr('data-module');
+                const path = window.location.pathname;
+                if (path.includes('/sales/invoices')) mod = 'sale';
+                else if (path.includes('/returns')) mod = 'sale_return';
+                else if (path.includes('/accounting/expenses')) mod = 'expense';
+                else if (path.includes('/purchase/bills')) mod = 'purchase';
+                else if (path.includes('/products')) mod = 'product';
             }
 
             QB.currentModule = (mod || '').toLowerCase().trim();
+            console.log("QueryBuilder: Detected module ->", QB.currentModule);
             $('#ufm-module-label').text(QB.currentModule || 'none');
         },
 
@@ -230,7 +236,7 @@
                 '    </div>' +
                 '    <div class="col-auto text-md-center">' +
                 '      <button type="button" class="ufm-rule-remove" title="Remove rule">' +
-                '        <i class="fas fa-times-circle"></i>' +
+                '        <i class="fas fa-times"></i>' +
                 '      </button>' +
                 '    </div>' +
                 '  </div>' +

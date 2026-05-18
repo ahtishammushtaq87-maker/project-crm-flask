@@ -163,7 +163,7 @@ class ProfessionalPDFGenerator:
         add(ParagraphStyle('GrandLabel',     parent=self.styles['Normal'], fontSize=9,  textColor=TEXT_COLOR,    fontName=u_f_b, alignment=TA_LEFT))
         add(ParagraphStyle('GrandValue',     parent=self.styles['Normal'], fontSize=9,  textColor=TEXT_COLOR,    fontName=u_f_b, alignment=TA_RIGHT))
         add(ParagraphStyle('NotesTitle',     parent=self.styles['Normal'], fontSize=8,  textColor=PRIMARY_COLOR, fontName=u_f_b, spaceAfter=3))
-        add(ParagraphStyle('NotesText',      parent=self.styles['Normal'], fontSize=7,  textColor=TEXT_COLOR,    leading=10, fontName=u_f))
+        add(ParagraphStyle('NotesText',      parent=self.styles['Normal'], fontSize=7,  textColor=TEXT_COLOR,    leading=9, fontName=u_f))
         add(ParagraphStyle('SectionHeader',  parent=self.styles['Normal'], fontSize=8,  textColor=PRIMARY_COLOR, fontName=u_f_b, spaceBefore=6, spaceAfter=3))
 
     # ── Logo ───────────────────────────────────────────────────────────────
@@ -254,23 +254,28 @@ class ProfessionalPDFGenerator:
 
     # ── INFO BOXES ─────────────────────────────────────────────────────────
     def _build_info_boxes(self, client_data, ship_to=None, reference_data=None, is_invoice=False):
-        BOX_W = 3.0 * inch
-        GAP   = 0.125 * inch   # visible space between boxes
+        GAP   = 0.15 * inch   # visible space between boxes
 
-        def make_box(title_text, rows, custom_style=None):
-            data = [[Paragraph(title_text, self.styles['BoxTitle'])]]
+        def make_box(title_text, rows, width=3.0*inch, custom_style=None):
+            # Ensure the title is always bold
+            bold_title = f"<b>{title_text}</b>"
+            data = [[Paragraph(bold_title, self.styles['BoxTitle'])]]
             for row in rows:
                 data.append([Paragraph(row, self.styles['BoxValue'])])
-            tbl = Table(data, colWidths=[BOX_W])
+            tbl = Table(data, colWidths=[width])
             style = [
                 ('VALIGN',        (0,0), (-1,-1), 'TOP'),
                 ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
-                ('TOPPADDING',    (0,0), (-1,-1), 3),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+                ('TOPPADDING',    (0,0), (-1,-1), 0),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 2),
                 ('LEFTPADDING',   (0,0), (-1,-1), 8),
                 ('RIGHTPADDING',  (0,0), (-1,-1), 6),
                 ('BACKGROUND',    (0,0), (-1,-1), WHITE),
             ]
+            # Extra padding for title row and box bottom
+            style.append(('TOPPADDING', (0,0), (-1,0), 3))
+            style.append(('BOTTOMPADDING', (0,0), (-1,0), 3))
+            style.append(('BOTTOMPADDING', (0,-1), (-1,-1), 4))
             if custom_style:
                 style.extend(custom_style)
             else:
@@ -278,17 +283,35 @@ class ProfessionalPDFGenerator:
             tbl.setStyle(TableStyle(style))
             return tbl
 
+        # Define flexible widths based on layout
+        if is_invoice and not reference_data and not ship_to:
+            # Standard 2-box Invoice layout: Bill To | Our Locations
+            box1_w = 4.6 * inch
+            box4_w = 2.7 * inch
+            gap_w  = TABLE_WIDTH - box1_w - box4_w
+        else:
+            box1_w = 3.0 * inch
+            box4_w = 3.0 * inch
+            gap_w  = GAP
+
         # Box 1 – Bill To
         b1_rows = []
-        label_map = {'name': 'Name', 'company': 'Company', 'address': 'Address', 'email': 'Email', 'phone': 'Phone', 'gst_number': 'GST No'}
-        for key in ('name', 'company', 'address', 'email', 'phone', 'gst_number'):
+        company = client_data.get('company')
+        name = client_data.get('name')
+        if company:
+            b1_rows.append(f"<b>Company:</b> {company}")
+        elif name:
+            b1_rows.append(f"<b>Name:</b> {name}")
+
+        label_map = {'address': 'Address', 'email': 'Email', 'phone': 'Phone', 'gst_number': 'GST No'}
+        for key in ('address', 'email', 'phone', 'gst_number'):
             val = client_data.get(key, '')
             if val:
                 label = label_map.get(key, key)
                 b1_rows.append(f"<b>{label}:</b> {val}")
-        box1 = make_box(self._bill_to_label or self._get_label('bill_to', 'BILL TO'), b1_rows)
+        box1 = make_box(self._bill_to_label or self._get_label('bill_to', 'BILL TO'), b1_rows, width=box1_w)
 
-        # Box 2 – Ship To / Ship From (only show if ship_to is provided)
+        # Box 2 – Ship To / Ship From
         box2 = None
         if ship_to:
             b2_rows = []
@@ -298,52 +321,45 @@ class ProfessionalPDFGenerator:
                     b2_rows.append(f"<b>{key.title()}:</b> {val}")
             if ship_to.get('contact_person'):
                 b2_rows.append(f"<b>Contact:</b> {ship_to['contact_person']}")
-            if not b2_rows:
-                b2_rows = ['N/A']
-            
-            # Use custom label if provided (e.g., "SHIP FROM" for purchase docs)
+            if not b2_rows: b2_rows = ['N/A']
             ship_label = getattr(self, '_ship_to_label', None) or self._get_label('ship_to', 'SHIP TO')
-            box2 = make_box(ship_label, b2_rows)
+            box2 = make_box(ship_label, b2_rows, width=3.0*inch)
 
         # Box 3 – Reference
         b3_rows = [f"<b>{k}:</b> {v}" for k, v in (reference_data or {}).items() if v]
 
+        # Box 4 – Locations
         box4 = None
         if is_invoice:
             addr_rows = [
                 "<b>Address 1:</b> No. 139 Tiyu West Road, Unit 15-A, Tianhe District, Guangzhou, Guangdong, 510620",
                 "<b>Address 2:</b> LS-25, Super Auto Parts Market, Main Super Highway, Sohrab Goth, Karachi."
             ]
-            # They requested "wiht right border" - we will give it a standard box outline but specifically ensure a border to the right side if they meant border-right only. Standard BOX has right border.
-            box4 = make_box("Our Locations", addr_rows)
+            box4 = make_box("Our Locations", addr_rows, width=box4_w)
 
         if b3_rows:
-            box3 = make_box(self._get_label('reference', 'REFERENCE'), b3_rows)
+            box3 = make_box(self._get_label('reference', 'REFERENCE'), b3_rows, width=2.0*inch)
             if box2:
-                # 3 boxes: Bill To | Gap | Ship To | Gap | Reference
                 outer = Table([[box1, '', box2, '', box3]],
-                              colWidths=[2.1*inch, 0.15*inch, 2.1*inch, 0.15*inch, 1.8*inch])
+                              colWidths=[2.5*inch, 0.1*inch, 2.5*inch, 0.1*inch, 2.3*inch])
             elif box4:
-                # 3 boxes: Bill To | Gap | Our Addresses | Gap | Reference
                 outer = Table([[box1, '', box4, '', box3]],
-                              colWidths=[2.2*inch, 0.15*inch, 2.7*inch, 0.15*inch, 1.8*inch])
+                              colWidths=[2.6*inch, 0.1*inch, 2.6*inch, 0.1*inch, 2.1*inch])
             else:
-                # 2 boxes: Bill To | Gap | Reference
                 outer = Table([[box1, '', box3]],
-                              colWidths=[2.8*inch, 0.15*inch, 2.3*inch])
+                              colWidths=[4.0*inch, 0.2*inch, 3.3*inch])
         else:
             if box2:
-                # 2 boxes: Bill To on left, Ship To on right with small gap
+                # 2 boxes: Bill To | Ship To
                 outer = Table([[box1, '', box2]],
-                              colWidths=[2.8*inch, 1.5*inch, 2.8*inch])
+                              colWidths=[3.6*inch, 0.3*inch, 3.6*inch])
             elif box4:
-                # 2 boxes: Bill To on left, Our Addresses on right
+                # 2 boxes: Bill To | Our Locations
                 outer = Table([[box1, '', box4]],
-                              colWidths=[3.2*inch, 0.5*inch, 3.4*inch])
+                              colWidths=[box1_w, gap_w, box4_w])
             else:
                 # 1 box only: Bill To (center it)
-                outer = Table([[box1]],
-                              colWidths=[7.1*inch])
+                outer = Table([[box1]], colWidths=[TABLE_WIDTH])
 
         outer.setStyle(TableStyle([
             ('VALIGN',        (0,0), (-1,-1), 'TOP'),
@@ -720,22 +736,22 @@ class ProfessionalPDFGenerator:
                 leading=12
             )
             eng_text = (
-                f"Thank you, <b>{customer_name}</b>, for your recent purchase.<br/>"
-                f"Your amount due is <b>{amount_due_fmt}</b>, due by <b>{due_date_fmt}</b>.<br/>"
+                f"Thank you, {customer_name}, for your recent purchase.<br/>"
+                f"Your amount due is {amount_due_fmt}, due by {due_date_fmt}.<br/>"
                 f"Any discount is valid only if paid by the due date.<br/>"
                 f"If you have any questions, please let us know.<br/><br/>"
-                f"Best regards,<br/>"
+                f"Best regards,"
                 f"We look forward to serving you again in the future."
             )
             eng_p = Paragraph(eng_text, eng_style)
 
             # ── Urdu Message (Shaped & Right Aligned) ──
             u_text = (
-                f"شکریہ، <b>{customer_name}</b>، آپ کی حالیہ خریداری کے لیے۔\n"
-                f"آپ کی قابلِ ادائیگی رقم <b>{amount_due_fmt}</b> ہے، جس کی آخری تاریخ <b>{due_date_fmt}</b> ہے۔\n"
+                f"شکریہ، {customer_name}، آپ کی حالیہ خریداری کے لیے۔\n"
+                f"آپ کی قابلِ ادائیگی رقم {amount_due_fmt} ہے، جس کی آخری تاریخ {due_date_fmt} ہے۔"
                 f"کوئی بھی رعایت صرف مقررہ تاریخ تک ادائیگی کی صورت میں ہی قابلِ قبول ہوگی۔\n"
                 f"اگر آپ کے کوئی سوالات ہوں تو براہِ کرم ہمیں آگاہ کریں۔\n"
-                f"نیک تمناؤں کے ساتھ،\n"
+                f"نیک تمناؤں کے ساتھ،"
                 f"ہم مستقبل میں دوبارہ آپ کی خدمت کرنے کے منتظر ہیں۔"
             )
             reshaped_text = arabic_reshaper.reshape(u_text)
@@ -809,8 +825,8 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             'phone':      obj.customer.phone        if obj.customer else "",
             'gst_number': obj.customer.gst_number   if obj.customer else "",
         }
-        if obj.customer and getattr(obj.customer, 'company', None):
-            client_data['company'] = obj.customer.company
+        if obj.customer and getattr(obj.customer, 'company_name', None):
+            client_data['company'] = obj.customer.company_name
 
         ship_to = None
 
@@ -839,7 +855,7 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
         sc = obj.shipping_charge if (hasattr(obj, 'shipping_charge') and obj.shipping_charge) else 0
         totals = [
             ("Subtotal",           f"{currency}{obj.subtotal:,.2f}"),
-            ("<b>One Time Payment Discount</b>", f"<b>{currency}{obj.discount:,.2f}</b>"),
+            ("<b>One Time Payment Discount</b>", f"{currency}{obj.discount:,.2f}"),
             ("Shipping / Freight", f"{currency}{sc:,.2f}"),
             ("Tax",                f"{currency}{obj.tax:,.2f}"),
             ("Total Due",          f"{currency}{obj.total:,.2f}"),
@@ -893,6 +909,8 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             'phone':      obj.vendor.phone      if obj.vendor else "",
             'gst_number': obj.vendor.gst_number if obj.vendor else "",
         }
+        if obj.vendor and getattr(obj.vendor, 'company_name', None):
+            client_data['company'] = obj.vendor.company_name
         
         ship_to = None
         
@@ -969,6 +987,8 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             'phone':      obj.vendor.phone      if obj.vendor else "",
             'gst_number': obj.vendor.gst_number if obj.vendor else "",
         }
+        if obj.vendor and getattr(obj.vendor, 'company_name', None):
+            client_data['company'] = obj.vendor.company_name
         
         ship_to = None
         

@@ -159,11 +159,6 @@
             width: 1px !important;
         }
 
-        @media (min-width: 1940px) {
-            #universal-filter-trigger-wrapper {
-                left: 1000px !important;
-            }
-        }
 
         @media (max-width: 768px) {
             .select2-container--bootstrap-5 .select2-selection {
@@ -1171,21 +1166,7 @@
                 </div>
             </div>
 
-            <!-- Universal Filter Trigger (shown when active_module is set) -->
-            {% if active_module %}
-            <div id="universal-filter-trigger-wrapper" class="position-fixed"
-                style="top: 70px; right: 20px; z-index: 1040;">
-                <button type="button" class="btn btn-primary btn-sm shadow" id="universal-filter-trigger-btn"
-                    data-module="{{ active_module }}" data-bs-toggle="modal" data-bs-target="#universalFilterModal">
-                    <i class="fas fa-filter me-1"></i> Advanced Filter
-                </button>
-                {% if filter_id or request.args.get('filter_rules') %}
-                <a href="{{ request.path }}" class="btn btn-outline-danger btn-sm shadow ms-1" title="Clear filter">
-                    <i class="fas fa-times"></i>
-                </a>
-                {% endif %}
-            </div>
-            {% endif %}
+
 
             <!-- Active Filter Banner -->
             {% if filter_id or request.args.get('filter_rules') %}
@@ -1216,6 +1197,22 @@
             </div>
         </div>
     </div>
+
+    <!-- Universal Filter Trigger Button (fixed position, outside layout grid) -->
+    {% if active_module %}
+    <div id="universal-filter-trigger-wrapper" class="d-none"
+        style="position: fixed; top: 75px; right: 25px; z-index: 1060;">
+        <button type="button" class="btn btn-primary btn-sm shadow" id="universal-filter-trigger-btn"
+            data-module="{{ active_module }}" data-bs-toggle="modal" data-bs-target="#universalFilterModal">
+            <i class="fas fa-filter me-1"></i> Advanced Filter
+        </button>
+        {% if filter_id or request.args.get('filter_rules') %}
+        <a href="{{ request.path }}" class="btn btn-outline-danger btn-sm shadow ms-1" title="Clear filter">
+            <i class="fas fa-times"></i>
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
 
     <!-- Sticky Notification Bell (Bottom Right) -->
     <div class="notification-bell-wrapper" id="notificationBell" title="View notifications">
@@ -1733,7 +1730,7 @@
                 columns: ':not(.no-export)',
                 rows: function (idx, data, node) {
                     const table = $(selector).DataTable();
-                    
+
                     // Optimization: check for any checked items in the whole table
                     // We can't easily cache this during a single export run without external state,
                     // but we can check if there are any checked checkboxes in the entire table data.
@@ -1748,7 +1745,13 @@
                 }
             };
 
-            return $(selector).DataTable({
+            // Clear any "No records found" placeholder row that might interfere with DataTables column count
+            const $tbody = $(selector).find('tbody');
+            if ($tbody.find('tr').length === 1 && $tbody.find('td').attr('colspan')) {
+                $tbody.empty();
+            }
+
+            const table = $(selector).DataTable({
                 dom: '<"d-flex justify-content-between align-items-center mb-3"Blf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
                 buttons: [
                     {
@@ -1788,10 +1791,43 @@
                 language: {
                     search: "_INPUT_",
                     searchPlaceholder: "Search records...",
-                    lengthMenu: "Show _MENU_ entries"
+                    lengthMenu: "Show _MENU_ entries",
+                    emptyTable: "No records found in this view"
                 },
                 order: []
             });
+
+            // Move Universal Filter button group if it exists and hasn't been moved yet
+            const filterBtn = $('#universal-filter-trigger-btn');
+            if (filterBtn.length && !filterBtn.closest('.dt-buttons').length) {
+                const container = table.buttons().container();
+                const wrapper = $('#universal-filter-trigger-wrapper');
+
+                if (container.length) {
+                    const clearBtn = wrapper.find('a[title="Clear filter"]');
+
+                    filterBtn.addClass('dt-button btn-primary').removeClass('shadow btn-sm');
+                    container.append(filterBtn);
+
+                    if (clearBtn.length) {
+                        clearBtn.addClass('dt-button btn-danger text-white').removeClass('btn-outline-danger btn-sm shadow ms-1');
+                        container.append(clearBtn);
+                    }
+
+                    wrapper.remove();
+                    filterBtn.show().removeClass('d-none');
+                } else {
+                    // Fallback if no DataTable container found: show floating at top right
+                    wrapper.addClass('position-fixed').css({
+                        'top': '75px',
+                        'right': '25px',
+                        'z-index': '1040'
+                    }).removeClass('d-none');
+                    filterBtn.show().removeClass('d-none');
+                }
+            }
+
+            return table;
         }
 
         // Auto-initialize tables with .datatable-export class or any .table inside .table-responsive
@@ -1840,31 +1876,109 @@
 
             // Universal Enhancement: Initialize other tables that aren't already DataTables
             $('.table-responsive .table:not(.dataTable):not(.no-datatable)').each(function () {
-                // Only auto-init if table has more than 5 rows to avoid affecting small UI elements
-                if ($(this).find('tbody tr').length > 5) {
-                    $(this).DataTable({
-                        dom: '<"d-flex justify-content-between align-items-center mb-3"lf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
+                const rowCount = $(this).find('tbody tr').length;
+                const hasEmptyMsg = rowCount === 1 && $(this).find('tbody td').attr('colspan');
+                
+                // Auto-init if more than 5 rows, OR if it's empty/has message, to ensure buttons & filter show up
+                if (rowCount > 5 || rowCount === 0 || hasEmptyMsg) {
+                    // Cleanup message row for clean init
+                    if (hasEmptyMsg) {
+                        $(this).find('tbody').empty();
+                    }
+
+                    const title = $(this).closest('.card').find('.card-header').text().trim() || 'Export';
+                    const table = $(this).DataTable({
+                        dom: '<"d-flex justify-content-between align-items-center mb-3"Blf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
+                        buttons: [
+                            {
+                                extend: 'excelHtml5',
+                                text: '<i class="fas fa-file-excel"></i> Excel',
+                                className: 'btn dt-button buttons-excel'
+                            },
+                            {
+                                extend: 'csvHtml5',
+                                text: '<i class="fas fa-file-csv"></i> CSV',
+                                className: 'btn dt-button buttons-csv'
+                            },
+                            {
+                                extend: 'pdfHtml5',
+                                text: '<i class="fas fa-file-pdf"></i> PDF',
+                                className: 'btn dt-button buttons-pdf'
+                            },
+                            {
+                                extend: 'print',
+                                text: '<i class="fas fa-print"></i> Print',
+                                className: 'btn dt-button buttons-print'
+                            }
+                        ],
                         paging: true,
                         lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
                         pageLength: 10,
                         language: {
                             search: "_INPUT_",
                             searchPlaceholder: "Search...",
-                            lengthMenu: "Show _MENU_ entries"
+                            lengthMenu: "Show _MENU_ entries",
+                            emptyTable: "No records found."
                         },
                         order: []
                     });
+
+                    // Move Universal Filter button group if it exists and hasn't been moved yet
+                    const filterBtn = $('#universal-filter-trigger-btn');
+                    if (filterBtn.length && !filterBtn.closest('.dt-buttons').length) {
+                        const container = table.buttons().container();
+                        const wrapper = $('#universal-filter-trigger-wrapper');
+
+                        if (container.length) {
+                            const clearBtn = wrapper.find('a[title="Clear filter"]');
+
+                            filterBtn.addClass('dt-button btn-primary').removeClass('shadow btn-sm');
+                            container.append(filterBtn);
+
+                            if (clearBtn.length) {
+                                clearBtn.addClass('dt-button btn-danger text-white').removeClass('btn-outline-danger btn-sm shadow ms-1');
+                                container.append(clearBtn);
+                            }
+
+                            wrapper.remove();
+                            filterBtn.show().removeClass('d-none');
+                        } else {
+                            // Fallback if no DataTable container found: show floating at top right
+                            wrapper.addClass('position-fixed').css({
+                                'top': '75px',
+                                'right': '25px',
+                                'z-index': '1040'
+                            }).removeClass('d-none');
+                            filterBtn.show().removeClass('d-none');
+                        }
+                    }
                 }
             });
+
+            // Final Fallback: Ensure Universal Filter button is visible even if no tables were initialized
+            setTimeout(function () {
+                const wrapper = $('#universal-filter-trigger-wrapper');
+                const filterBtn = $('#universal-filter-trigger-btn');
+                if (wrapper.length && wrapper.hasClass('d-none') && !filterBtn.closest('.dt-buttons').length) {
+                    wrapper.addClass('position-fixed').css({
+                        'top': '75px',
+                        'right': '25px',
+                        'z-index': '1040'
+                    }).removeClass('d-none');
+                    filterBtn.show().removeClass('d-none');
+                }
+            }, 1000);
         });
     </script>
     <!-- Global Entity History Modal -->
-    <div class="modal fade" id="entityHistoryModal" tabindex="-1" aria-labelledby="entityHistoryModalLabel" aria-hidden="true">
+    <div class="modal fade" id="entityHistoryModal" tabindex="-1" aria-labelledby="entityHistoryModalLabel"
+        aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="entityHistoryModalLabel">Entity Details</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
                 </div>
                 <div class="modal-body"></div>
                 <div class="modal-footer"></div>
@@ -1877,7 +1991,8 @@
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content shadow-lg border-0">
                 <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title font-monospace"><i class="fas fa-file-invoice-dollar me-2"></i>Customer Ledger: <span id="ledgerCustomerName"></span></h5>
+                    <h5 class="modal-title font-monospace"><i class="fas fa-file-invoice-dollar me-2"></i>Customer
+                        Ledger: <span id="ledgerCustomerName"></span></h5>
                     <div class="ms-auto me-3 d-flex gap-2">
                         <a id="downloadLedgerExcel" href="#" class="btn btn-sm btn-light shadow-sm">
                             <i class="fas fa-file-excel me-1 text-success"></i> Excel
@@ -1885,7 +2000,8 @@
                         <a id="downloadLedgerPDF" href="#" target="_blank" class="btn btn-sm btn-light shadow-sm">
                             <i class="fas fa-file-pdf me-1 text-danger"></i> PDF
                         </a>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                            aria-label="Close"></button>
                     </div>
                 </div>
                 <div class="modal-body p-0 bg-light" style="min-height: 400px;">
@@ -1988,19 +2104,19 @@
         function updateLedgerDownloadLink(targetId) {
             const selected = Array.from(document.querySelectorAll('.ledger-item-checkbox:checked'))
                 .map(cb => cb.value);
-            
+
             const excelLink = document.getElementById('downloadLedgerExcel');
             const pdfLink = document.getElementById('downloadLedgerPDF');
-            
+
             let excelUrl = `/sales/customer/${targetId}/ledger-excel`;
             let pdfUrl = `/sales/customer/${targetId}/ledger-pdf`;
-            
+
             if (selected.length > 0) {
                 const query = `?ids=${encodeURIComponent(selected.join(','))}`;
                 excelUrl += query;
                 pdfUrl += query;
             }
-            
+
             excelLink.href = excelUrl;
             pdfLink.href = pdfUrl;
         }
@@ -2031,7 +2147,7 @@
             const spinner = document.getElementById('ledgerSpinner');
             const content = document.getElementById('ledgerContent');
             const ledgerBody = document.getElementById('ledgerBody');
-            
+
             spinner.style.display = 'block';
             content.style.display = 'none';
 
@@ -2043,20 +2159,20 @@
                 .then(data => {
                     document.getElementById('ledgerCustomerName').textContent = data.customer_name;
                     document.getElementById('agingCustomerName').textContent = data.customer_name;
-                    
+
                     // Initialize download links
                     document.getElementById('downloadLedgerExcel').href = `/sales/customer/${targetId}/ledger-excel`;
                     document.getElementById('downloadLedgerPDF').href = `/sales/customer/${targetId}/ledger-pdf`;
-                    
+
                     ledgerBody.innerHTML = '';
                     data.entries.forEach(entry => {
                         const tr = document.createElement('tr');
                         tr.className = entry.invoice_number === 'Opening Balance' ? 'table-secondary fw-bold' : '';
-                        
+
                         let statusClass = 'bg-secondary';
-                        if(entry.status === 'Paid') statusClass = 'bg-success';
-                        else if(entry.status === 'Partial') statusClass = 'bg-warning text-dark';
-                        else if(entry.status === 'Unpaid') statusClass = 'bg-danger';
+                        if (entry.status === 'Paid') statusClass = 'bg-success';
+                        else if (entry.status === 'Partial') statusClass = 'bg-warning text-dark';
+                        else if (entry.status === 'Unpaid') statusClass = 'bg-danger';
 
                         tr.innerHTML = `
                             <td class="text-center no-export">
@@ -2065,10 +2181,10 @@
                             <td>${entry.date}</td>
                             <td class="fw-bold">${entry.invoice_number}</td>
                             <td>${entry.customer_name}</td>
-                            <td class="text-end fw-bold text-dark">PKR${entry.debit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                            <td class="text-end fw-bold text-success">PKR${entry.credit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                            <td class="text-end fw-bold text-danger">PKR${entry.invoice_balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                            <td class="text-end fw-bold">PKR${entry.running_balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td class="text-end fw-bold text-dark">PKR${entry.debit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td class="text-end fw-bold text-success">PKR${entry.credit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td class="text-end fw-bold text-danger">PKR${entry.invoice_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td class="text-end fw-bold">PKR${entry.running_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td class="text-center"><span class="badge ${statusClass}">${entry.status}</span></td>
                             <td class="text-center"><span class="small font-monospace">${entry.aging}</span></td>
                         `;
@@ -2081,7 +2197,7 @@
                     });
 
                     // Select All logic
-                    document.getElementById('ledgerSelectAll').onchange = function() {
+                    document.getElementById('ledgerSelectAll').onchange = function () {
                         const isChecked = this.checked;
                         document.querySelectorAll('.ledger-item-checkbox').forEach(cb => {
                             cb.checked = isChecked;
@@ -2096,11 +2212,11 @@
                     document.getElementById('bucket-91-180').textContent = `PKR${data.summary.aging_buckets['91-180'].toLocaleString()}`;
                     document.getElementById('bucket-above-180').textContent = `PKR${data.summary.aging_buckets['>180'].toLocaleString()}`;
 
-                    document.getElementById('summaryTotalSales').textContent = `PKR${data.summary.total_sales.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-                    document.getElementById('summaryTotalDiscounts').textContent = `PKR${data.summary.total_discounts.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-                    document.getElementById('summaryTotalAdvances').textContent = `PKR${data.summary.total_advances.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-                    document.getElementById('summaryTotalPaid').textContent = `PKR${data.summary.total_paid.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-                    document.getElementById('summaryOutstanding').textContent = `PKR${data.summary.total_outstanding.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                    document.getElementById('summaryTotalSales').textContent = `PKR${data.summary.total_sales.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                    document.getElementById('summaryTotalDiscounts').textContent = `PKR${data.summary.total_discounts.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                    document.getElementById('summaryTotalAdvances').textContent = `PKR${data.summary.total_advances.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                    document.getElementById('summaryTotalPaid').textContent = `PKR${data.summary.total_paid.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                    document.getElementById('summaryOutstanding').textContent = `PKR${data.summary.total_outstanding.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 
                     spinner.style.display = 'none';
                     content.style.display = 'block';
