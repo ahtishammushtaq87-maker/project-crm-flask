@@ -1317,10 +1317,12 @@ def customer_export_pdf(id):
     from reportlab.pdfbase.ttfonts import TTFont
     
     u_font = 'Helvetica'
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # Ensure we get the project root even when running from app/routes/
+    base_dir = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     possible_paths = [
         os.path.join(base_dir, 'app', 'static', 'fonts', 'arial.ttf'),
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/TTF/arial.ttf",
         "C:\\Windows\\Fonts\\arial.ttf"
     ]
@@ -1357,14 +1359,15 @@ def customer_export_pdf(id):
         f"Best regards, We look forward to serving you again in the future."
     )
     
-    # Urdu Message (Right)
+    # Urdu Message (Shaped & Right Aligned) - Aligned with pdf_utils.py
     urdu_style = ParagraphStyle('UrduThank', parent=styles['Normal'], fontSize=9, fontName=u_font, alignment=TA_RIGHT, textColor=TEXT_COLOR, leading=14)
     u_text = (
-        f"شکریہ، {customer.name}، آپ کی حالیہ خریداری کے لیے۔\n"
-        f"آپ کی قابلِ ادائیگی رقم {pkr(running_balance)} ہے، جس کی آخری تاریخ {latest_due_date} ہے۔\n"
+        f"شکریہ،  {customer.name}  ، آپ کی حالیہ خریداری کے لیے۔\n"
+        f"آپ کی قابلِ ادائیگی رقم {pkr(running_balance)} ہے، جس کی آخری تاریخ {latest_due_date} ہے۔"
         f"کوئی بھی رعایت صرف مقررہ تاریخ تک ادائیگی کی صورت میں ہی قابلِ قبول ہوگی۔\n"
         f"اگر آپ کے کوئی سوالات ہوں تو براہِ کرم ہمیں آگاہ کریں۔\n"
-        f"نیک تمناؤں کے ساتھ، ہم مستقبل میں دوبارہ آپ کی خدمت کرنے کے منتظر ہیں۔"
+        f"نیک تمناؤں کے ساتھ،"
+        f"ہم مستقبل میں دوبارہ آپ کی خدمت کرنے کے منتظر ہیں۔"
     )
     reshaped_text = arabic_reshaper.reshape(u_text)
     bidi_text = get_display(reshaped_text).replace('\n', '<br/>')

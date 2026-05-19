@@ -637,7 +637,7 @@ class PurchaseBill(db.Model):
     items = db.relationship('PurchaseItem', backref='bill', lazy=True, cascade='all, delete-orphan')
     bill_payments = db.relationship('BillPayment', backref='bill', lazy=True, cascade='all, delete-orphan')
     bill_receives = db.relationship('BillReceive', backref='bill', lazy=True, cascade='all, delete-orphan')
-    cost_price_history = db.relationship('CostPriceHistory', backref='bill', lazy=True, cascade='all, delete-orphan')
+    cost_price_history = db.relationship('CostPriceHistory', back_populates='purchase_bill', lazy=True, cascade='all, delete-orphan', overlaps="cost_price_changes,bill")
 
     currency = db.relationship('Currency', backref='purchase_bills', lazy=True)
     
@@ -1838,7 +1838,7 @@ class BillReceiveItem(db.Model):
 
     product = db.relationship('Product', backref='bill_receive_items', lazy=True)
     purchase_item = db.relationship('PurchaseItem', backref=db.backref('receive_items', lazy=True, cascade='all, delete-orphan'))
-    price_history = db.relationship('CostPriceHistory', backref='receive_item', lazy=True, cascade='all, delete-orphan')
+    price_history = db.relationship('CostPriceHistory', back_populates='bill_receive_item', lazy=True, cascade='all, delete-orphan', overlaps="cost_price_change,receive_item")
 
     def __repr__(self):
         return f'<BillReceiveItem receive={self.receive_id} product={self.product_id} qty={self.quantity_received}>'
@@ -1862,8 +1862,8 @@ class CostPriceHistory(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     
     product = db.relationship('Product', backref='cost_price_changes')
-    purchase_bill = db.relationship('PurchaseBill', backref='cost_price_changes')
-    bill_receive_item = db.relationship('BillReceiveItem', backref='cost_price_change', lazy=True)
+    purchase_bill = db.relationship('PurchaseBill', back_populates='cost_price_history', overlaps="cost_price_changes,bill")
+    bill_receive_item = db.relationship('BillReceiveItem', back_populates='price_history', lazy=True, overlaps="cost_price_change,receive_item")
     
     @property
     def remaining_at_old_price(self):
