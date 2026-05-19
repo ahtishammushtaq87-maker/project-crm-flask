@@ -30,6 +30,10 @@ def invoices():
     from_date = request.args.get('from_date')
     to_date = request.args.get('to_date')
     salesman_id = request.args.get('salesman_id', type=int)
+    invoice_number = request.args.get('invoice_number')
+    customer_id = request.args.get('customer_id', type=int)
+    customer_group_id = request.args.get('customer_group_id', type=int)
+    search = request.args.get('search', '')
     
     query = Sale.query
     
@@ -43,6 +47,22 @@ def invoices():
     
     if salesman_id:
         query = query.filter(Sale.salesman_id == salesman_id)
+
+    if invoice_number:
+        query = query.filter(Sale.invoice_number == invoice_number)
+    
+    if customer_id:
+        query = query.filter(Sale.customer_id == customer_id)
+    
+    if customer_group_id:
+        query = query.join(Customer).filter(Customer.group_id == customer_group_id)
+    
+    if search:
+        search_filter = f"%{search}%"
+        query = query.outerjoin(Customer).filter(
+            (Sale.invoice_number.ilike(search_filter)) |
+            (Customer.name.ilike(search_filter))
+        )
     
     if from_date:
         try:
@@ -75,8 +95,12 @@ def invoices():
     company = Company.query.first()
     date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
     
-        # Load salesmen for filter dropdown
+    # Load data for filter dropdowns
     salesmen = Salesman.query.filter_by(is_active=True).all()
+    all_customers = Customer.query.filter_by(is_active=True).order_by(Customer.name).all()
+    customer_groups = CustomerGroup.query.filter_by(is_active=True).order_by(CustomerGroup.name).all()
+    # Limit number of invoices in dropdown to avoid performance issues if there are thousands
+    recent_invoices = Sale.query.order_by(Sale.invoice_number.desc()).limit(1000).all()
     
     return render_template('sales/invoices.html', 
                          sales=sales, 
@@ -84,7 +108,14 @@ def invoices():
                          from_date=from_date,
                          to_date=to_date,
                          salesman_id=salesman_id,
+                         invoice_number=invoice_number,
+                         customer_id=customer_id,
+                         customer_group_id=customer_group_id,
+                         search=search,
                          salesmen=salesmen,
+                         all_customers=all_customers,
+                         customer_groups=customer_groups,
+                         recent_invoices=recent_invoices,
                          total_subtotal=total_subtotal,
                          total_tax=total_tax,
                          total_amount=total_amount,
@@ -1271,6 +1302,36 @@ def customer_export_pdf(id):
     elements.append(combined_tbl)
     elements.append(Spacer(1, 15))
 
+    # ── Thank You Message Section ──────────────────────────────────────────
+    # Calculate dynamic values
+    latest_due_date = "Immediate"
+    if sales_q:
+        latest = sales_q[-1]
+        if hasattr(latest, 'due_date') and latest.due_date:
+            latest_due_date = latest.due_date.strftime('%d-%m-%Y')
+    
+    # Register Urdu font if not already
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    
+    u_font = 'Helvetica'
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    possible_paths = [
+        os.path.join(base_dir, 'app', 'static', 'fonts', 'arial.ttf'),
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/arial.ttf",
+        "C:\\Windows\\Fonts\\arial.ttf"
+    ]
+    for fp in possible_paths:
+        if os.path.exists(fp):
+            try:
+                pdfmetrics.registerFont(TTFont('UrduFont', fp))
+                u_font = 'UrduFont'
+                break
+            except: continue
+            
     if settings and settings.default_terms:
         terms_content = [Paragraph("TERMS & CONDITIONS", s_BoxTitle)]
         for line in settings.default_terms.split('\n'):
@@ -1284,6 +1345,38 @@ def customer_export_pdf(id):
             ('LEFTPADDING', (0,0), (-1,-1), 8),
         ]))
         elements.append(terms_tbl)
+        elements.append(Spacer(1, 15))
+
+    # English Message (Left)
+    eng_style = ParagraphStyle('EngThank', parent=styles['Normal'], fontSize=8.5, textColor=TEXT_COLOR, leading=12)
+    eng_text = (
+        f"Thank you, {customer.name}, for your recent purchase.<br/>"
+        f"Your total amount due is {pkr(running_balance)}, due by {latest_due_date}.<br/>"
+        f"Any discount is valid only if paid by the due date.<br/>"
+        f"If you have any questions, please let us know.<br/><br/>"
+        f"Best regards, We look forward to serving you again in the future."
+    )
+    
+    # Urdu Message (Right)
+    urdu_style = ParagraphStyle('UrduThank', parent=styles['Normal'], fontSize=9, fontName=u_font, alignment=TA_RIGHT, textColor=TEXT_COLOR, leading=14)
+    u_text = (
+        f"شکریہ، {customer.name}، آپ کی حالیہ خریداری کے لیے۔\n"
+        f"آپ کی قابلِ ادائیگی رقم {pkr(running_balance)} ہے، جس کی آخری تاریخ {latest_due_date} ہے۔\n"
+        f"کوئی بھی رعایت صرف مقررہ تاریخ تک ادائیگی کی صورت میں ہی قابلِ قبول ہوگی۔\n"
+        f"اگر آپ کے کوئی سوالات ہوں تو براہِ کرم ہمیں آگاہ کریں۔\n"
+        f"نیک تمناؤں کے ساتھ، ہم مستقبل میں دوبارہ آپ کی خدمت کرنے کے منتظر ہیں۔"
+    )
+    reshaped_text = arabic_reshaper.reshape(u_text)
+    bidi_text = get_display(reshaped_text).replace('\n', '<br/>')
+    
+    thank_tbl = Table([[Paragraph(eng_text, eng_style), Paragraph(bidi_text, urdu_style)]], colWidths=[3.7*inch, 3.7*inch])
+    thank_tbl.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+    ]))
+    
+    elements.append(thank_tbl)
 
     doc.build(elements, onFirstPage=_draw_page_decorations, onLaterPages=_draw_page_decorations)
     output.seek(0)
@@ -2029,7 +2122,6 @@ def customer_ledger_json(id):
     returns = SaleReturn.query.filter_by(customer_id=id).order_by(SaleReturn.date.asc()).all()
     
     # In this system, payments are linked to sales. 
-    # We should get all payments for this customer's sales.
     sale_ids = [s.id for s in sales]
     payments = Payment.query.filter(Payment.invoice_id.in_(sale_ids)).order_by(Payment.date.asc()).all() if sale_ids else []
     

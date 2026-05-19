@@ -637,6 +637,7 @@ class PurchaseBill(db.Model):
     items = db.relationship('PurchaseItem', backref='bill', lazy=True, cascade='all, delete-orphan')
     bill_payments = db.relationship('BillPayment', backref='bill', lazy=True, cascade='all, delete-orphan')
     bill_receives = db.relationship('BillReceive', backref='bill', lazy=True, cascade='all, delete-orphan')
+    cost_price_history = db.relationship('CostPriceHistory', backref='bill', lazy=True, cascade='all, delete-orphan')
 
     currency = db.relationship('Currency', backref='purchase_bills', lazy=True)
     
@@ -1836,7 +1837,8 @@ class BillReceiveItem(db.Model):
     quantity_received = db.Column(db.Float, nullable=False)
 
     product = db.relationship('Product', backref='bill_receive_items', lazy=True)
-    purchase_item = db.relationship('PurchaseItem', backref='receive_items', lazy=True)
+    purchase_item = db.relationship('PurchaseItem', backref=db.backref('receive_items', lazy=True, cascade='all, delete-orphan'))
+    price_history = db.relationship('CostPriceHistory', backref='receive_item', lazy=True, cascade='all, delete-orphan')
 
     def __repr__(self):
         return f'<BillReceiveItem receive={self.receive_id} product={self.product_id} qty={self.quantity_received}>'

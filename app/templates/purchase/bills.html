@@ -11,6 +11,17 @@
             deleteUrl: "{{ url_for('purchase.bulk_delete_bills') }}",
             entityName: 'purchase bills'
         });
+
+        // Initialize Searchable Selects
+        $('.searchable-select').each(function () {
+            var placeholder = $(this).data('placeholder');
+            $(this).select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                allowClear: true,
+                placeholder: placeholder
+            });
+        });
     });
 </script>
 {% endblock %}
@@ -172,22 +183,40 @@
     <!-- Filter Bar -->
     <div class="card shadow mb-4">
         <div class="card-body">
-            <form method="GET" action="{{ url_for('purchase.bills') }}" class="row g-2">
-                <div class="col-12 col-sm-6 col-md-3">
-                    <input type="text" name="search" class="form-control" placeholder="Search bill # or vendor..."
-                        value="{{ search }}">
+            <form method="GET" action="{{ url_for('purchase.bills') }}" class="row g-3 px-2 align-items-end">
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">Vendor</label>
+                    <select name="vendor_id" class="form-select searchable-select" data-placeholder="— Filter by Vendor —">
+                        <option value=""></option>
+                        {% for v in vendors %}
+                        <option value="{{ v.id }}" {% if vendor_id|string == v.id|string %}selected{% endif %}>{{ v.name }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
-                <div class="col-6 col-sm-4 col-md-2">
-                    <input type="date" name="from_date" class="form-control" value="{{ from_date }}" title="From Date">
+                <div class="col-12 col-md-2">
+                    <label class="form-label small fw-bold text-muted mb-1">Order Number</label>
+                    <select name="bill_number" class="form-select searchable-select" data-placeholder="— PO/Bill # —">
+                        <option value=""></option>
+                        {% for bn in all_bill_numbers %}
+                        <option value="{{ bn }}" {% if bill_number == bn %}selected{% endif %}>{{ bn }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
-                <div class="col-6 col-sm-4 col-md-2">
-                    <input type="date" name="to_date" class="form-control" value="{{ to_date }}" title="To Date">
+                <div class="col-12 col-md-2">
+                    <label class="form-label small fw-bold text-muted mb-1">From Date</label>
+                    <input type="date" name="from_date" class="form-control" value="{{ from_date }}">
                 </div>
-                <div class="col-6 col-sm-4 col-md-3">
-                    <button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter"></i> Filter</button>
+                <div class="col-12 col-md-2">
+                    <label class="form-label small fw-bold text-muted mb-1">To Date</label>
+                    <input type="date" name="to_date" class="form-control" value="{{ to_date }}">
                 </div>
-                <div class="col-6 col-sm-4 col-md-2">
-                    <a href="{{ url_for('purchase.bills') }}" class="btn btn-secondary w-100">Clear</a>
+                <div class="col-6 col-md-2">
+                    <button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter me-1"></i> Filter</button>
+                </div>
+                <div class="col-6 col-md-1">
+                    <a href="{{ url_for('purchase.bills') }}" class="btn btn-outline-secondary w-100" title="Clear Filters">
+                        <i class="fas fa-undo"></i>
+                    </a>
                 </div>
                 <input type="hidden" name="status" value="{{ current_status }}">
             </form>

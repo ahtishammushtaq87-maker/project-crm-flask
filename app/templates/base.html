@@ -1878,7 +1878,7 @@
             $('.table-responsive .table:not(.dataTable):not(.no-datatable)').each(function () {
                 const rowCount = $(this).find('tbody tr').length;
                 const hasEmptyMsg = rowCount === 1 && $(this).find('tbody td').attr('colspan');
-                
+
                 // Auto-init if more than 5 rows, OR if it's empty/has message, to ensure buttons & filter show up
                 if (rowCount > 5 || rowCount === 0 || hasEmptyMsg) {
                     // Cleanup message row for clean init
@@ -1990,7 +1990,7 @@
     <div class="modal fade" id="customerLedgerModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content shadow-lg border-0">
-                <div class="modal-header bg-primary text-white">
+                <div class="modal-header bg-primary text-white py-3">
                     <h5 class="modal-title font-monospace"><i class="fas fa-file-invoice-dollar me-2"></i>Customer
                         Ledger: <span id="ledgerCustomerName"></span></h5>
                     <div class="ms-auto me-3 d-flex gap-2">
@@ -2013,7 +2013,7 @@
                     </div>
                     <div id="ledgerContent" class="p-4" style="display:none;">
                         <div class="table-responsive bg-white rounded shadow-sm mb-4">
-                            <table class="table table-hover align-middle mb-0" id="ledgerTable">
+                            <table class="table table-hover align-middle mb-0 no-datatable" id="ledgerTable">
                                 <thead class="table-light">
                                     <tr class="text-nowrap">
                                         <th class="text-center no-export" style="width: 40px;">
@@ -2101,6 +2101,77 @@
 
     <script src="{{ url_for('static', filename='js/entity_handler.js') }}"></script>
     <script>
+        // Enhanced Bulk Action Helper
+        function initBulkActions(config) {
+            const { selectAllId, checkboxClass, bulkDeleteBtnId, deleteUrl, entityName } = config;
+            const selectAll = document.getElementById(selectAllId);
+            const bulkBtn = document.getElementById(bulkDeleteBtnId);
+            if (!selectAll || !bulkBtn) return;
+
+            function updateBulkDeleteBtn() {
+                const checkedVisible = Array.from(document.querySelectorAll(`.${checkboxClass}:checked`)).filter(cb => {
+                    const tr = cb.closest('tr');
+                    return tr && window.getComputedStyle(tr).display !== 'none';
+                });
+                const count = checkedVisible.length;
+                if (count > 0) {
+                    bulkBtn.classList.remove('d-none');
+                    bulkBtn.innerHTML = `<i class="fas fa-trash me-1"></i> Delete ${count} Selected`;
+                } else {
+                    bulkBtn.classList.add('d-none');
+                }
+            }
+
+            selectAll.addEventListener('change', function () {
+                const allCheckboxes = document.querySelectorAll(`.${checkboxClass}`);
+                allCheckboxes.forEach(cb => {
+                    const tr = cb.closest('tr');
+                    if (tr && window.getComputedStyle(tr).display !== 'none') {
+                        cb.checked = selectAll.checked;
+                    }
+                });
+                updateBulkDeleteBtn();
+            });
+
+            document.addEventListener('change', function (e) {
+                if (e.target.classList.contains(checkboxClass)) {
+                    updateBulkDeleteBtn();
+                }
+            });
+
+            bulkBtn.addEventListener('click', function () {
+                const selected = Array.from(document.querySelectorAll(`.${checkboxClass}:checked`))
+                    .filter(cb => {
+                        const tr = cb.closest('tr');
+                        return tr && window.getComputedStyle(tr).display !== 'none';
+                    })
+                    .map(cb => cb.value);
+
+                if (selected.length === 0) return;
+
+                if (confirm(`Are you sure you want to delete ${selected.length} selected ${entityName}?`)) {
+                    fetch(deleteUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ ids: selected })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            window.location.reload();
+                        } else {
+                            alert(data.message || 'Error occurred during bulk deletion.');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('An unexpected error occurred during bulk deletion.');
+                    });
+                }
+            });
+        }
         function updateLedgerDownloadLink(targetId) {
             const selected = Array.from(document.querySelectorAll('.ledger-item-checkbox:checked'))
                 .map(cb => cb.value);
@@ -2123,9 +2194,15 @@
 
         function showCustomerLedger(customerId) {
             let targetId = customerId;
+
             if (!targetId || targetId == '0') {
                 const select = document.getElementById('customerSelect');
                 if (select) targetId = select.value;
+            }
+
+            if (!targetId || targetId == '0') {
+                const trigger = document.querySelector('.ledger-trigger[data-customer-id]');
+                if (trigger) targetId = trigger.getAttribute('data-customer-id');
             }
 
             if (!targetId || targetId == '0') {
@@ -2139,9 +2216,6 @@
                 modal.show();
             } else if (typeof jQuery !== 'undefined' && typeof jQuery.fn.modal !== 'undefined') {
                 $(modalEl).modal('show');
-            } else {
-                alert('System error: UI Modal controller not found.');
-                return;
             }
 
             const spinner = document.getElementById('ledgerSpinner');
@@ -2150,6 +2224,11 @@
 
             spinner.style.display = 'block';
             content.style.display = 'none';
+
+            // Destroy existing DataTable instance if it exists to avoid conflicts
+            if ($.fn.DataTable.isDataTable('#ledgerTable')) {
+                $('#ledgerTable').DataTable().destroy();
+            }
 
             // Reset select all checkbox
             document.getElementById('ledgerSelectAll').checked = false;
@@ -2160,7 +2239,6 @@
                     document.getElementById('ledgerCustomerName').textContent = data.customer_name;
                     document.getElementById('agingCustomerName').textContent = data.customer_name;
 
-                    // Initialize download links
                     document.getElementById('downloadLedgerExcel').href = `/sales/customer/${targetId}/ledger-excel`;
                     document.getElementById('downloadLedgerPDF').href = `/sales/customer/${targetId}/ledger-pdf`;
 
@@ -2178,57 +2256,64 @@
                             <td class="text-center no-export">
                                 <input type="checkbox" class="form-check-input ledger-item-checkbox" value="${entry.invoice_number}">
                             </td>
-                            <td>${entry.date}</td>
+                            <td class="text-nowrap">${entry.date}</td>
                             <td class="fw-bold">${entry.invoice_number}</td>
-                            <td>${entry.customer_name}</td>
+                            <td class="text-nowrap">${entry.customer_name}</td>
                             <td class="text-end fw-bold text-dark">PKR${entry.debit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td class="text-end fw-bold text-success">PKR${entry.credit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td class="text-end fw-bold text-danger">PKR${entry.invoice_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td class="text-end fw-bold">PKR${entry.running_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td class="text-center"><span class="badge ${statusClass}">${entry.status}</span></td>
-                            <td class="text-center"><span class="small font-monospace">${entry.aging}</span></td>
+                            <td class="text-center text-nowrap"><span class="small font-monospace">${entry.aging}</span></td>
                         `;
                         ledgerBody.appendChild(tr);
                     });
 
-                    // Add event listeners for checkboxes
-                    document.querySelectorAll('.ledger-item-checkbox').forEach(cb => {
-                        cb.addEventListener('change', () => updateLedgerDownloadLink(targetId));
+                    // Re-bind checkboxes for dynamic content
+                    $(document).off('change', '.ledger-item-checkbox').on('change', '.ledger-item-checkbox', function () {
+                        updateLedgerDownloadLink(targetId);
                     });
 
                     // Select All logic
                     document.getElementById('ledgerSelectAll').onchange = function () {
                         const isChecked = this.checked;
                         document.querySelectorAll('.ledger-item-checkbox').forEach(cb => {
-                            cb.checked = isChecked;
+                            const tr = cb.closest('tr');
+                            // Only check if row is visible (respects filters)
+                            if (tr && window.getComputedStyle(tr).display !== 'none') {
+                                cb.checked = isChecked;
+                            }
                         });
                         updateLedgerDownloadLink(targetId);
                     };
 
                     // Summary
-                    document.getElementById('bucket-0-30').textContent = `PKR${data.summary.aging_buckets['0-30'].toLocaleString()}`;
-                    document.getElementById('bucket-31-60').textContent = `PKR${data.summary.aging_buckets['31-60'].toLocaleString()}`;
-                    document.getElementById('bucket-61-90').textContent = `PKR${data.summary.aging_buckets['61-90'].toLocaleString()}`;
-                    document.getElementById('bucket-91-180').textContent = `PKR${data.summary.aging_buckets['91-180'].toLocaleString()}`;
-                    document.getElementById('bucket-above-180').textContent = `PKR${data.summary.aging_buckets['>180'].toLocaleString()}`;
+                    if (data.summary) {
+                        document.getElementById('bucket-0-30').textContent = `PKR${(data.summary.aging_buckets['0-30'] || 0).toLocaleString()}`;
+                        document.getElementById('bucket-31-60').textContent = `PKR${(data.summary.aging_buckets['31-60'] || 0).toLocaleString()}`;
+                        document.getElementById('bucket-61-90').textContent = `PKR${(data.summary.aging_buckets['61-90'] || 0).toLocaleString()}`;
+                        document.getElementById('bucket-91-180').textContent = `PKR${(data.summary.aging_buckets['91-180'] || 0).toLocaleString()}`;
+                        document.getElementById('bucket-above-180').textContent = `PKR${(data.summary.aging_buckets['>180'] || 0).toLocaleString()}`;
 
-                    document.getElementById('summaryTotalSales').textContent = `PKR${data.summary.total_sales.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-                    document.getElementById('summaryTotalDiscounts').textContent = `PKR${data.summary.total_discounts.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-                    document.getElementById('summaryTotalAdvances').textContent = `PKR${data.summary.total_advances.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-                    document.getElementById('summaryTotalPaid').textContent = `PKR${data.summary.total_paid.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-                    document.getElementById('summaryOutstanding').textContent = `PKR${data.summary.total_outstanding.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                        document.getElementById('summaryTotalSales').textContent = `PKR${(data.summary.total_sales || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                        document.getElementById('summaryTotalDiscounts').textContent = `PKR${(data.summary.total_discounts || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                        document.getElementById('summaryTotalAdvances').textContent = `PKR${(data.summary.total_advances || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                        document.getElementById('summaryTotalPaid').textContent = `PKR${(data.summary.total_paid || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                        document.getElementById('summaryOutstanding').textContent = `PKR${(data.summary.total_outstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                    }
 
                     spinner.style.display = 'none';
                     content.style.display = 'block';
+
+                    // Correctly re-initialize DataTable to recognize the new rows and remove "No records found"
+                    if (typeof initExportDataTable === 'function') {
+                        initExportDataTable('#ledgerTable', `Ledger_${data.customer_name.replace(/\s+/g, '_')}`);
+                    }
                 })
                 .catch(error => {
                     console.error('Error fetching ledger:', error);
                     alert('Failed to load ledger data.');
-                    if (window.bootstrap && window.bootstrap.Modal) {
-                        bootstrap.Modal.getOrCreateInstance(modalEl).hide();
-                    } else {
-                        $(modalEl).modal('hide');
-                    }
+                    spinner.style.display = 'none';
                 });
         }
     </script>

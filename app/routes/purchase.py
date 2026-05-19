@@ -29,6 +29,8 @@ def bills():
     status = request.args.get('status', 'all')
     from_date = request.args.get('from_date')
     to_date = request.args.get('to_date')
+    vendor_id = request.args.get('vendor_id')
+    bill_number = request.args.get('bill_number')
     search = request.args.get('search', '')
     
     query = PurchaseBill.query
@@ -40,6 +42,12 @@ def bills():
         )
     elif status != 'all':
         query = query.filter(PurchaseBill.status == status)
+    
+    if vendor_id:
+        query = query.filter(PurchaseBill.vendor_id == vendor_id)
+        
+    if bill_number:
+        query = query.filter(PurchaseBill.bill_number.ilike(f'%{bill_number}%'))
     
     if from_date:
         try:
@@ -73,12 +81,21 @@ def bills():
     company = Company.query.first()
     date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
     
+    vendors = Vendor.query.filter_by(is_active=True).all()
+    # Fetch all bill numbers for the searchable dropdown
+    all_bill_numbers = db.session.query(PurchaseBill.bill_number).distinct().order_by(PurchaseBill.bill_number).all()
+    all_bill_numbers = [b[0] for b in all_bill_numbers]
+    
     return render_template('purchase/bills.html', 
                          bills=bills, 
+                         vendors=vendors,
+                         all_bill_numbers=all_bill_numbers,
                          current_status=status,
                          from_date=from_date,
                          to_date=to_date,
                          search=search,
+                         vendor_id=vendor_id,
+                         bill_number=bill_number,
                          total_amount=total_amount,
                          total_paid=total_paid,
                          total_balance=total_balance,
@@ -1976,11 +1993,22 @@ def purchase_return_list():
 
     returns = query.order_by(PurchaseReturn.date.desc()).all()
 
+    vendors = Vendor.query.filter_by(is_active=True).all()
+    # Fetch all return numbers for the searchable dropdown
+    all_return_numbers = db.session.query(PurchaseReturn.return_number).distinct().order_by(PurchaseReturn.return_number).all()
+    all_return_numbers = [r[0] for r in all_return_numbers]
+    # Fetch all bill numbers for the searchable dropdown
+    all_bill_numbers = db.session.query(PurchaseBill.bill_number).distinct().order_by(PurchaseBill.bill_number).all()
+    all_bill_numbers = [b[0] for b in all_bill_numbers]
+
     total_returns = sum(r.total for r in returns)
     total_count = len(returns)
 
     return render_template('purchase/returns.html',
                         returns=returns,
+                        vendors=vendors,
+                        all_return_numbers=all_return_numbers,
+                        all_bill_numbers=all_bill_numbers,
                         from_date=from_date,
                         to_date=to_date,
                         current_status=status,
@@ -2334,6 +2362,60 @@ def delete_purchase_return(id):
     
     flash(f'Return {return_number} deleted successfully!', 'success')
     return redirect(url_for('purchase.purchase_return_list'))
+
+@bp.route('/returns/bulk-delete', methods=['POST'])
+@login_required
+@permission_required('purchases', action='delete')
+def bulk_delete_purchase_returns():
+    """Bulk delete multiple purchase returns"""
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No returns selected'}), 400
+    
+    deleted_count = 0
+    errors = []
+    
+    for return_id in ids:
+        purchase_return = PurchaseReturn.query.get(return_id)
+        if not purchase_return:
+            continue
+            
+        try:
+            bill = purchase_return.bill
+            # Restore product quantities
+            for item in purchase_return.items:
+                if item.product:
+                    item.product.quantity += item.quantity
+            
+            # Reverse vendor refund if was paid
+            if purchase_return.refund_status == 'paid' and purchase_return.vendor:
+                original_advance = VendorAdvance.query.filter_by(
+                    vendor_id=purchase_return.vendor.id,
+                    description=f'Refund for Return: {purchase_return.return_number}'
+                ).first()
+                if original_advance:
+                    db.session.delete(original_advance)
+            
+            # Restore bill totals
+            if bill:
+                bill.subtotal += purchase_return.subtotal
+                bill.tax += purchase_return.tax
+                bill.total += purchase_return.total
+                bill.update_status()
+            
+            db.session.delete(purchase_return)
+            deleted_count += 1
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f'Error deleting Return {purchase_return.return_number}: {str(e)}')
+            
+    if deleted_count > 0:
+        db.session.commit()
+        
+    message = f'Successfully deleted {deleted_count} purchase returns.'
+    if errors:
+        return jsonify({'success': False, 'message': message, 'errors': errors}), 500
+    return jsonify({'success': True, 'message': message})
 @bp.route('/return/settings', methods=['GET', 'POST'])
 @login_required
 def purchase_return_settings():

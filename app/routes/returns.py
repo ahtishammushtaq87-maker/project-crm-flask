@@ -2,10 +2,12 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
-from app.models import Sale, SaleItem, SaleReturn, SaleReturnItem, Product, Customer, SaleReturnSettings
+from app.models import (Sale, SaleItem, SaleReturn, SaleReturnItem, Product, 
+                        Customer, SaleReturnSettings, CustomerGroup, Salesman)
 from app.forms import SaleReturnSettingsForm
 from datetime import datetime
 from app.routes.filters import apply_saved_filter_to_query
+from sqlalchemy import or_
 
 bp = Blueprint('returns', __name__)
 
@@ -16,8 +18,39 @@ def return_list():
     from_date = request.args.get('from_date')
     to_date = request.args.get('to_date')
     status = request.args.get('status', 'all')
+    search = request.args.get('search', '')
+    return_num = request.args.get('return_number', '') 
+    customer_id = request.args.get('customer_id')
+    customer_group_id = request.args.get('customer_group_id')
+    salesman_id = request.args.get('salesman_id')
 
-    query = SaleReturn.query
+    query = SaleReturn.query.join(Sale)
+
+    # Search filter (Return #, original Invoice #, or Customer Name)
+    if search:
+        search_filter = f"%{search}%"
+        query = query.outerjoin(Customer, SaleReturn.customer_id == Customer.id).filter(
+            or_(
+                SaleReturn.return_number.ilike(search_filter),
+                Sale.invoice_number.ilike(search_filter),
+                Customer.name.ilike(search_filter)
+            )
+        )
+
+    if return_num:
+        query = query.filter(SaleReturn.return_number == return_num)
+
+    if customer_id:
+        query = query.filter(SaleReturn.customer_id == customer_id)
+
+    if customer_group_id:
+        # Check if Customer is already joined
+        if not any(j.entity == Customer for j in query._join_entities):
+            query = query.outerjoin(Customer, SaleReturn.customer_id == Customer.id)
+        query = query.filter(Customer.group_id == customer_group_id)
+
+    if salesman_id:
+        query = query.filter(Sale.salesman_id == salesman_id)
 
     if from_date:
         try:
@@ -44,11 +77,27 @@ def return_list():
     total_returns = sum(r.total for r in returns)
     total_count = len(returns)
 
+    # Load data for searchable dropdowns
+    salesmen = Salesman.query.filter_by(is_active=True).all()
+    all_customers = Customer.query.filter_by(is_active=True).order_by(Customer.name).all()
+    customer_groups = CustomerGroup.query.filter_by(is_active=True).order_by(CustomerGroup.name).all()
+    # Limit number of recent returns to 1000
+    recent_returns = SaleReturn.query.order_by(SaleReturn.return_number.desc()).limit(1000).all()
+
     return render_template('sales/returns.html',
                            returns=returns,
                            from_date=from_date,
                            to_date=to_date,
                            current_status=status,
+                           search=search,
+                           return_number=return_num,
+                           customer_id=customer_id,
+                           customer_group_id=customer_group_id,
+                           salesman_id=salesman_id,
+                           salesmen=salesmen,
+                           all_customers=all_customers,
+                           customer_groups=customer_groups,
+                           recent_returns=recent_returns,
                            total_returns=total_returns,
                            total_count=total_count,
                            active_module='sale_return',

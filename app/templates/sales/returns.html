@@ -14,62 +14,123 @@
     </div>
 
     <div class="card shadow">
-        <div class="card-header">
-            <form method="GET" class="row g-3 mb-3">
-                <div class="col-md-3">
-                    <label for="from_date" class="form-label">From Date</label>
-                    <input type="date" class="form-control" id="from_date" name="from_date" value="{{ from_date }}">
+    <!-- Filter Bar -->
+    <div class="card shadow mb-4">
+        <div class="card-body">
+            <form method="GET" action="{{ url_for('returns.return_list') }}" class="row g-3 px-2">
+                <!-- Search & Return # -->
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">General Search</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0"><i class="fas fa-search text-muted"></i></span>
+                        <input type="text" name="search" class="form-control border-start-0" placeholder="Return, Invoice or Customer..."
+                            value="{{ search if search is defined else '' }}">
+                    </div>
                 </div>
-                <div class="col-md-3">
-                    <label for="to_date" class="form-label">To Date</label>
-                    <input type="date" class="form-control" id="to_date" name="to_date" value="{{ to_date }}">
+
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">Return Number</label>
+                    <select name="return_number" class="form-select searchable-select" data-placeholder="— Select Return —">
+                        <option value=""></option>
+                        {% for r in recent_returns %}
+                        <option value="{{ r.return_number }}" {% if return_number == r.return_number %}selected{% endif %}>
+                            {{ r.return_number }}
+                        </option>
+                        {% endfor %}
+                    </select>
                 </div>
-                <div class="col-md-2">
-                    <label class="form-label">&nbsp;</label>
-                    <button type="submit" class="btn btn-primary d-block">Filter</button>
+
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">Customer</label>
+                    <select name="customer_id" class="form-select searchable-select" data-placeholder="— Select Customer —">
+                        <option value=""></option>
+                        {% for cust in all_customers %}
+                        <option value="{{ cust.id }}" {% if customer_id == cust.id %}selected{% endif %}>
+                            {{ cust.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
                 </div>
-                <div class="col-md-2">
-                    <label class="form-label">&nbsp;</label>
-                    <a href="{{ url_for('returns.return_list') }}" class="btn btn-secondary d-block">Clear</a>
+
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">Customer Group</label>
+                    <select name="customer_group_id" class="form-select searchable-select" data-placeholder="— Select Group —">
+                        <option value=""></option>
+                        {% for group in customer_groups %}
+                        <option value="{{ group.id }}" {% if customer_group_id == group.id %}selected{% endif %}>
+                            {{ group.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
                 </div>
-                <input type="hidden" name="status" value="{{ current_status }}">
+
+                <!-- Row 2: Salesman, Dates, Actions -->
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">Salesman</label>
+                    <select name="salesman_id" class="form-select searchable-select" data-placeholder="— Select Salesman —">
+                        <option value=""></option>
+                        {% for sm in salesmen %}
+                        <option value="{{ sm.id }}" {% if salesman_id == sm.id %}selected{% endif %}>
+                            {{ sm.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-6 col-md-2">
+                    <label class="form-label small fw-bold text-muted mb-1">From Date</label>
+                    <input type="date" name="from_date" id="from_date" class="form-control"
+                        value="{{ from_date if from_date is defined else '' }}">
+                </div>
+
+                <div class="col-6 col-md-2">
+                    <label class="form-label small fw-bold text-muted mb-1">To Date</label>
+                    <input type="date" name="to_date" id="to_date" class="form-control"
+                        value="{{ to_date if to_date is defined else '' }}">
+                </div>
+
+                <div class="col-12 col-md-5">
+                    <label class="form-label d-none d-md-block" style="height: 20px;"></label>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary flex-grow-1">
+                            <i class="fas fa-filter me-1"></i> Apply Filters
+                        </button>
+                        <a href="{{ url_for('returns.return_list') }}" class="btn btn-outline-secondary px-4">
+                            <i class="fas fa-undo me-1"></i> Clear
+                        </a>
+                    </div>
+                </div>
+
+                <input type="hidden" name="status" value="{{ current_status if current_status is defined else 'all' }}">
             </form>
+        </div>
+    </div>
 
-            {% if from_date or to_date %}
-            <div class="alert alert-info mt-2 mb-2">
-                <small>
-                    <i class="fas fa-filter"></i>
-                    <strong>Active Filters:</strong>
-                    {% if from_date %}From: {{ from_date }}{% endif %}
-                    {% if from_date and to_date %} | {% endif %}
-                    {% if to_date %}To: {{ to_date }}{% endif %}
-                    {% if current_status != 'all' %} | Status: {{ current_status|title }}{% endif %}
-                </small>
-            </div>
-            {% endif %}
-
+    <!-- Status Tabs -->
+    <div class="card shadow mb-4">
+        <div class="card-header border-bottom-0 pb-0">
             <ul class="nav nav-tabs card-header-tabs">
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'all' %}active{% endif %}"
-                        href="{{ url_for('returns.return_list', status='all', from_date=from_date, to_date=to_date) }}">
+                        href="{{ url_for('returns.return_list', status='all', from_date=from_date, to_date=to_date, search=search, return_number=return_number, customer_id=customer_id, customer_group_id=customer_group_id, salesman_id=salesman_id) }}">
                         All
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'pending' %}active{% endif %}"
-                        href="{{ url_for('returns.return_list', status='pending', from_date=from_date, to_date=to_date) }}">
+                        href="{{ url_for('returns.return_list', status='pending', from_date=from_date, to_date=to_date, search=search, return_number=return_number, customer_id=customer_id, customer_group_id=customer_group_id, salesman_id=salesman_id) }}">
                         Pending
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'approved' %}active{% endif %}"
-                        href="{{ url_for('returns.return_list', status='approved', from_date=from_date, to_date=to_date) }}">
+                        href="{{ url_for('returns.return_list', status='approved', from_date=from_date, to_date=to_date, search=search, return_number=return_number, customer_id=customer_id, customer_group_id=customer_group_id, salesman_id=salesman_id) }}">
                         Approved
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'completed' %}active{% endif %}"
-                        href="{{ url_for('returns.return_list', status='completed', from_date=from_date, to_date=to_date) }}">
+                        href="{{ url_for('returns.return_list', status='completed', from_date=from_date, to_date=to_date, search=search, return_number=return_number, customer_id=customer_id, customer_group_id=customer_group_id, salesman_id=salesman_id) }}">
                         Completed
                     </a>
                 </li>
@@ -169,16 +230,35 @@
         </div>
     </div>
 </div>
+</div>
+{% endblock %}
 
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        initBulkActions({
-            selectAllId: 'selectAll',
-            checkboxClass: 'return-checkbox',
-            entityName: 'sales returns'
+    $(document).ready(function() {
+        // Initialize Select2
+        $('.searchable-select').each(function() {
+            var placeholder = $(this).data('placeholder');
+            $(this).select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                allowClear: true,
+                placeholder: placeholder
+            });
         });
 
-        document.getElementById('from_date').addEventListener('change', function () {
+        // Initialize Bulk Actions
+        if (typeof initBulkActions === 'function') {
+            initBulkActions({
+                selectAllId: 'selectAll',
+                checkboxClass: 'return-checkbox',
+                entityName: 'sales returns'
+            });
+        }
+
+        // Date logic
+        $('#from_date').on('change', function () {
             const fromDate = this.value;
             const toDateInput = document.getElementById('to_date');
             if (fromDate && toDateInput.value && fromDate > toDateInput.value) {
@@ -187,7 +267,7 @@
             toDateInput.min = fromDate;
         });
 
-        document.getElementById('to_date').addEventListener('change', function () {
+        $('#to_date').on('change', function () {
             const toDate = this.value;
             const fromDateInput = document.getElementById('from_date');
             if (toDate && fromDateInput.value && toDate < fromDateInput.value) {

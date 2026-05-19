@@ -1,19 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Sales Invoices{% endblock %}
 
-{% block extra_js %}
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        initBulkActions({
-            selectAllId: 'selectAll',
-            checkboxClass: 'invoice-checkbox',
-            bulkDeleteBtnId: 'bulkDeleteBtn',
-            deleteUrl: "{{ url_for('sales.bulk_delete_invoices') }}",
-            entityName: 'sales invoices'
-        });
-    });
-</script>
-{% endblock %}
 {% block content %}
 <div class="container-fluid list-page">
     <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
@@ -153,25 +140,90 @@
     <!-- Filter Bar -->
     <div class="card shadow mb-4">
         <div class="card-body">
-            <form method="GET" action="{{ url_for('sales.invoices') }}" class="row g-2">
-                <div class="col-12 col-sm-6 col-md-3">
-                    <input type="text" name="search" class="form-control" placeholder="Search invoice # or customer..."
-                        value="{{ search if search is defined else '' }}">
+            <form method="GET" action="{{ url_for('sales.invoices') }}" class="row g-3 px-2">
+                <!-- Search & Invoice # -->
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">General Search</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0"><i class="fas fa-search text-muted"></i></span>
+                        <input type="text" name="search" class="form-control border-start-0" placeholder="Patient or search..."
+                            value="{{ search if search is defined else '' }}">
+                    </div>
                 </div>
-                <div class="col-6 col-sm-4 col-md-2">
+
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">Invoice Number</label>
+                    <select name="invoice_number" class="form-select searchable-select" data-placeholder="— Select Invoice —">
+                        <option value=""></option>
+                        {% for inv in recent_invoices %}
+                        <option value="{{ inv.invoice_number }}" {% if invoice_number == inv.invoice_number %}selected{% endif %}>
+                            {{ inv.invoice_number }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">Customer</label>
+                    <select name="customer_id" class="form-select searchable-select" data-placeholder="— Select Customer —">
+                        <option value=""></option>
+                        {% for cust in all_customers %}
+                        <option value="{{ cust.id }}" {% if customer_id == cust.id %}selected{% endif %}>
+                            {{ cust.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">Customer Group</label>
+                    <select name="customer_group_id" class="form-select searchable-select" data-placeholder="— Select Group —">
+                        <option value=""></option>
+                        {% for group in customer_groups %}
+                        <option value="{{ group.id }}" {% if customer_group_id == group.id %}selected{% endif %}>
+                            {{ group.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Row 2: Salesman, Dates, Actions -->
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">Salesman</label>
+                    <select name="salesman_id" class="form-select searchable-select" data-placeholder="— Select Salesman —">
+                        <option value=""></option>
+                        {% for sm in salesmen %}
+                        <option value="{{ sm.id }}" {% if salesman_id == sm.id %}selected{% endif %}>
+                            {{ sm.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-6 col-md-2">
+                    <label class="form-label small fw-bold text-muted mb-1">From Date</label>
                     <input type="date" name="from_date" class="form-control"
-                        value="{{ from_date if from_date is defined else '' }}" title="From Date">
+                        value="{{ from_date if from_date is defined else '' }}">
                 </div>
-                <div class="col-6 col-sm-4 col-md-2">
+
+                <div class="col-6 col-md-2">
+                    <label class="form-label small fw-bold text-muted mb-1">To Date</label>
                     <input type="date" name="to_date" class="form-control"
-                        value="{{ to_date if to_date is defined else '' }}" title="To Date">
+                        value="{{ to_date if to_date is defined else '' }}">
                 </div>
-                <div class="col-6 col-sm-4 col-md-3">
-                    <button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter"></i> Filter</button>
+
+                <div class="col-12 col-md-5">
+                    <label class="form-label d-none d-md-block" style="height: 20px;"></label>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary flex-grow-1">
+                            <i class="fas fa-filter me-1"></i> Apply Filters
+                        </button>
+                        <a href="{{ url_for('sales.invoices') }}" class="btn btn-outline-secondary px-4">
+                            <i class="fas fa-undo me-1"></i> Clear
+                        </a>
+                    </div>
                 </div>
-                <div class="col-6 col-sm-4 col-md-2">
-                    <a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary w-100">Clear</a>
-                </div>
+
                 <input type="hidden" name="status" value="{{ current_status if current_status is defined else 'all' }}">
             </form>
         </div>
@@ -183,31 +235,31 @@
             <ul class="nav nav-tabs card-header-tabs">
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'all' %}active{% endif %}"
-                        href="{{ url_for('sales.invoices', status='all', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search) }}">
+                        href="{{ url_for('sales.invoices', status='all', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search, invoice_number=invoice_number, customer_id=customer_id, customer_group_id=customer_group_id) }}">
                         All
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'paid' %}active{% endif %}"
-                        href="{{ url_for('sales.invoices', status='paid', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search) }}">
+                        href="{{ url_for('sales.invoices', status='paid', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search, invoice_number=invoice_number, customer_id=customer_id, customer_group_id=customer_group_id) }}">
                         Paid
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'unpaid' %}active{% endif %}"
-                        href="{{ url_for('sales.invoices', status='unpaid', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search) }}">
+                        href="{{ url_for('sales.invoices', status='unpaid', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search, invoice_number=invoice_number, customer_id=customer_id, customer_group_id=customer_group_id) }}">
                         Unpaid
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link {% if current_status == 'partial' %}active{% endif %}"
-                        href="{{ url_for('sales.invoices', status='partial', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search) }}">
+                        href="{{ url_for('sales.invoices', status='partial', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search, invoice_number=invoice_number, customer_id=customer_id, customer_group_id=customer_group_id) }}">
                         Partial
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link text-danger {% if current_status == 'overdue' %}active{% endif %}"
-                        href="{{ url_for('sales.invoices', status='overdue', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search) }}">
+                        href="{{ url_for('sales.invoices', status='overdue', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search, invoice_number=invoice_number, customer_id=customer_id, customer_group_id=customer_group_id) }}">
                         <i class="fas fa-exclamation-triangle"></i> Overdue
                     </a>
                 </li>
@@ -354,4 +406,33 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+    $(document).ready(function() {
+        // Initialize Select2
+        $('.searchable-select').each(function() {
+            var placeholder = $(this).data('placeholder');
+            $(this).select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                allowClear: true,
+                placeholder: placeholder
+            });
+        });
+
+        // Initialize Bulk Actions
+        if (typeof initBulkActions === 'function') {
+            initBulkActions({
+                selectAllId: 'selectAll',
+                checkboxClass: 'invoice-checkbox',
+                bulkDeleteBtnId: 'bulkDeleteBtn',
+                deleteUrl: "{{ url_for('sales.bulk_delete_invoices') }}",
+                entityName: 'sales invoices'
+            });
+        }
+    });
+</script>
 {% endblock %}
