@@ -23,6 +23,7 @@ def has_column(table_name, column_name):
 @login_required
 def products():
     category = request.args.get('category', 'all')
+    sku_filter = request.args.get('sku', '', type=str)
     warehouse_id = request.args.get('warehouse_id', '', type=str)
     qty_min = request.args.get('qty_min', '', type=str)
     qty_max = request.args.get('qty_max', '', type=str)
@@ -37,6 +38,10 @@ def products():
             (Product.name.ilike(f'%{search_query}%')) | 
             (Product.sku.ilike(f'%{search_query}%'))
         )
+
+    # SKU direct filter
+    if sku_filter:
+        query = query.filter(Product.sku == sku_filter)
     
     if category != 'all':
         query = query.filter(Product.category_id == int(category))
@@ -61,11 +66,16 @@ def products():
     # Get all warehouses for filter
     warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
     
+    # Get all products for SKU search dropdown
+    all_products_for_sku = Product.query.with_entities(Product.sku, Product.name).order_by(Product.sku).all()
+    
     return render_template('inventory/products.html', 
                          products=products, 
                          categories=categories,
                          warehouses=warehouses,
+                         all_products_for_sku=all_products_for_sku,
                          current_category=category,
+                         current_sku=sku_filter,
                          current_warehouse_id=warehouse_id,
                          qty_min=qty_min,
                          qty_max=qty_max,
@@ -211,16 +221,40 @@ def edit_product(id):
             except (ValueError, TypeError):
                 pass
         
-        # Handle image upload
+        # Handle image deletion or upload
+        remove_image = request.form.get('remove_image') == '1'
+        
         if 'image' in request.files:
             image_file = request.files['image']
             if image_file and image_file.filename:
+                # If new image uploaded, delete old one if exists
+                if product.image_path and os.path.exists(product.image_path):
+                    try:
+                        os.remove(product.image_path)
+                    except:
+                        pass
+                
                 filename = secure_filename(image_file.filename)
                 image_path = os.path.join('app', 'static', 'uploads', 'products', filename)
                 os.makedirs(os.path.dirname(image_path), exist_ok=True)
                 image_file.save(image_path)
-                # Normalize path to use forward slashes for consistency
                 product.image_path = image_path.replace('\\', '/')
+            elif remove_image and product.image_path:
+                # No new image but remove_image requested
+                if os.path.exists(product.image_path):
+                    try:
+                        os.remove(product.image_path)
+                    except:
+                        pass
+                product.image_path = None
+        elif remove_image and product.image_path:
+            # remove_image requested and image existed
+            if os.path.exists(product.image_path):
+                try:
+                    os.remove(product.image_path)
+                except:
+                    pass
+            product.image_path = None
         
         try:
             db.session.commit()

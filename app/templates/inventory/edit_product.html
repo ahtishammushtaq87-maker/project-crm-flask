@@ -147,7 +147,14 @@
                         <img src="{{ url_for('static', filename=img_src) }}" 
                              alt="{{ product.name }}" class="img-thumbnail" style="max-width: 200px; max-height: 200px;"
                              onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22200%22 height=%22200%22/%3E%3Ctext x=%22100%22 y=%22100%22 font-size=%2214%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3EImage Not Found%3C/text%3E%3C/svg%3E'">
-                        <p class="text-muted small mt-1">Upload a new one to replace it.</p>
+                        
+                        <div class="form-check mt-1">
+                            <input class="form-check-input" type="checkbox" name="remove_image" id="remove_image" value="1">
+                            <label class="form-check-label text-danger small" for="remove_image">
+                                <i class="fas fa-trash-alt me-1"></i> Remove current image
+                            </label>
+                        </div>
+                        <p class="text-muted small mt-1">Or upload a new one to replace it.</p>
                     </div>
                     {% endif %}
                     {{ form.image(class="form-control", accept="image/*", id="imageInput") }}
@@ -176,9 +183,12 @@ document.getElementById('imageInput').addEventListener('change', function(e) {
         const reader = new FileReader();
         reader.onload = function(event) {
             preview.innerHTML = `
-                <div class="mt-2">
+                <div class="mt-2 position-relative d-inline-block">
                     <p class="text-muted small"><strong>New Preview:</strong></p>
                     <img src="${event.target.result}" class="img-thumbnail" style="max-width: 300px; max-height: 300px;">
+                    <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-1 mt-4" onclick="clearImageInput()" title="Clear selection">
+                        <i class="fas fa-times"></i>
+                    </button>
                 </div>
             `;
         };
@@ -187,6 +197,13 @@ document.getElementById('imageInput').addEventListener('change', function(e) {
         preview.innerHTML = '';
     }
 });
+
+function clearImageInput() {
+    const input = document.getElementById('imageInput');
+    const preview = document.getElementById('imagePreview');
+    input.value = '';
+    preview.innerHTML = '';
+}
 
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize Select2

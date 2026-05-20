@@ -164,7 +164,7 @@
                     <div class="modal-body">
                         <div class="mb-3">
                             <label class="form-label">Select Warehouse</label>
-                            <select name="warehouse_id" class="form-control" required>
+                            <select name="warehouse_id" class="form-control searchable-select" data-placeholder="— Select Warehouse —" required>
                                 <option value="">-- Select Warehouse --</option>
                                 {% for wh in warehouses %}
                                 <option value="{{ wh.id }}">{{ wh.name }}</option>
@@ -196,8 +196,19 @@
                         value="{{ search_query }}">
                 </div>
                 <div class="col-md-3">
+                    <label class="form-label">Search by SKU</label>
+                    <select name="sku" class="form-select searchable-select" data-placeholder="— Select SKU —" onchange="this.form.submit()">
+                        <option value="">All SKUs</option>
+                        {% for p in all_products_for_sku %}
+                        <option value="{{ p.sku }}" {% if current_sku == p.sku %}selected{% endif %}>
+                            {{ p.sku }} - {{ p.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
                     <label class="form-label">Category</label>
-                    <select name="category" class="form-control" onchange="this.form.submit()">
+                    <select name="category" class="form-select searchable-select" data-placeholder="— Select Category —" onchange="this.form.submit()">
                         <option value="all" {% if current_category=='all' %}selected{% endif %}>All Categories</option>
                         {% for cat in categories %}
                         <option value="{{ cat.id }}" {% if current_category==cat.id|string %}selected{% endif %}>{{
@@ -205,27 +216,9 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-2 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary w-100">
-                        <i class="fas fa-search"></i> Search
-                    </button>
-                    {% if search_query %}
-                    <a href="{{ url_for('inventory.products') }}" class="btn btn-secondary w-100 ms-2 clear-filters"
-                        title="Clear Search">
-                        <i class="fas fa-times"></i>
-                    </a>
-                    {% endif %}
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <div class="card mb-3">
-        <div class="card-body">
-            <form method="GET" class="row g-3 filter-form">
                 <div class="col-md-3">
                     <label class="form-label">Warehouse</label>
-                    <select name="warehouse_id" class="form-control" onchange="this.form.submit()">
+                    <select name="warehouse_id" class="form-select searchable-select" data-placeholder="— Select Warehouse —" onchange="this.form.submit()">
                         <option value="">All Warehouses</option>
                         {% for wh in warehouses %}
                         <option value="{{ wh.id }}" {% if current_warehouse_id==wh.id|string %}selected{% endif %}>{{
@@ -234,29 +227,21 @@
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label">Min Quantity</label>
-                    <input type="number" name="qty_min" class="form-control" value="{{ qty_min }}" min="0"
-                        placeholder="0">
+                    <label class="form-label">Min Qty</label>
+                    <input type="number" name="qty_min" class="form-control" value="{{ qty_min }}" min="0" placeholder="0">
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label">Max Quantity</label>
-                    <input type="number" name="qty_max" class="form-control" value="{{ qty_max }}" min="0"
-                        placeholder="999999">
+                    <label class="form-label">Max Qty</label>
+                    <input type="number" name="qty_max" class="form-control" value="{{ qty_max }}" min="0" placeholder="999">
                 </div>
-                <div class="col-md-2">
-                    <label class="form-label">&nbsp;</label>
-                    <button type="submit" class="btn btn-primary w-100">
-                        <i class="fas fa-filter"></i> Filter
+                <div class="col-md-4 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary me-2 flex-grow-1">
+                        <i class="fas fa-filter"></i> Apply Filters
                     </button>
-                </div>
-                {% if qty_min or qty_max or current_warehouse_id %}
-                <div class="col-md-2">
-                    <label class="form-label">&nbsp;</label>
-                    <a href="{{ url_for('inventory.products') }}" class="btn btn-secondary w-100 clear-filters">
+                    <a href="{{ url_for('inventory.products') }}" class="btn btn-secondary clear-filters" title="Clear Filters">
                         <i class="fas fa-times"></i> Clear
                     </a>
                 </div>
-                {% endif %}
             </form>
         </div>
     </div>
@@ -373,6 +358,10 @@
     </div>
 </div>
 
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
     // Event Delegation for History and Delete buttons
     document.addEventListener('click', function (e) {
@@ -402,6 +391,7 @@
     function saveFilters() {
         const filters = {
             search: document.querySelector('input[name="search"]')?.value || '',
+            sku: document.querySelector('select[name="sku"]')?.value || '',
             category: document.querySelector('select[name="category"]')?.value || 'all',
             warehouse_id: document.querySelector('select[name="warehouse_id"]')?.value || '',
             qty_min: document.querySelector('input[name="qty_min"]')?.value || '',
@@ -415,14 +405,28 @@
     }
 
     document.addEventListener('DOMContentLoaded', function () {
+        // Initialize Select2
+        if (typeof $ !== 'undefined' && $.fn.select2) {
+            $('.searchable-select').each(function() {
+                var placeholder = $(this).data('placeholder');
+                $(this).select2({
+                    theme: 'bootstrap-5',
+                    width: '100%',
+                    allowClear: true,
+                    placeholder: placeholder
+                });
+            });
+        }
+
         const params = new URLSearchParams(window.location.search);
-        const filterParams = ['search', 'category', 'warehouse_id', 'qty_min', 'qty_max'];
+        const filterParams = ['search', 'sku', 'category', 'warehouse_id', 'qty_min', 'qty_max'];
         const hasParams = filterParams.some(p => params.has(p));
 
         if (hasParams) {
             // Save current URL params to storage
             const filters = {
                 search: params.get('search') || '',
+                sku: params.get('sku') || '',
                 category: params.get('category') || 'all',
                 warehouse_id: params.get('warehouse_id') || '',
                 qty_min: params.get('qty_min') || '',
@@ -436,6 +440,7 @@
                 const filters = JSON.parse(saved);
                 const newParams = new URLSearchParams();
                 if (filters.search) newParams.set('search', filters.search);
+                if (filters.sku) newParams.set('sku', filters.sku);
                 if (filters.category && filters.category !== 'all') newParams.set('category', filters.category);
                 if (filters.warehouse_id) newParams.set('warehouse_id', filters.warehouse_id);
                 if (filters.qty_min) newParams.set('qty_min', filters.qty_min);
@@ -462,7 +467,7 @@
                 const finalParams = new URLSearchParams();
 
                 // Fields to check
-                const fields = ['search', 'category', 'warehouse_id', 'qty_min', 'qty_max'];
+                const fields = ['search', 'sku', 'category', 'warehouse_id', 'qty_min', 'qty_max'];
 
                 fields.forEach(field => {
                     let val = formData.get(field);
@@ -473,8 +478,6 @@
 
                     if (val && val !== 'all' && val !== '') {
                         finalParams.set(field, val);
-                    } else if (field === 'category' && val === 'all') {
-                        // Explicitly skip 'all' category to keep URL clean, but it's handled by default
                     }
                 });
 

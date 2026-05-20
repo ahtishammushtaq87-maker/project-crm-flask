@@ -1968,6 +1968,8 @@ def purchase_return_list():
     from_date = request.args.get('from_date')
     to_date = request.args.get('to_date')
     status = request.args.get('status', 'all')
+    vendor_id = request.args.get('vendor_id')
+    return_number = request.args.get('return_number')
 
     query = PurchaseReturn.query
 
@@ -1988,6 +1990,12 @@ def purchase_return_list():
 
     if status != 'all':
         query = query.filter(PurchaseReturn.status == status)
+    
+    if vendor_id:
+        query = query.filter(PurchaseReturn.vendor_id == vendor_id)
+    
+    if return_number:
+        query = query.filter(PurchaseReturn.return_number == return_number)
 
     query = apply_saved_filter_to_query(query, 'purchase_return', request.args)
 
@@ -2012,6 +2020,8 @@ def purchase_return_list():
                         from_date=from_date,
                         to_date=to_date,
                         current_status=status,
+                        vendor_id=vendor_id,
+                        return_number=return_number,
                         total_returns=total_returns,
                         total_count=total_count,
                         active_module='purchase_return',

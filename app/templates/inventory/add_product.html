@@ -159,13 +159,27 @@ document.getElementById('imageInput').addEventListener('change', function(e) {
     if (e.target.files && e.target.files[0]) {
         const reader = new FileReader();
         reader.onload = function(e) {
-            preview.innerHTML = '<img src="' + e.target.result + '" style="max-width: 200px; max-height: 200px;">';
+            preview.innerHTML = `
+                <div class="mt-2 position-relative d-inline-block">
+                    <img src="${e.target.result}" style="max-width: 200px; max-height: 200px;" class="img-thumbnail">
+                    <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-1" onclick="clearImageInput()" title="Clear selection">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
         };
         reader.readAsDataURL(e.target.files[0]);
     } else {
         preview.innerHTML = '';
     }
 });
+
+function clearImageInput() {
+    const input = document.getElementById('imageInput');
+    const preview = document.getElementById('imagePreview');
+    input.value = '';
+    preview.innerHTML = '';
+}
 
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize Select2

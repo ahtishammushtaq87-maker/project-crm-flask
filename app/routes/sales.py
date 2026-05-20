@@ -644,6 +644,7 @@ def customers():
     status = request.args.get('status', 'all')
     search = request.args.get('search', '')
     customer_id = request.args.get('customer_id', type=int)
+    customer_group_id = request.args.get('customer_group_id', type=int)
     
     query = Customer.query
     
@@ -654,7 +655,11 @@ def customers():
     
     if customer_id:
         query = query.filter_by(id=customer_id)
-    elif search:
+    
+    if customer_group_id:
+        query = query.filter_by(group_id=customer_group_id)
+        
+    if not customer_id and search:
         search_filter = f"%{search}%"
         query = query.filter(
             (Customer.name.ilike(search_filter)) |
@@ -678,13 +683,16 @@ def customers():
             
     # List of all customers for the searchable dropdown
     all_customers = Customer.query.order_by(Customer.name.asc()).all()
+    customer_groups = CustomerGroup.query.filter_by(is_active=True).order_by(CustomerGroup.name).all()
     
     return render_template('sales/customers.html', 
                          customers=customers, 
                          all_customers=all_customers,
+                         customer_groups=customer_groups,
                          current_status=status, 
                          search_query=search,
                          selected_customer_id=customer_id,
+                         selected_group_id=customer_group_id,
                          active_module='customer',
                          filter_id=request.args.get('filter_id'))
 
