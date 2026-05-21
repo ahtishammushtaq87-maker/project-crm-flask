@@ -501,6 +501,7 @@ class Sale(db.Model):
     discount = db.Column(db.Float, default=0)
     delivery_charge = db.Column(db.Float, default=0)  # Delivery cost
     advance_applied = db.Column(db.Float, default=0)  # Advance amount applied to this invoice
+    ignore_overdue_discount = db.Column(db.Boolean, default=False)
     total = db.Column(db.Float, default=0)
     status = db.Column(Enum('paid', 'unpaid', 'partial', name='payment_status'), default='unpaid', index=True)
     paid_amount = db.Column(db.Float, default=0)
@@ -528,8 +529,9 @@ class Sale(db.Model):
     @property
     def is_overdue(self):
         """Check if invoice is overdue"""
-        if self.status != 'paid' and self.due_date:
-            return datetime.utcnow().date() > self.due_date.date()
+        if self.status != 'paid':
+            check_date = self.due_date.date() if self.due_date else self.date.date()
+            return datetime.utcnow().date() > check_date
         return False
     
     def update_status(self):
@@ -549,11 +551,14 @@ class Sale(db.Model):
         # Calculate tax
         self.tax = self.subtotal * (self.tax_rate / 100)
         
-        # Calculate discount
-        if self.discount_type == 'percentage':
-            discount_amount = self.subtotal * (self.discount / 100)
+        # Calculate discount - suspended if overdue unless forced
+        if self.is_overdue and not self.ignore_overdue_discount:
+            discount_amount = 0
         else:
-            discount_amount = self.discount
+            if self.discount_type == 'percentage':
+                discount_amount = self.subtotal * (self.discount / 100)
+            else:
+                discount_amount = self.discount
         
         # Calculate total = subtotal + tax + delivery - discount
         self.total = self.subtotal + self.tax + self.delivery_charge - discount_amount

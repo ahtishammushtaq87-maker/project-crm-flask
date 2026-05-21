@@ -2337,14 +2337,18 @@
                         let statusClass = 'bg-secondary';
                         if (entry.status === 'Paid') statusClass = 'bg-success';
                         else if (entry.status === 'Partial') statusClass = 'bg-warning text-dark';
-                        else if (entry.status === 'Unpaid') statusClass = 'bg-danger';
+                        else if (entry.status === 'Unpaid' || entry.status === 'Overdue') statusClass = 'bg-danger';
+
+                        const invoiceLink = (entry.entity_id && entry.entity_type) 
+                            ? `<a href="javascript:void(0)" class="entity-history-trigger" data-entity-type="${entry.entity_type}" data-entity-id="${entry.entity_id}">${entry.invoice_number}</a>`
+                            : entry.invoice_number;
 
                         tr.innerHTML = `
                             <td class="text-center no-export">
-                                <input type="checkbox" class="form-check-input ledger-item-checkbox" value="${entry.invoice_number}">
+                                <input type="checkbox" class="form-check-input ledger-item-checkbox" value="${entry.entity_id || entry.invoice_number}">
                             </td>
                             <td class="text-nowrap">${entry.date}</td>
-                            <td class="fw-bold">${entry.invoice_number}</td>
+                            <td class="fw-bold">${invoiceLink}</td>
                             <td class="text-nowrap">${entry.customer_name}</td>
                             <td class="text-end fw-bold text-dark">PKR${entry.debit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td class="text-end fw-bold text-success">PKR${entry.credit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>

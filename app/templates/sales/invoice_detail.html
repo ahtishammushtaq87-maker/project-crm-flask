@@ -98,9 +98,15 @@
             {% endif %}
             {% endif %}
             {% if sale.status != 'paid' %}
-            <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#discountModal">
-                <i class="fas fa-tag me-1"></i>Discount
-            </button>
+                <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#discountModal">
+                    <i class="fas fa-tag me-1"></i>Discount
+                </button>
+                {% if sale.is_overdue %}
+                <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#applyAdvanceModal"
+                    title="Apply customer advance to this overdue invoice">
+                    <i class="fas fa-bolt me-1"></i>Apply Advance
+                </button>
+                {% endif %}
             {% endif %}
             {% if current_user.has_permission('returns', 'add') %}
             <a href="{{ url_for('returns.create_return', sale_id=sale.id) }}" class="btn btn-danger">
@@ -118,6 +124,7 @@
         </div>
     </div>
 
+
     <!-- Discount Modal -->
     <div class="modal fade" id="discountModal" tabindex="-1">
         <div class="modal-dialog">
@@ -134,12 +141,55 @@
                         <div class="mb-3">
                             <label class="form-label fw-semibold">Discount Amount (PKR)</label>
                             <input type="number" step="0.01" name="discount_amount" class="form-control"
-                                placeholder="0.00" required>
+                                placeholder="0.00">
                         </div>
+                        {% if sale.is_overdue %}
+                        <div class="mb-3">
+                            <div class="form-check form-switch border p-2 rounded bg-light">
+                                <input class="form-check-input ms-0" type="checkbox" name="ignore_overdue_discount" id="ignoreOverdue">
+                                <label class="form-check-label fw-bold text-danger ms-2" for="ignoreOverdue">
+                                    Override Overdue Restriction
+                                </label>
+                                <div class="small text-muted ms-2 mt-1">Check this to allow discount on this overdue invoice.</div>
+                            </div>
+                        </div>
+                        {% endif %}
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" class="btn btn-warning text-dark fw-bold">Apply Discount</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Apply Advance Modal -->
+    <div class="modal fade" id="applyAdvanceModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form action="{{ url_for('sales.apply_advance_to_overdue', id=sale.id) }}" method="POST">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title"><i class="fas fa-bolt me-2"></i>Apply Customer Advance</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body text-start">
+                        {% if sale.customer %}
+                        <p class="text-muted small">
+                            Customer Advance Balance: <strong>PKR {{ "{:,.2f}".format(sale.customer.remaining_advance_balance or 0) }}</strong>
+                            &nbsp;|&nbsp; Balance Due: <strong>PKR {{ "{:,.2f}".format(sale.total - sale.paid_amount) }}</strong>
+                        </p>
+                        {% endif %}
+                        <div class="alert alert-warning py-2 small">
+                            <i class="fas fa-exclamation-triangle me-1"></i>
+                            This invoice is <strong>overdue</strong>. The available advance will be applied to reduce the outstanding balance.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-danger fw-bold">
+                            <i class="fas fa-bolt me-1"></i>Apply Advance
+                        </button>
                     </div>
                 </form>
             </div>
@@ -730,6 +780,19 @@
     }
 
     document.addEventListener('DOMContentLoaded', function () {
+        // Auto-show modal from URL hash (useful for redirects from entity popups)
+        const hash = window.location.hash;
+        if (hash) {
+            const modalEl = document.querySelector(hash);
+            if (modalEl && modalEl.classList.contains('modal')) {
+                // Short delay to ensure Bootstrap is fully ready
+                setTimeout(() => {
+                    const m = new bootstrap.Modal(modalEl);
+                    m.show();
+                }, 100);
+            }
+        }
+
         // Edit payment buttons
         document.querySelectorAll('.edit-payment-btn').forEach(btn => {
             btn.addEventListener('click', function () {

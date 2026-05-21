@@ -38,7 +38,7 @@
             </a>
             {% if current_user.has_permission('purchases', 'add') %}
             <a href="{{ url_for('purchase.create_bill') }}" class="btn btn-primary">
-                <i class="fas fa-plus me-1"></i> Create New Bill
+                <i class="fas fa-plus me-1"></i> Create New PO
             </a>
             {% endif %}
         </div>
@@ -186,10 +186,12 @@
             <form method="GET" action="{{ url_for('purchase.bills') }}" class="row g-3 px-2 align-items-end">
                 <div class="col-12 col-md-3">
                     <label class="form-label small fw-bold text-muted mb-1">Vendor</label>
-                    <select name="vendor_id" class="form-select searchable-select" data-placeholder="— Filter by Vendor —">
+                    <select name="vendor_id" class="form-select searchable-select"
+                        data-placeholder="— Filter by Vendor —">
                         <option value=""></option>
                         {% for v in vendors %}
-                        <option value="{{ v.id }}" {% if vendor_id|string == v.id|string %}selected{% endif %}>{{ v.name }}</option>
+                        <option value="{{ v.id }}" {% if vendor_id|string==v.id|string %}selected{% endif %}>{{ v.name
+                            }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -198,7 +200,7 @@
                     <select name="bill_number" class="form-select searchable-select" data-placeholder="— PO/Bill # —">
                         <option value=""></option>
                         {% for bn in all_bill_numbers %}
-                        <option value="{{ bn }}" {% if bill_number == bn %}selected{% endif %}>{{ bn }}</option>
+                        <option value="{{ bn }}" {% if bill_number==bn %}selected{% endif %}>{{ bn }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -211,10 +213,12 @@
                     <input type="date" name="to_date" class="form-control" value="{{ to_date }}">
                 </div>
                 <div class="col-6 col-md-2">
-                    <button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter me-1"></i> Filter</button>
+                    <button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter me-1"></i>
+                        Filter</button>
                 </div>
                 <div class="col-6 col-md-1">
-                    <a href="{{ url_for('purchase.bills') }}" class="btn btn-outline-secondary w-100" title="Clear Filters">
+                    <a href="{{ url_for('purchase.bills') }}" class="btn btn-outline-secondary w-100"
+                        title="Clear Filters">
                         <i class="fas fa-undo"></i>
                     </a>
                 </div>
@@ -289,13 +293,17 @@
                                 <input type="checkbox" class="form-check-input bill-checkbox" value="{{ bill.id }}">
                             </td>
                             <td class="fw-bold">
-                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="purchase" data-entity-id="{{ bill.id }}">
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal"
+                                    data-bs-target="#entityHistoryModal" data-entity-type="purchase"
+                                    data-entity-id="{{ bill.id }}">
                                     {{ bill.bill_number }}
                                 </a>
                             </td>
                             <td>{{ bill.date.strftime(date_format) }}</td>
                             <td>
-                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal" data-bs-target="#entityHistoryModal" data-entity-type="vendor" data-entity-id="{{ bill.vendor.id }}">
+                                <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal"
+                                    data-bs-target="#entityHistoryModal" data-entity-type="vendor"
+                                    data-entity-id="{{ bill.vendor.id }}">
                                     {{ bill.vendor.name }}
                                 </a>
                             </td>

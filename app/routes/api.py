@@ -48,11 +48,21 @@ def get_entity_details(entity_type, entity_id):
             if entity.customer_id:
                 data['actions'].append({'label': 'Ledger()', 'url': 'javascript:void(0)', 'btn_class': 'btn-outline-primary', 'onclick': f"showCustomerLedger({entity.customer_id}); bootstrap.Modal.getInstance(document.getElementById('entityHistoryModal')).hide();"})
 
+            data['actions'].append({'label': 'View Full', 'url': url_for('sales.invoice_detail', id=entity.id), 'btn_class': 'btn-primary'})
+
+            if entity.status != 'paid':
+                # Always show Discount (regulated by backend logic)
+                data['actions'].append({'label': 'Discount', 'url': 'javascript:void(0)', 'btn_class': 'btn-warning', 'onclick': f"bootstrap.Modal.getInstance(document.getElementById('entityHistoryModal')).hide(); window.location.href='{url_for('sales.invoice_detail', id=entity.id)}#discountModal'; setTimeout(() => {{ var m = new bootstrap.Modal(document.getElementById('discountModal')); m.show(); }}, 500);"})
+
+                if entity.is_overdue:
+                    # Plus Apply Advance for overdue
+                    data['actions'].append({'label': 'Apply Advance', 'url': 'javascript:void(0)', 'btn_class': 'btn-danger', 'onclick': f"bootstrap.Modal.getInstance(document.getElementById('entityHistoryModal')).hide(); window.location.href='{url_for('sales.invoice_detail', id=entity.id)}#applyAdvanceModal'; setTimeout(() => {{ var m = new bootstrap.Modal(document.getElementById('applyAdvanceModal')); m.show(); }}, 500);"})
+
             data['actions'].extend([
-                {'label': 'View Full', 'url': url_for('sales.invoice_detail', id=entity.id), 'btn_class': 'btn-primary'},
                 {'label': 'Edit', 'url': url_for('sales.edit_invoice', id=entity.id), 'btn_class': 'btn-info', 'permission': 'sales.edit'},
                 {'label': 'Delete', 'url': url_for('sales.delete_invoice', id=entity.id), 'btn_class': 'btn-danger', 'permission': 'sales.delete', 'is_form': True}
             ])
+            
             if entity.status != 'paid':
                 data['actions'].append({'label': 'Return', 'url': url_for('returns.create_return', sale_id=entity.id), 'btn_class': 'btn-warning', 'permission': 'returns.add'})
 

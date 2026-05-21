@@ -624,19 +624,91 @@ def payment_image(payment_id):
 @permission_required('sales', action='edit')
 def apply_discount(id):
     sale = Sale.query.get_or_404(id)
-    discount_amount = float(request.form.get('discount_amount', 0))
+
+    # Block discount if invoice is overdue unless manually overridden
+    ignore_overdue = request.form.get('ignore_overdue_discount') == 'on'
+    if sale.is_overdue and not ignore_overdue:
+        flash('Discount is restricted for overdue invoices. Select "Override Restriction" if this is an exception.', 'warning')
+        return redirect(request.referrer or url_for('sales.invoice_detail', id=sale.id))
+
+    if ignore_overdue:
+        sale.ignore_overdue_discount = True
+
+    if ignore_overdue:
+        sale.ignore_overdue_discount = True
+
+    # Use 'or 0' to handle empty string inputs safely
+    discount_amount_raw = request.form.get('discount_amount', '0')
+    discount_amount = float(discount_amount_raw if discount_amount_raw.strip() else 0)
     
-    if discount_amount > 0:
-        # Check if the discount is larger than the total
-        # Ensure we don't end up with a negative total
-        sale.discount += discount_amount
+    if discount_amount > 0 or ignore_overdue:
+        if discount_amount > 0:
+            sale.discount += discount_amount
+            flash(f'Discount of PKR {discount_amount:,.2f} applied successfully!', 'success')
+        
+        if ignore_overdue:
+            flash('Overdue restriction overridden successfully.', 'info')
+            
         sale.calculate_totals()
         sale.update_status()
-        
         db.session.commit()
-        flash(f'Discount of PKR {discount_amount} applied successfully!', 'success')
-    
+    else:
+        flash('No changes were made.', 'secondary')
+
     return redirect(request.referrer or url_for('sales.invoice_detail', id=sale.id))
+
+
+@bp.route('/invoice/<int:id>/apply-advance', methods=['POST'])
+@login_required
+@permission_required('sales', action='edit')
+def apply_advance_to_overdue(id):
+    """Apply available customer advance balance to an overdue invoice."""
+    sale = Sale.query.get_or_404(id)
+
+    if not sale.is_overdue:
+        flash('This invoice is not overdue. Use the standard discount option.', 'warning')
+        return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+    if not sale.customer_id:
+        flash('No customer linked to this invoice.', 'error')
+        return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+    customer = sale.customer
+    available_advance = customer.remaining_advance_balance
+
+    if available_advance <= 0:
+        flash('No advance balance available for this customer.', 'warning')
+        return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+    balance_due = sale.total - sale.paid_amount
+    if balance_due <= 0:
+        flash('Invoice is already fully paid.', 'info')
+        return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+    # Apply whichever is smaller: available advance or balance due
+    apply_amount = min(available_advance, balance_due)
+
+    # Record advance application
+    sale.advance_applied = (sale.advance_applied or 0) + apply_amount
+    sale.paid_amount = (sale.paid_amount or 0) + apply_amount
+    sale.update_status()
+
+    # Deduct from customer advance records (oldest first)
+    remaining_to_apply = apply_amount
+    for adv in sorted(customer.advances, key=lambda a: a.date):
+        if remaining_to_apply <= 0:
+            break
+        available_in_adv = adv.amount - (adv.applied_amount or 0)
+        if available_in_adv <= 0:
+            continue
+        use = min(available_in_adv, remaining_to_apply)
+        adv.applied_amount = (adv.applied_amount or 0) + use
+        remaining_to_apply -= use
+
+    db.session.commit()
+    flash(f'Advance of PKR {apply_amount:,.2f} applied to overdue invoice successfully!', 'success')
+    return redirect(url_for('sales.invoice_detail', id=sale.id))
+
 
 @bp.route('/customers')
 @login_required
@@ -2158,6 +2230,11 @@ def customer_ledger_json(id):
     events = []
     
     for s in sales:
+        # Determine status for ledger display
+        display_status = (s.status or 'unpaid').capitalize()
+        if s.is_overdue:
+            display_status = 'Overdue'
+
         # Gross Sale (Debit)
         events.append({
             'date': s.date,
@@ -2166,18 +2243,23 @@ def customer_ledger_json(id):
             'desc': f"Invoice #{s.invoice_number}",
             'debit': float(s.subtotal or 0) + float(s.tax or 0) + float(s.delivery_charge or 0),
             'credit': 0,
-            'status': (s.status or 'unpaid').capitalize(),
+            'status': display_status,
             'obj': s
         })
         # Discount (Credit)
-        if float(s.discount or 0) > 0:
+        # Suppress discount entry if overdue and not ignored, matching calculation logic
+        effective_discount = float(s.discount or 0)
+        if s.is_overdue and not s.ignore_overdue_discount:
+            effective_discount = 0
+
+        if effective_discount > 0:
             events.append({
                 'date': s.date,
                 'type': 'discount',
                 'invoice_number': s.invoice_number,
                 'desc': f"Discount (Inv #{s.invoice_number})",
                 'debit': 0,
-                'credit': float(s.discount or 0),
+                'credit': effective_discount,
                 'status': '-',
                 'obj': s
             })
@@ -2261,7 +2343,9 @@ def customer_ledger_json(id):
             'invoice_balance': 0, # Not applicable in detailed ledger
             'running_balance': running_balance,
             'status': e['status'],
-            'aging': '-' if e['type'] != 'sale' else '-' # Bucket calculation could be added here
+            'aging': '-' if e['type'] != 'sale' else '-', # Bucket calculation could be added here
+            'entity_id': e['obj'].id if 'obj' in e and hasattr(e['obj'], 'id') else None,
+            'entity_type': e['type'] if e['type'] in ['sale', 'return', 'advance', 'payment'] else None
         })
 
     summary = {
