@@ -1,6 +1,34 @@
 """Payment management utility functions"""
 
+from calendar import monthrange
+from datetime import date
+
 from app.models import Sale, PurchaseBill
+
+
+def get_working_days_in_month(year, month):
+    """
+    Returns the number of working days in a given month, excluding Sundays.
+
+    Args:
+        year: The year (e.g., 2026)
+        month: The month (1-12)
+
+    Returns:
+        int: Number of working days (Mon-Sat), excluding all Sundays
+
+    Examples:
+        - May 2026 (31 days, 5 Sundays):   31 - 5 = 26 working days
+        - June 2026 (30 days, 4 Sundays):  30 - 4 = 26 working days
+        - Feb 2025 (28 days, 4 Sundays):   28 - 4 = 24 working days
+    """
+    _, days_in_month = monthrange(year, month)
+    # weekday() returns 6 for Sunday
+    sundays = sum(
+        1 for day in range(1, days_in_month + 1)
+        if date(year, month, day).weekday() == 6
+    )
+    return days_in_month - sundays
 
 
 def safe_update_paid_amount(model_instance, delta_amount):

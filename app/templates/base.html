@@ -222,8 +222,15 @@
         }
 
         @keyframes slideInDown {
-            from { transform: translateY(-20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
         }
 
         .premium-alert .alert-content {
@@ -236,58 +243,77 @@
             font-size: 1.25rem;
         }
 
-        .alert-success.premium-alert { border-left-color: #2ecc71 !important; background-color: #eafaf1 !important; color: #1d8348 !important; }
-        .alert-danger.premium-alert { border-left-color: #e74c3c !important; background-color: #fdedec !important; color: #943126 !important; }
-        .alert-warning.premium-alert { border-left-color: #f1c40f !important; background-color: #fef9e7 !important; color: #9a7d0a !important; }
-        .alert-info.premium-alert { border-left-color: #3498db !important; background-color: #ebf5fb !important; color: #21618c !important; }
-        
+        .alert-success.premium-alert {
+            border-left-color: #2ecc71 !important;
+            background-color: #eafaf1 !important;
+            color: #1d8348 !important;
+        }
+
+        .alert-danger.premium-alert {
+            border-left-color: #e74c3c !important;
+            background-color: #fdedec !important;
+            color: #943126 !important;
+        }
+
+        .alert-warning.premium-alert {
+            border-left-color: #f1c40f !important;
+            background-color: #fef9e7 !important;
+            color: #9a7d0a !important;
+        }
+
+        .alert-info.premium-alert {
+            border-left-color: #3498db !important;
+            background-color: #ebf5fb !important;
+            color: #21618c !important;
+        }
+
         .premium-alert .btn-close {
             position: static !important;
             padding: 0.5rem !important;
             margin-left: 15px;
         }
 
-            /* Force horizontal scrolling for all responsive tables on mobile */
-            .table-responsive table,
-            #itemsTable,
-            #componentsTable,
-            #materialsTable,
-            #bomTable {
-                min-width: 800px !important;
-            }
+        /* Force horizontal scrolling for all responsive tables on mobile */
+        .table-responsive table,
+        #itemsTable,
+        #componentsTable,
+        #materialsTable,
+        #bomTable {
+            min-width: 800px !important;
+        }
 
-            /* Fix visibility of status badges (Paid, Unpaid, etc.) in tables */
-            .table .badge {
-                display: inline-block !important;
-                padding: 0.35em 0.65em !important;
-                font-size: 0.75em !important;
-                font-weight: 700 !important;
-                line-height: 1 !important;
-                text-align: center !important;
-                white-space: nowrap !important;
-                vertical-align: baseline !important;
-                border-radius: 0.25rem !important;
-                color: #fff !important;
-                /* White text for contrast */
-            }
+        /* Fix visibility of status badges (Paid, Unpaid, etc.) in tables */
+        .table .badge {
+            display: inline-block !important;
+            padding: 0.35em 0.65em !important;
+            font-size: 0.75em !important;
+            font-weight: 700 !important;
+            line-height: 1 !important;
+            text-align: center !important;
+            white-space: nowrap !important;
+            vertical-align: baseline !important;
+            border-radius: 0.25rem !important;
+            color: #fff !important;
+            /* White text for contrast */
+        }
 
-            .table .bg-success {
-                background-color: #198754 !important;
-            }
+        .table .bg-success {
+            background-color: #198754 !important;
+        }
 
-            .table .bg-danger {
-                background-color: #dc3545 !important;
-            }
+        .table .bg-danger {
+            background-color: #dc3545 !important;
+        }
 
-            .table .bg-secondary {
-                background-color: #6c757d !important;
-            }
+        .table .bg-secondary {
+            background-color: #6c757d !important;
+        }
 
-            .table .bg-warning {
-                background-color: #ffc107 !important;
-                color: #000 !important;
-                /* Warning usually needs dark text */
-            }
+        .table .bg-warning {
+            background-color: #ffc107 !important;
+            color: #000 !important;
+            /* Warning usually needs dark text */
+        }
 
         /* ──────────────────────────────────────────────────────────── */
 
@@ -1235,7 +1261,9 @@
                     {% if messages %}
                     {% for category, message in messages %}
                     {% set alert_type = category if category != 'message' else 'info' %}
-                    {% set icon = 'fa-check-circle' if alert_type == 'success' else 'fa-exclamation-circle' if alert_type == 'danger' else 'fa-exclamation-triangle' if alert_type == 'warning' else 'fa-info-circle' %}
+                    {% set icon = 'fa-check-circle' if alert_type == 'success' else 'fa-exclamation-circle' if
+                    alert_type == 'danger' else 'fa-exclamation-triangle' if alert_type == 'warning' else
+                    'fa-info-circle' %}
                     <div class="alert alert-{{ alert_type }} alert-dismissible fade show premium-alert" role="alert">
                         <div class="alert-content">
                             <i class="fas {{ icon }}"></i>
@@ -1251,113 +1279,114 @@
                 <!-- Page Content Internal Padding Container -->
                 <div class="p-3 p-md-4">
 
-                {% block content %}{% endblock %}
+                    {% block content %}{% endblock %}
+                </div>
             </div>
         </div>
-    </div>
 
-    <!-- Universal Filter Trigger Button (fixed position, outside layout grid) -->
-    {% if active_module %}
-    <div id="universal-filter-trigger-wrapper" class="d-none"
-        style="position: fixed; top: 75px; right: 25px; z-index: 1060;">
-        <button type="button" class="btn btn-primary btn-sm shadow" id="universal-filter-trigger-btn"
-            data-module="{{ active_module }}" data-bs-toggle="modal" data-bs-target="#universalFilterModal">
-            <i class="fas fa-filter me-1"></i> Advanced Filter
-        </button>
-        {% if filter_id or request.args.get('filter_rules') %}
-        <a href="{{ request.path }}" class="btn btn-outline-danger btn-sm shadow ms-1" title="Clear filter">
-            <i class="fas fa-times"></i>
-        </a>
+        <!-- Universal Filter Trigger Button (fixed position, outside layout grid) -->
+        {% if active_module %}
+        <div id="universal-filter-trigger-wrapper" class="d-none"
+            style="position: fixed; top: 75px; right: 25px; z-index: 1060;">
+            <button type="button" class="btn btn-primary btn-sm shadow" id="universal-filter-trigger-btn"
+                data-module="{{ active_module }}" data-bs-toggle="modal" data-bs-target="#universalFilterModal">
+                <i class="fas fa-filter me-1"></i> Advanced Filter
+            </button>
+            {% if filter_id or request.args.get('filter_rules') %}
+            <a href="{{ request.path }}" class="btn btn-outline-danger btn-sm shadow ms-1" title="Clear filter">
+                <i class="fas fa-times"></i>
+            </a>
+            {% endif %}
+        </div>
         {% endif %}
-    </div>
-    {% endif %}
 
-    <!-- Sticky Notification Bell (Bottom Right) -->
-    <div class="notification-bell-wrapper" id="notificationBell" title="View notifications">
-        <i class="fas fa-bell notification-bell"></i>
-        {% set error_count = get_flashed_messages(with_categories=true) | selectattr(0, 'equalto', 'danger') | list |
-        length %}
-        {% if error_count > 0 %}
-        <span class="notification-badge">{{ error_count }}</span>
-        {% endif %}
-    </div>
+        <!-- Sticky Notification Bell (Bottom Right) -->
+        <div class="notification-bell-wrapper" id="notificationBell" title="View notifications">
+            <i class="fas fa-bell notification-bell"></i>
+            {% set error_count = get_flashed_messages(with_categories=true) | selectattr(0, 'equalto', 'danger') | list
+            |
+            length %}
+            {% if error_count > 0 %}
+            <span class="notification-badge">{{ error_count }}</span>
+            {% endif %}
+        </div>
 
-    <!-- Notification Dropdown Panel -->
-    <div class="notification-dropdown" id="notificationDropdown">
-        <div class="notification-dropdown-header">
-            <span class="notification-header-text">Notifications</span>
-            <div>
-                <button type="button" class="notification-mark-read" id="markAllReadBtn">Mark all read</button>
-                <button type="button" class="notification-close" id="notificationClose">
-                    <i class="fas fa-times"></i>
-                </button>
+        <!-- Notification Dropdown Panel -->
+        <div class="notification-dropdown" id="notificationDropdown">
+            <div class="notification-dropdown-header">
+                <span class="notification-header-text">Notifications</span>
+                <div>
+                    <button type="button" class="notification-mark-read" id="markAllReadBtn">Mark all read</button>
+                    <button type="button" class="notification-close" id="notificationClose">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="notification-dropdown-body" id="notificationList">
+                <!-- Messages will be injected here by JavaScript -->
+            </div>
+            <div class="notification-footer" id="notificationFooter" style="display: none;">
+                <button class="notification-clear-all" id="clearAllBtn">Clear all notifications</button>
             </div>
         </div>
-        <div class="notification-dropdown-body" id="notificationList">
-            <!-- Messages will be injected here by JavaScript -->
-        </div>
-        <div class="notification-footer" id="notificationFooter" style="display: none;">
-            <button class="notification-clear-all" id="clearAllBtn">Clear all notifications</button>
-        </div>
-    </div>
 
-    <!-- Toast Notification Container (temporary toasts) -->
-    <div class="toast-container" id="toastContainer"></div>
+        <!-- Toast Notification Container (temporary toasts) -->
+        <div class="toast-container" id="toastContainer"></div>
 
-    {% include 'components/filter_modal.html' %}
+        {% include 'components/filter_modal.html' %}
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
-    <!-- DataTables & Buttons JS -->
-    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
-    <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
-    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap5.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
-    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
-    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.print.min.js"></script>
-    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.colVis.min.js"></script>
+        <!-- DataTables & Buttons JS -->
+        <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+        <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+        <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+        <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap5.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+        <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
+        <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.print.min.js"></script>
+        <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.colVis.min.js"></script>
 
-    <script src="{{ url_for('static', filename='js/query_builder.js') }}"></script>
-    <script>
-        // Mobile sidebar toggle
-        $(document).ready(function () {
-            $('#hamburgerBtn').click(function () {
-                $('#mobileSidebar').addClass('show');
-                $('#sidebarOverlay').addClass('show');
+        <script src="{{ url_for('static', filename='js/query_builder.js') }}"></script>
+        <script>
+            // Mobile sidebar toggle
+            $(document).ready(function () {
+                $('#hamburgerBtn').click(function () {
+                    $('#mobileSidebar').addClass('show');
+                    $('#sidebarOverlay').addClass('show');
+                });
+
+                $('#closeSidebar, #sidebarOverlay').click(function () {
+                    $('#mobileSidebar').removeClass('show');
+                    $('#sidebarOverlay').removeClass('show');
+                });
             });
 
-            $('#closeSidebar, #sidebarOverlay').click(function () {
-                $('#mobileSidebar').removeClass('show');
-                $('#sidebarOverlay').removeClass('show');
-            });
-        });
+            // Toast notification system
+            const Toast = {
+                container: null,
 
-        // Toast notification system
-        const Toast = {
-            container: null,
+                init: function () {
+                    this.container = document.getElementById('toastContainer');
+                },
 
-            init: function () {
-                this.container = document.getElementById('toastContainer');
-            },
+                show: function (message, type = 'info') {
+                    if (!this.container) return;
 
-            show: function (message, type = 'info') {
-                if (!this.container) return;
+                    const toastId = 'toast-' + Date.now();
+                    const iconMap = {
+                        'success': 'fa-check-circle',
+                        'danger': 'fa-exclamation-circle',
+                        'warning': 'fa-exclamation-triangle',
+                        'info': 'fa-info-circle'
+                    };
+                    const icon = iconMap[type] || iconMap.info;
 
-                const toastId = 'toast-' + Date.now();
-                const iconMap = {
-                    'success': 'fa-check-circle',
-                    'danger': 'fa-exclamation-circle',
-                    'warning': 'fa-exclamation-triangle',
-                    'info': 'fa-info-circle'
-                };
-                const icon = iconMap[type] || iconMap.info;
-
-                const toastHTML = `
+                    const toastHTML = `
                     <div id="${toastId}" class="toast toast-${type}" role="alert">
                         <div class="toast-header">
                             <i class="fas ${icon} me-2 text-${type}"></i>
@@ -1373,808 +1402,813 @@
                     </div>
                 `;
 
-                this.container.insertAdjacentHTML('beforeend', toastHTML);
+                    this.container.insertAdjacentHTML('beforeend', toastHTML);
 
-                const toastEl = document.getElementById(toastId);
-                setTimeout(() => {
-                    toastEl.style.animation = 'slideIn 0.3s ease-out';
-                }, 10);
+                    const toastEl = document.getElementById(toastId);
+                    setTimeout(() => {
+                        toastEl.style.animation = 'slideIn 0.3s ease-out';
+                    }, 10);
 
-                setTimeout(() => {
-                    this.dismiss(toastId);
-                }, 5000);
-            },
+                    setTimeout(() => {
+                        this.dismiss(toastId);
+                    }, 5000);
+                },
 
-            dismiss: function (toastId) {
-                const toast = document.getElementById(toastId);
-                if (toast) {
-                    toast.style.animation = 'slideIn 0.3s ease-out reverse';
-                    setTimeout(() => toast.remove(), 300);
-                }
-            }
-        };
-
-        // Persistent notification system
-        const AppNotifications = {
-            STORAGE_KEY: 'erp_notifications',
-            messages: [],
-
-            init: function () {
-                Toast.init();
-                this.loadFromStorage();
-                this.processFlashMessages();
-                this.setupBellListener();
-                this.setupCloseListener();
-                this.setupMarkAllRead();
-                this.updateUI();
-                // Attach click listener to notification list
-                this.setupListClickListener();
-            },
-
-            generateId: function (msg) {
-                const str = msg.message + '|' + (msg.type || 'info') + '|' + (msg.time || '');
-                let hash = 0;
-                for (let i = 0; i < str.length; i++) {
-                    hash = ((hash << 5) - hash) + str.charCodeAt(i);
-                    hash |= 0;
-                }
-                return 'id_' + Math.abs(hash);
-            },
-
-            loadFromStorage: function () {
-                try {
-                    const stored = localStorage.getItem(this.STORAGE_KEY);
-                    if (stored) {
-                        const parsed = JSON.parse(stored);
-                        this.messages = parsed.map(msg => ({
-                            id: msg.id || this.generateId(msg),
-                            message: msg.message,
-                            type: msg.type || 'info',
-                            time: msg.time || new Date().toISOString(),
-                            read: msg.read || false
-                        }));
+                dismiss: function (toastId) {
+                    const toast = document.getElementById(toastId);
+                    if (toast) {
+                        toast.style.animation = 'slideIn 0.3s ease-out reverse';
+                        setTimeout(() => toast.remove(), 300);
                     }
-                } catch (e) {
-                    console.error('Failed to load notifications:', e);
-                    this.messages = [];
                 }
-            },
+            };
 
-            processFlashMessages: function () {
-                const flashAlerts = document.querySelectorAll('.alert:not(.premium-alert)');
-                const premiumAlerts = document.querySelectorAll('.premium-alert');
-                
-                // Process standard alerts (and potentially remove them if they aren't meant for the top)
-                flashAlerts.forEach(alert => {
-                    this.addNotificationFromElement(alert, true); // true = remove from DOM
-                });
+            // Persistent notification system
+            const AppNotifications = {
+                STORAGE_KEY: 'erp_notifications',
+                messages: [],
 
-                // Process premium alerts (keep them at the top)
-                premiumAlerts.forEach(alert => {
-                    // Check if this is a real notification or just the filter banner
-                    if (!alert.textContent.includes('Advanced Filter Active')) {
-                        this.addNotificationFromElement(alert, false); // false = keep in DOM
+                init: function () {
+                    Toast.init();
+                    this.loadFromStorage();
+                    this.processFlashMessages();
+                    this.setupBellListener();
+                    this.setupCloseListener();
+                    this.setupMarkAllRead();
+                    this.updateUI();
+                    // Attach click listener to notification list
+                    this.setupListClickListener();
+                },
+
+                generateId: function (msg) {
+                    const str = msg.message + '|' + (msg.type || 'info') + '|' + (msg.time || '');
+                    let hash = 0;
+                    for (let i = 0; i < str.length; i++) {
+                        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+                        hash |= 0;
                     }
-                });
-                
-                this.saveToStorage();
-            },
+                    return 'id_' + Math.abs(hash);
+                },
 
-            addNotificationFromElement: function (alert, shouldRemove) {
-                const alertClass = alert.className;
-                let type = 'info';
-                if (alertClass.includes('success')) type = 'success';
-                else if (alertClass.includes('danger') || alertClass.includes('error')) type = 'danger';
-                else if (alertClass.includes('warning')) type = 'warning';
-                else if (alertClass.includes('info')) type = 'info';
+                loadFromStorage: function () {
+                    try {
+                        const stored = localStorage.getItem(this.STORAGE_KEY);
+                        if (stored) {
+                            const parsed = JSON.parse(stored);
+                            this.messages = parsed.map(msg => ({
+                                id: msg.id || this.generateId(msg),
+                                message: msg.message,
+                                type: msg.type || 'info',
+                                time: msg.time || new Date().toISOString(),
+                                read: msg.read || false
+                            }));
+                        }
+                    } catch (e) {
+                        console.error('Failed to load notifications:', e);
+                        this.messages = [];
+                    }
+                },
 
-                const message = alert.textContent.trim().replace(/×/g, '').trim();
-                
-                // Simple deduplication for current session to avoid double-processing
-                const isDuplicate = this.messages.some(m => 
-                    m.message === message && 
-                    m.type === type && 
-                    (new Date() - new Date(m.time)) < 2000 // Within 2 seconds
-                );
+                processFlashMessages: function () {
+                    const flashAlerts = document.querySelectorAll('.alert:not(.premium-alert)');
+                    const premiumAlerts = document.querySelectorAll('.premium-alert');
 
-                if (!isDuplicate) {
-                    const msg = {
-                        id: Date.now() + Math.random(),
-                        message,
-                        type,
-                        time: new Date().toISOString(),
-                        read: false
-                    };
-                    this.messages.push(msg);
-                    Toast.show(message, type);
-                }
+                    // Process standard alerts (and potentially remove them if they aren't meant for the top)
+                    flashAlerts.forEach(alert => {
+                        this.addNotificationFromElement(alert, true); // true = remove from DOM
+                    });
 
-                if (shouldRemove) {
-                    alert.remove();
-                }
-            },
+                    // Process premium alerts (keep them at the top)
+                    premiumAlerts.forEach(alert => {
+                        // Check if this is a real notification or just the filter banner
+                        if (!alert.textContent.includes('Advanced Filter Active')) {
+                            this.addNotificationFromElement(alert, false); // false = keep in DOM
+                        }
+                    });
 
-            saveToStorage: function () {
-                try {
-                    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.messages));
-                } catch (e) {
-                    console.error('Failed to save notifications:', e);
-                }
-            },
+                    this.saveToStorage();
+                },
 
-            markAsRead: function (id, event) {
-                if (event) event.stopPropagation();
-                const msg = this.messages.find(m => String(m.id) === String(id));
-                if (msg) {
-                    msg.read = true;
+                addNotificationFromElement: function (alert, shouldRemove) {
+                    const alertClass = alert.className;
+                    let type = 'info';
+                    if (alertClass.includes('success')) type = 'success';
+                    else if (alertClass.includes('danger') || alertClass.includes('error')) type = 'danger';
+                    else if (alertClass.includes('warning')) type = 'warning';
+                    else if (alertClass.includes('info')) type = 'info';
+
+                    const message = alert.textContent.trim().replace(/×/g, '').trim();
+
+                    // Simple deduplication for current session to avoid double-processing
+                    const isDuplicate = this.messages.some(m =>
+                        m.message === message &&
+                        m.type === type &&
+                        (new Date() - new Date(m.time)) < 2000 // Within 2 seconds
+                    );
+
+                    if (!isDuplicate) {
+                        const msg = {
+                            id: Date.now() + Math.random(),
+                            message,
+                            type,
+                            time: new Date().toISOString(),
+                            read: false
+                        };
+                        this.messages.push(msg);
+                        Toast.show(message, type);
+                    }
+
+                    if (shouldRemove) {
+                        alert.remove();
+                    }
+                },
+
+                saveToStorage: function () {
+                    try {
+                        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.messages));
+                    } catch (e) {
+                        console.error('Failed to save notifications:', e);
+                    }
+                },
+
+                markAsRead: function (id, event) {
+                    if (event) event.stopPropagation();
+                    const msg = this.messages.find(m => String(m.id) === String(id));
+                    if (msg) {
+                        msg.read = true;
+                        this.saveToStorage();
+                        this.updateUI();
+                    }
+                },
+
+                dismiss: function (id) {
+                    this.messages = this.messages.filter(m => String(m.id) !== String(id));
                     this.saveToStorage();
                     this.updateUI();
-                }
-            },
+                },
 
-            dismiss: function (id) {
-                this.messages = this.messages.filter(m => String(m.id) !== String(id));
-                this.saveToStorage();
-                this.updateUI();
-            },
-
-            markAllAsRead: function () {
-                this.messages.forEach(m => { m.read = true; });
-                this.saveToStorage();
-                this.updateUI();
-            },
-
-            dismiss: function (id) {
-                this.messages = this.messages.filter(m => m.id !== id);
-                this.saveToStorage();
-                this.updateUI();
-            },
-
-            clearAll: function () {
-                if (confirm('Clear all notifications?')) {
-                    this.messages = [];
+                markAllAsRead: function () {
+                    this.messages.forEach(m => { m.read = true; });
                     this.saveToStorage();
                     this.updateUI();
-                }
-            },
+                },
 
-            updateUI: function () {
-                this.updateDropdown();
-                this.updateBadge();
-                this.updateMarkAllReadButton();
-            },
+                dismiss: function (id) {
+                    this.messages = this.messages.filter(m => m.id !== id);
+                    this.saveToStorage();
+                    this.updateUI();
+                },
 
-            updateDropdown: function () {
-                const list = document.getElementById('notificationList');
-                const footer = document.getElementById('notificationFooter');
-                if (!list) return;
+                clearAll: function () {
+                    if (confirm('Clear all notifications?')) {
+                        this.messages = [];
+                        this.saveToStorage();
+                        this.updateUI();
+                    }
+                },
 
-                if (this.messages.length === 0) {
-                    list.innerHTML = '<div class="notification-item empty">No notifications</div>';
-                    if (footer) footer.style.display = 'none';
-                    return;
-                }
+                updateUI: function () {
+                    this.updateDropdown();
+                    this.updateBadge();
+                    this.updateMarkAllReadButton();
+                },
 
-                // Show last 10 messages, newest first
-                const recent = this.messages.slice(-10).reverse();
-                let html = '';
-                recent.forEach(msg => {
-                    html += `
+                updateDropdown: function () {
+                    const list = document.getElementById('notificationList');
+                    const footer = document.getElementById('notificationFooter');
+                    if (!list) return;
+
+                    if (this.messages.length === 0) {
+                        list.innerHTML = '<div class="notification-item empty">No notifications</div>';
+                        if (footer) footer.style.display = 'none';
+                        return;
+                    }
+
+                    // Show last 10 messages, newest first
+                    const recent = this.messages.slice(-10).reverse();
+                    let html = '';
+                    recent.forEach(msg => {
+                        html += `
                         <div class="notification-item ${msg.read ? 'read' : 'unread'} ${msg.type}" data-id="${String(msg.id)}">
                             <span class="notification-message">${this.escapeHtml(msg.message)}</span>
                         </div>
                     `;
-                });
-                list.innerHTML = html;
-
-                // Show footer when there are any messages
-                if (footer) footer.style.display = 'block';
-
-                // Attach click handlers to new elements
-                this.attachItemHandlers();
-            },
-
-            updateBadge: function () {
-                const badge = document.querySelector('.notification-badge');
-                if (!badge) {
-                    const bell = document.querySelector('.notification-bell-wrapper');
-                    if (bell) {
-                        const unread = this.messages.filter(m => !m.read).length;
-                        if (unread > 0) {
-                            const newBadge = document.createElement('span');
-                            newBadge.className = 'notification-badge';
-                            newBadge.textContent = unread;
-                            bell.appendChild(newBadge);
-                        }
-                    }
-                    return;
-                }
-                const unread = this.messages.filter(m => !m.read).length;
-                if (unread > 0) {
-                    badge.textContent = unread;
-                    badge.style.display = 'flex';
-                } else {
-                    badge.style.display = 'none';
-                }
-            },
-
-            attachItemHandlers: function () {
-                const list = document.getElementById('notificationList');
-                if (!list) return;
-
-                // Dismiss buttons
-                list.querySelectorAll('.notification-dismiss').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        const id = btn.getAttribute('data-id');
-                        this.dismiss(id);
                     });
-                });
+                    list.innerHTML = html;
 
-                // Message items (mark as read)
-                list.querySelectorAll('.notification-item:not(.empty)').forEach(item => {
-                    item.addEventListener('click', (e) => {
-                        if (e.target.closest('.notification-dismiss')) return;
-                        e.stopPropagation();
-                        const id = item.getAttribute('data-id');
-                        this.markAsRead(id);
-                    });
-                });
-            },
+                    // Show footer when there are any messages
+                    if (footer) footer.style.display = 'block';
 
-            setupListClickListener: function () {
-                const list = document.getElementById('notificationList');
-                if (!list) return;
+                    // Attach click handlers to new elements
+                    this.attachItemHandlers();
+                },
 
-                // Attach click listener once - uses event delegation
-                list.addEventListener('click', (e) => {
-                    const dismissBtn = e.target.closest('.notification-dismiss');
-                    if (dismissBtn) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const id = dismissBtn.getAttribute('data-id');
-                        this.dismiss(id);
-                        return;
-                    }
-
-                    const item = e.target.closest('.notification-item');
-                    if (item && !e.target.closest('.notification-dismiss')) {
-                        e.stopPropagation(); // Keep dropdown open when marking as read
-                        const id = item.getAttribute('data-id');
-                        this.markAsRead(id);
-                    }
-                });
-            },
-
-            updateMarkAllReadButton: function () {
-                const btn = document.getElementById('markAllReadBtn');
-                if (!btn) return;
-                const hasUnread = this.messages.some(m => !m.read);
-                btn.style.display = hasUnread ? 'inline-block' : 'none';
-            },
-
-            escapeHtml: function (text) {
-                const div = document.createElement('div');
-                div.textContent = text;
-                return div.innerHTML;
-            },
-
-            setupBellListener: function () {
-                const bell = document.getElementById('notificationBell');
-                if (bell) {
-                    bell.addEventListener('click', function (e) {
-                        e.preventDefault();
-                        const dropdown = document.getElementById('notificationDropdown');
-                        if (dropdown) {
-                            const isVisible = dropdown.classList.contains('show');
-                            document.querySelectorAll('.notification-dropdown').forEach(d => {
-                                d.classList.remove('show');
-                            });
-                            if (!isVisible) {
-                                dropdown.classList.add('show');
+                updateBadge: function () {
+                    const badge = document.querySelector('.notification-badge');
+                    if (!badge) {
+                        const bell = document.querySelector('.notification-bell-wrapper');
+                        if (bell) {
+                            const unread = this.messages.filter(m => !m.read).length;
+                            if (unread > 0) {
+                                const newBadge = document.createElement('span');
+                                newBadge.className = 'notification-badge';
+                                newBadge.textContent = unread;
+                                bell.appendChild(newBadge);
                             }
                         }
-                    });
-                }
-            },
-
-            setupCloseListener: function () {
-                const closeBtn = document.getElementById('notificationClose');
-                if (closeBtn) {
-                    closeBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        document.getElementById('notificationDropdown').classList.remove('show');
-                    });
-                }
-                document.addEventListener('click', function (e) {
-                    const dropdown = document.getElementById('notificationDropdown');
-                    const bell = document.getElementById('notificationBell');
-                    if (dropdown && dropdown.classList.contains('show') &&
-                        !dropdown.contains(e.target) && !bell.contains(e.target)) {
-                        dropdown.classList.remove('show');
+                        return;
                     }
-                });
-            },
-
-            setupMarkAllRead: function () {
-                const markAllBtn = document.getElementById('markAllReadBtn');
-                if (markAllBtn) {
-                    markAllBtn.addEventListener('click', () => this.markAllAsRead());
-                }
-                const clearAllBtn = document.getElementById('clearAllBtn');
-                if (clearAllBtn) {
-                    clearAllBtn.addEventListener('click', () => this.clearAll());
-                }
-            }
-        };
-
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function () {
-            AppNotifications.init();
-        });
-
-        // Bulk actions helper
-        function initBulkActions(config) {
-            let selectAllId, checkboxClass, bulkDeleteBtnId, deleteUrl, entityName;
-
-            if (typeof config === 'string') {
-                selectAllId = 'selectAll';
-                checkboxClass = config + '-checkbox';
-            } else {
-                ({ selectAllId, checkboxClass, bulkDeleteBtnId, deleteUrl, entityName } = config);
-            }
-
-            const selectAll = document.getElementById(selectAllId);
-
-            function updateBulkDeleteBtn() {
-                const checkedCount = document.querySelectorAll(`.${checkboxClass}:checked`).length;
-                const bulkDeleteBtn = document.getElementById(bulkDeleteBtnId);
-                if (bulkDeleteBtn) {
-                    if (checkedCount > 0) {
-                        bulkDeleteBtn.classList.remove('d-none');
-                        bulkDeleteBtn.innerHTML = `<i class="fas fa-trash"></i> Delete Selected (${checkedCount})`;
+                    const unread = this.messages.filter(m => !m.read).length;
+                    if (unread > 0) {
+                        badge.textContent = unread;
+                        badge.style.display = 'flex';
                     } else {
-                        bulkDeleteBtn.classList.add('d-none');
+                        badge.style.display = 'none';
                     }
-                }
-            }
+                },
 
-            if (selectAll) {
-                selectAll.addEventListener('change', function () {
-                    const checkboxes = document.querySelectorAll(`.${checkboxClass}`);
-                    checkboxes.forEach(cb => {
-                        cb.checked = this.checked;
+                attachItemHandlers: function () {
+                    const list = document.getElementById('notificationList');
+                    if (!list) return;
+
+                    // Dismiss buttons
+                    list.querySelectorAll('.notification-dismiss').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            const id = btn.getAttribute('data-id');
+                            this.dismiss(id);
+                        });
                     });
-                    updateBulkDeleteBtn();
-                });
-            }
 
-            // Sync selectAll when individual checkboxes are clicked
-            document.addEventListener('change', function (e) {
-                if (e.target && e.target.classList.contains(checkboxClass)) {
-                    updateBulkDeleteBtn();
-                    if (selectAll) {
-                        const allBoxes = document.querySelectorAll(`.${checkboxClass}`);
-                        const checkedBoxes = document.querySelectorAll(`.${checkboxClass}:checked`);
-                        selectAll.checked = allBoxes.length > 0 && allBoxes.length === checkedBoxes.length;
-                        selectAll.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < allBoxes.length;
-                    }
-                }
-            });
+                    // Message items (mark as read)
+                    list.querySelectorAll('.notification-item:not(.empty)').forEach(item => {
+                        item.addEventListener('click', (e) => {
+                            if (e.target.closest('.notification-dismiss')) return;
+                            e.stopPropagation();
+                            const id = item.getAttribute('data-id');
+                            this.markAsRead(id);
+                        });
+                    });
+                },
 
-            if (bulkDeleteBtnId && deleteUrl) {
-                const bulkDeleteBtn = document.getElementById(bulkDeleteBtnId);
-                if (bulkDeleteBtn) {
-                    bulkDeleteBtn.addEventListener('click', function () {
-                        const selectedIds = Array.from(document.querySelectorAll(`.${checkboxClass}:checked`))
-                            .map(cb => cb.value);
+                setupListClickListener: function () {
+                    const list = document.getElementById('notificationList');
+                    if (!list) return;
 
-                        if (selectedIds.length === 0) return;
+                    // Attach click listener once - uses event delegation
+                    list.addEventListener('click', (e) => {
+                        const dismissBtn = e.target.closest('.notification-dismiss');
+                        if (dismissBtn) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const id = dismissBtn.getAttribute('data-id');
+                            this.dismiss(id);
+                            return;
+                        }
 
-                        if (confirm(`Are you sure you want to delete ${selectedIds.length} ${entityName || 'items'}? This action cannot be undone.`)) {
-                            fetch(deleteUrl, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                },
-                                body: JSON.stringify({ ids: selectedIds })
-                            })
-                                .then(response => response.json())
-                                .then(data => {
-                                    if (data.success) {
-                                        Toast.show(data.message, 'success');
-                                        setTimeout(() => location.reload(), 1500);
-                                    } else {
-                                        Toast.show('Error: ' + data.message, 'danger');
-                                    }
-                                })
-                                .catch(error => {
-                                    console.error('Error:', error);
-                                    Toast.show('An error occurred while deleting.', 'danger');
-                                });
+                        const item = e.target.closest('.notification-item');
+                        if (item && !e.target.closest('.notification-dismiss')) {
+                            e.stopPropagation(); // Keep dropdown open when marking as read
+                            const id = item.getAttribute('data-id');
+                            this.markAsRead(id);
                         }
                     });
-                }
-            }
-        }
-        // Global Select2 Focus Auto-Fix
-        $(document).on('select2:open', function (e) {
-            setTimeout(function () {
-                const searchField = document.querySelector('.select2-container--open .select2-search__field');
-                if (searchField) {
-                    searchField.focus();
-                }
-            }, 50);
-        });
+                },
 
-        // Global DataTables Initialization
-        function initExportDataTable(selector, title = 'Export') {
-            if ($.fn.DataTable.isDataTable(selector)) {
-                $(selector).DataTable().destroy();
-            }
+                updateMarkAllReadButton: function () {
+                    const btn = document.getElementById('markAllReadBtn');
+                    if (!btn) return;
+                    const hasUnread = this.messages.some(m => !m.read);
+                    btn.style.display = hasUnread ? 'inline-block' : 'none';
+                },
 
-            const exportOpts = {
-                columns: ':not(.no-export)',
-                rows: function (idx, data, node) {
-                    const table = $(selector).DataTable();
+                escapeHtml: function (text) {
+                    const div = document.createElement('div');
+                    div.textContent = text;
+                    return div.innerHTML;
+                },
 
-                    // Optimization: check for any checked items in the whole table
-                    // We can't easily cache this during a single export run without external state,
-                    // but we can check if there are any checked checkboxes in the entire table data.
-                    const anyChecked = table.rows().nodes().to$().find("input[type='checkbox']:checked").length > 0;
+                setupBellListener: function () {
+                    const bell = document.getElementById('notificationBell');
+                    if (bell) {
+                        bell.addEventListener('click', function (e) {
+                            e.preventDefault();
+                            const dropdown = document.getElementById('notificationDropdown');
+                            if (dropdown) {
+                                const isVisible = dropdown.classList.contains('show');
+                                document.querySelectorAll('.notification-dropdown').forEach(d => {
+                                    d.classList.remove('show');
+                                });
+                                if (!isVisible) {
+                                    dropdown.classList.add('show');
+                                }
+                            }
+                        });
+                    }
+                },
 
-                    // If no rows are checked, export everything
-                    if (!anyChecked) return true;
+                setupCloseListener: function () {
+                    const closeBtn = document.getElementById('notificationClose');
+                    if (closeBtn) {
+                        closeBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            document.getElementById('notificationDropdown').classList.remove('show');
+                        });
+                    }
+                    document.addEventListener('click', function (e) {
+                        const dropdown = document.getElementById('notificationDropdown');
+                        const bell = document.getElementById('notificationBell');
+                        if (dropdown && dropdown.classList.contains('show') &&
+                            !dropdown.contains(e.target) && !bell.contains(e.target)) {
+                            dropdown.classList.remove('show');
+                        }
+                    });
+                },
 
-                    // Otherwise, only export rows that have a checked checkbox
-                    if (!node) return false; // Row not rendered, presumably not checked
-                    return $(node).find("input[type='checkbox']").is(':checked');
+                setupMarkAllRead: function () {
+                    const markAllBtn = document.getElementById('markAllReadBtn');
+                    if (markAllBtn) {
+                        markAllBtn.addEventListener('click', () => this.markAllAsRead());
+                    }
+                    const clearAllBtn = document.getElementById('clearAllBtn');
+                    if (clearAllBtn) {
+                        clearAllBtn.addEventListener('click', () => this.clearAll());
+                    }
                 }
             };
 
-            // Clear any "No records found" placeholder row that might interfere with DataTables column count
-            const $tbody = $(selector).find('tbody');
-            if ($tbody.find('tr').length === 1 && $tbody.find('td').attr('colspan')) {
-                $tbody.empty();
-            }
-
-            const table = $(selector).DataTable({
-                dom: '<"d-flex justify-content-between align-items-center mb-3"Blf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
-                buttons: [
-                    {
-                        extend: 'excelHtml5',
-                        text: '<i class="fas fa-file-excel"></i> Excel',
-                        className: 'btn dt-button buttons-excel',
-                        title: title,
-                        exportOptions: exportOpts
-                    },
-                    {
-                        extend: 'csvHtml5',
-                        text: '<i class="fas fa-file-csv"></i> CSV',
-                        className: 'btn dt-button buttons-csv',
-                        title: title,
-                        exportOptions: exportOpts
-                    },
-                    {
-                        extend: 'pdfHtml5',
-                        text: '<i class="fas fa-file-pdf"></i> PDF',
-                        className: 'btn dt-button buttons-pdf',
-                        title: title,
-                        orientation: 'landscape',
-                        pageSize: 'A4',
-                        exportOptions: exportOpts
-                    },
-                    {
-                        extend: 'print',
-                        text: '<i class="fas fa-print"></i> Print',
-                        className: 'btn dt-button buttons-print',
-                        title: title,
-                        exportOptions: exportOpts
-                    }
-                ],
-                paging: true,
-                lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
-                pageLength: 25,
-                language: {
-                    search: "_INPUT_",
-                    searchPlaceholder: "Search records...",
-                    lengthMenu: "Show _MENU_ entries",
-                    emptyTable: "No records found in this view"
-                },
-                order: []
+            // Initialize on page load
+            document.addEventListener('DOMContentLoaded', function () {
+                AppNotifications.init();
             });
 
-            // Move Universal Filter button group if it exists and hasn't been moved yet
-            const filterBtn = $('#universal-filter-trigger-btn');
-            if (filterBtn.length && !filterBtn.closest('.dt-buttons').length) {
-                const container = table.buttons().container();
-                const wrapper = $('#universal-filter-trigger-wrapper');
+            // Bulk actions helper
+            function initBulkActions(config) {
+                let selectAllId, checkboxClass, bulkDeleteBtnId, deleteUrl, entityName;
 
-                if (container.length) {
-                    const clearBtn = wrapper.find('a[title="Clear filter"]');
-
-                    filterBtn.addClass('dt-button btn-primary').removeClass('shadow btn-sm');
-                    container.append(filterBtn);
-
-                    if (clearBtn.length) {
-                        clearBtn.addClass('dt-button btn-danger text-white').removeClass('btn-outline-danger btn-sm shadow ms-1');
-                        container.append(clearBtn);
-                    }
-
-                    wrapper.remove();
-                    filterBtn.show().removeClass('d-none');
+                if (typeof config === 'string') {
+                    selectAllId = 'selectAll';
+                    checkboxClass = config + '-checkbox';
                 } else {
-                    // Fallback if no DataTable container found: show floating at top right
-                    wrapper.addClass('position-fixed').css({
-                        'top': '75px',
-                        'right': '25px',
-                        'z-index': '1040'
-                    }).removeClass('d-none');
-                    filterBtn.show().removeClass('d-none');
+                    ({ selectAllId, checkboxClass, bulkDeleteBtnId, deleteUrl, entityName } = config);
                 }
-            }
 
-            return table;
-        }
+                const selectAll = document.getElementById(selectAllId);
 
-        // Auto-initialize tables with .datatable-export class or any .table inside .table-responsive
-        $(document).ready(function () {
-            $('.datatable-export').each(function () {
-                const title = $(this).data('export-title') || 'Export';
-                initExportDataTable(this, title);
-            });
-
-            // Universal Drag-to-Scroll for Responsive Tables (Supports dynamic content)
-            $(document).on('mousedown', '.table-responsive', function (e) {
-                const container = this;
-                let isDown = true;
-                $(container).css('cursor', 'grabbing');
-
-                const startX = e.pageX - container.offsetLeft;
-                const scrollLeft = container.scrollLeft;
-
-                const mouseMoveHandler = (e) => {
-                    if (!isDown) return;
-                    e.preventDefault();
-                    const x = e.pageX - container.offsetLeft;
-                    const walk = (x - startX) * 2;
-                    container.scrollLeft = scrollLeft - walk;
-                };
-
-                const mouseUpHandler = () => {
-                    isDown = false;
-                    $(container).css('cursor', 'grab');
-                    $(document).off('mousemove', mouseMoveHandler);
-                    $(document).off('mouseup', mouseUpHandler);
-                };
-
-                $(document).on('mousemove', mouseMoveHandler);
-                $(document).on('mouseup', mouseUpHandler);
-            });
-
-            // Set initial grab cursor for all responsive tables
-            $(document).on('mouseenter', '.table-responsive', function () {
-                $(this).css({
-                    'cursor': 'grab',
-                    'overflow-x': 'auto',
-                    '-webkit-overflow-scrolling': 'touch'
-                });
-            });
-
-            // Universal Enhancement: Initialize other tables that aren't already DataTables
-            $('.table-responsive .table:not(.dataTable):not(.no-datatable)').each(function () {
-                const rowCount = $(this).find('tbody tr').length;
-                const hasEmptyMsg = rowCount === 1 && $(this).find('tbody td').attr('colspan');
-
-                // Auto-init if more than 5 rows, OR if it's empty/has message, to ensure buttons & filter show up
-                if (rowCount > 5 || rowCount === 0 || hasEmptyMsg) {
-                    // Cleanup message row for clean init
-                    if (hasEmptyMsg) {
-                        $(this).find('tbody').empty();
-                    }
-
-                    const title = $(this).closest('.card').find('.card-header').text().trim() || 'Export';
-                    const table = $(this).DataTable({
-                        dom: '<"d-flex justify-content-between align-items-center mb-3"Blf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
-                        buttons: [
-                            {
-                                extend: 'excelHtml5',
-                                text: '<i class="fas fa-file-excel"></i> Excel',
-                                className: 'btn dt-button buttons-excel'
-                            },
-                            {
-                                extend: 'csvHtml5',
-                                text: '<i class="fas fa-file-csv"></i> CSV',
-                                className: 'btn dt-button buttons-csv'
-                            },
-                            {
-                                extend: 'pdfHtml5',
-                                text: '<i class="fas fa-file-pdf"></i> PDF',
-                                className: 'btn dt-button buttons-pdf'
-                            },
-                            {
-                                extend: 'print',
-                                text: '<i class="fas fa-print"></i> Print',
-                                className: 'btn dt-button buttons-print'
-                            }
-                        ],
-                        paging: true,
-                        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
-                        pageLength: 10,
-                        language: {
-                            search: "_INPUT_",
-                            searchPlaceholder: "Search...",
-                            lengthMenu: "Show _MENU_ entries",
-                            emptyTable: "No records found."
-                        },
-                        order: []
-                    });
-
-                    // Move Universal Filter button group if it exists and hasn't been moved yet
-                    const filterBtn = $('#universal-filter-trigger-btn');
-                    if (filterBtn.length && !filterBtn.closest('.dt-buttons').length) {
-                        const container = table.buttons().container();
-                        const wrapper = $('#universal-filter-trigger-wrapper');
-
-                        if (container.length) {
-                            const clearBtn = wrapper.find('a[title="Clear filter"]');
-
-                            filterBtn.addClass('dt-button btn-primary').removeClass('shadow btn-sm');
-                            container.append(filterBtn);
-
-                            if (clearBtn.length) {
-                                clearBtn.addClass('dt-button btn-danger text-white').removeClass('btn-outline-danger btn-sm shadow ms-1');
-                                container.append(clearBtn);
-                            }
-
-                            wrapper.remove();
-                            filterBtn.show().removeClass('d-none');
+                function updateBulkDeleteBtn() {
+                    const checkedCount = document.querySelectorAll(`.${checkboxClass}:checked`).length;
+                    const bulkDeleteBtn = document.getElementById(bulkDeleteBtnId);
+                    if (bulkDeleteBtn) {
+                        if (checkedCount > 0) {
+                            bulkDeleteBtn.classList.remove('d-none');
+                            bulkDeleteBtn.innerHTML = `<i class="fas fa-trash"></i> Delete Selected (${checkedCount})`;
                         } else {
-                            // Fallback if no DataTable container found: show floating at top right
-                            wrapper.addClass('position-fixed').css({
-                                'top': '75px',
-                                'right': '25px',
-                                'z-index': '1040'
-                            }).removeClass('d-none');
-                            filterBtn.show().removeClass('d-none');
+                            bulkDeleteBtn.classList.add('d-none');
                         }
                     }
                 }
+
+                if (selectAll) {
+                    selectAll.addEventListener('change', function () {
+                        const checkboxes = document.querySelectorAll(`.${checkboxClass}`);
+                        checkboxes.forEach(cb => {
+                            cb.checked = this.checked;
+                        });
+                        updateBulkDeleteBtn();
+                    });
+                }
+
+                // Sync selectAll when individual checkboxes are clicked
+                document.addEventListener('change', function (e) {
+                    if (e.target && e.target.classList.contains(checkboxClass)) {
+                        updateBulkDeleteBtn();
+                        if (selectAll) {
+                            const allBoxes = document.querySelectorAll(`.${checkboxClass}`);
+                            const checkedBoxes = document.querySelectorAll(`.${checkboxClass}:checked`);
+                            selectAll.checked = allBoxes.length > 0 && allBoxes.length === checkedBoxes.length;
+                            selectAll.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < allBoxes.length;
+                        }
+                    }
+                });
+
+                if (bulkDeleteBtnId && deleteUrl) {
+                    const bulkDeleteBtn = document.getElementById(bulkDeleteBtnId);
+                    if (bulkDeleteBtn) {
+                        bulkDeleteBtn.addEventListener('click', function () {
+                            const selectedIds = Array.from(document.querySelectorAll(`.${checkboxClass}:checked`))
+                                .map(cb => cb.value);
+
+                            if (selectedIds.length === 0) return;
+
+                            if (confirm(`Are you sure you want to delete ${selectedIds.length} ${entityName || 'items'}? This action cannot be undone.`)) {
+                                fetch(deleteUrl, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                    },
+                                    body: JSON.stringify({ ids: selectedIds })
+                                })
+                                    .then(response => response.json())
+                                    .then(data => {
+                                        if (data.success) {
+                                            Toast.show(data.message, 'success');
+                                            setTimeout(() => location.reload(), 1500);
+                                        } else {
+                                            Toast.show('Error: ' + data.message, 'danger');
+                                        }
+                                    })
+                                    .catch(error => {
+                                        console.error('Error:', error);
+                                        Toast.show('An error occurred while deleting.', 'danger');
+                                    });
+                            }
+                        });
+                    }
+                }
+            }
+            // Global Select2 Focus Auto-Fix
+            $(document).on('select2:open', function (e) {
+                setTimeout(function () {
+                    const searchField = document.querySelector('.select2-container--open .select2-search__field');
+                    if (searchField) {
+                        searchField.focus();
+                    }
+                }, 50);
             });
 
-            // Final Fallback: Ensure Universal Filter button is visible even if no tables were initialized
-            setTimeout(function () {
-                const wrapper = $('#universal-filter-trigger-wrapper');
-                const filterBtn = $('#universal-filter-trigger-btn');
-                if (wrapper.length && wrapper.hasClass('d-none') && !filterBtn.closest('.dt-buttons').length) {
-                    wrapper.addClass('position-fixed').css({
-                        'top': '75px',
-                        'right': '25px',
-                        'z-index': '1040'
-                    }).removeClass('d-none');
-                    filterBtn.show().removeClass('d-none');
+            // Global DataTables Initialization
+            function initExportDataTable(selector, title = 'Export') {
+                if ($.fn.DataTable.isDataTable(selector)) {
+                    $(selector).DataTable().destroy();
                 }
-            }, 1000);
-        });
-    </script>
-    <!-- Global Entity History Modal -->
-    <div class="modal fade" id="entityHistoryModal" tabindex="-1" aria-labelledby="entityHistoryModalLabel"
-        aria-hidden="true">
-        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="entityHistoryModalLabel">Entity Details</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
-                        aria-label="Close"></button>
-                </div>
-                <div class="modal-body"></div>
-                <div class="modal-footer"></div>
-            </div>
-        </div>
-    </div>
 
-    <!-- Customer Ledger Modal -->
-    <div class="modal fade" id="customerLedgerModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-            <div class="modal-content shadow-lg border-0">
-                <div class="modal-header bg-primary text-white py-3">
-                    <h5 class="modal-title font-monospace"><i class="fas fa-file-invoice-dollar me-2"></i>Customer
-                        Ledger: <span id="ledgerCustomerName"></span></h5>
-                    <div class="ms-auto me-3 d-flex gap-2">
-                        <a id="downloadLedgerExcel" href="#" class="btn btn-sm btn-light shadow-sm">
-                            <i class="fas fa-file-excel me-1 text-success"></i> Excel
-                        </a>
-                        <a id="downloadLedgerPDF" href="#" target="_blank" class="btn btn-sm btn-light shadow-sm">
-                            <i class="fas fa-file-pdf me-1 text-danger"></i> PDF
-                        </a>
+                const exportOpts = {
+                    columns: ':not(.no-export)',
+                    rows: function (idx, data, node) {
+                        const table = $(selector).DataTable();
+
+                        // Optimization: check for any checked items in the whole table
+                        // We can't easily cache this during a single export run without external state,
+                        // but we can check if there are any checked checkboxes in the entire table data.
+                        const anyChecked = table.rows().nodes().to$().find("input[type='checkbox']:checked").length > 0;
+
+                        // If no rows are checked, export everything
+                        if (!anyChecked) return true;
+
+                        // Otherwise, only export rows that have a checked checkbox
+                        if (!node) return false; // Row not rendered, presumably not checked
+                        return $(node).find("input[type='checkbox']").is(':checked');
+                    }
+                };
+
+                // Clear any "No records found" placeholder row that might interfere with DataTables column count
+                const $tbody = $(selector).find('tbody');
+                if ($tbody.find('tr').length === 1 && $tbody.find('td').attr('colspan')) {
+                    $tbody.empty();
+                }
+
+                const table = $(selector).DataTable({
+                    dom: '<"d-flex justify-content-between align-items-center mb-3"Blf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
+                    buttons: [
+                        {
+                            extend: 'excelHtml5',
+                            text: '<i class="fas fa-file-excel"></i> Excel',
+                            className: 'btn dt-button buttons-excel',
+                            title: title,
+                            exportOptions: exportOpts
+                        },
+                        {
+                            extend: 'csvHtml5',
+                            text: '<i class="fas fa-file-csv"></i> CSV',
+                            className: 'btn dt-button buttons-csv',
+                            title: title,
+                            exportOptions: exportOpts
+                        },
+                        {
+                            extend: 'pdfHtml5',
+                            text: '<i class="fas fa-file-pdf"></i> PDF',
+                            className: 'btn dt-button buttons-pdf',
+                            title: title,
+                            orientation: 'landscape',
+                            pageSize: 'A4',
+                            exportOptions: exportOpts
+                        },
+                        {
+                            extend: 'print',
+                            text: '<i class="fas fa-print"></i> Print',
+                            className: 'btn dt-button buttons-print',
+                            title: title,
+                            exportOptions: exportOpts
+                        }
+                    ],
+                    paging: true,
+                    lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+                    pageLength: 25,
+                    language: {
+                        search: "_INPUT_",
+                        searchPlaceholder: "Search records...",
+                        lengthMenu: "Show _MENU_ entries",
+                        emptyTable: "No records found in this view"
+                    },
+                    order: []
+                });
+
+                // Move Universal Filter button group if it exists and hasn't been moved yet
+                const filterBtn = $('#universal-filter-trigger-btn');
+                if (filterBtn.length && !filterBtn.closest('.dt-buttons').length) {
+                    const container = table.buttons().container();
+                    const wrapper = $('#universal-filter-trigger-wrapper');
+
+                    if (container.length) {
+                        const clearBtn = wrapper.find('a[title="Clear filter"]');
+
+                        filterBtn.addClass('dt-button btn-primary').removeClass('shadow btn-sm');
+                        container.append(filterBtn);
+
+                        if (clearBtn.length) {
+                            clearBtn.addClass('dt-button btn-danger text-white').removeClass('btn-outline-danger btn-sm shadow ms-1');
+                            container.append(clearBtn);
+                        }
+
+                        wrapper.remove();
+                        filterBtn.show().removeClass('d-none');
+                    } else {
+                        // Fallback if no DataTable container found: show floating at top right
+                        wrapper.addClass('position-fixed').css({
+                            'top': '75px',
+                            'right': '25px',
+                            'z-index': '1040'
+                        }).removeClass('d-none');
+                        filterBtn.show().removeClass('d-none');
+                    }
+                }
+
+                return table;
+            }
+
+            // Auto-initialize tables with .datatable-export class or any .table inside .table-responsive
+            $(document).ready(function () {
+                $('.datatable-export').each(function () {
+                    const title = $(this).data('export-title') || 'Export';
+                    initExportDataTable(this, title);
+                });
+
+                // Universal Drag-to-Scroll for Responsive Tables (Supports dynamic content)
+                $(document).on('mousedown', '.table-responsive', function (e) {
+                    const container = this;
+                    let isDown = true;
+                    $(container).css('cursor', 'grabbing');
+
+                    const startX = e.pageX - container.offsetLeft;
+                    const scrollLeft = container.scrollLeft;
+
+                    const mouseMoveHandler = (e) => {
+                        if (!isDown) return;
+                        e.preventDefault();
+                        const x = e.pageX - container.offsetLeft;
+                        const walk = (x - startX) * 2;
+                        container.scrollLeft = scrollLeft - walk;
+                    };
+
+                    const mouseUpHandler = () => {
+                        isDown = false;
+                        $(container).css('cursor', 'grab');
+                        $(document).off('mousemove', mouseMoveHandler);
+                        $(document).off('mouseup', mouseUpHandler);
+                    };
+
+                    $(document).on('mousemove', mouseMoveHandler);
+                    $(document).on('mouseup', mouseUpHandler);
+                });
+
+                // Set initial grab cursor for all responsive tables
+                $(document).on('mouseenter', '.table-responsive', function () {
+                    $(this).css({
+                        'cursor': 'grab',
+                        'overflow-x': 'auto',
+                        '-webkit-overflow-scrolling': 'touch'
+                    });
+                });
+
+                // Universal Enhancement: Initialize other tables that aren't already DataTables
+                $('.table-responsive .table:not(.dataTable):not(.no-datatable)').each(function () {
+                    const rowCount = $(this).find('tbody tr').length;
+                    const hasEmptyMsg = rowCount === 1 && $(this).find('tbody td').attr('colspan');
+
+                    // Auto-init if more than 5 rows, OR if it's empty/has message, to ensure buttons & filter show up
+                    if (rowCount > 5 || rowCount === 0 || hasEmptyMsg) {
+                        // Cleanup message row for clean init
+                        if (hasEmptyMsg) {
+                            $(this).find('tbody').empty();
+                        }
+
+                        const title = $(this).closest('.card').find('.card-header').text().trim() || 'Export';
+                        const table = $(this).DataTable({
+                            dom: '<"d-flex justify-content-between align-items-center mb-3"Blf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
+                            buttons: [
+                                {
+                                    extend: 'excelHtml5',
+                                    text: '<i class="fas fa-file-excel"></i> Excel',
+                                    className: 'btn dt-button buttons-excel'
+                                },
+                                {
+                                    extend: 'csvHtml5',
+                                    text: '<i class="fas fa-file-csv"></i> CSV',
+                                    className: 'btn dt-button buttons-csv'
+                                },
+                                {
+                                    extend: 'pdfHtml5',
+                                    text: '<i class="fas fa-file-pdf"></i> PDF',
+                                    className: 'btn dt-button buttons-pdf'
+                                },
+                                {
+                                    extend: 'print',
+                                    text: '<i class="fas fa-print"></i> Print',
+                                    className: 'btn dt-button buttons-print'
+                                }
+                            ],
+                            paging: true,
+                            lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+                            pageLength: 10,
+                            language: {
+                                search: "_INPUT_",
+                                searchPlaceholder: "Search...",
+                                lengthMenu: "Show _MENU_ entries",
+                                emptyTable: "No records found."
+                            },
+                            order: []
+                        });
+
+                        // Move Universal Filter button group if it exists and hasn't been moved yet
+                        const filterBtn = $('#universal-filter-trigger-btn');
+                        if (filterBtn.length && !filterBtn.closest('.dt-buttons').length) {
+                            const container = table.buttons().container();
+                            const wrapper = $('#universal-filter-trigger-wrapper');
+
+                            if (container.length) {
+                                const clearBtn = wrapper.find('a[title="Clear filter"]');
+
+                                filterBtn.addClass('dt-button btn-primary').removeClass('shadow btn-sm');
+                                container.append(filterBtn);
+
+                                if (clearBtn.length) {
+                                    clearBtn.addClass('dt-button btn-danger text-white').removeClass('btn-outline-danger btn-sm shadow ms-1');
+                                    container.append(clearBtn);
+                                }
+
+                                wrapper.remove();
+                                filterBtn.show().removeClass('d-none');
+                            } else {
+                                // Fallback if no DataTable container found: show floating at top right
+                                wrapper.addClass('position-fixed').css({
+                                    'top': '75px',
+                                    'right': '25px',
+                                    'z-index': '1040'
+                                }).removeClass('d-none');
+                                filterBtn.show().removeClass('d-none');
+                            }
+                        }
+                    }
+                });
+
+                // Final Fallback: Ensure Universal Filter button is visible even if no tables were initialized
+                setTimeout(function () {
+                    const wrapper = $('#universal-filter-trigger-wrapper');
+                    const filterBtn = $('#universal-filter-trigger-btn');
+                    if (wrapper.length && wrapper.hasClass('d-none') && !filterBtn.closest('.dt-buttons').length) {
+                        wrapper.addClass('position-fixed').css({
+                            'top': '75px',
+                            'right': '25px',
+                            'z-index': '1040'
+                        }).removeClass('d-none');
+                        filterBtn.show().removeClass('d-none');
+                    }
+                }, 1000);
+            });
+        </script>
+        <!-- Global Entity History Modal -->
+        <div class="modal fade" id="entityHistoryModal" tabindex="-1" aria-labelledby="entityHistoryModalLabel"
+            aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="entityHistoryModalLabel">Entity Details</h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
                             aria-label="Close"></button>
                     </div>
+                    <div class="modal-body"></div>
+                    <div class="modal-footer"></div>
                 </div>
-                <div class="modal-body p-0 bg-light" style="min-height: 400px;">
-                    <div id="ledgerSpinner" class="text-center py-5">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <p class="mt-2 text-muted">Generating Ledger...</p>
-                    </div>
-                    <div id="ledgerContent" class="p-4" style="display:none;">
-                        <div class="table-responsive bg-white rounded shadow-sm mb-4">
-                            <table class="table table-hover align-middle mb-0 no-datatable" id="ledgerTable">
-                                <thead class="table-light">
-                                    <tr class="text-nowrap">
-                                        <th class="text-center no-export" style="width: 40px;">
-                                            <input type="checkbox" id="ledgerSelectAll" class="form-check-input">
-                                        </th>
-                                        <th>Date</th>
-                                        <th>Invoice #</th>
-                                        <th>Customer</th>
-                                        <th class="text-end">Debit / Sale</th>
-                                        <th class="text-end">Credit / Paid</th>
-                                        <th class="text-end">Balance</th>
-                                        <th class="text-end">Running Balance</th>
-                                        <th class="text-center">Status</th>
-                                        <th class="text-center">Aging</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="ledgerBody"></tbody>
-                            </table>
-                        </div>
+            </div>
+        </div>
 
-                        <div class="row g-4">
-                            <div class="col-md-6">
-                                <div class="card h-100 border-0 shadow-sm overflow-hidden">
-                                    <div class="card-header bg-info bg-opacity-10 py-3">
-                                        <h6 class="mb-0 text-info font-monospace fw-bold">Aging Bucket Summary</h6>
-                                    </div>
-                                    <div class="card-body p-0">
-                                        <table class="table table-sm table-borderless mb-0">
-                                            <thead>
-                                                <tr class="bg-light text-muted small uppercase">
-                                                    <th class="ps-3 py-2">Customer</th>
-                                                    <th class="text-center py-2">0-30</th>
-                                                    <th class="text-center py-2">31-60</th>
-                                                    <th class="text-center py-2">61-90</th>
-                                                    <th class="text-center py-2">91-180</th>
-                                                    <th class="text-center py-2">>180</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                <tr class="fw-bold border-top">
-                                                    <td class="ps-3 py-3" id="agingCustomerName"></td>
-                                                    <td class="text-center text-primary py-3" id="bucket-0-30"></td>
-                                                    <td class="text-center text-warning py-3" id="bucket-31-60"></td>
-                                                    <td class="text-center text-danger py-3" id="bucket-61-90"></td>
-                                                    <td class="text-center text-dark py-3" id="bucket-91-180"></td>
-                                                    <td class="text-center text-muted py-3" id="bucket-above-180"></td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
+        <!-- Customer Ledger Modal -->
+        <div class="modal fade" id="customerLedgerModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content shadow-lg border-0">
+                    <div class="modal-header bg-primary text-white py-3">
+                        <h5 class="modal-title font-monospace"><i class="fas fa-file-invoice-dollar me-2"></i>Customer
+                            Ledger: <span id="ledgerCustomerName"></span></h5>
+                        <div class="ms-auto me-3 d-flex gap-2">
+                            <a id="downloadLedgerExcel" href="#" class="btn btn-sm btn-light shadow-sm">
+                                <i class="fas fa-file-excel me-1 text-success"></i> Excel
+                            </a>
+                            <a id="downloadLedgerPDF" href="#" target="_blank" class="btn btn-sm btn-light shadow-sm">
+                                <i class="fas fa-file-pdf me-1 text-danger"></i> PDF
+                            </a>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                                aria-label="Close"></button>
+                        </div>
+                    </div>
+                    <div class="modal-body p-0 bg-light" style="min-height: 400px;">
+                        <div id="ledgerSpinner" class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">Generating Ledger...</p>
+                        </div>
+                        <div id="ledgerContent" class="p-4" style="display:none;">
+                            <div class="table-responsive bg-white rounded shadow-sm mb-4">
+                                <table class="table table-hover align-middle mb-0 no-datatable" id="ledgerTable">
+                                    <thead class="table-light">
+                                        <tr class="text-nowrap">
+                                            <th class="text-center no-export" style="width: 40px;">
+                                                <input type="checkbox" id="ledgerSelectAll" class="form-check-input">
+                                            </th>
+                                            <th>Date</th>
+                                            <th>Invoice #</th>
+                                            <th>Customer</th>
+                                            <th class="text-end">Debit / Sale</th>
+                                            <th class="text-end">Credit / Paid</th>
+                                            <th class="text-end">Balance</th>
+                                            <th class="text-end">Running Balance</th>
+                                            <th class="text-center">Status</th>
+                                            <th class="text-center">Aging</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="ledgerBody"></tbody>
+                                </table>
+                            </div>
+
+                            <div class="row g-4">
+                                <div class="col-md-6">
+                                    <div class="card h-100 border-0 shadow-sm overflow-hidden">
+                                        <div class="card-header bg-info bg-opacity-10 py-3">
+                                            <h6 class="mb-0 text-info font-monospace fw-bold">Aging Bucket Summary</h6>
+                                        </div>
+                                        <div class="card-body p-0">
+                                            <table class="table table-sm table-borderless mb-0">
+                                                <thead>
+                                                    <tr class="bg-light text-muted small uppercase">
+                                                        <th class="ps-3 py-2">Customer</th>
+                                                        <th class="text-center py-2">0-30</th>
+                                                        <th class="text-center py-2">31-60</th>
+                                                        <th class="text-center py-2">61-90</th>
+                                                        <th class="text-center py-2">91-180</th>
+                                                        <th class="text-center py-2">>180</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr class="fw-bold border-top">
+                                                        <td class="ps-3 py-3" id="agingCustomerName"></td>
+                                                        <td class="text-center text-primary py-3" id="bucket-0-30"></td>
+                                                        <td class="text-center text-warning py-3" id="bucket-31-60">
+                                                        </td>
+                                                        <td class="text-center text-danger py-3" id="bucket-61-90"></td>
+                                                        <td class="text-center text-dark py-3" id="bucket-91-180"></td>
+                                                        <td class="text-center text-muted py-3" id="bucket-above-180">
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="card h-100 border-0 shadow-sm">
-                                    <div class="card-body p-4">
-                                        <div class="d-flex justify-content-between mb-2">
-                                            <span class="text-muted">Total Sales:</span>
-                                            <span class="fw-bold fs-5" id="summaryTotalSales"></span>
-                                        </div>
-                                        <div class="d-flex justify-content-between mb-2">
-                                            <span class="text-muted">Total Discounts:</span>
-                                            <span class="text-danger fw-bold fs-5" id="summaryTotalDiscounts"></span>
-                                        </div>
-                                        <div class="d-flex justify-content-between mb-2">
-                                            <span class="text-muted">Total Advances:</span>
-                                            <span class="text-info fw-bold fs-5" id="summaryTotalAdvances"></span>
-                                        </div>
-                                        <div class="d-flex justify-content-between mb-2 pb-2 border-bottom">
-                                            <span class="text-muted">Total Paid:</span>
-                                            <span class="text-success fw-bold fs-5" id="summaryTotalPaid"></span>
-                                        </div>
-                                        <div class="d-flex justify-content-between mt-3">
-                                            <span class="h5 mb-0 text-primary fw-bold">Outstanding Balance:</span>
-                                            <span class="h4 mb-0 text-primary fw-bold" id="summaryOutstanding"></span>
+                                <div class="col-md-6">
+                                    <div class="card h-100 border-0 shadow-sm">
+                                        <div class="card-body p-4">
+                                            <div class="d-flex justify-content-between mb-2">
+                                                <span class="text-muted">Total Sales:</span>
+                                                <span class="fw-bold fs-5" id="summaryTotalSales"></span>
+                                            </div>
+                                            <div class="d-flex justify-content-between mb-2">
+                                                <span class="text-muted">Total Discounts:</span>
+                                                <span class="text-danger fw-bold fs-5"
+                                                    id="summaryTotalDiscounts"></span>
+                                            </div>
+                                            <div class="d-flex justify-content-between mb-2">
+                                                <span class="text-muted">Total Advances:</span>
+                                                <span class="text-info fw-bold fs-5" id="summaryTotalAdvances"></span>
+                                            </div>
+                                            <div class="d-flex justify-content-between mb-2 pb-2 border-bottom">
+                                                <span class="text-muted">Total Paid:</span>
+                                                <span class="text-success fw-bold fs-5" id="summaryTotalPaid"></span>
+                                            </div>
+                                            <div class="d-flex justify-content-between mt-3">
+                                                <span class="h5 mb-0 text-primary fw-bold">Outstanding Balance:</span>
+                                                <span class="h4 mb-0 text-primary fw-bold"
+                                                    id="summaryOutstanding"></span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -2184,166 +2218,165 @@
                 </div>
             </div>
         </div>
-    </div>
 
-    <script src="{{ url_for('static', filename='js/entity_handler.js') }}"></script>
-    <script>
-        // Enhanced Bulk Action Helper
-        function initBulkActions(config) {
-            const { selectAllId, checkboxClass, bulkDeleteBtnId, deleteUrl, entityName } = config;
-            const selectAll = document.getElementById(selectAllId);
-            const bulkBtn = document.getElementById(bulkDeleteBtnId);
-            if (!selectAll || !bulkBtn) return;
+        <script src="{{ url_for('static', filename='js/entity_handler.js') }}"></script>
+        <script>
+            // Enhanced Bulk Action Helper
+            function initBulkActions(config) {
+                const { selectAllId, checkboxClass, bulkDeleteBtnId, deleteUrl, entityName } = config;
+                const selectAll = document.getElementById(selectAllId);
+                const bulkBtn = document.getElementById(bulkDeleteBtnId);
+                if (!selectAll || !bulkBtn) return;
 
-            function updateBulkDeleteBtn() {
-                const checkedVisible = Array.from(document.querySelectorAll(`.${checkboxClass}:checked`)).filter(cb => {
-                    const tr = cb.closest('tr');
-                    return tr && window.getComputedStyle(tr).display !== 'none';
-                });
-                const count = checkedVisible.length;
-                if (count > 0) {
-                    bulkBtn.classList.remove('d-none');
-                    bulkBtn.innerHTML = `<i class="fas fa-trash me-1"></i> Delete ${count} Selected`;
-                } else {
-                    bulkBtn.classList.add('d-none');
-                }
-            }
-
-            selectAll.addEventListener('change', function () {
-                const allCheckboxes = document.querySelectorAll(`.${checkboxClass}`);
-                allCheckboxes.forEach(cb => {
-                    const tr = cb.closest('tr');
-                    if (tr && window.getComputedStyle(tr).display !== 'none') {
-                        cb.checked = selectAll.checked;
-                    }
-                });
-                updateBulkDeleteBtn();
-            });
-
-            document.addEventListener('change', function (e) {
-                if (e.target.classList.contains(checkboxClass)) {
-                    updateBulkDeleteBtn();
-                }
-            });
-
-            bulkBtn.addEventListener('click', function () {
-                const selected = Array.from(document.querySelectorAll(`.${checkboxClass}:checked`))
-                    .filter(cb => {
+                function updateBulkDeleteBtn() {
+                    const checkedVisible = Array.from(document.querySelectorAll(`.${checkboxClass}:checked`)).filter(cb => {
                         const tr = cb.closest('tr');
                         return tr && window.getComputedStyle(tr).display !== 'none';
-                    })
+                    });
+                    const count = checkedVisible.length;
+                    if (count > 0) {
+                        bulkBtn.classList.remove('d-none');
+                        bulkBtn.innerHTML = `<i class="fas fa-trash me-1"></i> Delete ${count} Selected`;
+                    } else {
+                        bulkBtn.classList.add('d-none');
+                    }
+                }
+
+                selectAll.addEventListener('change', function () {
+                    const allCheckboxes = document.querySelectorAll(`.${checkboxClass}`);
+                    allCheckboxes.forEach(cb => {
+                        const tr = cb.closest('tr');
+                        if (tr && window.getComputedStyle(tr).display !== 'none') {
+                            cb.checked = selectAll.checked;
+                        }
+                    });
+                    updateBulkDeleteBtn();
+                });
+
+                document.addEventListener('change', function (e) {
+                    if (e.target.classList.contains(checkboxClass)) {
+                        updateBulkDeleteBtn();
+                    }
+                });
+
+                bulkBtn.addEventListener('click', function () {
+                    const selected = Array.from(document.querySelectorAll(`.${checkboxClass}:checked`))
+                        .filter(cb => {
+                            const tr = cb.closest('tr');
+                            return tr && window.getComputedStyle(tr).display !== 'none';
+                        })
+                        .map(cb => cb.value);
+
+                    if (selected.length === 0) return;
+
+                    if (confirm(`Are you sure you want to delete ${selected.length} selected ${entityName}?`)) {
+                        fetch(deleteUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ ids: selected })
+                        })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success) {
+                                    window.location.reload();
+                                } else {
+                                    alert(data.message || 'Error occurred during bulk deletion.');
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error:', error);
+                                alert('An unexpected error occurred during bulk deletion.');
+                            });
+                    }
+                });
+            }
+            function updateLedgerDownloadLink(targetId) {
+                const selected = Array.from(document.querySelectorAll('.ledger-item-checkbox:checked'))
                     .map(cb => cb.value);
 
-                if (selected.length === 0) return;
+                const excelLink = document.getElementById('downloadLedgerExcel');
+                const pdfLink = document.getElementById('downloadLedgerPDF');
 
-                if (confirm(`Are you sure you want to delete ${selected.length} selected ${entityName}?`)) {
-                    fetch(deleteUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ ids: selected })
-                    })
+                let excelUrl = `/sales/customer/${targetId}/ledger-excel`;
+                let pdfUrl = `/sales/customer/${targetId}/ledger-pdf`;
+
+                if (selected.length > 0) {
+                    const query = `?ids=${encodeURIComponent(selected.join(','))}`;
+                    excelUrl += query;
+                    pdfUrl += query;
+                }
+
+                excelLink.href = excelUrl;
+                pdfLink.href = pdfUrl;
+            }
+
+            function showCustomerLedger(customerId) {
+                let targetId = customerId;
+
+                if (!targetId || targetId == '0') {
+                    const select = document.getElementById('customerSelect');
+                    if (select) targetId = select.value;
+                }
+
+                if (!targetId || targetId == '0') {
+                    const trigger = document.querySelector('.ledger-trigger[data-customer-id]');
+                    if (trigger) targetId = trigger.getAttribute('data-customer-id');
+                }
+
+                if (!targetId || targetId == '0') {
+                    alert('Please select a valid customer first.');
+                    return;
+                }
+
+                const modalEl = document.getElementById('customerLedgerModal');
+                if (window.bootstrap && window.bootstrap.Modal) {
+                    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                    modal.show();
+                } else if (typeof jQuery !== 'undefined' && typeof jQuery.fn.modal !== 'undefined') {
+                    $(modalEl).modal('show');
+                }
+
+                const spinner = document.getElementById('ledgerSpinner');
+                const content = document.getElementById('ledgerContent');
+                const ledgerBody = document.getElementById('ledgerBody');
+
+                spinner.style.display = 'block';
+                content.style.display = 'none';
+
+                // Destroy existing DataTable instance if it exists to avoid conflicts
+                if ($.fn.DataTable.isDataTable('#ledgerTable')) {
+                    $('#ledgerTable').DataTable().destroy();
+                }
+
+                // Reset select all checkbox
+                document.getElementById('ledgerSelectAll').checked = false;
+
+                fetch(`/sales/customer/${targetId}/ledger-json`)
                     .then(response => response.json())
                     .then(data => {
-                        if (data.success) {
-                            window.location.reload();
-                        } else {
-                            alert(data.message || 'Error occurred during bulk deletion.');
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        alert('An unexpected error occurred during bulk deletion.');
-                    });
-                }
-            });
-        }
-        function updateLedgerDownloadLink(targetId) {
-            const selected = Array.from(document.querySelectorAll('.ledger-item-checkbox:checked'))
-                .map(cb => cb.value);
+                        document.getElementById('ledgerCustomerName').textContent = data.customer_name;
+                        document.getElementById('agingCustomerName').textContent = data.customer_name;
 
-            const excelLink = document.getElementById('downloadLedgerExcel');
-            const pdfLink = document.getElementById('downloadLedgerPDF');
+                        document.getElementById('downloadLedgerExcel').href = `/sales/customer/${targetId}/ledger-excel`;
+                        document.getElementById('downloadLedgerPDF').href = `/sales/customer/${targetId}/ledger-pdf`;
 
-            let excelUrl = `/sales/customer/${targetId}/ledger-excel`;
-            let pdfUrl = `/sales/customer/${targetId}/ledger-pdf`;
+                        ledgerBody.innerHTML = '';
+                        data.entries.forEach(entry => {
+                            const tr = document.createElement('tr');
+                            tr.className = entry.invoice_number === 'Opening Balance' ? 'table-secondary fw-bold' : '';
 
-            if (selected.length > 0) {
-                const query = `?ids=${encodeURIComponent(selected.join(','))}`;
-                excelUrl += query;
-                pdfUrl += query;
-            }
+                            let statusClass = 'bg-secondary';
+                            if (entry.status === 'Paid') statusClass = 'bg-success';
+                            else if (entry.status === 'Partial') statusClass = 'bg-warning text-dark';
+                            else if (entry.status === 'Unpaid' || entry.status === 'Overdue') statusClass = 'bg-danger';
 
-            excelLink.href = excelUrl;
-            pdfLink.href = pdfUrl;
-        }
+                            const invoiceLink = (entry.entity_id && entry.entity_type)
+                                ? `<a href="javascript:void(0)" class="entity-history-trigger" data-entity-type="${entry.entity_type}" data-entity-id="${entry.entity_id}">${entry.invoice_number}</a>`
+                                : entry.invoice_number;
 
-        function showCustomerLedger(customerId) {
-            let targetId = customerId;
-
-            if (!targetId || targetId == '0') {
-                const select = document.getElementById('customerSelect');
-                if (select) targetId = select.value;
-            }
-
-            if (!targetId || targetId == '0') {
-                const trigger = document.querySelector('.ledger-trigger[data-customer-id]');
-                if (trigger) targetId = trigger.getAttribute('data-customer-id');
-            }
-
-            if (!targetId || targetId == '0') {
-                alert('Please select a valid customer first.');
-                return;
-            }
-
-            const modalEl = document.getElementById('customerLedgerModal');
-            if (window.bootstrap && window.bootstrap.Modal) {
-                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-                modal.show();
-            } else if (typeof jQuery !== 'undefined' && typeof jQuery.fn.modal !== 'undefined') {
-                $(modalEl).modal('show');
-            }
-
-            const spinner = document.getElementById('ledgerSpinner');
-            const content = document.getElementById('ledgerContent');
-            const ledgerBody = document.getElementById('ledgerBody');
-
-            spinner.style.display = 'block';
-            content.style.display = 'none';
-
-            // Destroy existing DataTable instance if it exists to avoid conflicts
-            if ($.fn.DataTable.isDataTable('#ledgerTable')) {
-                $('#ledgerTable').DataTable().destroy();
-            }
-
-            // Reset select all checkbox
-            document.getElementById('ledgerSelectAll').checked = false;
-
-            fetch(`/sales/customer/${targetId}/ledger-json`)
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('ledgerCustomerName').textContent = data.customer_name;
-                    document.getElementById('agingCustomerName').textContent = data.customer_name;
-
-                    document.getElementById('downloadLedgerExcel').href = `/sales/customer/${targetId}/ledger-excel`;
-                    document.getElementById('downloadLedgerPDF').href = `/sales/customer/${targetId}/ledger-pdf`;
-
-                    ledgerBody.innerHTML = '';
-                    data.entries.forEach(entry => {
-                        const tr = document.createElement('tr');
-                        tr.className = entry.invoice_number === 'Opening Balance' ? 'table-secondary fw-bold' : '';
-
-                        let statusClass = 'bg-secondary';
-                        if (entry.status === 'Paid') statusClass = 'bg-success';
-                        else if (entry.status === 'Partial') statusClass = 'bg-warning text-dark';
-                        else if (entry.status === 'Unpaid' || entry.status === 'Overdue') statusClass = 'bg-danger';
-
-                        const invoiceLink = (entry.entity_id && entry.entity_type) 
-                            ? `<a href="javascript:void(0)" class="entity-history-trigger" data-entity-type="${entry.entity_type}" data-entity-id="${entry.entity_id}">${entry.invoice_number}</a>`
-                            : entry.invoice_number;
-
-                        tr.innerHTML = `
+                            tr.innerHTML = `
                             <td class="text-center no-export">
                                 <input type="checkbox" class="form-check-input ledger-item-checkbox" value="${entry.entity_id || entry.invoice_number}">
                             </td>
@@ -2357,58 +2390,58 @@
                             <td class="text-center"><span class="badge ${statusClass}">${entry.status}</span></td>
                             <td class="text-center text-nowrap"><span class="small font-monospace">${entry.aging}</span></td>
                         `;
-                        ledgerBody.appendChild(tr);
-                    });
-
-                    // Re-bind checkboxes for dynamic content
-                    $(document).off('change', '.ledger-item-checkbox').on('change', '.ledger-item-checkbox', function () {
-                        updateLedgerDownloadLink(targetId);
-                    });
-
-                    // Select All logic
-                    document.getElementById('ledgerSelectAll').onchange = function () {
-                        const isChecked = this.checked;
-                        document.querySelectorAll('.ledger-item-checkbox').forEach(cb => {
-                            const tr = cb.closest('tr');
-                            // Only check if row is visible (respects filters)
-                            if (tr && window.getComputedStyle(tr).display !== 'none') {
-                                cb.checked = isChecked;
-                            }
+                            ledgerBody.appendChild(tr);
                         });
-                        updateLedgerDownloadLink(targetId);
-                    };
 
-                    // Summary
-                    if (data.summary) {
-                        document.getElementById('bucket-0-30').textContent = `PKR${(data.summary.aging_buckets['0-30'] || 0).toLocaleString()}`;
-                        document.getElementById('bucket-31-60').textContent = `PKR${(data.summary.aging_buckets['31-60'] || 0).toLocaleString()}`;
-                        document.getElementById('bucket-61-90').textContent = `PKR${(data.summary.aging_buckets['61-90'] || 0).toLocaleString()}`;
-                        document.getElementById('bucket-91-180').textContent = `PKR${(data.summary.aging_buckets['91-180'] || 0).toLocaleString()}`;
-                        document.getElementById('bucket-above-180').textContent = `PKR${(data.summary.aging_buckets['>180'] || 0).toLocaleString()}`;
+                        // Re-bind checkboxes for dynamic content
+                        $(document).off('change', '.ledger-item-checkbox').on('change', '.ledger-item-checkbox', function () {
+                            updateLedgerDownloadLink(targetId);
+                        });
 
-                        document.getElementById('summaryTotalSales').textContent = `PKR${(data.summary.total_sales || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-                        document.getElementById('summaryTotalDiscounts').textContent = `PKR${(data.summary.total_discounts || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-                        document.getElementById('summaryTotalAdvances').textContent = `PKR${(data.summary.total_advances || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-                        document.getElementById('summaryTotalPaid').textContent = `PKR${(data.summary.total_paid || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-                        document.getElementById('summaryOutstanding').textContent = `PKR${(data.summary.total_outstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-                    }
+                        // Select All logic
+                        document.getElementById('ledgerSelectAll').onchange = function () {
+                            const isChecked = this.checked;
+                            document.querySelectorAll('.ledger-item-checkbox').forEach(cb => {
+                                const tr = cb.closest('tr');
+                                // Only check if row is visible (respects filters)
+                                if (tr && window.getComputedStyle(tr).display !== 'none') {
+                                    cb.checked = isChecked;
+                                }
+                            });
+                            updateLedgerDownloadLink(targetId);
+                        };
 
-                    spinner.style.display = 'none';
-                    content.style.display = 'block';
+                        // Summary
+                        if (data.summary) {
+                            document.getElementById('bucket-0-30').textContent = `PKR${(data.summary.aging_buckets['0-30'] || 0).toLocaleString()}`;
+                            document.getElementById('bucket-31-60').textContent = `PKR${(data.summary.aging_buckets['31-60'] || 0).toLocaleString()}`;
+                            document.getElementById('bucket-61-90').textContent = `PKR${(data.summary.aging_buckets['61-90'] || 0).toLocaleString()}`;
+                            document.getElementById('bucket-91-180').textContent = `PKR${(data.summary.aging_buckets['91-180'] || 0).toLocaleString()}`;
+                            document.getElementById('bucket-above-180').textContent = `PKR${(data.summary.aging_buckets['>180'] || 0).toLocaleString()}`;
 
-                    // Correctly re-initialize DataTable to recognize the new rows and remove "No records found"
-                    if (typeof initExportDataTable === 'function') {
-                        initExportDataTable('#ledgerTable', `Ledger_${data.customer_name.replace(/\s+/g, '_')}`);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching ledger:', error);
-                    alert('Failed to load ledger data.');
-                    spinner.style.display = 'none';
-                });
-        }
-    </script>
-    {% block extra_js %}{% endblock %}
+                            document.getElementById('summaryTotalSales').textContent = `PKR${(data.summary.total_sales || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                            document.getElementById('summaryTotalDiscounts').textContent = `PKR${(data.summary.total_discounts || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                            document.getElementById('summaryTotalAdvances').textContent = `PKR${(data.summary.total_advances || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                            document.getElementById('summaryTotalPaid').textContent = `PKR${(data.summary.total_paid || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                            document.getElementById('summaryOutstanding').textContent = `PKR${(data.summary.total_outstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                        }
+
+                        spinner.style.display = 'none';
+                        content.style.display = 'block';
+
+                        // Correctly re-initialize DataTable to recognize the new rows and remove "No records found"
+                        if (typeof initExportDataTable === 'function') {
+                            initExportDataTable('#ledgerTable', `Ledger_${data.customer_name.replace(/\s+/g, '_')}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching ledger:', error);
+                        alert('Failed to load ledger data.');
+                        spinner.style.display = 'none';
+                    });
+            }
+        </script>
+        {% block extra_js %}{% endblock %}
 </body>
 
 </html>

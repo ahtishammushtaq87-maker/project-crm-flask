@@ -115,6 +115,11 @@
         <h2>👥 Attendance & Time Tracking</h2>
         <div class="btn-group">
             {% if current_user.has_permission('attendance', 'add') %}
+            <form action="{{ url_for('salary.recalculate_all_salaries') }}" method="POST" class="d-inline" onsubmit="return confirm('Note: This will recalculate all staff daily salaries and current month attendance rates by excluding Sundays. Proceed?')">
+                <button type="submit" class="btn btn-outline-warning text-dark">
+                    <i class="fas fa-sync-alt me-2"></i> Recalculate Rates
+                </button>
+            </form>
             <a href="{{ url_for('attendance.bulk_upload') }}" class="btn btn-outline-primary">
                 <i class="fas fa-file-upload me-2"></i> Bulk Add / Sample
             </a>

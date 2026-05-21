@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
-from app.models import Staff, SalaryAdvance, SalaryPayment
+from app.models import Staff, SalaryAdvance, SalaryPayment, Attendance
 from app.forms import StaffForm, SalaryAdvanceForm, SalaryPaymentForm
 from datetime import datetime
 from sqlalchemy import extract
@@ -23,6 +23,36 @@ def staff_list():
     query = apply_saved_filter_to_query(query, 'staff', request.args)
     staff_members = query.all()
     return render_template('salary/staff_list.html', staff_members=staff_members, active_module='staff')
+
+@bp.route('/staff/recalculate-all', methods=['POST'])
+@login_required
+@permission_required('salary', action='edit')
+def recalculate_all_salaries():
+    """Recalculate daily/hourly rates for all staff and current month attendance"""
+    try:
+        # Update All Staff Daily Salaries
+        staff_list = Staff.query.all()
+        for staff in staff_list:
+            staff.calculate_daily_salary()
+        
+        # Update current month's attendance records
+        today = datetime.utcnow()
+        attendance_records = Attendance.query.filter(
+            Attendance.date >= today.replace(day=1).date()
+        ).all()
+        
+        for record in attendance_records:
+            record.calculate_hourly_rate()
+            if record.clock_out:
+                record.calculate_earned_amount()
+        
+        db.session.commit()
+        flash('Successfully recalculated all staff salaries and current month attendance rates!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error during recalculation: {str(e)}', 'danger')
+        
+    return redirect(url_for('attendance.index'))
 
 @bp.route('/staff/add', methods=['GET', 'POST'])
 @login_required
@@ -463,7 +493,10 @@ def download_pay_stub(id):
     total_minutes = sum(a.minutes_worked for a in attendance_records)
     total_hours += total_minutes / 60
     days_worked = len(attendance_records)
-    hourly_rate = staff.monthly_salary / 30 / 8
+    # Calculate working days (excluding Sundays) for the payment month
+    from app.utils import get_working_days_in_month
+    working_days = get_working_days_in_month(year, month)
+    hourly_rate = staff.monthly_salary / float(working_days) / 8
     hourly_earnings = total_hours * hourly_rate
     
     attendance_data = {
@@ -522,7 +555,9 @@ def download_latest_pay_stub(staff_id):
     total_minutes = sum(a.minutes_worked for a in attendance_records)
     total_hours += total_minutes / 60
     days_worked = len(attendance_records)
-    hourly_rate = staff.monthly_salary / 30 / 8
+    from app.utils import get_working_days_in_month
+    working_days = get_working_days_in_month(year, month)
+    hourly_rate = staff.monthly_salary / working_days / 8
     hourly_earnings = total_hours * hourly_rate
     
     attendance_data = {

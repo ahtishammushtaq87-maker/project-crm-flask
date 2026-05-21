@@ -1365,23 +1365,24 @@ class Staff(db.Model):
 
     def calculate_daily_salary(self, reference_date=None):
         """
-        Calculate daily salary based on actual days in the month.
+        Calculate daily salary based on working days in the month (excludes Sundays).
         
         Args:
             reference_date: Date to use for determining the month (default: today)
             Examples:
-            - January (31 days): 10000 / 31 = 322.58 per day
-            - February (28/29 days): 10000 / 28 = 357.14 per day
-            - April (30 days): 10000 / 30 = 333.33 per day
+            - May 2026 (31 days, 5 Sundays = 26 working days): 26000 / 26 = 1000 per day
+            - Feb 2025 (28 days, 4 Sundays = 24 working days): 24000 / 24 = 1000 per day
         """
+        from app.utils import get_working_days_in_month
+        
         if reference_date is None:
             reference_date = datetime.utcnow().date()
         
-        # Get the number of days in the month
-        _, days_in_month = monthrange(reference_date.year, reference_date.month)
+        # Get the number of working days (excluding Sundays)
+        working_days = get_working_days_in_month(reference_date.year, reference_date.month)
         
-        # Calculate daily salary
-        self.daily_salary = self.monthly_salary / float(days_in_month)
+        # Calculate daily salary based on working days only
+        self.daily_salary = self.monthly_salary / float(working_days)
     
     def get_today_salary(self):
         """Get salary amount for today if staff is active"""
@@ -1458,21 +1459,23 @@ class Attendance(db.Model):
     
     def calculate_hourly_rate(self):
         """
-        Calculate hourly rate from staff monthly salary based on actual days in the month.
+        Calculate hourly rate from staff monthly salary based on working days in the month.
+        Sundays are excluded as they are official holidays.
         
-        Formula: monthly_salary / days_in_month / 8 hours_per_day
+        Formula: monthly_salary / working_days_in_month / 8 hours_per_day
         
         Examples:
-        - January (31 days): 10000 / 31 / 8 = 40.32 per hour
-        - February (28 days): 10000 / 28 / 8 = 44.64 per hour
-        - April (30 days): 10000 / 30 / 8 = 41.67 per hour
+        - May 2026 (26 working days): 26000 / 26 / 8 = 125.00 per hour
+        - Feb 2025 (24 working days): 24000 / 24 / 8 = 125.00 per hour
         """
+        from app.utils import get_working_days_in_month
+        
         if self.staff and self.staff.monthly_salary > 0:
-            # Get the number of days in the month for this attendance record
-            _, days_in_month = monthrange(self.date.year, self.date.month)
+            # Get the number of working days (Mon-Sat) for this attendance record's month
+            working_days = get_working_days_in_month(self.date.year, self.date.month)
             
-            # Assumption: 8 hours per working day
-            self.hourly_rate = self.staff.monthly_salary / float(days_in_month) / 8.0
+            # 8 hours per working day (after 1-hour break deduction from 9-hour shift)
+            self.hourly_rate = self.staff.monthly_salary / float(working_days) / 8.0
         else:
             self.hourly_rate = 0
     
