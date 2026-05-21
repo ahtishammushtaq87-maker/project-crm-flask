@@ -117,6 +117,13 @@
                             <label for="discountInput" class="form-label">Discount</label>
                             <input type="number" name="discount" id="discountInput" class="form-control" step="0.01"
                                 value="{{ '%.2f'|format(sale.discount) }}">
+                            <div class="form-check mt-1">
+                                <input class="form-check-input" type="checkbox" name="ignore_overdue_discount" id="ignoreOverdueCheck"
+                                    {% if sale.ignore_overdue_discount %}checked{% endif %}>
+                                <label class="form-check-label small text-info" for="ignoreOverdueCheck">
+                                    Override Overdue Restriction
+                                </label>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label for="taxRateInput" class="form-label">Tax Rate (%)</label>
@@ -295,14 +302,23 @@
         const discount = parseFloat(document.querySelector('input[name="discount"]').value) || 0;
         const delivery_charge = parseFloat(document.querySelector('input[name="delivery_charge"]').value) || 0;
 
-        const total = subtotal + tax + delivery_charge - discount;
+        const isOverdue = {{ 'true' if sale.is_overdue else 'false' }};
+        const overrideRestricted = document.getElementById('ignoreOverdueCheck').checked;
+        
+        // If overdue and NOT overridden, discount is ignored in final total
+        const effectiveDiscount = (isOverdue && !overrideRestricted) ? 0 : discount;
+
+        const total = subtotal + tax + delivery_charge - effectiveDiscount;
 
         document.getElementById('subtotal').textContent = `PKR${subtotal.toFixed(2)}`;
         document.getElementById('tax').textContent = `PKR${tax.toFixed(2)}`;
-        document.getElementById('discountDisplay').textContent = `PKR${discount.toFixed(2)}`;
+        document.getElementById('discountDisplay').textContent = `PKR${effectiveDiscount.toFixed(2)}`;
         document.getElementById('deliveryDisplay').textContent = `PKR${delivery_charge.toFixed(2)}`;
         document.getElementById('total').textContent = `PKR${total.toFixed(2)}`;
     }
+
+    // Add event listener for the override checkbox
+    document.getElementById('ignoreOverdueCheck').addEventListener('change', calculateTotals);
 
     function initSelect2(selector, placeholder = 'Search or select', width = '100%') {
         const $el = $(selector).select2({

@@ -146,6 +146,12 @@
                             <label for="discountInput" class="form-label">Discount</label>
                             <input type="number" name="discount" id="discountInput" class="form-control" step="0.01"
                                 value="0">
+                            <div class="form-check mt-1">
+                                <input class="form-check-input" type="checkbox" name="ignore_overdue_discount" id="ignoreOverdueCheck">
+                                <label class="form-check-label small text-info" for="ignoreOverdueCheck">
+                                    Override Overdue Restriction
+                                </label>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label for="taxRateInput" class="form-label">Tax Rate (%)</label>
@@ -436,15 +442,29 @@
             advanceInput.value = availableAdvance;
         }
 
-        const total = subtotal + tax + delivery_charge - discount - advance_applied;
+        // Check if overdue (for live calculation on backdated invoices)
+        const dueDateVal = document.getElementById('dueDateInput').value;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const dueDate = dueDateVal ? new Date(dueDateVal) : null;
+        const isOverdue = dueDate && dueDate < today;
+        const overrideRestricted = document.getElementById('ignoreOverdueCheck').checked;
+        
+        const effectiveDiscount = (isOverdue && !overrideRestricted) ? 0 : discount;
+
+        const total = subtotal + tax + delivery_charge - effectiveDiscount - advance_applied;
 
         document.getElementById('subtotal').textContent = `PKR${subtotal.toFixed(2)}`;
         document.getElementById('tax').textContent = `PKR${tax.toFixed(2)}`;
-        document.getElementById('discountDisplay').textContent = `PKR${discount.toFixed(2)}`;
+        document.getElementById('discountDisplay').textContent = `PKR${effectiveDiscount.toFixed(2)}`;
         document.getElementById('deliveryDisplay').textContent = `PKR${delivery_charge.toFixed(2)}`;
         document.getElementById('advanceDisplay').textContent = `PKR${advance_applied.toFixed(2)}`;
         document.getElementById('total').textContent = `PKR${total.toFixed(2)}`;
     }
+
+    // Add event listeners for restriction awareness
+    document.getElementById('ignoreOverdueCheck').addEventListener('change', calculateTotals);
+    document.getElementById('dueDateInput').addEventListener('change', calculateTotals);
 
     // ── Helper to init Select2 ──────────────────────────────────────────────
     function initSelect2(selector, placeholder = 'Search or select', width = '100%') {

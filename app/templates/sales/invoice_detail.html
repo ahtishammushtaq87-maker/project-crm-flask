@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Invoice {{ sale.invoice_number }}{% endblock %}
 {% block content %}
+{% set effective_discount = 0 if (sale.is_overdue and not sale.ignore_overdue_discount) else sale.discount %}
 <style>
     /* ── Mobile Responsiveness: Invoice Detail ── */
     @media (max-width: 767.98px) {
@@ -146,7 +147,8 @@
                         {% if sale.is_overdue %}
                         <div class="mb-3">
                             <div class="form-check form-switch border p-2 rounded bg-light">
-                                <input class="form-check-input ms-0" type="checkbox" name="ignore_overdue_discount" id="ignoreOverdue">
+                                <input class="form-check-input ms-0" type="checkbox" name="ignore_overdue_discount" id="ignoreOverdue"
+                                    {% if sale.ignore_overdue_discount %}checked{% endif %}>
                                 <label class="form-check-label fw-bold text-danger ms-2" for="ignoreOverdue">
                                     Override Overdue Restriction
                                 </label>
@@ -345,10 +347,10 @@
                             <td class="text-end">PKR {{ "{:,.2f}".format(sale.tax) }}</td>
                         </tr>
                         {% endif %}
-                        {% if sale.discount > 0 %}
+                        {% if effective_discount > 0 %}
                         <tr>
                             <td class="text-success">Discount</td>
-                            <td class="text-end text-success">-Rs {{ "{:,.2f}".format(sale.discount) }}</td>
+                            <td class="text-end text-success">-Rs {{ "{:,.2f}".format(effective_discount) }}</td>
                         </tr>
                         {% endif %}
                         {% if sale.advance_applied > 0 %}
@@ -407,7 +409,7 @@
                         {% set sum_item_delivery = sale.items | sum(attribute='delivery_fee') %}
                         {% set has_item_delivery = sum_item_delivery > 0 %}
                         {% set show_delivery_col = has_item_delivery %}
-                        {% set show_discount_col = sale.discount > 0 %}
+                        {% set show_discount_col = effective_discount > 0 %}
                         {% set base_cols = 6 %}
                         {% set total_cols = base_cols + (1 if show_delivery_col else 0) + (1 if show_discount_col else
                         0) %}
@@ -434,7 +436,7 @@
                             <tbody>
                                 {% for item in sale.items %}
                                 {% set item_subtotal = item.quantity * item.unit_price %}
-                                {% set item_discount = (item.total / sale.subtotal * sale.discount) if sale.subtotal > 0
+                                {% set item_discount = (item.total / sale.subtotal * effective_discount) if sale.subtotal > 0
                                 else 0 %}
                                 <tr>
                                     <td>{{ loop.index }}</td>
@@ -483,10 +485,10 @@
                                     <th class="text-end">PKR {{ "{:,.2f}".format(sale.tax) }}</th>
                                 </tr>
                                 {% endif %}
-                                {% if sale.discount > 0 %}
+                                {% if effective_discount > 0 %}
                                 <tr>
                                     <th colspan="{{ label_colspan }}" class="text-end text-success">Discount</th>
-                                    <th class="text-end text-success">-Rs {{ "{:,.2f}".format(sale.discount) }}</th>
+                                    <th class="text-end text-success">-Rs {{ "{:,.2f}".format(effective_discount) }}</th>
                                 </tr>
                                 {% endif %}
                                 {% if sale.advance_applied > 0 %}

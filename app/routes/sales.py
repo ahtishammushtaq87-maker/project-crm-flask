@@ -627,32 +627,48 @@ def apply_discount(id):
 
     # Block discount if invoice is overdue unless manually overridden
     ignore_overdue = request.form.get('ignore_overdue_discount') == 'on'
-    if sale.is_overdue and not ignore_overdue:
-        flash('Discount is restricted for overdue invoices. Select "Override Restriction" if this is an exception.', 'warning')
-        return redirect(request.referrer or url_for('sales.invoice_detail', id=sale.id))
-
-    if ignore_overdue:
-        sale.ignore_overdue_discount = True
-
-    if ignore_overdue:
-        sale.ignore_overdue_discount = True
-
+    
+    # Synchronize the ignore_overdue_discount flag with the checkbox
+    had_override = sale.ignore_overdue_discount
+    sale.ignore_overdue_discount = ignore_overdue
+    
     # Use 'or 0' to handle empty string inputs safely
     discount_amount_raw = request.form.get('discount_amount', '0')
     discount_amount = float(discount_amount_raw if discount_amount_raw.strip() else 0)
     
-    if discount_amount > 0 or ignore_overdue:
-        if discount_amount > 0:
-            sale.discount += discount_amount
-            flash(f'Discount of PKR {discount_amount:,.2f} applied successfully!', 'success')
-        
+    # Track if any significant change happened
+    changes_made = False
+
+    if discount_amount > 0:
+        # Check if overdue and NOT overridden BEFORE applying more discount
+        if sale.is_overdue and not sale.ignore_overdue_discount:
+            flash('Cannot add discount to an overdue invoice without "Override Restriction" selected.', 'warning')
+            return redirect(request.referrer or url_for('sales.invoice_detail', id=sale.id))
+            
+        sale.discount += discount_amount
+        flash(f'Discount of PKR {discount_amount:,.2f} applied successfully!', 'success')
+        log_activity('Sales', f'Applied Discount to Invoice #{sale.invoice_number}', 
+                    f'Amount: {discount_amount}, Customer: {sale.customer.name if sale.customer else "Walk-in"}')
+        changes_made = True
+    
+    if ignore_overdue != had_override:
         if ignore_overdue:
             flash('Overdue restriction overridden successfully.', 'info')
-            
+            log_activity('Sales', f'Overrode Overdue Restriction for Invoice #{sale.invoice_number}', 
+                        f'Invoice was overdue but discount was allowed/updated by {current_user.username}')
+        else:
+            flash('Overdue restriction re-applied. Any existing discount is now suspended.', 'warning')
+            log_activity('Sales', f'Re-applied Overdue Restriction for Invoice #{sale.invoice_number}', 
+                        f'Restriction was restored by {current_user.username}. Effective discount is now 0.')
+        changes_made = True
+
+    if changes_made:
         sale.calculate_totals()
         sale.update_status()
         db.session.commit()
     else:
+        # Only flash if something was actually attempted but nothing changed
+        # (Though with the logic above, changes_made should be true if either occurred)
         flash('No changes were made.', 'secondary')
 
     return redirect(request.referrer or url_for('sales.invoice_detail', id=sale.id))
@@ -972,14 +988,17 @@ def customer_export_pdf(id):
             'debit': float(s.subtotal or 0) + float(s.tax or 0) + float(s.delivery_charge or 0),
             'credit': 0
         })
-        if float(s.discount or 0) > 0:
+        # Apply overdue restriction logic
+        effective_discount = 0 if (s.is_overdue and not s.ignore_overdue_discount) else float(s.discount or 0)
+        
+        if effective_discount > 0:
             events.append({
                 'date': s.date,
                 'type': 'discount',
                 'desc': f"Discount (Inv #{s.invoice_number})",
                 'inv': s.invoice_number,
                 'debit': 0,
-                'credit': float(s.discount or 0)
+                'credit': effective_discount
             })
             
     for p in payments:
@@ -2393,14 +2412,17 @@ def customer_ledger_excel(id):
             'credit': 0,
             'status': (s.status or 'unpaid').capitalize()
         })
-        if float(s.discount or 0) > 0:
+        # Apply overdue restriction logic
+        effective_discount = 0 if (s.is_overdue and not s.ignore_overdue_discount) else float(s.discount or 0)
+        
+        if effective_discount > 0:
             events.append({
                 'date': s.date,
                 'type': 'discount',
                 'desc': f"Discount (Inv #{s.invoice_number})",
                 'inv': s.invoice_number,
                 'debit': 0,
-                'credit': float(s.discount or 0),
+                'credit': effective_discount,
                 'status': '-'
             })
             
