@@ -48,13 +48,28 @@
                 <div class="card-body">
                     <dl class="row mb-0">
                         <dt class="col-sm-5 text-truncate">Target Product</dt>
-                        <dd class="col-sm-7 fw-bold text-primary">{{ order.bom.product.name }}</dd>
+                        <dd class="col-sm-7 fw-bold text-primary">
+                            {{ order.bom.product.name }}
+                            <div class="small mt-1">
+                                <span class="badge bg-light text-success border">Stock: {{ (order.bom.product.quantity -
+                                    (order.produced_qty or 0))|format_qty }} <i
+                                        class="fas fa-long-arrow-alt-right mx-1"></i> {{
+                                    order.bom.product.quantity|format_qty }}</span>
+                            </div>
+                        </dd>
 
                         <dt class="col-sm-5 text-truncate">BOM Reference</dt>
                         <dd class="col-sm-7">{{ order.bom.name }}</dd>
 
                         <dt class="col-sm-5 text-truncate">Qty to Produce</dt>
-                        <dd class="col-sm-7">{{ order.quantity_to_produce }} Units</dd>
+                        <dd class="col-sm-7 fw-bold">
+                            {{ order.quantity_to_produce }} Units
+                            <div class="small text-muted mt-1">
+                                ({{ order.quantity_to_produce|format_qty }} <i
+                                    class="fas fa-long-arrow-alt-right mx-1 text-primary"></i> {{
+                                order.remaining_qty|format_qty }} Remaining)
+                            </div>
+                        </dd>
 
                         <dt class="col-sm-5 text-truncate">Start Date</dt>
                         <dd class="col-sm-7">{{ order.start_date.strftime('%d-%b-%Y') if order.start_date else '-' }}
@@ -63,14 +78,37 @@
                         <dt class="col-sm-12 mt-3 text-primary">Production Progress</dt>
                         <dd class="col-sm-12">
                             <div class="progress mb-2" style="height: 20px; --progress-val: {{ progress }}%;">
-                                <div class="progress-bar bg-success" role="progressbar" style="width: var(--progress-val);"
-                                    aria-valuenow="{{ progress }}" aria-valuemin="0" aria-valuemax="100">
+                                <div class="progress-bar bg-success" role="progressbar"
+                                    style="width: var(--progress-val);" aria-valuenow="{{ progress }}" aria-valuemin="0"
+                                    aria-valuemax="100">
                                     {{ "%.1f"|format(progress) }}%
                                 </div>
                             </div>
                             <div class="d-flex justify-content-between small">
                                 <span>Produced: <strong>{{ order.produced_qty or 0 }}</strong></span>
                                 <span>Remaining: <strong>{{ order.remaining_qty }}</strong></span>
+                            </div>
+                        </dd>
+
+                        <dt class="col-sm-12 mt-3 text-primary border-top pt-2">Inventory Impact (Before MO -> Now)</dt>
+                        <dd class="col-sm-12 mt-1">
+                            <div class="small">
+                                {% for item in order.items %}
+                                {# Calculate theoretical stock before this MO started #}
+                                {% set stock_now = item.component.quantity %}
+                                {% set consumed = item.quantity_consumed or 0 %}
+                                {% set stock_before = stock_now + consumed %}
+
+                                <div class="d-flex justify-content-between mb-1 border-bottom-dotted pb-1">
+                                    <span class="text-truncate mr-2" title="{{ item.component.name }}">{{
+                                        item.component.sku }}:</span>
+                                    <span class="fw-bold">
+                                        <small class="text-muted">{{ stock_before|format_qty }}</small>
+                                        <i class="fas fa-long-arrow-alt-right mx-1 text-danger"></i>
+                                        {{ stock_now|format_qty }}
+                                    </span>
+                                </div>
+                                {% endfor %}
                             </div>
                         </dd>
                     </dl>
@@ -137,6 +175,8 @@
                                     <th>Component</th>
                                     <th class="text-end">Required Qty</th>
                                     <th class="text-end">Consumed Qty</th>
+                                    <th class="text-end text-nowrap">Quantity Progress</th>
+                                    <th class="text-end text-nowrap">Component Reduced</th>
                                     <th class="text-end">Stock Status</th>
                                 </tr>
                             </thead>
@@ -147,22 +187,46 @@
                                         <strong>{{ item.component.name }}</strong><br>
                                         <small class="text-muted">{{ item.component.sku }}</small>
                                     </td>
-                                    <td class="text-end fw-bold">{{ item.quantity_required }}</td>
+                                    <td class="text-end fw-bold">{{ item.quantity_required|format_qty }}</td>
                                     <td class="text-end">
-                                        {% if order.status == 'Completed' %}
-                                        <span class="text-success fw-bold">{{ item.quantity_consumed }}</span>
-                                        {% else %}
-                                        <span class="text-warning">Pending</span>
-                                        {% endif %}
+                                        <span class="{% if item.quantity_consumed >= item.quantity_required %}text-success{% else %}text-info{% endif %} fw-bold">
+                                            {{ item.quantity_consumed|format_qty }}
+                                        </span>
+                                    </td>
+                                    <td class="text-end">
+                                        {# Remaining Progress Transition #}
+                                        <div class="text-nowrap mb-1">
+                                            <span class="badge bg-light text-dark border smaller">Used: {{ item.quantity_consumed|format_qty }}</span>
+                                        </div>
+                                        <div class="text-nowrap">
+                                            <small class="text-muted">{{ item.quantity_required|format_qty }}</small>
+                                            <i class="fas fa-arrow-right fa-xs mx-1 text-primary"></i>
+                                            <strong class="text-primary">{{ (item.quantity_required - item.quantity_consumed)|format_qty }}</strong>
+                                            <div class="progress progress-sm" style="height: 4px; width: 60px; margin-left: auto;">
+                                                <div class="progress-bar bg-info" role="progressbar" 
+                                                     style="width: {{ (item.quantity_consumed / item.quantity_required * 100) if item.quantity_required > 0 else 0 }}%">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="text-end">
+                                        {# Stock Transition #}
+                                        {% set stock_now = item.component.quantity %}
+                                        {% set consumed = item.quantity_consumed or 0 %}
+                                        {% set stock_before = stock_now + consumed %}
+                                        <div class="text-nowrap">
+                                            <small class="text-muted">{{ stock_before|format_qty }}</small>
+                                            <i class="fas fa-long-arrow-alt-right fa-xs mx-1 text-danger"></i>
+                                            <strong class="text-dark">{{ stock_now|format_qty }}</strong>
+                                        </div>
                                     </td>
                                     <td class="text-end">
                                         {% if order.status != 'Completed' %}
-                                        {% if item.component.quantity >= item.quantity_required %}
-                                        <span class="badge bg-success">In Stock ({{ item.component.quantity }})</span>
-                                        {% else %}
-                                        <span class="badge bg-danger">Shortage (Need {{ item.quantity_required -
-                                            item.component.quantity }})</span>
-                                        {% endif %}
+                                            {% if item.component.quantity >= (item.quantity_required - item.quantity_consumed) %}
+                                            <span class="badge bg-success">In Stock ({{ item.component.quantity|format_qty }})</span>
+                                            {% else %}
+                                            <span class="badge bg-danger">Shortage (Need {{ (item.quantity_required - item.quantity_consumed - item.component.quantity)|format_qty }})</span>
+                                            {% endif %}
                                         {% else %}
                                         <span class="text-muted">Consumed</span>
                                         {% endif %}
@@ -187,15 +251,21 @@
             </div>
             <div class="card-body">
                 {% if order.history %}
+                {% set ns = namespace(produced_running=order.produced_qty, comp_running={}) %}
+                {% for item in order.items %}
+                {% set _ = ns.comp_running.update({item.component_id: item.quantity_consumed}) %}
+                {% endfor %}
                 <div class="table-responsive">
-                    <table class="table table-bordered table-hover datatable-export" data-export-title="Production History: {{ order.order_number }}">
+                    <table class="table table-bordered table-hover datatable-export"
+                        data-export-title="Production History: {{ order.order_number }}">
                         <thead class="table-light">
                             <tr>
                                 <th style="width: 40px;" class="text-center no-export">
                                     <input type="checkbox" id="selectAllHistory" class="form-check-input">
                                 </th>
                                 <th>Date</th>
-                                <th>Quantity</th>
+                                <th>Quantity (Progress)</th>
+                                <th>Components Reduced</th>
                                 <th>Material (Total/Unit)</th>
                                 <th>Labor (Total/Unit)</th>
                                 <th>Overhead (Total/Unit)</th>
@@ -212,7 +282,36 @@
                                     <input type="checkbox" class="form-check-input history-checkbox" value="{{ h.id }}">
                                 </td>
                                 <td>{{ h.completion_date.strftime('%d-%m-%Y %H:%M') }}</td>
-                                <td class="fw-bold">{{ h.quantity_produced }}</td>
+                                <td class="fw-bold">
+                                    {% set next_qty = ns.produced_running %}
+                                    {% set prev_qty = next_qty - h.quantity_produced %}
+                                    <span class="text-muted small">{{ prev_qty|format_qty }}</span>
+                                    <i class="fas fa-arrow-right fa-xs mx-1 text-primary"></i>
+                                    {{ next_qty|format_qty }}
+                                    {% set ns.produced_running = prev_qty %}
+                                </td>
+                                <td class="small">
+                                    {% for item in order.items %}
+                                    {# Theoretical consumption based on BOM ratio #}
+                                    {% set ratio = item.quantity_required / order.quantity_to_produce if
+                                    order.quantity_to_produce > 0 else 0 %}
+                                    {% set consumed = ratio * h.quantity_produced %}
+                                    {% set next_c = ns.comp_running[item.component_id]|default(0) %}
+                                    {% set prev_c = next_c - consumed %}
+
+                                    {% set rem_before = item.quantity_required - prev_c %}
+                                    {% set rem_after = item.quantity_required - next_c %}
+
+                                    <div class="mb-1 text-nowrap">
+                                        <span class="badge bg-light text-dark border">{{ item.component.sku }}</span>
+                                        <small>{{ rem_before|format_qty }}</small>
+                                        <i class="fas fa-long-arrow-alt-right fa-xs mx-1 text-danger"></i>
+                                        <small class="fw-bold">{{ rem_after|format_qty }}</small>
+                                    </div>
+
+                                    {% set _ = ns.comp_running.update({item.component_id: prev_c}) %}
+                                    {% endfor %}
+                                </td>
                                 <td>
                                     <span class="d-block">PKR {{ "%.2f"|format(h.material_cost) }}</span>
                                     <small class="text-muted">Unit: {{ "%.2f"|format(h.material_cost /
@@ -233,8 +332,8 @@
                                     h.quantity_produced > 0 else 0) }}</td>
                                 <td>{{ h.creator.username if h.creator else 'System' }}</td>
                                 <td class="text-center no-export">
-                                                                        {% if current_user.has_permission('manufacturing', 'delete') %}
-<form action="{{ url_for('manufacturing.delete_history_batch', id=h.id) }}"
+                                    {% if current_user.has_permission('manufacturing', 'delete') %}
+                                    <form action="{{ url_for('manufacturing.delete_history_batch', id=h.id) }}"
                                         method="POST"
                                         onsubmit="return confirm('Are you sure you want to REVERSE this batch? Components will be put back in stock, finished items removed, and overhead returned to the MO bucket.');">
                                         <button type="submit" class="btn btn-sm btn-outline-danger"
@@ -242,7 +341,7 @@
                                             <i class="fas fa-undo"></i>
                                         </button>
                                     </form>
-{% endif %}                                    
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}
@@ -288,14 +387,16 @@
                             <input class="form-check-input" type="radio" name="overhead_mode" id="modeTotal_detail"
                                 value="total" checked>
                             <label class="form-check-input-label" for="modeTotal_detail">
-                                Apply Total Linked Overhead (PKR {{ "%.2f"|format(order.actual_overhead_cost or 0) }}) - Reset Bucket
+                                Apply Total Linked Overhead (PKR {{ "%.2f"|format(order.actual_overhead_cost or 0) }}) -
+                                Reset Bucket
                             </label>
                         </div>
                         <div class="form-check mb-2">
                             <input class="form-check-input" type="radio" name="overhead_mode" id="modeTotalKeep_detail"
                                 value="total_keep">
                             <label class="form-check-input-label" for="modeTotalKeep_detail">
-                                Apply Total Linked Overhead (PKR {{ "%.2f"|format(order.actual_overhead_cost or 0) }}) - Keep for Remaining
+                                Apply Total Linked Overhead (PKR {{ "%.2f"|format(order.actual_overhead_cost or 0) }}) -
+                                Keep for Remaining
                             </label>
                         </div>
                         <div class="form-check mb-2">
@@ -312,7 +413,14 @@
                                     name="per_unit_overhead" placeholder="Cost per unit">
                             </div>
                         </div>
-                        <div class="form-text mt-2"><i class="fas fa-info-circle me-1"></i> Bucket resetting depends on the mode selected above.</div>
+                        <div class="form-text mt-2"><i class="fas fa-info-circle me-1"></i> Bucket resetting depends on
+                            the mode selected above.</div>
+                    </div>
+
+                    <div id="batchPreviewDetail" class="mt-3 p-3 bg-light border rounded" style="display:none;">
+                        <h6 class="font-weight-bold text-primary mb-2 small border-bottom pb-1">Inventory Transition Preview</h6>
+                        <div id="fgPreviewDetail" class="mb-2"></div>
+                        <div id="compPreviewDetail"></div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -323,6 +431,19 @@
         </div>
     </div>
 </div>
+
+{# Hidden data for JS live preview #}
+<script id="component-data-json" type="application/json">
+[
+    {% for item in order.items %}
+    {
+        "sku": "{{ item.component.sku }}",
+        "stock": {{ item.component.quantity }},
+        "req": {{ item.quantity_required }}
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+]
+</script>
 
 <script>
     document.addEventListener('DOMContentLoaded', function () {
@@ -340,6 +461,72 @@
                     else document.getElementById('per_unit_overhead_detail').required = false;
                 });
             });
+        }
+
+        // Live Preview Logic for Details Page
+        const qtyInputDetail = document.getElementById('qty_produced_detail');
+        if (qtyInputDetail) {
+            // Get BOM components data from the hidden JSON script tag
+            const componentData = JSON.parse(document.getElementById('component-data-json').textContent);
+            const moData = {
+                fgSku: "{{ order.bom.product.sku }}",
+                fgStock: parseFloat("{{ order.bom.product.quantity }}"),
+                moTotal: parseFloat("{{ order.quantity_to_produce }}"),
+                items: componentData
+            };
+
+            qtyInputDetail.addEventListener('input', function() {
+                updateBatchPreviewDetail(this.value, moData);
+            });
+            // Initial call
+            updateBatchPreviewDetail(qtyInputDetail.value, moData);
+        }
+
+        function updateBatchPreviewDetail(value, moData) {
+            const previewBox = document.getElementById('batchPreviewDetail');
+            const fgBox = document.getElementById('fgPreviewDetail');
+            const compBox = document.getElementById('compPreviewDetail');
+            
+            const qty = parseFloat(value || 0);
+            if (qty <= 0) {
+                previewBox.style.display = 'none';
+                return;
+            }
+            
+            previewBox.style.display = 'block';
+            
+            // FG Preview
+            const fgNextStock = moData.fgStock + qty;
+            fgBox.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="small font-weight-bold">Finished Good (${moData.fgSku}):</span>
+                    <span>
+                        <small class="text-muted">${moData.fgStock.toFixed(2)}</small>
+                        <i class="fas fa-long-arrow-alt-right mx-1 text-success"></i>
+                        <strong class="text-success">${fgNextStock.toFixed(2)}</strong>
+                    </span>
+                </div>
+            `;
+            
+            // Components Preview
+            let compsHtml = '<div class="small font-weight-bold mb-1">Components Reduction:</div>';
+            moData.items.forEach(item => {
+                const ratio = moData.moTotal > 0 ? (item.req / moData.moTotal) : 0;
+                const consumed = ratio * qty;
+                const stockAfter = item.stock - consumed;
+                
+                compsHtml += `
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="smaller text-muted">${item.sku}:</span>
+                        <span>
+                            <small class="text-muted">${item.stock.toFixed(2)}</small>
+                            <i class="fas fa-long-arrow-alt-right mx-1 text-danger"></i>
+                            <strong class="text-danger">${stockAfter.toFixed(2)}</strong>
+                        </span>
+                    </div>
+                `;
+            });
+            compBox.innerHTML = compsHtml;
         }
 
         // Initialize table bulk selection
