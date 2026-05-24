@@ -551,8 +551,16 @@ class Sale(db.Model):
         # Calculate tax
         self.tax = self.subtotal * (self.tax_rate / 100)
         
-        # Calculate discount - suspended if overdue unless forced
-        if self.is_overdue and not self.ignore_overdue_discount:
+        # Check if overdue rule applies to this customer's group
+        rule_applies = False
+        settings = InvoiceSettings.query.first()
+        if settings:
+            restricted_groups = settings.restricted_group_ids
+            if self.customer and self.customer.group_id in restricted_groups:
+                rule_applies = True
+        
+        # Calculate discount - suspended if overdue unless forced AND rule applies
+        if self.is_overdue and not self.ignore_overdue_discount and rule_applies:
             discount_amount = 0
         else:
             if self.discount_type == 'percentage':
@@ -567,6 +575,19 @@ class Sale(db.Model):
         if self.total < 0:
             self.total = 0
             
+    @property
+    def is_discount_restricted(self):
+        """Check if the overdue discount restriction is currently active for this sale"""
+        if not self.is_overdue or self.ignore_overdue_discount:
+            return False
+            
+        settings = InvoiceSettings.query.first()
+        if settings:
+            restricted_groups = settings.restricted_group_ids
+            if self.customer and self.customer.group_id in restricted_groups:
+                return True
+        return False
+
     @property
     def valid_access_token(self):
         import uuid
@@ -1033,7 +1054,18 @@ class InvoiceSettings(db.Model):
     # Additional
     payment_terms = db.Column(db.Text)
     notes = db.Column(db.Text)
+    overdue_restricted_groups = db.Column(db.Text) # Stored as JSON list of group IDs
     
+    @property
+    def restricted_group_ids(self):
+        if not self.overdue_restricted_groups:
+            return []
+        import json
+        try:
+            return json.loads(self.overdue_restricted_groups)
+        except:
+            return []
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

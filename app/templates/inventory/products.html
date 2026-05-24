@@ -164,7 +164,8 @@
                     <div class="modal-body">
                         <div class="mb-3">
                             <label class="form-label">Select Warehouse</label>
-                            <select name="warehouse_id" class="form-control searchable-select" data-placeholder="— Select Warehouse —" required>
+                            <select name="warehouse_id" class="form-control searchable-select"
+                                data-placeholder="— Select Warehouse —" required>
                                 <option value="">-- Select Warehouse --</option>
                                 {% for wh in warehouses %}
                                 <option value="{{ wh.id }}">{{ wh.name }}</option>
@@ -197,10 +198,11 @@
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Search by SKU</label>
-                    <select name="sku" class="form-select searchable-select" data-placeholder="— Select SKU —" onchange="this.form.submit()">
+                    <select name="sku" class="form-select searchable-select" data-placeholder="— Select SKU —"
+                        onchange="this.form.submit()">
                         <option value="">All SKUs</option>
                         {% for p in all_products_for_sku %}
-                        <option value="{{ p.sku }}" {% if current_sku == p.sku %}selected{% endif %}>
+                        <option value="{{ p.sku }}" {% if current_sku==p.sku %}selected{% endif %}>
                             {{ p.sku }} - {{ p.name }}
                         </option>
                         {% endfor %}
@@ -208,7 +210,8 @@
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Category</label>
-                    <select name="category" class="form-select searchable-select" data-placeholder="— Select Category —" onchange="this.form.submit()">
+                    <select name="category" class="form-select searchable-select" data-placeholder="— Select Category —"
+                        onchange="this.form.submit()">
                         <option value="all" {% if current_category=='all' %}selected{% endif %}>All Categories</option>
                         {% for cat in categories %}
                         <option value="{{ cat.id }}" {% if current_category==cat.id|string %}selected{% endif %}>{{
@@ -218,7 +221,8 @@
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Warehouse</label>
-                    <select name="warehouse_id" class="form-select searchable-select" data-placeholder="— Select Warehouse —" onchange="this.form.submit()">
+                    <select name="warehouse_id" class="form-select searchable-select"
+                        data-placeholder="— Select Warehouse —" onchange="this.form.submit()">
                         <option value="">All Warehouses</option>
                         {% for wh in warehouses %}
                         <option value="{{ wh.id }}" {% if current_warehouse_id==wh.id|string %}selected{% endif %}>{{
@@ -228,17 +232,20 @@
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">Min Qty</label>
-                    <input type="number" name="qty_min" class="form-control" value="{{ qty_min }}" min="0" placeholder="0">
+                    <input type="number" name="qty_min" class="form-control" value="{{ qty_min }}" min="0"
+                        placeholder="0">
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">Max Qty</label>
-                    <input type="number" name="qty_max" class="form-control" value="{{ qty_max }}" min="0" placeholder="999">
+                    <input type="number" name="qty_max" class="form-control" value="{{ qty_max }}" min="0"
+                        placeholder="999">
                 </div>
                 <div class="col-md-4 d-flex align-items-end">
                     <button type="submit" class="btn btn-primary me-2 flex-grow-1">
                         <i class="fas fa-filter"></i> Apply Filters
                     </button>
-                    <a href="{{ url_for('inventory.products') }}" class="btn btn-secondary clear-filters" title="Clear Filters">
+                    <a href="{{ url_for('inventory.products') }}" class="btn btn-secondary clear-filters"
+                        title="Clear Filters">
                         <i class="fas fa-times"></i> Clear
                     </a>
                 </div>
@@ -310,7 +317,7 @@
                             <td>{{ product.warehouse.name if product.warehouse else '-' }}</td>
                             <td>
                                 {{ product.quantity | format_qty(product.unit) }}
-{% if product.quantity <= product.reorder_level %} <span class="badge bg-warning">Low
+                                {% if product.quantity <= product.reorder_level %} <span class="badge bg-warning">Low
                                     Stock</span>
                                     {% endif %}
                             </td>
@@ -407,7 +414,7 @@
     document.addEventListener('DOMContentLoaded', function () {
         // Initialize Select2
         if (typeof $ !== 'undefined' && $.fn.select2) {
-            $('.searchable-select').each(function() {
+            $('.searchable-select').each(function () {
                 var placeholder = $(this).data('placeholder');
                 $(this).select2({
                     theme: 'bootstrap-5',

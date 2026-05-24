@@ -55,6 +55,7 @@ class InvoiceSettingsForm(FlaskForm):
     tax_rate = DecimalField('Tax Rate (%)', default=lambda: Decimal('10'))
     payment_terms = TextAreaField('Payment Terms')
     notes = TextAreaField('Notes')
+    overdue_restricted_groups = SelectMultipleField('Restricted Customer Groups for Overdue Discount', coerce=int)
 
 class PurchaseSettingsForm(FlaskForm):
     default_notes = TextAreaField('Default Purchase Bill Notes')

@@ -9,6 +9,7 @@ from sqlalchemy import func, or_, and_
 from app.pdf_utils import generate_professional_pdf
 import os
 from werkzeug.utils import secure_filename
+import json
 from app.routes.filters import apply_saved_filter_to_query
 import os
 import io
@@ -640,8 +641,16 @@ def apply_discount(id):
     changes_made = False
 
     if discount_amount > 0:
+        # Check if overdue rule applies to this customer's group
+        rule_applies = False
+        settings = InvoiceSettings.query.first()
+        if settings:
+            restricted_groups = settings.restricted_group_ids
+            if sale.customer and sale.customer.group_id in restricted_groups:
+                rule_applies = True
+
         # Check if overdue and NOT overridden BEFORE applying more discount
-        if sale.is_overdue and not sale.ignore_overdue_discount:
+        if sale.is_overdue and not sale.ignore_overdue_discount and rule_applies:
             flash('Cannot add discount to an overdue invoice without "Override Restriction" selected.', 'warning')
             return redirect(request.referrer or url_for('sales.invoice_detail', id=sale.id))
             
@@ -1797,6 +1806,16 @@ def invoice_settings():
     
     form = InvoiceSettingsForm(obj=settings)
     
+    # Populate customer groups for the dropdown
+    customer_groups = CustomerGroup.query.filter_by(is_active=True).order_by(CustomerGroup.name).all()
+    form.overdue_restricted_groups.choices = [(g.id, g.name) for g in customer_groups]
+    
+    if request.method == 'GET' and settings and settings.overdue_restricted_groups:
+        try:
+            form.overdue_restricted_groups.data = json.loads(settings.overdue_restricted_groups)
+        except:
+            form.overdue_restricted_groups.data = []
+
     if form.validate_on_submit():
         if not settings:
             settings = InvoiceSettings()
@@ -1819,6 +1838,12 @@ def invoice_settings():
         settings.payment_terms = form.payment_terms.data
         settings.notes = form.notes.data
         
+        # Save restricted groups as JSON
+        if form.overdue_restricted_groups.data:
+            settings.overdue_restricted_groups = json.dumps(form.overdue_restricted_groups.data)
+        else:
+            settings.overdue_restricted_groups = None
+            
         db.session.commit()
         flash('Invoice settings updated successfully.', 'success')
         return redirect(url_for('sales.invoice_settings'))

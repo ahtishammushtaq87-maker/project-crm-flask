@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Invoice {{ sale.invoice_number }}{% endblock %}
 {% block content %}
-{% set effective_discount = 0 if (sale.is_overdue and not sale.ignore_overdue_discount) else sale.discount %}
+{% set effective_discount = 0 if sale.is_discount_restricted else sale.discount %}
 <style>
     /* ── Mobile Responsiveness: Invoice Detail ── */
     @media (max-width: 767.98px) {
@@ -347,9 +347,18 @@
                             <td class="text-end">PKR {{ "{:,.2f}".format(sale.tax) }}</td>
                         </tr>
                         {% endif %}
-                        {% if effective_discount > 0 %}
+                        {% if sale.discount > 0 %}
                         <tr>
-                            <td class="text-success">Discount</td>
+                            <td class="text-success">
+                                Discount
+                                {% if sale.is_overdue %}
+                                    {% if sale.is_discount_restricted %}
+                                    <span class="badge bg-danger ms-1 small" style="font-size: 0.65rem;">UNAPPLY</span>
+                                    {% else %}
+                                    <span class="badge bg-success ms-1 small" style="font-size: 0.65rem;">APPLY</span>
+                                    {% endif %}
+                                {% endif %}
+                            </td>
                             <td class="text-end text-success">-Rs {{ "{:,.2f}".format(effective_discount) }}</td>
                         </tr>
                         {% endif %}

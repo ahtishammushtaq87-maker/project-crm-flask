@@ -279,6 +279,7 @@
                             <th>Invoice #</th>
                             <th>Date</th>
                             <th>Customer</th>
+                            <th>Customer Group</th>
                             <th>Salesman</th>
                             <th class="text-end text-muted small">Delivery Charges</th>
                             <th class="text-end">Total</th>
@@ -313,6 +314,7 @@
                                 Walk-in Customer
                                 {% endif %}
                             </td>
+                            <td>{{ sale.customer.group.name if sale.customer and sale.customer.group else '-' }}</td>
                             <td>{{ sale.salesman.name if sale.salesman else '-' }}</td>
                             <td class="text-end text-muted small">PKR{{ "{:,.2f}".format(sale.delivery_charge) }}</td>
                             <td class="text-end">PKR{{ "{:,.2f}".format(sale.total) }}</td>
