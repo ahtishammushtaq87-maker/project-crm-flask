@@ -223,16 +223,10 @@
         }
 
         // Populate existing rows
-        const existingVal = hiddenInput.value;
-        if (existingVal) {
-            try {
-                const data = JSON.parse(existingVal);
-                if (Array.isArray(data)) {
-                    data.forEach(item => createRow(item.name, item.phone));
-                }
-            } catch (e) {
-                console.error("Error parsing sub_customers:", e);
-            }
+        const existingDataStr = '{{ customer.sub_customers_list|tojson|safe }}';
+        const existingData = existingDataStr !== 'null' ? JSON.parse(existingDataStr) : [];
+        if (Array.isArray(existingData)) {
+            existingData.forEach(item => createRow(item.name, item.phone));
         }
 
         addBtn.addEventListener('click', function () {

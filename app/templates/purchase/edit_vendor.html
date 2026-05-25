@@ -107,7 +107,7 @@
 
                         <hr class="my-4">
                         <label class="form-label fw-bold d-flex justify-content-between align-items-center">
-                            Contact Persons / Sub Vendors:
+                            Vendors Name:
                             <button type="button" class="btn btn-sm btn-success" id="add-sub-vendor-btn">
                                 <i class="fas fa-plus"></i> Add Person
                             </button>
@@ -190,56 +190,50 @@
         }
 
         // Load existing sub-vendors
-        const existingData = {{ vendor.sub_vendors|tojson|safe if vendor.sub_vendors else '[]' }};
-    if (typeof existingData === 'string' && existingData.length > 0) {
-        try {
-            const parsed = JSON.parse(existingData);
-            parsed.forEach(item => createRow(item.name, item.phone));
-        } catch (e) {
-            console.error("Error parsing sub-vendors JSON:", e);
+        const existingDataStr = '{{ vendor.sub_vendors_list|tojson|safe }}';
+        const existingData = existingDataStr !== 'null' ? JSON.parse(existingDataStr) : [];
+        if (Array.isArray(existingData)) {
+            existingData.forEach(item => createRow(item.name, item.phone));
         }
-    } else if (Array.isArray(existingData)) {
-        existingData.forEach(item => createRow(item.name, item.phone));
-    }
 
-    addBtn.addEventListener('click', function () {
-        createRow();
-    });
-
-    form.addEventListener('submit', function () {
-        const rows = wrapper.querySelectorAll('.sub-vendor-row');
-        const data = [];
-        rows.forEach(row => {
-            const name = row.querySelector('.sub-name').value.trim();
-            const phone = row.querySelector('.sub-phone').value.trim();
-            if (name || phone) {
-                data.push({ name, phone });
-            }
+        addBtn.addEventListener('click', function () {
+            createRow();
         });
-        hiddenInput.value = data.length > 0 ? JSON.stringify(data) : '';
-    });
 
-    // Image preview
-    const imgInput = document.getElementById('vendorImageInput');
-    const imgPreview = document.getElementById('imagePreview');
-    const imgPlaceholder = document.getElementById('imagePlaceholder');
-    if (imgInput) {
-        imgInput.addEventListener('change', function () {
-            const file = this.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function (e) {
-                    imgPreview.src = e.target.result;
-                    imgPreview.style.display = 'block';
-                    if (imgPlaceholder) imgPlaceholder.style.display = 'none';
-                };
-                reader.readAsDataURL(file);
-            } else {
-                // Reset to original if no file chosen? For now just hide if empty
-                // In edit, we might want to show the original image again.
-            }
+        form.addEventListener('submit', function () {
+            const rows = wrapper.querySelectorAll('.sub-vendor-row');
+            const data = [];
+            rows.forEach(row => {
+                const name = row.querySelector('.sub-name').value.trim();
+                const phone = row.querySelector('.sub-phone').value.trim();
+                if (name || phone) {
+                    data.push({ name, phone });
+                }
+            });
+            hiddenInput.value = data.length > 0 ? JSON.stringify(data) : '';
         });
-    }
+
+        // Image preview
+        const imgInput = document.getElementById('vendorImageInput');
+        const imgPreview = document.getElementById('imagePreview');
+        const imgPlaceholder = document.getElementById('imagePlaceholder');
+        if (imgInput) {
+            imgInput.addEventListener('change', function () {
+                const file = this.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function (e) {
+                        imgPreview.src = e.target.result;
+                        imgPreview.style.display = 'block';
+                        if (imgPlaceholder) imgPlaceholder.style.display = 'none';
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    // Reset to original if no file chosen? For now just hide if empty
+                    // In edit, we might want to show the original image again.
+                }
+            });
+        }
     });
 </script>
 {% endblock %}

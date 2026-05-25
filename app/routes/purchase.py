@@ -1146,16 +1146,7 @@ def vendors():
     
     query = apply_saved_filter_to_query(query, 'vendor', request.args)
 
-    import json
     vendors = query.order_by(Vendor.name.asc()).all()
-    for v in vendors:
-        if v.sub_vendors:
-            try:
-                v.sub_vendors_list = json.loads(v.sub_vendors)
-            except:
-                v.sub_vendors_list = []
-        else:
-            v.sub_vendors_list = []
             
     # List of all vendors for the searchable dropdown
     all_vendors = Vendor.query.order_by(Vendor.name.asc()).all()
@@ -1341,15 +1332,6 @@ def vendor_profile(id):
 
     advances = sorted(vendor.advances, key=lambda a: a.date, reverse=True)
 
-    import json
-    if vendor.sub_vendors:
-        try:
-            vendor.sub_vendors_list = json.loads(vendor.sub_vendors)
-        except:
-            vendor.sub_vendors_list = []
-    else:
-        vendor.sub_vendors_list = []
-
     return render_template('purchase/vendor_profile.html',
                            vendor=vendor,
                            bills=filtered_bills,
@@ -1379,7 +1361,7 @@ def add_vendor():
             account_number=form.account_number.data,
             swift_code=form.swift_code.data,
             ifsc_code=form.ifsc_code.data,
-            sub_vendors=request.form.get('sub_vendors_data') # JSON from JS
+            sub_vendors=form.sub_vendors.data # JSON from JS
         )
 
         # Handle image upload
@@ -1520,7 +1502,7 @@ def edit_vendor(id):
         vendor.account_number = form.account_number.data
         vendor.swift_code = form.swift_code.data
         vendor.ifsc_code = form.ifsc_code.data
-        vendor.sub_vendors = request.form.get('sub_vendors_data') # JSON from JS
+        vendor.sub_vendors = form.sub_vendors.data # JSON from JS
 
         # Handle image upload
         if 'image' in request.files:

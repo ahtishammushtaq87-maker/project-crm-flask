@@ -786,16 +786,7 @@ def customers():
     
     query = apply_saved_filter_to_query(query, 'customer', request.args)
     
-    import json
     customers = query.order_by(Customer.name.asc()).all()
-    for cust in customers:
-        if cust.sub_customers:
-            try:
-                cust.sub_customers_list = json.loads(cust.sub_customers)
-            except:
-                cust.sub_customers_list = []
-        else:
-            cust.sub_customers_list = []
             
     # List of all customers for the searchable dropdown
     all_customers = Customer.query.order_by(Customer.name.asc()).all()

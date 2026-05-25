@@ -236,6 +236,17 @@ class Vendor(db.Model):
     def pending_refund(self):
         return sum(ret.total for ret in self.purchase_returns if ret.refund_status == 'pending')
     
+    @property
+    def sub_vendors_list(self):
+        """Parse the JSON string of sub-vendors into a list"""
+        import json
+        if self.sub_vendors:
+            try:
+                return json.loads(self.sub_vendors)
+            except:
+                return []
+        return []
+
     def __repr__(self):
         return f'<Vendor {self.name}>'
 
@@ -329,6 +340,17 @@ class Customer(db.Model):
     def remaining_advance_balance(self):
         return self.total_advances_received - self.total_advances_adjusted
     
+    @property
+    def sub_customers_list(self):
+        """Parse the JSON string of sub-customers into a list"""
+        import json
+        if self.sub_customers:
+            try:
+                return json.loads(self.sub_customers)
+            except:
+                return []
+        return []
+
     def __repr__(self):
         return f'<Customer {self.name}>'
 
