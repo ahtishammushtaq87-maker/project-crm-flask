@@ -94,9 +94,14 @@ class CustomerForm(FlaskForm):
     email = StringField('Email', validators=[Optional(), Email()])
     phone = StringField('Phone')
     address = TextAreaField('Address')
+    city = StringField('City', validators=[Optional()])
+    state = StringField('State', validators=[Optional()])
+    country = StringField('Country', validators=[Optional()])
+    postal_code = StringField('Postal Code', validators=[Optional()])
     gst_number = StringField('GST Number')
     payment_method = StringField('Payment Method', validators=[Optional()])
     sub_customers = StringField('Sub Customers', validators=[Optional()])
+    image = FileField('Customer Image', validators=[Optional()])
 
 
 class PurchaseForm(FlaskForm):
@@ -109,9 +114,14 @@ class VendorForm(FlaskForm):
     email = StringField('Email', validators=[Optional(), Email()])
     phone = StringField('Phone')
     address = TextAreaField('Address')
+    city = StringField('City', validators=[Optional()])
+    state = StringField('State', validators=[Optional()])
+    country = StringField('Country', validators=[Optional()])
+    postal_code = StringField('Postal Code', validators=[Optional()])
     shipping_address = TextAreaField(' Shipping Address')
     gst_number = StringField('GST Number')
     payment_method = StringField('Payment Method', validators=[Optional()])
+    sub_vendors = StringField('Sub Vendors', validators=[Optional()])
     # Banking details
     bank_name = StringField('Bank Name', validators=[Optional()])
     account_holder_name = StringField('Account Holder Name', validators=[Optional()])

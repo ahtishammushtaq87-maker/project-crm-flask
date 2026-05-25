@@ -407,5 +407,7 @@ def create_app(config_class=Config):
     # Register custom filters
     from app.utils import format_qty
     app.jinja_env.filters['format_qty'] = format_qty
+    import json
+    app.jinja_env.filters['from_json'] = json.loads
 
     return app

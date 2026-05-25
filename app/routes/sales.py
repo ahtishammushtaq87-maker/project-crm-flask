@@ -742,6 +742,10 @@ def customers():
     search = request.args.get('search', '')
     customer_id = request.args.get('customer_id', type=int)
     customer_group_id = request.args.get('customer_group_id', type=int)
+    selected_city   = request.args.get('city', '')
+    selected_state  = request.args.get('state', '')
+    selected_country = request.args.get('country', '')
+    selected_postal = request.args.get('postal_code', '')
     
     query = Customer.query
     
@@ -755,13 +759,28 @@ def customers():
     
     if customer_group_id:
         query = query.filter_by(group_id=customer_group_id)
-        
+
+    if selected_city:
+        query = query.filter(Customer.city == selected_city)
+    
+    if selected_state:
+        query = query.filter(Customer.state == selected_state)
+
+    if selected_country:
+        query = query.filter(Customer.country == selected_country)
+
+    if selected_postal:
+        query = query.filter(Customer.postal_code == selected_postal)
+
     if not customer_id and search:
         search_filter = f"%{search}%"
         query = query.filter(
             (Customer.name.ilike(search_filter)) |
             (Customer.email.ilike(search_filter)) |
             (Customer.phone.ilike(search_filter)) |
+            (Customer.city.ilike(search_filter)) |
+            (Customer.state.ilike(search_filter)) |
+            (Customer.country.ilike(search_filter)) |
             (Customer.sub_customers.ilike(search_filter))
         )
     
@@ -781,7 +800,24 @@ def customers():
     # List of all customers for the searchable dropdown
     all_customers = Customer.query.order_by(Customer.name.asc()).all()
     customer_groups = CustomerGroup.query.filter_by(is_active=True).order_by(CustomerGroup.name).all()
-    
+
+    # Distinct city / state / country / postal lists for filter dropdowns (skip nulls/empty)
+    all_cities = [r[0] for r in db.session.query(Customer.city).filter(
+        Customer.city.isnot(None), Customer.city != ''
+    ).distinct().order_by(Customer.city).all()]
+
+    all_states = [r[0] for r in db.session.query(Customer.state).filter(
+        Customer.state.isnot(None), Customer.state != ''
+    ).distinct().order_by(Customer.state).all()]
+
+    all_countries = [r[0] for r in db.session.query(Customer.country).filter(
+        Customer.country.isnot(None), Customer.country != ''
+    ).distinct().order_by(Customer.country).all()]
+
+    all_postals = [r[0] for r in db.session.query(Customer.postal_code).filter(
+        Customer.postal_code.isnot(None), Customer.postal_code != ''
+    ).distinct().order_by(Customer.postal_code).all()]
+
     return render_template('sales/customers.html', 
                          customers=customers, 
                          all_customers=all_customers,
@@ -790,6 +826,14 @@ def customers():
                          search_query=search,
                          selected_customer_id=customer_id,
                          selected_group_id=customer_group_id,
+                         all_cities=all_cities,
+                         all_states=all_states,
+                         all_countries=all_countries,
+                         all_postals=all_postals,
+                         selected_city=selected_city,
+                         selected_state=selected_state,
+                         selected_country=selected_country,
+                         selected_postal=selected_postal,
                          active_module='customer',
                          filter_id=request.args.get('filter_id'))
 
@@ -1522,6 +1566,18 @@ def add_customer():
     form.group_id.choices = [(0, '- Select Group -')] + [(g.id, g.name) for g in groups]
     
     if form.validate_on_submit():
+        # Handle image upload
+        image_path = None
+        if 'image' in request.files:
+            image_file = request.files['image']
+            if image_file and image_file.filename:
+                filename = secure_filename(image_file.filename)
+                upload_dir = os.path.join('app', 'static', 'uploads', 'customers')
+                os.makedirs(upload_dir, exist_ok=True)
+                file_path = os.path.join(upload_dir, filename)
+                image_file.save(file_path)
+                image_path = f"uploads/customers/{filename}" # Store relative to static folder
+
         customer = Customer(
             name=form.name.data,
             company_name=form.company_name.data,
@@ -1529,9 +1585,14 @@ def add_customer():
             email=form.email.data,
             phone=form.phone.data,
             address=form.address.data,
+            city=form.city.data,
+            state=form.state.data,
+            country=form.country.data,
+            postal_code=form.postal_code.data,
             gst_number=form.gst_number.data,
             payment_method=form.payment_method.data,
-            sub_customers=form.sub_customers.data
+            sub_customers=form.sub_customers.data,
+            image_path=image_path
         )
         db.session.add(customer)
         db.session.commit()
@@ -1560,10 +1621,27 @@ def edit_customer(id):
         customer.email = form.email.data
         customer.phone = form.phone.data
         customer.address = form.address.data
+        customer.city = form.city.data
+        customer.state = form.state.data
+        customer.country = form.country.data
+        customer.postal_code = form.postal_code.data
         customer.gst_number = form.gst_number.data
         customer.payment_method = form.payment_method.data
         customer.sub_customers = form.sub_customers.data
+
+        # Handle image upload
+        if 'image' in request.files:
+            image_file = request.files['image']
+            if image_file and image_file.filename:
+                filename = secure_filename(image_file.filename)
+                upload_dir = os.path.join('app', 'static', 'uploads', 'customers')
+                os.makedirs(upload_dir, exist_ok=True)
+                file_path = os.path.join(upload_dir, filename)
+                image_file.save(file_path)
+                customer.image_path = f"uploads/customers/{filename}" # Store relative to static folder
+
         db.session.commit()
+        log_activity('Customers', f'Updated Customer: {customer.name}', f'ID: {customer.id}')
         flash('Customer updated successfully!', 'success')
         return redirect(url_for('sales.customers'))
     

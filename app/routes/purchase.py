@@ -1109,6 +1109,10 @@ def vendors():
     status = request.args.get('status', 'all')
     search = request.args.get('search', '')
     vendor_id = request.args.get('vendor_id', type=int)
+    city = request.args.get('city', '')
+    state = request.args.get('state', '')
+    country = request.args.get('country', '')
+    postal_code = request.args.get('postal_code', '')
     
     query = Vendor.query
     
@@ -1117,6 +1121,15 @@ def vendors():
     elif status == 'inactive':
         query = query.filter_by(is_active=False)
     
+    if city:
+        query = query.filter(Vendor.city == city)
+    if state:
+        query = query.filter(Vendor.state == state)
+    if country:
+        query = query.filter(Vendor.country == country)
+    if postal_code:
+        query = query.filter(Vendor.postal_code == postal_code)
+        
     if vendor_id:
         query = query.filter_by(id=vendor_id)
     elif search:
@@ -1124,21 +1137,56 @@ def vendors():
         query = query.filter(
             (Vendor.name.ilike(search_filter)) |
             (Vendor.email.ilike(search_filter)) |
-            (Vendor.phone.ilike(search_filter))
+            (Vendor.phone.ilike(search_filter)) |
+            (Vendor.city.ilike(search_filter)) |
+            (Vendor.state.ilike(search_filter)) |
+            (Vendor.country.ilike(search_filter)) |
+            (Vendor.postal_code.ilike(search_filter))
         )
     
     query = apply_saved_filter_to_query(query, 'vendor', request.args)
 
+    import json
     vendors = query.order_by(Vendor.name.asc()).all()
+    for v in vendors:
+        if v.sub_vendors:
+            try:
+                v.sub_vendors_list = json.loads(v.sub_vendors)
+            except:
+                v.sub_vendors_list = []
+        else:
+            v.sub_vendors_list = []
+            
     # List of all vendors for the searchable dropdown
     all_vendors = Vendor.query.order_by(Vendor.name.asc()).all()
+    
+    # Get distinct cities, states, countries, and postal codes for filters
+    all_cities = db.session.query(Vendor.city).filter(Vendor.city != None, Vendor.city != '').distinct().all()
+    all_cities = [c[0] for c in all_cities]
+    
+    all_states = db.session.query(Vendor.state).filter(Vendor.state != None, Vendor.state != '').distinct().all()
+    all_states = [s[0] for s in all_states]
+
+    all_countries = db.session.query(Vendor.country).filter(Vendor.country != None, Vendor.country != '').distinct().all()
+    all_countries = [c[0] for c in all_countries]
+
+    all_postals = db.session.query(Vendor.postal_code).filter(Vendor.postal_code != None, Vendor.postal_code != '').distinct().all()
+    all_postals = [p[0] for p in all_postals]
     
     return render_template('purchase/vendors.html', 
                          vendors=vendors,
                          all_vendors=all_vendors, 
+                         all_cities=all_cities,
+                         all_states=all_states,
+                         all_countries=all_countries,
+                         all_postals=all_postals,
                          current_status=status, 
                          search_query=search,
                          selected_vendor_id=vendor_id,
+                         selected_city=city,
+                         selected_state=state,
+                         selected_country=country,
+                         selected_postal=postal_code,
                          active_module='vendor',
                          filter_id=request.args.get('filter_id'))
 
@@ -1293,6 +1341,15 @@ def vendor_profile(id):
 
     advances = sorted(vendor.advances, key=lambda a: a.date, reverse=True)
 
+    import json
+    if vendor.sub_vendors:
+        try:
+            vendor.sub_vendors_list = json.loads(vendor.sub_vendors)
+        except:
+            vendor.sub_vendors_list = []
+    else:
+        vendor.sub_vendors_list = []
+
     return render_template('purchase/vendor_profile.html',
                            vendor=vendor,
                            bills=filtered_bills,
@@ -1311,13 +1368,18 @@ def add_vendor():
             email=form.email.data,
             phone=form.phone.data,
             address=form.address.data,
+            city=form.city.data,
+            state=form.state.data,
+            country=form.country.data,
+            postal_code=form.postal_code.data,
             gst_number=form.gst_number.data,
             payment_method=form.payment_method.data,
             bank_name=form.bank_name.data,
             account_holder_name=form.account_holder_name.data,
             account_number=form.account_number.data,
             swift_code=form.swift_code.data,
-            ifsc_code=form.ifsc_code.data
+            ifsc_code=form.ifsc_code.data,
+            sub_vendors=request.form.get('sub_vendors_data') # JSON from JS
         )
 
         # Handle image upload
@@ -1447,6 +1509,10 @@ def edit_vendor(id):
         vendor.email = form.email.data
         vendor.phone = form.phone.data
         vendor.address = form.address.data
+        vendor.city = form.city.data
+        vendor.state = form.state.data
+        vendor.country = form.country.data
+        vendor.postal_code = form.postal_code.data
         vendor.gst_number = form.gst_number.data
         vendor.payment_method = form.payment_method.data
         vendor.bank_name = form.bank_name.data
@@ -1454,6 +1520,7 @@ def edit_vendor(id):
         vendor.account_number = form.account_number.data
         vendor.swift_code = form.swift_code.data
         vendor.ifsc_code = form.ifsc_code.data
+        vendor.sub_vendors = request.form.get('sub_vendors_data') # JSON from JS
 
         # Handle image upload
         if 'image' in request.files:

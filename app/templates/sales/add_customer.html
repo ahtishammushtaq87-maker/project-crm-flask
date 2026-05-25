@@ -65,7 +65,7 @@
                     <h4>Add New Customer</h4>
                 </div>
                 <div class="card-body p-4">
-                    <form method="POST">
+                    <form method="POST" enctype="multipart/form-data">
                         {{ form.hidden_tag() }}
 
                         <div class="row">
@@ -112,11 +112,48 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-bold">Address</label>
-                            {{ form.address(class="form-control", rows=3, placeholder="Full address") }}
+                            {{ form.address(class="form-control", rows=3, placeholder="Street / full address") }}
                         </div>
-                        <div class="mb-4">
+                        <div class="row">
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label fw-bold">City</label>
+                                {{ form.city(class="form-control", placeholder="City") }}
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label fw-bold">State</label>
+                                {{ form.state(class="form-control", placeholder="State") }}
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label fw-bold">Country</label>
+                                {{ form.country(class="form-control", placeholder="Country") }}
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label fw-bold">Postal Code</label>
+                                {{ form.postal_code(class="form-control", placeholder="Postal / ZIP code") }}
+                            </div>
+                        </div>
+                        <div class="mb-3">
                             <label class="form-label fw-bold">Payment Method (Optional)</label>
                             {{ form.payment_method(class="form-control", placeholder="e.g. Cash, Bank Transfer") }}
+                        </div>
+
+                        <!-- Customer Image Upload -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Customer Image <span class="text-muted fw-normal">(Optional)</span></label>
+                            <div class="d-flex align-items-start gap-3">
+                                <div>
+                                    <img id="imagePreview" src="" alt="Preview"
+                                         style="width:90px;height:90px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6;display:none;">
+                                    <div id="imagePlaceholder"
+                                         style="width:90px;height:90px;border-radius:50%;border:2px dashed #adb5bd;display:flex;align-items:center;justify-content:center;background:#f8f9fa;color:#adb5bd;">
+                                        <i class="fas fa-user fa-2x"></i>
+                                    </div>
+                                </div>
+                                <div class="flex-fill">
+                                    {{ form.image(class="form-control", id="customerImageInput", accept="image/*") }}
+                                    <div class="form-text">Accepted formats: JPG, PNG, GIF, WebP. Max size: 5 MB.</div>
+                                </div>
+                            </div>
                         </div>
 
                         <hr>
@@ -195,5 +232,27 @@
             hiddenInput.value = data.length > 0 ? JSON.stringify(data) : '';
         });
     });
+
+    // Image preview
+    const imgInput = document.getElementById('customerImageInput');
+    const imgPreview = document.getElementById('imagePreview');
+    const imgPlaceholder = document.getElementById('imagePlaceholder');
+    if (imgInput) {
+        imgInput.addEventListener('change', function () {
+            const file = this.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    imgPreview.src = e.target.result;
+                    imgPreview.style.display = 'block';
+                    imgPlaceholder.style.display = 'none';
+                };
+                reader.readAsDataURL(file);
+            } else {
+                imgPreview.style.display = 'none';
+                imgPlaceholder.style.display = 'flex';
+            }
+        });
+    }
 </script>
 {% endblock %}

@@ -7,13 +7,6 @@
 <link rel="stylesheet"
     href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
 <style>
-    /* Select2 Premium Styling */
-    @media (min-width: 767px) {
-        .btn-success {
-            margin-left: 740px !important;
-        }
-    }
-
     .select2-container--bootstrap-5 {
         width: 100% !important;
         display: block !important;
@@ -35,9 +28,7 @@
         box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
     }
 
-    .select2-container--open {
-        z-index: 1060;
-    }
+    .select2-container--open { z-index: 1060; }
 
     .select2-results__options {
         max-height: 300px !important;
@@ -50,7 +41,6 @@
         box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
     }
 
-    /* Ensure the original select is hidden */
     .select2-hidden-accessible {
         border: 0 !important;
         clip: rect(0 0 0 0) !important;
@@ -61,6 +51,69 @@
         position: absolute !important;
         width: 1px !important;
     }
+
+    /* ── Customer Avatar ── */
+    .cust-avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid #dee2e6;
+        cursor: pointer;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .cust-avatar:hover {
+        transform: scale(1.12);
+        box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    }
+
+    .cust-avatar-placeholder {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        border: 2px dashed #ced4da;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f8f9fa;
+        color: #adb5bd;
+        font-size: 0.9rem;
+    }
+
+    /* ── Image Popup Overlay ── */
+    #imgPopupOverlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.65);
+        z-index: 2000;
+        align-items: center;
+        justify-content: center;
+    }
+    #imgPopupOverlay.show {
+        display: flex;
+    }
+    #imgPopupOverlay img {
+        max-width: 340px;
+        max-height: 340px;
+        border-radius: 50%;
+        border: 4px solid #fff;
+        box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+        object-fit: cover;
+        animation: popIn 0.2s ease;
+    }
+    @keyframes popIn {
+        from { transform: scale(0.6); opacity: 0; }
+        to   { transform: scale(1);   opacity: 1; }
+    }
+    #imgPopupName {
+        text-align: center;
+        margin-top: 10px;
+        color: #fff;
+        font-size: 1rem;
+        font-weight: 600;
+        text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+    }
 </style>
 {% endblock %}
 
@@ -68,27 +121,30 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Customers</h2>
-        {% if current_user.has_permission('customers', 'delete') %}
-        <button id="bulkDeleteBtn" class="btn btn-danger d-none me-2">
-            <i class="fas fa-trash me-1"></i> Delete Selected
-        </button>
-        {% endif %}
-
-        {% if current_user.has_permission('customers', 'add') %}
-        <a href="{{ url_for('sales.bulk_upload_customer') }}" class="btn btn-success me-2">
-            <i class="fas fa-file-excel"></i> Bulk Upload
-        </a>
-        <a href="{{ url_for('sales.add_customer') }}" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Add Customer
-        </a>
-        {% endif %}
+        <div class="d-flex gap-2">
+            {% if current_user.has_permission('customers', 'delete') %}
+            <button id="bulkDeleteBtn" class="btn btn-danger d-none">
+                <i class="fas fa-trash me-1"></i> Delete Selected
+            </button>
+            {% endif %}
+            {% if current_user.has_permission('customers', 'add') %}
+            <a href="{{ url_for('sales.bulk_upload_customer') }}" class="btn btn-success">
+                <i class="fas fa-file-excel"></i> Bulk Upload
+            </a>
+            <a href="{{ url_for('sales.add_customer') }}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Add Customer
+            </a>
+            {% endif %}
+        </div>
     </div>
 
-    <!-- Filters Section -->
+    <!-- ── Filters Section ── -->
     <div class="card mb-4">
         <div class="card-body">
             <form method="GET" action="{{ url_for('sales.customers') }}" class="row g-3 align-items-end">
-                <div class="col-md-3">
+
+                <!-- Customer Name -->
+                <div class="col-md-2">
                     <label class="form-label fw-bold small">Select Customer</label>
                     <select name="customer_id" class="form-select searchable-select customer-select" onchange="this.form.submit()">
                         <option value="">— All Customers —</option>
@@ -99,7 +155,9 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-3">
+
+                <!-- Customer Group -->
+                <div class="col-md-2">
                     <label class="form-label fw-bold small">Customer Group</label>
                     <select name="customer_group_id" class="form-select searchable-select group-select" onchange="this.form.submit()">
                         <option value="">— All Groups —</option>
@@ -110,46 +168,104 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-2">
+
+                <!-- City Filter -->
+                <div class="col-md-1">
+                    <label class="form-label fw-bold small">City</label>
+                    <select name="city" class="form-select searchable-select city-select" onchange="this.form.submit()">
+                        <option value="">— All —</option>
+                        {% for city in all_cities %}
+                        <option value="{{ city }}" {% if selected_city == city %}selected{% endif %}>{{ city }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- State Filter -->
+                <div class="col-md-1">
+                    <label class="form-label fw-bold small">State</label>
+                    <select name="state" class="form-select searchable-select state-select" onchange="this.form.submit()">
+                        <option value="">— All —</option>
+                        {% for state in all_states %}
+                        <option value="{{ state }}" {% if selected_state == state %}selected{% endif %}>{{ state }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Country Filter -->
+                <div class="col-md-1">
+                    <label class="form-label fw-bold small">Country</label>
+                    <select name="country" class="form-select searchable-select country-select" onchange="this.form.submit()">
+                        <option value="">— All —</option>
+                        {% for country in all_countries %}
+                        <option value="{{ country }}" {% if selected_country == country %}selected{% endif %}>{{ country }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Postal Code Filter -->
+                <div class="col-md-1">
+                    <label class="form-label fw-bold small">Postal Code</label>
+                    <select name="postal_code" class="form-select searchable-select postal-select" onchange="this.form.submit()">
+                        <option value="">— All —</option>
+                        {% for postal in all_postals %}
+                        <option value="{{ postal }}" {% if selected_postal == postal %}selected{% endif %}>{{ postal }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Status -->
+                <div class="col-md-1">
                     <label class="form-label fw-bold small">Status</label>
                     <select name="status" class="form-select" onchange="this.form.submit()">
-                        <option value="all" {% if current_status == 'all' %}selected{% endif %}>All Status</option>
-                        <option value="active" {% if current_status == 'active' %}selected{% endif %}>Active</option>
+                        <option value="all"      {% if current_status == 'all' %}selected{% endif %}>All</option>
+                        <option value="active"   {% if current_status == 'active' %}selected{% endif %}>Active</option>
                         <option value="inactive" {% if current_status == 'inactive' %}selected{% endif %}>Inactive</option>
                     </select>
                 </div>
-                <div class="col-md-3">
+
+                <!-- Search -->
+                <div class="col-md-2">
                     <label class="form-label fw-bold small">Search</label>
                     <div class="input-group">
-                        <input type="text" name="search" class="form-control" placeholder="Name, Email..."
+                        <input type="text" name="search" class="form-control" placeholder="Name, Email…"
                             value="{{ search_query if not (search_query in all_customers|map(attribute='name')) else '' }}">
                         <button class="btn btn-outline-primary" type="submit">
                             <i class="fas fa-search"></i>
                         </button>
                     </div>
                 </div>
+
+                <!-- Clear -->
                 <div class="col-md-1">
                     <a href="{{ url_for('sales.customers') }}" class="btn btn-outline-secondary w-100" title="Clear Filters">
                         <i class="fas fa-undo"></i>
                     </a>
                 </div>
+
             </form>
         </div>
     </div>
+
+    <!-- ── Table ── -->
     <div class="card">
         <div class="card-body">
             <div class="table-responsive">
                 <table class="table table-striped datatable-export" data-export-title="Customers List">
                     <thead>
                         <tr>
-                            <th style="width: 40px;" class="text-center no-export">
+                            <th style="width:40px;" class="text-center no-export">
                                 <input type="checkbox" id="selectAll" class="form-check-input">
                             </th>
+                            <th class="no-export" style="width:52px;">Image</th>
                             <th>Company Name</th>
                             <th></th>
                             <th>Group</th>
                             <th>Email</th>
                             <th>Phone</th>
+                            <th>City</th>
+                            <th>State</th>
+                            <th>Country</th>
+                            <th>Postal Code</th>
                             <th>Customers Name</th>
                             <th>GST Number</th>
                             <th>Total Sales</th>
@@ -161,10 +277,28 @@
                     <tbody>
                         {% for customer in customers %}
                         <tr>
+                            <!-- Checkbox -->
                             <td class="text-center no-export">
                                 <input type="checkbox" class="form-check-input customer-checkbox"
                                     value="{{ customer.id }}">
                             </td>
+
+                            <!-- Image -->
+                            <td class="no-export text-center align-middle">
+                                {% if customer.image_path %}
+                                <img class="cust-avatar"
+                                     src="{{ url_for('static', filename=customer.image_path) }}"
+                                     alt="{{ customer.name }}"
+                                     data-name="{{ customer.name }}"
+                                     onclick="showImgPopup(this)">
+                                {% else %}
+                                <div class="cust-avatar-placeholder mx-auto">
+                                    <i class="fas fa-user"></i>
+                                </div>
+                                {% endif %}
+                            </td>
+
+                            <!-- Name -->
                             <td>
                                 <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal"
                                     data-bs-target="#entityHistoryModal" data-entity-type="customer"
@@ -172,37 +306,65 @@
                                     {{ customer.name }}
                                 </a>
                             </td>
+
+                            <!-- Company Name -->
                             <td>{{ customer.company_name or '-' }}</td>
+
+                            <!-- Group -->
                             <td>
                                 {% if customer.group %}
-                                <span class="badge bg-secondary text-white" style="font-size: 0.8rem;">{{
-                                    customer.group.name }}</span>
-                                {% else %}
-                                -
-                                {% endif %}
+                                <span class="badge bg-secondary text-white" style="font-size:0.8rem;">
+                                    {{ customer.group.name }}
+                                </span>
+                                {% else %}-{% endif %}
                             </td>
+
+                            <!-- Email -->
                             <td>{{ customer.email or '-' }}</td>
+
+                            <!-- Phone -->
                             <td>{{ customer.phone or '-' }}</td>
+
+                            <!-- City -->
+                            <td>{{ customer.city or '-' }}</td>
+
+                            <!-- State -->
+                            <td>{{ customer.state or '-' }}</td>
+
+                            <!-- Country -->
+                            <td>{{ customer.country or '-' }}</td>
+
+                            <!-- Postal Code -->
+                            <td>{{ customer.postal_code or '-' }}</td>
+
+                            <!-- Sub-customers -->
                             <td>
                                 {% if customer.sub_customers_list %}
                                 <ul class="list-unstyled mb-0 small">
                                     {% for sub in customer.sub_customers_list %}
-                                    <li><i class="fas fa-user-circle text-muted me-1"></i>{{ sub.name }} ({{ sub.phone
-                                        }})</li>
+                                    <li><i class="fas fa-user-circle text-muted me-1"></i>{{ sub.name }} ({{ sub.phone }})</li>
                                     {% endfor %}
                                 </ul>
-                                {% else %}
-                                -
-                                {% endif %}
+                                {% else %}-{% endif %}
                             </td>
+
+                            <!-- GST -->
                             <td>{{ customer.gst_number or '-' }}</td>
+
+                            <!-- Total Sales -->
                             <td>PKR{{ "%.2f"|format(customer.total_sales) }}</td>
+
+                            <!-- Outstanding -->
                             <td>PKR{{ "%.2f"|format(customer.outstanding_balance) }}</td>
+
+                            <!-- Status -->
                             <td>
                                 <span class="badge bg-{{ 'success' if customer.is_active else 'danger' }}">
                                     {{ 'Active' if customer.is_active else 'Inactive' }}
                                 </span>
                             </td>
+
+                            <!-- Actions -->
                             <td class="no-export">
                                 <div class="btn-group" role="group">
                                     <a href="{{ url_for('sales.customer_profile', id=customer.id) }}"
@@ -223,24 +385,21 @@
                                     {% endif %}
                                 </div>
 
-                                <!-- Delete Confirmation Modal -->
+                                <!-- Delete Modal -->
                                 <div class="modal fade" id="deleteModal{{ customer.id }}" tabindex="-1"
                                     aria-labelledby="deleteModalLabel{{ customer.id }}" aria-hidden="true">
                                     <div class="modal-dialog">
                                         <div class="modal-content">
                                             <div class="modal-header">
-                                                <h5 class="modal-title" id="deleteModalLabel{{ customer.id }}">Confirm
-                                                    Delete</h5>
-                                                <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                                    aria-label="Close"></button>
+                                                <h5 class="modal-title" id="deleteModalLabel{{ customer.id }}">Confirm Delete</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                             </div>
                                             <div class="modal-body">
-                                                Are you sure you want to delete customer <strong>{{ customer.name
-                                                    }}</strong>? This action cannot be undone.
+                                                Are you sure you want to delete customer <strong>{{ customer.name }}</strong>?
+                                                This action cannot be undone.
                                             </div>
                                             <div class="modal-footer">
-                                                <button type="button" class="btn btn-secondary"
-                                                    data-bs-dismiss="modal">Cancel</button>
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                                                 {% if current_user.has_permission('sales', 'delete') %}
                                                 <form action="{{ url_for('sales.delete_customer', id=customer.id) }}"
                                                     method="POST" style="display:inline;">
@@ -260,26 +419,77 @@
         </div>
     </div>
 </div>
+
+<!-- ── Image Popup Overlay ── -->
+<div id="imgPopupOverlay" onclick="hideImgPopup()">
+    <div style="text-align:center;">
+        <img id="imgPopupImg" src="" alt="Customer">
+        <div id="imgPopupName"></div>
+        <div style="color:#ccc;font-size:0.8rem;margin-top:6px;">Click anywhere to close</div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
     $(document).ready(function () {
+        // Customer name searchable dropdown
         $('.customer-select').select2({
             theme: 'bootstrap-5',
             width: '100%',
-            placeholder: '— Search or Select Customer —',
+            placeholder: '— Search Customer —',
             allowClear: true
         });
 
+        // Group searchable dropdown
         $('.group-select').select2({
             theme: 'bootstrap-5',
             width: '100%',
-            placeholder: '— Search or Select Group —',
+            placeholder: '— Search Group —',
             allowClear: true
         });
 
+        // City searchable dropdown
+        $('.city-select').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: '— Search City —',
+            allowClear: true
+        });
+
+        // State searchable dropdown
+        $('.state-select').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: '— Search State —',
+            allowClear: true
+        });
+
+        // Country searchable dropdown
+        $('.country-select').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: '— Search Country —',
+            allowClear: true
+        });
+
+        // Postal code searchable dropdown
+        $('.postal-select').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: '— Search Postal —',
+            allowClear: true
+        });
+
+        // Auto-submit when Select2 clears a value
+        $('.city-select, .state-select, .country-select, .postal-select, .customer-select, .group-select').on('select2:clear', function () {
+            $(this).val('').trigger('change');
+            $(this).closest('form').submit();
+        });
+
+        // Bulk delete
         initBulkActions({
             selectAllId: 'selectAll',
             checkboxClass: 'customer-checkbox',
@@ -287,6 +497,20 @@
             deleteUrl: "{{ url_for('sales.bulk_delete_customers') }}",
             entityName: 'customers'
         });
+    });
+
+    /* Image popup */
+    function showImgPopup(imgEl) {
+        document.getElementById('imgPopupImg').src = imgEl.src;
+        document.getElementById('imgPopupName').textContent = imgEl.dataset.name || '';
+        document.getElementById('imgPopupOverlay').classList.add('show');
+    }
+    function hideImgPopup() {
+        document.getElementById('imgPopupOverlay').classList.remove('show');
+    }
+    // Close on Escape key
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') hideImgPopup();
     });
 </script>
 {% endblock %}
