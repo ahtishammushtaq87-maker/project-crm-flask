@@ -37,7 +37,8 @@ def create_app(config_class=Config):
             BOMVersionItem, ProductionTarget, ProductionLog, PDProject,
             PDProjectBOM, PDComponent, PDTooling, PDTesting, PDApproval, PDAsset,
             PurchaseReturn, PurchaseReturnItem, Unit, ActivityLog,
-            ToolReceiving, ToolReceivingItem, ToolDelivering, ToolDeliveringItem, ToolSettings
+            ToolReceiving, ToolReceivingItem, ToolDelivering, ToolDeliveringItem, ToolSettings,
+            ProductWarehouseStock
         )
         from app.filter_models import SavedFilter
         
@@ -103,7 +104,8 @@ def create_app(config_class=Config):
             'tool_receiving_items': ToolReceivingItem,
             'tool_delivering': ToolDelivering,
             'tool_delivering_items': ToolDeliveringItem,
-            'tool_settings': ToolSettings
+            'tool_settings': ToolSettings,
+            'product_warehouse_stock': ProductWarehouseStock
         }
         
         try:

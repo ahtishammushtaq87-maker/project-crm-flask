@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
-from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory, PurchaseReturn, PurchaseReturnItem, PurchaseSettings, PurchaseReturnSettings, BillPayment, BillReceive, BillReceiveItem
+from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory, PurchaseReturn, PurchaseReturnItem, PurchaseSettings, PurchaseReturnSettings, BillPayment, BillReceive, BillReceiveItem, ProductWarehouseStock, Warehouse
 from app.forms import PurchaseForm, VendorForm, PurchaseReturnSettingsForm
 from datetime import datetime, timedelta, date
 from app.pdf_utils import generate_professional_pdf
@@ -111,6 +111,7 @@ def create_bill():
     vendors = Vendor.query.filter_by(is_active=True).all()
     products = Product.query.filter_by(is_active=True).all()
     currencies = Currency.query.filter_by(is_active=True).all()
+    warehouses = Warehouse.query.all()
     
     form.vendor_id.choices = [(v.id, v.name) for v in vendors]
     
@@ -122,6 +123,7 @@ def create_bill():
         product_ids = request.form.getlist('product_id[]')
         quantities = request.form.getlist('quantity[]')
         prices = request.form.getlist('price[]')
+        warehouse_ids = request.form.getlist('warehouse_id[]')
 
         # Generate bill number using settings
         settings = PurchaseSettings.query.first()
@@ -163,6 +165,7 @@ def create_bill():
                     product_id=int(product_ids[i]),
                     quantity=float(quantities[i]),
                     unit_price=float(prices[i]),
+                    warehouse_id=int(warehouse_ids[i]) if i < len(warehouse_ids) and warehouse_ids[i] else None,
                     total=float(quantities[i]) * float(prices[i])
                 )
                 bill.items.append(item)
@@ -224,7 +227,7 @@ def create_bill():
         flash('Purchase bill created successfully!', 'success')
         return redirect(url_for('purchase.bill_detail', id=bill.id))
     
-    return render_template('purchase/create_bill.html', form=form, products=products, vendors=vendors, currencies=currencies)
+    return render_template('purchase/create_bill.html', form=form, products=products, vendors=vendors, currencies=currencies, warehouses=warehouses)
 
 @bp.route('/bill/<int:id>')
 @login_required
@@ -237,8 +240,10 @@ def bill_detail(id):
     for br in bill.bill_receives:
         for bri in br.receive_items:
             received_qty_map[bri.purchase_item_id] = received_qty_map.get(bri.purchase_item_id, 0) + bri.quantity_received
+    
+    warehouses = Warehouse.query.all()
     return render_template('purchase/bill_detail.html', bill=bill, date_format=date_format,
-                           received_qty_map=received_qty_map)
+                           received_qty_map=received_qty_map, warehouses=warehouses)
 
 @bp.route('/bill/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -249,6 +254,7 @@ def edit_bill(id):
     vendors = Vendor.query.filter_by(is_active=True).all()
     products = Product.query.filter_by(is_active=True).all()
     currencies = Currency.query.filter_by(is_active=True).all()
+    warehouses = Warehouse.query.all()
 
     form.vendor_id.choices = [(v.id, v.name) for v in vendors]
 
@@ -259,6 +265,16 @@ def edit_bill(id):
                 product = Product.query.get(item.product_id)
                 if product:
                     product.update_quantity(-item.quantity)
+                    # Revert from the specific warehouse used in the item
+                    if item.warehouse_id:
+                        wh_stock = ProductWarehouseStock.query.filter_by(
+                            product_id=item.product_id,
+                            warehouse_id=item.warehouse_id
+                        ).first()
+                        if wh_stock:
+                            wh_stock.quantity -= item.quantity
+                            if wh_stock.quantity < 0:
+                                wh_stock.quantity = 0
 
         # Safely remove old cost price history entries if not referenced by BOM items
         old_history_entries = CostPriceHistory.query.filter_by(purchase_bill_id=bill.id).all()
@@ -306,17 +322,20 @@ def edit_bill(id):
         product_ids = request.form.getlist('product_id[]')
         quantities = request.form.getlist('quantity[]')
         prices = request.form.getlist('price[]')
+        warehouse_ids = request.form.getlist('warehouse_id[]')
 
         for i in range(len(product_ids)):
             if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
                 prod_id = int(product_ids[i])
                 qty = float(quantities[i])
                 price = float(prices[i])
+                wh_id = int(warehouse_ids[i]) if i < len(warehouse_ids) and warehouse_ids[i] else None
                 item_total = qty * price
                 item = PurchaseItem(
                     product_id=prod_id,
                     quantity=qty,
                     unit_price=price,
+                    warehouse_id=wh_id,
                     total=item_total
                 )
                 bill.items.append(item)
@@ -349,7 +368,7 @@ def edit_bill(id):
         return redirect(url_for('purchase.bill_detail', id=bill.id))
 
     return render_template('purchase/edit_bill.html', form=form, bill=bill,
-                           products=products, vendors=vendors, currencies=currencies)
+                           products=products, vendors=vendors, currencies=currencies, warehouses=warehouses)
 
 @bp.route('/bill/<int:id>/update-shipping', methods=['POST'])
 @login_required
@@ -893,12 +912,18 @@ def receive_quantity(id):
             if qty_to_receive <= 0:
                 continue
 
+            warehouse_id = request.form.get(f'warehouse_{item.id}')
+            if not warehouse_id:
+                # Fallback to the warehouse set on the bill item
+                warehouse_id = item.warehouse_id
+
             # Save receive item
             bri = BillReceiveItem(
                 receive_id=receive_record.id,
                 purchase_item_id=item.id,
                 product_id=item.product_id,
-                quantity_received=qty_to_receive
+                quantity_received=qty_to_receive,
+                warehouse_id=int(warehouse_id) if warehouse_id else None
             )
             db.session.add(bri)
             db.session.flush()  # Get bri.id for cost history link
@@ -908,6 +933,35 @@ def receive_quantity(id):
             if product:
                 old_qty = product.quantity
                 product.update_quantity(qty_to_receive)
+                
+                # Update per-warehouse stock in the bridge table
+                if bri.warehouse_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(
+                        product_id=item.product_id,
+                        warehouse_id=bri.warehouse_id
+                    ).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(
+                            product_id=item.product_id,
+                            warehouse_id=bri.warehouse_id,
+                            quantity=0
+                        )
+                        db.session.add(wh_stock)
+                    wh_stock.quantity += qty_to_receive
+                elif product.warehouse_id:
+                    # Legacy fallback
+                    wh_stock = ProductWarehouseStock.query.filter_by(
+                        product_id=item.product_id,
+                        warehouse_id=product.warehouse_id
+                    ).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(
+                            product_id=item.product_id,
+                            warehouse_id=product.warehouse_id,
+                            quantity=0
+                        )
+                        db.session.add(wh_stock)
+                    wh_stock.quantity += qty_to_receive
 
                 # Calculate proportional cost (shipping + tax allocated by item value)
                 if total_items_cost > 0:
@@ -994,6 +1048,18 @@ def delete_receive(id):
             if product:
                 # Restore inventory (subtract received quantity)
                 product.update_quantity(-bri.quantity_received)
+                
+                # Revert from the specific warehouse in bridge table
+                if bri.warehouse_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(
+                        product_id=bri.product_id,
+                        warehouse_id=bri.warehouse_id
+                    ).first()
+                    if wh_stock:
+                        wh_stock.quantity -= bri.quantity_received
+                        if wh_stock.quantity < 0:
+                            wh_stock.quantity = 0
+                
                 affected_products[product.id] = product
             
             # Deactivate cost price history entries linked to this BillReceiveItem
@@ -1684,6 +1750,7 @@ def _parse_delivery_time(dt_str):
 def create_po():
     vendors = Vendor.query.filter_by(is_active=True).all()
     products = Product.query.filter_by(is_active=True).all()
+    warehouses = Warehouse.query.all()
 
     if request.method == 'POST':
         vendor_id = int(request.form.get('vendor_id'))
@@ -1693,6 +1760,7 @@ def create_po():
         product_ids = request.form.getlist('product_id[]')
         quantities  = request.form.getlist('quantity[]')
         prices      = request.form.getlist('price[]')
+        warehouse_ids = request.form.getlist('warehouse_id[]')
 
         # Auto-generate PO number using settings
         settings = PurchaseSettings.query.first()
@@ -1724,10 +1792,12 @@ def create_po():
             if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
                 qty   = float(quantities[i])
                 price = float(prices[i])
+                wh_id = int(warehouse_ids[i]) if i < len(warehouse_ids) and warehouse_ids[i] else None
                 item  = PurchaseOrderItem(
                     product_id=int(product_ids[i]),
                     quantity=qty,
                     unit_price=price,
+                    warehouse_id=wh_id,
                     total=qty * price
                 )
                 po.items.append(item)
@@ -1750,7 +1820,7 @@ def create_po():
         flash(f'Purchase Order {po.po_number} created!', 'success')
         return redirect(url_for('purchase.po_detail', id=po.id))
 
-    return render_template('purchase/create_po.html', vendors=vendors, products=products)
+    return render_template('purchase/create_po.html', vendors=vendors, products=products, warehouses=warehouses)
 
 
 @bp.route('/order/<int:id>')
@@ -1887,13 +1957,14 @@ def convert_po_to_bill(id):
             product_id=poi.product_id,
             quantity=poi.quantity,
             unit_price=poi.unit_price,
-            total=poi.total
+            total=poi.total,
+            warehouse_id=poi.warehouse_id
         )
         bill.items.append(item)
         # Update inventory
         product = Product.query.get(poi.product_id)
         if product:
-            product.update_quantity(poi.quantity)
+            product.update_quantity(poi.quantity, warehouse_id=poi.warehouse_id)
 
     bill.calculate_totals()
     po.status = 'Converted'
@@ -2199,9 +2270,7 @@ def create_purchase_return():
         # Subtract from inventory
         product = Product.query.get(item['product_id'])
         if product:
-            product.quantity -= item['quantity']
-            if product.quantity < 0:
-                product.quantity = 0
+            product.update_quantity(-item['quantity'])
 
     # Update bill totals - reduce bill total by return amount
     bill.subtotal -= subtotal

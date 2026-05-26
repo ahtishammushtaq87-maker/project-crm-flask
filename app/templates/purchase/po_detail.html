@@ -277,6 +277,7 @@
                             <tr>
                                 <th>#</th>
                                 <th>Product</th>
+                                <th class="text-center">Warehouse</th>
                                 <th class="text-center">Qty</th>
                                 <th class="text-end">Unit Price</th>
                                 <th class="text-end">Amount</th>
@@ -291,6 +292,13 @@
                             <tr>
                                 <td>{{ loop.index }}</td>
                                 <td><strong>{{ item.product.name }}</strong></td>
+                                <td class="text-center">
+                                    {% if item.warehouse %}
+                                    <span class="badge bg-light text-dark">{{ item.warehouse.name }}</span>
+                                    {% else %}
+                                    <span class="text-muted small">—</span>
+                                    {% endif %}
+                                </td>
                                 <td class="text-center">{{ '{:,.2f}'.format(item.quantity) }}</td>
                                 <td class="text-end">PKR {{ '{:,.2f}'.format(item.unit_price) }}</td>
                                 <td class="text-end">PKR {{ '{:,.2f}'.format(item.total) }}</td>
@@ -305,7 +313,7 @@
                         </tbody>
                         <tfoot class="table-light fw-bold">
                             <tr>
-                                <th colspan="{{ '4' if po.shipping_charge > 0 else '3' }}" class="text-end">Total</th>
+                                <th colspan="{{ '5' if po.shipping_charge > 0 else '4' }}" class="text-end">Total</th>
                                 <th class="text-end">PKR {{ '{:,.2f}'.format(po.subtotal) }}</th>
                                 {% if po.shipping_charge > 0 %}
                                 <th class="text-end text-info">PKR {{ '{:,.2f}'.format(po.shipping_charge) }}</th>

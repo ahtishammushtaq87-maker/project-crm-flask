@@ -105,15 +105,59 @@ def edit_warehouse(id):
 @login_required
 def warehouse_detail(id):
     warehouse = Warehouse.query.get_or_404(id)
-    products = Product.query.filter_by(warehouse_id=id).order_by(Product.name).all()
+    from app.models import ProductWarehouseStock
     
-    total_quantity = sum(p.quantity for p in products)
-    total_value = sum(p.quantity * p.cost_price for p in products)
-    total_items = len(products)
+    # Get products from ProductWarehouseStock
+    stock_records = ProductWarehouseStock.query.filter(
+        ProductWarehouseStock.warehouse_id == id,
+        ProductWarehouseStock.quantity > 0
+    ).all()
+    
+    # Track which products we've handled
+    handled_product_ids = set()
+    products_display = []
+    
+    for sr in stock_records:
+        p = sr.product
+        products_display.append({
+            'sku': p.sku,
+            'name': p.name,
+            'category': p.category,
+            'quantity': sr.quantity,
+            'unit': p.unit,
+            'unit_price': p.unit_price,
+            'cost_price': p.cost_price
+        })
+        handled_product_ids.add(p.id)
+    
+    # Fallback/Legacy: Get products that have this warehouse set as primary but no Stock records
+    legacy_products = Product.query.filter(
+        Product.warehouse_id == id,
+        Product.quantity > 0,
+        ~Product.id.in_(handled_product_ids) if handled_product_ids else True
+    ).all()
+    
+    for p in legacy_products:
+        products_display.append({
+            'sku': p.sku,
+            'name': p.name,
+            'category': p.category,
+            'quantity': p.quantity,
+            'unit': p.unit,
+            'unit_price': p.unit_price,
+            'cost_price': p.cost_price
+        })
+    
+    # Sort by name
+    products_display.sort(key=lambda x: x['name'])
+    
+    total_quantity = sum(p['quantity'] for p in products_display)
+    total_value = sum(p['quantity'] * p['cost_price'] for p in products_display)
+    total_items = len(products_display)
     
     return render_template('warehouse/warehouse_detail.html', 
                          warehouse=warehouse, 
-                         products=products,
+                         products=products_display,
                          total_quantity=total_quantity,
                          total_value=total_value,
                          total_items=total_items)
@@ -124,11 +168,23 @@ def warehouse_detail(id):
 def delete_warehouse(id):
     warehouse = Warehouse.query.get_or_404(id)
     
-    if warehouse.products:
+    if warehouse.total_products_count > 0:
         flash('Cannot delete warehouse with associated products. Remove or reassign products first.', 'error')
         return redirect(url_for('warehouse.warehouse_detail', id=id))
     
     try:
+        # Before deleting warehouse, clean up empty stock records in the bridge table
+        from app.models import ProductWarehouseStock, Product
+        ProductWarehouseStock.query.filter_by(warehouse_id=id).delete()
+        
+        # Also clear legacy warehouse_id from products
+        Product.query.filter_by(warehouse_id=id).update({Product.warehouse_id: None})
+        
+        # Also clean up any nullifiable associations in tool items
+        from app.models import ToolReceivingItem, ToolDeliveringItem
+        ToolReceivingItem.query.filter_by(warehouse_id=id).update({ToolReceivingItem.warehouse_id: None})
+        ToolDeliveringItem.query.filter_by(warehouse_id=id).update({ToolDeliveringItem.warehouse_id: None})
+        
         db.session.delete(warehouse)
         db.session.commit()
         flash('Warehouse deleted successfully!', 'success')
@@ -148,18 +204,29 @@ def bulk_delete_warehouses():
         
     ids = data['ids']
     try:
-        # Check if any selected warehouse has products
-        warehouses_with_products = Warehouse.query.filter(
-            Warehouse.id.in_(ids),
-            Warehouse.products.any()
-        ).count()
+        # Check if any selected warehouse has products with quantity > 0
+        from app.models import ProductWarehouseStock
         
-        if warehouses_with_products > 0:
+        problematic_warehouses = []
+        for id in ids:
+            w = Warehouse.query.get(id)
+            if w and w.total_products_count > 0:
+                problematic_warehouses.append(w.name)
+        
+        if problematic_warehouses:
             return jsonify({
                 'success': False, 
-                'message': f'Cannot delete {warehouses_with_products} warehouse(s) because they have associated products.'
+                'message': f'Cannot delete warehouses ({", ".join(problematic_warehouses)}) because they have associated products with stock.'
             }), 400
             
+        # Cleanup bridge table and nullifiable associations for all selected warehouses
+        ProductWarehouseStock.query.filter(ProductWarehouseStock.warehouse_id.in_(ids)).delete(synchronize_session=False)
+        
+        from app.models import Product, ToolReceivingItem, ToolDeliveringItem
+        Product.query.filter(Product.warehouse_id.in_(ids)).update({Product.warehouse_id: None}, synchronize_session=False)
+        ToolReceivingItem.query.filter(ToolReceivingItem.warehouse_id.in_(ids)).update({ToolReceivingItem.warehouse_id: None}, synchronize_session=False)
+        ToolDeliveringItem.query.filter(ToolDeliveringItem.warehouse_id.in_(ids)).update({ToolDeliveringItem.warehouse_id: None}, synchronize_session=False)
+
         Warehouse.query.filter(Warehouse.id.in_(ids)).delete(synchronize_session=False)
         db.session.commit()
         return jsonify({
@@ -180,15 +247,38 @@ def api_warehouses():
 @login_required
 def api_warehouse_summary(id):
     warehouse = Warehouse.query.get_or_404(id)
-    products = Product.query.filter_by(warehouse_id=id).all()
+    from app.models import ProductWarehouseStock
+    
+    # Get products from ProductWarehouseStock
+    stock_records = ProductWarehouseStock.query.filter(
+        ProductWarehouseStock.warehouse_id == id,
+        ProductWarehouseStock.quantity > 0
+    ).all()
+    
+    handled_product_ids = {sr.product_id for sr in stock_records}
+    total_quantity = sum(sr.quantity for sr in stock_records)
+    total_value = sum(sr.quantity * sr.product.cost_price for sr in stock_records)
+    total_products = len(stock_records)
+    
+    # Fallback/Legacy
+    legacy_products = Product.query.filter(
+        Product.warehouse_id == id,
+        Product.quantity > 0,
+        ~Product.id.in_(handled_product_ids) if handled_product_ids else True
+    ).all()
+    
+    for p in legacy_products:
+        total_quantity += p.quantity
+        total_value += p.quantity * p.cost_price
+        total_products += 1
     
     return jsonify({
         'id': warehouse.id,
         'name': warehouse.name,
         'code': warehouse.code,
-        'total_products': len(products),
-        'total_quantity': sum(p.quantity for p in products),
-        'total_value': sum(p.quantity * p.cost_price for p in products)
+        'total_products': total_products,
+        'total_quantity': total_quantity,
+        'total_value': total_value
     })
 
 @bp.route('/bulk-upload', methods=['GET', 'POST'])

@@ -162,6 +162,7 @@
                                 <thead class="table-light">
                                     <tr>
                                         <th>Product</th>
+                                        <th class="text-center">Warehouse</th>
                                         <th class="text-center">Bill Qty</th>
                                         <th class="text-center">Already Received</th>
                                         <th class="text-center">Pending</th>
@@ -175,8 +176,15 @@
                                     <tr>
                                         <td>
                                             <strong>{{ item.product.name }}</strong>
-                                            {% if item.product.sku %}<br><small class="text-muted">{{ item.product.sku
-                                                }}</small>{% endif %}
+                                            {% if item.product.sku %}<br><small class="text-muted">{{ item.product.sku }}</small>{% endif %}
+                                        </td>
+                                        <td>
+                                            <select name="warehouse_{{ item.id }}" class="form-select form-select-sm warehouse-select">
+                                                <option value="">— Select Warehouse —</option>
+                                                {% for w in warehouses %}
+                                                <option value="{{ w.id }}" {% if item.warehouse_id == w.id %}selected{% endif %}>{{ w.name }}</option>
+                                                {% endfor %}
+                                            </select>
                                         </td>
                                         <td class="text-center">{{ '{:,.3f}'.format(item.quantity) }}</td>
                                         <td class="text-center text-success fw-semibold">{{
@@ -196,7 +204,7 @@
                                 </tbody>
                                 <tfoot>
                                     <tr>
-                                        <th colspan="4" class="text-end text-primary">Fill All Pending:</th>
+                                        <th colspan="5" class="text-end text-primary">Fill All Pending:</th>
                                         <th class="text-center">
                                             <button type="button" class="btn btn-sm btn-outline-primary"
                                                 onclick="fillAllPending()">
@@ -625,6 +633,7 @@
                                 <tr>
                                     <th>#</th>
                                     <th>Product</th>
+                                    <th class="text-center">Warehouse</th>
                                     <th class="text-center">Bill Qty</th>
                                     <th class="text-center text-success">Received</th>
                                     <th class="text-end">Unit Price</th>
@@ -645,8 +654,14 @@
                                     <td>{{ loop.index }}</td>
                                     <td>
                                         <strong>{{ item.product.name }}</strong>
-                                        {% if item.product.sku %}<br><small class="text-muted">{{ item.product.sku
-                                            }}</small>{% endif %}
+                                        {% if item.product.sku %}<br><small class="text-muted">{{ item.product.sku }}</small>{% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        {% if item.warehouse %}
+                                        <span class="badge bg-light text-dark"><i class="fas fa-warehouse me-1"></i>{{ item.warehouse.name }}</span>
+                                        {% else %}
+                                        <span class="text-muted small">—</span>
+                                        {% endif %}
                                     </td>
                                     <td class="text-center">{{ '{:,.3f}'.format(item.quantity) }}</td>
                                     <td class="text-center">
@@ -669,7 +684,7 @@
                             </tbody>
                             <tfoot class="table-light">
                                 <tr>
-                                    <th colspan="{% if bill.shipping_charge > 0 %}4{% else %}3{% endif %}"
+                                    <th colspan="{% if bill.shipping_charge > 0 %}5{% else %}4{% endif %}"
                                         class="text-end">
                                         Subtotal</th>
                                     <th class="text-end">{{ '{:,.3f}'.format(bill.items | sum(attribute='quantity')) }}
@@ -685,7 +700,7 @@
                                 </tr>
                                 {% if bill.tax > 0 %}
                                 <tr>
-                                    <th colspan="{{ '7' if bill.shipping_charge > 0 else '6' }}" class="text-end">Tax
+                                    <th colspan="{{ '8' if bill.shipping_charge > 0 else '7' }}" class="text-end">Tax
                                         ({{
                                         bill.tax_rate }}%)</th>
                                     <th class="text-end">PKR {{ "{:,.2f}".format(bill.tax) }}</th>
@@ -693,13 +708,13 @@
                                 {% endif %}
                                 {% if bill.discount > 0 %}
                                 <tr>
-                                    <th colspan="{{ '7' if bill.shipping_charge > 0 else '6' }}"
+                                    <th colspan="{{ '8' if bill.shipping_charge > 0 else '7' }}"
                                         class="text-end text-success">Discount</th>
                                     <th class="text-end text-success">-Rs {{ "{:,.2f}".format(bill.discount) }}</th>
                                 </tr>
                                 {% endif %}
                                 <tr class="table-primary">
-                                    <th colspan="{{ '7' if bill.shipping_charge > 0 else '6' }}" class="text-end">Grand
+                                    <th colspan="{{ '8' if bill.shipping_charge > 0 else '7' }}" class="text-end">Grand
                                         Total</th>
                                     <th class="text-end fs-6">PKR {{ "{:,.2f}".format(bill.total) }}</th>
                                 </tr>
@@ -741,6 +756,7 @@
                                             <thead class="table-light">
                                                 <tr>
                                                     <th>Product</th>
+                                                    <th class="text-center">Warehouse</th>
                                                     <th class="text-center">Received Qty</th>
                                                     <th class="text-center">Action</th>
                                                 </tr>
@@ -751,6 +767,13 @@
                                                     <td>
                                                         <strong>{{ ri.product.name }}</strong>
                                                         <small class="text-muted ms-1">{{ ri.product.sku }}</small>
+                                                    </td>
+                                                    <td class="text-center">
+                                                        {% if ri.warehouse %}
+                                                        <span class="badge bg-light text-dark"><i class="fas fa-warehouse me-1"></i>{{ ri.warehouse.name }}</span>
+                                                        {% else %}
+                                                        <span class="text-muted small">—</span>
+                                                        {% endif %}
                                                     </td>
                                                     <td class="text-center text-success fw-bold">{{
                                                         '{:,.3f}'.format(ri.quantity_received) }}</td>
@@ -1114,12 +1137,23 @@
         });
 
         function fillAllPending() {
-            document.querySelectorAll('.receive-qty-input').forEach(function (inp) {
-                if (!inp.disabled) {
-                    inp.value = inp.dataset.max;
+            document.querySelectorAll('.receive-qty-input').forEach(input => {
+                if (!input.disabled) {
+                    input.value = input.dataset.max;
                 }
             });
         }
+
+        // Initialize Select2 in modals
+        $(document).ready(function() {
+            $('#receiveModal').on('shown.bs.modal', function () {
+                $('.warehouse-select').select2({
+                    theme: 'bootstrap-5',
+                    width: '100%',
+                    dropdownParent: $('#receiveModal')
+                });
+            });
+        });
 
         function previewPayImage(input) {
             const preview = document.getElementById('payImagePreview');

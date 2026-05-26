@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from app.utils import permission_required, log_activity
 from app import db
-from app.models import Product, User, Warehouse, ProductCategory, Unit
+from app.models import Product, User, Warehouse, ProductCategory, Unit, ProductWarehouseStock
 from app.forms import ProductForm, UnitForm
 from sqlalchemy import func, inspect
 from io import BytesIO
@@ -47,7 +47,16 @@ def products():
         query = query.filter(Product.category_id == int(category))
     
     if warehouse_id and warehouse_id.isdigit():
-        query = query.filter(Product.warehouse_id == int(warehouse_id))
+        wh_id = int(warehouse_id)
+        from app.models import ProductWarehouseStock
+        # Find products that have stock in this warehouse either in the bridge table or the legacy field
+        subquery = db.session.query(ProductWarehouseStock.product_id).filter(
+            ProductWarehouseStock.warehouse_id == wh_id,
+            ProductWarehouseStock.quantity > 0
+        )
+        query = query.filter(
+            (Product.id.in_(subquery)) | (Product.warehouse_id == wh_id)
+        )
     
     # Filter by quantity range
     if qty_min and qty_min.isdigit():
@@ -148,6 +157,18 @@ def add_product():
             
             try:
                 db.session.add(product)
+                db.session.flush() # Get product ID
+                
+                # Sync with ProductWarehouseStock
+                if product.warehouse_id and product.quantity > 0:
+                    from app.models import ProductWarehouseStock
+                    wh_stock = ProductWarehouseStock(
+                        product_id=product.id,
+                        warehouse_id=product.warehouse_id,
+                        quantity=product.quantity
+                    )
+                    db.session.add(wh_stock)
+                
                 db.session.commit()
                 
                 log_activity('Inventory', f'Added Product: {product.name}', 
@@ -257,6 +278,29 @@ def edit_product(id):
             product.image_path = None
         
         try:
+            # Sync with ProductWarehouseStock if warehouse_id is set
+            if product.warehouse_id:
+                from app.models import ProductWarehouseStock
+                wh_stock = ProductWarehouseStock.query.filter_by(
+                    product_id=product.id,
+                    warehouse_id=product.warehouse_id
+                ).first()
+                if not wh_stock:
+                    wh_stock = ProductWarehouseStock(
+                        product_id=product.id,
+                        warehouse_id=product.warehouse_id,
+                        quantity=0.0
+                    )
+                    db.session.add(wh_stock)
+                
+                # If quantity was also updated, we need to decide how to sync.
+                # In standard inventory edit, we usually set the TOTAL quantity.
+                # To be safe, we'll set this warehouse's stock to the new total IF it was the only warehouse,
+                # but if there are multiple, it's ambiguous. 
+                # For now, let's just make sure a record exists.
+                # If the user is specifically editing the "Primary" warehouse quantity:
+                wh_stock.quantity = product.quantity
+
             db.session.commit()
             
             log_activity('Inventory', f'Updated Product: {product.name}', 
@@ -384,55 +428,80 @@ def bulk_delete_products():
 @login_required
 @permission_required('inventory', action='edit')
 def bulk_assign_warehouse():
-    ids = request.json.get('ids', [])
-    warehouse_id = request.json.get('warehouse_id')
-    
+    data = request.get_json(silent=True) or {}
+    ids = data.get('ids', [])
+    warehouse_id = data.get('warehouse_id')
+
     if not ids:
         return jsonify({'success': False, 'message': 'No products selected'}), 400
-    
+
     if not warehouse_id:
         return jsonify({'success': False, 'message': 'No warehouse selected'}), 400
-    
+
+    # Convert warehouse_id to int safely
+    try:
+        warehouse_id = int(warehouse_id)
+    except (ValueError, TypeError):
+        return jsonify({'success': False, 'message': 'Invalid warehouse ID'}), 400
+
     # Verify warehouse exists
     warehouse = Warehouse.query.get(warehouse_id)
     if not warehouse:
-        return jsonify({'success': False, 'message': 'Invalid warehouse'}), 400
-    
+        return jsonify({'success': False, 'message': 'Warehouse not found'}), 400
+
     updated_count = 0
     skipped_count = 0
     errors = []
-    
+
     for product_id in ids:
-        product = Product.query.get(product_id)
+        try:
+            pid = int(product_id)
+        except (ValueError, TypeError):
+            skipped_count += 1
+            continue
+
+        product = Product.query.get(pid)
         if not product:
             skipped_count += 1
             continue
-        
-        # Safety check: skip products with transaction history
-        if product.sale_items or product.purchase_items or product.stock_movements:
-            skipped_count += 1
-            continue
-        
+
         try:
-            product.warehouse_id = int(warehouse_id)
+            # Update the legacy warehouse_id on product
+            product.warehouse_id = warehouse_id
+
+            # Also upsert into the ProductWarehouseStock bridge table
+            # so warehouse-based stock tracking works correctly
+            wh_stock = ProductWarehouseStock.query.filter_by(
+                product_id=pid,
+                warehouse_id=warehouse_id
+            ).first()
+            if not wh_stock:
+                wh_stock = ProductWarehouseStock(
+                    product_id=pid,
+                    warehouse_id=warehouse_id,
+                    quantity=product.quantity or 0
+                )
+                db.session.add(wh_stock)
+            # (if already exists, leave the existing quantity untouched)
+
             updated_count += 1
         except Exception as e:
             errors.append(f'Error updating {product.name}: {str(e)}')
-    
+
     if updated_count > 0:
         try:
             db.session.commit()
         except Exception as e:
             db.session.rollback()
             return jsonify({'success': False, 'message': f'Database error: {str(e)}'}), 500
-    
-    message = f'Successfully assigned warehouse to {updated_count} products.'
+
+    message = f'Successfully assigned "{warehouse.name}" to {updated_count} product(s).'
     if skipped_count > 0:
-        message += f' Skipped {skipped_count} products with transaction history (cannot reassign).'
-    
+        message += f' {skipped_count} product(s) could not be found and were skipped.'
+
     if errors:
         return jsonify({'success': False, 'message': message, 'errors': errors}), 500
-    
+
     return jsonify({'success': True, 'message': message})
 
 @bp.route('/stock-report')

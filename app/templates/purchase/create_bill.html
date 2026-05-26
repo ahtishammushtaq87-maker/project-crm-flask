@@ -306,12 +306,13 @@
                                 style="table-layout: fixed; width: 100%;">
                                 <thead class="table-light">
                                     <tr>
-                                        <th style="width: 35%;">Product</th>
+                                        <th style="width: 25%;">Product</th>
+                                        <th style="width: 15%;">Warehouse</th>
                                         <th style="width: 10%;">Qty</th>
                                         <th style="width: 15%;">Current Cost</th>
                                         <th style="width: 15%;">New Cost</th>
                                         <th style="width: 15%;">Amount</th>
-                                        <th style="width: 10%;"></th>
+                                        <th style="width: 5%;"></th>
                                     </tr>
                                 </thead>
                                 <tbody id="itemsBody">
@@ -324,6 +325,14 @@
                                                 <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.sku }} -
                                                     {{ p.name }}
                                                 </option>
+                                                {% endfor %}
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select name="warehouse_id[]" class="form-select warehouse-select">
+                                                <option value="">— Select Warehouse —</option>
+                                                {% for w in warehouses %}
+                                                <option value="{{ w.id }}">{{ w.name }}</option>
                                                 {% endfor %}
                                             </select>
                                         </td>
@@ -513,15 +522,24 @@
                 {% endfor %}
             </select>
         </td>
+        <td>
+            <select name="warehouse_id[]" class="form-select warehouse-select">
+                <option value="">— Select Warehouse —</option>
+                {% for w in warehouses %}
+                <option value="{{ w.id }}">{{ w.name }}</option>
+                {% endfor %}
+            </select>
+        </td>
         <td><input type="number" name="quantity[]" class="form-control qty" value="${qty}" min="0" step="any" oninput="calcRow(this)"></td>
         <td><input type="text" class="form-control currentCost" readonly style="background-color: #f8f9fa;"></td>
         <td><input type="number" name="price[]" class="form-control price newCost" value="${price}" step="0.01" oninput="calcRow(this); updatePriceIndicator(this)"></td>
         <td><input type="text" class="form-control amount" value="${total.toFixed(2)}" readonly></td>
         <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeRow(this)"><i class="fas fa-times"></i></button></td>`;
 
-        // Initialize Select2 on the product select
+        // Initialize Select2 on the selects
         setTimeout(() => {
             initSelect2($(row).find('.product-select'), 'Search or select product');
+            initSelect2($(row).find('.warehouse-select'), 'Search or select warehouse');
         }, 0);
 
         return row;
@@ -540,6 +558,12 @@
         $select.removeAttr('data-select2-id');
         $select.removeAttr('aria-hidden');
         $select.find('option').removeAttr('data-select2-id');
+        
+        const $whSelect = $(row).find('.warehouse-select');
+        $whSelect.removeClass('select2-hidden-accessible');
+        $whSelect.removeAttr('data-select2-id');
+        $whSelect.removeAttr('aria-hidden');
+        $whSelect.find('option').removeAttr('data-select2-id');
         // ------------------------------------
 
         row.querySelectorAll('input').forEach(i => { i.value = i.type === 'number' ? '0' : ''; });
@@ -552,8 +576,9 @@
 
         document.getElementById('itemsBody').appendChild(row);
 
-        // Initialize Select2 on new row's product select
+        // Initialize Select2 on new row's selects
         initSelect2($(row).find('.product-select'));
+        initSelect2($(row).find('.warehouse-select'));
     }
 
     function removeRow(btn) {
@@ -705,6 +730,7 @@
         // Initialize Select2 for vendor and product selects
         initSelect2('#vendorSelect', '— Search or Select Vendor —', '100%');
         initSelect2('.product-select', '— Search or Select Product —', '100%');
+        initSelect2('.warehouse-select', '— Search or Select Warehouse —', '100%');
     });
 </script>
 {% endblock %}

@@ -258,7 +258,7 @@
                             <td class="numeric-col">
                                 <input type="number" class="form-control form-control-sm inline-edit text-end" 
                                        data-target-id="{{ r.target.id }}" data-field="target_units" 
-                                       value="{{ r.target.target_units|int }}" min="0" style="width: 100px;">
+                                       value="{{ r.effective_target_units|int }}" min="0" style="width: 100px;">
                             </td>
                             <td class="numeric-col">
                                 <input type="number" class="form-control form-control-sm inline-edit text-end text-success fw-bold" 
@@ -268,7 +268,7 @@
                             <td class="numeric-col text-danger">{{ r.rejected_qty|int }}</td>
                             <td class="numeric-col text-warning">{{ r.returned_qty|int }}</td>
                             <td class="numeric-col text-primary fw-bold">{{ r.net_produced|int }}</td>
-                            <td class="numeric-col">{{ r.target.target_units|int }}</td>
+                            <td class="numeric-col">{{ r.effective_target_units|int }}</td>
                             <td class="numeric-col">{{ r.remaining|int }}</td>
                             <td class="numeric-col">{{ r.completion_pct }}%</td>
                             <td>

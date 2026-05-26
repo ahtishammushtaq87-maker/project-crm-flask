@@ -5,6 +5,7 @@ from app import db
 from app.models import Product, BOM, BOMItem, ManufacturingOrder, ManufacturingOrderItem, StockMovement, BOMVersion, Company, Expense, ManufacturingOrderHistory, ProductionLog, ProductionTarget
 from app.forms import BOMForm, ManufacturingOrderForm
 from app.services.bom_versioning import BOMVersioningService
+from calendar import monthrange
 from datetime import datetime
 from sqlalchemy import inspect, or_
 from app.routes.filters import apply_saved_filter_to_query
@@ -377,6 +378,29 @@ def add_order():
         
         db.session.commit()
         
+        # Ensure Production Target exists for this product/month
+        if mo.start_date:
+            target_month = mo.start_date.month
+            target_year = mo.start_date.year
+            
+            existing_target = ProductionTarget.query.filter_by(
+                sku_id=bom.product_id,
+                month=target_month,
+                year=target_year
+            ).first()
+            
+            if not existing_target:
+                new_target = ProductionTarget(
+                    sku_id=bom.product_id,
+                    month=target_month,
+                    year=target_year,
+                    target_units=0,
+                    start_date=datetime(target_year, target_month, 1).date(),
+                    end_date=datetime(target_year, target_month, monthrange(target_year, target_month)[1]).date()
+                )
+                db.session.add(new_target)
+                db.session.commit()
+
         flash('Manufacturing Order created successfully.', 'success')
         return redirect(url_for('manufacturing.orders'))
         
@@ -426,6 +450,29 @@ def edit_order(id):
             order.total_cost = order.actual_labor_cost + order.actual_material_cost + (order.actual_overhead_cost or 0)
         
         db.session.commit()
+        # Ensure Production Target exists for this product/month after edit
+        if order.start_date:
+            target_month = order.start_date.month
+            target_year = order.start_date.year
+            
+            existing_target = ProductionTarget.query.filter_by(
+                sku_id=order.bom.product_id,
+                month=target_month,
+                year=target_year
+            ).first()
+            
+            if not existing_target:
+                new_target = ProductionTarget(
+                    sku_id=order.bom.product_id,
+                    month=target_month,
+                    year=target_year,
+                    target_units=0,
+                    start_date=datetime(target_year, target_month, 1).date(),
+                    end_date=datetime(target_year, target_month, monthrange(target_year, target_month)[1]).date()
+                )
+                db.session.add(new_target)
+                db.session.commit()
+
         flash('Manufacturing Order updated successfully.', 'success')
         return redirect(url_for('manufacturing.order_details', id=order.id))
     

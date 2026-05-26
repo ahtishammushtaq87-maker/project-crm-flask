@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, flash, redirect, url_for,
 from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
-from app.models import ProductionTarget, ProductionLog, Product, BOM, SaleItem, Sale
+from app.models import ProductionTarget, ProductionLog, Product, BOM, SaleItem, Sale, ManufacturingOrder
 from datetime import datetime, timedelta
 from calendar import monthrange
 from sqlalchemy import func
@@ -56,6 +56,16 @@ def index():
         # Filter logs based on target range if available, else month/year
         log_start = target.start_date if target.start_date else month_start.date()
         log_end = target.end_date if target.end_date else month_end.date()
+
+        # Determine Target Units from Manufacturing Orders for this SKU in the range
+        mo_target_units = db.session.query(func.sum(ManufacturingOrder.quantity_to_produce)).join(BOM).filter(
+            BOM.product_id == target.sku_id,
+            ManufacturingOrder.start_date >= log_start,
+            ManufacturingOrder.start_date <= log_end
+        ).scalar() or 0
+        
+        # Use sum of manual target units and MO quantities
+        effective_target_units = (target.target_units or 0) + mo_target_units
 
         # Determine Produced Qty: Stateful Value vs dynamic Logs sum
         if target.produced_qty is not None:
@@ -111,8 +121,8 @@ def index():
             # If target has specific overhead, reflect it in the display
             reference_overhead = target.overhead_cost_per_unit
             
-        remaining = target.target_units - total_produced
-        completion_pct = (final_net_produced / target.target_units * 100) if target.target_units > 0 else 0
+        remaining = effective_target_units - total_produced
+        completion_pct = (final_net_produced / effective_target_units * 100) if effective_target_units > 0 else 0
         
         if completion_pct >= 100:
             status = 'DONE'
@@ -124,8 +134,8 @@ def index():
             status = 'BEHIND'
             status_class = 'danger'
         
-        target_revenue = target.target_units * selling_price
-        estimated_cost = target.target_units * item_unit_cost
+        target_revenue = effective_target_units * selling_price
+        estimated_cost = effective_target_units * item_unit_cost
         estimated_profit = target_revenue - estimated_cost
         
         # Actual (based on net produced qty after rejecting and returns)
@@ -155,10 +165,11 @@ def index():
             'estimated_profit': estimated_profit,
             'actual_revenue': actual_revenue,
             'actual_cost': actual_cost,
-            'actual_profit': actual_profit
+            'actual_profit': actual_profit,
+            'effective_target_units': effective_target_units
         })
         
-        total_target += target.target_units
+        total_target += effective_target_units
         total_produced_all += net_produced # Use Net Produced for the summary box
         total_remaining += remaining
         total_revenue += target_revenue
@@ -221,7 +232,8 @@ def set_target():
         year = start_date.year
         
         sku_ids = request.form.getlist('sku_ids')
-        target_units = float(request.form.get('target_units', 0))
+        target_units_val = request.form.get('target_units')
+        target_units = float(target_units_val) if target_units_val else 0.0
         overhead_cost_per_unit = float(request.form.get('overhead_cost_per_unit', 0))
         
         submitted_sku_ids = [int(sid) for sid in sku_ids if sid]
@@ -574,6 +586,15 @@ def export_report(format):
     for target in targets:
         product = target.product
         
+        # Target Units from MOs
+        mo_target_units = db.session.query(func.sum(ManufacturingOrder.quantity_to_produce)).join(BOM).filter(
+            BOM.product_id == target.sku_id,
+            ManufacturingOrder.start_date >= month_start.date(),
+            ManufacturingOrder.start_date <= month_end.date()
+        ).scalar() or 0
+        
+        effective_target_units = (target.target_units or 0) + mo_target_units
+
         produced_qty = db.session.query(func.sum(ProductionLog.qty_produced)).filter(
             ProductionLog.sku_id == target.sku_id,
             ProductionLog.date >= month_start.date(),
@@ -599,7 +620,7 @@ def export_report(format):
         bom_cost = (bom.total_cost - bom.overhead_cost - bom.labor_cost) if bom else product.cost_price
         overhead_cost = target.overhead_cost_per_unit if target.overhead_cost_per_unit > 0 else (bom.overhead_cost + bom.labor_cost if bom else 0)
         
-        completion_pct = (net_produced / target.target_units * 100) if target.target_units > 0 else 0
+        completion_pct = (net_produced / effective_target_units * 100) if effective_target_units > 0 else 0
         
         if completion_pct >= 100:
             status = 'DONE'
@@ -611,20 +632,20 @@ def export_report(format):
         data.append({
             'SKU': product.sku,
             'Product Name': product.name,
-            'Target Units': target.target_units,
+            'Target Units': effective_target_units,
             'Produced Units': produced_qty,
             'Rejected Units': rejected_qty,
             'Returned Units': returned_qty,
             'Net Produced': net_produced,
-            'Remaining': target.target_units - net_produced,
+            'Remaining': effective_target_units - net_produced,
             'Completion %': f"{completion_pct:.1f}%",
             'BOM Cost': bom_cost,
             'OH Cost (Labor+Overhead)': overhead_cost,
             'Item Cost': bom_cost,
             'Selling Price': product.finished_good_price if product.finished_good_price else product.unit_price,
-            'Target Revenue': target.target_units * (product.finished_good_price if product.finished_good_price else product.unit_price),
-            'Est. Cost': target.target_units * bom_cost,
-            'Est. Profit': (target.target_units * (product.finished_good_price if product.finished_good_price else product.unit_price)) - (target.target_units * bom_cost),
+            'Target Revenue': effective_target_units * (product.finished_good_price if product.finished_good_price else product.unit_price),
+            'Est. Cost': effective_target_units * bom_cost,
+            'Est. Profit': (effective_target_units * (product.finished_good_price if product.finished_good_price else product.unit_price)) - (effective_target_units * bom_cost),
             'Status': status
         })
     

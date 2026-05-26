@@ -16,7 +16,7 @@
             {% endif %}
 
             {% if current_user.has_permission('inventory', 'edit') %}
-            <button id="bulkWarehouseBtn" class="btn btn-primary d-none me-2">
+            <button id="bulkWarehouseBtn" type="button" class="btn btn-primary d-none me-2" data-bs-toggle="modal" data-bs-target="#bulkWarehouseModal">
                 <i class="fas fa-warehouse"></i> Assign Warehouse
             </button>
             {% endif %}
@@ -314,7 +314,20 @@
                             </td>
                             <td><strong>{{ product.name }}</strong></td>
                             <td>{{ product.category.name if product.category else '-' }}</td>
-                            <td>{{ product.warehouse.name if product.warehouse else '-' }}</td>
+                            <td>
+                                {% set active_stocks = product.warehouse_stocks | selectattr('quantity', 'gt', 0) | list %}
+                                {% if active_stocks %}
+                                    {% for ws in active_stocks %}
+                                        <span class="badge bg-info text-dark me-1 mb-1" title="{{ ws.warehouse.name }}: {{ ws.quantity }}">
+                                            {{ ws.warehouse.name }}: <strong>{{ ws.quantity | int if ws.quantity == ws.quantity | int else ws.quantity }}</strong>
+                                        </span>
+                                    {% endfor %}
+                                {% elif product.warehouse %}
+                                    {{ product.warehouse.name }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
                             <td>
                                 {{ product.quantity | format_qty(product.unit) }}
                                 {% if product.quantity <= product.reorder_level %} <span class="badge bg-warning">Low
@@ -659,17 +672,16 @@
             }
         }
 
-        // Show modal for warehouse assignment
-        if (bulkWarehouseBtn) {
-            bulkWarehouseBtn.addEventListener('click', function () {
-                const selected = document.querySelectorAll('.product-checkbox:checked');
-                if (selected.length === 0) {
-                    alert('Please select at least one product.');
-                    return;
-                }
-                bulkWarehouseError.classList.add('d-none');
-                const modal = new bootstrap.Modal(document.getElementById('bulkWarehouseModal'));
-                modal.show();
+        // Initialize Select2 in modal when it's shown
+        const modalEl = document.getElementById('bulkWarehouseModal');
+        if (modalEl) {
+            modalEl.addEventListener('shown.bs.modal', function () {
+                $(this).find('.searchable-select').select2({
+                    theme: 'bootstrap-5',
+                    dropdownParent: $('#bulkWarehouseModal'),
+                    width: '100%',
+                    placeholder: '-- Select Warehouse --'
+                });
             });
         }
 
@@ -717,9 +729,11 @@
             bulkWarehouseError.classList.remove('d-none');
         }
 
-        // Attach update function to all checkboxes
-        document.querySelectorAll('.product-checkbox').forEach(cb => {
-            cb.addEventListener('change', updateBulkWarehouseBtn);
+        // Attach update function using event delegation (important for DataTables)
+        document.addEventListener('change', function(e) {
+            if (e.target && e.target.classList.contains('product-checkbox')) {
+                updateBulkWarehouseBtn();
+            }
         });
 
         // Also update on selectAll change

@@ -144,9 +144,10 @@
                                 <thead class="table-light">
                                     <tr>
                                         <th class="product-select-col">Item / Product</th>
+                                        <th style="width: 20%;">Warehouse</th>
                                         <th style="width: 15%;">Qty</th>
-                                        <th style="width: 20%;">Price</th>
-                                        <th style="width: 20%;">Total</th>
+                                        <th style="width: 15%;">Price</th>
+                                        <th style="width: 15%;">Total</th>
                                         <th style="width: 50px;"></th>
                                     </tr>
                                 </thead>
@@ -160,6 +161,14 @@
                                                     {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity
                                                     }})
                                                 </option>
+                                                {% endfor %}
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select name="warehouse_id[]" class="form-select searchable-select warehouse-select" required>
+                                                <option value="">Select Warehouse</option>
+                                                {% for warehouse in warehouses %}
+                                                <option value="{{ warehouse.id }}">{{ warehouse.name }}</option>
                                                 {% endfor %}
                                             </select>
                                         </td>
@@ -426,15 +435,22 @@
         const newRow = firstRow.cloneNode(true);
 
         $(newRow).find('.select2-container').remove();
-        const $select = $(newRow).find('.product-select');
-        $select.removeClass('select2-hidden-accessible').removeAttr('data-select2-id').removeAttr('aria-hidden').val('');
+        
+        const $productSelect = $(newRow).find('.product-select');
+        $productSelect.removeClass('select2-hidden-accessible').removeAttr('data-select2-id').removeAttr('aria-hidden').val('');
+        $productSelect.find('option').removeAttr('data-select2-id');
+
+        const $warehouseSelect = $(newRow).find('.warehouse-select');
+        $warehouseSelect.removeClass('select2-hidden-accessible').removeAttr('data-select2-id').removeAttr('aria-hidden').val('');
+        $warehouseSelect.find('option').removeAttr('data-select2-id');
 
         newRow.querySelector('.quantity').value = '1';
         newRow.querySelector('.price').value = '';
         newRow.querySelector('.item-total').textContent = 'PKR 0.00';
 
         document.getElementById('itemsBody').appendChild(newRow);
-        initSelect2($select, '— Search or Select Tool —');
+        initSelect2($productSelect, '— Search or Select Tool —');
+        initSelect2($warehouseSelect, '— Select Warehouse —');
         attachEvents(newRow);
     }
 

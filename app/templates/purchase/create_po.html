@@ -210,10 +210,11 @@
                             <table class="table table-bordered mb-0" id="itemsTable" style="table-layout: fixed; width: 100%;">
                                 <thead class="table-light">
                                     <tr>
-                                        <th style="width: 45%;">Product</th>
+                                        <th style="width: 35%;">Product</th>
+                                        <th style="width: 15%;">Warehouse</th>
                                         <th style="width: 10%;">Qty</th>
                                         <th style="width: 20%;">Unit Price</th>
-                                        <th style="width: 15%;">Amount</th>
+                                        <th style="width: 10%;">Amount</th>
                                         <th style="width: 10%;"></th>
                                     </tr>
                                 </thead>
@@ -224,6 +225,14 @@
                                                 <option value="">— Select Product —</option>
                                                 {% for p in products %}
                                                 <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.sku }} - {{ p.name }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select name="warehouse_id[]" class="form-select warehouse-select">
+                                                <option value="">— Select Warehouse —</option>
+                                                {% for w in warehouses %}
+                                                <option value="{{ w.id }}">{{ w.name }}</option>
                                                 {% endfor %}
                                             </select>
                                         </td>
@@ -342,15 +351,23 @@ function addRow() {
     $select.removeAttr('data-select2-id');
     $select.removeAttr('aria-hidden');
     $select.find('option').removeAttr('data-select2-id');
+
+    const $whSelect = $(row).find('.warehouse-select');
+    $whSelect.removeClass('select2-hidden-accessible');
+    $whSelect.removeAttr('data-select2-id');
+    $whSelect.removeAttr('aria-hidden');
+    $whSelect.find('option').removeAttr('data-select2-id');
     // ------------------------------------
 
     row.querySelectorAll('input').forEach(i => { i.value = i.type === 'number' ? '0' : ''; });
     row.querySelector('.qty').value = '1';
     row.querySelector('.product-select').selectedIndex = 0;
+    row.querySelector('.warehouse-select').selectedIndex = 0;
     document.getElementById('itemsBody').appendChild(row);
     
-    // Initialize Select2 on new row's product select
+    // Initialize Select2 on new row's selects
     initSelect2($(row).find('.product-select'));
+    initSelect2($(row).find('.warehouse-select'));
 }
 
 function removeRow(btn) {
@@ -422,6 +439,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize Select2 for vendor and product selects
     initSelect2('#vendorSelect', '— Search or Select Vendor —', '100%');
     initSelect2('.product-select', '— Search or Select Product —', '100%');
+    initSelect2('.warehouse-select', '— Search or Select Warehouse —', '100%');
     
     // Update advance modal with vendor info before showing
     const quickAdvanceModal = document.getElementById('quickAdvanceModal');

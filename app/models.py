@@ -392,6 +392,15 @@ class Warehouse(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    @property
+    def total_products_count(self):
+        """Returns the number of unique products that have stock in this warehouse"""
+        # Count from ProductWarehouseStock
+        multi_stock_ids = {s.product_id for s in self.product_stocks if s.quantity > 0}
+        # Count from legacy Product.warehouse_id
+        legacy_ids = {p.id for p in self.products if p.quantity > 0}
+        return len(multi_stock_ids.union(legacy_ids))
+
     def __repr__(self):
         return f'<Warehouse {self.name}>'
 
@@ -468,6 +477,25 @@ class Product(db.Model):
     
     def __repr__(self):
         return f'<Product {self.name} ({self.sku})>'
+
+
+class ProductWarehouseStock(db.Model):
+    """Tracks per-warehouse stock quantity for a product.
+    Allows one product to have stock across multiple warehouses simultaneously.
+    Updated by Tool Receiving (adds) and Tool Delivering (subtracts).
+    """
+    __tablename__ = 'product_warehouse_stock'
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=False, index=True)
+    quantity = db.Column(db.Float, default=0)
+    __table_args__ = (db.UniqueConstraint('product_id', 'warehouse_id', name='uq_product_warehouse'),)
+
+    product = db.relationship('Product', backref='warehouse_stocks', lazy=True)
+    warehouse = db.relationship('Warehouse', backref='product_stocks', lazy=True)
+
+    def __repr__(self):
+        return f'<ProductWarehouseStock product={self.product_id} warehouse={self.warehouse_id} qty={self.quantity}>'
 
 
 class ProductCategory(db.Model):
@@ -781,7 +809,10 @@ class PurchaseItem(db.Model):
     unit_price = db.Column(db.Float, nullable=False)
     discount = db.Column(db.Float, default=0)
     shipping_charge = db.Column(db.Float, default=0)  # Per-item shipping cost
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
     total = db.Column(db.Float, nullable=False)
+    
+    warehouse = db.relationship('Warehouse', backref='purchase_items', lazy=True)
     
     @property
     def net_total(self):
@@ -1851,9 +1882,11 @@ class PurchaseOrderItem(db.Model):
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
     quantity = db.Column(db.Float, nullable=False)
     unit_price = db.Column(db.Float, nullable=False)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
     total = db.Column(db.Float, nullable=False)
 
     product = db.relationship('Product', backref='po_items', lazy=True)
+    warehouse = db.relationship('Warehouse', backref='po_items', lazy=True)
 
     def __repr__(self):
         return f'<PurchaseOrderItem po={self.po_id} product={self.product_id}>'
@@ -1907,8 +1940,10 @@ class BillReceiveItem(db.Model):
     purchase_item_id = db.Column(db.Integer, db.ForeignKey('purchase_items.id'), nullable=False, index=True)
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
     quantity_received = db.Column(db.Float, nullable=False)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
 
     product = db.relationship('Product', backref='bill_receive_items', lazy=True)
+    warehouse = db.relationship('Warehouse', backref='bill_receive_items', lazy=True)
     purchase_item = db.relationship('PurchaseItem', backref=db.backref('receive_items', lazy=True, cascade='all, delete-orphan'))
     price_history = db.relationship('CostPriceHistory', back_populates='bill_receive_item', lazy=True, cascade='all, delete-orphan', overlaps="cost_price_change,receive_item")
 
@@ -2289,11 +2324,13 @@ class ToolReceivingItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     receiving_id = db.Column(db.Integer, db.ForeignKey('tool_receiving.id'), nullable=False, index=True)
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
     quantity = db.Column(db.Float, nullable=False)
     unit_price = db.Column(db.Float, nullable=False)
     total = db.Column(db.Float, nullable=False)
     
     product = db.relationship('Product', backref='tool_receivings', lazy=True)
+    warehouse = db.relationship('Warehouse', backref='tool_receiving_items', lazy=True)
 
 class ToolDelivering(db.Model):
     __tablename__ = 'tool_delivering'
@@ -2322,11 +2359,13 @@ class ToolDeliveringItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     delivering_id = db.Column(db.Integer, db.ForeignKey('tool_delivering.id'), nullable=False, index=True)
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
     quantity = db.Column(db.Float, nullable=False)
     unit_price = db.Column(db.Float, default=0.0)
     total = db.Column(db.Float, default=0.0)
     
     product = db.relationship('Product', backref='tool_deliverings', lazy=True)
+    warehouse = db.relationship('Warehouse', backref='tool_delivering_items', lazy=True)
 
 class ToolSettings(db.Model):
     __tablename__ = 'tool_settings'

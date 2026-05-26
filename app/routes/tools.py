@@ -4,8 +4,8 @@ from app.utils import permission_required, log_activity
 from app import db
 from app.models import (
     ToolReceiving, ToolReceivingItem, ToolDelivering, ToolDeliveringItem, 
-    ToolSettings, Product, Expense, ExpenseCategory, Company, Staff, Vendor,
-    ManufacturingOrder, BOM
+    ToolSettings, Product, ProductWarehouseStock, Expense, ExpenseCategory, Company, Staff, Vendor,
+    ManufacturingOrder, BOM, Warehouse
 )
 from datetime import datetime
 
@@ -55,6 +55,7 @@ def receiving_list():
 @permission_required('receiving', action='add')
 def create_receiving():
     products = Product.query.filter_by(is_active=True).all()
+    warehouses = Warehouse.query.filter_by(is_active=True).all()
     settings = get_tool_settings()
     
     if request.method == 'POST':
@@ -71,6 +72,7 @@ def create_receiving():
         product_ids = request.form.getlist('product_id[]')
         quantities = request.form.getlist('quantity[]')
         prices = request.form.getlist('price[]') # selling price
+        warehouse_ids = request.form.getlist('warehouse_id[]')
         
         total_items_amount = 0
         valid_items = []
@@ -85,7 +87,8 @@ def create_receiving():
                     'product_id': int(product_ids[i]),
                     'quantity': qty,
                     'unit_price': price,
-                    'total': total
+                    'total': total,
+                    'warehouse_id': int(warehouse_ids[i]) if i < len(warehouse_ids) and warehouse_ids[i] else None
                 })
         
         if not valid_items:
@@ -238,7 +241,8 @@ def create_receiving():
                 product_id=item['product_id'],
                 quantity=item['quantity'],
                 unit_price=item['unit_price'],
-                total=item['total']
+                total=item['total'],
+                warehouse_id=item['warehouse_id']
             )
             db.session.add(rec_item)
             
@@ -247,6 +251,20 @@ def create_receiving():
             if product:
                 product.update_quantity(item['quantity'])
                 product.cost_price = item['unit_price']
+                # Update per-warehouse stock
+                if item['warehouse_id']:
+                    wh_stock = ProductWarehouseStock.query.filter_by(
+                        product_id=item['product_id'],
+                        warehouse_id=item['warehouse_id']
+                    ).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(
+                            product_id=item['product_id'],
+                            warehouse_id=item['warehouse_id'],
+                            quantity=0.0
+                        )
+                        db.session.add(wh_stock)
+                    wh_stock.quantity += item['quantity']
         
         db.session.commit()
         
@@ -266,6 +284,7 @@ def create_receiving():
                           products=products, 
                           staff=staff, 
                           vendors=vendors, 
+                          warehouses=warehouses,
                           now=datetime.now(),
                           in_progress_mos=in_progress_mos,
                           manufactured_products=manufactured_products,
@@ -307,6 +326,7 @@ def delivering_list():
 @permission_required('delivering', action='add')
 def create_delivering():
     products = Product.query.filter_by(is_active=True).all()
+    warehouses = Warehouse.query.filter_by(is_active=True).all()
     settings = get_tool_settings()
     
     if request.method == 'POST':
@@ -322,6 +342,7 @@ def create_delivering():
         product_ids = request.form.getlist('product_id[]')
         quantities = request.form.getlist('quantity[]')
         prices = request.form.getlist('price[]')
+        warehouse_ids = request.form.getlist('warehouse_id[]')
         
         valid_items = []
         grand_total = 0
@@ -334,7 +355,8 @@ def create_delivering():
                     'product_id': int(product_ids[i]),
                     'quantity': qty,
                     'unit_price': price,
-                    'total': total
+                    'total': total,
+                    'warehouse_id': int(warehouse_ids[i]) if i < len(warehouse_ids) and warehouse_ids[i] else None
                 })
                 grand_total += total
                 
@@ -358,24 +380,6 @@ def create_delivering():
                 bill_file.save(bill_path)
                 bill_image_path = bill_path.replace('\\', '/')
         
-        # 1. Create Expense record
-        category = ExpenseCategory.query.filter_by(name='Tools Expense').first()
-        if not category:
-            category = ExpenseCategory(name='Tools Expense', description='Expenses related to internal tools')
-            db.session.add(category)
-            db.session.flush()
-            
-        expense = Expense(
-            expense_number=f"EXP-TOOL-DEL-{delivering_number}",
-            description=f"Tool Delivery #{delivering_number}: {description[:50]}",
-            amount=grand_total,
-            date=date,
-            category_id=category.id,
-            status='confirmed',
-            created_by=current_user.id
-        )
-        db.session.add(expense)
-        db.session.flush()
         
         # 2. Create ToolDelivering
         delivering = ToolDelivering(
@@ -385,7 +389,7 @@ def create_delivering():
             shipping_charges=shipping_charges,
             total_amount=grand_total,
             bill_image_path=bill_image_path,
-            expense_id=expense.id,
+            expense_id=None,
             buyer_id=int(buyer_id) if buyer_id else None,
             vendor_id=int(vendor_id) if vendor_id else None,
             requester_id=int(requester_id) if requester_id else None,
@@ -400,7 +404,8 @@ def create_delivering():
                 product_id=item['product_id'],
                 quantity=item['quantity'],
                 unit_price=item['unit_price'],
-                total=item['total']
+                total=item['total'],
+                warehouse_id=item['warehouse_id']
             )
             db.session.add(del_item)
             
@@ -408,6 +413,20 @@ def create_delivering():
             product = Product.query.get(item['product_id'])
             if product:
                 product.update_quantity(-item['quantity'])
+                # Deduct per-warehouse stock
+                if item['warehouse_id']:
+                    wh_stock = ProductWarehouseStock.query.filter_by(
+                        product_id=item['product_id'],
+                        warehouse_id=item['warehouse_id']
+                    ).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(
+                            product_id=item['product_id'],
+                            warehouse_id=item['warehouse_id'],
+                            quantity=0.0
+                        )
+                        db.session.add(wh_stock)
+                    wh_stock.quantity = max(0, wh_stock.quantity - item['quantity'])
                 
         db.session.commit()
         
@@ -417,7 +436,7 @@ def create_delivering():
         
     staff = Staff.query.filter_by(is_active=True).all()
     vendors = Vendor.query.filter_by(is_active=True).all()
-    return render_template('tools/create_delivering.html', products=products, staff=staff, vendors=vendors, now=datetime.now())
+    return render_template('tools/create_delivering.html', products=products, staff=staff, vendors=vendors, warehouses=warehouses, now=datetime.now())
 
 @bp.route('/receiving/<int:id>/delete', methods=['POST'])
 @login_required
@@ -431,6 +450,14 @@ def delete_receiving(id):
         product = Product.query.get(item.product_id)
         if product:
             product.update_quantity(-item.quantity)
+        # Revert per-warehouse stock
+        if item.warehouse_id:
+            wh_stock = ProductWarehouseStock.query.filter_by(
+                product_id=item.product_id,
+                warehouse_id=item.warehouse_id
+            ).first()
+            if wh_stock:
+                wh_stock.quantity = max(0, wh_stock.quantity - item.quantity)
             
     # 2. Delete linked overhead expenses and update MO costs
     expenses = Expense.query.filter_by(reference=receiving.receiving_number).all()
@@ -460,6 +487,14 @@ def delete_delivering(id):
         product = Product.query.get(item.product_id)
         if product:
             product.update_quantity(item.quantity)
+        # Revert per-warehouse stock
+        if item.warehouse_id:
+            wh_stock = ProductWarehouseStock.query.filter_by(
+                product_id=item.product_id,
+                warehouse_id=item.warehouse_id
+            ).first()
+            if wh_stock:
+                wh_stock.quantity += item.quantity
             
     # 2. Delete linked expense
     if delivering.expense:
@@ -493,6 +528,14 @@ def edit_receiving(id):
             product = Product.query.get(item.product_id)
             if product:
                 product.update_quantity(-item.quantity)
+            # Revert per-warehouse stock
+            if item.warehouse_id:
+                wh_stock = ProductWarehouseStock.query.filter_by(
+                    product_id=item.product_id,
+                    warehouse_id=item.warehouse_id
+                ).first()
+                if wh_stock:
+                    wh_stock.quantity = max(0, wh_stock.quantity - item.quantity)
         
         # Delete old items
         ToolReceivingItem.query.filter_by(receiving_id=receiving.id).delete()
@@ -520,12 +563,16 @@ def edit_receiving(id):
                 total = qty * price
                 total_items_amount += total
                 
+                warehouse_ids = request.form.getlist('warehouse_id[]')
+                item_wh_id = int(warehouse_ids[i]) if i < len(warehouse_ids) and warehouse_ids[i] else None
+                
                 item = ToolReceivingItem(
                     receiving_id=receiving.id,
                     product_id=int(product_ids[i]),
                     quantity=qty,
                     unit_price=price,
-                    total=total
+                    total=total,
+                    warehouse_id=item_wh_id
                 )
                 db.session.add(item)
                 
@@ -534,6 +581,20 @@ def edit_receiving(id):
                 if product:
                     product.update_quantity(qty)
                     product.cost_price = price
+                    # Update per-warehouse stock
+                    if item_wh_id:
+                        wh_stock = ProductWarehouseStock.query.filter_by(
+                            product_id=int(product_ids[i]),
+                            warehouse_id=item_wh_id
+                        ).first()
+                        if not wh_stock:
+                            wh_stock = ProductWarehouseStock(
+                                product_id=int(product_ids[i]),
+                                warehouse_id=item_wh_id,
+                                quantity=0.0
+                            )
+                            db.session.add(wh_stock)
+                        wh_stock.quantity += qty
         
         receiving.total_amount = total_items_amount + receiving.shipping_charges
         
@@ -656,6 +717,7 @@ def edit_receiving(id):
     in_progress_mos = ManufacturingOrder.query.filter_by(status='In Progress').order_by(ManufacturingOrder.order_number).all()
     manufactured_products = Product.query.filter_by(is_active=True).order_by(Product.name).all()
     boms = BOM.query.filter_by(is_active=True).order_by(BOM.name).all()
+    warehouses = Warehouse.query.filter_by(is_active=True).all()
     
     # Pre-process allocated_ids for the template (already stored as comma separated string)
     allocated_list = receiving.allocated_ids.split(',') if receiving.allocated_ids else []
@@ -665,6 +727,7 @@ def edit_receiving(id):
                           products=products, 
                           staff=staff, 
                           vendors=vendors,
+                          warehouses=warehouses,
                           in_progress_mos=in_progress_mos,
                           manufactured_products=manufactured_products,
                           boms=boms,
@@ -685,6 +748,7 @@ def delivering_detail(id):
 def edit_delivering(id):
     delivering = ToolDelivering.query.get_or_404(id)
     products = Product.query.filter_by(is_active=True).all()
+    warehouses = Warehouse.query.filter_by(is_active=True).all()
     
     if request.method == 'POST':
         # Revert old inventory
@@ -692,6 +756,14 @@ def edit_delivering(id):
             product = Product.query.get(item.product_id)
             if product:
                 product.update_quantity(item.quantity)
+            # Revert per-warehouse stock deduction
+            if item.warehouse_id:
+                wh_stock = ProductWarehouseStock.query.filter_by(
+                    product_id=item.product_id,
+                    warehouse_id=item.warehouse_id
+                ).first()
+                if wh_stock:
+                    wh_stock.quantity += item.quantity
         
         # Delete old items
         ToolDeliveringItem.query.filter_by(delivering_id=delivering.id).delete()
@@ -708,6 +780,7 @@ def edit_delivering(id):
         product_ids = request.form.getlist('product_id[]')
         quantities = request.form.getlist('quantity[]')
         prices = request.form.getlist('price[]')
+        warehouse_ids = request.form.getlist('warehouse_id[]')
         
         total_items_amount = 0
         for i in range(len(product_ids)):
@@ -722,7 +795,8 @@ def edit_delivering(id):
                     product_id=int(product_ids[i]),
                     quantity=qty,
                     unit_price=price,
-                    total=total
+                    total=total,
+                    warehouse_id=int(warehouse_ids[i]) if i < len(warehouse_ids) and warehouse_ids[i] else None
                 )
                 db.session.add(item)
                 
@@ -730,6 +804,21 @@ def edit_delivering(id):
                 product = Product.query.get(int(product_ids[i]))
                 if product:
                     product.update_quantity(-qty)
+                # Deduct per-warehouse stock
+                wh_id = int(warehouse_ids[i]) if i < len(warehouse_ids) and warehouse_ids[i] else None
+                if wh_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(
+                        product_id=int(product_ids[i]),
+                        warehouse_id=wh_id
+                    ).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(
+                            product_id=int(product_ids[i]),
+                            warehouse_id=wh_id,
+                            quantity=0.0
+                        )
+                        db.session.add(wh_stock)
+                    wh_stock.quantity = max(0, wh_stock.quantity - qty)
         
         delivering.total_amount = total_items_amount + delivering.shipping_charges
         
@@ -744,30 +833,9 @@ def edit_delivering(id):
                 bill_file.save(bill_path)
                 delivering.bill_image_path = bill_path.replace('\\', '/')
         
-        # Update or create linked expense
-        if not delivering.expense:
-            category = ExpenseCategory.query.filter_by(name='Tools Expense').first()
-            if not category:
-                category = ExpenseCategory(name='Tools Expense', description='Expenses related to internal tools')
-                db.session.add(category)
-                db.session.flush()
-                
-            expense = Expense(
-                expense_number=f"EXP-TOOL-DEL-{delivering.delivering_number}",
-                description=f"Tool Delivery #{delivering.delivering_number}: {delivering.description[:50]}",
-                amount=delivering.total_amount,
-                date=delivering.date,
-                category_id=category.id,
-                status='confirmed',
-                created_by=current_user.id
-            )
-            db.session.add(expense)
-            db.session.flush()
-            delivering.expense_id = expense.id
-        else:
-            delivering.expense.amount = delivering.total_amount
-            delivering.expense.date = delivering.date
-            delivering.expense.description = f"Tool Delivery #{delivering.delivering_number}: {delivering.description[:50]}"
+        if delivering.expense:
+            db.session.delete(delivering.expense)
+            delivering.expense_id = None
             
         db.session.commit()
         flash('Tool Delivering updated successfully!', 'success')
@@ -775,7 +843,7 @@ def edit_delivering(id):
         
     staff = Staff.query.filter_by(is_active=True).all()
     vendors = Vendor.query.filter_by(is_active=True).all()
-    return render_template('tools/edit_delivering.html', delivering=delivering, products=products, staff=staff, vendors=vendors)
+    return render_template('tools/edit_delivering.html', delivering=delivering, products=products, staff=staff, vendors=vendors, warehouses=warehouses)
 
 @bp.route('/receiving/bulk-delete', methods=['POST'])
 @login_required
@@ -794,6 +862,14 @@ def bulk_delete_receiving():
                 product = Product.query.get(item.product_id)
                 if product:
                     product.update_quantity(-item.quantity)
+                # Revert per-warehouse stock
+                if item.warehouse_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(
+                        product_id=item.product_id,
+                        warehouse_id=item.warehouse_id
+                    ).first()
+                    if wh_stock:
+                        wh_stock.quantity = max(0, wh_stock.quantity - item.quantity)
             expenses = Expense.query.filter_by(reference=receiving.receiving_number).all()
             for exp in expenses:
                 if exp.is_bom_overhead and exp.mo_id:
@@ -823,6 +899,14 @@ def bulk_delete_delivering():
                 product = Product.query.get(item.product_id)
                 if product:
                     product.update_quantity(item.quantity)
+                # Revert per-warehouse stock
+                if item.warehouse_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(
+                        product_id=item.product_id,
+                        warehouse_id=item.warehouse_id
+                    ).first()
+                    if wh_stock:
+                        wh_stock.quantity += item.quantity
             if delivering.expense:
                 db.session.delete(delivering.expense)
             db.session.delete(delivering)

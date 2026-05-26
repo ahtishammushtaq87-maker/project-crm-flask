@@ -111,10 +111,11 @@
                             <table class="table table-bordered mb-0" id="itemsTable">
                                 <thead class="table-light text-center">
                                     <tr>
-                                        <th style="width: 45%;">Item / Product</th>
-                                        <th style="width: 15%;">Qty</th>
-                                        <th style="width: 20%;">Price</th>
-                                        <th style="width: 20%;">Total</th>
+                                        <th style="width: 35%;">Item / Product</th>
+                                        <th style="width: 20%;">Warehouse</th>
+                                        <th style="width: 10%;">Qty</th>
+                                        <th style="width: 15%;">Price</th>
+                                        <th style="width: 15%;">Total</th>
                                         <th style="width: 50px;"></th>
                                     </tr>
                                 </thead>
@@ -131,6 +132,14 @@
                                                     {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity
                                                     }})
                                                 </option>
+                                                {% endfor %}
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select name="warehouse_id[]" class="form-select searchable-select warehouse-select" required>
+                                                <option value="">Select Warehouse</option>
+                                                {% for warehouse in warehouses %}
+                                                <option value="{{ warehouse.id }}" {% if warehouse.id == item.warehouse_id %}selected{% endif %}>{{ warehouse.name }}</option>
                                                 {% endfor %}
                                             </select>
                                         </td>
@@ -168,7 +177,7 @@
             <div class="col-md-4">
                 <div class="card shadow-sm border-danger mb-3">
                     <div class="card-header bg-danger text-white">
-                        <h5 class="mb-0">Cost Summary (Expense)</h5>
+                        <h5 class="mb-0">Cost Summary</h5>
                     </div>
                     <div class="card-body">
                         <div class="mb-3">
@@ -201,10 +210,6 @@
                                 <h4 class="mb-0 text-primary" id="grandTotalLabel">0.00</h4>
                             </div>
                         </div>
-                        <p class="text-muted small">
-                            <i class="fas fa-info-circle me-1"></i>
-                            This amount will be recorded as a <strong>Tools Expense</strong>.
-                        </p>
                     </div>
                 </div>
 
@@ -213,8 +218,7 @@
                         <i class="fas fa-exclamation-triangle text-danger fa-3x mb-3"></i>
                         <h5>Confirm Stock Update</h5>
                         <p class="text-muted">
-                            Editing will revert the previous deduction and apply the new one, updating the expense
-                            amount.
+                            Editing will revert the previous deduction and apply the new one.
                         </p>
                         <button type="submit" class="btn btn-danger w-100 py-2 fw-bold">
                             <i class="fas fa-check-circle me-2"></i> Update Delivery
@@ -254,20 +258,27 @@
         }
     }
 
-    function updateGlobals() {
+    function addItem() {
         const firstRow = document.querySelector('.item-row');
         const newRow = firstRow.cloneNode(true);
 
         $(newRow).find('.select2-container').remove();
-        const $select = $(newRow).find('.product-select');
-        $select.removeClass('select2-hidden-accessible').removeAttr('data-select2-id').removeAttr('aria-hidden').val('');
+        
+        const $productSelect = $(newRow).find('.product-select');
+        $productSelect.removeClass('select2-hidden-accessible').removeAttr('data-select2-id').removeAttr('aria-hidden').val('');
+        $productSelect.find('option').removeAttr('data-select2-id');
+
+        const $warehouseSelect = $(newRow).find('.warehouse-select');
+        $warehouseSelect.removeClass('select2-hidden-accessible').removeAttr('data-select2-id').removeAttr('aria-hidden').val('');
+        $warehouseSelect.find('option').removeAttr('data-select2-id');
 
         newRow.querySelector('.qty-input').value = '1';
         newRow.querySelector('.price-input').value = '0';
         newRow.querySelector('.total-input').value = '0.00';
 
         document.getElementById('itemsBody').appendChild(newRow);
-        initSelect2($select, '— Search or Select Item —');
+        initSelect2($productSelect, '— Search or Select Item —');
+        initSelect2($warehouseSelect, '— Select Warehouse —');
         calculateGrandTotal();
     }
 

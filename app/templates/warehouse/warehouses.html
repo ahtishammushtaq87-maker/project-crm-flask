@@ -92,7 +92,7 @@
                             <td>{{ w.phone or '-' }}</td>
                             <td>{{ w.manager or '-' }}</td>
                             <td>
-                                <span class="badge bg-info">{{ w.products|length }} products</span>
+                                <span class="badge bg-info">{{ w.total_products_count }} products</span>
                             </td>
                             <td>
                                 {% if w.is_active %}

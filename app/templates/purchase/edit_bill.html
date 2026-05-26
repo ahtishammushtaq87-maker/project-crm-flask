@@ -192,12 +192,13 @@
                                 style="table-layout: fixed; width: 100%;">
                                 <thead class="table-light">
                                     <tr>
-                                        <th style="width: 35%;">Product</th>
+                                        <th style="width: 25%;">Product</th>
+                                        <th style="width: 15%;">Warehouse</th>
                                         <th style="width: 10%;">Qty</th>
                                         <th style="width: 15%;">Current Cost</th>
                                         <th style="width: 15%;">New Cost</th>
                                         <th style="width: 15%;">Amount</th>
-                                        <th style="width: 10%;"></th>
+                                        <th style="width: 5%;"></th>
                                     </tr>
                                 </thead>
                                 <tbody id="itemsBody">
@@ -212,6 +213,14 @@
                                                     item.product_id==p.id %}selected{% endif %}>
                                                     {{ p.sku }} - {{ p.name }}
                                                 </option>
+                                                {% endfor %}
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select name="warehouse_id[]" class="form-select warehouse-select">
+                                                <option value="">— Select Warehouse —</option>
+                                                {% for w in warehouses %}
+                                                <option value="{{ w.id }}" {% if item.warehouse_id == w.id %}selected{% endif %}>{{ w.name }}</option>
                                                 {% endfor %}
                                             </select>
                                         </td>
@@ -255,14 +264,22 @@
         $select.removeAttr('data-select2-id');
         $select.removeAttr('aria-hidden');
         $select.find('option').removeAttr('data-select2-id');
+
+        const $whSelect = $(row).find('.warehouse-select');
+        $whSelect.removeClass('select2-hidden-accessible');
+        $whSelect.removeAttr('data-select2-id');
+        $whSelect.removeAttr('aria-hidden');
+        $whSelect.find('option').removeAttr('data-select2-id');
         row.querySelectorAll('input').forEach(i => { i.value = i.type === 'number' ? '0' : ''; });
         row.querySelector('.qty').value = '1';
         row.querySelector('.product-select').selectedIndex = 0;
+        row.querySelector('.warehouse-select').selectedIndex = 0;
         row.querySelector('.currentCost').value = '';
         const badge = row.querySelector('.priceChangeBadge');
         if (badge) badge.remove();
         document.getElementById('itemsBody').appendChild(row);
         initSelect2($(row).find('.product-select'));
+        initSelect2($(row).find('.warehouse-select'));
     }
 
     function removeRow(btn) {
@@ -352,6 +369,7 @@
         calculateTotal();
         initSelect2('#vendorSelect', '— Search or Select Vendor —', '100%');
         initSelect2('.product-select', '— Search or Select Product —', '100%');
+        initSelect2('.warehouse-select', '— Search or Select Warehouse —', '100%');
     });
 </script>
 {% endblock %}
