@@ -299,7 +299,7 @@
                                             {% else %}-{% endif %}
                                         </td>
                                         <td class="fw-bold text-success">+{{ item.quantity }}</td>
-                                        <td>PKR {{ "{:,.2f}".format(item.total_amount) }}</td>
+                                        <td>PKR {{ "{:,.2f}".format(item.total_amount or 0) }}</td>
                                         <td class="text-end">
                                             {% if item.sale_return.sale %}
                                                 <a href="{{ url_for('sales.invoice_detail', id=item.sale_return.sale_id) }}" class="btn btn-sm btn-outline-success rounded-pill" target="_blank">
@@ -408,7 +408,7 @@
                                             {% else %}-{% endif %}
                                         </td>
                                         <td class="fw-bold text-danger">-{{ item.quantity }}</td>
-                                        <td>PKR {{ "{:,.2f}".format(item.total_amount) }}</td>
+                                        <td>PKR {{ "{:,.2f}".format(item.total_amount or 0) }}</td>
                                         <td class="text-end">
                                             {% if item.purchase_return.bill %}
                                                 <a href="{{ url_for('purchase.bill_detail', id=item.purchase_return.bill_id) }}" class="btn btn-sm btn-outline-danger rounded-pill" target="_blank">
