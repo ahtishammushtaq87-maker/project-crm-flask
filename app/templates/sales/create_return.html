@@ -180,13 +180,14 @@
                     <table class="table" id="itemsTable">
                         <thead>
                             <tr>
-                                <th>Product</th>
-                                <th>Original Qty</th>
-                                <th>Return Qty</th>
-                                <th>Unit Price</th>
-                                <th>Total</th>
-                                <th></th>
-                            </tr>
+                                    <th>Product</th>
+                                    <th>Warehouse</th>
+                                    <th>Original Qty</th>
+                                    <th>Return Qty</th>
+                                    <th>Unit Price</th>
+                                    <th>Total</th>
+                                    <th></th>
+                                </tr>
                         </thead>
                         <tbody id="itemsBody">
                             {% for item in sale.items %}
@@ -200,6 +201,16 @@
                                             {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity }})
                                         </option>
                                         {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <select name="warehouse_id[]" class="form-control warehouse-select searchable-select">
+                                        <option value="">Select Warehouse</option>
+                                        {% if warehouses %}
+                                            {% for warehouse in warehouses %}
+                                            <option value="{{ warehouse.id }}" {% if item.warehouse_id==warehouse.id %}selected{% endif %}>{{ warehouse.name }}</option>
+                                            {% endfor %}
+                                        {% endif %}
                                     </select>
                                 </td>
                                 <td>
@@ -264,8 +275,9 @@
         newRow.querySelector('.item-total').textContent = 'PKR0.00';
         document.getElementById('itemsBody').appendChild(newRow);
         
-        // Init Select2 on new row
+        // Init Select2 on new row (product + warehouse)
         initSelect2($(newRow).find('.searchable-select'));
+        initSelect2($(newRow).find('.warehouse-select'), '— Select Warehouse —');
         
         attachItemEvents(newRow);
     }
@@ -334,6 +346,7 @@
 
     $(document).ready(function() {
         initSelect2('.searchable-select');
+        initSelect2('.warehouse-select', '— Select Warehouse —');
         document.querySelectorAll('.item-row').forEach(attachItemEvents);
         
         const discountInput = document.querySelector('input[name="discount"]');

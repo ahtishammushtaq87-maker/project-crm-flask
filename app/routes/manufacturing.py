@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
-from app.models import Product, BOM, BOMItem, ManufacturingOrder, ManufacturingOrderItem, StockMovement, BOMVersion, Company, Expense, ManufacturingOrderHistory, ProductionLog, ProductionTarget
+from app.models import Product, BOM, BOMItem, ManufacturingOrder, ManufacturingOrderItem, StockMovement, BOMVersion, Company, Expense, ManufacturingOrderHistory, ProductionLog, ProductionTarget, Warehouse, ProductWarehouseStock
 from app.forms import BOMForm, ManufacturingOrderForm
 from app.services.bom_versioning import BOMVersioningService
 from calendar import monthrange
@@ -56,8 +56,9 @@ def add_bom():
         # Process components (submitted via dynamic form elements)
         component_ids = request.form.getlist('component_id[]')
         quantities = request.form.getlist('quantity[]')
+        warehouse_ids = request.form.getlist('warehouse_id[]')
         
-        for comp_id, qty in zip(component_ids, quantities):
+        for comp_id, qty, wh in zip(component_ids, quantities, warehouse_ids if warehouse_ids else [None]*len(component_ids)):
             if comp_id and qty:
                 comp_product = Product.query.get(comp_id)
                 if comp_product:
@@ -73,6 +74,11 @@ def add_bom():
                     item.unit_cost = unit_cost
                     item.shipping_per_unit = 0
                     item.total_cost = total_cost
+                    # set per-component warehouse if provided
+                    try:
+                        item.warehouse_id = int(wh) if wh else None
+                    except (ValueError, TypeError):
+                        item.warehouse_id = None
                     db.session.add(item)
                     
         # Update total cost of BOM after items are added
@@ -134,7 +140,8 @@ def add_bom():
         flash('Bill of Materials created successfully (v1).', 'success')
         return redirect(url_for('manufacturing.boms'))
         
-    return render_template('manufacturing/add_bom.html', form=form, all_products=all_products)
+    warehouses = Warehouse.query.filter_by(is_active=True).all()
+    return render_template('manufacturing/add_bom.html', form=form, all_products=all_products, warehouses=warehouses)
 
 @bp.route('/bom/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -174,15 +181,16 @@ def edit_bom(id):
         # Process new components
         component_ids = request.form.getlist('component_id[]')
         quantities = request.form.getlist('quantity[]')
-        
-        for comp_id, qty in zip(component_ids, quantities):
+        warehouse_ids = request.form.getlist('warehouse_id[]')
+
+        for comp_id, qty, wh in zip(component_ids, quantities, warehouse_ids if warehouse_ids else [None]*len(component_ids)):
             if comp_id and qty:
                 comp_product = Product.query.get(comp_id)
                 if comp_product:
                     unit_cost = comp_product.cost_price
                     qty_float = float(qty)
                     total_cost = unit_cost * qty_float
-                    
+
                     new_item = BOMItem()
                     new_item.bom_id = bom.id
                     new_item.component_id = comp_id
@@ -190,6 +198,10 @@ def edit_bom(id):
                     new_item.unit_cost = unit_cost
                     new_item.shipping_per_unit = 0
                     new_item.total_cost = total_cost
+                    try:
+                        new_item.warehouse_id = int(wh) if wh else None
+                    except (ValueError, TypeError):
+                        new_item.warehouse_id = None
                     db.session.add(new_item)
                     
         db.session.commit()
@@ -242,7 +254,8 @@ def edit_bom(id):
         flash('Bill of Materials updated successfully.', 'success')
         return redirect(url_for('manufacturing.bom_details', id=bom.id))
         
-    return render_template('manufacturing/edit_bom.html', form=form, all_products=all_products, bom=bom)
+    warehouses = Warehouse.query.filter_by(is_active=True).all()
+    return render_template('manufacturing/edit_bom.html', form=form, all_products=all_products, bom=bom, warehouses=warehouses)
 
 @bp.route('/bom/<int:id>')
 @login_required
@@ -309,6 +322,9 @@ def add_order():
     form = ManufacturingOrderForm()
     boms = BOM.query.all()
     form.bom_id.choices = [(b.id, f"{b.name} ({b.product.sku} - {b.product.name})") for b in boms]
+    # Finished warehouse choices
+    warehouses = Warehouse.query.filter_by(is_active=True).all()
+    form.finished_warehouse_id.choices = [(0, '— None —')] + [(w.id, f"{w.code} - {w.name}") for w in warehouses]
     
     if form.validate_on_submit():
         # Generate Unique Order Number using company settings
@@ -334,6 +350,13 @@ def add_order():
         mo = ManufacturingOrder()
         mo.order_number = order_number
         mo.bom_id = bom.id
+        # persist finished goods warehouse selection
+        try:
+            mo.finished_warehouse_id = int(form.finished_warehouse_id.data) if form.finished_warehouse_id.data else None
+            if mo.finished_warehouse_id == 0:
+                mo.finished_warehouse_id = None
+        except (ValueError, TypeError):
+            mo.finished_warehouse_id = None
         mo.quantity_to_produce = form.quantity_to_produce.data
         mo.start_date = form.start_date.data
         mo.end_date = form.end_date.data
@@ -351,6 +374,8 @@ def add_order():
             mo_item = ManufacturingOrderItem()
             mo_item.mo_id = mo.id
             mo_item.component_id = bom_item.component_id
+            # copy per-component warehouse from BOMItem if present
+            mo_item.warehouse_id = bom_item.warehouse_id if hasattr(bom_item, 'warehouse_id') else None
             mo_item.quantity_required = req_qty
             mo_item.quantity_consumed = 0
             mo_item.cost = comp_cost
@@ -404,7 +429,7 @@ def add_order():
         flash('Manufacturing Order created successfully.', 'success')
         return redirect(url_for('manufacturing.orders'))
         
-    return render_template('manufacturing/add_order.html', form=form)
+    return render_template('manufacturing/add_order.html', form=form, warehouses=warehouses)
 
 @bp.route('/order/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -415,6 +440,13 @@ def edit_order(id):
     
     boms = BOM.query.all()
     form.bom_id.choices = [(b.id, f"{b.name} ({b.product.sku} - {b.product.name})") for b in boms]
+    warehouses = Warehouse.query.filter_by(is_active=True).all()
+    # ensure choices present and set current value
+    form.finished_warehouse_id.choices = [(0, '— None —')] + [(w.id, f"{w.code} - {w.name}") for w in warehouses]
+    try:
+        form.finished_warehouse_id.data = order.finished_warehouse_id or 0
+    except Exception:
+        pass
     
     if form.validate_on_submit():
         old_bom_id = order.bom_id
@@ -424,6 +456,13 @@ def edit_order(id):
         order.quantity_to_produce = form.quantity_to_produce.data
         order.start_date = form.start_date.data
         order.end_date = form.end_date.data
+        # update finished warehouse
+        try:
+            order.finished_warehouse_id = int(form.finished_warehouse_id.data) if form.finished_warehouse_id.data else None
+            if order.finished_warehouse_id == 0:
+                order.finished_warehouse_id = None
+        except (ValueError, TypeError):
+            order.finished_warehouse_id = None
         
         if old_bom_id != order.bom_id or old_quantity != order.quantity_to_produce:
             multiplier = order.quantity_to_produce
@@ -440,6 +479,8 @@ def edit_order(id):
                 mo_item = ManufacturingOrderItem()
                 mo_item.mo_id = order.id
                 mo_item.component_id = bom_item.component_id
+                # copy warehouse selection from BOM item
+                mo_item.warehouse_id = bom_item.warehouse_id if hasattr(bom_item, 'warehouse_id') else None
                 mo_item.quantity_required = req_qty
                 mo_item.quantity_consumed = 0
                 mo_item.cost = comp_cost
@@ -476,7 +517,7 @@ def edit_order(id):
         flash('Manufacturing Order updated successfully.', 'success')
         return redirect(url_for('manufacturing.order_details', id=order.id))
     
-    return render_template('manufacturing/edit_order.html', form=form, order=order)
+    return render_template('manufacturing/edit_order.html', form=form, order=order, warehouses=warehouses)
 
 @bp.route('/order/<int:id>')
 @login_required
@@ -515,9 +556,19 @@ def complete_order(id):
     for item in order.items:
         # Calculate remaining needed for this component
         needed_now = item.quantity_required - item.quantity_consumed
-        if needed_now > 0 and item.component.quantity < needed_now:
-            flash(f'Insufficient stock for component {item.component.name}. Required: {needed_now}, Available: {item.component.quantity}', 'danger')
-            return redirect(url_for('manufacturing.order_details', id=order.id))
+        if needed_now > 0:
+            # Prefer warehouse-specific stock if configured on MO item, then BOM item, then legacy product.warehouse_id
+            wh_id = getattr(item, 'warehouse_id', None) or (item.component.warehouse_id if hasattr(item.component, 'warehouse_id') else None)
+            if wh_id:
+                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.component_id, warehouse_id=wh_id).first()
+                available = wh_stock.quantity if wh_stock else 0
+                if available < needed_now:
+                    flash(f'Insufficient stock in warehouse for component {item.component.name}. Required: {needed_now}, Available: {available}', 'danger')
+                    return redirect(url_for('manufacturing.order_details', id=order.id))
+            else:
+                if item.component.quantity < needed_now:
+                    flash(f'Insufficient stock for component {item.component.name}. Required: {needed_now}, Available: {item.component.quantity}', 'danger')
+                    return redirect(url_for('manufacturing.order_details', id=order.id))
             
     # Consume components and record stock movements for the remaining batch
     total_batch_material_cost = 0
@@ -539,6 +590,16 @@ def complete_order(id):
             movement_out.created_by = current_user.id
             db.session.add(movement_out)
             total_batch_material_cost += item.component.cost_price * consume_qty
+            # Also deduct from per-warehouse stock when configured
+            wh_id = getattr(item, 'warehouse_id', None) or (item.component.warehouse_id if hasattr(item.component, 'warehouse_id') else None)
+            if wh_id:
+                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.component_id, warehouse_id=wh_id).first()
+                if wh_stock:
+                    wh_stock.quantity -= consume_qty
+                else:
+                    # If warehouse-specific row missing, do not create negative stock silently; raise a safe error
+                    # (This situation should be prevented by checks above)
+                    pass
 
     # Add finished good and record stock movement for the remaining batch
     finished_good = order.bom.product
@@ -556,6 +617,17 @@ def complete_order(id):
         movement_in.reason = f'Produced (Final) from MO {order.order_number}'
         movement_in.created_by = current_user.id
         db.session.add(movement_in)
+        # Also add finished goods to selected warehouse stock if configured on MO
+        finished_wh_id = order.finished_warehouse_id or (finished_good.warehouse_id if hasattr(finished_good, 'warehouse_id') else None)
+        if finished_wh_id:
+            wh_stock = ProductWarehouseStock.query.filter_by(product_id=finished_good.id, warehouse_id=finished_wh_id).first()
+            if not wh_stock:
+                wh_stock = ProductWarehouseStock()
+                wh_stock.product_id = finished_good.id
+                wh_stock.warehouse_id = finished_wh_id
+                wh_stock.quantity = 0
+                db.session.add(wh_stock)
+            wh_stock.quantity += qty_to_process
     
     # Calculate costs for the whole order
     # material cost is now correctly the sum in item.quantity_consumed * cost_price
@@ -663,20 +735,27 @@ def partial_complete_order(id):
         # The BOM ratio is (item.quantity_required / order.quantity_to_produce)
         ratio = item.quantity_required / order.quantity_to_produce
         needed_qty = ratio * qty_produced
-        
-        if item.component.quantity < needed_qty:
-            flash(f'Insufficient stock for component {item.component.name}. Required: {needed_qty}, Available: {item.component.quantity}', 'danger')
-            return redirect(url_for('manufacturing.order_details', id=order.id))
+        # Prefer warehouse-specific stock if configured on MO item, else fallback to global
+        wh_id = getattr(item, 'warehouse_id', None) or (item.component.warehouse_id if hasattr(item.component, 'warehouse_id') else None)
+        if wh_id:
+            wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.component_id, warehouse_id=wh_id).first()
+            available = wh_stock.quantity if wh_stock else 0
+            if available < needed_qty:
+                flash(f'Insufficient stock in warehouse for component {item.component.name}. Required: {needed_qty}, Available: {available}', 'danger')
+                return redirect(url_for('manufacturing.order_details', id=order.id))
+        else:
+            if item.component.quantity < needed_qty:
+                flash(f'Insufficient stock for component {item.component.name}. Required: {needed_qty}, Available: {item.component.quantity}', 'danger')
+                return redirect(url_for('manufacturing.order_details', id=order.id))
 
     # Consume components and record stock movements
     total_material_cost = 0
     for item in order.items:
         ratio = item.quantity_required / order.quantity_to_produce
         batch_consume_qty = ratio * qty_produced
-        
         item.component.quantity -= batch_consume_qty
         item.quantity_consumed += batch_consume_qty
-        
+
         movement_out = StockMovement()
         movement_out.product_id = item.component_id
         movement_out.movement_type = 'out'
@@ -689,6 +768,15 @@ def partial_complete_order(id):
         movement_out.created_by = current_user.id
         db.session.add(movement_out)
         total_material_cost += item.component.cost_price * batch_consume_qty
+        # Deduct from per-warehouse stock when configured
+        wh_id = getattr(item, 'warehouse_id', None) or (item.component.warehouse_id if hasattr(item.component, 'warehouse_id') else None)
+        if wh_id:
+            wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.component_id, warehouse_id=wh_id).first()
+            if wh_stock:
+                wh_stock.quantity -= batch_consume_qty
+            else:
+                # If missing, do nothing (should have been prevented by earlier check)
+                pass
 
     # Add finished good and record stock movement
     finished_good = order.bom.product
@@ -705,6 +793,17 @@ def partial_complete_order(id):
     movement_in.reason = f'Produced (Partial) from MO {order.order_number}'
     movement_in.created_by = current_user.id
     db.session.add(movement_in)
+    # Also add to finished goods warehouse if configured on MO
+    finished_wh_id = order.finished_warehouse_id or (finished_good.warehouse_id if hasattr(finished_good, 'warehouse_id') else None)
+    if finished_wh_id:
+        wh_stock = ProductWarehouseStock.query.filter_by(product_id=finished_good.id, warehouse_id=finished_wh_id).first()
+        if not wh_stock:
+            wh_stock = ProductWarehouseStock()
+            wh_stock.product_id = finished_good.id
+            wh_stock.warehouse_id = finished_wh_id
+            wh_stock.quantity = 0
+            db.session.add(wh_stock)
+        wh_stock.quantity += qty_produced
     
     # Calculate costs for this batch
     batch_labor_cost = (order.actual_labor_cost / order.quantity_to_produce) * qty_produced if order.quantity_to_produce > 0 else 0

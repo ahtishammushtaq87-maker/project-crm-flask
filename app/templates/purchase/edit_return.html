@@ -95,6 +95,7 @@
                         <thead>
                             <tr>
                                 <th>Product</th>
+                                <th>Warehouse</th>
                                 <th>Available Qty</th>
                                 <th>Return Qty</th>
                                 <th>Unit Price</th>
@@ -114,6 +115,16 @@
                                             {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity }})
                                         </option>
                                         {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <select name="warehouse_id[]" class="form-control warehouse-select searchable-select">
+                                        <option value="">Select Warehouse</option>
+                                        {% if warehouses %}
+                                            {% for warehouse in warehouses %}
+                                            <option value="{{ warehouse.id }}" {% if item.warehouse_id==warehouse.id %}selected{% endif %}>{{ warehouse.name }}</option>
+                                            {% endfor %}
+                                        {% endif %}
                                     </select>
                                 </td>
                                 <td>

@@ -172,11 +172,12 @@
                     <table class="table table-bordered mb-0" id="itemsTable" style="table-layout: fixed; width: 100%;">
                         <thead class="table-light">
                             <tr>
-                                <th style="width: 40%;">Product</th>
+                                <th style="width: 35%;">Product</th>
+                                <th style="width: 15%;">Warehouse</th>
                                 <th style="width: 15%;">Quantity</th>
                                 <th style="width: 15%;">Unit Price</th>
-                                <th style="width: 15%;">Delivery</th>
-                                <th style="width: 15%;">Total</th>
+                                <th style="width: 10%;">Delivery</th>
+                                <th style="width: 10%;">Total</th>
                                 <th style="width: 40px;"></th>
                             </tr>
                         </thead>
@@ -192,6 +193,16 @@
                                             {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity }})
                                         </option>
                                         {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <select name="warehouse_id[]" class="form-select warehouse-select searchable-select">
+                                        <option value="">Select Warehouse</option>
+                                        {% if warehouses %}
+                                            {% for warehouse in warehouses %}
+                                            <option value="{{ warehouse.id }}" {% if item.warehouse_id==warehouse.id %}selected{% endif %}>{{ warehouse.name }}</option>
+                                            {% endfor %}
+                                        {% endif %}
                                     </select>
                                 </td>
                                 <td>
@@ -253,6 +264,7 @@
         document.getElementById('itemsBody').appendChild(newRow);
 
         initSelect2($(newRow).find('.product-select'), 'Search or select product');
+        initSelect2($(newRow).find('.warehouse-select'), '— Select Warehouse —');
         attachItemEvents(newRow);
     }
 
@@ -344,6 +356,7 @@
         initSelect2('#vendorSelect', '— Search or Select Vendor —');
         initSelect2('#salesmanSelect', '— Search or Select Salesman —');
         initSelect2('.product-select', '— Search or Select Product —');
+        initSelect2('.warehouse-select', '— Select Warehouse —');
 
         document.querySelectorAll('.item-row').forEach(attachItemEvents);
         document.querySelector('input[name="discount"]').addEventListener('input', calculateTotals);

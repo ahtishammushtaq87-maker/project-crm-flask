@@ -269,6 +269,7 @@ def get_entity_details(entity_type, entity_id):
             data['total_mfg_count'] = len(mo_items_as_component) + len(mo_as_finished_good)
 
             data['actions'] = [
+                {'label': 'Complete History', 'url': url_for('inventory.product_full_history', id=entity.id), 'btn_class': 'btn-primary'},
                 {'label': 'Price History', 'url': 'javascript:void(0)', 'btn_class': 'btn-success', 'onclick': f"showPriceHistory({entity.id}, '{entity.name.replace(chr(39), chr(92)+chr(39))}'); bootstrap.Modal.getInstance(document.getElementById('entityHistoryModal')).hide();"},
                 {'label': 'Edit', 'url': url_for('inventory.edit_product', id=entity.id), 'btn_class': 'btn-info', 'permission': 'inventory.edit'},
                 {'label': 'Delete', 'url': url_for('inventory.delete_product', id=entity.id), 'btn_class': 'btn-danger', 'permission': 'inventory.delete', 'is_form': True}

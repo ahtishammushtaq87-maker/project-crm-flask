@@ -157,13 +157,14 @@
                     <table class="table" id="itemsTable">
                         <thead>
                             <tr>
-                                <th>Product</th>
-                                <th>Original Qty</th>
-                                <th>Return Qty</th>
-                                <th>Unit Price</th>
-                                <th>Total</th>
-                                <th></th>
-                            </tr>
+                                    <th>Product</th>
+                                    <th>Warehouse</th>
+                                    <th>Original Qty</th>
+                                    <th>Return Qty</th>
+                                    <th>Unit Price</th>
+                                    <th>Total</th>
+                                    <th></th>
+                                </tr>
                         </thead>
                         <tbody id="itemsBody">
                             {% for item in bill.items %}
@@ -177,6 +178,16 @@
                                             {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity }})
                                         </option>
                                         {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <select name="warehouse_id[]" class="form-control warehouse-select searchable-select">
+                                        <option value="">Select Warehouse</option>
+                                        {% if warehouses %}
+                                            {% for warehouse in warehouses %}
+                                            <option value="{{ warehouse.id }}" {% if warehouse.id==item.warehouse_id %}selected{% endif %}>{{ warehouse.name }}</option>
+                                            {% endfor %}
+                                        {% endif %}
                                     </select>
                                 </td>
                                 <td>

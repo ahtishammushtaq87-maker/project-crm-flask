@@ -2,11 +2,19 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from app.utils import permission_required, log_activity
 from app import db
-from app.models import Product, User, Warehouse, ProductCategory, Unit, ProductWarehouseStock
+from app.models import (
+    Product, User, Warehouse, ProductCategory, Unit, ProductWarehouseStock,
+    SaleItem, SaleReturnItem, PurchaseItem, PurchaseReturnItem,
+    ToolReceivingItem, ToolDeliveringItem, StockMovement, ActivityLog,
+    Sale, SaleReturn, PurchaseBill, PurchaseReturn, ToolReceiving, ToolDelivering,
+    BillReceiveItem
+)
 from app.forms import ProductForm, UnitForm
 from sqlalchemy import func, inspect
-from io import BytesIO
+from datetime import datetime
 import os
+import json
+from io import BytesIO
 from werkzeug.utils import secure_filename
 from app.routes.filters import apply_saved_filter_to_query
 
@@ -688,3 +696,144 @@ def get_product(id):
         'reorder_level': product.reorder_level,
         'category': product.category
     })
+
+@bp.route('/product/<int:id>/full-history')
+@login_required
+def product_full_history(id):
+    product = Product.query.get_or_404(id)
+    
+    # 1. Stock History (StockMovement)
+    movements = StockMovement.query.filter_by(product_id=id).order_by(StockMovement.created_at.desc()).all()
+    
+    # 2. Sales History
+    sales = SaleItem.query.filter_by(product_id=id).join(SaleItem.sale).order_by(Sale.date.desc()).all()
+    
+    # 3. Sales Return History
+    sale_returns = SaleReturnItem.query.filter_by(product_id=id).join(SaleReturnItem.sale_return).order_by(SaleReturn.date.desc()).all()
+    
+    # 4. Purchase History
+    purchases = sorted(PurchaseItem.query.filter_by(product_id=id).all(), key=lambda x: (x.bill.date if x.bill and x.bill.date else x.bill.created_at) if x.bill else datetime.min, reverse=True)
+    
+    # 5. Purchase Return History
+    purchase_returns = PurchaseReturnItem.query.filter_by(product_id=id).join(PurchaseReturnItem.purchase_return).order_by(PurchaseReturn.date.desc()).all()
+    
+    # 6. Voucher Receiving (Tools)
+    receivings = ToolReceivingItem.query.filter_by(product_id=id).join(ToolReceivingItem.receiving).order_by(ToolReceiving.date.desc()).all()
+    
+    # 7. Voucher Delivery (Tools)
+    deliveries = ToolDeliveringItem.query.filter_by(product_id=id).join(ToolDeliveringItem.delivering).order_by(ToolDelivering.date.desc()).all()
+    
+    # 8. Activity Log (Edits/Deletes)
+    activity_logs = ActivityLog.query.filter(
+        ActivityLog.module == 'Inventory',
+        ActivityLog.details.ilike(f'%SKU: {product.sku}%')
+    ).order_by(ActivityLog.timestamp.desc()).all()
+
+    # Calculate summary stats
+    summary = {
+        'total_sold': sum(item.quantity for item in sales),
+        'total_purchased': sum(item.quantity for item in purchases),
+        'total_returned_by_customer': sum(item.quantity for item in sale_returns),
+        'total_returned_to_vendor': sum(item.quantity for item in purchase_returns),
+        'total_received_tool': sum(item.quantity for item in receivings),
+        'total_delivered_tool': sum(item.quantity for item in deliveries),
+        'stock_value': product.stock_value
+    }
+
+    return render_template('inventory/product_full_history.html',
+                         product=product,
+                         movements=movements,
+                         sales=sales,
+                         sale_returns=sale_returns,
+                         purchases=purchases,
+                         purchase_returns=purchase_returns,
+                         receivings=receivings,
+                         deliveries=deliveries,
+                         activity_logs=activity_logs,
+                         summary=summary,
+                         active_module='product')
+
+@bp.route('/product/<int:id>/recalculate', methods=['POST'])
+@login_required
+@permission_required('inventory', action='edit')
+def recalculate_stock(id):
+    product = Product.query.get_or_404(id)
+    
+    # Recalculate total quantity from all sources
+    # Start with 0 and add/subtract based on verified transactions
+    history_qty = 0
+    has_history = False
+    
+    # + Purchases (Only actually received stock)
+    purchases_qty = db.session.query(func.sum(BillReceiveItem.quantity_received)).filter_by(product_id=id).scalar() or 0
+    if purchases_qty > 0: has_history = True
+    history_qty += purchases_qty
+    
+    # - Sales
+    sales_qty = db.session.query(func.sum(SaleItem.quantity)).filter_by(product_id=id).scalar() or 0
+    if sales_qty > 0: has_history = True
+    history_qty -= sales_qty
+    
+    # + Sale Returns (Only if returned to inventory)
+    sale_returns_qty = db.session.query(func.sum(SaleReturnItem.quantity))\
+        .join(SaleReturn).filter(SaleReturnItem.product_id == id, SaleReturn.returned_to_inventory == True).scalar() or 0
+    if sale_returns_qty > 0: has_history = True
+    history_qty += sale_returns_qty
+    
+    # - Purchase Returns (Only if removed from inventory)
+    purchase_returns_qty = db.session.query(func.sum(PurchaseReturnItem.quantity))\
+        .join(PurchaseReturn).filter(PurchaseReturnItem.product_id == id, PurchaseReturn.returned_to_inventory == True).scalar() or 0
+    if purchase_returns_qty > 0: has_history = True
+    history_qty -= purchase_returns_qty
+    
+    # + Tool Receiving
+    tool_receivings_qty = db.session.query(func.sum(ToolReceivingItem.quantity)).filter_by(product_id=id).scalar() or 0
+    if tool_receivings_qty > 0: has_history = True
+    history_qty += tool_receivings_qty
+    
+    # - Tool Delivering
+    tool_deliveries_qty = db.session.query(func.sum(ToolDeliveringItem.quantity)).filter_by(product_id=id).scalar() or 0
+    if tool_deliveries_qty > 0: has_history = True
+    history_qty -= tool_deliveries_qty
+    
+    # +/- Manufacturing/Stock Adjustments (from StockMovement)
+    mfg_in = db.session.query(func.sum(StockMovement.quantity)).filter_by(product_id=id, movement_type='in', reference_type='manufacturing_finish').scalar() or 0
+    mfg_out = db.session.query(func.sum(StockMovement.quantity)).filter_by(product_id=id, movement_type='out', reference_type='manufacturing_usage').scalar() or 0
+    if mfg_in > 0 or mfg_out > 0: has_history = True
+    history_qty += mfg_in
+    history_qty -= mfg_out
+
+    # General adjustments
+    adjust_in = db.session.query(func.sum(StockMovement.quantity)).filter_by(product_id=id, movement_type='in', reference_type='adjustment').scalar() or 0
+    adjust_out = db.session.query(func.sum(StockMovement.quantity)).filter_by(product_id=id, movement_type='out', reference_type='adjustment').scalar() or 0
+    if adjust_in > 0 or adjust_out > 0: has_history = True
+    history_qty += adjust_in
+    history_qty -= adjust_out
+
+    old_qty = product.quantity
+    
+    # SAFETY CHECK: If no history exists at all but we have stock, DON'T set to zero.
+    # This preserves opening balances and manual edits that lack movement logs.
+    if not has_history and old_qty > 0:
+        return jsonify({'success': True, 'old_qty': old_qty, 'new_qty': old_qty, 'message': 'No transaction history found to recalculate. Current stock preserved.'})
+
+    # Otherwise, update with the history-based total
+    product.quantity = history_qty
+    total_qty = history_qty
+    
+    # Sync with primary warehouse if exists
+    if product.warehouse_id:
+        wh_stock = ProductWarehouseStock.query.filter_by(product_id=id, warehouse_id=product.warehouse_id).first()
+        if wh_stock:
+            wh_stock.quantity = total_qty
+        else:
+            wh_stock = ProductWarehouseStock(product_id=id, warehouse_id=product.warehouse_id, quantity=total_qty)
+            db.session.add(wh_stock)
+
+    try:
+        db.session.commit()
+        log_activity('Inventory', f'Recalculated Stock for {product.name}', f'SKU: {product.sku}, Old Qty: {old_qty}, New Qty: {total_qty}')
+        return jsonify({'success': True, 'old_qty': old_qty, 'new_qty': total_qty, 'message': f'Stock recalculated successfully! New Quantity: {total_qty}'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500

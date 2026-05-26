@@ -383,6 +383,7 @@ class ManufacturingOrderForm(FlaskForm):
     quantity_to_produce = FloatField('Quantity to Produce', validators=[DataRequired(), NumberRange(min=0.1)])
     start_date = DateField('Start Date', validators=[Optional()])
     end_date = DateField('End Date', validators=[Optional()])
+    finished_warehouse_id = SelectField('Finished Warehouse', coerce=int, validators=[Optional()])
 
 class StaffForm(FlaskForm):
     name = StringField('Staff Name', validators=[DataRequired()])

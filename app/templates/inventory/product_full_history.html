@@ -1,0 +1,644 @@
+{% extends "base.html" %}
+
+{% block title %}Full History: {{ product.sku }} - {{ product.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header Section -->
+    <div class="row align-items-center mb-4">
+        <div class="col-md-6">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-1">
+                    <li class="breadcrumb-item"><a href="{{ url_for('inventory.products') }}" class="text-decoration-none">Inventory</a></li>
+                    <li class="breadcrumb-item active">{{ product.sku }}</li>
+                </ol>
+            </nav>
+            <h2 class="h3 mb-0 fw-bold text-gradient-primary">Complete History: {{ product.name }}</h2>
+        </div>
+        <div class="col-md-6 text-md-end mt-3 mt-md-0">
+            <button class="btn btn-premium-secondary me-2" id="recalculateBtn">
+                <i class="fas fa-sync-alt me-2"></i>Recalculate Stock
+            </button>
+            <a href="{{ url_for('inventory.edit_product', id=product.id) }}" class="btn btn-premium-info me-2">
+                <i class="fas fa-edit me-2"></i>Edit Item
+            </a>
+            <button class="btn btn-premium-dark" onclick="window.print()">
+                <i class="fas fa-print me-2"></i>Print History
+            </button>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4 g-3">
+        <div class="col-xl-3 col-sm-6">
+            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden summary-card">
+                <div class="card-body p-3">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <div class="icon-shape bg-soft-primary text-primary rounded-3 p-3">
+                                <i class="fas fa-boxes fa-2x"></i>
+                            </div>
+                        </div>
+                        <div class="col ps-0">
+                            <p class="text-xs text-uppercase mb-0 text-muted fw-bold">Current Stock</p>
+                            <h4 class="mb-0 fw-bold">{{ product.quantity }} <small class="text-muted text-sm">{{ product.unit }}</small></h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-sm-6">
+            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden summary-card">
+                <div class="card-body p-3">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <div class="icon-shape bg-soft-success text-success rounded-3 p-3">
+                                <i class="fas fa-arrow-up fa-2x"></i>
+                            </div>
+                        </div>
+                        <div class="col ps-0">
+                            <p class="text-xs text-uppercase mb-0 text-muted fw-bold">Total Inbound</p>
+                            <h4 class="mb-0 fw-bold text-success">+{{ summary.total_purchased + summary.total_received_tool + summary.total_returned_by_customer }}</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-sm-6">
+            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden summary-card">
+                <div class="card-body p-3">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <div class="icon-shape bg-soft-danger text-danger rounded-3 p-3">
+                                <i class="fas fa-arrow-down fa-2x"></i>
+                            </div>
+                        </div>
+                        <div class="col ps-0">
+                            <p class="text-xs text-uppercase mb-0 text-muted fw-bold">Total Outbound</p>
+                            <h4 class="mb-0 fw-bold text-danger">-{{ summary.total_sold + summary.total_delivered_tool + summary.total_returned_to_vendor }}</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-sm-6">
+            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden summary-card">
+                <div class="card-body p-3">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <div class="icon-shape bg-soft-info text-info rounded-3 p-3">
+                                <i class="fas fa-wallet fa-2x"></i>
+                            </div>
+                        </div>
+                        <div class="col ps-0">
+                            <p class="text-xs text-uppercase mb-0 text-muted fw-bold">Stock Value</p>
+                            <h4 class="mb-0 fw-bold">PKR {{ "{:,.2f}".format(summary.stock_value) }}</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Details Tab Section -->
+    <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+        <div class="card-header bg-white border-bottom-0 pb-0 pt-4">
+            <ul class="nav nav-tabs nav-premium border-0" id="historyTab" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="stock-tab" data-bs-toggle="tab" data-bs-target="#stock-content" type="button" role="tab">
+                        <i class="fas fa-history me-2"></i>Stock Movements
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="sales-tab" data-bs-toggle="tab" data-bs-target="#sales-content" type="button" role="tab">
+                        <i class="fas fa-shopping-cart me-2"></i>Sales & Returns
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="purchases-tab" data-bs-toggle="tab" data-bs-target="#purchases-content" type="button" role="tab">
+                        <i class="fas fa-truck me-2"></i>Purchases & Returns
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="vouchers-tab" data-bs-toggle="tab" data-bs-target="#vouchers-content" type="button" role="tab">
+                        <i class="fas fa-file-invoice me-2"></i>Tool Vouchers
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="timeline-tab" data-bs-toggle="tab" data-bs-target="#timeline-content" type="button" role="tab">
+                        <i class="fas fa-stream me-2"></i>Audit Trail
+                    </button>
+                </li>
+            </ul>
+        </div>
+        <div class="card-body p-0">
+            <div class="tab-content" id="historyTabContent">
+
+                <!-- ═══════════════════════════════════════════════════ -->
+                <!-- Stock Movements Tab -->
+                <!-- ═══════════════════════════════════════════════════ -->
+                <div class="tab-pane fade show active" id="stock-content" role="tabpanel">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0 datatable-export">
+                            <thead class="bg-light">
+                                <tr>
+                                    <th class="ps-4">Date & Time</th>
+                                    <th>Type</th>
+                                    <th>Reference</th>
+                                    <th>Prev Qty</th>
+                                    <th>Change</th>
+                                    <th>New Qty</th>
+                                    <th>Reason</th>
+                                    <th class="pe-4 text-end">View</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for movement in movements %}
+                                <tr>
+                                    <td class="ps-4">
+                                        <div class="d-flex flex-column">
+                                            <span class="fw-bold">{{ movement.created_at.strftime('%Y-%m-%d') }}</span>
+                                            <small class="text-muted">{{ movement.created_at.strftime('%H:%M') }}</small>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge rounded-pill bg-soft-{{ 'success' if movement.movement_type == 'in' else 'danger' }}">
+                                            {{ movement.movement_type|upper }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex flex-column">
+                                            <span class="text-sm fw-bold">{{ movement.reference_type|replace('_', ' ')|title }}</span>
+                                            <small class="text-muted">#{{ movement.reference_id }}</small>
+                                        </div>
+                                    </td>
+                                    <td>{{ movement.previous_quantity }}</td>
+                                    <td>
+                                        <span class="fw-bold text-{{ 'success' if movement.movement_type == 'in' else 'danger' }}">
+                                            {{ '+' if movement.movement_type == 'in' else '-' }}{{ movement.quantity }}
+                                        </span>
+                                    </td>
+                                    <td><span class="fw-bold text-dark">{{ movement.new_quantity }}</span></td>
+                                    <td><small>{{ movement.reason or '-' }}</small></td>
+                                    <td class="pe-4 text-end">
+                                        {% if movement.reference_type in ['sale', 'sale_payment'] %}
+                                            <a href="{{ url_for('sales.invoice_detail', id=movement.reference_id) }}" class="btn btn-sm btn-outline-primary rounded-pill" target="_blank" title="View Invoice">
+                                                <i class="fas fa-eye me-1"></i>Invoice
+                                            </a>
+                                        {% elif movement.reference_type in ['purchase', 'purchase_receive'] %}
+                                            <a href="{{ url_for('purchase.bill_detail', id=movement.reference_id) }}" class="btn btn-sm btn-outline-info rounded-pill" target="_blank" title="View Bill">
+                                                <i class="fas fa-eye me-1"></i>Bill
+                                            </a>
+                                        {% elif movement.reference_type in ['manufacturing_finish', 'manufacturing_usage'] %}
+                                            <a href="{{ url_for('manufacturing.order_details', id=movement.reference_id) }}" class="btn btn-sm btn-outline-warning rounded-pill" target="_blank" title="View MO">
+                                                <i class="fas fa-industry me-1"></i>MO
+                                            </a>
+                                        {% else %}
+                                            <span class="badge bg-light text-muted">{{ movement.reference_type|replace('_',' ')|title }}</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="8" class="text-center text-muted py-4"><i class="fas fa-inbox me-2"></i>No stock movements recorded.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ═══════════════════════════════════════════════════ -->
+                <!-- Sales & Returns Tab -->
+                <!-- ═══════════════════════════════════════════════════ -->
+                <div class="tab-pane fade" id="sales-content" role="tabpanel">
+                    <div class="p-4">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-shopping-cart text-primary me-2"></i>Sales History</h6>
+                        <div class="table-responsive mb-4">
+                            <table class="table table-hover align-middle datatable-export">
+                                <thead class="bg-light">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Invoice #</th>
+                                        <th>Customer</th>
+                                        <th>Quantity</th>
+                                        <th>Unit Price</th>
+                                        <th>Total</th>
+                                        <th>Status</th>
+                                        <th class="text-end">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in sales %}
+                                    <tr>
+                                        <td>{{ item.sale.date.strftime('%Y-%m-%d') }}</td>
+                                        <td>
+                                            <a href="{{ url_for('sales.invoice_detail', id=item.sale_id) }}" class="fw-bold text-decoration-none text-primary" target="_blank">
+                                                <i class="fas fa-file-invoice me-1"></i>#{{ item.sale.invoice_number }}
+                                            </a>
+                                        </td>
+                                        <td>
+                                            {% if item.sale.customer %}
+                                                <a href="{{ url_for('sales.edit_customer', id=item.sale.customer_id) }}" class="text-decoration-none text-dark fw-semibold customer-link" target="_blank" title="View Customer Profile">
+                                                    <i class="fas fa-user-circle me-1 text-info"></i>{{ item.sale.customer.name }}
+                                                </a>
+                                            {% else %}
+                                                <span class="text-muted">Walk-in</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="fw-bold text-danger">-{{ item.quantity }}</td>
+                                        <td>PKR {{ "{:,.2f}".format(item.unit_price) }}</td>
+                                        <td>PKR {{ "{:,.2f}".format(item.total) }}</td>
+                                        <td>
+                                            <span class="badge bg-soft-{{ 'success' if item.sale.status == 'paid' else 'warning' }}">{{ item.sale.status|title }}</span>
+                                        </td>
+                                        <td class="text-end">
+                                            <a href="{{ url_for('sales.invoice_detail', id=item.sale_id) }}" class="btn btn-sm btn-outline-primary rounded-pill" target="_blank">
+                                                <i class="fas fa-external-link-alt me-1"></i>View
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="8" class="text-center text-muted py-4"><i class="fas fa-inbox me-2"></i>No sales recorded.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <hr class="my-4">
+
+                        <h6 class="fw-bold mb-3"><i class="fas fa-undo text-success me-2"></i>Sales Return History</h6>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle datatable-export">
+                                <thead class="bg-light">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Return #</th>
+                                        <th>Orig. Invoice</th>
+                                        <th>Customer</th>
+                                        <th>Quantity</th>
+                                        <th>Amount</th>
+                                        <th class="text-end">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in sale_returns %}
+                                    <tr>
+                                        <td>{{ item.sale_return.date.strftime('%Y-%m-%d') }}</td>
+                                        <td><span class="fw-bold badge bg-soft-success">#{{ item.sale_return.return_number }}</span></td>
+                                        <td>
+                                            {% if item.sale_return.sale %}
+                                                <a href="{{ url_for('sales.invoice_detail', id=item.sale_return.sale_id) }}" class="text-decoration-none fw-bold text-primary" target="_blank">
+                                                    <i class="fas fa-file-invoice me-1"></i>#{{ item.sale_return.sale.invoice_number }}
+                                                </a>
+                                            {% else %}-{% endif %}
+                                        </td>
+                                        <td>
+                                            {% if item.sale_return.customer %}
+                                                <a href="{{ url_for('sales.edit_customer', id=item.sale_return.customer_id) }}" class="text-decoration-none text-dark fw-semibold customer-link" target="_blank">
+                                                    <i class="fas fa-user-circle me-1 text-info"></i>{{ item.sale_return.customer.name }}
+                                                </a>
+                                            {% else %}-{% endif %}
+                                        </td>
+                                        <td class="fw-bold text-success">+{{ item.quantity }}</td>
+                                        <td>PKR {{ "{:,.2f}".format(item.total_amount) }}</td>
+                                        <td class="text-end">
+                                            {% if item.sale_return.sale %}
+                                                <a href="{{ url_for('sales.invoice_detail', id=item.sale_return.sale_id) }}" class="btn btn-sm btn-outline-success rounded-pill" target="_blank">
+                                                    <i class="fas fa-external-link-alt me-1"></i>View Invoice
+                                                </a>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="7" class="text-center text-muted py-4"><i class="fas fa-inbox me-2"></i>No sale returns recorded.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══════════════════════════════════════════════════ -->
+                <!-- Purchases & Returns Tab -->
+                <!-- ═══════════════════════════════════════════════════ -->
+                <div class="tab-pane fade" id="purchases-content" role="tabpanel">
+                    <div class="p-4">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-truck text-info me-2"></i>Purchase History</h6>
+                        <div class="table-responsive mb-4">
+                            <table class="table table-hover align-middle datatable-export">
+                                <thead class="bg-light">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Bill #</th>
+                                        <th>Vendor</th>
+                                        <th>Quantity</th>
+                                        <th>Unit Cost</th>
+                                        <th>Total</th>
+                                        <th class="text-end">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in purchases %}
+                                    <tr>
+                                        <td>{{ item.bill.date.strftime('%Y-%m-%d') if item.bill and item.bill.date else '-' }}</td>
+                                        <td>
+                                            {% if item.bill %}
+                                                <a href="{{ url_for('purchase.bill_detail', id=item.bill_id) }}" class="fw-bold text-decoration-none text-info" target="_blank">
+                                                    <i class="fas fa-file-alt me-1"></i>#{{ item.bill.bill_number }}
+                                                </a>
+                                            {% else %}-{% endif %}
+                                        </td>
+                                        <td>
+                                            {% if item.bill and item.bill.vendor %}
+                                                <a href="{{ url_for('purchase.vendors') }}?vendor_id={{ item.bill.vendor_id }}" class="text-decoration-none text-dark fw-semibold vendor-link" target="_blank" title="View Vendor">
+                                                    <i class="fas fa-building me-1 text-warning"></i>{{ item.bill.vendor.name }}
+                                                </a>
+                                            {% else %}-{% endif %}
+                                        </td>
+                                        <td class="fw-bold text-success">+{{ item.quantity }}</td>
+                                        <td>PKR {{ "{:,.2f}".format(item.unit_price) }}</td>
+                                        <td>PKR {{ "{:,.2f}".format(item.total) }}</td>
+                                        <td class="text-end">
+                                            {% if item.bill %}
+                                                <a href="{{ url_for('purchase.bill_detail', id=item.bill_id) }}" class="btn btn-sm btn-outline-info rounded-pill" target="_blank">
+                                                    <i class="fas fa-external-link-alt me-1"></i>View Bill
+                                                </a>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="7" class="text-center text-muted py-4"><i class="fas fa-inbox me-2"></i>No purchases recorded.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <hr class="my-4">
+
+                        <h6 class="fw-bold mb-3"><i class="fas fa-undo text-danger me-2"></i>Purchase Return History</h6>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle datatable-export">
+                                <thead class="bg-light">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Return #</th>
+                                        <th>Orig. Bill</th>
+                                        <th>Vendor</th>
+                                        <th>Quantity</th>
+                                        <th>Amount</th>
+                                        <th class="text-end">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in purchase_returns %}
+                                    <tr>
+                                        <td>{{ item.purchase_return.date.strftime('%Y-%m-%d') }}</td>
+                                        <td><span class="fw-bold badge bg-soft-danger">#{{ item.purchase_return.return_number }}</span></td>
+                                        <td>
+                                            {% if item.purchase_return.bill %}
+                                                <a href="{{ url_for('purchase.bill_detail', id=item.purchase_return.bill_id) }}" class="text-decoration-none fw-bold text-info" target="_blank">
+                                                    <i class="fas fa-file-alt me-1"></i>#{{ item.purchase_return.bill.bill_number }}
+                                                </a>
+                                            {% else %}-{% endif %}
+                                        </td>
+                                        <td>
+                                            {% if item.purchase_return.vendor %}
+                                                <a href="{{ url_for('purchase.vendors') }}?vendor_id={{ item.purchase_return.vendor_id }}" class="text-decoration-none text-dark fw-semibold vendor-link" target="_blank">
+                                                    <i class="fas fa-building me-1 text-warning"></i>{{ item.purchase_return.vendor.name }}
+                                                </a>
+                                            {% else %}-{% endif %}
+                                        </td>
+                                        <td class="fw-bold text-danger">-{{ item.quantity }}</td>
+                                        <td>PKR {{ "{:,.2f}".format(item.total_amount) }}</td>
+                                        <td class="text-end">
+                                            {% if item.purchase_return.bill %}
+                                                <a href="{{ url_for('purchase.bill_detail', id=item.purchase_return.bill_id) }}" class="btn btn-sm btn-outline-danger rounded-pill" target="_blank">
+                                                    <i class="fas fa-external-link-alt me-1"></i>View Bill
+                                                </a>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="7" class="text-center text-muted py-4"><i class="fas fa-inbox me-2"></i>No purchase returns recorded.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══════════════════════════════════════════════════ -->
+                <!-- Tool Vouchers Tab -->
+                <!-- ═══════════════════════════════════════════════════ -->
+                <div class="tab-pane fade" id="vouchers-content" role="tabpanel">
+                    <div class="p-4">
+                        <div class="row">
+                            <div class="col-lg-6">
+                                <h6 class="fw-bold mb-3"><i class="fas fa-arrow-circle-down text-success me-2"></i>Tool Receiving Vouchers</h6>
+                                <div class="table-responsive">
+                                    <table class="table table-hover table-sm align-middle datatable-export">
+                                        <thead class="bg-light text-xs">
+                                            <tr>
+                                                <th>Date</th>
+                                                <th>Voucher #</th>
+                                                <th>Qty</th>
+                                                <th>Cost</th>
+                                                <th class="text-end">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for item in receivings %}
+                                            <tr>
+                                                <td>{{ item.receiving.date.strftime('%Y-%m-%d') }}</td>
+                                                <td>
+                                                    <a href="{{ url_for('tools.receiving_detail', id=item.receiving_id) }}" class="fw-bold text-decoration-none text-success" target="_blank">
+                                                        <i class="fas fa-file-invoice me-1"></i>#{{ item.receiving.receiving_number }}
+                                                    </a>
+                                                </td>
+                                                <td class="text-success fw-bold">+{{ item.quantity }}</td>
+                                                <td>{{ "{:,.2f}".format(item.unit_price) }}</td>
+                                                <td class="text-end">
+                                                    <a href="{{ url_for('tools.receiving_detail', id=item.receiving_id) }}" class="btn btn-sm btn-outline-success rounded-pill" target="_blank">
+                                                        <i class="fas fa-eye"></i>
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                            {% else %}
+                                            <tr><td colspan="5" class="text-center text-muted py-3"><i class="fas fa-inbox me-1"></i>No receivings.</td></tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="col-lg-6">
+                                <h6 class="fw-bold mb-3"><i class="fas fa-arrow-circle-up text-danger me-2"></i>Tool Delivering Vouchers</h6>
+                                <div class="table-responsive">
+                                    <table class="table table-hover table-sm align-middle datatable-export">
+                                        <thead class="bg-light text-xs">
+                                            <tr>
+                                                <th>Date</th>
+                                                <th>Voucher #</th>
+                                                <th>Qty</th>
+                                                <th>Description</th>
+                                                <th class="text-end">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for item in deliveries %}
+                                            <tr>
+                                                <td>{{ item.delivering.date.strftime('%Y-%m-%d') }}</td>
+                                                <td>
+                                                    <a href="{{ url_for('tools.delivering_detail', id=item.delivering_id) }}" class="fw-bold text-decoration-none text-danger" target="_blank">
+                                                        <i class="fas fa-file-invoice me-1"></i>#{{ item.delivering.delivering_number }}
+                                                    </a>
+                                                </td>
+                                                <td class="text-danger fw-bold">-{{ item.quantity }}</td>
+                                                <td><small>{{ item.delivering.description or '-' }}</small></td>
+                                                <td class="text-end">
+                                                    <a href="{{ url_for('tools.delivering_detail', id=item.delivering_id) }}" class="btn btn-sm btn-outline-danger rounded-pill" target="_blank">
+                                                        <i class="fas fa-eye"></i>
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                            {% else %}
+                                            <tr><td colspan="5" class="text-center text-muted py-3"><i class="fas fa-inbox me-1"></i>No deliverings.</td></tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══════════════════════════════════════════════════ -->
+                <!-- Audit Trail Tab -->
+                <!-- ═══════════════════════════════════════════════════ -->
+                <div class="tab-pane fade" id="timeline-content" role="tabpanel">
+                    <div class="p-4">
+                        <div class="timeline timeline-one-side">
+                            {% for log in activity_logs %}
+                            <div class="timeline-block mb-3">
+                                <span class="timeline-step">
+                                    <i class="fas fa-{{ 'edit' if 'Updated' in log.action else 'plus' if 'Added' in log.action else 'history' }} text-{{ 'info' if 'Updated' in log.action else 'success' if 'Added' in log.action else 'primary' }}"></i>
+                                </span>
+                                <div class="timeline-content card border-0 bg-light p-3 rounded-4 shadow-none">
+                                    <h6 class="text-dark text-sm font-weight-bold mb-0">{{ log.action }}</h6>
+                                    <p class="text-muted text-xs mt-1 mb-2">{{ log.timestamp.strftime('%Y-%m-%d %H:%M') }} by <strong>{{ log.user.username if log.user else 'System' }}</strong></p>
+                                    <p class="text-sm mb-0">{{ log.details }}</p>
+                                </div>
+                            </div>
+                            {% else %}
+                            <div class="text-center text-muted py-4"><i class="fas fa-stream me-2"></i>No audit trail entries.</div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Styles -->
+<style>
+    .text-gradient-primary {
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    .icon-shape {
+        width: 50px; height: 50px;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .bg-soft-primary  { background-color: rgba(30, 60, 114, 0.1); color: #1e3c72; }
+    .bg-soft-success  { background-color: rgba(45, 206, 137, 0.1); color: #2dce89; }
+    .bg-soft-danger   { background-color: rgba(245, 54, 92,  0.1); color: #f5365c; }
+    .bg-soft-info     { background-color: rgba(17, 205, 239, 0.1); color: #11cdef; }
+    .bg-soft-warning  { background-color: rgba(251,188,5,   0.1); color: #c8930a; }
+    .summary-card { transition: transform 0.2s ease; cursor: default; }
+    .summary-card:hover { transform: translateY(-5px); }
+    .nav-premium .nav-link {
+        color: #6c757d; font-weight: 600; padding: 1rem 1.5rem;
+        transition: all 0.3s ease; border-bottom: 3px solid transparent;
+    }
+    .nav-premium .nav-link.active {
+        color: #1e3c72; background: none; border-bottom-color: #1e3c72;
+    }
+    /* Clickable name styles */
+    .customer-link, .vendor-link {
+        transition: color 0.2s; border-bottom: 1px dashed transparent;
+    }
+    .customer-link:hover { color: #11cdef !important; border-bottom-color: #11cdef; }
+    .vendor-link:hover   { color: #ffc107 !important; border-bottom-color: #ffc107; }
+    /* Timeline */
+    .timeline { position: relative; padding-left: 1.5rem; }
+    .timeline:before {
+        content: ""; position: absolute; top: 0; left: 0.75rem;
+        height: 100%; width: 2px; background: #e9ecef;
+    }
+    .timeline-block { position: relative; margin-bottom: 2rem; }
+    .timeline-step {
+        position: absolute; left: -1.5rem; width: 30px; height: 30px;
+        background: #fff; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        z-index: 10; box-shadow: 0 0 0 4px #fff, 0 2px 4px rgba(0,0,0,0.1);
+    }
+    /* Buttons */
+    .btn-premium-secondary { background: #6c757d; color: #fff; border-radius: 12px; font-weight: 600; padding: 0.6rem 1.2rem; }
+    .btn-premium-info      { background: #11cdef; color: #fff; border-radius: 12px; font-weight: 600; padding: 0.6rem 1.2rem; }
+    .btn-premium-dark      { background: #344767; color: #fff; border-radius: 12px; font-weight: 600; padding: 0.6rem 1.2rem; }
+</style>
+
+<!-- SweetAlert2 -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Recalculate Stock
+    const recalculateBtn = document.getElementById('recalculateBtn');
+    if (recalculateBtn) {
+        recalculateBtn.addEventListener('click', function() {
+            Swal.fire({
+                title: 'Recalculate Stock?',
+                text: "This will re-check all transactions and verify the current stock level. Existing data will NOT be erased — only discrepancies will be corrected.",
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#1e3c72',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: '<i class="fas fa-sync-alt me-1"></i> Yes, Recalculate!',
+                cancelButtonText: 'Cancel',
+                showLoaderOnConfirm: true,
+                preConfirm: () => {
+                    return fetch('{{ url_for("inventory.recalculate_stock", id=product.id) }}', {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': '{{ csrf_token() if csrf_token else "" }}'
+                        }
+                    })
+                    .then(response => {
+                        if (!response.ok) throw new Error(response.statusText);
+                        return response.json();
+                    })
+                    .catch(error => {
+                        Swal.showValidationMessage(`Request failed: ${error}`);
+                    });
+                },
+                allowOutsideClick: () => !Swal.isLoading()
+            }).then((result) => {
+                if (result.isConfirmed && result.value) {
+                    if (result.value.success) {
+                        Swal.fire({
+                            title: 'Done!',
+                            html: result.value.message,
+                            icon: 'success'
+                        }).then(() => location.reload());
+                    } else {
+                        Swal.fire('Error', result.value.message, 'error');
+                    }
+                }
+            });
+        });
+    }
+});
+</script>
+{% endblock %}

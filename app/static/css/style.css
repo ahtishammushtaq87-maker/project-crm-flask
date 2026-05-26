@@ -105,8 +105,55 @@
     .table {
         font-size: 0.85rem;
     }
-    
-    .filter-group .form-label {
-        font-size: 0.75rem;
     }
+
+/* Premium Design Tokens */
+:root {
+    --primary-gradient: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    --success-gradient: linear-gradient(135deg, #2dce89 0%, #2dcecc 100%);
+    --danger-gradient: linear-gradient(135deg, #f5365c 0%, #f56036 100%);
+    --info-gradient: linear-gradient(135deg, #11cdef 0%, #1171ef 100%);
+    --warning-gradient: linear-gradient(135deg, #fb6340 0%, #fbb140 100%);
+    --soft-primary: rgba(30, 60, 114, 0.1);
+    --soft-success: rgba(45, 206, 137, 0.1);
+    --soft-danger: rgba(245, 54, 92, 0.1);
+    --soft-info: rgba(17, 205, 239, 0.1);
 }
+
+.text-gradient-primary { background: var(--primary-gradient); -webkit-background-clip: text; -webkit-fill-color: transparent; }
+.bg-gradient-primary { background: var(--primary-gradient); }
+.bg-soft-primary { background-color: var(--soft-primary); }
+.bg-soft-success { background-color: var(--soft-success); }
+.bg-soft-danger { background-color: var(--soft-danger); }
+.bg-soft-info { background-color: var(--soft-info); }
+
+.card-premium {
+    border: none;
+    border-radius: 1rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.05);
+    transition: all 0.3s ease;
+}
+
+.card-premium:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 1rem 2rem rgba(0, 0, 0, 0.1);
+}
+
+.btn-premium {
+    border-radius: 0.75rem;
+    padding: 0.6rem 1.5rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.btn-premium:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+
+@keyframes slideInRight {
+    from { transform: translateX(30px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+.animate-slide-in { animation: slideInRight 0.5s ease-out; }

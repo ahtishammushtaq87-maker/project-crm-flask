@@ -669,6 +669,7 @@ class SaleItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sale_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=False, index=True)
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
     quantity = db.Column(db.Float, nullable=False)
     unit_price = db.Column(db.Float, nullable=False)
     discount = db.Column(db.Float, default=0)
@@ -687,6 +688,24 @@ class SaleItem(db.Model):
     
     def __repr__(self):
         return f'<SaleItem {self.sale_id} - {self.product_id}>'
+
+
+class SaleReturnItem(db.Model):
+    """Sales return item details"""
+    __tablename__ = 'sale_return_items'
+
+    id = db.Column(db.Integer, primary_key=True)
+    return_id = db.Column(db.Integer, db.ForeignKey('sale_returns.id'), nullable=False, index=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
+    quantity = db.Column(db.Float, nullable=False)
+    unit_price = db.Column(db.Float, nullable=False)
+    total = db.Column(db.Float, nullable=False)
+
+    product = db.relationship('Product', backref='return_items', lazy=True)
+
+    def __repr__(self):
+        return f'<SaleReturnItem {self.return_id} - {self.product_id}>'
 
 class PurchaseBill(db.Model):
     """Purchase Bill model"""
@@ -1248,21 +1267,7 @@ class SaleReturn(db.Model):
         return f'<SaleReturn {self.return_number}>'
 
 
-class SaleReturnItem(db.Model):
-    """Sales return item details"""
-    __tablename__ = 'sale_return_items'
 
-    id = db.Column(db.Integer, primary_key=True)
-    return_id = db.Column(db.Integer, db.ForeignKey('sale_returns.id'), nullable=False, index=True)
-    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
-    quantity = db.Column(db.Float, nullable=False)
-    unit_price = db.Column(db.Float, nullable=False)
-    total = db.Column(db.Float, nullable=False)
-
-    product = db.relationship('Product', backref='return_items', lazy=True)
-
-    def __repr__(self):
-        return f'<SaleReturnItem {self.return_id} - {self.product_id}>'
 
 
 class PurchaseReturn(db.Model):
@@ -1312,6 +1317,7 @@ class PurchaseReturnItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     return_id = db.Column(db.Integer, db.ForeignKey('purchase_returns.id'), nullable=False, index=True)
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
     quantity = db.Column(db.Float, nullable=False)
     unit_price = db.Column(db.Float, nullable=False)
     total = db.Column(db.Float, nullable=False)
@@ -1382,6 +1388,9 @@ class BOMItem(db.Model):
     
     component = db.relationship('Product', foreign_keys=[component_id])
     cost_history = db.relationship('CostPriceHistory', foreign_keys=[cost_price_history_id])
+    # Optional per-component warehouse: which warehouse components are drawn from when producing
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
+    warehouse = db.relationship('Warehouse', foreign_keys=[warehouse_id])
 
 class Staff(db.Model):
     """Staff/Employee model"""
@@ -1707,6 +1716,9 @@ class ManufacturingOrder(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     order_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
     bom_id = db.Column(db.Integer, db.ForeignKey('boms.id'), nullable=False, index=True)
+    # Warehouse where finished goods will be stored after completion
+    finished_warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
+    finished_warehouse = db.relationship('Warehouse', foreign_keys=[finished_warehouse_id])
     status = db.Column(Enum('Draft', 'In Progress', 'Completed', name='mo_status'), default='Draft', index=True)
     quantity_to_produce = db.Column(db.Float, nullable=False)
     produced_qty = db.Column(db.Float, default=0)
@@ -1755,6 +1767,9 @@ class ManufacturingOrderItem(db.Model):
     quantity_required = db.Column(db.Float, nullable=False)
     quantity_consumed = db.Column(db.Float, default=0)
     cost = db.Column(db.Float, default=0)
+    # Optional per-item/component warehouse to consume from (copied from BOMItem at MO creation)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
+    warehouse = db.relationship('Warehouse', foreign_keys=[warehouse_id])
     
     component = db.relationship('Product', foreign_keys=[component_id])
 

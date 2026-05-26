@@ -2157,17 +2157,21 @@ def create_purchase_return():
         bill_id = request.args.get('bill_id')
         if bill_id:
             bill = PurchaseBill.query.get_or_404(int(bill_id))
+            warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
             return render_template('purchase/create_return.html',
                                bill=bill,
                                products=Product.query.filter_by(is_active=True).all(),
+                               warehouses=warehouses,
                                now=datetime.now())
 
         bills = PurchaseBill.query.order_by(PurchaseBill.date.desc()).all()
+        warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
         return render_template('purchase/create_return.html',
-                           bills=bills,
-                           bill=None,
-                           products=Product.query.filter_by(is_active=True).all(),
-                           now=datetime.now())
+                   bills=bills,
+                   bill=None,
+                   products=Product.query.filter_by(is_active=True).all(),
+                   warehouses=warehouses,
+                   now=datetime.now())
 
     # POST - process return
     bill_id = request.form.get('bill_id')
@@ -2176,6 +2180,7 @@ def create_purchase_return():
     product_ids = request.form.getlist('product_id[]')
     quantities = request.form.getlist('quantity[]')
     prices = request.form.getlist('price[]')
+    warehouses = request.form.getlist('warehouse_id[]')
 
     subtotal = 0
     return_items = []
@@ -2188,8 +2193,15 @@ def create_purchase_return():
             total = quantity * price
             subtotal += total
 
+            wh = None
+            try:
+                wh = int(warehouses[i]) if i < len(warehouses) and warehouses[i] else None
+            except Exception:
+                wh = None
+
             return_items.append({
                 'product_id': product.id,
+                'warehouse_id': wh,
                 'quantity': quantity,
                 'unit_price': price,
                 'total': total
@@ -2261,6 +2273,7 @@ def create_purchase_return():
         return_item = PurchaseReturnItem(
             return_id=purchase_return.id,
             product_id=item['product_id'],
+            warehouse_id=item.get('warehouse_id'),
             quantity=item['quantity'],
             unit_price=item['unit_price'],
             total=item['total']
@@ -2270,7 +2283,23 @@ def create_purchase_return():
         # Subtract from inventory
         product = Product.query.get(item['product_id'])
         if product:
+            # decrease global product quantity
             product.update_quantity(-item['quantity'])
+
+            # decrease per-warehouse stock if specified
+            wh_id = item.get('warehouse_id')
+            if wh_id:
+                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=wh_id).first()
+                if not wh_stock:
+                    wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=wh_id, quantity=0)
+                    db.session.add(wh_stock)
+                wh_stock.quantity -= item['quantity']
+            elif product.warehouse_id:
+                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=product.warehouse_id).first()
+                if not wh_stock:
+                    wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=product.warehouse_id, quantity=0)
+                    db.session.add(wh_stock)
+                wh_stock.quantity -= item['quantity']
 
     # Update bill totals - reduce bill total by return amount
     bill.subtotal -= subtotal

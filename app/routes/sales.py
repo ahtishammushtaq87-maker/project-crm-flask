@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from app.utils import permission_required, log_activity
 from app import db
-from app.models import Sale, SaleItem, Product, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman, CustomerGroup, Payment, PaymentMethod, SalesmanGroup
+from app.models import Sale, SaleItem, Product, ProductWarehouseStock, Warehouse, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman, CustomerGroup, Payment, PaymentMethod, SalesmanGroup
 from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm, SalesmanForm, CustomerGroupForm
 from datetime import datetime, date
 from sqlalchemy import func, or_, and_
@@ -154,6 +154,7 @@ def create_invoice():
         quantities = request.form.getlist('quantity[]')
         prices = request.form.getlist('price[]')
         deliveries = request.form.getlist('delivery[]')
+        warehouses = request.form.getlist('warehouse_id[]')
         
         subtotal = 0
         item_delivery_total = 0
@@ -170,8 +171,15 @@ def create_invoice():
                 subtotal += total
                 item_delivery_total += delivery_fee
                 
+                wh = None
+                try:
+                    wh = int(warehouses[i]) if i < len(warehouses) and warehouses[i] else None
+                except Exception:
+                    wh = None
+
                 sale_items.append({
                     'product_id': product.id,
+                    'warehouse_id': wh,
                     'quantity': quantity,
                     'unit_price': price,
                     'delivery_fee': delivery_fee,
@@ -253,16 +261,35 @@ def create_invoice():
             sale_item = SaleItem(
                 sale_id=sale.id,
                 product_id=item['product_id'],
+                warehouse_id=item.get('warehouse_id'),
                 quantity=item['quantity'],
                 unit_price=item['unit_price'],
                 delivery_fee=item.get('delivery_fee', 0),
                 total=item['total']
             )
             db.session.add(sale_item)
-            
-            # Update inventory
+
+            # Update inventory (global + per-warehouse)
             product = Product.query.get(item['product_id'])
-            product.update_quantity(-item['quantity'])
+            if product:
+                # reduce total product quantity
+                product.update_quantity(-item['quantity'])
+
+                # Update per-warehouse stock if warehouse selected
+                wh_id = item.get('warehouse_id')
+                if wh_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=wh_id).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=wh_id, quantity=0)
+                        db.session.add(wh_stock)
+                    wh_stock.quantity -= item['quantity']
+                elif product.warehouse_id:
+                    # Legacy fallback
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=product.warehouse_id).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=product.warehouse_id, quantity=0)
+                        db.session.add(wh_stock)
+                    wh_stock.quantity -= item['quantity']
         
         db.session.commit()
         
@@ -273,7 +300,8 @@ def create_invoice():
         return redirect(url_for('sales.invoice_detail', id=sale.id))
     
     salesmen = Salesman.query.filter_by(is_active=True).all()
-    return render_template('sales/create_invoice.html', form=form, products=products, customers=customers, vendors=vendors, currencies=currencies, now=datetime.now(), customer_advances=customer_advances, customer_total_advances=customer_total_advances, salesmen=salesmen)
+    warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
+    return render_template('sales/create_invoice.html', form=form, products=products, customers=customers, vendors=vendors, currencies=currencies, now=datetime.now(), customer_advances=customer_advances, customer_total_advances=customer_total_advances, salesmen=salesmen, warehouses=warehouses)
 
 @bp.route('/invoice/<int:id>')
 @login_required
@@ -307,7 +335,26 @@ def edit_invoice(id):
         for item in sale.items:
             product = Product.query.get(item.product_id)
             if product:
+                # restore total quantity
                 product.update_quantity(item.quantity)
+
+                # restore per-warehouse quantity if used
+                try:
+                    wh_id = getattr(item, 'warehouse_id', None)
+                except Exception:
+                    wh_id = None
+                if wh_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=wh_id, quantity=0)
+                        db.session.add(wh_stock)
+                    wh_stock.quantity += item.quantity
+                elif product.warehouse_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=product.warehouse_id).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=product.warehouse_id, quantity=0)
+                        db.session.add(wh_stock)
+                    wh_stock.quantity += item.quantity
 
         # Delete old items
         SaleItem.query.filter_by(sale_id=sale.id).delete()
@@ -322,6 +369,7 @@ def edit_invoice(id):
         quantities = request.form.getlist('quantity[]')
         prices = request.form.getlist('price[]')
         deliveries = request.form.getlist('delivery[]')
+        warehouses = request.form.getlist('warehouse_id[]')
 
         subtotal = 0
         sale_items = []
@@ -336,8 +384,15 @@ def edit_invoice(id):
                 total = item_subtotal + delivery_fee
                 subtotal += total
 
+                wh = None
+                try:
+                    wh = int(warehouses[i]) if i < len(warehouses) and warehouses[i] else None
+                except Exception:
+                    wh = None
+
                 sale_items.append({
                     'product_id': product.id,
+                    'warehouse_id': wh,
                     'quantity': quantity,
                     'unit_price': price,
                     'delivery_fee': delivery_fee,
@@ -374,14 +429,32 @@ def edit_invoice(id):
             sale_item = SaleItem(
                 sale_id=sale.id,
                 product_id=item['product_id'],
+                warehouse_id=item.get('warehouse_id'),
                 quantity=item['quantity'],
                 unit_price=item['unit_price'],
                 delivery_fee=item.get('delivery_fee', 0),
                 total=item['total']
             )
             db.session.add(sale_item)
+
+            # update inventory
             product = Product.query.get(item['product_id'])
-            product.update_quantity(-item['quantity'])
+            if product:
+                product.update_quantity(-item['quantity'])
+
+                wh_id = item.get('warehouse_id')
+                if wh_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=wh_id).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=wh_id, quantity=0)
+                        db.session.add(wh_stock)
+                    wh_stock.quantity -= item['quantity']
+                elif product.warehouse_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=product.warehouse_id).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=product.warehouse_id, quantity=0)
+                        db.session.add(wh_stock)
+                    wh_stock.quantity -= item['quantity']
 
         sale.calculate_totals()
         # Preserve paid amount; update status accordingly
@@ -396,9 +469,10 @@ def edit_invoice(id):
         flash('Invoice updated successfully!', 'success')
         return redirect(url_for('sales.invoice_detail', id=sale.id))
 
+    warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
     return render_template('sales/edit_invoice.html', form=form, sale=sale, products=products,
                            customers=customers, vendors=vendors, currencies=currencies,
-                           salesmen=salesmen, now=datetime.now())
+                           salesmen=salesmen, now=datetime.now(), warehouses=warehouses)
 
 
 @bp.route('/invoice/<int:id>/delete', methods=['POST'])
@@ -410,7 +484,26 @@ def delete_invoice(id):
     for item in sale.items:
         product = Product.query.get(item.product_id)
         if product:
+            # restore total quantity
             product.update_quantity(item.quantity)
+
+            # restore per-warehouse quantity if sale item recorded a warehouse
+            try:
+                wh_id = getattr(item, 'warehouse_id', None)
+            except Exception:
+                wh_id = None
+            if wh_id:
+                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
+                if not wh_stock:
+                    wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=wh_id, quantity=0)
+                    db.session.add(wh_stock)
+                wh_stock.quantity += item.quantity
+            elif product.warehouse_id:
+                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=product.warehouse_id).first()
+                if not wh_stock:
+                    wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=product.warehouse_id, quantity=0)
+                    db.session.add(wh_stock)
+                wh_stock.quantity += item.quantity
 
     invoice_num = sale.invoice_number
     cust_name = sale.customer.name if sale.customer else "Walk-in Customer"

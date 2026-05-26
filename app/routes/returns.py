@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
-from app.models import (Sale, SaleItem, SaleReturn, SaleReturnItem, Product, 
+from app.models import (Sale, SaleItem, SaleReturn, SaleReturnItem, Product, ProductWarehouseStock, Warehouse,
                         Customer, SaleReturnSettings, CustomerGroup, Salesman)
 from app.forms import SaleReturnSettingsForm
 from datetime import datetime
@@ -112,17 +112,21 @@ def create_return():
         sale_id = request.args.get('sale_id')
         if sale_id:
             sale = Sale.query.get_or_404(int(sale_id))
+            warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
             return render_template('sales/create_return.html',
                                    sale=sale,
                                    products=Product.query.filter_by(is_active=True).all(),
+                                   warehouses=warehouses,
                                    now=datetime.now())
 
         sales = Sale.query.order_by(Sale.date.desc()).all()
+        warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
         return render_template('sales/create_return.html',
-                               sales=sales,
-                               sale=None,
-                               products=Product.query.filter_by(is_active=True).all(),
-                               now=datetime.now())
+                       sales=sales,
+                       sale=None,
+                       products=Product.query.filter_by(is_active=True).all(),
+                       warehouses=warehouses,
+                       now=datetime.now())
 
     # POST - process return
     sale_id = request.form.get('sale_id')
@@ -131,6 +135,7 @@ def create_return():
     product_ids = request.form.getlist('product_id[]')
     quantities = request.form.getlist('quantity[]')
     prices = request.form.getlist('price[]')
+    warehouses = request.form.getlist('warehouse_id[]')
 
     subtotal = 0
     return_items = []
@@ -143,8 +148,15 @@ def create_return():
             total = quantity * price
             subtotal += total
 
+            wh = None
+            try:
+                wh = int(warehouses[i]) if i < len(warehouses) and warehouses[i] else None
+            except Exception:
+                wh = None
+
             return_items.append({
                 'product_id': product.id,
+                'warehouse_id': wh,
                 'quantity': quantity,
                 'unit_price': price,
                 'total': total
@@ -243,6 +255,7 @@ def create_return():
         return_item = SaleReturnItem(
             return_id=sale_return.id,
             product_id=item['product_id'],
+            warehouse_id=item.get('warehouse_id'),
             quantity=item['quantity'],
             unit_price=item['unit_price'],
             total=item['total']
@@ -292,7 +305,26 @@ def return_to_inventory(id):
     for item in sale_return.items:
         product = Product.query.get(item.product_id)
         if product:
+            # update global product quantity
             product.update_quantity(item.quantity)
+
+            # update per-warehouse stock if recorded
+            try:
+                wh_id = getattr(item, 'warehouse_id', None)
+            except Exception:
+                wh_id = None
+            if wh_id:
+                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
+                if not wh_stock:
+                    wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=wh_id, quantity=0)
+                    db.session.add(wh_stock)
+                wh_stock.quantity += item.quantity
+            elif product.warehouse_id:
+                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=product.warehouse_id).first()
+                if not wh_stock:
+                    wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=product.warehouse_id, quantity=0)
+                    db.session.add(wh_stock)
+                wh_stock.quantity += item.quantity
 
     sale_return.returned_to_inventory = True
     sale_return.status = 'completed'
@@ -314,7 +346,22 @@ def delete_return(id):
         for item in sale_return.items:
             product = Product.query.get(item.product_id)
             if product:
+                # reduce global product quantity
                 product.update_quantity(-item.quantity)
+
+                # reduce per-warehouse stock if recorded
+                try:
+                    wh_id = getattr(item, 'warehouse_id', None)
+                except Exception:
+                    wh_id = None
+                if wh_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
+                    if wh_stock:
+                        wh_stock.quantity -= item.quantity
+                elif product.warehouse_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=product.warehouse_id).first()
+                    if wh_stock:
+                        wh_stock.quantity -= item.quantity
 
     # Delete production log entries for rejected quantities (created at return time)
     return_date = sale_return.date.date() if sale_return.date else None
