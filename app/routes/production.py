@@ -14,19 +14,27 @@ bp = Blueprint('production', __name__)
 @login_required
 def index():
     """Production Target Dashboard - Main view"""
-    selected_month = request.args.get('month', type=int, default=datetime.now().month)
-    selected_year = request.args.get('year', type=int, default=datetime.now().year)
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
     selected_product_id = request.args.get('product_id', type=int, default=None)
     
-    _, days_in_month = monthrange(selected_year, selected_month)
-    month_start = datetime(selected_year, selected_month, 1)
-    month_end = datetime(selected_year, selected_month, days_in_month, 23, 59, 59)
+    if start_date_str:
+        month_start = datetime.strptime(start_date_str, '%Y-%m-%d')
+    else:
+        month_start = datetime(datetime.now().year, datetime.now().month, 1)
+        
+    if end_date_str:
+        month_end = datetime.strptime(end_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+    else:
+        _, days_in_month = monthrange(month_start.year, month_start.month)
+        month_end = datetime(month_start.year, month_start.month, days_in_month, 23, 59, 59)
     
-    # Filter targets occurring in this month or with this month/year label
+    # Filter targets occurring in this range or with label matching the start of range
     query = ProductionTarget.query.filter(
         db.or_(
-            db.and_(ProductionTarget.month == selected_month, ProductionTarget.year == selected_year),
-            db.and_(ProductionTarget.start_date >= month_start.date(), ProductionTarget.start_date <= month_end.date())
+            db.and_(ProductionTarget.month == month_start.month, ProductionTarget.year == month_start.year),
+            db.and_(ProductionTarget.start_date >= month_start.date(), ProductionTarget.start_date <= month_end.date()),
+            db.and_(ProductionTarget.end_date >= month_start.date(), ProductionTarget.end_date <= month_end.date())
         )
     )
     if selected_product_id:
@@ -47,8 +55,14 @@ def index():
     actual_profit_all = 0
     
     today = datetime.now().date()
-    current_day = today.day if today.year == selected_year and today.month == selected_month else days_in_month
-    expected_progress = (current_day / days_in_month) * 100
+    if today >= month_start.date() and today <= month_end.date():
+        total_days = (month_end.date() - month_start.date()).days + 1
+        elapsed_days = (today - month_start.date()).days + 1
+        expected_progress = (elapsed_days / total_days) * 100
+    elif today > month_end.date():
+        expected_progress = 100
+    else:
+        expected_progress = 0
     
     for target in targets:
         product = target.product
@@ -184,8 +198,8 @@ def index():
     return render_template('production/index.html',
                          results=results,
                          products=products,
-                         selected_month=selected_month,
-                         selected_year=selected_year,
+                         start_date=month_start.strftime('%Y-%m-%d'),
+                         end_date=month_end.strftime('%Y-%m-%d'),
                          selected_product_id=selected_product_id,
                          total_target=total_target,
                          total_produced=total_produced_all,
@@ -197,8 +211,6 @@ def index():
                          actual_revenue=actual_revenue_all,
                          actual_cost=actual_cost_all,
                          actual_profit=actual_profit_all,
-                         days_in_month=days_in_month,
-                         current_day=current_day,
                          expected_progress=round(expected_progress, 1))
 
 
@@ -572,14 +584,28 @@ def api_selling_price(sku_id):
 @login_required
 def export_report(format):
     """Export production target report"""
-    selected_month = request.args.get('month', type=int, default=datetime.now().month)
-    selected_year = request.args.get('year', type=int, default=datetime.now().year)
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
     
-    targets = ProductionTarget.query.filter_by(month=selected_month, year=selected_year).all()
-    
-    _, days_in_month = monthrange(selected_year, selected_month)
-    month_start = datetime(selected_year, selected_month, 1)
-    month_end = datetime(selected_year, selected_month, days_in_month, 23, 59, 59)
+    if start_date_str:
+        month_start = datetime.strptime(start_date_str, '%Y-%m-%d')
+    else:
+        month_start = datetime(datetime.now().year, datetime.now().month, 1)
+        
+    if end_date_str:
+        month_end = datetime.strptime(end_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+    else:
+        _, days_in_month = monthrange(month_start.year, month_start.month)
+        month_end = datetime(month_start.year, month_start.month, days_in_month, 23, 59, 59)
+
+    # Filter targets occurring in this range or with label matching the start of range
+    targets = ProductionTarget.query.filter(
+        db.or_(
+            db.and_(ProductionTarget.month == month_start.month, ProductionTarget.year == month_start.year),
+            db.and_(ProductionTarget.start_date >= month_start.date(), ProductionTarget.start_date <= month_end.date()),
+            db.and_(ProductionTarget.end_date >= month_start.date(), ProductionTarget.end_date <= month_end.date())
+        )
+    ).all()
     
     data = []
     
@@ -620,11 +646,22 @@ def export_report(format):
         bom_cost = (bom.total_cost - bom.overhead_cost - bom.labor_cost) if bom else product.cost_price
         overhead_cost = target.overhead_cost_per_unit if target.overhead_cost_per_unit > 0 else (bom.overhead_cost + bom.labor_cost if bom else 0)
         
+        # Calculate expected progress for status
+        today = datetime.now().date()
+        if today >= month_start.date() and today <= month_end.date():
+            total_days_range = (month_end.date() - month_start.date()).days + 1
+            elapsed_days_range = (today - month_start.date()).days + 1
+            expected_progress_val = (elapsed_days_range / total_days_range) * 100
+        elif today > month_end.date():
+            expected_progress_val = 100
+        else:
+            expected_progress_val = 0
+
         completion_pct = (net_produced / effective_target_units * 100) if effective_target_units > 0 else 0
         
         if completion_pct >= 100:
             status = 'DONE'
-        elif completion_pct >= ((datetime.now().day / monthrange(selected_year, selected_month)[1]) * 100):
+        elif completion_pct >= expected_progress_val:
             status = 'ON TRACK'
         else:
             status = 'BEHIND'
@@ -653,7 +690,7 @@ def export_report(format):
                'Completion %', 'BOM Cost', 'OH Cost (Labor+Overhead)', 'Item Cost', 
                'Selling Price', 'Target Revenue', 'Est. Cost', 'Est. Profit', 'Status']
     
-    title = f"Production Target Report - {selected_month}/{selected_year}"
+    title = f"Production Target Report ({month_start.strftime('%d-%m-%Y')} to {month_end.strftime('%d-%m-%Y')})"
     
     if format == 'pdf':
         from app.models import Company
@@ -665,14 +702,14 @@ def export_report(format):
             'email': company.email if company else ''
         }
         output = generate_pdf(data, title, headers, company_info)
-        return send_file(output, as_attachment=True, download_name=f"production_report_{selected_month}_{selected_year}.pdf", mimetype='application/pdf')
+        return send_file(output, as_attachment=True, download_name=f"production_report_{month_start.strftime('%Y%m%d')}.pdf", mimetype='application/pdf')
     
     elif format == 'excel':
         output = generate_excel(data, "ProductionTarget")
-        return send_file(output, as_attachment=True, download_name=f"production_report_{selected_month}_{selected_year}.xlsx", mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        return send_file(output, as_attachment=True, download_name=f"production_report_{month_start.strftime('%Y%m%d')}.xlsx", mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     
     elif format == 'csv':
         output = generate_csv(data)
-        return send_file(output, as_attachment=True, download_name=f"production_report_{selected_month}_{selected_year}.csv", mimetype='text/csv')
+        return send_file(output, as_attachment=True, download_name=f"production_report_{month_start.strftime('%Y%m%d')}.csv", mimetype='text/csv')
     
     return redirect(url_for('production.index'))

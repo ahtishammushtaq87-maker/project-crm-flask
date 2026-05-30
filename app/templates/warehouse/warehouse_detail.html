@@ -121,14 +121,22 @@
     </div>
 
     <div class="card">
-        <div class="card-header">
+        <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0"><i class="fas fa-boxes me-2"></i>Products in Warehouse</h5>
+            {% if current_user.has_permission('warehouse', 'delete') %}
+            <button id="bulkRemoveBtn" class="btn btn-sm btn-danger d-none">
+                <i class="fas fa-trash me-2"></i>Remove Selected
+            </button>
+            {% endif %}
         </div>
         <div class="card-body">
             <div class="table-responsive">
                 <table class="table table-hover datatable-export" data-export-title="Warehouse Products: {{ warehouse.name }}">
                     <thead>
                         <tr>
+                            <th style="width: 40px;" class="no-export">
+                                <input type="checkbox" id="selectAllProducts" class="form-check-input">
+                            </th>
                             <th>SKU</th>
                             <th>Product Name</th>
                             <th>Category</th>
@@ -141,6 +149,9 @@
                     <tbody>
                         {% for p in products %}
                         <tr>
+                            <td class="no-export">
+                                <input type="checkbox" class="form-check-input product-checkbox" value="{{ p.id }}">
+                            </td>
                             <td>{{ p.sku }}</td>
                             <td>{{ p.name }}</td>
                             <td>{{ p.category.name if p.category else '-' }}</td>
@@ -172,11 +183,34 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="7" class="text-center">No products in this warehouse.</td>
+                            <td colspan="8" class="text-center">No products in this warehouse.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Remove Confirmation Modal -->
+<div class="modal fade" id="bulkRemoveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header text-white bg-danger">
+                <h5 class="modal-title">Confirm Bulk Removal</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to remove <strong id="bulkRemoveCount">0</strong> selected items from this warehouse?</p>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    This will remove the associated stock quantities from both this warehouse and the total inventory.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="confirmBulkRemove" class="btn btn-danger">Confirm Bulk Removal</button>
             </div>
         </div>
     </div>
@@ -267,9 +301,73 @@
             modal.find('#removeQuantity').text(quantity);
             modal.find('#removeStockForm').attr('action', '/warehouse/warehouse/' + warehouseId + '/stock/' + productId + '/remove');
         });
+
+        // Bulk Selection Logic
+        const selectAll = $('#selectAllProducts');
+        const checkboxes = $('.product-checkbox');
+        const bulkRemoveBtn = $('#bulkRemoveBtn');
+
+        selectAll.on('change', function() {
+            checkboxes.prop('checked', $(this).prop('checked'));
+            updateBulkBtn();
+        });
+
+        $(document).on('change', '.product-checkbox', function() {
+            updateBulkBtn();
+        });
+
+        function updateBulkBtn() {
+            const checkedCount = $('.product-checkbox:checked').length;
+            if (checkedCount > 0) {
+                bulkRemoveBtn.removeClass('d-none').text(`Remove Selected (${checkedCount})`);
+            } else {
+                bulkRemoveBtn.addClass('d-none');
+            }
+        }
+
+        // Handle Bulk Remove
+        bulkRemoveBtn.on('click', function() {
+            const checkedCount = $('.product-checkbox:checked').length;
+            $('#bulkRemoveCount').text(checkedCount);
+            const modal = new bootstrap.Modal(document.getElementById('bulkRemoveModal'));
+            modal.show();
+        });
+
+        $('#confirmBulkRemove').on('click', function() {
+            const selectedIds = $('.product-checkbox:checked').map(function() {
+                return $(this).val();
+            }).get();
+            const warehouseId = "{{ warehouse.id }}";
+
+            // Disable button and show loading
+            $(this).prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>Removing...');
+
+            fetch(`/warehouse/warehouse/${warehouseId}/stock/bulk-remove`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ product_ids: selectedIds })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                    $(this).prop('disabled', false).text('Confirm Bulk Removal');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('A network error occurred.');
+                $(this).prop('disabled', false).text('Confirm Bulk Removal');
+            });
+        });
     });
 </script>
 {% endblock %}
+
 
 
 

@@ -744,6 +744,41 @@ def product_full_history(id):
         ActivityLog.details.ilike(f'%SKU: {product.sku}%')
     ).order_by(ActivityLog.timestamp.desc()).all()
 
+    # 9. Warehouse Specific History - Search by Name or SKU in action or details
+    warehouse_history = ActivityLog.query.filter(
+        ActivityLog.module == 'Warehouse',
+        db.or_(
+            ActivityLog.details.ilike(f'%{product.name}%'),
+            ActivityLog.details.ilike(f'%{product.sku}%'),
+            ActivityLog.action.ilike(f'%{product.name}%'),
+            ActivityLog.action.ilike(f'%{product.sku}%')
+        )
+    ).order_by(ActivityLog.timestamp.desc()).all()
+
+    # 10. Current Warehouse Distribution
+    wh_distribution = []
+    handled_wh_ids = set()
+    
+    # From bridge table
+    for ws in product.warehouse_stocks:
+        if ws.quantity > 0:
+            wh_distribution.append({
+                'warehouse_id': ws.warehouse_id,
+                'warehouse_name': ws.warehouse.name,
+                'quantity': ws.quantity
+            })
+            handled_wh_ids.add(ws.warehouse_id)
+            
+    # From legacy field
+    if product.warehouse_id and product.warehouse_id not in handled_wh_ids and product.quantity > 0:
+        wh_distribution.append({
+            'warehouse_id': product.warehouse_id,
+            'warehouse_name': product.warehouse.name,
+            'quantity': product.quantity
+        })
+
+
+
     # Calculate summary stats
     summary = {
         'total_sold': sum(item.quantity for item in sales),
@@ -765,8 +800,12 @@ def product_full_history(id):
                          receivings=receivings,
                          deliveries=deliveries,
                          activity_logs=activity_logs,
+                         warehouse_history=warehouse_history,
+                         wh_distribution=wh_distribution,
                          summary=summary,
                          active_module='product')
+
+
 
 @bp.route('/product/<int:id>/recalculate', methods=['POST'])
 @login_required

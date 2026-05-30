@@ -82,26 +82,16 @@
         <div class="card-body">
             <form method="get" class="row g-3">
                 <div class="col-md-3">
-                    <label class="form-label">Month</label>
-                    <select name="month" class="form-select">
-                        {% for m in range(1, 13) %}
-                        <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>
-                            {{ ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m-1] }}
-                        </option>
-                        {% endfor %}
-                    </select>
+                    <label class="form-label">From Date</label>
+                    <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label">Year</label>
-                    <select name="year" class="form-select">
-                        {% for y in range(2023, 2030) %}
-                        <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
-                        {% endfor %}
-                    </select>
+                    <label class="form-label">To Date</label>
+                    <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Product</label>
-                    <select name="product_id" class="form-select searchable-select" onchange="this.form.submit()">
+                    <select name="product_id" class="form-select searchable-select">
                         <option value="">— All Products —</option>
                         {% for product in products %}
                         <option value="{{ product.id }}" {% if selected_product_id == product.id %}selected{% endif %}>
@@ -110,8 +100,13 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-3 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary w-100">Apply Filters</button>
+                <div class="col-md-3 d-flex align-items-end gap-2">
+                    <button type="submit" class="btn btn-primary flex-grow-1">
+                        <i class="bi bi-filter"></i> Apply
+                    </button>
+                    <a href="{{ url_for('production.index') }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-counterclockwise"></i> Reset
+                    </a>
                 </div>
             </form>
         </div>
@@ -211,10 +206,10 @@
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0"><i class="bi bi-table"></i> Production Target vs Actual</h5>
             <div>
-                <a href="{{ url_for('production.export_report', format='excel', month=selected_month, year=selected_year) }}" class="btn btn-sm btn-success">
+                <a href="{{ url_for('production.export_report', format='excel', start_date=start_date, end_date=end_date) }}" class="btn btn-sm btn-success">
                     <i class="bi bi-file-earmark-excel"></i> Excel
                 </a>
-                <a href="{{ url_for('production.export_report', format='pdf', month=selected_month, year=selected_year) }}" class="btn btn-sm btn-danger">
+                <a href="{{ url_for('production.export_report', format='pdf', start_date=start_date, end_date=end_date) }}" class="btn btn-sm btn-danger">
                     <i class="bi bi-file-earmark-pdf"></i> PDF
                 </a>
             </div>
@@ -314,8 +309,8 @@
             </div>
             {% else %}
             <div class="text-center py-5">
-                <p class="text-muted">No targets set for this month. 
-                    <a href="{{ url_for('production.set_target', month=selected_month, year=selected_year) }}">Set targets now</a>
+                <p class="text-muted">No targets set for this range. 
+                    <a href="{{ url_for('production.set_target', start_date=start_date, end_date=end_date) }}">Set targets now</a>
                 </p>
             </div>
             {% endif %}

@@ -215,7 +215,7 @@ def update_stock(warehouse_id, product_id):
         db.session.commit()
         
         from app.utils import log_activity
-        log_activity('Warehouse', f'Updated Stock: {product.name}', 
+        log_activity('Warehouse', f'Updated Stock: {product.name} (SKU: {product.sku})', 
                     f'Warehouse: {warehouse.name}, Old Qty: {old_wh_qty}, New Qty: {new_quantity}, Diff: {qty_diff}')
         
         flash(f'Stock for {product.name} updated successfully in {warehouse.name}.', 'success')
@@ -224,7 +224,7 @@ def update_stock(warehouse_id, product_id):
         flash(f'Error updating stock: {str(e)}', 'error')
         
     return redirect(url_for('warehouse.warehouse_detail', id=warehouse_id))
-
+    
 @bp.route('/warehouse/<int:warehouse_id>/stock/<int:product_id>/remove', methods=['POST'])
 @login_required
 @permission_required('warehouse', action='delete')
@@ -256,15 +256,81 @@ def remove_stock(warehouse_id, product_id):
         db.session.commit()
         
         from app.utils import log_activity
-        log_activity('Warehouse', f'Removed Stock: {product.name}', 
+        log_activity('Warehouse', f'Removed Stock: {product.name} (SKU: {product.sku})', 
                     f'Removed {qty_to_remove} from {warehouse.name}. New global qty: {product.quantity}')
         
-        flash(f'Successfully removed {product.name} from {warehouse.name}.', 'success')
+        flash(f'Removed {product.name} from {warehouse.name} and updated global inventory.', 'success')
     except Exception as e:
         db.session.rollback()
         flash(f'Error removing stock: {str(e)}', 'error')
         
-    return redirect(url_for('warehouse.warehouse_detail', id=warehouse_id))
+    return redirect(request.referrer or url_for('warehouse.warehouse_detail', id=warehouse_id))
+
+
+@bp.route('/warehouse/<int:warehouse_id>/stock/bulk-remove', methods=['POST'])
+@login_required
+@permission_required('warehouse', action='delete')
+def bulk_remove_stock(warehouse_id):
+    from app.models import ProductWarehouseStock, Product
+    warehouse = Warehouse.query.get_or_404(warehouse_id)
+    data = request.get_json()
+    product_ids = data.get('product_ids', [])
+    
+    if not product_ids:
+        return jsonify({'success': False, 'message': 'No products selected'}), 400
+        
+    try:
+        removed_count = 0
+        total_qty_removed = 0
+        
+        for pid in product_ids:
+            product = Product.query.get(pid)
+            if not product:
+                continue
+                
+            # 1. Find the quantity in this warehouse
+            wh_stock = ProductWarehouseStock.query.filter_by(
+                product_id=pid,
+                warehouse_id=warehouse_id
+            ).first()
+            
+            qty_to_remove = 0
+            if wh_stock:
+                qty_to_remove = wh_stock.quantity
+                total_qty_removed += qty_to_remove
+                db.session.delete(wh_stock)
+                removed_count += 1
+            elif product.warehouse_id == warehouse_id:
+                # Legacy case
+                qty_to_remove = product.quantity
+                total_qty_removed += qty_to_remove
+                product.warehouse_id = None
+                removed_count += 1
+                
+            # 2. Update global Product quantity
+            product.quantity -= qty_to_remove
+            if product.quantity < 0: product.quantity = 0
+        
+        db.session.commit()
+        
+        # Collect product info for logging
+        product_info = []
+        for pid in product_ids:
+            p = Product.query.get(pid)
+            if p: product_info.append(f"{p.name} ({p.sku})")
+        
+        from app.utils import log_activity
+        log_activity('Warehouse', f'Bulk Removed Stock from {warehouse.name}', 
+                    f'Removed {removed_count} products: {", ".join(product_info)}. Total units: {total_qty_removed}')
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Successfully removed {removed_count} items from {warehouse.name}.'
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 
 
 @bp.route('/warehouse/<int:id>/delete', methods=['POST'])
