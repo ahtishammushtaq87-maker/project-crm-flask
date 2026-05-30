@@ -46,17 +46,22 @@ def index():
         start_datetime = current_month
         end_datetime = datetime.now().replace(hour=23, minute=59, second=59)
 
-    # Total Sales
+    # Total Sales — only count admin-approved invoices
     total_sales = db.session.query(func.sum(Sale.total)).filter(
+        Sale.is_approved == True,
         Sale.date >= start_datetime,
         Sale.date <= end_datetime
     ).scalar() or 0
 
-    # Total COGS
+    # Total COGS — only from approved invoices
     total_cogs = db.session.query(func.sum(SaleItem.quantity * Product.cost_price))\
         .join(Sale, SaleItem.sale_id == Sale.id)\
         .join(Product, SaleItem.product_id == Product.id)\
-        .filter(Sale.date >= start_datetime, Sale.date <= end_datetime)\
+        .filter(
+            Sale.is_approved == True,
+            Sale.date >= start_datetime,
+            Sale.date <= end_datetime
+        )\
         .scalar() or 0
 
     # Total Purchases (Inventory Addition)
@@ -244,8 +249,9 @@ def index():
     # (BOM overhead is already in COGS)
     net_profit = gross_profit - operating_expenses - tools_expenses - divided_expenses_for_period - daily_payroll_for_period
 
-    # Outstanding Payments
+    # Outstanding Payments — only from approved invoices
     outstanding = db.session.query(func.sum(Sale.total - Sale.paid_amount)).filter(
+        Sale.is_approved == True,
         Sale.status != 'paid',
         Sale.date >= start_datetime,
         Sale.date <= end_datetime

@@ -318,11 +318,13 @@ class Customer(db.Model):
     
     @property
     def total_sales(self):
-        return sum(sale.total for sale in self.sales)
+        """Total of approved sales only"""
+        return sum(sale.total for sale in self.sales if sale.is_approved)
     
     @property
     def outstanding_balance(self):
-        return sum(sale.total - sale.paid_amount for sale in self.sales if sale.status != 'paid')
+        """Outstanding balance from approved sales only"""
+        return sum(sale.total - sale.paid_amount for sale in self.sales if sale.status != 'paid' and sale.is_approved)
     
     @property
     def total_delivery_charges(self):
@@ -330,7 +332,8 @@ class Customer(db.Model):
 
     @property
     def total_advances_received(self):
-        return sum(adv.amount for adv in self.advances)
+        """Total of approved advances only"""
+        return sum(adv.amount for adv in self.advances if adv.is_approved)
 
     @property
     def total_advances_adjusted(self):
@@ -552,6 +555,7 @@ class Sale(db.Model):
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), index=True)
     date = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     due_date = db.Column(db.DateTime)
+    overdue_date = db.Column(db.DateTime, nullable=True)
     currency_id = db.Column(db.Integer, db.ForeignKey('currencies.id'), nullable=True)
     exchange_rate = db.Column(db.Float, default=1)
     subtotal = db.Column(db.Float, default=0)
@@ -575,6 +579,10 @@ class Sale(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     access_token = db.Column(db.String(100), unique=True, nullable=True, index=True)
     token_expiry = db.Column(db.DateTime, nullable=True)
+    # Approval workflow: staff-created invoices require admin approval before counting in sales totals
+    is_approved = db.Column(db.Boolean, default=True, index=True)  # True for admin-created, False for staff-created
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     
     # Relationships
     items = db.relationship('SaleItem', backref='sale', lazy=True, cascade='all, delete-orphan')
@@ -935,6 +943,10 @@ class Payment(db.Model):
     notes = db.Column(db.Text)
     image_path = db.Column(db.String(255))  # Path to uploaded payment receipt/bill image
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    # Approval workflow: staff-recorded payments require admin approval before updating paid_amount
+    is_approved = db.Column(db.Boolean, default=True, index=True)  # True for admin-created, False for staff-created
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
 
     invoice = db.relationship('Sale', backref='payments', lazy=True)
     expense = db.relationship('Expense', backref='payments', lazy=True)
@@ -1833,6 +1845,10 @@ class CustomerAdvance(db.Model):
     adjusted_invoice_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Approval workflow: staff-recorded advances require admin approval before being available for use
+    is_approved = db.Column(db.Boolean, default=True, index=True)  # True for admin-created, False for staff-created
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
 
     adjusted_invoice = db.relationship('Sale', backref='adjusted_advances', lazy=True)
 

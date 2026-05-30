@@ -761,7 +761,7 @@ def product_full_history(id):
     
     # From bridge table
     for ws in product.warehouse_stocks:
-        if ws.quantity > 0:
+        if ws.quantity != 0:
             wh_distribution.append({
                 'warehouse_id': ws.warehouse_id,
                 'warehouse_name': ws.warehouse.name,
@@ -770,7 +770,7 @@ def product_full_history(id):
             handled_wh_ids.add(ws.warehouse_id)
             
     # From legacy field
-    if product.warehouse_id and product.warehouse_id not in handled_wh_ids and product.quantity > 0:
+    if product.warehouse_id and product.warehouse_id not in handled_wh_ids and product.quantity != 0:
         wh_distribution.append({
             'warehouse_id': product.warehouse_id,
             'warehouse_name': product.warehouse.name,

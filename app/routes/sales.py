@@ -43,6 +43,13 @@ def invoices():
             Sale.status != 'paid',
             Sale.due_date < datetime.utcnow()
         )
+    elif status == 'unapproved':
+        # Show invoices that are themselves unapproved, OR have unapproved payments, OR have unapproved advances
+        query = query.filter(
+            (Sale.is_approved == False) |
+            (Sale.payments.any(Payment.is_approved == False)) |
+            (Sale.adjusted_advances.any(CustomerAdvance.is_approved == False))
+        )
     elif status != 'all':
         query = query.filter(Sale.status == status)
     
@@ -92,6 +99,21 @@ def invoices():
     total_paid = sum(sale.paid_amount for sale in sales)
     total_balance = sum(sale.balance_due for sale in sales)
     
+    # ── Unapproved summary (for alert box at top of page) ─────────────────
+    # Always calculated regardless of which tab is active
+    unapproved_invoices_all = Sale.query.filter(Sale.is_approved == False).all()
+    unapproved_invoice_total = sum(s.total for s in unapproved_invoices_all)
+    unapproved_invoice_count = len(unapproved_invoices_all)
+
+    unapproved_payments_all = Payment.query.filter(Payment.is_approved == False).all()
+    unapproved_payment_total = sum(p.amount for p in unapproved_payments_all)
+    unapproved_payment_count = len(unapproved_payments_all)
+
+    unapproved_advances_all = CustomerAdvance.query.filter(CustomerAdvance.is_approved == False).all()
+    unapproved_advance_total = sum(a.amount for a in unapproved_advances_all)
+    unapproved_advance_count = len(unapproved_advances_all)
+    # ──────────────────────────────────────────────────────────────────────
+
     # Get company date format
     company = Company.query.first()
     date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
@@ -124,7 +146,11 @@ def invoices():
                          total_balance=total_balance,
                          date_format=date_format,
                          active_module='sale',
-                         filter_id=request.args.get('filter_id'))
+                         filter_id=request.args.get('filter_id'),
+                         unapproved_invoice_total=unapproved_invoice_total,
+                         unapproved_invoice_count=unapproved_invoice_count,
+                         unapproved_payment_total=unapproved_payment_total,
+                         unapproved_payment_count=unapproved_payment_count, unapproved_invoices_all=unapproved_invoices_all, unapproved_payments_all=unapproved_payments_all, unapproved_advance_total=unapproved_advance_total, unapproved_advance_count=unapproved_advance_count, unapproved_advances_all=unapproved_advances_all)
 
 @bp.route('/invoice/create', methods=['GET', 'POST'])
 @login_required
@@ -202,6 +228,9 @@ def create_invoice():
         invoice_number = f"{settings.invoice_prefix}{settings.next_number}{settings.invoice_suffix}"
         settings.next_number += 1
 
+        # Determine approval: admin-created invoices are pre-approved; staff need admin approval
+        creator_is_admin = (current_user.role == 'admin')
+
         sale = Sale(
             invoice_number=invoice_number,
             customer_id=customer_id if customer_id != '0' else None,
@@ -219,13 +248,17 @@ def create_invoice():
             exchange_rate=float(request.form.get('exchange_rate', 1)),
             salesman_id=salesman_id if salesman_id and salesman_id != '0' else None,
             paid_amount=advance_applied,
-            created_by=current_user.id
+            created_by=current_user.id,
+            is_approved=creator_is_admin,
+            approved_by=current_user.id if creator_is_admin else None,
+            approved_at=datetime.utcnow() if creator_is_admin else None
         )
 
         due_date_str = request.form.get('due_date')
         if due_date_str:
             try:
                 sale.due_date = datetime.strptime(due_date_str, '%Y-%m-%d')
+                sale.overdue_date = sale.due_date
             except ValueError:
                 sale.due_date = None
         
@@ -421,6 +454,7 @@ def edit_invoice(id):
         if due_date_str:
             try:
                 sale.due_date = datetime.strptime(due_date_str, '%Y-%m-%d')
+                sale.overdue_date = sale.due_date
             except ValueError:
                 sale.due_date = None
 
@@ -563,9 +597,14 @@ def pay_invoice(id):
     amount = float(request.form.get('amount', 0))
     
     if amount > 0:
-        # Update sale payment status (existing logic preserved)
-        sale.paid_amount += amount
-        sale.update_status()
+        # Determine if this user's payment is auto-approved (admin) or needs approval (staff)
+        payer_is_admin = (current_user.role == 'admin')
+
+        # Only update paid_amount immediately for admin-approved payments
+        # Staff payments remain pending until admin approves them
+        if payer_is_admin:
+            sale.paid_amount += amount
+            sale.update_status()
         
         # Handle payment receipt image upload
         image_path = None
@@ -597,14 +636,83 @@ def pay_invoice(id):
             invoice_id=sale.id,
             notes=payment_notes,
             image_path=image_path,
-            created_by=current_user.id
+            created_by=current_user.id,
+            is_approved=payer_is_admin,
+            approved_by=current_user.id if payer_is_admin else None,
+            approved_at=datetime.utcnow() if payer_is_admin else None
         )
         db.session.add(payment)
         
         db.session.commit()
-        flash(f'Payment of PKR {amount:,.2f} recorded successfully!', 'success')
+        if payer_is_admin:
+            flash(f'Payment of PKR {amount:,.2f} recorded and approved successfully!', 'success')
+        else:
+            flash(f'Payment of PKR {amount:,.2f} submitted — pending admin approval.', 'info')
     
     return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+
+# ── APPROVAL ROUTES (Admin only) ─────────────────────────────────────────────
+
+@bp.route('/invoice/<int:id>/approve', methods=['POST'])
+@login_required
+def approve_invoice(id):
+    """Admin approves a pending invoice — marks it approved so it counts in sales totals."""
+    if current_user.role != 'admin':
+        flash('Only admin can approve invoices.', 'danger')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
+    sale = Sale.query.get_or_404(id)
+    if sale.is_approved:
+        flash('Invoice is already approved.', 'info')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
+    sale.is_approved = True
+    sale.approved_by = current_user.id
+    sale.approved_at = datetime.utcnow()
+    # Also auto-approve any pending payments on this invoice when the invoice itself is approved
+    pending_payments = Payment.query.filter_by(invoice_id=sale.id, is_approved=False).all()
+    for pmt in pending_payments:
+        sale.paid_amount += pmt.amount
+        pmt.is_approved = True
+        pmt.approved_by = current_user.id
+        pmt.approved_at = datetime.utcnow()
+    sale.update_status()
+    db.session.commit()
+    log_activity('Sales', f'Approved Invoice #{sale.invoice_number}',
+                 f'Approved by {current_user.username}. Pending payments also approved: {len(pending_payments)}')
+    flash(f'Invoice {sale.invoice_number} approved successfully!', 'success')
+    return redirect(url_for('sales.invoice_detail', id=id))
+
+
+@bp.route('/invoice/<int:id>/payment/<int:pay_id>/approve', methods=['POST'])
+@login_required
+def approve_payment(id, pay_id):
+    """Admin approves a single pending payment — adds its amount to sale.paid_amount."""
+    if current_user.role != 'admin':
+        flash('Only admin can approve payments.', 'danger')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
+    sale = Sale.query.get_or_404(id)
+    payment = Payment.query.filter_by(id=pay_id, invoice_id=sale.id).first_or_404()
+
+    if payment.is_approved:
+        flash('Payment is already approved.', 'info')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
+    payment.is_approved = True
+    payment.approved_by = current_user.id
+    payment.approved_at = datetime.utcnow()
+
+    # Now add the payment amount to the sale's paid_amount
+    sale.paid_amount += payment.amount
+    sale.update_status()
+
+    db.session.commit()
+    log_activity('Sales', f'Approved Payment #{payment.payment_number} on Invoice #{sale.invoice_number}',
+                 f'Amount: PKR {payment.amount:,.2f} approved by {current_user.username}')
+    flash(f'Payment of PKR {payment.amount:,.2f} approved and applied to invoice!', 'success')
+    return redirect(url_for('sales.invoice_detail', id=id))
 
 
 @bp.route('/invoice/<int:id>/payment/<int:pay_id>/edit', methods=['GET', 'POST'])
@@ -1061,7 +1169,10 @@ def customer_profile(id):
     except ValueError:
         pass
 
-    all_sales = sorted(customer.sales, key=lambda s: s.date, reverse=True)
+    # Filter sales: only approved sales contribute to financial balance in profile
+    all_sales = sorted([s for s in customer.sales if s.is_approved], key=lambda s: s.date, reverse=True)
+    unapproved_sales = sorted([s for s in customer.sales if not s.is_approved], key=lambda s: s.date, reverse=True)
+
     if date_from or date_to:
         filtered_sales = [
             s for s in all_sales
@@ -1071,12 +1182,16 @@ def customer_profile(id):
     else:
         filtered_sales = all_sales
 
-    advances = sorted(customer.advances, key=lambda a: a.date, reverse=True)
+    # Filter advances: only approved advances are listed for application
+    all_advances = sorted([a for a in customer.advances if a.is_approved], key=lambda a: a.date, reverse=True)
+    unapproved_advances = sorted([a for a in customer.advances if not a.is_approved], key=lambda a: a.date, reverse=True)
     
     return render_template('sales/customer_profile.html', 
                           customer=customer, 
                           sales=filtered_sales, 
-                          advances=advances,
+                          unapproved_sales=unapproved_sales,
+                          advances=all_advances,
+                          unapproved_advances=unapproved_advances,
                           date_from=date_from_str,
                           date_to=date_to_str,
                           now=datetime.now())
@@ -1105,12 +1220,14 @@ def customer_export_pdf(id):
     # Opening balance
     opening_balance = float(customer.opening_balance or 0)
     
-    sales_q = Sale.query.filter_by(customer_id=id).order_by(Sale.date.asc()).all()
-    advances = CustomerAdvance.query.filter_by(customer_id=id).order_by(CustomerAdvance.date.asc()).all()
+    # Only include approved entities in the official ledger PDF
+    sales_q = Sale.query.filter_by(customer_id=id, is_approved=True).order_by(Sale.date.asc()).all()
+    advances = CustomerAdvance.query.filter_by(customer_id=id, is_approved=True).order_by(CustomerAdvance.date.asc()).all()
     returns = SaleReturn.query.filter_by(customer_id=id).order_by(SaleReturn.date.asc()).all()
     
     sale_ids = [s.id for s in sales_q]
-    payments = Payment.query.filter(Payment.invoice_id.in_(sale_ids)).order_by(Payment.date.asc()).all() if sale_ids else []
+    # Only include approved payments
+    payments = Payment.query.filter(Payment.invoice_id.in_(sale_ids), Payment.is_approved == True).order_by(Payment.date.asc()).all() if sale_ids else []
     
     events = []
     for s in sales_q:
@@ -2034,16 +2151,52 @@ def customer_receive_advance(id):
     except ValueError:
         advance_date = date.today()
     
+    # Determine approval: admin-recorded advances are pre-approved; staff need admin approval
+    creator_is_admin = (current_user.role == 'admin')
+
     advance = CustomerAdvance(
         customer_id=customer.id,
         amount=amount,
         date=advance_date,
         description=description or 'Advance for purchase',
-        created_by=current_user.id
+        created_by=current_user.id,
+        is_approved=creator_is_admin,
+        approved_by=current_user.id if creator_is_admin else None,
+        approved_at=datetime.utcnow() if creator_is_admin else None
     )
     db.session.add(advance)
     db.session.commit()
-    flash(f'Advance of PKR {amount:,.2f} recorded from {customer.name}.', 'success')
+    
+    if creator_is_admin:
+        flash(f'Advance of PKR {amount:,.2f} recorded and approved successfully.', 'success')
+    else:
+        flash(f'Advance of PKR {amount:,.2f} recorded — pending admin approval.', 'info')
+    
+    return redirect(url_for('sales.customer_profile', id=id))
+
+
+@bp.route('/customer/<int:id>/advance/<int:adv_id>/approve', methods=['POST'])
+@login_required
+def approve_advance(id, adv_id):
+    """Admin approves a pending customer advance."""
+    if current_user.role != 'admin':
+        flash('Only admin can approve advances.', 'danger')
+        return redirect(url_for('sales.customer_profile', id=id))
+
+    advance = CustomerAdvance.query.get_or_404(adv_id)
+    if advance.is_approved:
+        flash('Advance is already approved.', 'info')
+        return redirect(url_for('sales.customer_profile', id=id))
+
+    advance.is_approved = True
+    advance.approved_by = current_user.id
+    advance.approved_at = datetime.utcnow()
+    db.session.commit()
+    
+    log_activity('Customers', f'Approved Advance from {advance.customer.name}',
+                 f'Amount: PKR {advance.amount:,.2f} approved by {current_user.username}')
+                 
+    flash(f'Advance of PKR {advance.amount:,.2f} approved successfully!', 'success')
     return redirect(url_for('sales.customer_profile', id=id))
 
 
@@ -2055,6 +2208,11 @@ def customer_apply_advance(customer_id, adv_id):
     advance = CustomerAdvance.query.get_or_404(adv_id)
     invoice_id = request.form.get('invoice_id')
     
+    # Check if advance is approved
+    if not advance.is_approved:
+        flash('This advance is pending approval and cannot be applied yet.', 'warning')
+        return redirect(url_for('sales.customer_profile', id=customer_id))
+
     # Check if advance still has remaining balance
     if advance.remaining_balance <= 0:
         flash('This advance has no remaining balance to apply.', 'warning')

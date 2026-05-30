@@ -77,6 +77,11 @@
                     class="fas {% if sale.status == 'paid' %}fa-check{% elif sale.status == 'partial' %}fa-clock{% else %}fa-times{% endif %} me-1"></i>{{
                 sale.status | capitalize }}
             </span>
+            {% if not sale.is_approved %}
+            <span class="badge bg-warning text-dark ms-1" title="Waiting for admin approval">
+                <i class="fas fa-hourglass-half me-1"></i>Pending Approval
+            </span>
+            {% endif %}
         </div>
         <div class="btn-group flex-wrap gap-1">
             <a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" class="btn btn-info" target="_blank">
@@ -99,15 +104,15 @@
             {% endif %}
             {% endif %}
             {% if sale.status != 'paid' %}
-                <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#discountModal">
-                    <i class="fas fa-tag me-1"></i>Discount
-                </button>
-                {% if sale.is_overdue %}
-                <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#applyAdvanceModal"
-                    title="Apply customer advance to this overdue invoice">
-                    <i class="fas fa-bolt me-1"></i>Apply Advance
-                </button>
-                {% endif %}
+            <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#discountModal">
+                <i class="fas fa-tag me-1"></i>Discount
+            </button>
+            {% if sale.is_overdue %}
+            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#applyAdvanceModal"
+                title="Apply customer advance to this overdue invoice">
+                <i class="fas fa-bolt me-1"></i>Apply Advance
+            </button>
+            {% endif %}
             {% endif %}
             {% if current_user.has_permission('returns', 'add') %}
             <a href="{{ url_for('returns.create_return', sale_id=sale.id) }}" class="btn btn-danger">
@@ -122,6 +127,14 @@
             <a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left me-1"></i>Back
             </a>
+            {% if current_user.role == 'admin' and not sale.is_approved %}
+            <form action="{{ url_for('sales.approve_invoice', id=sale.id) }}" method="POST" class="d-inline">
+                <button type="submit" class="btn btn-success fw-bold"
+                    onclick="return confirm('Approve invoice {{ sale.invoice_number }}? It will count in sales totals.')">
+                    <i class="fas fa-check-circle me-1"></i>Approve Invoice
+                </button>
+            </form>
+            {% endif %}
         </div>
     </div>
 
@@ -147,12 +160,13 @@
                         {% if sale.is_overdue %}
                         <div class="mb-3">
                             <div class="form-check form-switch border p-2 rounded bg-light">
-                                <input class="form-check-input ms-0" type="checkbox" name="ignore_overdue_discount" id="ignoreOverdue"
-                                    {% if sale.ignore_overdue_discount %}checked{% endif %}>
+                                <input class="form-check-input ms-0" type="checkbox" name="ignore_overdue_discount"
+                                    id="ignoreOverdue" {% if sale.ignore_overdue_discount %}checked{% endif %}>
                                 <label class="form-check-label fw-bold text-danger ms-2" for="ignoreOverdue">
                                     Override Overdue Restriction
                                 </label>
-                                <div class="small text-muted ms-2 mt-1">Check this to allow discount on this overdue invoice.</div>
+                                <div class="small text-muted ms-2 mt-1">Check this to allow discount on this overdue
+                                    invoice.</div>
                             </div>
                         </div>
                         {% endif %}
@@ -178,13 +192,16 @@
                     <div class="modal-body text-start">
                         {% if sale.customer %}
                         <p class="text-muted small">
-                            Customer Advance Balance: <strong>PKR {{ "{:,.2f}".format(sale.customer.remaining_advance_balance or 0) }}</strong>
-                            &nbsp;|&nbsp; Balance Due: <strong>PKR {{ "{:,.2f}".format(sale.total - sale.paid_amount) }}</strong>
+                            Customer Advance Balance: <strong>PKR {{
+                                "{:,.2f}".format(sale.customer.remaining_advance_balance or 0) }}</strong>
+                            &nbsp;|&nbsp; Balance Due: <strong>PKR {{ "{:,.2f}".format(sale.total - sale.paid_amount)
+                                }}</strong>
                         </p>
                         {% endif %}
                         <div class="alert alert-warning py-2 small">
                             <i class="fas fa-exclamation-triangle me-1"></i>
-                            This invoice is <strong>overdue</strong>. The available advance will be applied to reduce the outstanding balance.
+                            This invoice is <strong>overdue</strong>. The available advance will be applied to reduce
+                            the outstanding balance.
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -352,11 +369,11 @@
                             <td class="text-success">
                                 Discount
                                 {% if sale.is_overdue %}
-                                    {% if sale.is_discount_restricted %}
-                                    <span class="badge bg-danger ms-1 small" style="font-size: 0.65rem;">UNAPPLY</span>
-                                    {% else %}
-                                    <span class="badge bg-success ms-1 small" style="font-size: 0.65rem;">APPLY</span>
-                                    {% endif %}
+                                {% if sale.is_discount_restricted %}
+                                <span class="badge bg-danger ms-1 small" style="font-size: 0.65rem;">UNAPPLY</span>
+                                {% else %}
+                                <span class="badge bg-success ms-1 small" style="font-size: 0.65rem;">APPLY</span>
+                                {% endif %}
                                 {% endif %}
                             </td>
                             <td class="text-end text-success">-Rs {{ "{:,.2f}".format(effective_discount) }}</td>
@@ -445,7 +462,8 @@
                             <tbody>
                                 {% for item in sale.items %}
                                 {% set item_subtotal = item.quantity * item.unit_price %}
-                                {% set item_discount = (item.total / sale.subtotal * effective_discount) if sale.subtotal > 0
+                                {% set item_discount = (item.total / sale.subtotal * effective_discount) if
+                                sale.subtotal > 0
                                 else 0 %}
                                 <tr>
                                     <td>{{ loop.index }}</td>
@@ -497,7 +515,8 @@
                                 {% if effective_discount > 0 %}
                                 <tr>
                                     <th colspan="{{ label_colspan }}" class="text-end text-success">Discount</th>
-                                    <th class="text-end text-success">-Rs {{ "{:,.2f}".format(effective_discount) }}</th>
+                                    <th class="text-end text-success">-Rs {{ "{:,.2f}".format(effective_discount) }}
+                                    </th>
                                 </tr>
                                 {% endif %}
                                 {% if sale.advance_applied > 0 %}
@@ -550,7 +569,7 @@
                             </thead>
                             <tbody>
                                 {% for payment in payments | sort(attribute='date', reverse=True) %}
-                                <tr>
+                                <tr class="{% if not payment.is_approved %}table-warning{% endif %}">
                                     <td>
                                         {{ payment.date.strftime(date_format) }}
                                         <br><small class="text-muted">{{ payment.date.strftime('%H:%M') }}</small>
@@ -558,8 +577,14 @@
                                     <td>
                                         <span class="badge bg-secondary">{{ payment.method or 'Cash' }}</span>
                                     </td>
-                                    <td class="text-muted small">{{ payment.reference_number or '—' }}</td>
-                                    <td class="text-end fw-bold text-success">PKR {{ "{:,.2f}".format(payment.amount) }}
+                                    <td class="text-muted small">{{ payment.reference_number or '&mdash;' }}</td>
+                                    <td
+                                        class="text-end fw-bold {% if payment.is_approved %}text-success{% else %}text-warning{% endif %}">
+                                        PKR {{ "{:,.2f}".format(payment.amount) }}
+                                        {% if not payment.is_approved %}
+                                        <br><small class="text-warning"><i
+                                                class="fas fa-hourglass-half me-1"></i>Pending</small>
+                                        {% endif %}
                                     </td>
                                     <td>
                                         {% if payment.image_path %}
@@ -580,11 +605,23 @@
                                         </a>
                                         {% endif %}
                                         {% else %}
-                                        <span class="text-muted small">—</span>
+                                        <span class="text-muted small">&mdash;</span>
                                         {% endif %}
                                     </td>
-                                    <td class="text-muted small">{{ payment.notes or '—' }}</td>
+                                    <td class="text-muted small">{{ payment.notes or '&mdash;' }}</td>
                                     <td class="text-center">
+                                        {% if current_user.role == 'admin' and not payment.is_approved %}
+                                        <!-- Admin approve button -->
+                                        <form method="POST"
+                                            action="{{ url_for('sales.approve_payment', id=sale.id, pay_id=payment.id) }}"
+                                            class="d-inline">
+                                            <button type="submit" class="btn btn-sm btn-success fw-bold me-1"
+                                                title="Approve this payment"
+                                                onclick="return confirm('Approve this payment? It will update the invoice paid amount.')">
+                                                <i class="fas fa-check"></i> Approve
+                                            </button>
+                                        </form>
+                                        {% elif payment.is_approved %}
                                         <button type="button"
                                             class="btn btn-sm btn-outline-primary edit-payment-btn me-1"
                                             data-bs-toggle="modal" data-bs-target="#editPaymentModal{{ payment.id }}">
@@ -600,6 +637,7 @@
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         </form>
+                                        {% endif %}
                                         {% endif %}
                                     </td>
                                 </tr>
