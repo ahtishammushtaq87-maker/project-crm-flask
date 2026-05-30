@@ -2342,14 +2342,30 @@ def purchase_return_detail(id):
 @bp.route('/return/<int:id>/mark_returned', methods=['POST'])
 @login_required
 def mark_purchase_returned(id):
-    """Mark return as returned to inventory"""
+    """Mark return as returned to inventory and actually restore stock levels"""
     purchase_return = PurchaseReturn.query.get_or_404(id)
     
     if not purchase_return.returned_to_inventory:
+        # Restore inventory for each item
+        for item in purchase_return.items:
+            product = Product.query.get(item.product_id)
+            if product:
+                # increase global product quantity
+                product.update_quantity(item.quantity)
+
+                # increase per-warehouse stock
+                wh_id = item.warehouse_id or product.warehouse_id
+                if wh_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=wh_id, quantity=0)
+                        db.session.add(wh_stock)
+                    wh_stock.quantity += item.quantity
+
         purchase_return.returned_to_inventory = True
         purchase_return.status = 'completed'
         db.session.commit()
-        flash('Items marked as returned to inventory.', 'success')
+        flash('Items successfully returned to inventory and stock levels updated.', 'success')
     else:
         flash('Items already returned to inventory.', 'info')
     
@@ -2415,53 +2431,69 @@ def edit_purchase_return(id):
         purchase_return.reason = request.form.get('reason', '')
         purchase_return.date = datetime.strptime(request.form.get('date'), '%Y-%m-%d') if request.form.get('date') else purchase_return.date
         
-        # Update quantities and recalculate totals
+        # Reverse inventory changes for old items ONLY if they weren't already returned to inventory
+        if not purchase_return.returned_to_inventory:
+            for item in purchase_return.items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    product.update_quantity(item.quantity)
+                    
+                    wh_id = item.warehouse_id or product.warehouse_id
+                    if wh_id:
+                        wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
+                        if wh_stock:
+                            wh_stock.quantity += item.quantity
+
+        # Delete existing items
+        for item in purchase_return.items:
+            db.session.delete(item)
+        
+        # Get new data
         product_ids = request.form.getlist('product_id[]')
         quantities = request.form.getlist('quantity[]')
         prices = request.form.getlist('price[]')
-        
-        # Delete existing items
-        for item in purchase_return.items:
-            # Restore product quantity
-            if item.product:
-                item.product.quantity += item.quantity
-            db.session.delete(item)
+        warehouse_ids = request.form.getlist('warehouse_id[]')
         
         # Create new items
-        subtotal = 0
         for i in range(len(product_ids)):
             if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
                 product = Product.query.get(int(product_ids[i]))
                 quantity = float(quantities[i])
                 price = float(prices[i])
                 total = quantity * price
-                subtotal += total
+                wh_id = int(warehouse_ids[i]) if i < len(warehouse_ids) and warehouse_ids[i] else (product.warehouse_id if product else None)
                 
                 return_item = PurchaseReturnItem(
                     return_id=purchase_return.id,
                     product_id=product.id,
                     quantity=quantity,
                     unit_price=price,
-                    total=total
+                    total=total,
+                    warehouse_id=wh_id
                 )
                 db.session.add(return_item)
                 
-                # Subtract from inventory
-                if product:
-                    product.quantity -= quantity
-                    if product.quantity < 0:
-                        product.quantity = 0
+                # Subtract from inventory ONLY if not already returned to inventory
+                if not purchase_return.returned_to_inventory:
+                    if product:
+                        product.update_quantity(-quantity)
+                        
+                        if wh_id:
+                            wh_stock = ProductWarehouseStock.query.filter_by(product_id=product.id, warehouse_id=wh_id).first()
+                            if not wh_stock:
+                                wh_stock = ProductWarehouseStock(product_id=product.id, warehouse_id=wh_id, quantity=0)
+                                db.session.add(wh_stock)
+                            wh_stock.quantity -= quantity
         
         # Recalculate totals
-        tax_rate = purchase_return.tax_rate
-        tax = subtotal * (tax_rate / 100)
-        discount = purchase_return.discount
-        total = subtotal + tax - discount
+        purchase_return.calculate_totals()
         
-        purchase_return.subtotal = subtotal
-        purchase_return.tax = tax
-        purchase_return.total = total
-        
+        # Update bill totals
+        if bill:
+            bill.subtotal = sum(item.total for item in bill.items) - sum(ret.total for ret in bill.purchase_returns)
+            bill.calculate_totals()
+            bill.update_status()
+
         db.session.commit()
         flash(f'Return {purchase_return.return_number} updated successfully!', 'success')
         return redirect(url_for('purchase.purchase_return_detail', id=id))
@@ -2475,14 +2507,27 @@ def edit_purchase_return(id):
 @login_required
 @permission_required('purchases', action='delete')
 def delete_purchase_return(id):
-    """Delete a purchase return"""
+    """Delete a purchase return and restore stock if not already returned"""
     purchase_return = PurchaseReturn.query.get_or_404(id)
     bill = purchase_return.bill
     
-    # Restore product quantities
-    for item in purchase_return.items:
-        if item.product:
-            item.product.quantity += item.quantity
+    # Restore product quantities ONLY if they were still "out" (returned to vendor)
+    # If returned_to_inventory is True, it means they already came back to shelf.
+    if not purchase_return.returned_to_inventory:
+        for item in purchase_return.items:
+            product = Product.query.get(item.product_id)
+            if product:
+                # restore global product quantity
+                product.update_quantity(item.quantity)
+
+                # restore per-warehouse stock
+                wh_id = item.warehouse_id or product.warehouse_id
+                if wh_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=wh_id, quantity=0)
+                        db.session.add(wh_stock)
+                    wh_stock.quantity += item.quantity
     
     # Reverse vendor refund if was paid
     if purchase_return.refund_status == 'paid' and purchase_return.vendor:
@@ -2517,7 +2562,7 @@ def delete_purchase_return(id):
     db.session.delete(purchase_return)
     db.session.commit()
     
-    flash(f'Return {return_number} deleted successfully!', 'success')
+    flash(f'Return {return_number} deleted successfully. Inventory has been restored where applicable.', 'success')
     return redirect(url_for('purchase.purchase_return_list'))
 
 @bp.route('/returns/bulk-delete', methods=['POST'])

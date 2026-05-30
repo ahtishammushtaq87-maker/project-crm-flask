@@ -120,6 +120,7 @@ def warehouse_detail(id):
     for sr in stock_records:
         p = sr.product
         products_display.append({
+            'id': p.id,
             'sku': p.sku,
             'name': p.name,
             'category': p.category,
@@ -139,6 +140,7 @@ def warehouse_detail(id):
     
     for p in legacy_products:
         products_display.append({
+            'id': p.id,
             'sku': p.sku,
             'name': p.name,
             'category': p.category,
@@ -161,6 +163,109 @@ def warehouse_detail(id):
                          total_quantity=total_quantity,
                          total_value=total_value,
                          total_items=total_items)
+
+@bp.route('/warehouse/<int:warehouse_id>/stock/<int:product_id>/update', methods=['POST'])
+@login_required
+@permission_required('warehouse', action='edit')
+def update_stock(warehouse_id, product_id):
+    from app.models import ProductWarehouseStock, Product
+    warehouse = Warehouse.query.get_or_404(warehouse_id)
+    product = Product.query.get_or_404(product_id)
+    
+    try:
+        new_quantity = float(request.form.get('quantity', 0))
+        if new_quantity < 0:
+            flash('Quantity cannot be negative.', 'error')
+            return redirect(url_for('warehouse.warehouse_detail', id=warehouse_id))
+            
+        # 1. Update/Create ProductWarehouseStock record
+        wh_stock = ProductWarehouseStock.query.filter_by(
+            product_id=product_id,
+            warehouse_id=warehouse_id
+        ).first()
+        
+        old_wh_qty = 0
+        if wh_stock:
+            old_wh_qty = wh_stock.quantity
+            wh_stock.quantity = new_quantity
+        else:
+            # Check if it was a legacy primary warehouse assignment
+            if product.warehouse_id == warehouse_id:
+                old_wh_qty = product.quantity
+                # Convert legacy to bridge table record
+                wh_stock = ProductWarehouseStock(
+                    product_id=product_id,
+                    warehouse_id=warehouse_id,
+                    quantity=new_quantity
+                )
+                db.session.add(wh_stock)
+            else:
+                # New stock assignment to this warehouse
+                wh_stock = ProductWarehouseStock(
+                    product_id=product_id,
+                    warehouse_id=warehouse_id,
+                    quantity=new_quantity
+                )
+                db.session.add(wh_stock)
+        
+        # 2. Update global Product quantity
+        qty_diff = new_quantity - old_wh_qty
+        product.quantity += qty_diff
+        
+        db.session.commit()
+        
+        from app.utils import log_activity
+        log_activity('Warehouse', f'Updated Stock: {product.name}', 
+                    f'Warehouse: {warehouse.name}, Old Qty: {old_wh_qty}, New Qty: {new_quantity}, Diff: {qty_diff}')
+        
+        flash(f'Stock for {product.name} updated successfully in {warehouse.name}.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error updating stock: {str(e)}', 'error')
+        
+    return redirect(url_for('warehouse.warehouse_detail', id=warehouse_id))
+
+@bp.route('/warehouse/<int:warehouse_id>/stock/<int:product_id>/remove', methods=['POST'])
+@login_required
+@permission_required('warehouse', action='delete')
+def remove_stock(warehouse_id, product_id):
+    from app.models import ProductWarehouseStock, Product
+    warehouse = Warehouse.query.get_or_404(warehouse_id)
+    product = Product.query.get_or_404(product_id)
+    
+    try:
+        # 1. Find the quantity in this warehouse
+        wh_stock = ProductWarehouseStock.query.filter_by(
+            product_id=product_id,
+            warehouse_id=warehouse_id
+        ).first()
+        
+        qty_to_remove = 0
+        if wh_stock:
+            qty_to_remove = wh_stock.quantity
+            db.session.delete(wh_stock)
+        elif product.warehouse_id == warehouse_id:
+            # Legacy case
+            qty_to_remove = product.quantity
+            product.warehouse_id = None
+            
+        # 2. Update global Product quantity
+        product.quantity -= qty_to_remove
+        if product.quantity < 0: product.quantity = 0
+        
+        db.session.commit()
+        
+        from app.utils import log_activity
+        log_activity('Warehouse', f'Removed Stock: {product.name}', 
+                    f'Removed {qty_to_remove} from {warehouse.name}. New global qty: {product.quantity}')
+        
+        flash(f'Successfully removed {product.name} from {warehouse.name}.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error removing stock: {str(e)}', 'error')
+        
+    return redirect(url_for('warehouse.warehouse_detail', id=warehouse_id))
+
 
 @bp.route('/warehouse/<int:id>/delete', methods=['POST'])
 @login_required

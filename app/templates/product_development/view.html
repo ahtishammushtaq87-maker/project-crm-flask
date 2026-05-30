@@ -57,8 +57,8 @@
                 <div class="mt-3">
                     <small class="text-muted">Progress</small>
                     <div class="progress" style="height: 20px;">
-                        <div class="progress-bar" role="progressbar" style="width: {{ (project.current_phase / 6) * 100 }}%">
-                            {{ project.current_phase }}/6 Phases
+                        <div class="progress-bar" role="progressbar" style="width: {{ (project.current_phase / 5) * 100 }}%">
+                            {{ project.current_phase }}/5 Phases
                         </div>
                     </div>
                 </div>
@@ -72,107 +72,86 @@
         <ul class="nav nav-tabs" id="phaseTabs" role="tablist">
             <li class="nav-item" role="presentation">
                 <button class="nav-link {{ 'active' if project.current_phase == 1 else '' }}" id="phase1-tab" data-bs-toggle="tab" data-bs-target="#phase1" type="button">
-                    <i class="fas fa-list me-1"></i> Phase 1: BOM
+                    <i class="fas fa-layer-group me-1"></i> Phase 1: Materials & Components
                 </button>
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link {{ 'active' if project.current_phase == 2 else '' }}" id="phase2-tab" data-bs-toggle="tab" data-bs-target="#phase2" type="button">
-                    <i class="fas fa-cogs me-1"></i> Phase 2: Components
+                    <i class="fas fa-tools me-1"></i> Phase 2: Tooling
                 </button>
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link {{ 'active' if project.current_phase == 3 else '' }}" id="phase3-tab" data-bs-toggle="tab" data-bs-target="#phase3" type="button">
-                    <i class="fas fa-tools me-1"></i> Phase 3: Tooling
+                    <i class="fas fa-vial me-1"></i> Phase 3: Testing
                 </button>
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link {{ 'active' if project.current_phase == 4 else '' }}" id="phase4-tab" data-bs-toggle="tab" data-bs-target="#phase4" type="button">
-                    <i class="fas fa-vial me-1"></i> Phase 4: Testing
+                    <i class="fas fa-check-circle me-1"></i> Phase 4: Approval
                 </button>
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link {{ 'active' if project.current_phase == 5 else '' }}" id="phase5-tab" data-bs-toggle="tab" data-bs-target="#phase5" type="button">
-                    <i class="fas fa-check-circle me-1"></i> Phase 5: Approval
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link {{ 'active' if project.current_phase == 6 else '' }}" id="phase6-tab" data-bs-toggle="tab" data-bs-target="#phase6" type="button">
-                    <i class="fas fa-rocket me-1"></i> Phase 6: Production
+                    <i class="fas fa-rocket me-1"></i> Phase 5: Production
                 </button>
             </li>
         </ul>
         
         <div class="tab-content p-3 border border-top-0 bg-white" id="phaseTabsContent">
-            <!-- Phase 1: BOM -->
+            <!-- Phase 1: Materials & Components -->
             <div class="tab-pane fade {{ 'show active' if project.current_phase == 1 else '' }}" id="phase1" role="tabpanel">
-                <h5><i class="fas fa-list me-2"></i>Bill of Materials</h5>
-                <div class="mb-3">
-                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addBOMModal">
-                        <i class="fas fa-plus me-1"></i> Add Material
-                    </button>
+                <h5><i class="fas fa-layer-group me-2"></i>Materials & Components</h5>
+                <div class="mb-3 d-flex justify-content-between align-items-center">
+                    <div class="btn-group" role="group">
+                       <!-- <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addBOMModal">
+                            <i class="fas fa-plus me-1"></i> Add Material
+                        </button>-->
+                        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addComponentModal">
+                            <i class="fas fa-plus me-1"></i> Add Component
+                        </button>
+                    </div>
+                    {% if project.current_phase == 1 and project.bom_items|length + project.components|length > 0 %}
+                    <form method="POST" action="{{ url_for('product_development.complete_phase', project_id=project.id, phase=1) }}">
+                        <button type="submit" class="btn btn-sm btn-success">
+                            <i class="fas fa-check me-1"></i> Phase Complete
+                        </button>
+                    </form>
+                    {% endif %}
                 </div>
                 <table class="table table-sm">
                     <thead>
                         <tr>
-                            <th>Material Name</th>
-                            <th>SKU</th>
-                            <th>Qty/Unit</th>
-                            <th>Est. Cost</th>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>SKU/Ref</th>
+                            <th>Qty</th>
+                            <th>Cost/Unit</th>
                             <th>Total</th>
+                            <th>Vendor</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
+                        <!-- BOM Items -->
                         {% for item in project.bom_items %}
                         <tr>
                             <td>{{ item.material_name }}</td>
+                            <td><span class="badge bg-secondary">Material</span></td>
                             <td>{{ item.material.sku if item.material else '-' }}</td>
                             <td>{{ item.quantity_per_unit }}</td>
                             <td>PKR {{ "{:,.0f}".format(item.estimated_cost) }}</td>
                             <td>PKR {{ "{:,.0f}".format(item.total_cost) }}</td>
+                            <td>-</td>
                             <td>
-                                                                {% if current_user.has_permission('product_dev', 'delete') %}
+                                {% if current_user.has_permission('product_dev', 'delete') %}
 <a href="{{ url_for('product_development.delete_bom', bom_id=item.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete this item?')">
                                     <i class="fas fa-trash"></i>
                                 </a>
 {% endif %}                                
                             </td>
                         </tr>
-                        {% else %}
-                        <tr><td colspan="6" class="text-muted">No BOM items added</td></tr>
                         {% endfor %}
-                    </tbody>
-                    <tfoot>
-                        <tr class="fw-bold">
-                            <td colspan="4">Total BOM Cost</td>
-                            <td>PKR {{ "{:,.0f}".format(project.total_bom_cost) }}</td>
-                            <td></td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-            
-            <!-- Phase 2: Components -->
-            <div class="tab-pane fade {{ 'show active' if project.current_phase == 2 else '' }}" id="phase2" role="tabpanel">
-                <h5><i class="fas fa-cogs me-2"></i>Component Management</h5>
-                <div class="mb-3">
-                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addComponentModal">
-                        <i class="fas fa-plus me-1"></i> Add Component
-                    </button>
-                </div>
-                <table class="table table-sm">
-                    <thead>
-                        <tr>
-                            <th>Component</th>
-                            <th>Type</th>
-                            <th>Qty</th>
-                            <th>Vendor</th>
-                            <th>Cost</th>
-                            <th>Link</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+                        <!-- Components -->
                         {% for comp in project.components %}
                         <tr>
                             <td>{{ comp.component_name }}</td>
@@ -185,63 +164,48 @@
                                 <span class="badge bg-warning">OUTSOURCE</span>
                                 {% endif %}
                             </td>
+                            <td>-</td>
                             <td>{{ comp.quantity }}</td>
-                            <td>{{ comp.vendor.name if comp.vendor else '-' }}</td>
+                            <td>PKR {{ "{:,.0f}".format(comp.estimated_cost) }}</td>
                             <td>PKR {{ "{:,.0f}".format(comp.cost) }}</td>
+                            <td>{{ comp.vendor.name if comp.vendor else '-' }}</td>
                             <td>
-                                {% if comp.purchase_order_id %}
-<<<<<<< HEAD
-                                                                {% if current_user.has_permission('purchases', 'edit') %}
-<a href="{{ url_for('purchase.edit_order', order_id=comp.purchase_order_id) }}" class="btn btn-sm btn-info">PO</a>
-{% endif %}                                
-                                {% elif comp.manufacturing_order_id %}
-                                <a href="{{ url_for('manufacturing.view_order', order_id=comp.manufacturing_order_id) }}" class="btn btn-sm btn-info">MO</a>
-=======
-                                <a href="{{ url_for('purchase.po_detail', id=comp.purchase_order_id) }}" class="btn btn-sm btn-info">PO</a>
-                                {% elif comp.manufacturing_order_id %}
-                                <a href="{{ url_for('manufacturing.order_details', id=comp.manufacturing_order_id) }}" class="btn btn-sm btn-info">MO</a>
->>>>>>> 817f50840933f800b784ce4d44645bbd5bb0f00c
-                                {% else %}
-                                {% if comp.component_type != 'MAKE' %}
-                                                                {% if current_user.has_permission('product_dev', 'add') %}
-<a href="{{ url_for('product_development.create_purchase_order_from_component', comp_id=comp.id) }}" class="btn btn-sm btn-success">Create PO</a>
-{% endif %}                                
-                                {% else %}
-                                                                {% if current_user.has_permission('product_dev', 'add') %}
-<a href="{{ url_for('product_development.create_manufacturing_order_from_component', comp_id=comp.id) }}" class="btn btn-sm btn-success">Create MO</a>
-{% endif %}                                
-                                {% endif %}
-                                {% endif %}
-                            </td>
-                            <td>
-                                                                {% if current_user.has_permission('product_dev', 'delete') %}
+                                {% if current_user.has_permission('product_dev', 'delete') %}
 <a href="{{ url_for('product_development.delete_component', comp_id=comp.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')">
                                     <i class="fas fa-trash"></i>
                                 </a>
 {% endif %}                                
                             </td>
                         </tr>
-                        {% else %}
-                        <tr><td colspan="7" class="text-muted">No components added</td></tr>
                         {% endfor %}
+                        {% if not project.bom_items and not project.components %}
+                        <tr><td colspan="8" class="text-muted">No materials or components added</td></tr>
+                        {% endif %}
                     </tbody>
                     <tfoot>
                         <tr class="fw-bold">
-                            <td colspan="4">Total Component Cost</td>
-                            <td>PKR {{ "{:,.0f}".format(project.total_component_cost) }}</td>
+                            <td colspan="5">Total M&C Cost</td>
+                            <td>PKR {{ "{:,.0f}".format(project.total_bom_cost + project.total_component_cost) }}</td>
                             <td colspan="2"></td>
                         </tr>
                     </tfoot>
                 </table>
             </div>
             
-            <!-- Phase 3: Tooling -->
-            <div class="tab-pane fade {{ 'show active' if project.current_phase == 3 else '' }}" id="phase3" role="tabpanel">
+            <!-- Phase 2: Tooling -->
+            <div class="tab-pane fade {{ 'show active' if project.current_phase == 2 else '' }}" id="phase2" role="tabpanel">
                 <h5><i class="fas fa-tools me-2"></i>Tooling Development</h5>
-                <div class="mb-3">
+                <div class="mb-3 d-flex justify-content-between align-items-center">
                     <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addToolingModal">
                         <i class="fas fa-plus me-1"></i> Add Tool
                     </button>
+                    {% if project.current_phase == 2 and project.tooling|length > 0 %}
+                    <form method="POST" action="{{ url_for('product_development.complete_phase', project_id=project.id, phase=2) }}">
+                        <button type="submit" class="btn btn-sm btn-success">
+                            <i class="fas fa-check me-1"></i> Phase Complete
+                        </button>
+                    </form>
+                    {% endif %}
                 </div>
                 <table class="table table-sm">
                     <thead>
@@ -307,13 +271,20 @@
                 </table>
             </div>
             
-            <!-- Phase 4: Testing -->
-            <div class="tab-pane fade {{ 'show active' if project.current_phase == 4 else '' }}" id="phase4" role="tabpanel">
+            <!-- Phase 3: Testing -->
+            <div class="tab-pane fade {{ 'show active' if project.current_phase == 3 else '' }}" id="phase3" role="tabpanel">
                 <h5><i class="fas fa-vial me-2"></i>Prototype Testing</h5>
-                <div class="mb-3">
+                <div class="mb-3 d-flex justify-content-between align-items-center">
                     <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addTestingModal">
                         <i class="fas fa-plus me-1"></i> Add Trial
                     </button>
+                    {% if project.current_phase == 3 %}
+                    <form method="POST" action="{{ url_for('product_development.complete_phase', project_id=project.id, phase=3) }}">
+                        <button type="submit" class="btn btn-sm btn-success">
+                            <i class="fas fa-check me-1"></i> Phase Complete
+                        </button>
+                    </form>
+                    {% endif %}
                 </div>
                 <table class="table table-sm">
                     <thead>
@@ -374,13 +345,13 @@
                 </table>
             </div>
             
-            <!-- Phase 5: Approval -->
-            <div class="tab-pane fade {{ 'show active' if project.current_phase == 5 else '' }}" id="phase5" role="tabpanel">
+            <!-- Phase 4: Approval -->
+            <div class="tab-pane fade {{ 'show active' if project.current_phase == 4 else '' }}" id="phase4" role="tabpanel">
                 <h5><i class="fas fa-check-circle me-2"></i>Approval Gate</h5>
                 <div class="card">
                     <div class="card-body">
-                                                {% if current_user.has_permission('product_dev', 'edit') %}
-<form method="POST" action="{{ url_for('product_development.update_approval', project_id=project.id) }}">
+                        {% if current_user.has_permission('product_dev', 'edit') %}
+                        <form method="POST" action="{{ url_for('product_development.update_approval', project_id=project.id) }}">
                             <div class="row">
                                 <div class="col-md-4">
                                     <label class="form-label">Approval Status</label>
@@ -397,15 +368,94 @@
                             </div>
                             <div class="mt-3">
                                 <button type="submit" class="btn btn-primary">Update Approval</button>
+                                {% if project.current_phase == 4 and project.approval and project.approval.approval_status == 'Approved' %}
+                                <form method="POST" action="{{ url_for('product_development.complete_phase', project_id=project.id, phase=4) }}" class="d-inline">
+                                    <button type="submit" class="btn btn-success">
+                                        <i class="fas fa-check me-1"></i> Phase Complete
+                                    </button>
+                                </form>
+                                {% endif %}
                             </div>
                         </form>
-{% endif %}                        
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <!-- Project Summary Table for Phase 4 -->
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h6 class="mb-0">Project Summary</h6>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <th>Project</th>
+                                    <td>{{ project.pdv_code }} - {{ project.product_name }}</td>
+                                </tr>
+                                <tr>
+                                    <th>SKU</th>
+                                    <td>{{ project.sku.name if project.sku else '-' }} ({{ project.sku.sku if project.sku else '' }})</td>
+                                </tr>
+                                <tr>
+                                    <th>Cost</th>
+                                    <td>PKR {{ "{:,.0f}".format(project.computed_cost) }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Materials</th>
+                                    <td>
+                                        {% for item in project.bom_items %}
+                                            {{ item.material_name }}{% if not loop.last %}, {% endif %}
+                                        {% else %}
+                                            -
+                                        {% endfor %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Components</th>
+                                    <td>
+                                        {% for comp in project.components %}
+                                            {{ comp.component_name }} ({{ comp.component_type }}){% if not loop.last %}, {% endif %}
+                                        {% else %}
+                                            -
+                                        {% endfor %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Tooling</th>
+                                    <td>
+                                        {% for tool in project.tooling %}
+                                            {{ tool.tool_name }} ({% if tool.status == 'Completed' %}Done{% else %}{{ tool.status }}{% endif %}){% if not loop.last %}, {% endif %}
+                                        {% else %}
+                                            -
+                                        {% endfor %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Phase 4 Status</th>
+                                    <td>
+                                        {% if project.approval %}
+                                            {% if project.approval.approval_status == 'Approved' %}
+                                                <span class="badge bg-success">Approved</span>
+                                            {% elif project.approval.approval_status == 'Rejected' %}
+                                                <span class="badge bg-danger">Rejected</span>
+                                            {% else %}
+                                                <span class="badge bg-warning">Pending</span>
+                                            {% endif %}
+                                            {% if project.approval.remarks %}<br><small>{{ project.approval.remarks }}</small>{% endif %}
+                                        {% else %}
+                                            <span class="badge bg-secondary">Not Set</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
             
-            <!-- Phase 6: Production -->
-            <div class="tab-pane fade {{ 'show active' if project.current_phase == 6 else '' }}" id="phase6" role="tabpanel">
+            <!-- Phase 5: Production -->
+            <div class="tab-pane fade {{ 'show active' if project.current_phase == 5 else '' }}" id="phase5" role="tabpanel">
                 <h5><i class="fas fa-rocket me-2"></i>Production Activation</h5>
                 
                 <div class="row">
@@ -415,10 +465,17 @@
                                 <h6 class="mb-0">Assets Created</h6>
                             </div>
                             <div class="card-body">
-                                <button class="btn btn-sm btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#addAssetModal">
-                                    <i class="fas fa-plus me-1"></i> Add Asset
+                            {% if project.current_phase == 5 %}
+                            <form method="POST" action="{{ url_for('product_development.complete_phase', project_id=project.id, phase=5) }}" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-success mb-3">
+                                    <i class="fas fa-check me-1"></i> Phase Complete
                                 </button>
-                                <table class="table table-sm">
+                            </form>
+                            {% endif %}
+                            <button class="btn btn-sm btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#addAssetModal">
+                                <i class="fas fa-plus me-1"></i> Add Asset
+                            </button>
+                            <table class="table table-sm">
                                     <thead>
                                         <tr>
                                             <th>Asset Name</th>
@@ -508,38 +565,46 @@
                     <h5 class="modal-title">Add BOM Item</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
-                    <div class="mb-2">
-                        <label class="form-label">Material Name</label>
-                        <input type="text" name="material_name" class="form-control" required>
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label">SKU (optional)</label>
-                        <select name="sku_id" class="form-select">
-                            <option value="">-- Select --</option>
-                            {% for p in products|default([]) %}
-                            <option value="{{ p.id }}">{{ p.name }} ({{ p.sku }})</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label">Quantity per Unit</label>
-                        <input type="number" name="quantity_per_unit" class="form-control" value="1" step="0.01">
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label">Estimated Cost (PKR)</label>
-                        <input type="number" name="estimated_cost" class="form-control" step="0.01" value="0">
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label">Notes</label>
-                        <textarea name="notes" class="form-control" rows="2"></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="submit" class="btn btn-primary">Add</button>
-                </div>
-            </form>
-{% endif %}            
+<div class="modal-body">
+                     <div class="mb-2">
+                         <label class="form-label">Material Name</label>
+                         <select name="material_name" class="form-select searchable-select" required>
+                             <option value="">-- Search inventory item --</option>
+                             {% for p in products %}
+                             <option value="{{ p.name }}" data-cost="{{ p.cost_price or 0 }}" data-sku="{{ p.sku }}">{{ p.sku }} - {{ p.name }}</option>
+                             {% endfor %}
+                         </select>
+                     </div>
+                      <div class="mb-2">
+                          <label class="form-label">SKU (optional)</label>
+                          <select id="bomSkuSelect" name="sku_id" class="form-select searchable-select" data-placeholder="-- Search or Select --">
+                              <option value="">-- Select --</option>
+                              {% for p in products %}
+                              <option value="{{ p.id }}" data-sku="{{ p.sku }}" data-name="{{ p.name }}" data-cost="{{ p.cost_price or 0 }}">{{ p.name }} ({{ p.sku }})</option>
+                              {% endfor %}
+                          </select>
+                      </div>
+
+                     <div class="mb-2">
+                         <label class="form-label">Quantity per Unit</label>
+                         <input type="number" name="quantity_per_unit" class="form-control" value="1" step="0.01">
+                     </div>
+                     <div class="mb-2">
+                         <label class="form-label">Estimated Cost (PKR)</label>
+                         <input type="number" name="estimated_cost" class="form-control" step="0.01" value="0">
+                     </div>
+                     <div class="mb-2">
+                         <label class="form-label">Notes</label>
+                         <textarea name="notes" class="form-control" rows="2"></textarea>
+                     </div>
+                 </div>
+                 <div class="modal-footer">
+                     <button type="submit" class="btn btn-primary">Add</button>
+                 </div>
+             </form>
+
+ {% endif %}            
+
         </div>
     </div>
 </div>
@@ -555,10 +620,15 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-2">
-                        <label class="form-label">Component Name</label>
-                        <input type="text" name="component_name" class="form-control" required>
-                    </div>
+                     <div class="mb-2">
+                         <label class="form-label">Component Name</label>
+                         <select name="component_name" class="form-select searchable-select" required>
+                             <option value="">-- Search inventory item --</option>
+                             {% for p in products %}
+                             <option value="{{ p.name }}" data-cost="{{ p.cost_price or 0 }}">{{ p.sku }} - {{ p.name }}</option>
+                             {% endfor %}
+                         </select>
+                     </div>
                     <div class="mb-2">
                         <label class="form-label">Type</label>
                         <select name="component_type" class="form-select">
@@ -760,6 +830,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     var triggerTab = document.querySelector('#phase{{ project.current_phase }}-tab');
@@ -767,6 +838,124 @@ document.addEventListener('DOMContentLoaded', function() {
         var tab = new bootstrap.Tab(triggerTab);
         tab.show();
     }
+
+    // Helper function to set input value safely
+    function safeSetInputValue(input, value) {
+        if (!input) return;
+        if (value === null || value === undefined || value === '') {
+            input.value = '';
+            return;
+        }
+        const num = Number(value);
+        if (!Number.isFinite(num)) {
+            input.value = '';
+            return;
+        }
+        input.value = num.toFixed(2);
+    }
+
+    // Initialize Select2 for searchable selects with proper modal support
+    function initSelect2() {
+        $('.searchable-select').each(function() {
+            // Destroy existing instance if any to avoid duplicates
+            if ($(this).data('select2')) {
+                $(this).select2('destroy');
+            }
+            // Initialize with modal-aware configuration
+            $(this).select2({
+                placeholder: "-- Search or Select --",
+                allowClear: true,
+                width: '100%',
+                dropdownAutoWidth: true,
+                dropdownParent: $(this).closest('.modal-content') || $(this).closest('.modal')
+            });
+        });
+    }
+
+    // Initialize on DOM load
+    initSelect2();
+
+    // Re-initialize when modals are shown (to handle dynamically added content)
+    $('.modal').on('shown.bs.modal', function () {
+        initSelect2();
+    });
+
+    // BOM SKU auto-fill functionality
+    $('#addBOMModal').on('shown.bs.modal', function () {
+        var $materialSelect = $('#addBOMModal select[name="material_name"]');
+        var $skuSelect = $('#bomSkuSelect');
+        var $estimatedCostInput = $('#addBOMModal input[name="estimated_cost"]');
+
+        // Handle material_name select change with Select2
+        if ($materialSelect.length && $estimatedCostInput.length) {
+            // Unbind previous events to avoid duplicates
+            $materialSelect.off('select2:select.autofill');
+            
+            // Add Select2 select event (fires when user selects from dropdown)
+            $materialSelect.on('select2:select.autofill', function(e) {
+                var cost = $(e.params.data.element).attr('data-cost');
+                if (cost !== null && cost !== '') {
+                    $estimatedCostInput.val(parseFloat(cost).toFixed(2));
+                } else {
+                    $estimatedCostInput.val('');
+                }
+                console.log('Material auto-fill: cost=' + $estimatedCostInput.val());
+            });
+        }
+
+        // Handle SKU select change with Select2 (alternative method)
+        if ($skuSelect.length && $estimatedCostInput.length) {
+            $skuSelect.off('select2:select.skuautofill');
+            
+            $skuSelect.on('select2:select.skuautofill', async function(e) {
+                const skuId = e.params.data.id;
+                if (!skuId) {
+                    $estimatedCostInput.val('');
+                    return;
+                }
+
+                try {
+                    const baseUrl = `{{ url_for('product_development.api_bom_sku_cost', sku_id=0) }}`;
+                    const url = baseUrl.replace(/0\/?$/, skuId.toString());
+                    const res = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' } });
+                    const data = await res.json();
+                    if (data && data.ok) {
+                        $estimatedCostInput.val(parseFloat(data.cost).toFixed(2));
+                        console.log('SKU auto-fill: cost=' + $estimatedCostInput.val());
+                    } else {
+                        $estimatedCostInput.val('');
+                    }
+                } catch (e) {
+                    console.error('Error fetching SKU cost:', e);
+                    $estimatedCostInput.val('');
+                }
+            });
+        }
+    });
+
+    // Component auto-fill functionality (for Add Component modal)
+    $('#addComponentModal').on('shown.bs.modal', function () {
+        var $componentSelect = $('#addComponentModal select[name="component_name"]');
+        var $costInput = $('#addComponentModal input[name="estimated_cost"]');
+        
+        if (!$componentSelect.length || !$costInput.length) {
+            return;
+        }
+
+        // Unbind previous events to avoid duplicates
+        $componentSelect.off('select2:select.componentautofill');
+        
+        // Add Select2 select event (fires when user selects from dropdown)
+        $componentSelect.on('select2:select.componentautofill', function(e) {
+            var cost = $(e.params.data.element).attr('data-cost');
+            if (cost !== null && cost !== '') {
+                $costInput.val(parseFloat(cost).toFixed(2));
+            } else {
+                $costInput.val('');
+            }
+            console.log('Component auto-fill: cost=' + $costInput.val());
+        });
+    });
 });
 </script>
 {% endblock %}

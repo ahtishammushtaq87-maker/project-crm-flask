@@ -2099,12 +2099,31 @@ class PDProject(db.Model):
     pdv_code = db.Column(db.String(50), unique=True, nullable=False, index=True)
     product_name = db.Column(db.String(200), nullable=False)
     sku_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True, index=True)
+    cost = db.Column(db.Float, default=0)
+    damage_percent = db.Column(db.Float, default=0)
     start_date = db.Column(db.Date, nullable=True)
     promise_date = db.Column(db.Date, nullable=True)
     budget = db.Column(db.Float, default=0)
     status = db.Column(db.Enum('Draft', 'Active', 'Completed', 'On Hold', name='pd_project_status'), default='Draft', index=True)
     current_phase = db.Column(db.Integer, default=1)  # 1-6 for phases
     description = db.Column(db.Text)
+    product_category_id = db.Column(db.Integer, db.ForeignKey('product_categories.id'), nullable=True, index=True)
+    oem_part_number = db.Column(db.String(100), nullable=True, index=True)
+    aftermarket_part_number = db.Column(db.String(100), nullable=True, index=True)
+    vehicle_application = db.Column(db.String(200), nullable=True)
+    requested_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    project_owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    target_market = db.Column(db.String(100), nullable=True)
+    expected_monthly_demand = db.Column(db.Float, default=0)
+    target_selling_price = db.Column(db.Float, default=0)
+    approved_budget = db.Column(db.Float, default=0)
+    project_stage = db.Column(db.Enum(
+        'New Request', 'Sample Required', 'Sample Received', 'Reverse Engineering', 'Drawing In Progress',
+        'Tooling Required', 'Tooling In Progress', 'Tooling Trial', 'Prototype In Progress', 'Testing',
+        'Costing Review', 'Approval Pending', 'Released for Production', 'On Hold', 'Rejected',
+        'Revision Required', 'Discontinued', name='pd_project_stage'), default='New Request', index=True)
+    next_action = db.Column(db.String(200), nullable=True)
+    revision_number = db.Column(db.Integer, default=1)
     notes = db.Column(db.Text)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -2112,13 +2131,26 @@ class PDProject(db.Model):
     
     # Relationships
     sku = db.relationship('Product', backref='pd_projects', lazy=True)
-    creator = db.relationship('User', backref='created_pd_projects', lazy=True)
+    creator = db.relationship('User', foreign_keys=[created_by], backref='created_pd_projects', lazy=True)
+    product_category = db.relationship('ProductCategory', backref='pd_projects', lazy=True)
+    requester = db.relationship('User', foreign_keys=[requested_by], backref='requested_pd_projects', lazy=True)
+    project_owner = db.relationship('User', foreign_keys=[project_owner_id], backref='owned_pd_projects', lazy=True)
     bom_items = db.relationship('PDProjectBOM', backref='project', lazy=True, cascade='all, delete-orphan')
     components = db.relationship('PDComponent', backref='project', lazy=True, cascade='all, delete-orphan')
     tooling = db.relationship('PDTooling', backref='project', lazy=True, cascade='all, delete-orphan')
     testing = db.relationship('PDTesting', backref='project', lazy=True, cascade='all, delete-orphan')
     approval = db.relationship('PDApproval', backref='project', uselist=False, cascade='all, delete-orphan')
     assets = db.relationship('PDAsset', backref='project', lazy=True, cascade='all, delete-orphan')
+    samples = db.relationship('ProductSample', backref='project', lazy=True, cascade='all, delete-orphan')
+    reverse_engineering = db.relationship('ProductReverseEngineering', backref='project', lazy=True, cascade='all, delete-orphan')
+    drawings = db.relationship('ProductDrawing', backref='project', lazy=True, cascade='all, delete-orphan')
+    tooling_trials = db.relationship('ProductToolingTrial', backref='project', lazy=True, cascade='all, delete-orphan')
+    prototype_batches = db.relationship('ProductPrototypeBatch', backref='project', lazy=True, cascade='all, delete-orphan')
+    development_expenses = db.relationship('ProductDevelopmentExpense', backref='project', lazy=True, cascade='all, delete-orphan')
+    bom_versions = db.relationship('ProductBOMVersion', backref='project', lazy=True, cascade='all, delete-orphan')
+    release_records = db.relationship('ProductRelease', backref='project', lazy=True, cascade='all, delete-orphan')
+    revision_history = db.relationship('ProductRevisionHistory', backref='project', lazy=True, cascade='all, delete-orphan')
+    attachments = db.relationship('ProductAttachment', backref='project', lazy=True, cascade='all, delete-orphan')
     
     @property
     def total_tooling_cost(self):
@@ -2135,11 +2167,38 @@ class PDProject(db.Model):
     @property
     def total_investment(self):
         return self.total_tooling_cost + self.total_component_cost + self.total_bom_cost
+
+    @property
+    def total_expense_cost(self):
+        return sum(exp.amount or 0 for exp in self.development_expenses)
+
+    @property
+    def current_total_cost(self):
+        return self.total_investment + self.total_expense_cost
+
+    @property
+    def budget_variance(self):
+        target = self.approved_budget if self.approved_budget else self.budget
+        return target - self.current_total_cost if target else 0
+
+    @property
+    def stage_name(self):
+        return self.project_stage or 'New Request'
     
     @property
     def budget_vs_actual(self):
         return self.budget - self.total_investment if self.budget else 0
-    
+
+    @property
+    def computed_cost(self):
+        base_cost = self.sku.cost_price if self.sku and self.sku.cost_price else (self.cost or 0)
+        damage_multiplier = 1 + (self.damage_percent or 0) / 100
+        return base_cost * damage_multiplier
+
+    @property
+    def base_cost(self):
+        return self.sku.cost_price if self.sku and self.sku.cost_price else (self.cost or 0)
+
     @property
     def is_delayed(self):
         if self.promise_date and self.status not in ['Completed']:
@@ -2305,6 +2364,240 @@ class PDAsset(db.Model):
     
     def __repr__(self):
         return f'<PDAsset {self.project_id} - {self.asset_name}>'
+
+
+class ProductSample(db.Model):
+    """Sample control records for product development"""
+    __tablename__ = 'product_samples'
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=False, index=True)
+    sample_code = db.Column(db.String(100), nullable=True, index=True)
+    received = db.Column(db.Boolean, default=False)
+    received_date = db.Column(db.Date, nullable=True, index=True)
+    source = db.Column(db.String(200), nullable=True)
+    condition = db.Column(db.String(100), nullable=True)
+    quantity = db.Column(db.Float, default=0)
+    storage_location = db.Column(db.String(200), nullable=True)
+    returned = db.Column(db.Boolean, default=False)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<ProductSample {self.project_id} - {self.sample_code or self.id}>'
+
+
+class ProductReverseEngineering(db.Model):
+    """Reverse engineering checklist and notes"""
+    __tablename__ = 'product_reverse_engineering'
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=False, index=True)
+    teardown_completed = db.Column(db.Boolean, default=False)
+    measured_by = db.Column(db.String(120), nullable=True)
+    measurement_method = db.Column(db.String(120), nullable=True)
+    critical_dimensions_recorded = db.Column(db.Boolean, default=False)
+    tolerance_defined = db.Column(db.Boolean, default=False)
+    material_identified = db.Column(db.Boolean, default=False)
+    bearings_seals_identified = db.Column(db.Boolean, default=False)
+    weight_recorded = db.Column(db.Boolean, default=False)
+    fitment_verified = db.Column(db.Boolean, default=False)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<ProductReverseEngineering {self.project_id}>'
+
+
+class ProductDrawing(db.Model):
+    """Drawing and CAD records for PD"""
+    __tablename__ = 'product_drawings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=False, index=True)
+    drawing_required_2d = db.Column(db.Boolean, default=False)
+    drawing_required_3d = db.Column(db.Boolean, default=False)
+    drawing_number = db.Column(db.String(100), nullable=True, index=True)
+    drawing_revision = db.Column(db.String(50), nullable=True)
+    drawing_status = db.Column(db.Enum('Draft', 'In Review', 'Approved', 'Released', 'Cancelled', name='pd_drawing_status'), default='Draft', index=True)
+    prepared_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    checked_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    file_path = db.Column(db.String(255), nullable=True)
+    revision_notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    preparer = db.relationship('User', foreign_keys=[prepared_by], lazy=True)
+    checker = db.relationship('User', foreign_keys=[checked_by], lazy=True)
+    approver = db.relationship('User', foreign_keys=[approved_by], lazy=True)
+
+    def __repr__(self):
+        return f'<ProductDrawing {self.project_id} - {self.drawing_number}>'
+
+
+class ProductToolingTrial(db.Model):
+    """Individual tooling trials linked to PD tooling"""
+    __tablename__ = 'product_tooling_trials'
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=False, index=True)
+    tooling_id = db.Column(db.Integer, db.ForeignKey('pd_tooling.id'), nullable=False, index=True)
+    trial_number = db.Column(db.Integer, default=1)
+    trial_date = db.Column(db.Date, nullable=True)
+    result = db.Column(db.Enum('PENDING', 'PASS', 'FAIL', name='pd_tooling_trial_result'), default='PENDING', index=True)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tooling = db.relationship('PDTooling', backref='trials', lazy=True)
+
+    def __repr__(self):
+        return f'<ProductToolingTrial {self.project_id} - T{self.trial_number}>'
+
+
+class ProductPrototypeBatch(db.Model):
+    """Prototype batch records for PD"""
+    __tablename__ = 'product_prototypes'
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=False, index=True)
+    batch_code = db.Column(db.String(100), nullable=True, index=True)
+    batch_date = db.Column(db.Date, nullable=True)
+    material_used = db.Column(db.Text)
+    prototype_cost = db.Column(db.Float, default=0)
+    assembly_cost = db.Column(db.Float, default=0)
+    testing_status = db.Column(db.Enum('Pending', 'In Progress', 'Passed', 'Failed', name='pd_prototype_status'), default='Pending', index=True)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<ProductPrototypeBatch {self.project_id} - {self.batch_code or self.id}>'
+
+
+class ProductDevelopmentExpense(db.Model):
+    """Project development expense records"""
+    __tablename__ = 'product_development_expenses'
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=True, index=True)
+    tooling_id = db.Column(db.Integer, db.ForeignKey('pd_tooling.id'), nullable=True, index=True)
+    prototype_batch_id = db.Column(db.Integer, db.ForeignKey('product_prototypes.id'), nullable=True, index=True)
+    item_code = db.Column(db.String(100), nullable=True, index=True)
+    work_order_id = db.Column(db.Integer, db.ForeignKey('manufacturing_orders.id'), nullable=True, index=True)
+    expense_category = db.Column(db.Enum(
+        'Sample Purchase', 'Reverse Engineering', 'Measurement', 'CAD', 'Prototype', 'Testing',
+        'Mold', 'Die', 'Fixture', 'Pattern', 'Jig', 'Gauge',
+        'Raw Material', 'Purchased Components', 'Machining', 'Casting',
+        'Electricity', 'Maintenance', 'Factory Wages',
+        'Office Rent', 'Salaries', 'Marketing', 'Travel',
+        'Scrap', 'Prototype Failure', 'Warranty', name='pd_expense_category'), nullable=False, index=True)
+    amount = db.Column(db.Float, default=0)
+    cost_center = db.Column(db.String(100), nullable=True)
+    description = db.Column(db.Text)
+    amortization_selected = db.Column(db.Boolean, default=False)
+    expected_recovery_quantity = db.Column(db.Float, default=0)
+    shared_cost = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tooling = db.relationship('PDTooling', backref='development_expenses', lazy=True)
+    prototype_batch = db.relationship('ProductPrototypeBatch', backref='development_expenses', lazy=True)
+    work_order = db.relationship('ManufacturingOrder', backref='development_expenses', lazy=True)
+
+    def __repr__(self):
+        return f'<ProductDevelopmentExpense {self.project_id} - {self.expense_category}>'
+
+
+class ProductBOMVersion(db.Model):
+    """BOM version history for development projects"""
+    __tablename__ = 'product_bom_versions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=False, index=True)
+    version = db.Column(db.String(50), nullable=False)
+    notes = db.Column(db.Text)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    creator = db.relationship('User', backref='created_product_bom_versions', lazy=True)
+
+    def __repr__(self):
+        return f'<ProductBOMVersion {self.project_id} - {self.version}>'
+
+
+class ProductRelease(db.Model):
+    """Production release and approval records"""
+    __tablename__ = 'product_release'
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=False, index=True)
+    released_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    release_date = db.Column(db.DateTime, nullable=True)
+    approval_status = db.Column(db.Enum('Pending', 'Approved', 'Rejected', name='pd_release_status'), default='Pending', index=True)
+    release_notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    releaser = db.relationship('User', backref='product_releases', lazy=True)
+
+    def __repr__(self):
+        return f'<ProductRelease {self.project_id} - {self.approval_status}>'
+
+
+class ProductRevisionHistory(db.Model):
+    """Revision history for product development projects"""
+    __tablename__ = 'product_revision_history'
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=False, index=True)
+    revision_number = db.Column(db.Integer, default=1)
+    change_summary = db.Column(db.Text)
+    changed_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    changed_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    changer = db.relationship('User', backref='project_revisions', lazy=True)
+
+    def __repr__(self):
+        return f'<ProductRevisionHistory {self.project_id} - rev{self.revision_number}>'
+
+
+class SharedCostAllocation(db.Model):
+    """Allocation of shared development cost across multiple projects"""
+    __tablename__ = 'shared_cost_allocations'
+
+    id = db.Column(db.Integer, primary_key=True)
+    expense_id = db.Column(db.Integer, db.ForeignKey('product_development_expenses.id'), nullable=False, index=True)
+    allocated_project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=False, index=True)
+    allocation_percent = db.Column(db.Float, default=0)
+    allocated_amount = db.Column(db.Float, default=0)
+    reason = db.Column(db.Text)
+
+    expense = db.relationship('ProductDevelopmentExpense', backref='allocations', lazy=True)
+    allocated_project = db.relationship('PDProject', backref='shared_allocations', lazy=True)
+
+    def __repr__(self):
+        return f'<SharedCostAllocation {self.expense_id} -> {self.allocated_project_id}>'
+
+
+class ProductAttachment(db.Model):
+    """Project file attachments for development records"""
+    __tablename__ = 'product_attachments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=False, index=True)
+    attachment_type = db.Column(db.String(100), nullable=True)
+    file_path = db.Column(db.String(255), nullable=False)
+    uploaded_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    notes = db.Column(db.Text)
+
+    uploader = db.relationship('User', backref='pd_attachments', lazy=True)
+
+    def __repr__(self):
+        return f'<ProductAttachment {self.project_id} - {self.attachment_type}>'
 
 class ToolReceiving(db.Model):
     __tablename__ = 'tool_receiving'

@@ -446,6 +446,20 @@ def bulk_assign_warehouse():
     if not warehouse_id:
         return jsonify({'success': False, 'message': 'No warehouse selected'}), 400
 
+    if warehouse_id == 'none':
+        updated_count = 0
+        skipped_count = 0
+        for product_id in ids:
+            product = Product.query.get(product_id)
+            if product:
+                product.warehouse_id = None
+                updated_count += 1
+            else:
+                skipped_count += 1
+        
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'Successfully unassigned warehouse from {updated_count} product(s).'})
+
     # Convert warehouse_id to int safely
     try:
         warehouse_id = int(warehouse_id)
@@ -511,6 +525,7 @@ def bulk_assign_warehouse():
         return jsonify({'success': False, 'message': message, 'errors': errors}), 500
 
     return jsonify({'success': True, 'message': message})
+
 
 @bp.route('/stock-report')
 @login_required

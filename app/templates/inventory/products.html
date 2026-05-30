@@ -167,10 +167,12 @@
                             <select name="warehouse_id" class="form-control searchable-select"
                                 data-placeholder="— Select Warehouse —" required>
                                 <option value="">-- Select Warehouse --</option>
+                                <option value="none">-- NO WAREHOUSE / UNASSIGN --</option>
                                 {% for wh in warehouses %}
                                 <option value="{{ wh.id }}">{{ wh.name }}</option>
                                 {% endfor %}
                             </select>
+
                         </div>
                         <p class="text-muted small">
                             <i class="fas fa-info-circle"></i> This will assign the selected warehouse to all chosen
