@@ -16,30 +16,34 @@
                             <label class="form-label">Product Name <span class="text-danger">*</span></label>
                             <input type="text" name="product_name" class="form-control" required>
                         </div>
-                       <!-- <div class="col-md-6">
-                            <label class="form-label">Link to Finished Good SKU <span class="text-danger">*</span></label>
+                        <div class="col-md-6">
+                            <label class="form-label">Link to Finished Good SKU <span
+                                    class="text-danger">*</span></label>
                             <select name="sku_id" id="skuSelect" class="form-select searchable-select" required>
                                 <option value="">-- Search Finished Good --</option>
                                 {% for p in finished_goods %}
-                                <option value="{{ p.id }}" data-cost="{{ p.cost_price or 0 }}" data-name="{{ p.name }}" data-sku="{{ p.sku }}">{{ p.name }} ({{ p.sku }})</option>
+                                <option value="{{ p.id }}" data-cost="{{ p.cost_price or 0 }}" data-name="{{ p.name }}"
+                                    data-sku="{{ p.sku }}">{{ p.name }} ({{ p.sku }})</option>
                                 {% endfor %}
                             </select>
-                        </div>-->
+                        </div>
                     </div>
-                    
-                    <!--<div class="row mb-3">
+
+                    <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label">Cost (PKR)</label>
-                            <input type="number" name="cost" id="costInput" class="form-control" step="0.01" placeholder="0.00" readonly>
+                            <input type="number" name="cost" id="costInput" class="form-control" step="0.01"
+                                placeholder="0.00" readonly>
                             <small class="text-muted">Auto-filled from finished good inventory item</small>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Damage %</label>
-                            <input type="number" name="damage_percent" id="damagePercent" class="form-control" step="0.01" value="0" onchange="updateDamageCost()">
+                            <input type="number" name="damage_percent" id="damagePercent" class="form-control"
+                                step="0.01" value="0" onchange="updateDamageCost()">
                             <small class="text-muted">Damage percentage to add to cost</small>
                         </div>
-                    </div>-->
-                    
+                    </div>
+
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label">Start Date</label>
@@ -50,12 +54,12 @@
                             <input type="date" name="promise_date" class="form-control">
                         </div>
                     </div>
-                    
+
                     <div class="mb-3">
                         <label class="form-label">Budget (PKR)</label>
                         <input type="number" name="budget" class="form-control" step="0.01" placeholder="0.00">
                     </div>
-                    
+
                     <div class="d-flex justify-content-between">
                         <a href="{{ url_for('product_development.index') }}" class="btn btn-secondary">Cancel</a>
                         <button type="submit" class="btn btn-primary">
@@ -72,29 +76,29 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    $('#skuSelect').select2({
-        placeholder: "-- Search Finished Good --",
-        allowClear: true,
-        width: '100%',
-        dropdownAutoWidth: true
-    });
+    document.addEventListener('DOMContentLoaded', function () {
+        $('#skuSelect').select2({
+            placeholder: "-- Search Finished Good --",
+            allowClear: true,
+            width: '100%',
+            dropdownAutoWidth: true
+        });
 
-    var $skuSelect = $('#skuSelect');
-    var $costInput = $('#costInput');
+        var $skuSelect = $('#skuSelect');
+        var $costInput = $('#costInput');
 
-    $skuSelect.on('select2:select', function(e) {
-        var cost = $(e.params.data.element).attr('data-cost');
-        if (cost !== null && cost !== '') {
-            $costInput.val(parseFloat(cost).toFixed(2));
-        } else {
+        $skuSelect.on('select2:select', function (e) {
+            var cost = $(e.params.data.element).attr('data-cost');
+            if (cost !== null && cost !== '') {
+                $costInput.val(parseFloat(cost).toFixed(2));
+            } else {
+                $costInput.val('');
+            }
+        });
+
+        $skuSelect.on('select2:clear', function (e) {
             $costInput.val('');
-        }
+        });
     });
-
-    $skuSelect.on('select2:clear', function(e) {
-        $costInput.val('');
-    });
-});
 </script>
 {% endblock %}

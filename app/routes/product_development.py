@@ -818,9 +818,54 @@ def add_expense(project_id):
     )
     db.session.add(expense)
     db.session.commit()
-    log_activity('Product Development', f'Added expense {category} for {project.pdv_code}')
     flash('Development expense added!', 'success')
     return redirect(url_for('product_development.view', project_id=project_id, phase=4))
+
+
+@bp.route('/shift-expense', methods=['POST'])
+@login_required
+def shift_expense():
+    """Shift a general expense to a PD project"""
+    if not current_user.is_admin:
+        return jsonify({'success': False, 'message': 'Admin access required.'}), 403
+        
+    expense_id = request.form.get('expense_id', type=int)
+    project_id = request.form.get('project_id', type=int)
+    category = request.form.get('category')
+    
+    if not all([expense_id, project_id, category]):
+        return jsonify({'success': False, 'message': 'Missing required fields.'}), 400
+        
+    from app.models import Expense, PDProject, ProductDevelopmentExpense
+    
+    expense = Expense.query.get_or_404(expense_id)
+    project = PDProject.query.get_or_404(project_id)
+    
+    try:
+        # Create PD Expense
+        pd_expense = ProductDevelopmentExpense(
+            project_id=project.id,
+            expense_category=category,
+            amount=expense.amount,
+            description=f"[Shifted] {expense.description or ''}",
+            cost_center='Project',
+            item_code=project.sku.sku if project.sku else None
+        )
+        db.session.add(pd_expense)
+        db.session.flush() # Get ID
+        
+        # Update original expense
+        expense.is_shifted = True
+        expense.shifted_to_pd_id = project.id
+        expense.pd_expense_id = pd_expense.id
+        
+        db.session.commit()
+        log_activity('Product Development', f'Shifted expense {expense.expense_number} to {project.pdv_code}')
+        
+        return jsonify({'success': True, 'message': f'Expense shifted to {project.pdv_code}'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 @bp.route('/shared-allocation/add/<int:expense_id>', methods=['POST'])
@@ -1073,7 +1118,7 @@ def complete_phase(project_id, phase):
         return redirect(url_for('product_development.view', project_id=project_id))
     
     # Move to next phase if not at max
-    if project.current_phase < 5:
+    if project.current_phase < 6:
         project.current_phase += 1
     db.session.commit()
     
@@ -1092,6 +1137,34 @@ def update_phase(project_id, phase):
     db.session.commit()
     
     return jsonify({'success': True, 'phase': phase})
+
+
+
+
+@bp.route('/expense/delete/<int:expense_id>', methods=['GET', 'POST'])
+@login_required
+@permission_required('product_dev', action='delete')
+def delete_expense(expense_id):
+    """Delete a PD expense"""
+    expense = ProductDevelopmentExpense.query.get_or_404(expense_id)
+    project_id = expense.project_id
+    
+    # If this was a shifted expense, we should probably unshift it in accounting
+    # But for now, let's just delete it or handle based on logic
+    from app.models import Expense
+    linked_expense = Expense.query.filter_by(pd_expense_id=expense_id).first()
+    if linked_expense:
+        linked_expense.is_shifted = False
+        linked_expense.shifted_to_pd_id = None
+        linked_expense.pd_expense_id = None
+        
+    db.session.delete(expense)
+    db.session.commit()
+    
+    flash('Project expense deleted', 'success')
+    return redirect(url_for('product_development.view', project_id=project_id, phase=4))
+
+
 
 
 # Import models at the end to avoid circular imports

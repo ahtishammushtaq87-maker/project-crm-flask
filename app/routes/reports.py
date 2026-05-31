@@ -345,7 +345,7 @@ def expense_report():
     category_id = request.args.get('category_id')
     vendor_id = request.args.get('vendor_id')
     
-    query = Expense.query
+    query = Expense.query.filter(Expense.is_shifted == False)
     
     if start_date:
         query = query.filter(Expense.date >= datetime.strptime(start_date, '%Y-%m-%d'))
@@ -728,6 +728,7 @@ def profit_loss_report():
         Expense.date >= start_date, 
         Expense.date <= end_date,
         Expense.is_bom_overhead == False,
+        Expense.is_shifted == False,
         Expense.status == 'confirmed'
     ).all()
     

@@ -1031,6 +1031,11 @@ class Expense(db.Model):
     monthly_end_date = db.Column(db.Date)  # End date for monthly distribution
     daily_amount = db.Column(db.Float, default=0)  # Calculated daily amount
     
+    # Expense Shifting fields
+    is_shifted = db.Column(db.Boolean, default=False)
+    shifted_to_pd_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=True)
+    pd_expense_id = db.Column(db.Integer, db.ForeignKey('product_development_expenses.id'), nullable=True)
+    
     # Relationships
     vendor = db.relationship('Vendor', backref='expenses', lazy=True)
     product = db.relationship('Product', backref='overhead_expenses', lazy=True)
@@ -2182,7 +2187,7 @@ class PDProject(db.Model):
     
     @property
     def total_investment(self):
-        return self.total_tooling_cost + self.total_component_cost + self.total_bom_cost
+        return self.total_tooling_cost + self.total_component_cost + self.total_bom_cost + self.total_expense_cost
 
     @property
     def total_expense_cost(self):
@@ -2190,7 +2195,7 @@ class PDProject(db.Model):
 
     @property
     def current_total_cost(self):
-        return self.total_investment + self.total_expense_cost
+        return self.total_investment
 
     @property
     def budget_variance(self):
@@ -2223,8 +2228,8 @@ class PDProject(db.Model):
     
     @property
     def phase_name(self):
-        phases = {1: 'Initiation & BOM', 2: 'Component Management', 3: 'Tooling', 
-                  4: 'Testing', 5: 'Approval', 6: 'Production Ready'}
+        phases = {1: 'Initiation & BOM', 2: 'Tooling', 3: 'Testing', 
+                  4: 'Production Expense', 5: 'Approval', 6: 'Production Ready'}
         return phases.get(self.current_phase, 'Unknown')
     
     def __repr__(self):

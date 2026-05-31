@@ -108,6 +108,7 @@ def dashboard():
     # Build filters for operating expenses
     operating_filter = [
         Expense.is_bom_overhead == False,
+        Expense.is_shifted == False,
         Expense.date >= date_from,
         Expense.date <= date_to
     ]
@@ -121,6 +122,7 @@ def dashboard():
     # Build filters for manufacturing overhead
     bom_filter = [
         Expense.is_bom_overhead == True,
+        Expense.is_shifted == False,
         Expense.date >= date_from,
         Expense.date <= date_to
     ]
@@ -138,9 +140,10 @@ def dashboard():
     divided_expenses_for_period = 0  # Divided expenses applicable to the date range
     
     if has_column('expenses', 'is_monthly_divided'):
-        # Get all monthly divided expenses
+        # Get all monthly divided expenses (excluding shifted)
         all_monthly_expenses = Expense.query.filter(
             Expense.is_monthly_divided == True,
+            Expense.is_shifted == False,
             Expense.status == 'confirmed'
         ).all()
         
@@ -950,7 +953,9 @@ def expenses():
     query = apply_saved_filter_to_query(query, 'expense', request.args)
     
     expenses = query.order_by(Expense.date.desc()).all()
-    total_expense = sum(e.amount for e in expenses if e.status == 'confirmed')
+    # Calculate confirmed expenses, excluding those shifted to PD projects
+    total_expense = sum(e.amount for e in expenses if e.status == 'confirmed' and not getattr(e, 'is_shifted', False))
+    total_pd_shifted_expense = sum(e.amount for e in expenses if e.status == 'confirmed' and getattr(e, 'is_shifted', False))
     
     # Get filter options
     categories = ExpenseCategory.query.filter_by(is_active=True).order_by(ExpenseCategory.name).all()
@@ -958,7 +963,21 @@ def expenses():
     from app.models import ManufacturingOrder
     manufacturing_orders = ManufacturingOrder.query.order_by(ManufacturingOrder.order_number.desc()).all()
     
-    # Get company date format setting
+    # Get active/draft PD projects for the shift modal
+    from app.models import PDProject
+    active_pd_projects = PDProject.query.filter(PDProject.status.in_(['Draft', 'Active'])).all()
+    
+    # Get PD expense categories for the shift modal
+    pd_expense_categories = [
+        'Sample Purchase', 'Reverse Engineering', 'Measurement', 'CAD', 'Prototype', 'Testing',
+        'Mold', 'Die', 'Fixture', 'Pattern', 'Jig', 'Gauge',
+        'Raw Material', 'Purchased Components', 'Machining', 'Casting',
+        'Electricity', 'Maintenance', 'Factory Wages',
+        'Office Rent', 'Salaries', 'Marketing', 'Travel',
+        'Scrap', 'Prototype Failure', 'Warranty'
+    ]
+
+    # Get date format from company settings
     from app.models import Company
     company = Company.query.first()
     date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
@@ -966,9 +985,12 @@ def expenses():
     return render_template('accounting/expenses.html', 
                          expenses=expenses, 
                          total_expense=total_expense,
+                         total_pd_shifted_expense=total_pd_shifted_expense,
                          categories=categories,
                          vendors=vendors,
                          manufacturing_orders=manufacturing_orders,
+                         active_pd_projects=active_pd_projects,
+                         pd_expense_categories=pd_expense_categories,
                          selected_vendor=vendor_id,
                          selected_category=category_id,
                          selected_mo_id=mo_id,

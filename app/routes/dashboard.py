@@ -77,6 +77,7 @@ def index():
             operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
                 Expense.is_bom_overhead == False,
                 Expense.is_monthly_divided == False,
+                Expense.is_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
                 Expense.status == 'confirmed'
@@ -86,6 +87,7 @@ def index():
             manufacturing_overhead = db.session.query(func.sum(Expense.amount)).filter(
                 Expense.is_bom_overhead == True,
                 Expense.is_monthly_divided == False,
+                Expense.is_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
                 Expense.status == 'confirmed'
@@ -94,6 +96,7 @@ def index():
             # Fallback: exclude BOM only
             operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
                 Expense.is_bom_overhead == False,
+                Expense.is_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
                 Expense.status == 'confirmed'
@@ -102,6 +105,7 @@ def index():
             # Total Manufacturing Overhead (BOM linked)
             manufacturing_overhead = db.session.query(func.sum(Expense.amount)).filter(
                 Expense.is_bom_overhead == True,
+                Expense.is_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
                 Expense.status == 'confirmed'
@@ -112,6 +116,7 @@ def index():
             # Exclude divided expenses only
             operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
                 Expense.is_monthly_divided == False,
+                Expense.is_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
                 Expense.status == 'confirmed'
@@ -119,6 +124,7 @@ def index():
         else:
             # Fallback: include all expenses
             operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
+                Expense.is_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
                 Expense.status == 'confirmed'
@@ -130,6 +136,7 @@ def index():
     if has_column('expenses', 'is_monthly_divided'):
         monthly_expenses = Expense.query.filter(
             Expense.is_monthly_divided == True,
+            Expense.is_shifted == False,
             Expense.status == 'confirmed'
         ).all()
         for exp in monthly_expenses:
@@ -144,9 +151,13 @@ def index():
                     # Add proportional amount
                     divided_expenses_for_period += exp.daily_amount * overlap_days
     
+    # Calculate Daily Payroll (Active staff daily salary × days in period + Attendance-based salary)
+    # Note: Payroll is not shifted, so no change needed here
+    
     # Calculate Tools Expenses separately
     tools_expenses = db.session.query(func.sum(Expense.amount)).join(ExpenseCategory).filter(
         ExpenseCategory.name == 'Tools Expense',
+        Expense.is_shifted == False,
         Expense.date >= start_datetime,
         Expense.date <= end_datetime,
         Expense.status == 'confirmed'

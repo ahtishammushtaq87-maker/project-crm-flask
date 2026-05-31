@@ -11,69 +11,83 @@
             </div>
             <div class="card-body">
                 <form method="POST">
-                   <!-- <div class="row mb-3">
+                    <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label">Product Name <span class="text-danger">*</span></label>
-                            <input type="text" name="product_name" class="form-control" value="{{ project.product_name }}" required>
+                            <input type="text" name="product_name" class="form-control"
+                                value="{{ project.product_name }}" required>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">Link to Finished Good SKU <span class="text-danger">*</span></label>
+                            <label class="form-label">Link to Finished Good SKU <span
+                                    class="text-danger">*</span></label>
                             <select name="sku_id" id="skuSelect" class="form-select searchable-select" required>
                                 <option value="">-- Search Finished Good --</option>
                                 {% for p in finished_goods %}
-                                <option value="{{ p.id }}" data-cost="{{ p.cost_price or 0 }}" data-name="{{ p.name }}" data-sku="{{ p.sku }}" {{ 'selected' if project.sku_id == p.id else '' }}>{{ p.name }} ({{ p.sku }})</option>
+                                <option value="{{ p.id }}" data-cost="{{ p.cost_price or 0 }}" data-name="{{ p.name }}"
+                                    data-sku="{{ p.sku }}" {{ 'selected' if project.sku_id==p.id else '' }}>{{ p.name }}
+                                    ({{ p.sku }})</option>
                                 {% endfor %}
                             </select>
                         </div>
-                    </div>-->
-                    
-                   <!-- <div class="row mb-3">
+                    </div>
+
+                    <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label">Cost (PKR)</label>
-                            <input type="number" name="cost" id="costInput" class="form-control" step="0.01" value="{{ project.cost or '' }}" readonly>
+                            <input type="number" name="cost" id="costInput" class="form-control" step="0.01"
+                                value="{{ project.cost or '' }}" readonly>
                             <small class="text-muted">Auto-filled from finished good inventory item</small>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Damage %</label>
-                            <input type="number" name="damage_percent" id="damagePercent" class="form-control" step="0.01" value="{{ project.damage_percent or 0 }}">
+                            <input type="number" name="damage_percent" id="damagePercent" class="form-control"
+                                step="0.01" value="{{ project.damage_percent or 0 }}">
                             <small class="text-muted">Damage percentage to add to cost</small>
                         </div>
-                    </div>-->
-                    
+                    </div>
+
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label">Start Date</label>
-                            <input type="date" name="start_date" class="form-control" value="{{ project.start_date.strftime('%Y-%m-%d') if project.start_date else '' }}">
+                            <input type="date" name="start_date" class="form-control"
+                                value="{{ project.start_date.strftime('%Y-%m-%d') if project.start_date else '' }}">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Promise Date</label>
-                            <input type="date" name="promise_date" class="form-control" value="{{ project.promise_date.strftime('%Y-%m-%d') if project.promise_date else '' }}">
+                            <input type="date" name="promise_date" class="form-control"
+                                value="{{ project.promise_date.strftime('%Y-%m-%d') if project.promise_date else '' }}">
                         </div>
                     </div>
-                    
+
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label">Budget (PKR)</label>
-                            <input type="number" name="budget" class="form-control" step="0.01" value="{{ project.budget }}">
+                            <input type="number" name="budget" class="form-control" step="0.01"
+                                value="{{ project.budget }}">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Status</label>
                             <select name="status" class="form-select">
-                                <option value="Draft" {{ 'selected' if project.status == 'Draft' else '' }}>Draft</option>
-                                <option value="Active" {{ 'selected' if project.status == 'Active' else '' }}>Active</option>
-                                <option value="On Hold" {{ 'selected' if project.status == 'On Hold' else '' }}>On Hold</option>
-                                <option value="Completed" {{ 'selected' if project.status == 'Completed' else '' }}>Completed</option>
+                                <option value="Draft" {{ 'selected' if project.status=='Draft' else '' }}>Draft</option>
+                                <option value="Active" {{ 'selected' if project.status=='Active' else '' }}>Active
+                                </option>
+                                <option value="On Hold" {{ 'selected' if project.status=='On Hold' else '' }}>On Hold
+                                </option>
+                                <option value="Completed" {{ 'selected' if project.status=='Completed' else '' }}>
+                                    Completed</option>
                             </select>
                         </div>
                     </div>
-                    
+
                     <div class="mb-3">
                         <label class="form-label">Description</label>
-                        <textarea name="description" class="form-control" rows="3">{{ project.description or '' }}</textarea>
+                        <textarea name="description" class="form-control"
+                            rows="3">{{ project.description or '' }}</textarea>
                     </div>
-                    
+
                     <div class="d-flex justify-content-between">
-                        <a href="{{ url_for('product_development.view', project_id=project.id) }}" class="btn btn-secondary">Cancel</a>
+                        <a href="{{ url_for('product_development.view', project_id=project.id) }}"
+                            class="btn btn-secondary">Cancel</a>
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-save me-1"></i> Save Changes
                         </button>
@@ -88,29 +102,29 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    $('#skuSelect').select2({
-        placeholder: "-- Search Finished Good --",
-        allowClear: true,
-        width: '100%',
-        dropdownAutoWidth: true
-    });
+    document.addEventListener('DOMContentLoaded', function () {
+        $('#skuSelect').select2({
+            placeholder: "-- Search Finished Good --",
+            allowClear: true,
+            width: '100%',
+            dropdownAutoWidth: true
+        });
 
-    var $skuSelect = $('#skuSelect');
-    var $costInput = $('#costInput');
+        var $skuSelect = $('#skuSelect');
+        var $costInput = $('#costInput');
 
-    $skuSelect.on('select2:select', function(e) {
-        var cost = $(e.params.data.element).attr('data-cost');
-        if (cost !== null && cost !== '') {
-            $costInput.val(parseFloat(cost).toFixed(2));
-        } else {
+        $skuSelect.on('select2:select', function (e) {
+            var cost = $(e.params.data.element).attr('data-cost');
+            if (cost !== null && cost !== '') {
+                $costInput.val(parseFloat(cost).toFixed(2));
+            } else {
+                $costInput.val('');
+            }
+        });
+
+        $skuSelect.on('select2:clear', function (e) {
             $costInput.val('');
-        }
+        });
     });
-
-    $skuSelect.on('select2:clear', function(e) {
-        $costInput.val('');
-    });
-});
 </script>
 {% endblock %}
