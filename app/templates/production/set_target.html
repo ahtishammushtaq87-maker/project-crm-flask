@@ -79,20 +79,22 @@
                     <label class="form-label fw-bold">Product (SKU) <span class="text-danger">*</span></label>
                     {% if target %}
                         <select name="sku_ids" class="form-select product-select" required>
-                            <option value="{{ target.sku_id }}" selected>{{ target.product.sku }} - {{ target.product.name }}</option>
+                            <option value="{{ target.sku_id }}" selected>{{ target.product.name }} ({{ target.product.sku }})</option>
                         </select>
                         <small class="text-muted">Editing target for a single product</small>
                     {% else %}
                         <select name="sku_ids" class="form-select product-select" multiple="multiple" required>
                             {% for product in products %}
-                            <option value="{{ product.id }}" 
-                                    data-cost="{{ product.cost_price }}" 
-                                    data-price="{{ product.finished_good_price if product.finished_good_price else product.unit_price }}">
-                                {{ product.sku }} - {{ product.name }}
+                            {% set mo_numbers = mo_by_product.get(product.id, []) %}
+                            <option value="{{ product.id }}"
+                                    data-cost="{{ product.cost_price }}"
+                                    data-price="{{ product.finished_good_price if product.finished_good_price else product.unit_price }}"
+                                    data-search="{{ product.sku }} {{ product.name }}{% if mo_numbers %} {{ mo_numbers | join(' ') }}{% endif %}">
+                                {{ product.name }} ({{ product.sku }}){% if mo_numbers %} — MO: {{ mo_numbers | join(', ') }}{% endif %}
                             </option>
                             {% endfor %}
                         </select>
-                        <small class="text-muted">You can select multiple products for bulk target setting</small>
+                        <small class="text-muted">You can select multiple products or search by MO number</small>
                     {% endif %}
                 </div>
 
@@ -141,10 +143,33 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 $(document).ready(function() {
+
+    // Custom matcher: search by displayed text AND the data-search attribute (includes MO numbers)
+    function moAwareMatcher(params, data) {
+        if (!params.term || params.term.trim() === '') {
+            return data;
+        }
+        if (typeof data.text === 'undefined') {
+            return null;
+        }
+        var term = params.term.toLowerCase();
+        var text = data.text.toLowerCase();
+
+        // Also check data-search attribute which includes MO numbers
+        var el = data.element ? $(data.element) : null;
+        var searchData = el ? (el.attr('data-search') || '').toLowerCase() : '';
+
+        if (text.indexOf(term) > -1 || searchData.indexOf(term) > -1) {
+            return data;
+        }
+        return null;
+    }
+
     const productSelect = $('.product-select').select2({
         theme: 'bootstrap-5',
-        placeholder: 'Search for finished goods...',
-        allowClear: true
+        placeholder: 'Search by product name, SKU or MO number...',
+        allowClear: true,
+        matcher: moAwareMatcher
     });
 
     function updatePriceInfo() {

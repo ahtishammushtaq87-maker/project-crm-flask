@@ -225,6 +225,19 @@ def set_target():
         target = ProductionTarget.query.get_or_404(target_id)
     
     products = Product.query.filter_by(is_active=True, is_manufactured=True).order_by(Product.name).all()
+
+    # Gather in-progress MO numbers per product (via BOM relationship)
+    inprogress_mos = ManufacturingOrder.query.filter(
+        ManufacturingOrder.status == 'In Progress'
+    ).all()
+    # Build dict: product_id -> list of order_numbers
+    mo_by_product = {}
+    for mo in inprogress_mos:
+        try:
+            prod_id = mo.bom.product_id
+            mo_by_product.setdefault(prod_id, []).append(mo.order_number)
+        except Exception:
+            pass
     
     selected_month = request.args.get('month', type=int, default=datetime.now().month)
     selected_year = request.args.get('year', type=int, default=datetime.now().year)
@@ -298,6 +311,7 @@ def set_target():
     return render_template('production/set_target.html',
                          target=target,
                          products=products,
+                         mo_by_product=mo_by_product,
                          selected_month=selected_month,
                          selected_year=selected_year)
 

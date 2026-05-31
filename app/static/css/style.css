@@ -1,4 +1,7 @@
 /* Additional custom styles */
+*{
+   font-family: sans-serif; -webkit-font-smoothing: antialiased;
+}
 .card-stats {
     transition: transform 0.3s;
 }
