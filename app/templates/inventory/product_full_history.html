@@ -134,7 +134,6 @@
                         <i class="fas fa-warehouse me-2"></i>Warehouse History
                     </button>
                 </li>
-
             </ul>
         </div>
         <div class="card-body p-0">
@@ -547,14 +546,26 @@
                     <div class="p-4">
                         <!-- Warehouse Distribution Table -->
                         <div class="mb-5">
-                            <h6 class="fw-bold mb-3 d-flex align-items-center">
-                                <i class="fas fa-boxes text-primary me-2"></i>Current Warehouse Distribution
-                            </h6>
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold mb-0 d-flex align-items-center">
+                                    <i class="fas fa-boxes text-primary me-2"></i>Current Warehouse Distribution
+                                </h6>
+                                <div id="bulkDeleteContainer" style="display: none;">
+                                    <button class="btn btn-sm btn-danger rounded-pill px-3" id="bulkDeleteWhBtn">
+                                        <i class="fas fa-trash-alt me-1"></i>Bulk Delete (<span id="selectedWhCount">0</span>)
+                                    </button>
+                                </div>
+                            </div>
                             <div class="table-responsive">
-                                <table class="table table-hover align-middle border rounded-3 overflow-hidden">
+                                <table class="table table-hover align-middle border rounded-3 overflow-hidden" id="whDistributionTable">
                                     <thead class="bg-soft-primary">
                                         <tr>
-                                            <th class="ps-4">Warehouse Name</th>
+                                            <th class="ps-4" style="width: 40px;">
+                                                <div class="form-check mb-0">
+                                                    <input class="form-check-input" type="checkbox" id="selectAllWh">
+                                                </div>
+                                            </th>
+                                            <th>Warehouse Name</th>
                                             <th>Quantity</th>
                                             <th>Unit</th>
                                             <th class="text-end pe-4">Actions</th>
@@ -563,7 +574,12 @@
                                     <tbody>
                                         {% for dist in wh_distribution %}
                                         <tr>
-                                            <td class="ps-4 fw-bold text-dark">{{ dist.warehouse_name }}</td>
+                                            <td class="ps-4">
+                                                <div class="form-check mb-0">
+                                                    <input class="form-check-input wh-checkbox" type="checkbox" data-wh-id="{{ dist.warehouse_id }}">
+                                                </div>
+                                            </td>
+                                            <td class="fw-bold text-dark">{{ dist.warehouse_name }}</td>
                                             <td><span class="badge bg-light text-dark border fw-bold px-3 py-2 fs-6">{{ dist.quantity }}</span></td>
                                             <td class="text-muted">{{ product.unit }}</td>
                                             <td class="text-end pe-4">
@@ -582,7 +598,7 @@
                                             </td>
                                         </tr>
                                         {% else %}
-                                        <tr><td colspan="4" class="text-center text-muted py-4"><i class="fas fa-exclamation-circle me-2"></i>No stock distributed in any warehouse.</td></tr>
+                                        <tr><td colspan="5" class="text-center text-muted py-4"><i class="fas fa-exclamation-circle me-2"></i>No stock distributed in any warehouse.</td></tr>
                                         {% endfor %}
                                     </tbody>
                                 </table>
@@ -811,6 +827,99 @@ document.addEventListener('DOMContentLoaded', function() {
         var removeModal = new bootstrap.Modal(document.getElementById('removeWhStockModal'));
         removeModal.show();
     });
+
+    // Tab Persistence
+    const activeTab = localStorage.getItem('product_history_active_tab');
+    if (activeTab) {
+        const tabEl = document.querySelector(`#${activeTab}`);
+        if (tabEl) {
+            const tab = new bootstrap.Tab(tabEl);
+            tab.show();
+        }
+    }
+
+    document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(tabTriggerEl => {
+        tabTriggerEl.addEventListener('shown.bs.tab', event => {
+            localStorage.setItem('product_history_active_tab', event.target.id);
+        });
+    });
+
+    // Bulk Selection for Warehouses
+    const selectAllWh = document.getElementById('selectAllWh');
+    const whCheckboxes = document.querySelectorAll('.wh-checkbox');
+    const bulkDeleteContainer = document.getElementById('bulkDeleteContainer');
+    const selectedWhCount = document.getElementById('selectedWhCount');
+
+    function updateBulkDeleteVisibility() {
+        const checkedCount = document.querySelectorAll('.wh-checkbox:checked').length;
+        if (checkedCount > 0) {
+            bulkDeleteContainer.style.display = 'block';
+            selectedWhCount.textContent = checkedCount;
+        } else {
+            bulkDeleteContainer.style.display = 'none';
+        }
+    }
+
+    if (selectAllWh) {
+        selectAllWh.addEventListener('change', function() {
+            whCheckboxes.forEach(cb => cb.checked = this.checked);
+            updateBulkDeleteVisibility();
+        });
+    }
+
+    whCheckboxes.forEach(cb => {
+        cb.addEventListener('change', function() {
+            const allChecked = document.querySelectorAll('.wh-checkbox:checked').length === whCheckboxes.length;
+            if (selectAllWh) selectAllWh.checked = allChecked;
+            updateBulkDeleteVisibility();
+        });
+    });
+
+    // Bulk Delete Action
+    const bulkDeleteWhBtn = document.getElementById('bulkDeleteWhBtn');
+    if (bulkDeleteWhBtn) {
+        bulkDeleteWhBtn.addEventListener('click', function() {
+            const selectedIds = Array.from(document.querySelectorAll('.wh-checkbox:checked')).map(cb => cb.dataset.whId);
+            
+            if (selectedIds.length === 0) return;
+
+            Swal.fire({
+                title: 'Bulk Remove stock?',
+                text: `You are about to remove this product from ${selectedIds.length} warehouses. This will also update the global inventory.`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#f5365c',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, Remove All!',
+                showLoaderOnConfirm: true,
+                preConfirm: () => {
+                    return fetch(`/warehouse/product/{{ product.id }}/warehouse/bulk-remove`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token() if csrf_token else "" }}'
+                        },
+                        body: JSON.stringify({ warehouse_ids: selectedIds })
+                    })
+                    .then(response => {
+                        if (!response.ok) throw new Error(response.statusText);
+                        return response.json();
+                    })
+                    .catch(error => {
+                        Swal.showValidationMessage(`Request failed: ${error}`);
+                    });
+                }
+            }).then((result) => {
+                if (result.isConfirmed && result.value) {
+                    if (result.value.success) {
+                        Swal.fire('Removed!', result.value.message, 'success').then(() => location.reload());
+                    } else {
+                        Swal.fire('Error', result.value.message, 'error');
+                    }
+                }
+            });
+        });
+    }
 });
 </script>
 {% endblock %}

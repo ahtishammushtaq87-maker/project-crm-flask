@@ -332,6 +332,68 @@ def bulk_remove_stock(warehouse_id):
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@bp.route('/product/<int:product_id>/warehouse/bulk-remove', methods=['POST'])
+@login_required
+@permission_required('warehouse', action='delete')
+def bulk_remove_product_from_warehouses(product_id):
+    from app.models import ProductWarehouseStock, Product
+    product = Product.query.get_or_404(product_id)
+    data = request.get_json()
+    warehouse_ids = data.get('warehouse_ids', [])
+    
+    if not warehouse_ids:
+        return jsonify({'success': False, 'message': 'No warehouses selected'}), 400
+        
+    try:
+        removed_count = 0
+        total_qty_removed = 0
+        warehouse_names = []
+        
+        for wh_id in warehouse_ids:
+            warehouse = Warehouse.query.get(wh_id)
+            if not warehouse:
+                continue
+                
+            # 1. Find the quantity in this warehouse
+            wh_stock = ProductWarehouseStock.query.filter_by(
+                product_id=product_id,
+                warehouse_id=wh_id
+            ).first()
+            
+            qty_to_remove = 0
+            if wh_stock:
+                qty_to_remove = wh_stock.quantity
+                total_qty_removed += qty_to_remove
+                db.session.delete(wh_stock)
+                removed_count += 1
+                warehouse_names.append(warehouse.name)
+            elif product.warehouse_id == wh_id:
+                # Legacy case
+                qty_to_remove = product.quantity
+                total_qty_removed += qty_to_remove
+                product.warehouse_id = None
+                removed_count += 1
+                warehouse_names.append(warehouse.name)
+                
+            # 2. Update global Product quantity
+            product.quantity -= qty_to_remove
+            if product.quantity < 0: product.quantity = 0
+        
+        db.session.commit()
+        
+        from app.utils import log_activity
+        log_activity('Warehouse', f'Bulk Removed Product: {product.name} (SKU: {product.sku})', 
+                    f'Removed from {removed_count} warehouses: {", ".join(warehouse_names)}. Total units removed: {total_qty_removed}')
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Successfully removed from {removed_count} warehouses. Total units removed: {total_qty_removed}.'
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 
 @bp.route('/warehouse/<int:id>/delete', methods=['POST'])
 @login_required
