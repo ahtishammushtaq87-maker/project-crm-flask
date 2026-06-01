@@ -98,6 +98,8 @@ def index():
                          total_hours=total_hours,
                          total_minutes=total_minutes,
                          total_earned=total_earned,
+                         now=datetime.now(),
+                         timedelta=timedelta,
                          active_module='attendance')
 
 # --- Clock In/Out ---
@@ -206,36 +208,169 @@ def clock_out(staff_id):
 @login_required
 @permission_required('attendance', action='add')
 def mark_holiday(staff_id):
-    """Mark staff attendance as holiday for today"""
+    """Mark staff attendance as holiday for a specific date"""
     staff = Staff.query.get_or_404(staff_id)
-    today = datetime.now().date()
     
-    # Check if already has a record today
+    # 1. Get date from form or default to today
+    date_str = request.form.get('holiday_date')
+    if date_str:
+        try:
+            holiday_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            holiday_date = datetime.now().date()
+    else:
+        holiday_date = datetime.now().date()
+    
+    # 2. Find or create record for that date
     attendance = Attendance.query.filter_by(
         staff_id=staff_id,
-        date=today
+        date=holiday_date
     ).first()
     
     if not attendance:
         attendance = Attendance(
             staff_id=staff_id,
-            date=today,
+            date=holiday_date,
             notes="Sudden holiday declared"
         )
         db.session.add(attendance)
     
-    # Ensure staff object is attached for calculation logic
+    # 3. Mark as holiday and clear clocks
     attendance.staff = staff
-    
     attendance.is_holiday = True
     attendance.clock_in = None
     attendance.clock_out = None
-    attendance.calculate_hours_worked() # Will set to 8h
-    attendance.calculate_earned_amount() # Will set to full day salary
+    attendance.calculate_hours_worked() # Now sets to 0h
+    attendance.calculate_earned_amount() # Now sets to 0 PKR
+    
+    db.session.flush() # Ensure this record is counted in subsequent calculations
+    
+    # 4. CRITICAL: Recalculate ALL attendance records for this staff in this month
+    # because the new holiday reduces working days and thus changes the daily/hourly rate.
+    from sqlalchemy import extract
+    all_month_records = Attendance.query.filter(
+        Attendance.staff_id == staff_id,
+        extract('year', Attendance.date) == holiday_date.year,
+        extract('month', Attendance.date) == holiday_date.month
+    ).all()
+    
+    for record in all_month_records:
+        record.calculate_hourly_rate() # This will call staff.calculate_daily_salary(record.date)
+        record.calculate_earned_amount()
     
     db.session.commit()
-    flash(f'Marked {today} as holiday for {staff.name}. Full day salary added.', 'success')
+    flash(f'Marked {holiday_date} as holiday for {staff.name}. Monthly working days and rates recalculated.', 'success')
     return redirect(url_for('attendance.index'))
+
+# --- Absent / No-Show Logic ---
+
+@bp.route('/mark-absent/<int:staff_id>', methods=['POST'])
+@login_required
+@permission_required('attendance', action='add')
+def mark_absent(staff_id):
+    """Manually mark a staff member as absent for a given date"""
+    staff = Staff.query.get_or_404(staff_id)
+
+    date_str = request.form.get('absent_date')
+    if date_str:
+        try:
+            absent_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            absent_date = datetime.now().date()
+    else:
+        absent_date = datetime.now().date()
+
+    # Prevent marking today before 5pm (shift end)
+    now = datetime.now()
+    if absent_date == now.date() and now.hour < 17:
+        flash(f'Cannot mark absent before shift ends (5:00 PM). Current time: {now.strftime("%H:%M")}.', 'warning')
+        return redirect(url_for('attendance.index'))
+
+    # Don't mark absent on Sundays
+    if absent_date.weekday() == 6:
+        flash('Cannot mark absent on Sunday (official day off).', 'warning')
+        return redirect(url_for('attendance.index'))
+
+    existing = Attendance.query.filter_by(staff_id=staff_id, date=absent_date).first()
+
+    if existing and existing.clock_in:
+        flash(f'{staff.name} has a clock-in record for {absent_date}. Cannot mark absent.', 'danger')
+        return redirect(url_for('attendance.index'))
+
+    if not existing:
+        existing = Attendance(staff_id=staff_id, date=absent_date, notes='Absent - no clock-in')
+        db.session.add(existing)
+
+    existing.staff = staff
+    existing.is_absent = True
+    existing.is_holiday = False
+    existing.clock_in = None
+    existing.clock_out = None
+    existing.hours_worked = 0
+    existing.minutes_worked = 0
+    existing.earned_amount = 0
+    existing.calculate_hourly_rate()
+
+    db.session.commit()
+    flash(f'{staff.name} marked as absent on {absent_date}.', 'warning')
+    return redirect(url_for('attendance.index'))
+
+
+@bp.route('/process-absences', methods=['POST'])
+@login_required
+@permission_required('attendance', action='add')
+def process_absences():
+    """
+    Auto-detect and mark absent any active staff member who has no attendance
+    record for the previous working day (Mon-Sat, after 5:00 PM shift end).
+    Can also be triggered manually for a specific date.
+    """
+    date_str = request.form.get('process_date')
+    if date_str:
+        try:
+            check_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            check_date = (datetime.now() - timedelta(days=1)).date()
+    else:
+        # Default: yesterday
+        check_date = (datetime.now() - timedelta(days=1)).date()
+
+    # Skip Sundays
+    if check_date.weekday() == 6:
+        flash(f'{check_date} is Sunday — no absences to process.', 'info')
+        return redirect(url_for('attendance.index'))
+
+    all_staff = Staff.query.filter_by(is_active=True).all()
+    marked_count = 0
+    skipped = []
+
+    for staff in all_staff:
+        existing = Attendance.query.filter_by(staff_id=staff.id, date=check_date).first()
+
+        # Already has a record with clock-in, holiday, or already absent → skip
+        if existing and (existing.clock_in or existing.is_holiday or existing.is_absent):
+            skipped.append(staff.name)
+            continue
+
+        if not existing:
+            existing = Attendance(staff_id=staff.id, date=check_date, notes='Auto-absent: no clock-in recorded')
+            db.session.add(existing)
+
+        existing.staff = staff
+        existing.is_absent = True
+        existing.is_holiday = False
+        existing.clock_in = None
+        existing.clock_out = None
+        existing.hours_worked = 0
+        existing.minutes_worked = 0
+        existing.earned_amount = 0
+        existing.calculate_hourly_rate()
+        marked_count += 1
+
+    db.session.commit()
+    flash(f'Processed absences for {check_date}: {marked_count} staff marked absent, {len(skipped)} skipped.', 'success')
+    return redirect(url_for('attendance.index'))
+
 
 # --- Attendance Management ---
 
@@ -272,8 +407,20 @@ def edit_attendance(attendance_id):
             else:
                 attendance.clock_out = None
             
-            # 3. Update holiday status, break status, custom deductions, notes and recalculate
-            attendance.is_holiday = True if request.form.get('is_holiday') else False
+            # 3. Update holiday/absent status, break, deductions, notes and recalculate
+            is_holiday = True if request.form.get('is_holiday') else False
+            is_absent = True if request.form.get('is_absent') else False
+
+            # Mutual exclusivity: if marking holiday OR absent, clear the other
+            if is_holiday:
+                is_absent = False
+            elif is_absent:
+                is_holiday = False
+                attendance.clock_in = None
+                attendance.clock_out = None
+
+            attendance.is_holiday = is_holiday
+            attendance.is_absent = is_absent
             attendance.used_break = True if request.form.get('used_break') else False
             attendance.deduct_hours = float(request.form.get('deduct_hours') or 0)
             attendance.deduct_minutes = int(request.form.get('deduct_minutes') or 0)

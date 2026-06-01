@@ -73,6 +73,27 @@
         border: 1px solid #e1bee7;
     }
 
+    .status-absent {
+        background: #fff5f5;
+        color: #c0392b;
+        border: 1px solid #f5c6cb;
+        padding: 0.35rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+
+    .absent-btn {
+        background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+        color: white;
+    }
+
+    .absent-btn:hover {
+        background: linear-gradient(135deg, #c0392b 0%, #a93226 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px rgba(231, 76, 60, 0.4);
+    }
+
     .time-badge {
         background: #fff3cd;
         color: #856404;
@@ -128,18 +149,35 @@
 {% block content %}
 <div id="module-context" data-module="attendance" style="display:none;"></div>
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
         <h2>👥 Attendance & Time Tracking</h2>
-        <div class="btn-group">
+        <div class="d-flex flex-wrap gap-2 align-items-start justify-content-end">
             {% if current_user.has_permission('attendance', 'add') %}
-            <form action="{{ url_for('salary.recalculate_all_salaries') }}" method="POST" class="d-inline" onsubmit="return confirm('Note: This will recalculate all staff daily salaries and current month attendance rates by excluding Sundays. Proceed?')">
-                <button type="submit" class="btn btn-outline-warning text-dark">
-                    <i class="fas fa-sync-alt me-2"></i> Recalculate Rates
-                </button>
-            </form>
-            <a href="{{ url_for('attendance.bulk_upload') }}" class="btn btn-outline-primary">
-                <i class="fas fa-file-upload me-2"></i> Bulk Add / Sample
-            </a>
+            <div class="d-flex flex-column gap-1">
+                <form action="{{ url_for('salary.recalculate_all_salaries') }}" method="POST" class="d-inline" onsubmit="return confirm('Note: This will recalculate all staff daily salaries and current month attendance rates by excluding Sundays. Proceed?')">
+                    <button type="submit" class="btn btn-outline-warning text-dark w-100">
+                        <i class="fas fa-sync-alt me-2"></i> Recalculate Rates
+                    </button>
+                </form>
+            </div>
+            
+            <div class="d-flex flex-column gap-1" style="min-width: 200px;">
+                <form method="POST" action="{{ url_for('attendance.process_absences') }}" onsubmit="return confirm('Mark all staff with no clock-in for the selected date as Absent?')">
+                    <button type="submit" class="btn btn-outline-danger w-100 mb-1">
+                        <i class="fas fa-user-times me-2"></i> Process Absences
+                    </button>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text py-0 px-2" style="font-size: 0.7rem;">Check Date:</span>
+                        <input type="date" name="process_date" class="form-control form-control-sm" value="{{ (now - timedelta(days=1)).strftime('%Y-%m-%d') }}">
+                    </div>
+                </form>
+            </div>
+
+            <div class="d-flex flex-column">
+                <a href="{{ url_for('attendance.bulk_upload') }}" class="btn btn-outline-primary">
+                    <i class="fas fa-file-upload me-2"></i> Bulk Add / Sample
+                </a>
+            </div>
             {% endif %}
         </div>
     </div>
@@ -239,7 +277,9 @@
                         <td>{{ record.staff.name }}</td>
                         <td>
                             {% if record.is_holiday %}
-                            <span class="badge status-holiday">Holiday</span>
+                            <span class="badge status-holiday">🌴 Holiday</span>
+                            {% elif record.is_absent %}
+                            <span class="status-absent">❌ Absent</span>
                             {% elif record.clock_in %}
                             <span class="time-badge">{{ record.clock_in.strftime('%H:%M:%S') }}</span>
                             {% else %}
@@ -248,7 +288,9 @@
                         </td>
                         <td>
                             {% if record.is_holiday %}
-                            <span class="badge status-holiday">Holiday</span>
+                            <span class="badge status-holiday">🌴 Holiday</span>
+                            {% elif record.is_absent %}
+                            <span class="status-absent">Lost: 8h 0m</span>
                             {% elif record.clock_out %}
                             <span class="time-badge">{{ record.clock_out.strftime('%H:%M:%S') }}</span>
                             {% else %}
@@ -390,60 +432,96 @@
                         </div>
                     </div>
 
-                    <div class="d-grid gap-2">
-                        <form method="POST" action="{{ url_for('attendance.clock_in', staff_id=staff.id) }}"
-                            id="clockInForm_{{ staff.id }}" style="display:inline;">
-                            <input type="hidden" name="used_break" value="{{ 'true' if today_att and today_att.used_break else 'false' }}">
-                            <input type="hidden" name="deduct_hours"
-                                value="{{ today_att.deduct_hours if today_att else 0 }}">
-                            <input type="hidden" name="deduct_minutes"
-                                value="{{ today_att.deduct_minutes if today_att else 0 }}">
-                            <input type="hidden" name="deduct_reason"
-                                value="{{ today_att.deduct_reason if today_att and today_att.deduct_reason else '' }}">
-                            <input type="hidden" name="notes"
-                                value="{{ today_att.notes if today_att and today_att.notes else '' }}">
-                            <button type="submit" class="btn clock-button clock-in-btn w-100">
-                                <i class="fas fa-sign-in-alt"></i>
-                                {% if today_att and today_att.clock_in and not today_att.clock_out %}
-                                Update Status
-                                {% else %}
-                                Clock In
-                                {% endif %}
-                            </button>
-                        </form>
-                        <form method="POST" action="{{ url_for('attendance.clock_out', staff_id=staff.id) }}"
-                            id="clockOutForm_{{ staff.id }}" style="display:inline;">
-                            <input type="hidden" name="used_break" value="{{ 'true' if today_att and today_att.used_break else 'false' }}">
-                            <input type="hidden" name="deduct_hours"
-                                value="{{ today_att.deduct_hours if today_att else 0 }}">
-                            <input type="hidden" name="deduct_minutes"
-                                value="{{ today_att.deduct_minutes if today_att else 0 }}">
-                            <input type="hidden" name="deduct_reason"
-                                value="{{ today_att.deduct_reason if today_att and today_att.deduct_reason else '' }}">
-                            <input type="hidden" name="notes"
-                                value="{{ today_att.notes if today_att and today_att.notes else '' }}">
-                            <button type="submit" class="btn clock-button clock-out-btn w-100" {% if not today_att or
-                                (today_att and today_att.clock_out) or today_att.is_holiday %}disabled{% endif %}>
-                                <i class="fas fa-sign-out-alt"></i> Clock Out
-                            </button>
-                        </form>
-                        <form method="POST" action="{{ url_for('attendance.mark_holiday', staff_id=staff.id) }}"
-                            id="markHolidayForm_{{ staff.id }}" style="display:inline;" onsubmit="return confirm('Mark as holiday? This will override any clock-in for today and give full salary.')">
-                            <button type="submit" class="btn clock-button holiday-btn w-100" {% if today_att and today_att.is_holiday %}disabled{% endif %}>
-                                <i class="fas fa-umbrella-beach"></i> {% if today_att and today_att.is_holiday %}Holiday Marked{% else %}Mark Holiday{% endif %}
-                            </button>
-                        </form>
+                    <!-- Row 1: Clock In / Clock Out -->
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <form method="POST" action="{{ url_for('attendance.clock_in', staff_id=staff.id) }}"
+                                id="clockInForm_{{ staff.id }}">
+                                <input type="hidden" name="used_break" value="{{ 'true' if today_att and today_att.used_break else 'false' }}">
+                                <input type="hidden" name="deduct_hours" value="{{ today_att.deduct_hours if today_att else 0 }}">
+                                <input type="hidden" name="deduct_minutes" value="{{ today_att.deduct_minutes if today_att else 0 }}">
+                                <input type="hidden" name="deduct_reason" value="{{ today_att.deduct_reason if today_att and today_att.deduct_reason else '' }}">
+                                <input type="hidden" name="notes" value="{{ today_att.notes if today_att and today_att.notes else '' }}">
+                                <button type="submit" class="btn clock-button clock-in-btn w-100">
+                                    <i class="fas fa-sign-in-alt"></i>
+                                    {% if today_att and today_att.clock_in and not today_att.clock_out %}Update{% else %}Clock In{% endif %}
+                                </button>
+                            </form>
+                        </div>
+                        <div class="col-6">
+                            <form method="POST" action="{{ url_for('attendance.clock_out', staff_id=staff.id) }}"
+                                id="clockOutForm_{{ staff.id }}">
+                                <input type="hidden" name="used_break" value="{{ 'true' if today_att and today_att.used_break else 'false' }}">
+                                <input type="hidden" name="deduct_hours" value="{{ today_att.deduct_hours if today_att else 0 }}">
+                                <input type="hidden" name="deduct_minutes" value="{{ today_att.deduct_minutes if today_att else 0 }}">
+                                <input type="hidden" name="deduct_reason" value="{{ today_att.deduct_reason if today_att and today_att.deduct_reason else '' }}">
+                                <input type="hidden" name="notes" value="{{ today_att.notes if today_att and today_att.notes else '' }}">
+                                <button type="submit" class="btn clock-button clock-out-btn w-100"
+                                    {% if not today_att or (today_att and today_att.clock_out) or (today_att and today_att.is_holiday) %}disabled{% endif %}>
+                                    <i class="fas fa-sign-out-alt"></i> Clock Out
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Shared Date for Holiday / Absent -->
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold text-muted mb-1">
+                            <i class="fas fa-calendar-alt me-1"></i>Date for Holiday / Absent
+                        </label>
+                        <input type="date" id="sharedDate_{{ staff.id }}"
+                               class="form-control form-control-sm"
+                               value="{{ now.strftime('%Y-%m-%d') }}"
+                               onchange="syncDate('{{ staff.id }}')">
+                    </div>
+
+                    <!-- Row 2: Mark Holiday / Mark Absent -->
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <form method="POST" action="{{ url_for('attendance.mark_holiday', staff_id=staff.id) }}"
+                                id="markHolidayForm_{{ staff.id }}"
+                                onsubmit="return confirm('Mark as holiday? This recalculates the monthly rate.')">
+                                <input type="hidden" name="holiday_date" id="holidayDateInput_{{ staff.id }}" value="{{ now.strftime('%Y-%m-%d') }}">
+                                <button type="submit" class="btn clock-button holiday-btn w-100"
+                                    {% if today_att and today_att.is_holiday %}disabled{% endif %}>
+                                    <i class="fas fa-umbrella-beach"></i>
+                                    {% if today_att and today_att.is_holiday %}Holiday ✓{% else %}Holiday{% endif %}
+                                </button>
+                            </form>
+                        </div>
+                        <div class="col-6">
+                            <form method="POST" action="{{ url_for('attendance.mark_absent', staff_id=staff.id) }}"
+                                id="markAbsentForm_{{ staff.id }}"
+                                onsubmit="return confirm('Mark as absent? Records 0 earnings for this date.')">
+                                <input type="hidden" name="absent_date" id="absentDateInput_{{ staff.id }}" value="{{ now.strftime('%Y-%m-%d') }}">
+                                <button type="submit" class="btn clock-button absent-btn w-100"
+                                    {% if today_att and (today_att.is_absent or today_att.clock_in) %}disabled{% endif %}>
+                                    <i class="fas fa-times-circle"></i>
+                                    {% if today_att and today_att.is_absent %}Absent ✓{% else %}Absent{% endif %}
+                                </button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>
             {% endfor %}
         </div>
     </div>
+
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+    // Sync the shared date picker into both holiday & absent hidden inputs
+    function syncDate(staffId) {
+        const val = document.getElementById('sharedDate_' + staffId).value;
+        const hInput = document.getElementById('holidayDateInput_' + staffId);
+        const aInput = document.getElementById('absentDateInput_' + staffId);
+        if (hInput) hInput.value = val;
+        if (aInput) aInput.value = val;
+    }
+
     function updateSharedInputs(staffId) {
         // Get values from visible inputs
         const breakUsed = document.querySelector(`[name="used_break_shared_${staffId}"]`).checked;

@@ -1492,24 +1492,31 @@ class Staff(db.Model):
 
     def calculate_daily_salary(self, reference_date=None):
         """
-        Calculate daily salary based on working days in the month (excludes Sundays).
-        
-        Args:
-            reference_date: Date to use for determining the month (default: today)
-            Examples:
-            - May 2026 (31 days, 5 Sundays = 26 working days): 26000 / 26 = 1000 per day
-            - Feb 2025 (28 days, 4 Sundays = 24 working days): 24000 / 24 = 1000 per day
+        Calculate daily salary based on actual working days in the month.
+        Excludes Sundays AND manually marked holidays.
         """
         from app.utils import get_working_days_in_month
+        from sqlalchemy import extract
         
         if reference_date is None:
             reference_date = datetime.utcnow().date()
         
-        # Get the number of working days (excluding Sundays)
+        # 1. Get standard working days (Total - Sundays)
         working_days = get_working_days_in_month(reference_date.year, reference_date.month)
         
-        # Calculate daily salary based on working days only
-        self.daily_salary = self.monthly_salary / float(working_days)
+        # 2. Subtract staff-specific holidays for this month
+        holidays_count = Attendance.query.filter(
+            Attendance.staff_id == self.id,
+            Attendance.is_holiday == True,
+            extract('year', Attendance.date) == reference_date.year,
+            extract('month', Attendance.date) == reference_date.month
+        ).count()
+        
+        actual_working_days = working_days - holidays_count
+        if actual_working_days <= 0:
+            actual_working_days = 1 # Safety fallback
+            
+        self.daily_salary = self.monthly_salary / float(actual_working_days)
     
     def get_today_salary(self):
         """Get salary amount for today if staff is active"""
@@ -1539,6 +1546,7 @@ class Attendance(db.Model):
     deduct_minutes = db.Column(db.Integer, default=0)
     deduct_reason = db.Column(db.Text)
     is_holiday = db.Column(db.Boolean, default=False)
+    is_absent = db.Column(db.Boolean, default=False)  # Auto-set if no clock-in by end of shift day
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     def __init__(self, staff_id, date, clock_in=None, clock_out=None, notes=None):
@@ -1551,10 +1559,17 @@ class Attendance(db.Model):
     # Relationship
     staff = db.relationship('Staff', backref=db.backref('attendance_records', lazy=True, cascade='all, delete-orphan'))
     
+    @property
+    def lost_hours(self):
+        """For absent records, returns the standard lost shift hours (8h)"""
+        if getattr(self, 'is_absent', False):
+            return 8.0
+        return 0.0
+
     def calculate_hours_worked(self):
         """Calculate hours and minutes worked from clock in/out times, optionally subtracting 1 hour break and custom deductions"""
-        if getattr(self, 'is_holiday', False):
-            self.hours_worked = 8
+        if getattr(self, 'is_holiday', False) or getattr(self, 'is_absent', False):
+            self.hours_worked = 0
             self.minutes_worked = 0
             return
 
@@ -1592,35 +1607,21 @@ class Attendance(db.Model):
     
     def calculate_hourly_rate(self):
         """
-        Calculate hourly rate from staff monthly salary based on working days in the month.
-        Sundays are excluded as they are official holidays.
-        
-        Formula: monthly_salary / working_days_in_month / 8 hours_per_day
-        
-        Examples:
-        - May 2026 (26 working days): 26000 / 26 / 8 = 125.00 per hour
-        - Feb 2025 (24 working days): 24000 / 24 / 8 = 125.00 per hour
+        Calculate hourly rate from staff monthly salary based on actual working days (Total - Sundays - Holidays).
         """
-        from app.utils import get_working_days_in_month
-        
         if self.staff and self.staff.monthly_salary > 0:
-            # Get the number of working days (Mon-Sat) for this attendance record's month
-            working_days = get_working_days_in_month(self.date.year, self.date.month)
-            
-            # 8 hours per working day (after 1-hour break deduction from 9-hour shift)
-            self.hourly_rate = self.staff.monthly_salary / float(working_days) / 8.0
+            # First, ensure staff daily salary is up to date for this month
+            self.staff.calculate_daily_salary(self.date)
+            # Standard 8 hour working day
+            self.hourly_rate = self.staff.daily_salary / 8.0
         else:
             self.hourly_rate = 0
     
     def calculate_earned_amount(self):
         """Calculate total earned amount for the day"""
-        if getattr(self, 'is_holiday', False):
-            # For holiday, give full shift salary (8 hours)
-            self.calculate_hourly_rate()
-            if self.hourly_rate > 0:
-                self.earned_amount = self.hourly_rate * 8.0
-            else:
-                self.earned_amount = 0
+        if getattr(self, 'is_holiday', False) or getattr(self, 'is_absent', False):
+            # For holiday/absent, earned amount is zero
+            self.earned_amount = 0
             return
 
         self.calculate_hourly_rate()
@@ -1636,6 +1637,8 @@ class Attendance(db.Model):
         """Return live duration for active shifts or saved duration for completed shifts"""
         if getattr(self, 'is_holiday', False):
             return "Holiday"
+        if getattr(self, 'is_absent', False):
+            return "Absent (Lost: 8h 0m)"
             
         if self.clock_in and not self.clock_out:
             diff = datetime.now() - self.clock_in
@@ -1683,6 +1686,8 @@ class Attendance(db.Model):
         """Return formatted time summary (e.g., '8h 30m')"""
         if getattr(self, 'is_holiday', False):
             return "Holiday"
+        if getattr(self, 'is_absent', False):
+            return "Absent"
         if self.hours_worked > 0 or self.minutes_worked > 0:
             return f"{int(self.hours_worked)}h {int(self.minutes_worked)}m"
         return "0h 0m"
