@@ -892,6 +892,11 @@
                     <i class="fas fa-boxes me-2"></i> Inventory
                 </a>
                 {% endif %}
+                {% if current_user.is_admin or current_user.can_view_media %}
+                <a class="nav-link" href="{{ url_for('media.index') }}">
+                    <i class="fas fa-folder-open me-2"></i> Media
+                </a>
+                {% endif %}
                 {% if current_user.is_admin or current_user.can_view_product_dev %}
                 <a class="nav-link" href="{{ url_for('product_development.index') }}">
                     <i class="fas fa-flask me-2"></i> Product Dev
@@ -1229,6 +1234,11 @@
                         {% if current_user.is_admin or current_user.can_view_activity_logs %}
                         <a class="nav-link" href="{{ url_for('activity_log.index') }}">
                             <i class="fas fa-history me-2"></i> Activity Log
+                        </a>
+                        {% endif %}
+                        {% if current_user.is_admin or current_user.can_view_media %}
+                        <a class="nav-link" href="{{ url_for('media.index') }}">
+                            <i class="fas fa-folder-open me-2"></i> Media
                         </a>
                         {% endif %}
                         {% if current_user.is_admin or current_user.can_view_tasks %}

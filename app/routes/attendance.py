@@ -202,6 +202,41 @@ def clock_out(staff_id):
     flash(f'{staff.name} clocked out at {attendance.clock_out.strftime("%H:%M:%S")}. Worked: {attendance.get_time_summary()}', 'success')
     return redirect(url_for('attendance.index'))
 
+@bp.route('/mark-holiday/<int:staff_id>', methods=['POST'])
+@login_required
+@permission_required('attendance', action='add')
+def mark_holiday(staff_id):
+    """Mark staff attendance as holiday for today"""
+    staff = Staff.query.get_or_404(staff_id)
+    today = datetime.now().date()
+    
+    # Check if already has a record today
+    attendance = Attendance.query.filter_by(
+        staff_id=staff_id,
+        date=today
+    ).first()
+    
+    if not attendance:
+        attendance = Attendance(
+            staff_id=staff_id,
+            date=today,
+            notes="Sudden holiday declared"
+        )
+        db.session.add(attendance)
+    
+    # Ensure staff object is attached for calculation logic
+    attendance.staff = staff
+    
+    attendance.is_holiday = True
+    attendance.clock_in = None
+    attendance.clock_out = None
+    attendance.calculate_hours_worked() # Will set to 8h
+    attendance.calculate_earned_amount() # Will set to full day salary
+    
+    db.session.commit()
+    flash(f'Marked {today} as holiday for {staff.name}. Full day salary added.', 'success')
+    return redirect(url_for('attendance.index'))
+
 # --- Attendance Management ---
 
 @bp.route('/record/<int:attendance_id>/edit', methods=['GET', 'POST'])
@@ -237,12 +272,15 @@ def edit_attendance(attendance_id):
             else:
                 attendance.clock_out = None
             
-            # 3. Update break status, custom deductions, notes and recalculate
+            # 3. Update holiday status, break status, custom deductions, notes and recalculate
+            attendance.is_holiday = True if request.form.get('is_holiday') else False
             attendance.used_break = True if request.form.get('used_break') else False
             attendance.deduct_hours = float(request.form.get('deduct_hours') or 0)
             attendance.deduct_minutes = int(request.form.get('deduct_minutes') or 0)
             attendance.deduct_reason = request.form.get('deduct_reason')
             attendance.notes = notes
+            
+            # Recalculate based on new state
             attendance.calculate_hours_worked()
             attendance.calculate_earned_amount() # This also recalculates hourly rate based on the date
             

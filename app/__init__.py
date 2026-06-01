@@ -41,7 +41,7 @@ def create_app(config_class=Config):
             ProductRelease, ProductRevisionHistory, SharedCostAllocation, ProductAttachment,
             PurchaseReturn, PurchaseReturnItem, Unit, ActivityLog,
             ToolReceiving, ToolReceivingItem, ToolDelivering, ToolDeliveringItem, ToolSettings,
-            ProductWarehouseStock
+            ProductWarehouseStock, Media
         )
         from app.filter_models import SavedFilter
         
@@ -119,7 +119,8 @@ def create_app(config_class=Config):
             'tool_delivering': ToolDelivering,
             'tool_delivering_items': ToolDeliveringItem,
             'tool_settings': ToolSettings,
-            'product_warehouse_stock': ProductWarehouseStock
+            'product_warehouse_stock': ProductWarehouseStock,
+            'media': Media
         }
         
         try:
@@ -245,6 +246,7 @@ def create_app(config_class=Config):
     from app.routes.api import bp as api_bp
     from app.routes.activity_log import bp as activity_log_bp
     from app.routes.tools import bp as tools_bp
+    from app.routes.media import bp as media_bp
 
     app.register_blueprint(dashboard_bp, url_prefix='/')
     app.register_blueprint(accounting_bp, url_prefix='/accounting')
@@ -268,6 +270,7 @@ def create_app(config_class=Config):
     app.register_blueprint(api_bp, url_prefix='/api')
     app.register_blueprint(activity_log_bp, url_prefix='/activity-log')
     app.register_blueprint(tools_bp, url_prefix='/tools')
+    app.register_blueprint(media_bp, url_prefix='/media')
     
     @app.context_processor
     def inject_company():

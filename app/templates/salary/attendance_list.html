@@ -34,6 +34,17 @@
         box-shadow: 0 8px 15px rgba(245, 87, 108, 0.4);
     }
 
+    .holiday-btn {
+        background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%);
+        color: white;
+    }
+
+    .holiday-btn:hover {
+        background: linear-gradient(135deg, #8e7cc3 0%, #f9a8e0 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px rgba(161, 140, 209, 0.4);
+    }
+
     .status-badge {
         padding: 0.35rem 0.75rem;
         border-radius: 20px;
@@ -54,6 +65,12 @@
     .status-idle {
         background: #e2e3e5;
         color: #383d41;
+    }
+
+    .status-holiday {
+        background: #fdf2ff;
+        color: #b336e8;
+        border: 1px solid #e1bee7;
     }
 
     .time-badge {
@@ -221,14 +238,18 @@
                         <td><strong>{{ record.date.strftime('%Y-%m-%d') }}</strong></td>
                         <td>{{ record.staff.name }}</td>
                         <td>
-                            {% if record.clock_in %}
+                            {% if record.is_holiday %}
+                            <span class="badge status-holiday">Holiday</span>
+                            {% elif record.clock_in %}
                             <span class="time-badge">{{ record.clock_in.strftime('%H:%M:%S') }}</span>
                             {% else %}
                             <span class="badge bg-light text-dark">—</span>
                             {% endif %}
                         </td>
                         <td>
-                            {% if record.clock_out %}
+                            {% if record.is_holiday %}
+                            <span class="badge status-holiday">Holiday</span>
+                            {% elif record.clock_out %}
                             <span class="time-badge">{{ record.clock_out.strftime('%H:%M:%S') }}</span>
                             {% else %}
                             <span class="badge bg-warning">Active</span>
@@ -402,8 +423,14 @@
                             <input type="hidden" name="notes"
                                 value="{{ today_att.notes if today_att and today_att.notes else '' }}">
                             <button type="submit" class="btn clock-button clock-out-btn w-100" {% if not today_att or
-                                (today_att and today_att.clock_out) %}disabled{% endif %}>
+                                (today_att and today_att.clock_out) or today_att.is_holiday %}disabled{% endif %}>
                                 <i class="fas fa-sign-out-alt"></i> Clock Out
+                            </button>
+                        </form>
+                        <form method="POST" action="{{ url_for('attendance.mark_holiday', staff_id=staff.id) }}"
+                            id="markHolidayForm_{{ staff.id }}" style="display:inline;" onsubmit="return confirm('Mark as holiday? This will override any clock-in for today and give full salary.')">
+                            <button type="submit" class="btn clock-button holiday-btn w-100" {% if today_att and today_att.is_holiday %}disabled{% endif %}>
+                                <i class="fas fa-umbrella-beach"></i> {% if today_att and today_att.is_holiday %}Holiday Marked{% else %}Mark Holiday{% endif %}
                             </button>
                         </form>
                     </div>

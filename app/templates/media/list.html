@@ -1,0 +1,332 @@
+{% extends 'base.html' %}
+
+{% block title %}Media Library{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card shadow-sm border-0 rounded-3">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h3 class="fw-bold text-primary mb-1"><i class="fas fa-folder-open me-2"></i>Media Library</h3>
+                        <p class="text-muted mb-0">Upload and manage your business documents and assets.</p>
+                    </div>
+                </div>
+
+                <!-- Flash messages -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                {% endfor %}
+                {% endif %}
+                {% endwith %}
+
+                {% if current_user.is_admin or current_user.can_add_media %}
+                <!-- Upload Zone -->
+                <div id="drop-zone" class="upload-zone mb-4 p-5 text-center rounded-3">
+                    <div class="upload-icon mb-3">
+                        <i class="fas fa-cloud-upload-alt fa-4x text-primary" style="opacity:0.5"></i>
+                    </div>
+                    <h4 class="fw-bold">Drag & Drop Files Here</h4>
+                    <p class="text-muted mb-3">or click the button below to browse files</p>
+                    <button type="button" id="browse-btn" class="btn btn-primary">
+                        <i class="fas fa-folder-open me-2"></i>Browse Files
+                    </button>
+                    <!-- Hidden file input — NOT inside drop zone to avoid click conflicts -->
+                </div>
+
+                <!-- Upload Progress -->
+                <div id="upload-progress-container" class="mb-3 d-none">
+                    <div class="d-flex align-items-center mb-1">
+                        <span id="upload-status-text" class="text-muted small me-2">Uploading...</span>
+                        <span id="progress-percent" class="fw-bold small">0%</span>
+                    </div>
+                    <div class="progress" style="height: 10px;">
+                        <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div id="upload-alerts"></div>
+                {% endif %}
+
+                <!-- Files Table -->
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle border-top" id="mediaTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Filename</th>
+                                <th>Type</th>
+                                <th>Size</th>
+                                <th>Uploaded By</th>
+                                <th>Date</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for doc in documents %}
+                            <tr>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="file-icon-sm me-3 bg-light rounded p-2">
+                                            {% if doc.file_type and 'image' in doc.file_type %}
+                                            <i class="fas fa-file-image text-success"></i>
+                                            {% elif doc.file_type and 'pdf' in doc.file_type %}
+                                            <i class="fas fa-file-pdf text-danger"></i>
+                                            {% elif doc.file_type and ('word' in doc.file_type or 'doc' in doc.file_type) %}
+                                            <i class="fas fa-file-word text-primary"></i>
+                                            {% elif doc.file_type and ('excel' in doc.file_type or 'sheet' in doc.file_type or 'csv' in doc.file_type) %}
+                                            <i class="fas fa-file-excel text-success"></i>
+                                            {% else %}
+                                            <i class="fas fa-file-alt text-secondary"></i>
+                                            {% endif %}
+                                        </div>
+                                        <span class="fw-semibold">{{ doc.filename }}</span>
+                                    </div>
+                                </td>
+                                <td><span class="badge bg-light text-dark border">{{ doc.file_type.split('/')[-1].upper() if doc.file_type else 'UNKNOWN' }}</span></td>
+                                <td>{{ (doc.file_size / 1024) | round(1) if doc.file_size else 0 }} KB</td>
+                                <td>{{ doc.uploaded_by.username if doc.uploaded_by else 'Unknown' }}</td>
+                                <td>{{ doc.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                <td class="text-end">
+                                    <div class="btn-group shadow-sm rounded">
+                                        <a href="{{ url_for('media.view', media_id=doc.id) }}" target="_blank" class="btn btn-sm btn-white border" title="View">
+                                            <i class="fas fa-eye text-primary"></i>
+                                        </a>
+                                        <a href="{{ url_for('media.download', media_id=doc.id) }}" class="btn btn-sm btn-white border" title="Download">
+                                            <i class="fas fa-download text-success"></i>
+                                        </a>
+                                        {% if current_user.is_admin or current_user.can_delete_media %}
+                                        <form action="{{ url_for('media.delete', media_id=doc.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this document?')">
+                                            <button type="submit" class="btn btn-sm btn-white border" title="Delete">
+                                                <i class="fas fa-trash-alt text-danger"></i>
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% if not documents %}
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">
+                                    <i class="fas fa-folder-open fa-2x mb-2 d-block"></i>
+                                    No documents uploaded yet.
+                                </td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden file input placed OUTSIDE the drop zone to avoid event conflicts -->
+<input type="file" id="file-input" multiple style="display:none !important; position:absolute; top:-9999px;">
+
+<style>
+    .upload-zone {
+        background-color: #f0f4ff;
+        border: 2.5px dashed #b0c4f8;
+        transition: all 0.25s ease;
+    }
+    .upload-zone.dragover {
+        background-color: #dce8ff;
+        border-color: #4a7cf7;
+        box-shadow: 0 0 20px rgba(74, 124, 247, 0.2);
+        transform: translateY(-2px);
+    }
+    .file-icon-sm {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+    .btn-white { background: white; }
+    .btn-white:hover { background: #f8f9fa; }
+</style>
+
+<script>
+(function() {
+    var dropZone    = document.getElementById('drop-zone');
+    var fileInput   = document.getElementById('file-input');
+    var browseBtn   = document.getElementById('browse-btn');
+    var progressContainer = document.getElementById('upload-progress-container');
+    var progressBar       = document.getElementById('progress-bar');
+    var progressPercent   = document.getElementById('progress-percent');
+    var uploadStatusText  = document.getElementById('upload-status-text');
+    var uploadAlerts      = document.getElementById('upload-alerts');
+
+    if (!dropZone || !fileInput) return;
+
+    // --- Browse button opens file dialog ---
+    browseBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        fileInput.click();
+    });
+
+    // --- Prevent drop zone click from also firing (it has its own button) ---
+    // (No click handler on the drop zone itself)
+
+    // --- Prevent browser default for drag events over the WHOLE page ---
+    document.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }, false);
+
+    document.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }, false);
+
+    // --- Drop zone highlight on drag enter/over ---
+    dropZone.addEventListener('dragenter', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.add('dragover');
+    }, false);
+
+    dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.add('dragover');
+    }, false);
+
+    dropZone.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        // Only remove if we've actually left the zone (not just moved to a child)
+        if (!dropZone.contains(e.relatedTarget)) {
+            dropZone.classList.remove('dragover');
+        }
+    }, false);
+
+    // --- Handle drop ---
+    dropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('dragover');
+        var files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            handleUpload(files);
+        }
+    }, false);
+
+    // --- Handle file input change (browse) ---
+    fileInput.addEventListener('change', function(e) {
+        var files = e.target.files;
+        if (files && files.length > 0) {
+            handleUpload(files);
+        }
+    });
+
+    function showAlert(type, message) {
+        var div = document.createElement('div');
+        div.className = 'alert alert-' + type + ' alert-dismissible fade show mt-2';
+        div.role = 'alert';
+        div.innerHTML = message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+        uploadAlerts.appendChild(div);
+    }
+
+    function handleUpload(files) {
+        var fileArray = Array.from(files);
+        var completed = 0;
+        var total = fileArray.length;
+        var failed = 0;
+
+        progressContainer.classList.remove('d-none');
+        progressBar.style.width = '0%';
+        progressPercent.textContent = '0%';
+        uploadStatusText.textContent = 'Uploading ' + total + ' file(s)...';
+        uploadAlerts.innerHTML = '';
+
+        fileArray.forEach(function(file) {
+            var formData = new FormData();
+            formData.append('file', file);
+
+            var xhr = new XMLHttpRequest();
+
+            xhr.upload.addEventListener('progress', function(e) {
+                if (e.lengthComputable && total === 1) {
+                    var pct = Math.round((e.loaded / e.total) * 100);
+                    progressBar.style.width = pct + '%';
+                    progressPercent.textContent = pct + '%';
+                }
+            });
+
+            xhr.addEventListener('load', function() {
+                completed++;
+                var pct = Math.round((completed / total) * 100);
+                progressBar.style.width = pct + '%';
+                progressPercent.textContent = pct + '%';
+
+                if (xhr.status === 200) {
+                    uploadStatusText.textContent = file.name + ' uploaded!';
+                } else {
+                    failed++;
+                    var errMsg = 'Upload failed';
+                    try {
+                        var resp = JSON.parse(xhr.responseText);
+                        errMsg = resp.error || errMsg;
+                    } catch(ex) {}
+                    showAlert('danger', '<strong>' + file.name + '</strong>: ' + errMsg);
+                }
+
+                if (completed === total) {
+                    if (failed === 0) {
+                        uploadStatusText.textContent = 'All files uploaded! Refreshing...';
+                        setTimeout(function() { window.location.reload(); }, 800);
+                    } else {
+                        uploadStatusText.textContent = 'Done with ' + failed + ' error(s).';
+                        if (completed - failed > 0) {
+                            setTimeout(function() { window.location.reload(); }, 1500);
+                        }
+                    }
+                }
+            });
+
+            xhr.addEventListener('error', function() {
+                completed++;
+                failed++;
+                showAlert('danger', '<strong>' + file.name + '</strong>: Network error during upload.');
+                if (completed === total) {
+                    uploadStatusText.textContent = 'Upload failed.';
+                }
+            });
+
+            xhr.open('POST', "{{ url_for('media.upload') }}");
+            // Send CSRF token
+            var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+            if (csrfMeta) {
+                xhr.setRequestHeader('X-CSRFToken', csrfMeta.getAttribute('content'));
+            }
+            // Flask-WTF CSRF via cookie fallback: include it in FormData
+            var csrfInput = document.querySelector('input[name="csrf_token"]');
+            if (csrfInput) {
+                formData.append('csrf_token', csrfInput.value);
+            }
+            xhr.send(formData);
+        });
+    }
+
+    // --- Init DataTable if available ---
+    if (typeof $ !== 'undefined' && $.fn && $.fn.DataTable) {
+        $('#mediaTable').DataTable({
+            order: [[4, 'desc']],
+            pageLength: 25,
+            language: { emptyTable: "No documents uploaded yet." }
+        });
+    }
+})();
+</script>
+{% endblock %}

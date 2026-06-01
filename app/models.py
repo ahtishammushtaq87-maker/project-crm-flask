@@ -129,6 +129,11 @@ class User(UserMixin, db.Model):
     can_delete_receiving = db.Column(db.Boolean, default=False)
     can_delete_delivering = db.Column(db.Boolean, default=False)
     can_delete_activity_logs = db.Column(db.Boolean, default=False)
+    
+    # New Media Module Permissions
+    can_view_media = db.Column(db.Boolean, default=True)
+    can_add_media = db.Column(db.Boolean, default=False)
+    can_delete_media = db.Column(db.Boolean, default=False)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -1532,6 +1537,7 @@ class Attendance(db.Model):
     deduct_hours = db.Column(db.Float, default=0)
     deduct_minutes = db.Column(db.Integer, default=0)
     deduct_reason = db.Column(db.Text)
+    is_holiday = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     def __init__(self, staff_id, date, clock_in=None, clock_out=None, notes=None):
@@ -1546,6 +1552,11 @@ class Attendance(db.Model):
     
     def calculate_hours_worked(self):
         """Calculate hours and minutes worked from clock in/out times, optionally subtracting 1 hour break and custom deductions"""
+        if getattr(self, 'is_holiday', False):
+            self.hours_worked = 8
+            self.minutes_worked = 0
+            return
+
         if self.clock_in and self.clock_out:
             time_diff = self.clock_out - self.clock_in
             total_seconds = time_diff.total_seconds()
@@ -1602,6 +1613,15 @@ class Attendance(db.Model):
     
     def calculate_earned_amount(self):
         """Calculate total earned amount for the day"""
+        if getattr(self, 'is_holiday', False):
+            # For holiday, give full shift salary (8 hours)
+            self.calculate_hourly_rate()
+            if self.hourly_rate > 0:
+                self.earned_amount = self.hourly_rate * 8.0
+            else:
+                self.earned_amount = 0
+            return
+
         self.calculate_hourly_rate()
         
         if self.hourly_rate > 0 and (self.hours_worked > 0 or self.minutes_worked > 0):
@@ -1613,6 +1633,9 @@ class Attendance(db.Model):
     
     def get_current_duration(self):
         """Return live duration for active shifts or saved duration for completed shifts"""
+        if getattr(self, 'is_holiday', False):
+            return "Holiday"
+            
         if self.clock_in and not self.clock_out:
             diff = datetime.now() - self.clock_in
             total_mins = int(diff.total_seconds() / 60)
@@ -1657,6 +1680,8 @@ class Attendance(db.Model):
 
     def get_time_summary(self):
         """Return formatted time summary (e.g., '8h 30m')"""
+        if getattr(self, 'is_holiday', False):
+            return "Holiday"
         if self.hours_worked > 0 or self.minutes_worked > 0:
             return f"{int(self.hours_worked)}h {int(self.minutes_worked)}m"
         return "0h 0m"
@@ -2703,3 +2728,20 @@ class ToolSettings(db.Model):
     delivering_prefix = db.Column(db.String(10), default='TDEL-')
     next_receiving_number = db.Column(db.Integer, default=1)
     next_delivering_number = db.Column(db.Integer, default=1)
+
+class Media(db.Model):
+    """Media/Document model"""
+    __tablename__ = 'media'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), nullable=False)
+    filepath = db.Column(db.String(512), nullable=False)
+    file_type = db.Column(db.String(100))
+    file_size = db.Column(db.Integer) # in bytes
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    uploaded_by = db.relationship('User', backref='uploaded_media')
+
+    def __repr__(self):
+        return f'<Media {self.filename}>'

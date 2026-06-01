@@ -43,7 +43,7 @@ def recalculate_all_salaries():
         
         for record in attendance_records:
             record.calculate_hourly_rate()
-            if record.clock_out:
+            if record.clock_out or getattr(record, 'is_holiday', False):
                 record.calculate_earned_amount()
         
         db.session.commit()
