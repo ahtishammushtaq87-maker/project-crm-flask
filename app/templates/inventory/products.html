@@ -16,7 +16,8 @@
             {% endif %}
 
             {% if current_user.has_permission('inventory', 'edit') %}
-            <button id="bulkWarehouseBtn" type="button" class="btn btn-primary d-none me-2" data-bs-toggle="modal" data-bs-target="#bulkWarehouseModal">
+            <button id="bulkWarehouseBtn" type="button" class="btn btn-primary d-none me-2" data-bs-toggle="modal"
+                data-bs-target="#bulkWarehouseModal">
                 <i class="fas fa-warehouse"></i> Assign Warehouse
             </button>
             {% endif %}
@@ -317,17 +318,21 @@
                             <td><strong>{{ product.name }}</strong></td>
                             <td>{{ product.category.name if product.category else '-' }}</td>
                             <td>
-                                {% set active_stocks = product.warehouse_stocks | selectattr('quantity', 'ne', 0) | list %}
+                                {% set active_stocks = product.warehouse_stocks | selectattr('quantity', 'ne', 0) | list
+                                %}
                                 {% if active_stocks %}
-                                    {% for ws in active_stocks %}
-                                        <span class="badge {% if ws.quantity < 0 %}bg-danger{% else %}bg-info text-dark{% endif %} me-1 mb-1" title="{{ ws.warehouse.name }}: {{ ws.quantity }}">
-                                            {{ ws.warehouse.name }}: <strong>{{ ws.quantity | int if ws.quantity == ws.quantity | int else ws.quantity }}</strong>
-                                        </span>
-                                    {% endfor %}
+                                {% for ws in active_stocks %}
+                                <span
+                                    class="badge {% if ws.quantity < 0 %}bg-danger{% else %}bg-info text-dark{% endif %} me-1 mb-1"
+                                    title="{{ ws.warehouse.name }}: {{ ws.quantity }}">
+                                    {{ ws.warehouse.name }}: <strong>{{ ws.quantity | int if ws.quantity == ws.quantity
+                                        | int else ws.quantity }}</strong>
+                                </span>
+                                {% endfor %}
                                 {% elif product.warehouse %}
-                                    {{ product.warehouse.name }}
+                                {{ product.warehouse.name }}
                                 {% else %}
-                                    -
+                                -
                                 {% endif %}
                             </td>
                             <td>
@@ -732,7 +737,7 @@
         }
 
         // Attach update function using event delegation (important for DataTables)
-        document.addEventListener('change', function(e) {
+        document.addEventListener('change', function (e) {
             if (e.target && e.target.classList.contains('product-checkbox')) {
                 updateBulkWarehouseBtn();
             }

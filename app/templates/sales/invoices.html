@@ -2,6 +2,20 @@
 {% block title %}Sales Invoices{% endblock %}
 
 {% block content %}
+<style>
+    .col-md-4 {
+        width: 10% !important;
+    }
+
+    .h3,
+    h3 {
+        font-size: 1.4rem !important;
+    }
+
+    .card-stats {
+        margin-bottom: 0px !important;
+    }
+</style>
 <div class="container-fluid list-page">
     <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
         <h2 class="h3 mb-0 text-gray-800">Sales Invoices</h2>
@@ -49,9 +63,6 @@
                         <h3 class="mb-0">PKR{{ "{:,.2f}".format(sale_totals.collected) }}</h3>
                         <small class="text-white-50">Fully + Partially Paid amt</small>
                     </div>
-                    <div class="stats-icon opacity-50">
-                        <i class="fas fa-hand-holding-usd fa-2x"></i>
-                    </div>
                 </div>
             </div>
         </div>
@@ -64,9 +75,6 @@
                         <h6 class="text-white-50 small mb-1">Total Partial</h6>
                         <h3 class="mb-0">PKR{{ "{:,.2f}".format(sale_totals.partial_total) }}</h3>
                         <small class="text-white-50">Total of partial invoices</small>
-                    </div>
-                    <div class="stats-icon opacity-50">
-                        <i class="fas fa-file-invoice-dollar fa-2x"></i>
                     </div>
                 </div>
             </div>
@@ -81,9 +89,6 @@
                         <h3 class="mb-0">PKR{{ "{:,.2f}".format(sale_totals.partial_unpaid) }}</h3>
                         <small class="text-white-50">Balance of partials</small>
                     </div>
-                    <div class="stats-icon opacity-50">
-                        <i class="fas fa-hourglass-half fa-2x"></i>
-                    </div>
                 </div>
             </div>
         </div>
@@ -96,9 +101,6 @@
                         <h6 class="text-white-50 small mb-1">Total Unpaid</h6>
                         <h3 class="mb-0">PKR{{ "{:,.2f}".format(sale_totals.unpaid) }}</h3>
                         <small class="text-white-50">Unpaid amount</small>
-                    </div>
-                    <div class="stats-icon opacity-50">
-                        <i class="fas fa-times-circle fa-2x"></i>
                     </div>
                 </div>
             </div>
@@ -113,9 +115,6 @@
                         <h3 class="mb-0">PKR{{"{:,.2f}".format(sale_totals.unpaid + sale_totals.partial_unpaid) }}</h3>
                         <small class="text-white-50">Fully unpaid amount</small>
                     </div>
-                    <div class="stats-icon opacity-50">
-                        <i class="fas fa-times-circle fa-2x"></i>
-                    </div>
                 </div>
             </div>
         </div>
@@ -128,9 +127,6 @@
                         <h6 class="text-white-50 small mb-1">Total Overdue</h6>
                         <h3 class="mb-0">PKR{{ "{:,.2f}".format(sale_totals.overdue) }}</h3>
                         <small class="text-white-50">Balance after due date</small>
-                    </div>
-                    <div class="stats-icon opacity-50">
-                        <i class="fas fa-exclamation-triangle fa-2x"></i>
                     </div>
                 </div>
             </div>
@@ -388,7 +384,8 @@
                                 </a>
                             </td>
                             <td>{{ sale.date.strftime(date_format) }}</td>
-                            <td>{{ sale.overdue_date.strftime(date_format) if sale.overdue_date else (sale.due_date.strftime(date_format) if sale.due_date else '-') }}</td>
+                            <td>{{ sale.overdue_date.strftime(date_format) if sale.overdue_date else
+                                (sale.due_date.strftime(date_format) if sale.due_date else '-') }}</td>
                             <td>
                                 {% if sale.customer %}
                                 <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal"
