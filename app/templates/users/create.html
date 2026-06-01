@@ -527,6 +527,9 @@
     <label class="form-check-label fw-semibold">{{ form.can_view_media.label.text }}</label>
     <div class="ms-4 mt-1 border-start ps-3 sub-permissions-media" id="sub_media">
         <div class="form-check form-check-inline">
+            {{ form.can_view_media_document(class="form-check-input sub-cb-media") }} <label class="form-check-label small text-muted">View</label>
+        </div>
+        <div class="form-check form-check-inline">
             {{ form.can_add_media(class="form-check-input sub-cb-media") }} <label class="form-check-label small text-muted">Upload</label>
         </div>
         <div class="form-check form-check-inline">

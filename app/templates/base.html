@@ -1532,7 +1532,9 @@
                             read: false
                         };
                         this.messages.push(msg);
-                        Toast.show(message, type);
+                        if (shouldRemove) {
+                            Toast.show(message, type);
+                        }
                     }
 
                     if (shouldRemove) {

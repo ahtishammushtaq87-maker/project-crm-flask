@@ -163,6 +163,7 @@ class UserForm(FlaskForm):
     can_view_receiving = BooleanField('Tools Receiving Access', default=False)
     can_view_delivering = BooleanField('Tools Delivering Access', default=False)
     can_view_media = BooleanField('Media Access', default=False)
+    can_view_media_document = BooleanField('View Documents', default=False)
 
     can_view_activity_logs = BooleanField('Activity Log Access', default=False)
     can_add_sales = BooleanField('Add Sales', default=False)
@@ -191,6 +192,7 @@ class UserForm(FlaskForm):
     can_add_users = BooleanField('Add Users', default=False)
     can_add_receiving = BooleanField('Add Receiving', default=False)
     can_add_delivering = BooleanField('Add Delivering', default=False)
+    can_add_media = BooleanField('Add Media', default=False)
 
     can_edit_sales = BooleanField('Edit Sales', default=False)
     can_edit_purchases = BooleanField('Edit Purchases', default=False)
@@ -283,6 +285,7 @@ class UserEditForm(FlaskForm):
     can_view_receiving = BooleanField('Tools Receiving Access', default=False)
     can_view_delivering = BooleanField('Tools Delivering Access', default=False)
     can_view_media = BooleanField('Media Access', default=False)
+    can_view_media_document = BooleanField('View Documents', default=False)
     can_view_activity_logs = BooleanField('Activity Log Access', default=False)
     can_add_sales = BooleanField('Add Sales', default=False)
     can_add_purchases = BooleanField('Add Purchases', default=False)
@@ -310,6 +313,7 @@ class UserEditForm(FlaskForm):
     can_add_users = BooleanField('Add Users', default=False)
     can_add_receiving = BooleanField('Add Receiving', default=False)
     can_add_delivering = BooleanField('Add Delivering', default=False)
+    can_add_media = BooleanField('Add Media', default=False)
 
     can_edit_sales = BooleanField('Edit Sales', default=False)
     can_edit_purchases = BooleanField('Edit Purchases', default=False)

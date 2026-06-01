@@ -27,21 +27,34 @@
 {% endblock %}
 {% block content %}
 <style>
-    .col-md-4 {
-        width: 10% !important;
-    }
+    @media (min-width: 992px) {
 
-    .h3,
-    h3 {
-        font-size: 1.4rem !important;
-    }
+        .container,
+        .container-fluid,
+        .container-lg,
+        .container-md,
+        .container-sm,
+        .container-xl,
+        .container-xxl {
+            padding-left: var(--bs-gutter-x, 0rem);
+        }
 
-    .card-stats {
-        margin-bottom: 0px !important;
-    }
+        .col-md-4 {
+            width: 10% !important;
+        }
 
-    .row {
-        --bs-gutter-x: 0.5rem !important;
+        .h3,
+        h3 {
+            font-size: 1.4rem !important;
+        }
+
+        .card-stats {
+            margin-bottom: 0px !important;
+        }
+
+        .row {
+            --bs-gutter-x: 0.5rem !important;
+        }
     }
 </style>
 <div class="container-fluid list-page">

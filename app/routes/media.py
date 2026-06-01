@@ -82,7 +82,7 @@ def upload():
 @bp.route('/download/<int:media_id>')
 @login_required
 def download(media_id):
-    if not current_user.is_admin and not current_user.can_view_media:
+    if not current_user.is_admin and not current_user.can_view_media_document:
         flash('Permission denied', 'danger')
         return redirect(url_for('dashboard.index'))
     
@@ -95,7 +95,7 @@ def download(media_id):
 @bp.route('/view/<int:media_id>')
 @login_required
 def view(media_id):
-    if not current_user.is_admin and not current_user.can_view_media:
+    if not current_user.is_admin and not current_user.can_view_media_document:
         flash('Permission denied', 'danger')
         return redirect(url_for('dashboard.index'))
     

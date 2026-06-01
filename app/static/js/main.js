@@ -33,13 +33,13 @@ function confirmAction(message, callback) {
 }
 
 // Auto-hide alerts
-$(document).ready(function() {
-    setTimeout(function() {
-        $('.alert').fadeOut('slow', function() {
-            $(this).remove();
-        });
-    }, 5000);
-});
+// $(document).ready(function() {
+//     setTimeout(function() {
+//         $('.alert').fadeOut('slow', function() {
+//             $(this).remove();
+//         });
+//     }, 5000);
+// });
 
 // Form validation
 function validateForm(formId) {

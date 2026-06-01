@@ -3,21 +3,34 @@
 
 {% block content %}
 <style>
-    .col-md-4 {
-        width: 10% !important;
-    }
+    @media (min-width: 992px) {
 
-    .h3,
-    h3 {
-        font-size: 1.4rem !important;
-    }
+        .container,
+        .container-fluid,
+        .container-lg,
+        .container-md,
+        .container-sm,
+        .container-xl,
+        .container-xxl {
+            padding-left: var(--bs-gutter-x, 0rem);
+        }
 
-    .card-stats {
-        margin-bottom: 0px !important;
-    }
+        .col-md-4 {
+            width: 10% !important;
+        }
 
-    .row {
-        --bs-gutter-x: 0.5rem !important;
+        .h3,
+        h3 {
+            font-size: 1.4rem !important;
+        }
+
+        .card-stats {
+            margin-bottom: 0px !important;
+        }
+
+        .row {
+            --bs-gutter-x: 0.5rem !important;
+        }
     }
 </style>
 <div class="container-fluid list-page">
@@ -140,7 +153,7 @@
     <!-- ── UNAPPROVED ALERT BOX (admin only) ──────────────────────────────── -->
     {% if current_user.is_admin and (unapproved_invoice_count > 0 or unapproved_payment_count > 0 or
     unapproved_advance_count > 0) %}
-    <div class="alert mb-4 border-0 shadow"
+    <div class="alert mb-4 border-0 shadow premium-alert"
         style="background: linear-gradient(135deg, #ff6b35 0%, #f7c59f 100%); border-left: 5px solid #e63946 !important;"
         role="alert">
         <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
@@ -192,9 +205,6 @@
                     <div class="fw-bold fs-5">PKR {{ "{:,.2f}".format(unapproved_invoice_total +
                         unapproved_payment_total + unapproved_advance_total) }}</div>
                 </div>
-                <a href="{{ url_for('sales.invoices', status='unapproved') }}" class="btn btn-light btn-sm fw-bold">
-                    <i class="fas fa-eye me-1"></i> View All Unapproved
-                </a>
             </div>
         </div>
     </div>

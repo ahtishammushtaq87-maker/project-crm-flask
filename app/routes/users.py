@@ -76,6 +76,7 @@ def create_user():
             can_view_receiving=form.can_view_receiving.data,
             can_view_delivering=form.can_view_delivering.data,
             can_view_media=form.can_view_media.data,
+            can_view_media_document=form.can_view_media_document.data,
             can_view_activity_logs=form.can_view_activity_logs.data,
             can_add_sales=form.can_add_sales.data,
             can_add_purchases=form.can_add_purchases.data,
@@ -215,6 +216,7 @@ def edit_user(id):
         user.can_view_receiving = form.can_view_receiving.data
         user.can_view_delivering = form.can_view_delivering.data
         user.can_view_media = form.can_view_media.data
+        user.can_view_media_document = form.can_view_media_document.data
         user.can_view_activity_logs = form.can_view_activity_logs.data
         user.can_add_sales = form.can_add_sales.data
         user.can_add_purchases = form.can_add_purchases.data
@@ -336,6 +338,7 @@ def edit_user(id):
         form.can_view_receiving.data = getattr(user, 'can_view_receiving', False)
         form.can_view_delivering.data = getattr(user, 'can_view_delivering', False)
         form.can_view_media.data = getattr(user, 'can_view_media', True)
+        form.can_view_media_document.data = getattr(user, 'can_view_media_document', False)
         form.can_view_activity_logs.data = getattr(user, 'can_view_activity_logs', False)
         form.can_add_sales.data = getattr(user, 'can_add_sales', False)
         form.can_add_purchases.data = getattr(user, 'can_add_purchases', False)

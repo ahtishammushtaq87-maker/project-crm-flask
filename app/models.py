@@ -132,6 +132,7 @@ class User(UserMixin, db.Model):
     
     # New Media Module Permissions
     can_view_media = db.Column(db.Boolean, default=True)
+    can_view_media_document = db.Column(db.Boolean, default=True)
     can_add_media = db.Column(db.Boolean, default=False)
     can_delete_media = db.Column(db.Boolean, default=False)
 
