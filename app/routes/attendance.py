@@ -325,50 +325,59 @@ def process_absences():
     record for the previous working day (Mon-Sat, after 5:00 PM shift end).
     Can also be triggered manually for a specific date.
     """
-    date_str = request.form.get('process_date')
-    if date_str:
-        try:
-            check_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-        except ValueError:
-            check_date = (datetime.now() - timedelta(days=1)).date()
-    else:
-        # Default: yesterday
-        check_date = (datetime.now() - timedelta(days=1)).date()
+    date_from_str = request.form.get('process_date_from')
+    date_to_str = request.form.get('process_date_to')
+    
+    # Fallback to single process_date if provided
+    process_date_single = request.form.get('process_date')
+    if process_date_single and not date_from_str:
+        date_from_str = process_date_single
+        date_to_str = process_date_single
 
-    # Skip Sundays
-    if check_date.weekday() == 6:
-        flash(f'{check_date} is Sunday — no absences to process.', 'info')
-        return redirect(url_for('attendance.index'))
+    if not date_from_str:
+        yesterday = (datetime.now() - timedelta(days=1)).date()
+        date_from = yesterday
+        date_to = yesterday
+    else:
+        date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
+        date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date() if date_to_str else date_from
 
     all_staff = Staff.query.filter_by(is_active=True).all()
     marked_count = 0
-    skipped = []
+    current_check = date_from
 
-    for staff in all_staff:
-        existing = Attendance.query.filter_by(staff_id=staff.id, date=check_date).first()
-
-        # Already has a record with clock-in, holiday, or already absent → skip
-        if existing and (existing.clock_in or existing.is_holiday or existing.is_absent):
-            skipped.append(staff.name)
+    while current_check <= date_to:
+        # Skip Sundays
+        if current_check.weekday() == 6:
+            current_check += timedelta(days=1)
             continue
 
-        if not existing:
-            existing = Attendance(staff_id=staff.id, date=check_date, notes='Auto-absent: no clock-in recorded')
-            db.session.add(existing)
+        for staff in all_staff:
+            existing = Attendance.query.filter_by(staff_id=staff.id, date=current_check).first()
 
-        existing.staff = staff
-        existing.is_absent = True
-        existing.is_holiday = False
-        existing.clock_in = None
-        existing.clock_out = None
-        existing.hours_worked = 0
-        existing.minutes_worked = 0
-        existing.earned_amount = 0
-        existing.calculate_hourly_rate()
-        marked_count += 1
+            # Already has a record with clock-in, holiday, or already absent → skip
+            if existing and (existing.clock_in or existing.is_holiday or existing.is_absent):
+                continue
+
+            if not existing:
+                existing = Attendance(staff_id=staff.id, date=current_check, notes='Auto-absent: no clock-in recorded')
+                db.session.add(existing)
+
+            existing.staff = staff
+            existing.is_absent = True
+            existing.is_holiday = False
+            existing.clock_in = None
+            existing.clock_out = None
+            existing.hours_worked = 0
+            existing.minutes_worked = 0
+            existing.earned_amount = 0
+            existing.calculate_hourly_rate()
+            marked_count += 1
+
+        current_check += timedelta(days=1)
 
     db.session.commit()
-    flash(f'Processed absences for {check_date}: {marked_count} staff marked absent, {len(skipped)} skipped.', 'success')
+    flash(f'Processed absences from {date_from} to {date_to}: {marked_count} total staff-days marked absent.', 'success')
     return redirect(url_for('attendance.index'))
 
 

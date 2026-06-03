@@ -36,18 +36,21 @@ def staff_list():
         query = query.filter(Staff.is_active == True)
     elif status == 'inactive':
         query = query.filter(Staff.is_active == False)
-    if start_date:
-        try:
-            query = query.filter(Staff.joining_date >= datetime.strptime(start_date, '%Y-%m-%d').date())
-        except ValueError: pass
-    if end_date:
-        try:
-            query = query.filter(Staff.joining_date <= datetime.strptime(end_date, '%Y-%m-%d').date())
-        except ValueError: pass
-
     query = apply_saved_filter_to_query(query, 'staff', request.args)
     staff_members = query.all()
     
+    # Pre-process dates for template calculations
+    start_date_obj = None
+    end_date_obj = None
+    if start_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+        except ValueError: pass
+    if end_date:
+        try:
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+        except ValueError: pass
+
     # For selection dropdowns
     all_staff = Staff.query.with_entities(Staff.id, Staff.name).order_by(Staff.name).all()
     designations = db.session.query(Staff.designation).distinct().filter(Staff.designation != None).all()
@@ -62,6 +65,8 @@ def staff_list():
                            selected_status=status,
                            selected_start_date=start_date,
                            selected_end_date=end_date,
+                           start_date_obj=start_date_obj,
+                           end_date_obj=end_date_obj,
                            active_module='staff')
 
 @bp.route('/staff/recalculate-all', methods=['POST'])
@@ -893,6 +898,8 @@ def get_staff_history(staff_id):
             'total_bonus': total_bonus,
             'total_other_deductions': total_other_deductions,
             'total_salary_remaining': staff.total_salary_remaining,
+            'total_attendance_earnings': staff.total_attendance_earnings,
+            'total_absents': staff.total_absents,
             'agreement_letter': staff.agreement_letter
         },
         'payments': [{
@@ -909,4 +916,20 @@ def get_staff_history(staff_id):
             'payment_method': p.payment_method,
             'status': p.status
         } for p in payments]
+    })
+
+@bp.route('/api/get_attendance_salary/<int:staff_id>/<int:month>/<int:year>')
+@login_required
+def get_attendance_salary(staff_id, month, year):
+    from calendar import monthrange
+    from datetime import date
+    staff = Staff.query.get_or_404(staff_id)
+    _, last_day = monthrange(year, month)
+    start_date = date(year, month, 1)
+    end_date = date(year, month, last_day)
+    
+    earnings = staff.get_attendance_earnings(start_date, end_date)
+    return jsonify({
+        'attendance_salary': earnings,
+        'base_salary': staff.monthly_salary
     })

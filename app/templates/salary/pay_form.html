@@ -25,7 +25,7 @@
                         </ul>
                     </div>
                     {% endif %}
-                    
+
                     <div class="row g-3 mb-4">
                         <div class="col-md-6">
                             <label class="form-label fw-bold small text-muted text-uppercase">Month</label>
@@ -41,28 +41,47 @@
                         <div class="card-body">
                             <div class="row g-3">
                                 <div class="col-md-6">
-                                    <label class="form-label fw-bold small text-muted text-uppercase">Base Salary</label>
+                                    <label class="form-label fw-bold small text-muted text-uppercase">Base
+                                        Salary</label>
                                     {{ form.base_salary(class="form-control", readonly=True, id="base_salary") }}
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label fw-bold small text-muted text-uppercase text-danger">Advance Deduction</label>
-                                    {{ form.advance_deduction(class="form-control text-danger", id="advance_deduction") }}
-                                    <small class="text-muted">Total Pending: {{ staff.total_outstanding_advance | round(2) }}</small>
+                                    <label
+                                        class="form-label fw-bold small text-muted text-uppercase text-danger">Advance
+                                        Deduction</label>
+                                    {{ form.advance_deduction(class="form-control text-danger", id="advance_deduction")
+                                    }}
+                                    <small class="text-muted">Total Pending: {{ staff.total_outstanding_advance |
+                                        round(2) }}</small>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label fw-bold small text-muted text-uppercase text-info">Use Joining Advance</label>
-                                    {{ form.joining_advance_deduction(class="form-control text-info", id="joining_advance_deduction") }}
+                                    <label class="form-label fw-bold small text-muted text-uppercase text-info">Use
+                                        Joining Advance</label>
+                                    {{ form.joining_advance_deduction(class="form-control text-info",
+                                    id="joining_advance_deduction") }}
                                     <div class="mt-1">
-                                        <span class="badge bg-info-soft text-info">Current Balance: {{ staff.remaining_joining_advance | round(2) }}</span>
-                                        <span class="badge bg-light text-muted border ms-1">After: <span id="remaining_preview">{{ staff.remaining_joining_advance | round(2) }}</span></span>
+                                        <span class="badge bg-info-soft text-info">Current Balance: {{
+                                            staff.remaining_joining_advance | round(2) }}</span>
+                                        <span class="badge bg-light text-muted border ms-1">After: <span
+                                                id="remaining_preview">{{ staff.remaining_joining_advance | round(2)
+                                                }}</span></span>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label fw-bold small text-muted text-uppercase text-success">Bonus</label>
+                                    <label
+                                        class="form-label fw-bold small text-muted text-uppercase text-success">Bonus</label>
                                     {{ form.bonus(class="form-control text-success", id="bonus") }}
                                 </div>
+                                <div class="col-md-6" id="attendance_salary_container" style="display:none;">
+                                    <label
+                                        class="form-label fw-bold small text-muted text-uppercase text-primary">Attendance
+                                        Salv. (earned)</label>
+                                    <input type="text" class="form-control text-primary fw-bold" id="attendance_salary"
+                                        readonly value="0.00">
+                                </div>
                                 <div class="col-md-6">
-                                    <label class="form-label fw-bold small text-muted text-uppercase text-danger">Other Deductions</label>
+                                    <label class="form-label fw-bold small text-muted text-uppercase text-danger">Other
+                                        Deductions</label>
                                     {{ form.other_deductions(class="form-control text-danger", id="other_deductions") }}
                                 </div>
                             </div>
@@ -114,7 +133,7 @@
 
 {% block extra_js %}
 <script>
-    $(document).ready(function() {
+    $(document).ready(function () {
         function calculateNet() {
             const base = parseFloat($('#base_salary').val()) || 0;
             const bonus = parseFloat($('#bonus').val()) || 0;
@@ -122,17 +141,44 @@
             const joining_deduct = parseFloat($('#joining_advance_deduction').val()) || 0;
             const current_remaining = parseFloat('{{ staff.remaining_joining_advance or 0 }}');
             const others = parseFloat($('#other_deductions').val()) || 0;
-            
+
             // Update preview of remaining balance
             const new_remaining = Math.max(0, current_remaining - joining_deduct);
             $('#remaining_preview').text(new_remaining.toFixed(2));
-            
+
             const net = base + bonus - advance - joining_deduct - others;
-            $('#net_salary_display').text(net.toFixed(2));
+            $('#net_salary_display').text(Math.max(0, net).toFixed(2));
         }
 
+        function fetchAttendanceSalary() {
+            const staffId = '{{ staff.id }}';
+            const month = $('#month').val();
+            const year = $('#year').val();
+
+            if (month && year) {
+                $.get(`/salary/api/get_attendance_salary/${staffId}/${month}/${year}`, function (data) {
+                    $('#attendance_salary_container').fadeIn();
+                    const att_sal = data.attendance_salary || 0;
+                    $('#attendance_salary').val(att_sal.toFixed(2));
+
+                    const base = parseFloat($('#base_salary').val()) || 0;
+                    if (att_sal < base) {
+                        const diff = base - att_sal;
+                        $('#other_deductions').val(diff.toFixed(2));
+                    } else {
+                        $('#other_deductions').val(0);
+                    }
+                    calculateNet();
+                });
+            }
+        }
+
+        $('#month, #year').on('change', fetchAttendanceSalary);
         $('#base_salary, #bonus, #advance_deduction, #joining_advance_deduction, #other_deductions').on('input change', calculateNet);
-        calculateNet(); // Initial calculation
+
+        // Initial setup
+        fetchAttendanceSalary();
+        calculateNet();
     });
 </script>
 {% endblock %}

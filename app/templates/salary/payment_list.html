@@ -140,7 +140,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <td class="text-success">{{ "%.2f" % payment.bonus }}</td>
                         <td class="text-danger">{{ "%.2f" % payment.advance_deduction }}</td>
                         <td class="text-danger">{{ "%.2f" % payment.other_deductions }}</td>
-                        <td><strong class="text-success">{{ "%.2f" % payment.net_salary }}</strong></td>
+                        <td><strong class="text-success">{{ "%.2f" % ([payment.net_salary, 0] | max) }}</strong></td>
                         <td><small class="text-muted">{{ payment.payment_date.strftime('%d %b, %y') }}</small></td>
                         <td><span class="badge bg-light text-dark px-2 py-1 border small">{{ payment.payment_method }}</span></td>
                         <td>

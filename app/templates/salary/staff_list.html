@@ -211,6 +211,10 @@
                         <th class="px-4 border-0">Staff Name</th>
                         <th>Designation</th>
                         <th>Base Salary</th>
+                        <th>Att. Salary</th>
+                        <th>Absents</th>
+                        <th>Total Hours</th>
+                        <th>Mon. Hours</th>
                         <th>J.A. Initial</th>
                         <th>J.A. Remain</th>
                         <th>J.A. Paid</th>
@@ -247,19 +251,23 @@
                         </td>
                         <td>{{ staff.designation or '---' }}</td>
                         <td>{{ "%.2f" % staff.monthly_salary }}</td>
+                        <td class="text-primary fw-bold">{{ "%.2f" % staff.get_attendance_earnings(start_date_obj, end_date_obj) }}</td>
+                        <td class="text-danger fw-bold text-center">{{ staff.get_absents_count(start_date_obj, end_date_obj) }}</td>
+                        <td class="text-info fw-bold text-center">{{ "%.1f" % staff.get_total_hours(start_date_obj, end_date_obj) }}h</td>
+                        <td class="text-secondary fw-bold text-center">{{ "%.1f" % staff.current_month_hours }}h</td>
                         <td>{{ "%.2f" % (staff.joining_advance or 0) }}</td>
                         <td class="text-info">{{ "%.2f" % (staff.remaining_joining_advance or 0) }}</td>
-                        <td class="text-success">{{ "%.2f" % staff.joining_advance_paid }}</td>
-                        <td class="text-success">+{{ "%.2f" % staff.total_bonus_paid }}</td>
-                        <td class="text-danger">-{{ "%.2f" % staff.total_paid_regular_advance }}</td>
+                        <td class="text-success">{{ "%.2f" % staff.get_joining_adv_paid(start_date_obj, end_date_obj) }}</td>
+                        <td class="text-success">+{{ "%.2f" % staff.get_bonus_paid(start_date_obj, end_date_obj) }}</td>
+                        <td class="text-danger">-{{ "%.2f" % staff.get_regular_adv_deducted(start_date_obj, end_date_obj) }}</td>
                         <td>
-                            {% set outstanding = staff.total_outstanding_advance %}
+                            {% set outstanding = staff.get_outstanding_advance(start_date_obj, end_date_obj) %}
                             <span class="badge {% if outstanding > 0 %}bg-warning text-dark{% else %}bg-light text-muted{% endif %} px-2 py-1">
                                 {{ "%.2f" % outstanding }}
                             </span>
                         </td>
-                        <td class="text-danger">-{{ "%.2f" % staff.total_other_deductions }}</td>
-                        <td><strong class="text-primary">{{ "%.2f" % (staff.salary_payments | sum(attribute='net_salary')) }}</strong></td>
+                        <td class="text-danger">-{{ "%.2f" % staff.get_other_deductions(start_date_obj, end_date_obj) }}</td>
+                        <td><strong class="text-primary">{{ "%.2f" % ([staff.get_net_paid(start_date_obj, end_date_obj), 0] | max) }}</strong></td>
                         <td>
                             {% if staff.agreement_letter %}
                             <a href="{{ url_for('static', filename=staff.agreement_letter) }}" target="_blank" class="btn btn-sm btn-outline-info">
@@ -520,6 +528,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="stat-card-inner border-primary">
                     <div class="stat-label">Total Bonus</div>
                     <div class="stat-value text-primary">+₨ ${staff.total_bonus.toLocaleString()}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card-inner border-primary">
+                    <div class="stat-label">Attendance Salv.</div>
+                    <div class="stat-value text-primary">₨ ${staff.total_attendance_earnings.toLocaleString()}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card-inner border-danger">
+                    <div class="stat-label">Total Absents</div>
+                    <div class="stat-value text-danger">${staff.total_absents} Days</div>
                 </div>
             </div>
             <div class="col-6 col-md-3">

@@ -1453,17 +1453,92 @@ class Staff(db.Model):
     @property
     def total_outstanding_advance(self):
         """Calculate total non-deducted advances"""
-        return sum(advance.amount for advance in self.advances if not advance.is_deducted)
+        return self.get_outstanding_advance()
+
+    def get_outstanding_advance(self, start_date=None, end_date=None):
+        """Calculate total non-deducted advances within a date range"""
+        advs = self.advances
+        if start_date:
+            advs = [a for a in advs if a.date >= start_date]
+        if end_date:
+            advs = [a for a in advs if a.date <= end_date]
+        return sum(advance.amount for advance in advs if not advance.is_deducted)
     
+    @property
+    def total_attendance_earnings(self):
+        """Calculate total earnings from all attendance records"""
+        return self.get_attendance_earnings()
+
+    def get_attendance_earnings(self, start_date=None, end_date=None):
+        """Calculate total earnings from attendance records within a date range"""
+        records = self.attendance_records
+        if start_date:
+            records = [r for r in records if r.date >= start_date]
+        if end_date:
+            records = [r for r in records if r.date <= end_date]
+        return sum(r.earned_amount for r in records if r.earned_amount)
+
+    @property
+    def total_absents(self):
+        """Calculate total absent days from attendance records"""
+        return self.get_absents_count()
+
+    def get_absents_count(self, start_date=None, end_date=None):
+        """Calculate total absent days within a date range"""
+        records = self.attendance_records
+        if start_date:
+            records = [r for r in records if r.date >= start_date]
+        if end_date:
+            records = [r for r in records if r.date <= end_date]
+        return sum(1 for r in records if getattr(r, 'is_absent', False))
+
+    def get_total_hours(self, start_date=None, end_date=None):
+        """Calculate total hours worked within a date range"""
+        records = self.attendance_records
+        if start_date:
+            records = [r for r in records if r.date >= start_date]
+        if end_date:
+            records = [r for r in records if r.date <= end_date]
+        
+        total_h = sum(r.hours_worked for r in records if r.hours_worked)
+        total_m = sum(r.minutes_worked for r in records if r.minutes_worked)
+        return total_h + (total_m / 60.0)
+
+    @property
+    def current_month_hours(self):
+        """Calculate total hours worked in the current calendar month"""
+        from datetime import date
+        today = date.today()
+        start_of_month = date(today.year, today.month, 1)
+        return self.get_total_hours(start_date=start_of_month)
+
     @property
     def total_paid_regular_advance(self):
         """Calculate total deducted regular advances"""
-        return sum(advance.amount for advance in self.advances if advance.is_deducted)
+        return self.get_regular_adv_deducted()
+
+    def get_regular_adv_deducted(self, start_date=None, end_date=None):
+        """Calculate regular advances deducted within a date range"""
+        payments = self.salary_payments
+        if start_date:
+            payments = [p for p in payments if p.payment_date and p.payment_date >= start_date]
+        if end_date:
+            payments = [p for p in payments if p.payment_date and p.payment_date <= end_date]
+        return sum(p.advance_deduction for p in payments if p.advance_deduction)
     
     @property
     def joining_advance_paid(self):
         """Calculate joining advance already paid/deducted"""
-        return (self.joining_advance or 0) - (self.remaining_joining_advance or 0)
+        return self.get_joining_adv_paid()
+
+    def get_joining_adv_paid(self, start_date=None, end_date=None):
+        """Calculate joining advances deducted within a date range"""
+        payments = self.salary_payments
+        if start_date:
+            payments = [p for p in payments if p.payment_date and p.payment_date >= start_date]
+        if end_date:
+            payments = [p for p in payments if p.payment_date and p.payment_date <= end_date]
+        return sum(p.joining_advance_deduction for p in payments if p.joining_advance_deduction)
 
     @property
     def total_paid_advance(self):
@@ -1473,12 +1548,39 @@ class Staff(db.Model):
     @property
     def total_bonus_paid(self):
         """Total sum of all bonuses across all payments"""
-        return sum(p.bonus for p in self.salary_payments if p.bonus)
+        return self.get_bonus_paid()
+
+    def get_bonus_paid(self, start_date=None, end_date=None):
+        """Calculate bonuses paid within a date range"""
+        payments = self.salary_payments
+        if start_date:
+            payments = [p for p in payments if p.payment_date and p.payment_date >= start_date]
+        if end_date:
+            payments = [p for p in payments if p.payment_date and p.payment_date <= end_date]
+        return sum(p.bonus for p in payments if p.bonus)
 
     @property
     def total_other_deductions(self):
         """Total sum of all other deductions across all payments"""
-        return sum(p.other_deductions for p in self.salary_payments if p.other_deductions)
+        return self.get_other_deductions()
+
+    def get_other_deductions(self, start_date=None, end_date=None):
+        """Calculate other deductions within a date range"""
+        payments = self.salary_payments
+        if start_date:
+            payments = [p for p in payments if p.payment_date and p.payment_date >= start_date]
+        if end_date:
+            payments = [p for p in payments if p.payment_date and p.payment_date <= end_date]
+        return sum(p.other_deductions for p in payments if p.other_deductions)
+
+    def get_net_paid(self, start_date=None, end_date=None):
+        """Calculate net salary paid within a date range"""
+        payments = self.salary_payments
+        if start_date:
+            payments = [p for p in payments if p.payment_date and p.payment_date >= start_date]
+        if end_date:
+            payments = [p for p in payments if p.payment_date and p.payment_date <= end_date]
+        return sum(p.net_salary for p in payments if p.net_salary)
     
     @property
     def total_salary_remaining(self):

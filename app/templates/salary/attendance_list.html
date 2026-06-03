@@ -162,13 +162,23 @@
             </div>
             
             <div class="d-flex flex-column gap-1" style="min-width: 200px;">
-                <form method="POST" action="{{ url_for('attendance.process_absences') }}" onsubmit="return confirm('Mark all staff with no clock-in for the selected date as Absent?')">
+                <form method="POST" action="{{ url_for('attendance.process_absences') }}" onsubmit="return confirm('Mark all staff with no clock-in for the selected range as Absent?')">
                     <button type="submit" class="btn btn-outline-danger w-100 mb-1">
                         <i class="fas fa-user-times me-2"></i> Process Absences
                     </button>
-                    <div class="input-group input-group-sm">
-                        <span class="input-group-text py-0 px-2" style="font-size: 0.7rem;">Check Date:</span>
-                        <input type="date" name="process_date" class="form-control form-control-sm" value="{{ (now - timedelta(days=1)).strftime('%Y-%m-%d') }}">
+                    <div class="row g-1">
+                        <div class="col-6">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text py-0 px-2" style="font-size: 0.65rem;">From:</span>
+                                <input type="date" name="process_date_from" class="form-control form-control-sm" value="{{ (now - timedelta(days=1)).strftime('%Y-%m-%d') }}">
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text py-0 px-2" style="font-size: 0.65rem;">To:</span>
+                                <input type="date" name="process_date_to" class="form-control form-control-sm" value="{{ (now - timedelta(days=1)).strftime('%Y-%m-%d') }}">
+                            </div>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -204,9 +214,14 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <button type="submit" class="btn btn-primary w-100">
                     <i class="fas fa-filter"></i> Filter
+                </button>
+            </div>
+            <div class="col-md-1">
+                <button type="button" class="btn btn-outline-secondary w-100" onclick="clearFilters()">
+                    <i class="fas fa-times"></i> Clear
                 </button>
             </div>
         </form>
@@ -542,6 +557,40 @@
                 form.querySelector('[name="notes"]').value = n;
             }
         });
+    }
+
+    // Filter Persistence logic
+    document.addEventListener('DOMContentLoaded', function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        // If we have URL params, save them to localStorage
+        if (urlParams.has('date_from') || urlParams.has('date_to') || urlParams.has('staff_id')) {
+            localStorage.setItem('attendance_filter_from', urlParams.get('date_from') || '');
+            localStorage.setItem('attendance_filter_to', urlParams.get('date_to') || '');
+            localStorage.setItem('attendance_filter_staff', urlParams.get('staff_id') || '');
+        } else {
+            // If no URL params, try to load from localStorage
+            const savedFrom = localStorage.getItem('attendance_filter_from');
+            const savedTo = localStorage.getItem('attendance_filter_to');
+            const savedStaff = localStorage.getItem('attendance_filter_staff');
+            
+            if (savedFrom || savedTo || savedStaff) {
+                // Redirect with saved filters if they exist
+                const params = new URLSearchParams();
+                if (savedFrom) params.set('date_from', savedFrom);
+                if (savedTo) params.set('date_to', savedTo);
+                if (savedStaff) params.set('staff_id', savedStaff);
+                
+                window.location.href = window.location.pathname + '?' + params.toString();
+            }
+        }
+    });
+
+    function clearFilters() {
+        localStorage.removeItem('attendance_filter_from');
+        localStorage.removeItem('attendance_filter_to');
+        localStorage.removeItem('attendance_filter_staff');
+        window.location.href = window.location.pathname;
     }
 </script>
 {% endblock %}
