@@ -20,9 +20,49 @@ from app.routes.filters import apply_saved_filter_to_query
 @login_required
 def staff_list():
     query = Staff.query
+    
+    # Simple manual filters
+    staff_id = request.args.get('staff_id', type=int)
+    designation = request.args.get('designation')
+    status = request.args.get('status')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    if staff_id:
+        query = query.filter(Staff.id == staff_id)
+    if designation:
+        query = query.filter(Staff.designation.ilike(f'%{designation}%'))
+    if status == 'active':
+        query = query.filter(Staff.is_active == True)
+    elif status == 'inactive':
+        query = query.filter(Staff.is_active == False)
+    if start_date:
+        try:
+            query = query.filter(Staff.joining_date >= datetime.strptime(start_date, '%Y-%m-%d').date())
+        except ValueError: pass
+    if end_date:
+        try:
+            query = query.filter(Staff.joining_date <= datetime.strptime(end_date, '%Y-%m-%d').date())
+        except ValueError: pass
+
     query = apply_saved_filter_to_query(query, 'staff', request.args)
     staff_members = query.all()
-    return render_template('salary/staff_list.html', staff_members=staff_members, active_module='staff')
+    
+    # For selection dropdowns
+    all_staff = Staff.query.with_entities(Staff.id, Staff.name).order_by(Staff.name).all()
+    designations = db.session.query(Staff.designation).distinct().filter(Staff.designation != None).all()
+    designations = [d[0] for d in designations if d[0]]
+    
+    return render_template('salary/staff_list.html', 
+                           staff_members=staff_members, 
+                           all_staff=all_staff,
+                           designations=designations,
+                           selected_staff_id=staff_id,
+                           selected_designation=designation,
+                           selected_status=status,
+                           selected_start_date=start_date,
+                           selected_end_date=end_date,
+                           active_module='staff')
 
 @bp.route('/staff/recalculate-all', methods=['POST'])
 @login_required
@@ -353,9 +393,51 @@ def delete_advance(id):
 @login_required
 def payment_list():
     query = SalaryPayment.query
+    
+    staff_id = request.args.get('staff_id', type=int)
+    month = request.args.get('month', type=int)
+    year = request.args.get('year', type=int)
+    status = request.args.get('status')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+
+    if staff_id:
+        query = query.filter(SalaryPayment.staff_id == staff_id)
+    if month:
+        query = query.filter(SalaryPayment.month == month)
+    if year:
+        query = query.filter(SalaryPayment.year == year)
+    if status:
+        query = query.filter(SalaryPayment.status == status)
+    if start_date:
+        try:
+            query = query.filter(SalaryPayment.payment_date >= datetime.strptime(start_date, '%Y-%m-%d').date())
+        except ValueError: pass
+    if end_date:
+        try:
+            query = query.filter(SalaryPayment.payment_date <= datetime.strptime(end_date, '%Y-%m-%d').date())
+        except ValueError: pass
+
     query = apply_saved_filter_to_query(query, 'salary_payment', request.args)
     payments = query.order_by(SalaryPayment.year.desc(), SalaryPayment.month.desc()).all()
-    return render_template('salary/payment_list.html', payments=payments, auto_download_id=None, active_module='salary_payment')
+    
+    # Selection options
+    all_staff = Staff.query.with_entities(Staff.id, Staff.name).order_by(Staff.name).all()
+    years = db.session.query(SalaryPayment.year).distinct().order_by(SalaryPayment.year.desc()).all()
+    years = [y[0] for y in years]
+    
+    return render_template('salary/payment_list.html', 
+                           payments=payments, 
+                           all_staff=all_staff,
+                           years=years,
+                           selected_staff_id=staff_id,
+                           selected_month=month,
+                           selected_year=year,
+                           selected_status=status,
+                           selected_start_date=start_date,
+                           selected_end_date=end_date,
+                           auto_download_id=None, 
+                           active_module='salary_payment')
 
 @bp.route('/payments/<int:paid>')
 @login_required
@@ -427,13 +509,37 @@ def pay_salary(staff_id):
 
         # Mark advances as deducted
         if form.advance_deduction.data > 0:
+            total_to_deduct = form.advance_deduction.data
             unpaid_advances = SalaryAdvance.query.filter_by(staff_id=staff.id, is_deducted=False).order_by(SalaryAdvance.date.asc()).all()
             deducted_so_far = 0
+            
             for adv in unpaid_advances:
-                if deducted_so_far < form.advance_deduction.data:
+                remaining_to_deduct = total_to_deduct - deducted_so_far
+                if remaining_to_deduct <= 0:
+                    break
+                
+                if adv.amount <= remaining_to_deduct:
+                    # Fully deduct this advance
                     adv.is_deducted = True
                     adv.salary_payment_id = payment.id
                     deducted_so_far += adv.amount
+                else:
+                    # Partially deduct this advance
+                    # 1. Create a new advance for the remaining part
+                    remaining_amount = adv.amount - remaining_to_deduct
+                    new_adv = SalaryAdvance(
+                        staff_id=staff.id,
+                        amount=remaining_amount,
+                        date=adv.date,
+                        description=f"{adv.description or 'Advance'} (Remaining from {adv.date})"
+                    )
+                    db.session.add(new_adv)
+                    
+                    # 2. Update current advance to the deducted amount and mark as fully deducted
+                    adv.amount = remaining_to_deduct
+                    adv.is_deducted = True
+                    adv.salary_payment_id = payment.id
+                    deducted_so_far += remaining_to_deduct
         
         db.session.commit()
         flash(f'Salary processed for {staff.name}. Payment ID: {payment.id}', 'success')

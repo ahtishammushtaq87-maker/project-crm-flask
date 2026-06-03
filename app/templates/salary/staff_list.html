@@ -152,7 +152,54 @@
     </div>
 </div>
 
-<div class="card shadow-sm border-0 rounded-3">
+<div class="card shadow-sm border-0 mb-4 rounded-3">
+    <div class="card-body">
+        <form method="GET" class="row g-3">
+            <div class="col-md-3">
+                <label for="staff_id" class="form-label small text-muted text-uppercase fw-bold">Staff member</label>
+                <select name="staff_id" id="staff_id" class="form-select searchable-select">
+                    <option value="">All Staff</option>
+                    {% for s in all_staff %}
+                    <option value="{{ s.id }}" {% if selected_staff_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="designation" class="form-label small text-muted text-uppercase fw-bold">Designation</label>
+                <select name="designation" id="designation" class="form-select searchable-select">
+                    <option value="">All Designations</option>
+                    {% for d in designations %}
+                    <option value="{{ d }}" {% if selected_designation == d %}selected{% endif %}>{{ d }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="status" class="form-label small text-muted text-uppercase fw-bold">Status</label>
+                <select name="status" id="status" class="form-select">
+                    <option value="">All Statuses</option>
+                    <option value="active" {% if selected_status == 'active' %}selected{% endif %}>Active Only</option>
+                    <option value="inactive" {% if selected_status == 'inactive' %}selected{% endif %}>Inactive Only</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="start_date" class="form-label small text-muted text-uppercase fw-bold">Joined From</label>
+                <input type="date" name="start_date" id="start_date" class="form-control" value="{{ selected_start_date or '' }}">
+            </div>
+            <div class="col-md-2">
+                <label for="end_date" class="form-label small text-muted text-uppercase fw-bold">Joined To</label>
+                <input type="date" name="end_date" id="end_date" class="form-control" value="{{ selected_end_date or '' }}">
+            </div>
+            <div class="col-12 d-flex justify-content-end align-items-center mt-3">
+                <a href="{{ url_for('salary.staff_list') }}" class="btn btn-light rounded-pill px-4 me-2">
+                    <i class="fas fa-undo me-2"></i>Reset
+                </a>
+                <button type="submit" class="btn btn-primary rounded-pill px-4">
+                    <i class="fas fa-filter me-2"></i>Apply Filters
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0 datatable-export" data-export-title="Staff List">
@@ -349,6 +396,26 @@
         .stat-value { font-size: 0.9rem; }
     }
 </style>
+
+{% block extra_js %}
+<script>
+    $(document).ready(function() {
+        $('.searchable-select').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: $(this).data('placeholder') || 'Select an option',
+            allowClear: true
+        });
+    });
+</script>
+{% if auto_download_id %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    window.open('{{ url_for("salary.download_pay_stub", id=auto_download_id) }}', '_blank');
+});
+</script>
+{% endif %}
+{% endblock %}
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {

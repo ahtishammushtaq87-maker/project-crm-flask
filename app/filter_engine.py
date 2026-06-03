@@ -155,6 +155,7 @@ def _build_field_registry():
             'designation':{'expr': lambda: Staff.designation,  'type': 'string'},
             'phone':      {'expr': lambda: Staff.phone,        'type': 'string'},
             'monthly_salary': {'expr': lambda: Staff.monthly_salary, 'type': 'number'},
+            'joining_date': {'expr': lambda: Staff.joining_date, 'type': 'date'},
             'is_active':  {'expr': lambda: Staff.is_active,    'type': 'boolean'},
         },
         # === MANUFACTURING ORDER MODULE ===
