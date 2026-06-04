@@ -214,7 +214,6 @@
                         <th>Att. Salary</th>
                         <th>Absents</th>
                         <th>Total Hours</th>
-                        <th>Mon. Hours</th>
                         <th>J.A. Initial</th>
                         <th>J.A. Remain</th>
                         <th>J.A. Paid</th>
@@ -254,7 +253,6 @@
                         <td class="text-primary fw-bold">{{ "%.2f" % staff.get_attendance_earnings(start_date_obj, end_date_obj) }}</td>
                         <td class="text-danger fw-bold text-center">{{ staff.get_absents_count(start_date_obj, end_date_obj) }}</td>
                         <td class="text-info fw-bold text-center">{{ "%.1f" % staff.get_total_hours(start_date_obj, end_date_obj) }}h</td>
-                        <td class="text-secondary fw-bold text-center">{{ "%.1f" % staff.current_month_hours }}h</td>
                         <td>{{ "%.2f" % (staff.joining_advance or 0) }}</td>
                         <td class="text-info">{{ "%.2f" % (staff.remaining_joining_advance or 0) }}</td>
                         <td class="text-success">{{ "%.2f" % staff.get_joining_adv_paid(start_date_obj, end_date_obj) }}</td>

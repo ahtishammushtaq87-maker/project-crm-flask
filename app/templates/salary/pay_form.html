@@ -49,10 +49,11 @@
                                     <label
                                         class="form-label fw-bold small text-muted text-uppercase text-danger">Advance
                                         Deduction</label>
-                                    {{ form.advance_deduction(class="form-control text-danger", id="advance_deduction")
-                                    }}
-                                    <small class="text-muted">Total Pending: {{ staff.total_outstanding_advance |
-                                        round(2) }}</small>
+                                    {{ form.advance_deduction(class="form-control text-danger", id="advance_deduction") }}
+                                    <div class="mt-1">
+                                        <span class="badge bg-danger-soft text-danger">Pending: {{ staff.total_outstanding_advance | round(2) }}</span>
+                                        <span class="badge bg-light text-muted border ms-1">After: <span id="adv_remaining_preview">{{ staff.total_outstanding_advance | round(2) }}</span></span>
+                                    </div>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label fw-bold small text-muted text-uppercase text-info">Use
@@ -97,7 +98,7 @@
                     <div class="row g-3 mb-4">
                         <div class="col-md-6">
                             <label class="form-label fw-bold small text-muted text-uppercase">Payment Date</label>
-                            {{ form.payment_date(class="form-control", type="date") }}
+                            {{ form.payment_date(class="form-control", type="date", id="payment_date") }}
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold small text-muted text-uppercase">Method</label>
@@ -142,12 +143,27 @@
             const current_remaining = parseFloat('{{ staff.remaining_joining_advance or 0 }}');
             const others = parseFloat($('#other_deductions').val()) || 0;
 
-            // Update preview of remaining balance
+            // Update preview of joining advance
             const new_remaining = Math.max(0, current_remaining - joining_deduct);
             $('#remaining_preview').text(new_remaining.toFixed(2));
 
+            // Update preview of regular advance
+            const current_adv_pending = parseFloat('{{ staff.total_outstanding_advance or 0 }}');
+            const new_adv_remaining = Math.max(0, current_adv_pending - advance);
+            $('#adv_remaining_preview').text(new_adv_remaining.toFixed(2));
+
             const net = base + bonus - advance - joining_deduct - others;
             $('#net_salary_display').text(Math.max(0, net).toFixed(2));
+        }
+
+        function updatePaymentDate() {
+            const month = parseInt($('#month').val());
+            const year = parseInt($('#year').val());
+            if (month && year) {
+                const lastDay = new Date(year, month, 0).getDate();
+                const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+                $('#payment_date').val(dateStr);
+            }
         }
 
         function fetchAttendanceSalary() {
@@ -168,12 +184,26 @@
                     } else {
                         $('#other_deductions').val(0);
                     }
+
+                    // Auto-fill Advance Logic
+                    const pendingAdv = parseFloat('{{ staff.total_outstanding_advance or 0 }}');
+                    if (pendingAdv > 0) {
+                        if (pendingAdv > att_sal) {
+                            $('#advance_deduction').val(att_sal.toFixed(2));
+                        } else {
+                            $('#advance_deduction').val(pendingAdv.toFixed(2));
+                        }
+                    }
+
+                    updatePaymentDate();
                     calculateNet();
                 });
             }
         }
 
-        $('#month, #year').on('change', fetchAttendanceSalary);
+        $('#month, #year').on('change', function() {
+            fetchAttendanceSalary();
+        });
         $('#base_salary, #bonus, #advance_deduction, #joining_advance_deduction, #other_deductions').on('input change', calculateNet);
 
         // Initial setup
