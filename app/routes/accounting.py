@@ -925,12 +925,39 @@ def profit_loss():
 @bp.route('/expenses')
 @login_required
 def expenses():
-    # Get filter parameters
-    vendor_id = request.args.get('vendor_id', type=int)
-    category_id = request.args.get('category_id', type=int)
-    mo_id = request.args.get('mo_id', type=int)
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
+    from flask import session
+    
+    # Check for reset trigger
+    if request.args.get('reset'):
+        session.pop('expense_filters', None)
+        return redirect(url_for('accounting.expenses'))
+
+    # Helper to get either from request.args or from session
+    def get_filter(name, type_func=None):
+        val = request.args.get(name)
+        if val is not None:
+            # Update session if value is present in request
+            if 'expense_filters' not in session:
+                session['expense_filters'] = {}
+            session['expense_filters'][name] = val
+            
+            if val == '':
+                return None
+            return type_func(val) if type_func else val
+        
+        # If not in request, check session
+        saved_filters = session.get('expense_filters', {})
+        val = saved_filters.get(name)
+        if val and val != '':
+            return type_func(val) if type_func else val
+        return None
+
+    # Get filter parameters with persistence
+    vendor_id = get_filter('vendor_id', int)
+    category_id = get_filter('category_id', int)
+    mo_id = get_filter('mo_id', int)
+    start_date = get_filter('start_date')
+    end_date = get_filter('end_date')
     
     # Build query
     query = Expense.query

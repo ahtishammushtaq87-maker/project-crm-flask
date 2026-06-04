@@ -1880,6 +1880,30 @@
                     }
                 };
 
+                // Dynamic PDF sizing based on column count
+                const visibleCols = $(selector).find('thead th:not(.no-export)').length;
+                let dynamicOrientation = 'portrait';
+                let dynamicPageSize = 'A4';
+                let dynamicFontSize = 10;
+                let dynamicHeaderSize = 11;
+
+                if (visibleCols > 15) {
+                    dynamicOrientation = 'landscape';
+                    dynamicPageSize = 'A2';
+                    dynamicFontSize = 7;
+                    dynamicHeaderSize = 8;
+                } else if (visibleCols > 10) {
+                    dynamicOrientation = 'landscape';
+                    dynamicPageSize = 'A3';
+                    dynamicFontSize = 8;
+                    dynamicHeaderSize = 9;
+                } else if (visibleCols > 5) {
+                    dynamicOrientation = 'landscape';
+                    dynamicPageSize = 'A4';
+                    dynamicFontSize = 9;
+                    dynamicHeaderSize = 10;
+                }
+
                 // Clear any "No records found" placeholder row that might interfere with DataTables column count
                 const $tbody = $(selector).find('tbody');
                 if ($tbody.find('tr').length === 1 && $tbody.find('td').attr('colspan')) {
@@ -1908,9 +1932,15 @@
                             text: '<i class="fas fa-file-pdf"></i> PDF',
                             className: 'btn dt-button buttons-pdf',
                             title: title,
-                            orientation: 'landscape',
-                            pageSize: 'A4',
-                            exportOptions: exportOpts
+                            orientation: dynamicOrientation,
+                            pageSize: dynamicPageSize,
+                            exportOptions: exportOpts,
+                            customize: function (doc) {
+                                doc.defaultStyle.fontSize = dynamicFontSize;
+                                doc.styles.tableHeader.fontSize = dynamicHeaderSize;
+                                // Auto-width columns to fit the page better
+                                doc.content[1].table.widths = Array(doc.content[1].table.body[0].length + 1).join('*').split('');
+                            }
                         },
                         {
                             extend: 'print',
@@ -2022,6 +2052,31 @@
                         }
 
                         const title = $(this).closest('.card').find('.card-header').text().trim() || 'Export';
+                        
+                        // Dynamic PDF sizing for universal tables
+                        const universalCols = $(this).find('thead th:not(.no-export)').length;
+                        let uOrientation = 'portrait';
+                        let uPageSize = 'A4';
+                        let uFontSize = 10;
+                        let uHeaderSize = 11;
+
+                        if (universalCols > 15) {
+                            uOrientation = 'landscape';
+                            uPageSize = 'A2';
+                            uFontSize = 7;
+                            uHeaderSize = 8;
+                        } else if (universalCols > 10) {
+                            uOrientation = 'landscape';
+                            uPageSize = 'A3';
+                            uFontSize = 8;
+                            uHeaderSize = 9;
+                        } else if (universalCols > 5) {
+                            uOrientation = 'landscape';
+                            uPageSize = 'A4';
+                            uFontSize = 9;
+                            uHeaderSize = 10;
+                        }
+
                         const table = $(this).DataTable({
                             dom: '<"d-flex justify-content-between align-items-center mb-3"Blf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
                             buttons: [
@@ -2038,7 +2093,14 @@
                                 {
                                     extend: 'pdfHtml5',
                                     text: '<i class="fas fa-file-pdf"></i> PDF',
-                                    className: 'btn dt-button buttons-pdf'
+                                    className: 'btn dt-button buttons-pdf',
+                                    orientation: uOrientation,
+                                    pageSize: uPageSize,
+                                    customize: function (doc) {
+                                        doc.defaultStyle.fontSize = uFontSize;
+                                        doc.styles.tableHeader.fontSize = uHeaderSize;
+                                        doc.content[1].table.widths = Array(doc.content[1].table.body[0].length + 1).join('*').split('');
+                                    }
                                 },
                                 {
                                     extend: 'print',
