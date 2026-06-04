@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request
 from app.utils import permission_required
 from flask_login import login_required, current_user
-from app.models import Sale, Product, PurchaseBill, Expense, ExpenseCategory, db, SaleItem, Vendor, Customer, Staff, Attendance
+from app.models import Sale, Product, PurchaseBill, PurchaseItem, Expense, ExpenseCategory, db, SaleItem, Vendor, Customer, Staff, Attendance
 from datetime import datetime, timedelta
 from sqlalchemy import func, inspect
 from calendar import monthrange
@@ -28,23 +28,31 @@ def index():
     # Get date filters from request
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
-    
-    # If no dates provided, use current month
-    if not start_date or not end_date:
-        current_month = datetime.now().replace(day=1)
-        if not start_date:
-            start_date = current_month.strftime('%Y-%m-%d')
-        if not end_date:
-            end_date = datetime.now().strftime('%Y-%m-%d')
-    
-    # Convert string dates to datetime objects
-    try:
-        start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
-        end_datetime = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
-    except:
-        current_month = datetime.now().replace(day=1)
-        start_datetime = current_month
+    all_time = request.args.get('all_time', '0') == '1'
+
+    if all_time:
+        # Reset: show all-time data — use widest possible range
+        start_datetime = datetime(2000, 1, 1)
         end_datetime = datetime.now().replace(hour=23, minute=59, second=59)
+        start_date = ''
+        end_date = ''
+    else:
+        # If no dates provided, use current month
+        if not start_date or not end_date:
+            current_month = datetime.now().replace(day=1)
+            if not start_date:
+                start_date = current_month.strftime('%Y-%m-%d')
+            if not end_date:
+                end_date = datetime.now().strftime('%Y-%m-%d')
+
+        # Convert string dates to datetime objects
+        try:
+            start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
+            end_datetime = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+        except:
+            current_month = datetime.now().replace(day=1)
+            start_datetime = current_month
+            end_datetime = datetime.now().replace(hour=23, minute=59, second=59)
 
     # Total Sales — only count admin-approved invoices
     total_sales = db.session.query(func.sum(Sale.total)).filter(
@@ -274,8 +282,23 @@ def index():
     # Total Products
     products_count = Product.query.count()
     
-    # Total Stock Value
-    total_stock_value = db.session.query(func.sum(Product.quantity * Product.cost_price)).scalar() or 0
+    # Total Stock Value:
+    # - All Time (reset): true live inventory cost = SUM(qty × cost_price) for all products
+    # - Date filtered: cost of stock received in the period via purchase bills
+    if all_time:
+        total_stock_value = db.session.query(
+            func.sum(Product.quantity * Product.cost_price)
+        ).scalar() or 0
+    else:
+        total_stock_value = db.session.query(
+            func.sum(PurchaseItem.quantity * PurchaseItem.unit_price)
+        ).join(
+            PurchaseBill, PurchaseItem.bill_id == PurchaseBill.id
+        ).filter(
+            PurchaseBill.inventory_received == True,
+            PurchaseBill.date >= start_datetime,
+            PurchaseBill.date <= end_datetime
+        ).scalar() or 0
     
     # Active Vendors
     vendors_count = Vendor.query.filter(Vendor.is_active == True).count()
@@ -323,4 +346,5 @@ def index():
                          recent_sales=recent_sales,
                          sales_chart=sales_chart,
                          start_date=start_date,
-                         end_date=end_date)
+                         end_date=end_date,
+                         all_time=all_time)

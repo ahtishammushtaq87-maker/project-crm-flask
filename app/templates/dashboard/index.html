@@ -8,19 +8,22 @@
         background: white;
         padding: 10px 12px;
         border-radius: 8px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
     }
+
     .filter-group label {
         font-weight: 600;
         font-size: 0.8rem;
         margin-bottom: 3px;
         display: block;
     }
+
     .filter-group .form-control-sm {
         font-size: 0.85rem;
         padding: 0.35rem 0.5rem;
         height: auto;
     }
+
     .filter-group .btn-sm {
         padding: 0.35rem 0.75rem;
         font-size: 0.8rem;
@@ -30,22 +33,35 @@
 
 {% block content %}
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap">
-        <h2 class="me-2">Dashboard</h2>
-        <div class="filter-group flex-grow-1" style="min-width: 200px; max-width: 400px;">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <h2 class="me-2">
+            Dashboard
+            {% if all_time %}
+            <span class="badge bg-secondary ms-2" style="font-size:0.6rem; vertical-align: middle;">All Time</span>
+            {% endif %}
+        </h2>
+        <div class="filter-group" style="min-width: 320px; max-width: 560px; flex-grow:1;">
             <form method="GET" action="{{ url_for('dashboard.index') }}" class="row g-2">
-                <div class="col-5">
+                <div class="col-4">
                     <label class="form-label">From Date</label>
-                    <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date or '' }}">
+                    <input type="date" name="start_date" class="form-control form-control-sm"
+                        value="{{ start_date or '' }}">
                 </div>
-                <div class="col-5">
+                <div class="col-4">
                     <label class="form-label">To Date</label>
-                    <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date or '' }}">
+                    <input type="date" name="end_date" class="form-control form-control-sm"
+                        value="{{ end_date or '' }}">
                 </div>
                 <div class="col-2 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary btn-sm w-100">
+                    <button type="submit" class="btn btn-primary btn-sm w-100" title="Apply Filter">
                         <i class="fas fa-filter"></i>
                     </button>
+                </div>
+                <div class="col-2 d-flex align-items-end">
+                    <a href="{{ url_for('dashboard.index', all_time=1) }}"
+                        class="btn btn-outline-secondary btn-sm w-100" title="Reset — Show All Time">
+                        <i class="fas fa-times"></i>
+                    </a>
                 </div>
             </form>
         </div>
@@ -93,7 +109,7 @@
                 <h5>Total Expenses</h5>
                 <h3>PKR{{ "%.2f"|format(total_expenses-manufacturing_overhead) }}</h3>
                 <div class="mt-1" style="font-size: 0.75rem; opacity: 0.9;">
-                    <span>Op: PKR{{ "%.2f"|format(operating_expenses) }}</span> | 
+                    <span>Op: PKR{{ "%.2f"|format(operating_expenses) }}</span> |
                     <span>BOM: PKR{{ "%.2f"|format(manufacturing_overhead) }}</span> |
                     <span>Pay: PKR{{ "%.2f"|format(daily_payroll_for_period) }}</span> |
                     <span>Tools: PKR{{ "%.2f"|format(tools_expenses) }}</span>
@@ -145,13 +161,27 @@
         </div>
 
         <div class="col-sm-6 col-lg-3 mb-3">
+            {% set net_stock_position = total_stock_value + net_profit %}
+            <div class="card-stats" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+                <div class="stats-icon float-end">
+                    <i class="fas fa-balance-scale"></i>
+                </div>
+                <h5>Net Stock Position</h5>
+                <h3 class="{% if net_stock_position >= 0 %}text-success{% else %}text-danger{% endif %}">
+                    PKR{{ "%.2f"|format(net_stock_position) }}
+                </h3>
+                <small>Stock Value + Net Profit</small>
+            </div>
+        </div>
+
+        <div class="col-sm-6 col-lg-3 mb-3">
             <div class="card-stats" style="background: linear-gradient(135deg, #f6c23e 0%, #dda20a 100%);">
                 <div class="stats-icon float-end">
                     <i class="fas fa-chart-line"></i>
                 </div>
                 <h5>Total Stock Value</h5>
                 <h3>PKR{{ "%.2f"|format(total_stock_value) }}</h3>
-                <small>Current Inventory</small>
+                <small>{% if all_time %}Current Inventory{% else %}Stock Received in Period{% endif %}</small>
             </div>
         </div>
     </div>
@@ -244,14 +274,18 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
+    const salesData = JSON.parse('{{ sales_chart | tojson | safe }}');
+    const chartLabels = salesData.map(function (d) { return d.date; });
+    const chartData = salesData.map(function (d) { return d.amount; });
+
     const ctx = document.getElementById('salesChart').getContext('2d');
     const salesChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: {{ sales_chart|map(attribute='date')|list|tojson }},
+            labels: chartLabels,
             datasets: [{
                 label: 'Sales Amount',
-                data: {{ sales_chart|map(attribute='amount')|list|tojson }},
+                data: chartData,
                 borderColor: 'rgb(75, 192, 192)',
                 tension: 0.1
             }]
