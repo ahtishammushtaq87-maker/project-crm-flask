@@ -1506,8 +1506,11 @@ def customer_export_pdf(id):
     elements.append(Spacer(1, 8))
     elements.append(HRFlowable(width="100%", thickness=0.6, color=BORDER_GREY, spaceAfter=8))
 
-    # INFO BOX (CUSTOMER DETAILS)
+    # INFO BOXES (CUSTOMER DETAILS & OUR LOCATIONS)
     BOX_W = 3.5 * inch
+    GAP_W = 0.2 * inch
+    
+    # Box 1: Customer Details
     b1_rows = []
     b1_rows.append(f"<b>Name:</b> {customer.company_name or customer.name}")
     if customer.email:   b1_rows.append(f"<b>Email:</b> {customer.email}")
@@ -1520,7 +1523,8 @@ def customer_export_pdf(id):
     for row in b1_rows:
         data.append([Paragraph(row, s_BoxValue)])
     box1 = Table(data, colWidths=[BOX_W])
-    box1.setStyle(TableStyle([
+    
+    box_style = TableStyle([
         ('VALIGN',        (0,0), (-1,-1), 'TOP'),
         ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
         ('TOPPADDING',    (0,0), (-1,-1), 3),
@@ -1529,9 +1533,22 @@ def customer_export_pdf(id):
         ('RIGHTPADDING',  (0,0), (-1,-1), 6),
         ('BACKGROUND',    (0,0), (-1,-1), WHITE),
         ('BOX',           (0,0), (-1,-1), 0.5, BORDER_GREY),
-    ]))
+    ])
+    box1.setStyle(box_style)
 
-    outer = Table([[box1]], colWidths=[7.1*inch])
+    # Box 4: Our Locations (matching sales invoice layout)
+    addr_rows = [
+        "<b>Address 1:</b> No. 139 Tiyu West Road, Unit 15-A, Tianhe District, Guangzhou, Guangdong, 510620",
+        "<b>Address 2:</b> LS-25, Super Auto Parts Market, Main Super Highway, Sohrab Goth, Karachi."
+    ]
+    data4 = [[Paragraph("OUR LOCATIONS", s_BoxTitle)]]
+    for row in addr_rows:
+        data4.append([Paragraph(row, s_BoxValue)])
+    box4 = Table(data4, colWidths=[BOX_W])
+    box4.setStyle(box_style)
+
+    # Combine into a single row
+    outer = Table([[box1, Spacer(GAP_W, 1), box4]], colWidths=[BOX_W, GAP_W, BOX_W])
     outer.setStyle(TableStyle([
         ('VALIGN',        (0,0), (-1,-1), 'TOP'),
         ('LEFTPADDING',   (0,0), (-1,-1), 0),
