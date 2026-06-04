@@ -112,7 +112,17 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-bold">Address</label>
-                            {{ form.address(class="form-control", rows=3, placeholder="Street / full address") }}
+                            <div class="row g-2">
+                                <div class="col-12">
+                                    <input type="text" id="address_line_1" class="form-control" placeholder="Address Line 1 (Street, Building)">
+                                </div>
+                                <div class="col-12">
+                                    <input type="text" id="address_line_2" class="form-control" placeholder="Address Line 2 (Apartment, Suite, Unit)">
+                                </div>
+                            </div>
+                            <div style="display:none;">
+                                {{ form.address(id="actual_address", class="form-control") }}
+                            </div>
                         </div>
                         <div class="row">
                             <div class="col-md-3 mb-3">
@@ -220,6 +230,11 @@
         });
 
         form.addEventListener('submit', function () {
+            // Combine address lines
+            const addr1 = document.getElementById('address_line_1').value.trim();
+            const addr2 = document.getElementById('address_line_2').value.trim();
+            document.getElementById('actual_address').value = addr1 + (addr2 ? '\n' + addr2 : '');
+
             const rows = wrapper.querySelectorAll('.sub-customer-row');
             const data = [];
             rows.forEach(row => {

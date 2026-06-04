@@ -78,7 +78,17 @@
 
                         <div class="mb-3">
                             <label class="form-label fw-bold">Address</label>
-                            {{ form.address(class="form-control", rows=3, placeholder="Enter street address") }}
+                            <div class="row g-2">
+                                <div class="col-12">
+                                    <input type="text" id="address_line_1" class="form-control" placeholder="Address Line 1 (Street, Building)">
+                                </div>
+                                <div class="col-12">
+                                    <input type="text" id="address_line_2" class="form-control" placeholder="Address Line 2 (Apartment, Suite, Unit)">
+                                </div>
+                            </div>
+                            <div style="display:none;">
+                                {{ form.address(id="actual_address", class="form-control") }}
+                            </div>
                         </div>
 
                         <div class="row">
@@ -200,7 +210,20 @@
             createRow();
         });
 
+        // Populate existing address lines
+        const fullAddr = document.getElementById('actual_address').value;
+        if (fullAddr) {
+            const lines = fullAddr.split('\n');
+            if (lines.length > 0) document.getElementById('address_line_1').value = lines[0];
+            if (lines.length > 1) document.getElementById('address_line_2').value = lines.slice(1).join(', ');
+        }
+
         form.addEventListener('submit', function () {
+            // Combine address lines
+            const addr1 = document.getElementById('address_line_1').value.trim();
+            const addr2 = document.getElementById('address_line_2').value.trim();
+            document.getElementById('actual_address').value = addr1 + (addr2 ? '\n' + addr2 : '');
+
             const rows = wrapper.querySelectorAll('.sub-vendor-row');
             const data = [];
             rows.forEach(row => {
