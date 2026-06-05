@@ -21,6 +21,15 @@
             color: white;
         }
 
+        /* ── File Upload Enhancement Styling ── */
+        .file-upload-dragover {
+            outline: 2px dashed #667eea !important;
+            outline-offset: 4px !important;
+            background-color: rgba(102, 126, 234, 0.05) !important;
+            border-radius: 8px !important;
+            transition: all 0.2s ease-in-out !important;
+        }
+
         .sidebar a {
             color: rgba(255, 255, 255, 0.8);
             text-decoration: none;
@@ -2523,6 +2532,95 @@
             }
         </script>
         {% block extra_js %}{% endblock %}
+
+        <script>
+            /* ── Global File Upload Enhancement (Drag&Drop + Paste) ── */
+            (function() {
+                function setupFileUploadEnhancement() {
+                    // Target all file inputs that haven't been enhanced yet
+                    const fileInputs = document.querySelectorAll('input[type="file"]:not([data-enhanced="true"])');
+                    
+                    fileInputs.forEach(input => {
+                        input.dataset.enhanced = "true";
+
+                        // Use the closest container (usually .mb-3 or the immediate parent)
+                        let container = input.closest('.mb-3') || input.closest('.input-group') || input.parentElement;
+                        
+                        // Prevent browser defaults for drag events
+                        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                            container.addEventListener(eventName, e => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                            }, false);
+                        });
+
+                        // Visual feedback when dragging over
+                        ['dragenter', 'dragover'].forEach(eventName => {
+                            container.addEventListener(eventName, () => {
+                                container.classList.add('file-upload-dragover');
+                            }, false);
+                        });
+
+                        ['dragleave', 'drop'].forEach(eventName => {
+                            container.addEventListener(eventName, () => {
+                                container.classList.remove('file-upload-dragover');
+                            }, false);
+                        });
+
+                        // Handle dropped files
+                        container.addEventListener('drop', (e) => {
+                            const dt = e.dataTransfer;
+                            if (dt && dt.files.length > 0) {
+                                handleFiles(dt.files, input);
+                            }
+                        }, false);
+
+                        // Handle pasted files (when input is focused)
+                        input.addEventListener('paste', (e) => {
+                            const files = e.clipboardData.files;
+                            if (files && files.length > 0) {
+                                handleFiles(files, input);
+                            }
+                        });
+
+                        // Also allow pasting when the container is focused or clicked
+                        container.addEventListener('click', () => input.focus());
+                    });
+                }
+
+                function handleFiles(files, input) {
+                    if (files.length === 0) return;
+                    
+                    // Create a new DataTransfer to populate the file input
+                    const dt = new DataTransfer();
+                    for (let i = 0; i < files.length; i++) {
+                        dt.items.add(files[i]);
+                    }
+                    input.files = dt.files;
+
+                    // Dispatch change event to trigger existing previews/logic
+                    const event = new Event('change', { bubbles: true });
+                    input.dispatchEvent(event);
+                }
+
+                // Initial setup
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', setupFileUploadEnhancement);
+                } else {
+                    setupFileUploadEnhancement();
+                }
+                
+                // Watch for new inputs (e.g. in modals or dynamic rows)
+                const observer = new MutationObserver((mutations) => {
+                    let needsSetup = false;
+                    mutations.forEach(m => {
+                        if (m.addedNodes.length > 0) needsSetup = true;
+                    });
+                    if (needsSetup) setupFileUploadEnhancement();
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+            })();
+        </script>
 </body>
 
 </html>
