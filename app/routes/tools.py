@@ -5,7 +5,7 @@ from app import db
 from app.models import (
     ToolReceiving, ToolReceivingItem, ToolDelivering, ToolDeliveringItem, 
     ToolSettings, Product, ProductWarehouseStock, Expense, ExpenseCategory, Company, Staff, Vendor,
-    ManufacturingOrder, BOM, Warehouse
+    ManufacturingOrder, BOM, Warehouse, ExpenseSettings
 )
 from datetime import datetime
 
@@ -313,11 +313,13 @@ def delivering_list():
 
     deliverings = query.order_by(ToolDelivering.date.desc()).all()
     products = Product.query.filter_by(is_active=True).all()
+    expense_categories = ExpenseCategory.query.filter_by(is_active=True).order_by(ExpenseCategory.name).all()
     company = Company.query.first()
     date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
     return render_template('tools/delivering_list.html', 
                           deliverings=deliverings, 
                           products=products,
+                          expense_categories=expense_categories,
                           date_format=date_format,
                           filters=request.args)
 
@@ -927,3 +929,67 @@ def settings():
         flash('Tool settings updated.', 'success')
         return redirect(url_for('tools.settings'))
     return render_template('tools/settings.html', settings=settings)
+
+
+@bp.route('/delivering/<int:id>/send-to-expense', methods=['POST'])
+@login_required
+@permission_required('delivering', action='edit')
+def send_delivering_to_expense(id):
+    """Create an Expense record from a Tool Delivering voucher."""
+    delivering = ToolDelivering.query.get_or_404(id)
+
+    # Prevent double-sending
+    if delivering.expense_id:
+        return jsonify({'success': False, 'message': 'This voucher has already been sent to expense.'})
+
+    category_id = request.form.get('category_id')
+    if not category_id:
+        return jsonify({'success': False, 'message': 'Please select an expense category.'})
+
+    category = ExpenseCategory.query.get(category_id)
+    if not category:
+        return jsonify({'success': False, 'message': 'Invalid expense category.'})
+
+    try:
+        from app.routes.accounting import get_unique_expense_number
+        acc_settings = ExpenseSettings.query.first()
+        if not acc_settings:
+            acc_settings = ExpenseSettings()
+            db.session.add(acc_settings)
+            db.session.flush()
+
+        exp_num, next_num = get_unique_expense_number(acc_settings, acc_settings.next_number)
+
+        expense = Expense()
+        expense.expense_number = exp_num
+        expense.date = delivering.date
+        expense.category_id = int(category_id)
+        expense.vendor_id = delivering.vendor_id
+        expense.description = f"Tool Delivery Voucher #{delivering.delivering_number}"
+        expense.amount = delivering.total_amount or 0
+        expense.payment_method = 'Cash'
+        expense.reference = delivering.delivering_number
+        expense.status = 'confirmed'
+        expense.created_by = current_user.id
+
+        db.session.add(expense)
+        db.session.flush()
+
+        # Link expense to delivering voucher
+        delivering.expense_id = expense.id
+
+        acc_settings.next_number = next_num
+        db.session.commit()
+
+        log_activity('Tools', f'Sent Delivering #{delivering.delivering_number} to Expense', 
+                     f'Category: {category.name}, Amount: {delivering.total_amount}')
+
+        return jsonify({
+            'success': True,
+            'message': f'Expense #{exp_num} created successfully under "{category.name}".',
+            'expense_number': exp_num
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'})

@@ -2,6 +2,25 @@
 
 {% block title %}{{ project.pdv_code }} - {{ project.product_name }}{% endblock %}
 
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<style>
+    .select2-container--default .select2-selection--single {
+        height: 38px;
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__rendered {
+        line-height: 38px;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__arrow {
+        height: 36px;
+    }
+    .select2-container {
+        z-index: 9999 !important;
+    }
+</style>
+{% endblock %}
 {% block content %}
 <div class="mb-3">
     <a href="{{ url_for('product_development.index') }}" class="btn btn-secondary btn-sm">
@@ -247,7 +266,7 @@
                                 {% if tool.status != 'Completed' %}
                                                                 {% if current_user.has_permission('product_dev', 'edit') %}
 <form method="POST" action="{{ url_for('product_development.update_tooling_status', tool_id=tool.id) }}" class="d-inline">
-                                    <select name="status" class="form-select form-select-sm d-inline-block" style="width:auto;" onchange="this.form.submit()">
+                                    <select name="status" class="form-select form-select-sm d-inline-block searchable-select" style="width:auto;" onchange="this.form.submit()">
                                         <option value="Planned" {{ 'selected' if tool.status == 'Planned' else '' }}>Planned</option>
                                         <option value="In Progress" {{ 'selected' if tool.status == 'In Progress' else '' }}>In Progress</option>
                                         <option value="Completed" {{ 'selected' if tool.status == 'Completed' else '' }}>Completed</option>
@@ -328,7 +347,7 @@
                                 {% if test.result == 'PENDING' %}
                                                                 {% if current_user.has_permission('product_dev', 'edit') %}
 <form method="POST" action="{{ url_for('product_development.update_testing_result', test_id=test.id) }}" class="d-inline">
-                                    <select name="result" class="form-select form-select-sm d-inline-block" style="width:auto;" onchange="this.form.submit()">
+                                    <select name="result" class="form-select form-select-sm d-inline-block searchable-select" style="width:auto;" onchange="this.form.submit()">
                                         <option value="PENDING" {{ 'selected' if test.result == 'PENDING' else '' }}>Pending</option>
                                         <option value="PASS">Pass</option>
                                         <option value="FAIL">Fail</option>
@@ -427,7 +446,7 @@
                             <div class="row">
                                 <div class="col-md-4">
                                     <label class="form-label">Approval Status</label>
-                                    <select name="approval_status" class="form-select">
+                                    <select name="approval_status" class="form-select searchable-select">
                                         <option value="Pending" {{ 'selected' if project.approval and project.approval.approval_status == 'Pending' else '' }}>Pending</option>
                                         <option value="Approved" {{ 'selected' if project.approval and project.approval.approval_status == 'Approved' else '' }}>Approved</option>
                                         <option value="Rejected" {{ 'selected' if project.approval and project.approval.approval_status == 'Rejected' else '' }}>Rejected</option>
@@ -712,7 +731,7 @@
                      </div>
                     <div class="mb-2">
                         <label class="form-label">Type</label>
-                        <select name="component_type" class="form-select">
+                        <select name="component_type" class="form-select searchable-select">
                             <option value="BUY">BUY (Purchase)</option>
                             <option value="MAKE">MAKE (In-house)</option>
                             <option value="OUTSOURCE">OUTSOURCE (Vendor)</option>
@@ -724,7 +743,7 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label">Vendor</label>
-                        <select name="vendor_id" class="form-select">
+                        <select name="vendor_id" class="form-select searchable-select">
                             <option value="">-- Select --</option>
                             {% for v in vendors|default([]) %}
                             <option value="{{ v.id }}">{{ v.name }}</option>
@@ -766,7 +785,7 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label">Tool Type</label>
-                        <select name="tool_type" class="form-select">
+                        <select name="tool_type" class="form-select searchable-select">
                             <option value="mold">Mold</option>
                             <option value="die">Die</option>
                             <option value="injection">Injection</option>
@@ -782,7 +801,7 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label">Vendor</label>
-                        <select name="vendor_id" class="form-select">
+                        <select name="vendor_id" class="form-select searchable-select">
                             <option value="">-- Select --</option>
                             {% for v in vendors|default([]) %}
                             <option value="{{ v.id }}">{{ v.name }}</option>
@@ -836,7 +855,7 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label">Test Type</label>
-                        <select name="test_type" class="form-select">
+                        <select name="test_type" class="form-select searchable-select">
                             <option value="Functional">Functional</option>
                             <option value="Dimensional">Dimensional</option>
                             <option value="Final">Final</option>
@@ -869,7 +888,7 @@
                 <div class="modal-body">
                     <div class="mb-2">
                         <label class="form-label">Link to Tooling (optional)</label>
-                        <select name="tooling_id" class="form-select">
+                        <select name="tooling_id" class="form-select searchable-select">
                             <option value="">-- Select --</option>
                             {% for tool in project.tooling %}
                             <option value="{{ tool.id }}">{{ tool.tool_name }}</option>
@@ -890,7 +909,7 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label">Depreciation Method</label>
-                        <select name="depreciation_method" class="form-select">
+                        <select name="depreciation_method" class="form-select searchable-select">
                             <option value="Straight Line">Straight Line</option>
                             <option value="Reducing Balance">Reducing Balance</option>
                         </select>
@@ -920,7 +939,7 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Category</label>
-                        <select name="expense_category" class="form-select" required>
+                        <select name="expense_category" class="form-select searchable-select" required>
                             <option value="Raw Material">Raw Material</option>
                             <option value="Purchased Components">Purchased Components</option>
                             <option value="Machining">Machining</option>
@@ -999,7 +1018,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 allowClear: true,
                 width: '100%',
                 dropdownAutoWidth: true,
-                dropdownParent: $(this).closest('.modal-content') || $(this).closest('.modal')
+                dropdownParent: $(this).closest('.modal-content').length ? $(this).closest('.modal-content') : $(document.body)
+            }).on('select2:open', function(e) {
+                // Auto-focus the search field when opened
+                const searchField = document.querySelector('.select2-search__field');
+                if (searchField) {
+                    searchField.focus();
+                }
             });
         });
     }

@@ -1124,6 +1124,12 @@ class Company(db.Model):
     mo_suffix = db.Column(db.String(10), default='')
     next_mo_number = db.Column(db.Integer, default=1)
 
+    # Product Development number settings
+    pd_prefix = db.Column(db.String(20), default='PDV')
+    pd_suffix = db.Column(db.String(10), default='')
+    next_pd_number = db.Column(db.Integer, default=1)
+    pd_code_format = db.Column(db.String(50), default='{prefix}-{year}-{number}')
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

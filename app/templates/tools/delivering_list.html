@@ -1,9 +1,47 @@
 {% extends "base.html" %}
 {% block title %}Delivering Voucher{% endblock %}
 
+{% block extra_css %}
+<style>
+    .expense-sent-badge {
+        font-size: 0.7rem;
+        padding: 2px 6px;
+        border-radius: 50px;
+    }
+
+    .btn-send-expense {
+        background: linear-gradient(135deg, #28a745, #20c997);
+        border: none;
+        color: white;
+        transition: all 0.2s;
+    }
+
+    .btn-send-expense:hover {
+        background: linear-gradient(135deg, #218838, #17a589);
+        color: white;
+        transform: translateY(-1px);
+        box-shadow: 0 3px 8px rgba(40, 167, 69, 0.3);
+    }
+
+    .btn-send-expense:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
+
+    #expenseCategorySelect+.select2-container {
+        width: 100% !important;
+    }
+</style>
+{% endblock %}
+
 {% block extra_js %}
 <script>
+    let currentDeliveringId = null;
+
     document.addEventListener('DOMContentLoaded', function () {
+        // Init Bulk Actions
         initBulkActions({
             selectAllId: 'selectAll',
             checkboxClass: 'delivering-checkbox',
@@ -11,11 +49,139 @@
             deleteUrl: "{{ url_for('tools.bulk_delete_delivering') }}",
             entityName: 'item deliverings'
         });
+
+        // Init general Select2
         $('.select2-filter').select2({
             theme: 'bootstrap-5',
             width: '100%'
         });
+
+        // Modal population listener
+        const sendToExpenseModal = document.getElementById('sendToExpenseModal');
+        if (sendToExpenseModal) {
+            sendToExpenseModal.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                currentDeliveringId = button.getAttribute('data-delivering-id');
+                const voucherNumber = button.getAttribute('data-voucher-number');
+                const amount = button.getAttribute('data-amount');
+
+                document.getElementById('modalVoucherNumber').textContent = voucherNumber;
+                document.getElementById('modalVoucherAmount').textContent = parseFloat(amount).toLocaleString('en-US', {
+                    minimumFractionDigits: 2, maximumFractionDigits: 2
+                });
+
+                // Reset modal state
+                document.getElementById('expenseCategorySelect').value = '';
+                const resultEl = document.getElementById('sendExpenseResult');
+                resultEl.className = 'd-none';
+                resultEl.innerHTML = '';
+                const btn = document.getElementById('confirmSendToExpenseBtn');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check me-1"></i> Confirm & Send';
+
+                // Clear any Select2 search if exists
+                if ($('#expenseCategorySelect').hasClass('select2-hidden-accessible')) {
+                    $('#expenseCategorySelect').val(null).trigger('change');
+                }
+            });
+
+            sendToExpenseModal.addEventListener('shown.bs.modal', function () {
+                // Initialize Select2 after modal shows
+                if (typeof $ !== 'undefined' && $.fn.select2) {
+                    const $sel = $('#expenseCategorySelect');
+                    if (!$sel.hasClass('select2-hidden-accessible')) {
+                        $sel.select2({
+                            theme: 'bootstrap-5',
+                            width: '100%',
+                            dropdownParent: $('#sendToExpenseModal'),
+                            placeholder: '— Choose Category —',
+                            allowClear: true
+                        });
+                    }
+                }
+            });
+        }
     });
+
+    function showBillPreview(url) {
+        const isPdf = url.toLowerCase().endsWith('.pdf');
+        const imgEl = document.getElementById('billPreviewImage');
+        const pdfEl = document.getElementById('billPreviewPdf');
+        if (isPdf) {
+            imgEl.style.display = 'none';
+            pdfEl.style.display = 'block';
+            pdfEl.src = url;
+        } else {
+            pdfEl.style.display = 'none';
+            imgEl.style.display = 'block';
+            imgEl.src = url;
+        }
+        new bootstrap.Modal(document.getElementById('billPreviewModal')).show();
+    }
+
+    function getCsrfToken() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta) return meta.getAttribute('content');
+        const inp = document.querySelector('input[name="csrf_token"]');
+        if (inp) return inp.value;
+        return '';
+    }
+
+    function confirmSendToExpense() {
+        let categoryId = document.getElementById('expenseCategorySelect').value;
+        if (typeof $ !== 'undefined' && $.fn.select2) {
+            categoryId = $('#expenseCategorySelect').val() || categoryId;
+        }
+
+        const resultEl = document.getElementById('sendExpenseResult');
+        const btn = document.getElementById('confirmSendToExpenseBtn');
+
+        if (!categoryId) {
+            resultEl.className = 'alert alert-warning mt-3';
+            resultEl.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i> Please select a category first.';
+            resultEl.classList.remove('d-none');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Sending...';
+
+        const formData = new FormData();
+        formData.append('category_id', categoryId);
+        const csrf = getCsrfToken();
+        if (csrf) formData.append('csrf_token', csrf);
+
+        fetch('/tools/delivering/' + currentDeliveringId + '/send-to-expense', {
+            method: 'POST',
+            body: formData
+        })
+            .then(r => {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    resultEl.className = 'alert alert-success mt-3';
+                    resultEl.innerHTML = '<i class="fas fa-check-circle me-1"></i> ' + data.message;
+                    btn.innerHTML = 'Done!';
+                    resultEl.classList.remove('d-none');
+                    setTimeout(() => { location.reload(); }, 1500);
+                } else {
+                    resultEl.className = 'alert alert-danger mt-3';
+                    resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i> ' + data.message;
+                    resultEl.classList.remove('d-none');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-check me-1"></i> Confirm & Send';
+                }
+            })
+            .catch(err => {
+                resultEl.className = 'alert alert-danger mt-3';
+                resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i> Error: ' + err.message;
+                resultEl.classList.remove('d-none');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check me-1"></i> Confirm & Send';
+            });
+    }
 </script>
 {% endblock %}
 
@@ -77,7 +243,7 @@
     <div class="card shadow mb-4">
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover mb-0 datatable-export" data-export-title="Delivering Tools">
+                <table class="table table-hover mb-0 help-table datatable-export" data-export-title="Delivering Tools">
                     <thead class="table-light">
                         <tr>
                             <th style="width: 40px;" class="text-center no-export">
@@ -105,6 +271,11 @@
                                 <a href="{{ url_for('tools.delivering_detail', id=del.id) }}">
                                     {{ del.delivering_number }}
                                 </a>
+                                {% if del.expense_id %}
+                                <br><span class="badge bg-success expense-sent-badge">
+                                    <i class="fas fa-check-circle me-1"></i>Sent to Expense
+                                </span>
+                                {% endif %}
                             </td>
                             <td>{{ del.date.strftime(date_format) }}</td>
                             <td>{{ del.description }}</td>
@@ -138,11 +309,20 @@
                                     {% if current_user.has_permission('delivering', 'edit') %}
                                     <a href="{{ url_for('tools.edit_delivering', id=del.id) }}"
                                         class="btn btn-outline-secondary" title="Edit"><i class="fas fa-edit"></i></a>
+
+                                    <button type="button" class="btn btn-send-expense btn-sm" title="Send to Expense"
+                                        data-bs-toggle="modal" data-bs-target="#sendToExpenseModal"
+                                        data-delivering-id="{{ del.id }}"
+                                        data-voucher-number="{{ del.delivering_number }}"
+                                        data-amount="{{ del.total_amount or 0 }}" {% if del.expense_id %}disabled{%
+                                        endif %}>
+                                        <i class="fas fa-paper-plane"></i>
+                                    </button>
                                     {% endif %}
+
                                     {% if current_user.has_permission('delivering', 'delete') %}
                                     <form action="{{ url_for('tools.delete_delivering', id=del.id) }}" method="POST"
-                                        class="d-inline"
-                                        onsubmit="return confirm('Delete this item delivering? Inventory will be reverted.');">
+                                        class="d-inline" onsubmit="return confirm('Delete this record?');">
                                         <button type="submit" class="btn btn-outline-danger" title="Delete"><i
                                                 class="fas fa-trash"></i></button>
                                     </form>
@@ -152,11 +332,58 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="7" class="text-center py-4 text-muted">No item delivering records found.</td>
+                            <td colspan="10" class="text-center py-4 text-muted">No item delivering records found.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Send to Expense Modal -->
+<div class="modal fade" id="sendToExpenseModal" tabindex="-1" aria-labelledby="sendToExpenseModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="sendToExpenseModalLabel">
+                    <i class="fas fa-paper-plane me-2"></i>Send to Expense
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                    aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info d-flex align-items-center py-2 mb-3" role="alert">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <div>
+                        Voucher <strong id="modalVoucherNumber"></strong> &mdash;
+                        Amount: <strong id="modalVoucherAmount"></strong>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="expenseCategorySelect" class="form-label fw-semibold">
+                        <i class="fas fa-tags me-1 text-success"></i>Select Expense Category <span
+                            class="text-danger">*</span>
+                    </label>
+                    <select id="expenseCategorySelect" class="form-select">
+                        <option value="">— Choose Category —</option>
+                        {% for cat in expense_categories %}
+                        <option value="{{ cat.id }}">{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div id="sendExpenseResult" class="d-none mt-3"></div>
+            </div>
+            <div class="modal-footer bg-light">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i> Cancel
+                </button>
+                <button type="button" class="btn btn-success" id="confirmSendToExpenseBtn"
+                    onclick="confirmSendToExpense()">
+                    <i class="fas fa-check me-1"></i> Confirm & Send
+                </button>
             </div>
         </div>
     </div>
@@ -167,36 +394,15 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Bill / Receipt Preview</h5>
+                <h5 class="modal-title">Receipt Preview</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body text-center">
-                <img id="billPreviewImage" src="" alt="Bill Preview" class="img-fluid"
-                    style="max-height: 70vh; display: none;">
-                <iframe id="billPreviewPdf" src="" style="width: 100%; height: 70vh; display: none;"
+                <img id="billPreviewImage" src="" alt="Bill" class="img-fluid" style="max-height: 75vh; display: none;">
+                <iframe id="billPreviewPdf" src="" style="width: 100%; height: 75vh; display: none;"
                     frameborder="0"></iframe>
             </div>
         </div>
     </div>
 </div>
-
-<script>
-    function showBillPreview(url) {
-        const isPdf = url.toLowerCase().endsWith('.pdf');
-        const imgEl = document.getElementById('billPreviewImage');
-        const pdfEl = document.getElementById('billPreviewPdf');
-
-        if (isPdf) {
-            imgEl.style.display = 'none';
-            pdfEl.style.display = 'block';
-            pdfEl.src = url;
-        } else {
-            pdfEl.style.display = 'none';
-            imgEl.style.display = 'block';
-            imgEl.src = url;
-        }
-
-        new bootstrap.Modal(document.getElementById('billPreviewModal')).show();
-    }
-</script>
 {% endblock %}

@@ -12,23 +12,55 @@ bp = Blueprint('product_development', __name__, url_prefix='/product-development
 
 
 def generate_pdv_code():
-    """Generate unique PDV code"""
+    """Generate unique PDV code based on company settings"""
+    from app.models import Company
+    company = Company.query.first()
+    
+    prefix = company.pd_prefix if company and company.pd_prefix else "PDV"
     year = datetime.now().year
-    prefix = f"PDV-{year}-"
+    
+    # Check for the last number
     last_project = PDProject.query.filter(
         PDProject.pdv_code.like(f"{prefix}%")
     ).order_by(PDProject.pdv_code.desc()).first()
     
     if last_project:
         try:
-            last_num = int(last_project.pdv_code.split('-')[-1])
-            new_num = last_num + 1
+            # Extract number from code by finding the last digits
+            import re
+            nums = re.findall(r'\d+', last_project.pdv_code)
+            if nums:
+                last_num = int(nums[-1])
+                new_num = last_num + 1
+            else:
+                new_num = 1
         except:
             new_num = 1
     else:
-        new_num = 1
+        new_num = company.next_pd_number if company else 1
     
-    return f"{prefix}{new_num:04d}"
+    # Handle the format ()-()-()
+    if company and company.pd_code_format and '()' in company.pd_code_format:
+        format_str = company.pd_code_format
+        # Determine what each () should be based on its position or just sequential
+        # If there are exactly 3, we do prefix, year, number
+        # If there are 2, we do prefix-year, number
+        count = format_str.count('()')
+        res = format_str
+        if count == 3:
+            res = res.replace('()', str(prefix), 1)
+            res = res.replace('()', str(year), 1)
+            res = res.replace('()', f"{new_num:04d}", 1)
+        elif count == 2:
+            res = res.replace('()', f"{prefix}-{year}", 1)
+            res = res.replace('()', f"{new_num:04d}", 1)
+        else:
+            res = res.replace('()', f"{prefix}-{year}-{new_num:04d}", 1)
+            
+        return res
+    
+    # Fallback to default format if settings are not strictly using ()
+    return f"{prefix}-{year}-{new_num:04d}"
 
 
 def generate_asset_tag():
@@ -102,6 +134,8 @@ def project_has_invalid_expenses(project):
 @login_required
 def index():
     """Dashboard with all projects"""
+    from app.models import Company
+    company = Company.query.first()
     projects = PDProject.query.order_by(PDProject.created_at.desc()).all()
     today = datetime.now().date()
     
@@ -116,6 +150,7 @@ def index():
     
     return render_template('product_development/index.html',
                          projects=projects,
+                         company=company,
                          total_projects=total_projects,
                          active_projects=active_projects,
                          completed_projects=completed_projects,
@@ -123,6 +158,40 @@ def index():
                          total_investment=total_investment,
                          near_deadline=near_deadline,
                          today=today)
+
+
+@bp.route('/settings', methods=['POST'])
+@login_required
+def update_settings():
+    """Update PD project settings"""
+    if current_user.role != 'admin':
+        flash('Unauthorized.', 'danger')
+        return redirect(url_for('product_development.index'))
+    
+    from app.models import Company
+    company = Company.query.first()
+    if not company:
+        company = Company(name='My Company')
+        db.session.add(company)
+        db.session.commit()
+    
+    pd_code_format = request.form.get('pd_code_format')
+    if pd_code_format:
+        # User format: PDV-()-() 
+        # We store prefix, and format
+        parts = pd_code_format.split('-')
+        if len(parts) >= 1:
+            company.pd_prefix = parts[0].strip()
+        
+        # We translate ()-()-() to something our generator can use
+        # But user wants simple (), so we'll just store the user preference
+        # and handle it in generator
+        company.pd_code_format = pd_code_format
+        
+        db.session.commit()
+        flash('Settings updated successfully.', 'success')
+    
+    return redirect(url_for('product_development.index'))
 
 
 @bp.route('/create', methods=['GET', 'POST'])
@@ -155,7 +224,7 @@ def create():
             target_market=request.form.get('target_market'),
             expected_monthly_demand=float(request.form.get('expected_monthly_demand') or 0),
             target_selling_price=float(request.form.get('target_selling_price') or 0),
-            status='Draft',
+            status='Active',
             current_phase=1,
             description=request.form.get('description'),
             created_by=current_user.id
