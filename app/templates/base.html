@@ -944,7 +944,7 @@
                 <div class="collapse" id="mobileMfgSubmenu">
                     {% if current_user.is_admin or current_user.can_view_manufacturing %}
                     <a class="nav-link ps-4" href="{{ url_for('manufacturing.boms') }}">Bills of Material</a>
-                    <a class="nav-link ps-4" href="{{ url_for('manufacturing.orders') }}">Production Orders</a>
+                    <a class="nav-link ps-4" href="{{ url_for('manufacturing.orders') }}">Manufacturing Orders</a>
                     {% endif %}
                     {% if current_user.is_admin or current_user.can_view_production %}
                     <a class="nav-link ps-4" href="{{ url_for('production.index') }}">Target Tracker</a>
@@ -1153,7 +1153,8 @@
                         <div class="collapse" id="mfgSubmenu">
                             {% if current_user.is_admin or current_user.can_view_manufacturing %}
                             <a class="nav-link ps-4" href="{{ url_for('manufacturing.boms') }}">Bills of Material</a>
-                            <a class="nav-link ps-4" href="{{ url_for('manufacturing.orders') }}">Production Orders</a>
+                            <a class="nav-link ps-4" href="{{ url_for('manufacturing.orders') }}">Manufacturing
+                                Orders</a>
                             {% endif %}
                             {% if current_user.is_admin or current_user.can_view_production %}
                             <a class="nav-link ps-4" href="{{ url_for('production.index') }}">Target Tracker</a>
@@ -1921,6 +1922,7 @@
 
                 const table = $(selector).DataTable({
                     dom: '<"d-flex justify-content-between align-items-center mb-3"Blf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
+                    stateSave: true,
                     buttons: [
                         {
                             extend: 'excelHtml5',
@@ -2061,7 +2063,7 @@
                         }
 
                         const title = $(this).closest('.card').find('.card-header').text().trim() || 'Export';
-                        
+
                         // Dynamic PDF sizing for universal tables
                         const universalCols = $(this).find('thead th:not(.no-export)').length;
                         let uOrientation = 'portrait';
@@ -2088,6 +2090,7 @@
 
                         const table = $(this).DataTable({
                             dom: '<"d-flex justify-content-between align-items-center mb-3"Blf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
+                            stateSave: true,
                             buttons: [
                                 {
                                     extend: 'excelHtml5',
@@ -2119,7 +2122,7 @@
                             ],
                             paging: true,
                             lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
-                            pageLength: 10,
+                            pageLength: 25,
                             language: {
                                 search: "_INPUT_",
                                 searchPlaceholder: "Search...",
@@ -2535,17 +2538,17 @@
 
         <script>
             /* ── Global File Upload Enhancement (Drag&Drop + Paste) ── */
-            (function() {
+            (function () {
                 function setupFileUploadEnhancement() {
                     // Target all file inputs that haven't been enhanced yet
                     const fileInputs = document.querySelectorAll('input[type="file"]:not([data-enhanced="true"])');
-                    
+
                     fileInputs.forEach(input => {
                         input.dataset.enhanced = "true";
 
                         // Use the closest container (usually .mb-3 or the immediate parent)
                         let container = input.closest('.mb-3') || input.closest('.input-group') || input.parentElement;
-                        
+
                         // Prevent browser defaults for drag events
                         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
                             container.addEventListener(eventName, e => {
@@ -2590,7 +2593,7 @@
 
                 function handleFiles(files, input) {
                     if (files.length === 0) return;
-                    
+
                     // Create a new DataTransfer to populate the file input
                     const dt = new DataTransfer();
                     for (let i = 0; i < files.length; i++) {
@@ -2609,7 +2612,7 @@
                 } else {
                     setupFileUploadEnhancement();
                 }
-                
+
                 // Watch for new inputs (e.g. in modals or dynamic rows)
                 const observer = new MutationObserver((mutations) => {
                     let needsSetup = false;

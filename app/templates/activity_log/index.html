@@ -178,6 +178,7 @@
         // Initialize DataTable with export buttons
         var table = $('#logsTable').DataTable({
             "order": [[1, "desc"]], // Column index 1 because index 0 is checkbox
+            "stateSave": true,
             "pageLength": 25,
             "lengthMenu": [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
             "dom": '<"d-flex justify-content-between align-items-center mb-3"<"d-flex align-items-center"lB>f>rtip',

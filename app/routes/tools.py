@@ -217,18 +217,24 @@ def create_receiving():
                         else:
                             exp_kwargs['bom_id'] = target_id
                             
-                        exp = Expense(
-                            expense_number=exp_num,
-                            amount=amount_per,
-                            status='confirmed',
-                            created_by=current_user.id,
-                            **exp_kwargs
-                        )
+                        exp = Expense()
+                        exp.expense_number = exp_num
+                        exp.amount = amount_per
+                        exp.status = 'confirmed'
+                        exp.created_by = current_user.id
+                        for key, value in exp_kwargs.items():
+                            setattr(exp, key, value)
                         db.session.add(exp)
                 else:
                     # Unassigned
                     exp_num, next_num = get_unique_expense_number(acc_settings, next_num)
-                    exp = Expense(expense_number=exp_num, amount=grand_total, status='confirmed', created_by=current_user.id, **common_kwargs)
+                    exp = Expense()
+                    exp.expense_number = exp_num
+                    exp.amount = grand_total
+                    exp.status = 'confirmed'
+                    exp.created_by = current_user.id
+                    for key, value in common_kwargs.items():
+                        setattr(exp, key, value)
                     db.session.add(exp)
             
             receiving.allocated_ids = ",".join(allocated_ids)
@@ -669,20 +675,26 @@ def edit_receiving(id):
                     amount_per_mo = receiving.total_amount / len(valid_mos)
                     for mo in valid_mos:
                         exp_num, next_num = get_unique_expense_number(acc_settings, next_num)
-                        exp = Expense(
-                            expense_number=exp_num,
-                            amount=amount_per_mo,
-                            status='confirmed',
-                            mo_id=mo.id,
-                            created_by=current_user.id,
-                            **common_kwargs
-                        )
+                        exp = Expense()
+                        exp.expense_number = exp_num
+                        exp.amount = amount_per_mo
+                        exp.status = 'confirmed'
+                        exp.mo_id = mo.id
+                        exp.created_by = current_user.id
+                        for key, value in common_kwargs.items():
+                            setattr(exp, key, value)
                         db.session.add(exp)
                         mo.actual_overhead_cost = (mo.actual_overhead_cost or 0) + amount_per_mo
                         mo.total_cost = (mo.actual_material_cost or 0) + (mo.actual_labor_cost or 0) + mo.actual_overhead_cost
                 else:
                     exp_num, next_num = get_unique_expense_number(acc_settings, next_num)
-                    exp = Expense(expense_number=exp_num, amount=receiving.total_amount, status='confirmed', created_by=current_user.id, **common_kwargs)
+                    exp = Expense()
+                    exp.expense_number = exp_num
+                    exp.amount = receiving.total_amount
+                    exp.status = 'confirmed'
+                    exp.created_by = current_user.id
+                    for key, value in common_kwargs.items():
+                        setattr(exp, key, value)
                     db.session.add(exp)
             else:
                 # Bulk Split mode
@@ -704,11 +716,23 @@ def edit_receiving(id):
                         exp_kwargs = dict(common_kwargs)
                         if target_type == 'product': exp_kwargs['product_id'] = target_id
                         else: exp_kwargs['bom_id'] = target_id
-                        exp = Expense(expense_number=exp_num, amount=amount_per, status='confirmed', created_by=current_user.id, **exp_kwargs)
+                        exp = Expense()
+                        exp.expense_number = exp_num
+                        exp.amount = amount_per
+                        exp.status = 'confirmed'
+                        exp.created_by = current_user.id
+                        for key, value in exp_kwargs.items():
+                            setattr(exp, key, value)
                         db.session.add(exp)
                 else:
                     exp_num, next_num = get_unique_expense_number(acc_settings, next_num)
-                    exp = Expense(expense_number=exp_num, amount=receiving.total_amount, status='confirmed', created_by=current_user.id, **common_kwargs)
+                    exp = Expense()
+                    exp.expense_number = exp_num
+                    exp.amount = receiving.total_amount
+                    exp.status = 'confirmed'
+                    exp.created_by = current_user.id
+                    for key, value in common_kwargs.items():
+                        setattr(exp, key, value)
                     db.session.add(exp)
             
             receiving.allocated_ids = ",".join(allocated_ids)

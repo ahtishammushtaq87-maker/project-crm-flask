@@ -11,6 +11,10 @@
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
     }
 
+    .card-stats {
+        color: black;
+    }
+
     .filter-group label {
         font-weight: 600;
         font-size: 0.8rem;
@@ -27,6 +31,88 @@
     .filter-group .btn-sm {
         padding: 0.35rem 0.75rem;
         font-size: 0.8rem;
+    }
+
+    /* Searchable category dropdown */
+    .cat-dropdown-wrapper {
+        position: relative;
+        margin-top: 8px;
+    }
+
+    .cat-dropdown-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: rgba(255, 255, 255, 0.25);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 0.75rem;
+        color: #fff;
+        cursor: pointer;
+        width: 100%;
+        text-align: left;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .cat-dropdown-toggle:hover {
+        background: rgba(255, 255, 255, 0.35);
+    }
+
+    .cat-dropdown-menu {
+        display: none;
+        position: absolute;
+        bottom: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+        z-index: 1050;
+        overflow: hidden;
+        min-width: 180px;
+    }
+
+    .cat-dropdown-menu.open {
+        display: block;
+    }
+
+    .cat-search-input {
+        width: 100%;
+        border: none;
+        border-bottom: 1px solid #eee;
+        padding: 7px 10px;
+        font-size: 0.8rem;
+        outline: none;
+        box-sizing: border-box;
+    }
+
+    .cat-list {
+        max-height: 180px;
+        overflow-y: auto;
+    }
+
+    .cat-list-item {
+        padding: 6px 12px;
+        font-size: 0.8rem;
+        color: #333;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .cat-list-item:hover,
+    .cat-list-item.active {
+        background: #f0f4ff;
+        color: #4361ee;
+        font-weight: 600;
+    }
+
+    .cat-list-item.hidden-cat {
+        display: none;
     }
 </style>
 {% endblock %}
@@ -74,7 +160,7 @@
                     <i class="fas fa-chart-line"></i>
                 </div>
                 <h5>Total Sales</h5>
-                <h3>PKR{{ "%.2f"|format(total_sales) }}</h3>
+                <h3 style="color: white;">PKR{{ "%.2f"|format(total_sales) }}</h3>
                 <small>This Month</small>
             </div>
         </div>
@@ -85,7 +171,7 @@
                     <i class="fas fa-shopping-cart"></i>
                 </div>
                 <h5>Total Purchases</h5>
-                <h3>PKR{{ "%.2f"|format(total_purchases) }}</h3>
+                <h3 style="color: white;">PKR{{ "%.2f"|format(total_purchases) }}</h3>
                 <small>Inventory Added</small>
             </div>
         </div>
@@ -96,7 +182,7 @@
                     <i class="fas fa-boxes"></i>
                 </div>
                 <h5>COGS</h5>
-                <h3>PKR{{ "%.2f"|format(total_cogs) }}</h3>
+                <h3 style="color: white;">PKR{{ "%.2f"|format(total_cogs) }}</h3>
                 <small>Cost of Goods Sold</small>
             </div>
         </div>
@@ -107,7 +193,7 @@
                     <i class="fas fa-money-bill-wave"></i>
                 </div>
                 <h5>Total Expenses</h5>
-                <h3>PKR{{ "%.2f"|format(total_expenses-manufacturing_overhead) }}</h3>
+                <h3 style="color: white;">PKR{{ "%.2f"|format(total_expenses-manufacturing_overhead) }}</h3>
                 <div class="mt-1" style="font-size: 0.75rem; opacity: 0.9;">
                     <span>Op: PKR{{ "%.2f"|format(operating_expenses) }}</span> |
                     <span>BOM: PKR{{ "%.2f"|format(manufacturing_overhead) }}</span> |
@@ -156,32 +242,57 @@
                 </div>
                 <h5>Outstanding</h5>
                 <h3>PKR{{ "%.2f"|format(outstanding) }}</h3>
-                <small>Unpaid Invoices</small>
-            </div>
-        </div>
-
-        <div class="col-sm-6 col-lg-3 mb-3">
-            {% set net_stock_position = total_stock_value + net_profit %}
-            <div class="card-stats" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
-                <div class="stats-icon float-end">
-                    <i class="fas fa-balance-scale"></i>
-                </div>
-                <h5>Net Stock Position</h5>
-                <h3 class="{% if net_stock_position >= 0 %}text-success{% else %}text-danger{% endif %}">
-                    PKR{{ "%.2f"|format(net_stock_position) }}
-                </h3>
-                <small>Stock Value + Net Profit</small>
+                <small>All Unpaid Invoices</small>
             </div>
         </div>
 
         <div class="col-sm-6 col-lg-3 mb-3">
             <div class="card-stats" style="background: linear-gradient(135deg, #f6c23e 0%, #dda20a 100%);">
                 <div class="stats-icon float-end">
-                    <i class="fas fa-chart-line"></i>
+                    <i class="fas fa-warehouse"></i>
                 </div>
                 <h5>Total Stock Value</h5>
                 <h3>PKR{{ "%.2f"|format(total_stock_value) }}</h3>
-                <small>{% if all_time %}Current Inventory{% else %}Stock Received in Period{% endif %}</small>
+                <small>Current Inventory{% if selected_category_id and selected_category_id.isdigit() %} &mdash;
+                    filtered{% endif %}</small>
+
+                <!-- Searchable Category Dropdown -->
+                <form method="GET" action="{{ url_for('dashboard.index') }}" id="catFilterForm">
+                    {# Preserve date filter params #}
+                    {% if start_date %}<input type="hidden" name="start_date" value="{{ start_date }}">{% endif %}
+                    {% if end_date %}<input type="hidden" name="end_date" value="{{ end_date }}">{% endif %}
+                    {% if all_time %}<input type="hidden" name="all_time" value="1">{% endif %}
+                    <input type="hidden" name="category_id" id="selectedCatId" value="{{ selected_category_id or '' }}">
+
+                    <div class="cat-dropdown-wrapper">
+                        <button type="button" class="cat-dropdown-toggle" id="catToggleBtn"
+                            onclick="toggleCatDropdown(event)">
+                            <span id="catLabel">
+                                {% if selected_category_id and selected_category_id.isdigit() %}
+                                {% for cat in categories %}{% if cat.id|string == selected_category_id %}{{ cat.name
+                                }}{% endif %}{% endfor %}
+                                {% else %}
+                                All Categories
+                                {% endif %}
+                            </span>
+                            <i class="fas fa-chevron-up ms-1" style="font-size:0.65rem; opacity:0.8;"></i>
+                        </button>
+                        <div class="cat-dropdown-menu" id="catDropdownMenu">
+                            <input type="text" class="cat-search-input" id="catSearchInput"
+                                placeholder="Search category..." oninput="filterCats(this.value)" autocomplete="off">
+                            <div class="cat-list" id="catList">
+                                <div class="cat-list-item {% if not selected_category_id %}active{% endif %}"
+                                    data-val="" data-label="All Categories" onclick="selectCat(this)">All Categories
+                                </div>
+                                {% for cat in categories %}
+                                <div class="cat-list-item {% if cat.id|string == selected_category_id %}active{% endif %}"
+                                    data-val="{{ cat.id }}" data-label="{{ cat.name }}" onclick="selectCat(this)">{{
+                                    cat.name }}</div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -293,6 +404,56 @@
         options: {
             responsive: true,
             maintainAspectRatio: false
+        }
+    });
+</script>
+<script>
+    /* ── Searchable Category Dropdown ── */
+    function toggleCatDropdown(e) {
+        e.stopPropagation();
+        var menu = document.getElementById('catDropdownMenu');
+        var isOpen = menu.classList.contains('open');
+        // close first, then maybe open
+        closeAllCatDropdowns();
+        if (!isOpen) {
+            menu.classList.add('open');
+            var input = document.getElementById('catSearchInput');
+            if (input) { input.focus(); input.value = ''; filterCats(''); }
+        }
+    }
+
+    function filterCats(query) {
+        var q = query.trim().toLowerCase();
+        var items = document.querySelectorAll('#catList .cat-list-item');
+        items.forEach(function (item) {
+            var text = item.textContent.toLowerCase();
+            item.classList.toggle('hidden-cat', q.length > 0 && text.indexOf(q) === -1);
+        });
+    }
+
+    function selectCat(el) {
+        var val = el.getAttribute('data-val');
+        var label = el.getAttribute('data-label');
+        document.getElementById('selectedCatId').value = val;
+        document.getElementById('catLabel').textContent = label;
+        // update active state
+        document.querySelectorAll('#catList .cat-list-item').forEach(function (item) {
+            item.classList.toggle('active', item.getAttribute('data-val') === val);
+        });
+        closeAllCatDropdowns();
+        document.getElementById('catFilterForm').submit();
+    }
+
+    function closeAllCatDropdowns() {
+        document.querySelectorAll('.cat-dropdown-menu').forEach(function (m) {
+            m.classList.remove('open');
+        });
+    }
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.cat-dropdown-wrapper')) {
+            closeAllCatDropdowns();
         }
     });
 </script>

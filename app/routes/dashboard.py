@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request
 from app.utils import permission_required
 from flask_login import login_required, current_user
-from app.models import Sale, Product, PurchaseBill, PurchaseItem, Expense, ExpenseCategory, db, SaleItem, Vendor, Customer, Staff, Attendance
+from app.models import Sale, Product, ProductCategory, PurchaseBill, PurchaseItem, Expense, ExpenseCategory, db, SaleItem, Vendor, Customer, Staff, Attendance
 from datetime import datetime, timedelta
 from sqlalchemy import func, inspect
 from calendar import monthrange
@@ -268,12 +268,10 @@ def index():
     # (BOM overhead is already in COGS)
     net_profit = gross_profit - operating_expenses - tools_expenses - divided_expenses_for_period - daily_payroll_for_period
 
-    # Outstanding Payments — only from approved invoices
+    # Outstanding Payments — ALL unpaid invoices regardless of date (snapshot, not period metric)
     outstanding = db.session.query(func.sum(Sale.total - Sale.paid_amount)).filter(
         Sale.is_approved == True,
-        Sale.status != 'paid',
-        Sale.date >= start_datetime,
-        Sale.date <= end_datetime
+        Sale.status != 'paid'
     ).scalar() or 0
     
     # Low Stock Products
@@ -282,23 +280,15 @@ def index():
     # Total Products
     products_count = Product.query.count()
     
-    # Total Stock Value:
-    # - All Time (reset): true live inventory cost = SUM(qty × cost_price) for all products
-    # - Date filtered: cost of stock received in the period via purchase bills
-    if all_time:
-        total_stock_value = db.session.query(
-            func.sum(Product.quantity * Product.cost_price)
-        ).scalar() or 0
-    else:
-        total_stock_value = db.session.query(
-            func.sum(PurchaseItem.quantity * PurchaseItem.unit_price)
-        ).join(
-            PurchaseBill, PurchaseItem.bill_id == PurchaseBill.id
-        ).filter(
-            PurchaseBill.inventory_received == True,
-            PurchaseBill.date >= start_datetime,
-            PurchaseBill.date <= end_datetime
-        ).scalar() or 0
+    # Category filter for Total Stock Value
+    selected_category_id = request.args.get('category_id', '', type=str)
+    categories = ProductCategory.query.filter_by(is_active=True).order_by(ProductCategory.name).all()
+
+    # Total Stock Value — always current live inventory (snapshot), optionally filtered by category
+    stock_q = db.session.query(func.sum(Product.quantity * Product.cost_price))
+    if selected_category_id and selected_category_id.isdigit():
+        stock_q = stock_q.filter(Product.category_id == int(selected_category_id))
+    total_stock_value = stock_q.scalar() or 0
     
     # Active Vendors
     vendors_count = Vendor.query.filter(Vendor.is_active == True).count()
@@ -341,6 +331,8 @@ def index():
                          low_stock=low_stock,
                          products_count=products_count,
                          total_stock_value=total_stock_value,
+                         categories=categories,
+                         selected_category_id=selected_category_id,
                          vendors_count=vendors_count,
                          customers_count=customers_count,
                          recent_sales=recent_sales,

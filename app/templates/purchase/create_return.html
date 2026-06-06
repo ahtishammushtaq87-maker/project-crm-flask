@@ -303,7 +303,9 @@ $(document).ready(function() {
     initSelect2(document);
     
     $('#billsTable').DataTable({
-        pageLength: 10,
+        stateSave: true,
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
         order: [[1, 'desc']]
     });
     
