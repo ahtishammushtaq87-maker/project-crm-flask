@@ -255,6 +255,8 @@
                             <th>Buyer</th>
                             <th>Vendor</th>
                             <th>Requester</th>
+                            <th>Customer</th>
+                            <th>Invoice No</th>
                             <th>Items / SKU</th>
                             <th>Total Amount</th>
                             <th class="text-center no-export">Actions</th>
@@ -282,6 +284,8 @@
                             <td class="small">{{ del.buyer.name if del.buyer else '-' }}</td>
                             <td class="small">{{ del.vendor_rel.name if del.vendor_rel else '-' }}</td>
                             <td class="small">{{ del.requester.name if del.requester else '-' }}</td>
+                            <td class="small">{{ del.customer.name if del.customer else '-' }}</td>
+                            <td class="small">{{ del.sale.invoice_number if del.sale else '-' }}</td>
                             <td>
                                 <div class="d-flex flex-wrap gap-1" style="max-width: 300px;">
                                     {% for item in del.items %}
@@ -332,7 +336,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="10" class="text-center py-4 text-muted">No item delivering records found.</td>
+                            <td colspan="12" class="text-center py-4 text-muted">No item delivering records found.</td>
                         </tr>
                         {% endfor %}
                     </tbody>

@@ -91,6 +91,26 @@
                                 </select>
                             </div>
                         </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Customer</label>
+                                <select name="customer_id" class="form-select searchable-select">
+                                    <option value="">Select Customer</option>
+                                    {% for c in customers %}
+                                    <option value="{{ c.id }}" {% if delivering.customer_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Sales Invoice No</label>
+                                <select name="sale_id" class="form-select searchable-select">
+                                    <option value="">Select Invoice</option>
+                                    {% for s in sales %}
+                                    <option value="{{ s.id }}" {% if delivering.sale_id == s.id %}selected{% endif %}>{{ s.invoice_number }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
                         <div class="mb-3">
                             <label class="form-label">Description / Reason</label>
                             <textarea name="description" class="form-control" rows="3"

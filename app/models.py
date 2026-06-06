@@ -2781,11 +2781,16 @@ class ToolReceiving(db.Model):
     overhead_type = db.Column(db.String(20)) # 'mo', 'bulk'
     allocated_ids = db.Column(db.Text) # Stored as comma-separated or JSON list for pre-filling UI
     
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
+    sale_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=True)
+    
     items = db.relationship('ToolReceivingItem', backref='receiving', lazy=True, cascade='all, delete-orphan')
     expense = db.relationship('Expense', backref='tool_receiving', lazy=True)
     buyer = db.relationship('Staff', foreign_keys=[buyer_id], backref='tool_purchases', lazy=True)
     vendor_rel = db.relationship('Vendor', foreign_keys=[vendor_id], backref='tool_supplies', lazy=True)
     requester = db.relationship('Staff', foreign_keys=[requester_id], backref='tool_requests', lazy=True)
+    customer = db.relationship('Customer', foreign_keys=[customer_id], lazy=True)
+    sale = db.relationship('Sale', foreign_keys=[sale_id], lazy=True)
 
 class ToolReceivingItem(db.Model):
     __tablename__ = 'tool_receiving_items'
@@ -2816,11 +2821,16 @@ class ToolDelivering(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
+    sale_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=True)
+    
     items = db.relationship('ToolDeliveringItem', backref='delivering', lazy=True, cascade='all, delete-orphan')
     expense = db.relationship('Expense', backref='tool_deliveries', lazy=True)
     buyer = db.relationship('Staff', foreign_keys=[buyer_id], backref='tool_delivery_buys', lazy=True)
     vendor_rel = db.relationship('Vendor', foreign_keys=[vendor_id], backref='tool_delivery_vendors', lazy=True)
     requester = db.relationship('Staff', foreign_keys=[requester_id], backref='tool_delivery_requests', lazy=True)
+    customer = db.relationship('Customer', foreign_keys=[customer_id], lazy=True)
+    sale = db.relationship('Sale', foreign_keys=[sale_id], lazy=True)
 
 class ToolDeliveringItem(db.Model):
     __tablename__ = 'tool_delivering_items'

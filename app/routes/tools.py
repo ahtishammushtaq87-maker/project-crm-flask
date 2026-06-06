@@ -5,7 +5,7 @@ from app import db
 from app.models import (
     ToolReceiving, ToolReceivingItem, ToolDelivering, ToolDeliveringItem, 
     ToolSettings, Product, ProductWarehouseStock, Expense, ExpenseCategory, Company, Staff, Vendor,
-    ManufacturingOrder, BOM, Warehouse, ExpenseSettings
+    ManufacturingOrder, BOM, Warehouse, ExpenseSettings, Customer, Sale
 )
 from datetime import datetime
 
@@ -339,6 +339,8 @@ def create_delivering():
         buyer_id = request.form.get('buyer_id')
         vendor_id = request.form.get('vendor_id')
         requester_id = request.form.get('requester_id')
+        customer_id = request.form.get('customer_id')
+        sale_id = request.form.get('sale_id')
         shipping_charges = float(request.form.get('shipping_charges') or 0)
         
         product_ids = request.form.getlist('product_id[]')
@@ -395,6 +397,8 @@ def create_delivering():
             buyer_id=int(buyer_id) if buyer_id else None,
             vendor_id=int(vendor_id) if vendor_id else None,
             requester_id=int(requester_id) if requester_id else None,
+            customer_id=int(customer_id) if customer_id else None,
+            sale_id=int(sale_id) if sale_id else None,
             created_by=current_user.id
         )
         db.session.add(delivering)
@@ -438,7 +442,9 @@ def create_delivering():
         
     staff = Staff.query.filter_by(is_active=True).all()
     vendors = Vendor.query.filter_by(is_active=True).all()
-    return render_template('tools/create_delivering.html', products=products, staff=staff, vendors=vendors, warehouses=warehouses, now=datetime.now())
+    customers = Customer.query.filter_by(is_active=True).all()
+    sales = Sale.query.filter_by(is_approved=True).order_by(Sale.invoice_number.desc()).all()
+    return render_template('tools/create_delivering.html', products=products, staff=staff, vendors=vendors, warehouses=warehouses, customers=customers, sales=sales, now=datetime.now())
 
 @bp.route('/receiving/<int:id>/delete', methods=['POST'])
 @login_required
@@ -778,6 +784,8 @@ def edit_delivering(id):
         delivering.buyer_id = int(request.form.get('buyer_id')) if request.form.get('buyer_id') else None
         delivering.vendor_id = int(request.form.get('vendor_id')) if request.form.get('vendor_id') else None
         delivering.requester_id = int(request.form.get('requester_id')) if request.form.get('requester_id') else None
+        delivering.customer_id = int(request.form.get('customer_id')) if request.form.get('customer_id') else None
+        delivering.sale_id = int(request.form.get('sale_id')) if request.form.get('sale_id') else None
         
         product_ids = request.form.getlist('product_id[]')
         quantities = request.form.getlist('quantity[]')
@@ -845,7 +853,10 @@ def edit_delivering(id):
         
     staff = Staff.query.filter_by(is_active=True).all()
     vendors = Vendor.query.filter_by(is_active=True).all()
-    return render_template('tools/edit_delivering.html', delivering=delivering, products=products, staff=staff, vendors=vendors, warehouses=warehouses)
+    customers = Customer.query.filter_by(is_active=True).all()
+    sales = Sale.query.filter_by(is_approved=True).order_by(Sale.invoice_number.desc()).all()
+    
+    return render_template('tools/edit_delivering.html', delivering=delivering, products=products, staff=staff, vendors=vendors, warehouses=warehouses, customers=customers, sales=sales)
 
 @bp.route('/receiving/bulk-delete', methods=['POST'])
 @login_required
