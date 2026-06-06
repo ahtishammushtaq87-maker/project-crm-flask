@@ -222,7 +222,7 @@
                                 </td>
                                 <td>
                                     <input type="number" name="price[]" class="form-control price" step="0.01"
-                                           value="{{ item.unit_price }}" readonly>
+                                           value="{{ item.unit_price }}" {% if not current_user.is_admin %}readonly{% endif %}>
                                 </td>
                                 <td>
                                     <span class="item-total">PKR0.00</span>
@@ -251,6 +251,8 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
+    const isAdmin = "{{ 'true' if current_user.is_admin else 'false' }}" === "true";
+
     function addItem() {
         const rowToClone = document.querySelector('.item-row');
         if (!rowToClone) return;
@@ -271,6 +273,13 @@
                 input.value = '';
             }
         });
+        if (newRow.querySelector('.price')) {
+            if (isAdmin) {
+                newRow.querySelector('.price').removeAttribute('readonly');
+            } else {
+                newRow.querySelector('.price').setAttribute('readonly', true);
+            }
+        }
         
         newRow.querySelector('.item-total').textContent = 'PKR0.00';
         document.getElementById('itemsBody').appendChild(newRow);

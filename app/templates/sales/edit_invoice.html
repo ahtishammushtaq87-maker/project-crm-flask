@@ -211,7 +211,7 @@
                                 </td>
                                 <td>
                                     <input type="number" name="price[]" class="form-control price" step="0.01"
-                                        value="{{ '%.2f'|format(item.unit_price) }}" readonly>
+                                        value="{{ '%.2f'|format(item.unit_price) }}" {% if not current_user.is_admin %}readonly{% endif %}>
                                 </td>
                                 <td>
                                     <input type="number" name="delivery[]" class="form-control delivery" step="0.01"
@@ -244,6 +244,8 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
+    const isAdmin = "{{ 'true' if current_user.is_admin else 'false' }}" === "true";
+
     function addItem() {
         const newRow = document.querySelector('.item-row').cloneNode(true);
 
@@ -258,6 +260,13 @@
         newRow.querySelectorAll('input, select').forEach(input => input.value = '');
         newRow.querySelector('.quantity').value = '1';
         newRow.querySelector('.price').value = '0';
+        if (newRow.querySelector('.price')) {
+            if (isAdmin) {
+                newRow.querySelector('.price').removeAttribute('readonly');
+            } else {
+                newRow.querySelector('.price').setAttribute('readonly', true);
+            }
+        }
         newRow.querySelector('.delivery').value = '0';
         newRow.querySelector('.item-total').textContent = 'PKR0.00';
         newRow.querySelector('.product-select').selectedIndex = 0;
@@ -314,7 +323,7 @@
         const discount = parseFloat(document.querySelector('input[name="discount"]').value) || 0;
         const delivery_charge = parseFloat(document.querySelector('input[name="delivery_charge"]').value) || 0;
 
-        const isOverdue = {{ 'true' if sale.is_overdue else 'false' }};
+        const isOverdue = "{{ 'true' if sale.is_overdue else 'false' }}" === "true";
         const overrideRestricted = document.getElementById('ignoreOverdueCheck').checked;
         
         // If overdue and NOT overridden, discount is ignored in final total

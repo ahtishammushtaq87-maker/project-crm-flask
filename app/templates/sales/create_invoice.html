@@ -253,7 +253,7 @@
                                 </td>
                                 <td>
                                     <input type="number" name="price[]" id="price1" class="form-control price"
-                                        step="0.01" readonly>
+                                        step="0.01" {% if not current_user.is_admin %}readonly{% endif %}>
                                 </td>
                                 <td>
                                     <input type="number" name="delivery[]" id="delivery1" class="form-control delivery"
@@ -285,6 +285,8 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
+    const isAdmin = "{{ 'true' if current_user.is_admin else 'false' }}" === "true";
+
     function updateCustomerInfo() {
         const select = document.getElementById('customerSelect');
         const infoDiv = document.getElementById('customerAdvanceInfo');
@@ -383,6 +385,13 @@
         newRow.querySelectorAll('input, select').forEach(input => input.value = '');
         newRow.querySelector('.quantity').value = '1';
         newRow.querySelector('.price').value = '0';
+        if (newRow.querySelector('.price')) {
+            if (isAdmin) {
+                newRow.querySelector('.price').removeAttribute('readonly');
+            } else {
+                newRow.querySelector('.price').setAttribute('readonly', true);
+            }
+        }
         newRow.querySelector('.delivery').value = '0';
         newRow.querySelector('.item-total').textContent = 'PKR0.00';
         document.getElementById('itemsBody').appendChild(newRow);
