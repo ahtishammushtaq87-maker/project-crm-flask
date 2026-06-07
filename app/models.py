@@ -322,6 +322,20 @@ class Customer(db.Model):
     sales = db.relationship('Sale', backref='customer', lazy=True, cascade='all, delete-orphan')
     advances = db.relationship('CustomerAdvance', backref='customer', lazy=True, cascade='all, delete-orphan')
     
+    access_token = db.Column(db.String(100), unique=True, nullable=True, index=True)
+    token_expiry = db.Column(db.DateTime, nullable=True)
+
+    @property
+    def valid_access_token(self):
+        import uuid
+        from datetime import datetime, timedelta
+        from app import db
+        if not self.access_token or not self.token_expiry or self.token_expiry < datetime.utcnow():
+            self.access_token = str(uuid.uuid4())
+            self.token_expiry = datetime.utcnow() + timedelta(days=30) # Ledgers last longer
+            db.session.commit()
+        return self.access_token
+    
     @property
     def total_sales(self):
         """Total of approved sales only"""

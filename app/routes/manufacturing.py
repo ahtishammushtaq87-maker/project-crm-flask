@@ -263,6 +263,36 @@ def bom_details(id):
     bom = BOM.query.get_or_404(id)
     return render_template('manufacturing/bom_details.html', bom=bom)
 
+@bp.route('/bom/<int:id>/versions')
+@login_required
+def bom_versions(id):
+    bom = BOM.query.get_or_404(id)
+    versions = BOMVersioningService.get_bom_version_history(id)
+    return jsonify({
+        'bom_name': bom.name,
+        'bom_product': bom.product.name if bom.product else '',
+        'bom_sku': bom.product.sku if bom.product else '',
+        'versions': [{
+            'id': v.id,
+            'version_number': v.version_number,
+            'labor_cost': v.labor_cost,
+            'overhead_cost': v.overhead_cost,
+            'total_cost': v.total_cost,
+            'change_reason': v.change_reason or 'Initial version',
+            'change_type': v.change_type or '-',
+            'previous_version': v.previous_version or '-',
+            'created_at': v.created_at.strftime('%Y-%m-%d %H:%M') if v.created_at else '-',
+            'items': [{
+                'component_name': item.component.name if item.component else 'N/A',
+                'component_sku': item.component.sku if item.component else 'N/A',
+                'quantity': item.quantity,
+                'unit_cost': item.unit_cost,
+                'shipping_per_unit': item.shipping_per_unit,
+                'total_cost': item.total_cost
+            } for item in v.items]
+        } for v in versions]
+    })
+
 @bp.route('/bom/<int:id>/delete', methods=['GET', 'POST'])
 @login_required
 @permission_required('manufacturing', action='delete')

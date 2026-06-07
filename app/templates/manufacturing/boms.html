@@ -7,11 +7,11 @@
 <div class="container-fluid">
     <div class="d-sm-flex align-items-center justify-content-between mb-4">
         <h1 class="h3 mb-0 text-gray-800">Bills of Material (BOM)</h1>
-                {% if current_user.has_permission('manufacturing', 'add') %}
-<a href="{{ url_for('manufacturing.add_bom') }}" class="btn btn-sm btn-primary shadow-sm">
+        {% if current_user.has_permission('manufacturing', 'add') %}
+        <a href="{{ url_for('manufacturing.add_bom') }}" class="btn btn-sm btn-primary shadow-sm">
             <i class="fas fa-plus fa-sm text-white-50"></i> Create BOM
         </a>
-{% endif %}        
+        {% endif %}
     </div>
 
     <!-- DataTales Example -->
@@ -21,11 +21,13 @@
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-bordered datatable-export" id="dataTable" width="100%" cellspacing="0" data-export-title="Bills of Material">
+                <table class="table table-bordered datatable-export" id="dataTable" width="100%" cellspacing="0"
+                    data-export-title="Bills of Material">
                     <thead>
                         <tr>
                             <th style="width: 40px;" class="text-center no-export">
-                                <input type="checkbox" id="selectAll" class="form-check-input" onclick="document.querySelectorAll('.bom-checkbox').forEach(cb => cb.checked = this.checked)">
+                                <input type="checkbox" id="selectAll" class="form-check-input"
+                                    onclick="document.querySelectorAll('.bom-checkbox').forEach(cb => cb.checked = this.checked)">
                             </th>
                             <th>BOM Name</th>
                             <th>Finished Product</th>
@@ -48,27 +50,33 @@
                                 <small class="text-muted">{{ bom.product.sku }}</small>
                             </td>
                             <td>
-                                <span class="badge badge-primary">{{ bom.version }}</span>
+                                {% set ver = bom.version if bom.version else 'v1' %}
+                                <span class="badge bg-primary version-badge" style="cursor: pointer; font-size: 0.85em;"
+                                    data-bom-id="{{ bom.id }}" title="Click to view history">
+                                    <i class="fas fa-code-branch me-1"></i>{{ ver }}
+                                </span>
                             </td>
                             <td>{{ bom.items|length }} items</td>
                             <td>PKR {{ "%.2f"|format(bom.labor_cost) }}</td>
                             <td>PKR {{ "%.2f"|format(bom.total_cost) }}</td>
                             <td class="no-export">
-                                 <a href="{{ url_for('manufacturing.bom_details', id=bom.id) }}" class="btn btn-info btn-sm">
+                                <a href="{{ url_for('manufacturing.bom_details', id=bom.id) }}"
+                                    class="btn btn-info btn-sm">
                                     <i class="fas fa-eye"></i> View
                                 </a>
-                                                                {% if current_user.has_permission('manufacturing', 'edit') %}
-<a href="{{ url_for('manufacturing.edit_bom', id=bom.id) }}" class="btn btn-warning btn-sm">
+                                {% if current_user.has_permission('manufacturing', 'edit') %}
+                                <a href="{{ url_for('manufacturing.edit_bom', id=bom.id) }}"
+                                    class="btn btn-warning btn-sm">
                                     <i class="fas fa-edit"></i> Edit
                                 </a>
-{% endif %}                                
-                                                                {% if current_user.has_permission('manufacturing', 'delete') %}
-<a href="{{ url_for('manufacturing.delete_bom', id=bom.id) }}" 
-                                   class="btn btn-danger btn-sm"
-                                   onclick="return confirm('WARNING: Are you sure you want to delete this BOM? This action is permanent.');">
+                                {% endif %}
+                                {% if current_user.has_permission('manufacturing', 'delete') %}
+                                <a href="{{ url_for('manufacturing.delete_bom', id=bom.id) }}"
+                                    class="btn btn-danger btn-sm"
+                                    onclick="return confirm('WARNING: Are you sure you want to delete this BOM? This action is permanent.');">
                                     <i class="fas fa-trash"></i> Delete
                                 </a>
-{% endif %}                                
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
@@ -78,4 +86,291 @@
         </div>
     </div>
 </div>
+
+<!-- BOM Version History Modal -->
+<div class="modal fade" id="bomVersionModal" tabindex="-1" aria-labelledby="bomVersionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content shadow-lg border-0">
+            <div class="modal-header py-3" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <div>
+                    <h5 class="modal-title text-white mb-0" id="bomVersionModalLabel">
+                        <i class="fas fa-history me-2"></i>BOM Version History
+                    </h5>
+                    <small class="text-white-50" id="modalBomSubtitle"></small>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                    aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0 bg-light" style="min-height: 350px;">
+                <div id="versionSpinner" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2 text-muted">Loading version history...</p>
+                </div>
+                <div id="versionContent" style="display:none;">
+                    <!-- Summary bar -->
+                    <div class="p-3 bg-white border-bottom" id="versionSummaryBar"></div>
+
+                    <!-- Filter Bar -->
+                    <div class="p-3 bg-light border-bottom">
+                        <div class="row g-2 align-items-end">
+                            <div class="col-12 col-md-3">
+                                <label class="form-label small fw-semibold mb-1"><i
+                                        class="fas fa-calendar-alt me-1 text-primary"></i>From Date</label>
+                                <input type="date" id="verFilterFrom" class="form-control form-control-sm">
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <label class="form-label small fw-semibold mb-1"><i
+                                        class="fas fa-calendar-alt me-1 text-primary"></i>To Date</label>
+                                <input type="date" id="verFilterTo" class="form-control form-control-sm">
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <label class="form-label small fw-semibold mb-1"><i
+                                        class="fas fa-code-branch me-1 text-primary"></i>Version</label>
+                                <select id="verFilterVersion" class="form-select form-select-sm">
+                                    <option value="">All Versions</option>
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-3 d-flex gap-2">
+                                <button id="verApplyFilter" class="btn btn-primary btn-sm flex-fill">
+                                    <i class="fas fa-filter me-1"></i>Apply
+                                </button>
+                                <button id="verClearFilter" class="btn btn-outline-secondary btn-sm flex-fill">
+                                    <i class="fas fa-times me-1"></i>Clear
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Table -->
+                    <div class="p-3">
+                        <div class="table-responsive bg-white rounded shadow-sm">
+                            <table class="table table-bordered table-hover align-middle mb-0 no-datatable"
+                                id="versionHistoryTable">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th class="text-center no-export" style="width:40px;">
+                                            <input type="checkbox" id="versionSelectAll" class="form-check-input">
+                                        </th>
+                                        <th>Version</th>
+                                        <th>Component Name</th>
+                                        <th>SKU</th>
+                                        <th class="text-end">Qty</th>
+                                        <th class="text-end">Unit Cost</th>
+                                        <th class="text-end">Shipping/Unit</th>
+                                        <th class="text-end">Component Total</th>
+                                        <th class="text-end">Labor</th>
+                                        <th class="text-end">Overhead</th>
+                                        <th class="text-end">BOM Total</th>
+                                        <th>Change Reason</th>
+                                        <th>Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="versionHistoryBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-white border-top">
+                <small class="text-muted me-auto"><i class="fas fa-info-circle me-1"></i>Click on a version badge in the
+                    table to view its history</small>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // ── BOM Version History Popup ──────────────────────────────────
+    var _verDTInstance = null;  // hold DataTable reference
+
+    // Custom DataTables search plugin for date + version filtering
+    $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
+        if (settings.nTable.id !== 'versionHistoryTable') return true;
+        var from = $('#verFilterFrom').val();
+        var to = $('#verFilterTo').val();
+        var version = $('#verFilterVersion').val().trim().toLowerCase();
+        // Date column index = 12, Version column index = 1
+        var rowDate = (data[12] || '').trim();
+        var rowVersion = (data[1] || '').replace(/<[^>]+>/g, '').trim().toLowerCase();
+
+        if (from && rowDate < from) return false;
+        if (to && rowDate.substring(0, 10) > to) return false;
+        if (version && rowVersion !== version && !rowVersion.startsWith(version)) return false;
+        return true;
+    });
+
+    $(document).on('click', '.version-badge', function () {
+        openBomVersionHistory($(this).data('bom-id'));
+    });
+
+    function openBomVersionHistory(bomId) {
+        var modalEl = document.getElementById('bomVersionModal');
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+
+        var spinner = document.getElementById('versionSpinner');
+        var content = document.getElementById('versionContent');
+        var tbody = document.getElementById('versionHistoryBody');
+        var summaryBar = document.getElementById('versionSummaryBar');
+        var subtitle = document.getElementById('modalBomSubtitle');
+        var verSel = document.getElementById('verFilterVersion');
+
+        // Reset UI
+        spinner.style.display = 'block';
+        content.style.display = 'none';
+        tbody.innerHTML = '';
+        summaryBar.innerHTML = '';
+        $('#verFilterFrom').val('');
+        $('#verFilterTo').val('');
+        $(verSel).html('<option value="">All Versions</option>');
+
+        // Destroy previous DataTable
+        if (_verDTInstance) {
+            _verDTInstance.destroy();
+            _verDTInstance = null;
+        }
+
+        fetch('/manufacturing/bom/' + bomId + '/versions')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                subtitle.textContent = data.bom_product + ' (' + data.bom_sku + ') — ' + data.versions.length + ' version(s)';
+
+                // Summary bar
+                if (data.versions.length > 0) {
+                    var latest = data.versions[0];
+                    summaryBar.innerHTML =
+                        '<div class="d-flex flex-wrap gap-3 align-items-center">' +
+                        '<span class="fw-bold"><i class="fas fa-boxes me-1 text-primary"></i>' + data.bom_name + '</span>' +
+                        '<span class="badge bg-primary">' + latest.version_number + ' (Current)</span>' +
+                        '<span class="text-muted small">| ' + data.versions.length + ' version(s)</span>' +
+                        '<span class="fw-semibold text-success small"><i class="fas fa-coins me-1"></i>Latest Total: PKR ' +
+                        latest.total_cost.toLocaleString(undefined, { minimumFractionDigits: 2 }) + '</span>' +
+                        '</div>';
+                } else {
+                    summaryBar.innerHTML = '<span class="text-muted">No version history recorded yet.</span>';
+                }
+
+                // Populate version dropdown
+                var seen = {};
+                data.versions.forEach(function (v) {
+                    if (!seen[v.version_number]) {
+                        seen[v.version_number] = true;
+                        var opt = document.createElement('option');
+                        opt.value = v.version_number;
+                        opt.textContent = v.version_number;
+                        verSel.appendChild(opt);
+                    }
+                });
+
+                // Initialize Select2 on version dropdown
+                $(verSel).select2({
+                    dropdownParent: $('#bomVersionModal'),
+                    placeholder: 'All Versions',
+                    allowClear: true,
+                    width: '100%'
+                });
+
+                // Build table rows — ALL FLAT (no rowspan) — DataTables requires equal cell count per row
+                if (data.versions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="13" class="text-center text-muted py-4">' +
+                        '<i class="fas fa-inbox fa-2x mb-2 d-block"></i>' +
+                        'No version history found. Versions are created automatically when costs change.</td></tr>';
+                } else {
+                    data.versions.forEach(function (v) {
+                        var items = v.items.length > 0 ? v.items : [null];
+                        // version badge + metadata strings reused per row
+                        var verBadge = '<span class="badge bg-primary">' + v.version_number + '</span>' +
+                            (v.previous_version && v.previous_version !== '-'
+                                ? ' <small class="text-muted d-block">prev: ' + v.previous_version + '</small>'
+                                : '');
+                        var laborStr    = 'PKR ' + v.labor_cost.toLocaleString(undefined, {minimumFractionDigits:2});
+                        var overheadStr = 'PKR ' + v.overhead_cost.toLocaleString(undefined, {minimumFractionDigits:2});
+                        var totalStr    = 'PKR ' + v.total_cost.toLocaleString(undefined, {minimumFractionDigits:2});
+
+                        items.forEach(function (item, idx) {
+                            var tr = document.createElement('tr');
+                            // shade alternate versions for readability
+                            var isEven = parseInt(v.version_number.replace('v','')) % 2 === 0;
+                            if (isEven) tr.style.backgroundColor = '#f8f9ff';
+
+                            // col 1: checkbox — only first item gets the checkbox for bulk actions
+                            var checkCell = idx === 0
+                                ? '<td class="text-center no-export"><input type="checkbox" class="form-check-input ver-check" value="' + v.id + '"></td>'
+                                : '<td class="no-export"></td>';
+
+                            // col 2: version (Show on first row prominently, muted on others for filtering)
+                            var versionCell = '<td>' + (idx === 0
+                                ? verBadge
+                                : '<span class="text-muted small">' + v.version_number + '</span>') + '</td>';
+
+                            // cols 3-8: component data
+                            var compCells = item
+                                ? '<td><strong>' + item.component_name + '</strong></td>' +
+                                  '<td><span class="badge bg-light text-dark border">' + item.component_sku + '</span></td>' +
+                                  '<td class="text-end">' + item.quantity + '</td>' +
+                                  '<td class="text-end">PKR ' + item.unit_cost.toLocaleString(undefined, {minimumFractionDigits:2}) + '</td>' +
+                                  '<td class="text-end">PKR ' + item.shipping_per_unit.toLocaleString(undefined, {minimumFractionDigits:2}) + '</td>' +
+                                  '<td class="text-end fw-semibold">PKR ' + item.total_cost.toLocaleString(undefined, {minimumFractionDigits:2}) + '</td>'
+                                : '<td colspan="6" class="text-muted fst-italic small">No component snapshot</td>';
+
+                            // cols 9-13: BOM-level costs — REPEAT on every row (needed for DataTables filter/sorting)
+                            // Use text-muted for rows after the first to keep it clean
+                            var rowMuted = idx === 0 ? '' : 'text-muted small';
+                            var bomCells =
+                                '<td class="text-end ' + rowMuted + '">' + laborStr + '</td>' +
+                                '<td class="text-end ' + rowMuted + '">' + overheadStr + '</td>' +
+                                '<td class="text-end fw-bold ' + (idx === 0 ? 'text-primary' : 'text-muted opacity-50') + '">' + totalStr + '</td>' +
+                                '<td class="' + rowMuted + '">' + (idx === 0 ? v.change_reason : '') + '</td>' +
+                                '<td class="text-nowrap ' + rowMuted + '">' + v.created_at + '</td>';
+
+                            tr.innerHTML = checkCell + versionCell + compCells + bomCells;
+                            tbody.appendChild(tr);
+                        });
+                    });
+                }
+                spinner.style.display = 'none';
+                content.style.display = 'block';
+
+                // ── Init DataTable using the same global function used by the main BOM table ──
+                // This gives identical styled buttons (Excel/CSV/PDF/Print) + Show entries dropdown
+                _verDTInstance = initExportDataTable('#versionHistoryTable', 'BOM Version History - ' + data.bom_name);
+
+                // ── Filter bar events ──
+                $('#verApplyFilter').off('click').on('click', function () {
+                    _verDTInstance.draw();
+                });
+                $('#verClearFilter').off('click').on('click', function () {
+                    $('#verFilterFrom').val('');
+                    $('#verFilterTo').val('');
+                    $(verSel).val('').trigger('change');
+                    _verDTInstance.draw();
+                });
+                // Trigger draw when version dropdown changes
+                $(verSel).off('change.verFilter').on('change.verFilter', function () {
+                    _verDTInstance.draw();
+                });
+
+                // ── Select All logic ──
+                document.getElementById('versionSelectAll').onchange = function () {
+                    document.querySelectorAll('.ver-check').forEach(function (cb) {
+                        var tr = cb.closest('tr');
+                        if (tr && window.getComputedStyle(tr).display !== 'none') {
+                            cb.checked = this.checked;
+                        }
+                    }.bind(this));
+                };
+            })
+            .catch(function (err) {
+                console.error('BOM version fetch error:', err);
+                document.getElementById('versionSpinner').innerHTML =
+                    '<div class="text-danger p-4"><i class="fas fa-exclamation-triangle me-2"></i>Failed to load version history.</div>';
+            });
+    }
+</script>
 {% endblock %}

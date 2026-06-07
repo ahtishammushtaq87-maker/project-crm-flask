@@ -2209,6 +2209,9 @@
                             <a id="downloadLedgerPDF" href="#" target="_blank" class="btn btn-sm btn-light shadow-sm">
                                 <i class="fas fa-file-pdf me-1 text-danger"></i> PDF
                             </a>
+                            <button id="shareLedgerPDFBtn" class="btn btn-sm btn-light shadow-sm" onclick="shareLedgerPDF()">
+                                <i class="fab fa-whatsapp me-1 text-success"></i> Share
+                            </button>
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
                                 aria-label="Close"></button>
                         </div>
@@ -2405,6 +2408,27 @@
                 pdfLink.href = pdfUrl;
             }
 
+            function shareLedgerPDF() {
+                const modal = document.getElementById('customerLedgerModal');
+                const customerId = modal.dataset.customerId;
+                const customerName = modal.dataset.customerName;
+                const phone = modal.dataset.customerPhone;
+                const token = modal.dataset.accessToken;
+
+                // Check if specific items are selected (if you want to share specific invoices)
+                const selected = Array.from(document.querySelectorAll('.ledger-item-checkbox:checked'))
+                    .map(cb => cb.value);
+
+                let baseUrl = `${window.location.origin}/sales/public/ledger/${token}`;
+                if (selected.length > 0) {
+                    baseUrl += `?ids=${encodeURIComponent(selected.join(','))}`;
+                }
+
+                const message = `Hello ${customerName},\n\nPlease find your detailed ledger at the following link:\n\n${baseUrl}\n\nThank you!`;
+                const whatsappUrl = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(message)}`;
+                window.open(whatsappUrl, '_blank');
+            }
+
             function showCustomerLedger(customerId) {
                 let targetId = customerId;
 
@@ -2454,6 +2478,12 @@
 
                         document.getElementById('downloadLedgerExcel').href = `/sales/customer/${targetId}/ledger-excel`;
                         document.getElementById('downloadLedgerPDF').href = `/sales/customer/${targetId}/ledger-pdf`;
+
+                        // Store relevant info for sharing
+                        modalEl.dataset.customerPhone = data.customer_phone || '';
+                        modalEl.dataset.accessToken = data.access_token || '';
+                        modalEl.dataset.customerName = data.customer_name || '';
+                        modalEl.dataset.customerId = targetId;
 
                         ledgerBody.innerHTML = '';
                         data.entries.forEach(entry => {

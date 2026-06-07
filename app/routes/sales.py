@@ -114,6 +114,11 @@ def invoices():
     unapproved_advance_count = len(unapproved_advances_all)
     # ──────────────────────────────────────────────────────────────────────
 
+    # Identify overdue invoices with suspended discounts (regardless of tab filter)
+    # Use is_discount_restricted property which handles overdue status and customer group rules
+    all_active_sales_with_discounts = Sale.query.filter(Sale.status != 'paid', Sale.discount > 0).all()
+    suspended_discount_invoices = [s for s in all_active_sales_with_discounts if s.is_discount_restricted]
+
     # Get company date format
     company = Company.query.first()
     date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
@@ -150,7 +155,7 @@ def invoices():
                          unapproved_invoice_total=unapproved_invoice_total,
                          unapproved_invoice_count=unapproved_invoice_count,
                          unapproved_payment_total=unapproved_payment_total,
-                         unapproved_payment_count=unapproved_payment_count, unapproved_invoices_all=unapproved_invoices_all, unapproved_payments_all=unapproved_payments_all, unapproved_advance_total=unapproved_advance_total, unapproved_advance_count=unapproved_advance_count, unapproved_advances_all=unapproved_advances_all)
+                         unapproved_payment_count=unapproved_payment_count, unapproved_invoices_all=unapproved_invoices_all, unapproved_payments_all=unapproved_payments_all, unapproved_advance_total=unapproved_advance_total, unapproved_advance_count=unapproved_advance_count, unapproved_advances_all=unapproved_advances_all, suspended_discount_invoices=suspended_discount_invoices)
 
 @bp.route('/invoice/create', methods=['GET', 'POST'])
 @login_required
@@ -1197,8 +1202,7 @@ def customer_profile(id):
                           now=datetime.now())
 
 @bp.route('/customer/<int:id>/ledger-pdf')
-@login_required
-def customer_export_pdf(id):
+def customer_export_pdf(id, is_public=False):
     """Export customer detailed ledger to PDF"""
     from datetime import datetime as _dt, time as _time
     from app.models import Company, InvoiceSettings, Sale, CustomerAdvance, SaleReturn, Payment, Customer
@@ -1210,6 +1214,10 @@ def customer_export_pdf(id):
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image
     )
     from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+    from flask_login import current_user
+
+    if not is_public and not current_user.is_authenticated:
+        return current_app.login_manager.unauthorized()
 
     customer = Customer.query.get_or_404(id)
     company  = Company.query.first()
@@ -2572,6 +2580,18 @@ def public_invoice(token):
     except Exception as e:
         return f"Error generating PDF: {str(e)}", 500
 
+@bp.route('/public/ledger/<token>')
+def public_ledger(token):
+    from datetime import datetime
+    customer = Customer.query.filter_by(access_token=token).first_or_404()
+    
+    # Check expiry
+    if customer.token_expiry and customer.token_expiry < datetime.utcnow():
+        return "Link expired", 403
+        
+    # Reuse the existing PDF generation logic
+    return customer_export_pdf(customer.id, is_public=True)
+
 @bp.route('/customer/<int:id>/ledger-json')
 @login_required
 def customer_ledger_json(id):
@@ -2741,6 +2761,8 @@ def customer_ledger_json(id):
     
     return jsonify({
         'customer_name': customer.name,
+        'customer_phone': customer.phone,
+        'access_token': customer.valid_access_token,
         'entries': ledger_entries,
         'summary': summary
     })
