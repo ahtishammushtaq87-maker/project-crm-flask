@@ -2943,3 +2943,65 @@ def customer_ledger_excel(id):
     
     filename = f"Ledger_{customer.name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx"
     return send_file(output, as_attachment=True, download_name=filename)
+
+@bp.route('/recalculate-all', methods=['POST'])
+@login_required
+@permission_required('sales', action='edit')
+def recalculate_all():
+    """Safely recalculate all invoice totals, payments, and statuses without manual data entry"""
+    try:
+        # 1. Recalculate Item Totals to ensure consistency
+        all_items = SaleItem.query.all()
+        for item in all_items:
+            item.total = (item.quantity * item.unit_price) + (item.delivery_fee or 0)
+        
+        # 2. Recalculate Sales Return Totals
+        all_returns = SaleReturn.query.all()
+        for ret in all_returns:
+            ret.calculate_totals()
+            
+        # 3. Recalculate Invoices
+        sales = Sale.query.all()
+        recalculated_count = 0
+        
+        for sale in sales:
+            # Recalculate Original Invoice Totals (Subtotal, Tax, Delivery, Calculated Discount)
+            # This handles the overdue discount restriction logic internally
+            sale.calculate_totals()
+            
+            # Subtract Return Totals
+            returns_total = 0
+            if sale.returns:
+                # Include 'pending' returns as the system traditionally subtracts them immediately
+                returns_total = sum(ret.total for ret in sale.returns if ret.status in ['approved', 'completed', 'pending'])
+            
+            sale.total = max(0, sale.total - returns_total)
+            
+            # Synchronize Paid Amount from approved Payments and manual Advances
+            approved_payments_sum = db.session.query(func.sum(Payment.amount)).filter(
+                Payment.invoice_id == sale.id,
+                Payment.is_approved == True
+            ).scalar() or 0
+            
+            sale.paid_amount = approved_payments_sum + (sale.advance_applied or 0)
+            
+            # Safety cap: if returns reduced the total below what was already paid
+            if sale.paid_amount > sale.total:
+                sale.paid_amount = sale.total
+                
+            # Update Payment Status (Paid, Partial, Unpaid)
+            sale.update_status()
+            
+            recalculated_count += 1
+            
+        db.session.commit()
+        
+        log_activity('Sales', 'Bulk Recalculation', f'Successfully recalculated {recalculated_count} invoices and synced with returns/payments.')
+        flash(f'Audit complete: {recalculated_count} invoices have been successfully recalculated and synchronized.', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Recalculation Error: {str(e)}")
+        flash(f'Recalculation failed: {str(e)}', 'danger')
+        
+    return redirect(url_for('sales.invoices'))
