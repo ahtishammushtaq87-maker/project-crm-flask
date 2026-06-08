@@ -853,12 +853,21 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             items.append(entry)
 
         # Calculate effective discount based on overdue status and override flag
-        effective_discount = 0 if (obj.is_overdue and not getattr(obj, 'ignore_overdue_discount', False)) else obj.discount
+        is_restricted = getattr(obj, 'is_discount_restricted', False)
+        effective_discount = getattr(obj, 'effective_discount_amount', 0)
 
         sc = obj.shipping_charge if (hasattr(obj, 'shipping_charge') and obj.shipping_charge) else 0
+        
+        # Determine discount display value
+        discount_label = "<b>One Time Payment Discount</b>"
+        discount_display = f"{currency}{effective_discount:,.2f}"
+        if is_restricted and getattr(obj, 'base_discount_amount', 0) > 0:
+            discount_label = "<b>Discount</b>"
+            discount_display = "Reversal"
+
         totals = [
             ("Subtotal",           f"{currency}{obj.subtotal:,.2f}"),
-            ("<b>One Time Payment Discount</b>", f"{currency}{effective_discount:,.2f}"),
+            (discount_label,       discount_display),
             ("Shipping / Freight", f"{currency}{sc:,.2f}"),
             ("Tax",                f"{currency}{obj.tax:,.2f}"),
             ("Total Due",          f"{currency}{obj.total:,.2f}"),

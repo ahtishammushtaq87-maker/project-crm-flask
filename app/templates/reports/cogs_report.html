@@ -39,10 +39,12 @@
     </div>
 
     <div class="row mb-3">
-        <div class="col-md-3"><div class="card report-card p-3"><h6>Total Quantity</h6><h3>{{ total_quantity }}</h3></div></div>
-        <div class="col-md-3"><div class="card report-card p-3"><h6>Total COGS</h6><h3>PKR{{ "%.2f"|format(total_cogs) }}</h3></div></div>
-        <div class="col-md-3"><div class="card report-card p-3"><h6>Total Revenue</h6><h3>PKR{{ "%.2f"|format(total_revenue) }}</h3></div></div>
-        <div class="col-md-3"><div class="card report-card p-3"><h6>Total Profit</h6><h3>PKR{{ "%.2f"|format(total_profit) }}</h3></div></div>
+        <div class="col-md-2"><div class="card report-card p-3"><h6>Total Quantity</h6><h3>{{ total_quantity }}</h3></div></div>
+        <div class="col-md-2"><div class="card report-card p-3"><h6>Total COGS</h6><h3>PKR{{ "%.2f"|format(total_cogs) }}</h3></div></div>
+        <div class="col-md-2"><div class="card report-card p-3"><h6>Total Revenue</h6><h3>PKR{{ "%.2f"|format(total_revenue) }}</h3></div></div>
+        <div class="col-md-2"><div class="card report-card p-3"><h6 class="text-danger">Total Discount</h6><h3>PKR{{ "%.2f"|format(total_discount) }}</h3></div></div>
+        <div class="col-md-2"><div class="card report-card p-3"><h6 class="text-success">Total Profit</h6><h3>PKR{{ "%.2f"|format(total_profit) }}</h3></div></div>
+        <div class="col-md-2"><div class="card report-card p-3"><h6>Profit %</h6><h3>{{ "%.1f"|format(total_profit_percent) }}%</h3></div></div>
     </div>
 
     <div class="filter-section mb-4">
@@ -99,7 +101,9 @@
                         <th>Cost Price</th>
                         <th>COGS</th>
                         <th>Revenue</th>
+                        <th>Discount</th>
                         <th>Profit</th>
+                        <th>Profit %</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -115,11 +119,17 @@
                         <td>PKR{{ "%.2f"|format(p.cost_price) }}</td>
                         <td>PKR{{ "%.2f"|format(p.cogs) }}</td>
                         <td>PKR{{ "%.2f"|format(p.revenue) }}</td>
-                        <td>PKR{{ "%.2f"|format(p.profit) }}</td>
+                        <td class="text-danger">PKR{{ "%.2f"|format(p.discount) }}</td>
+                        <td class="{% if p.profit >= 0 %}text-success{% else %}text-danger{% endif %}">PKR{{ "%.2f"|format(p.profit) }}</td>
+                        <td>
+                            <span class="badge {% if p.profit_percent > 20 %}bg-success{% elif p.profit_percent > 0 %}bg-info{% else %}bg-danger{% endif %}">
+                                {{ "%.1f"|format(p.profit_percent) }}%
+                            </span>
+                        </td>
                     </tr>
                     {% endfor %}
                     {% if not products %}
-                    <tr><td colspan="8" class="text-center py-4 text-muted">No COGS data found for selected filters.</td></tr>
+                    <tr><td colspan="11" class="text-center py-4 text-muted">No COGS data found for selected filters.</td></tr>
                     {% endif %}
                 </tbody>
             </table>

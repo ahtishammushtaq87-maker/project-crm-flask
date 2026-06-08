@@ -606,6 +606,9 @@ class Sale(db.Model):
     
     # Relationships
     items = db.relationship('SaleItem', backref='sale', lazy=True, cascade='all, delete-orphan')
+    returns = db.relationship('SaleReturn', backref='sale', lazy=True, cascade='all, delete-orphan')
+    payments = db.relationship('Payment', backref='invoice', lazy=True, cascade='all, delete-orphan')
+    transactions = db.relationship('Transaction', backref='invoice', lazy=True, cascade='all, delete-orphan')
 
     currency = db.relationship('Currency', backref='sales', lazy=True)
     
@@ -675,6 +678,20 @@ class Sale(db.Model):
             if self.customer and self.customer.group_id in restricted_groups:
                 return True
         return False
+
+    @property
+    def base_discount_amount(self):
+        """Calculated PKR amount of the discount BEFORE any overdue restrictions"""
+        if self.discount_type == 'percentage':
+            return (self.subtotal or 0) * ((self.discount or 0) / 100)
+        return self.discount or 0
+
+    @property
+    def effective_discount_amount(self):
+        """Calculated PKR amount of the discount AFTER applying overdue restrictions"""
+        if self.is_discount_restricted:
+            return 0
+        return self.base_discount_amount
 
     @property
     def valid_access_token(self):
@@ -897,7 +914,8 @@ class Transaction(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    invoice = db.relationship('Sale', backref='transactions', lazy=True)
+    # Relationship moved to Sale model for cascade deletion
+    # invoice = db.relationship('Sale', backref='transactions', lazy=True)
     
     def __repr__(self):
         return f'<Transaction {self.transaction_number}>'
@@ -968,7 +986,8 @@ class Payment(db.Model):
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
 
-    invoice = db.relationship('Sale', backref='payments', lazy=True)
+    # Relationship moved to Sale model for cascade deletion
+    # invoice = db.relationship('Sale', backref='payments', lazy=True)
     expense = db.relationship('Expense', backref='payments', lazy=True)
 
     def __repr__(self):
@@ -1294,7 +1313,8 @@ class SaleReturn(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    sale = db.relationship('Sale', backref='returns', lazy=True)
+    # Relationship moved to Sale model for cascade deletion
+    # sale = db.relationship('Sale', backref='returns', lazy=True)
     customer = db.relationship('Customer', backref='sale_returns', lazy=True)
     items = db.relationship('SaleReturnItem', backref='sale_return', lazy=True, cascade='all, delete-orphan')
 

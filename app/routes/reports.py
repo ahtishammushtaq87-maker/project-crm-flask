@@ -286,6 +286,7 @@ def cogs_report():
     product_stats = {}
     total_cogs = 0
     total_revenue = 0
+    total_discount = 0
     total_quantity = 0
 
     for item in sale_items:
@@ -295,6 +296,14 @@ def cogs_report():
 
         cogs = (prod.cost_price or 0) * item.quantity
         revenue = item.total
+        
+        # Calculate proportional discount from invoice
+        sale = item.sale
+        item_discount = 0
+        if sale and getattr(sale, 'subtotal', 0) > 0:
+            # use the effective PKR amount we implemented
+            total_inv_discount = getattr(sale, 'effective_discount_amount', 0)
+            item_discount = (item.total / sale.subtotal) * total_inv_discount
 
         if prod.id not in product_stats:
             product_stats[prod.id] = {
@@ -306,21 +315,37 @@ def cogs_report():
                 'quantity_sold': 0,
                 'cogs': 0,
                 'revenue': 0,
-                'profit': 0
+                'discount': 0,
+                'profit': 0,
+                'profit_percent': 0
             }
 
         product_stats[prod.id]['quantity_sold'] += item.quantity
         product_stats[prod.id]['cogs'] += cogs
         product_stats[prod.id]['revenue'] += revenue
-        product_stats[prod.id]['profit'] = product_stats[prod.id]['revenue'] - product_stats[prod.id]['cogs']
+        product_stats[prod.id]['discount'] += item_discount
+        
+        # Net Profit = (Gross Revenue - Discount) - COGS
+        product_stats[prod.id]['profit'] = (product_stats[prod.id]['revenue'] - product_stats[prod.id]['discount']) - product_stats[prod.id]['cogs']
+        
+        # Profit % = (Profit / Net Sales) * 100
+        net_sales = product_stats[prod.id]['revenue'] - product_stats[prod.id]['discount']
+        if net_sales > 0:
+            product_stats[prod.id]['profit_percent'] = (product_stats[prod.id]['profit'] / net_sales) * 100
+        else:
+            product_stats[prod.id]['profit_percent'] = -100 if product_stats[prod.id]['cogs'] > 0 else 0
 
         total_cogs += cogs
         total_revenue += revenue
+        total_discount += item_discount
         total_quantity += item.quantity
 
     products = sorted(product_stats.values(), key=lambda x: x['product_name'])
     categories = ProductCategory.query.order_by(ProductCategory.name).all()
     categories = [c.name for c in categories if c.name]
+    
+    total_net_profit = (total_revenue - total_discount) - total_cogs
+    total_profit_percent = ((total_revenue - total_discount) - total_cogs) / (total_revenue - total_discount) * 100 if (total_revenue - total_discount) > 0 else 0
 
     return render_template('reports/cogs_report.html',
                           products=products,
@@ -331,8 +356,10 @@ def cogs_report():
                           search=search,
                           total_cogs=total_cogs,
                           total_revenue=total_revenue,
+                          total_discount=total_discount,
                           total_quantity=total_quantity,
-                          total_profit=total_revenue - total_cogs,
+                          total_profit=total_net_profit,
+                          total_profit_percent=total_profit_percent,
                           active_module='cogs_report',
                           filter_id=request.args.get('filter_id'))
 
@@ -960,6 +987,14 @@ def download_report(format, report_type):
                 continue
             cogs = (prod.cost_price or 0) * item.quantity
             revenue = item.total
+            
+            # Calculate proportional discount from invoice
+            sale = item.sale
+            item_discount = 0
+            if sale and getattr(sale, 'subtotal', 0) > 0:
+                total_inv_discount = getattr(sale, 'effective_discount_amount', 0)
+                item_discount = (item.total / sale.subtotal) * total_inv_discount
+
             if prod.id not in product_stats:
                 product_stats[prod.id] = {
                     'Product': prod.name,
@@ -969,16 +1004,27 @@ def download_report(format, report_type):
                     'Cost Price': f"{prod.cost_price or 0:.2f}",
                     'COGS': 0,
                     'Revenue': 0,
-                    'Profit': 0
+                    'Discount': 0,
+                    'Profit': 0,
+                    'Profit %': 0
                 }
             product_stats[prod.id]['Qty Sold'] += item.quantity
             product_stats[prod.id]['COGS'] = float(product_stats[prod.id]['COGS']) + cogs if isinstance(product_stats[prod.id]['COGS'], (int, float)) else cogs
             product_stats[prod.id]['Revenue'] = float(product_stats[prod.id]['Revenue']) + revenue if isinstance(product_stats[prod.id]['Revenue'], (int, float)) else revenue
-            product_stats[prod.id]['Profit'] = float(product_stats[prod.id]['Profit']) + (revenue - cogs) if isinstance(product_stats[prod.id]['Profit'], (int, float)) else (revenue - cogs)
-        
-        products = sorted(product_stats.values(), key=lambda x: x['Product'])
+            product_stats[prod.id]['Discount'] = float(product_stats[prod.id]['Discount']) + item_discount if isinstance(product_stats[prod.id]['Discount'], (int, float)) else item_discount
+            
+            # Profit = (Revenue - Discount) - COGS
+            net_sales = float(product_stats[prod.id]['Revenue']) - float(product_stats[prod.id]['Discount'])
+            profit = net_sales - float(product_stats[prod.id]['COGS'])
+            product_stats[prod.id]['Profit'] = profit
+            
+            if net_sales > 0:
+                product_stats[prod.id]['Profit %'] = (profit / net_sales) * 100
+            else:
+                product_stats[prod.id]['Profit %'] = -100 if float(product_stats[prod.id]['COGS']) > 0 else 0
+
         title = "COGS Report"
-        headers = ['Product', 'SKU', 'Category', 'Qty Sold', 'Cost Price', 'COGS', 'Revenue', 'Profit']
+        headers = ['Product', 'SKU', 'Category', 'Qty Sold', 'Cost Price', 'COGS', 'Revenue', 'Discount', 'Profit', 'Profit %']
         data = [{
             'Product': p['Product'],
             'SKU': p['SKU'],
@@ -987,8 +1033,10 @@ def download_report(format, report_type):
             'Cost Price': p['Cost Price'],
             'COGS': f"{p['COGS']:.2f}",
             'Revenue': f"{p['Revenue']:.2f}",
-            'Profit': f"{p['Profit']:.2f}"
-        } for p in products]
+            'Discount': f"{p['Discount']:.2f}",
+            'Profit': f"{p['Profit']:.2f}",
+            'Profit %': f"{p['Profit %']:.1f}%"
+        } for p in sorted(product_stats.values(), key=lambda x: x['Product'])]
 
     elif report_type == 'expense':
         category_id = request.args.get('category_id')

@@ -1251,16 +1251,26 @@ def customer_export_pdf(id, is_public=False):
             'credit': 0
         })
         # Apply overdue restriction logic
-        effective_discount = 0 if (s.is_overdue and not s.ignore_overdue_discount) else float(s.discount or 0)
+        is_restricted = getattr(s, 'is_discount_restricted', False)
+        effective_discount = getattr(s, 'effective_discount_amount', 0)
         
-        if effective_discount > 0:
+        if is_restricted and getattr(s, 'base_discount_amount', 0) > 0:
+            events.append({
+                'date': s.date,
+                'type': 'discount',
+                'desc': f"Discount (Inv #{s.invoice_number}): Reversal due to overdue",
+                'inv': s.invoice_number,
+                'debit': 0,
+                'credit': 0
+            })
+        elif effective_discount > 0:
             events.append({
                 'date': s.date,
                 'type': 'discount',
                 'desc': f"Discount (Inv #{s.invoice_number})",
                 'inv': s.invoice_number,
                 'debit': 0,
-                'credit': effective_discount
+                'credit': float(effective_discount or 0)
             })
             
     for p in payments:
@@ -2648,19 +2658,28 @@ def customer_ledger_json(id):
             'obj': s
         })
         # Discount (Credit)
-        # Suppress discount entry if overdue and not ignored, matching calculation logic
-        effective_discount = float(s.discount or 0)
-        if s.is_overdue and not s.ignore_overdue_discount:
-            effective_discount = 0
-
-        if effective_discount > 0:
+        is_restricted = getattr(s, 'is_discount_restricted', False)
+        effective_discount = getattr(s, 'effective_discount_amount', 0)
+        
+        if is_restricted and getattr(s, 'base_discount_amount', 0) > 0:
+            events.append({
+                'date': s.date,
+                'type': 'discount',
+                'invoice_number': s.invoice_number,
+                'desc': f"Discount (Inv #{s.invoice_number}): Reversal due to overdue",
+                'debit': 0,
+                'credit': 0,
+                'status': '-',
+                'obj': s
+            })
+        elif effective_discount > 0:
             events.append({
                 'date': s.date,
                 'type': 'discount',
                 'invoice_number': s.invoice_number,
                 'desc': f"Discount (Inv #{s.invoice_number})",
                 'debit': 0,
-                'credit': effective_discount,
+                'credit': float(effective_discount or 0),
                 'status': '-',
                 'obj': s
             })
@@ -2797,16 +2816,27 @@ def customer_ledger_excel(id):
             'status': (s.status or 'unpaid').capitalize()
         })
         # Apply overdue restriction logic
-        effective_discount = 0 if (s.is_overdue and not s.ignore_overdue_discount) else float(s.discount or 0)
+        is_restricted = getattr(s, 'is_discount_restricted', False)
+        effective_discount = getattr(s, 'effective_discount_amount', 0)
         
-        if effective_discount > 0:
+        if is_restricted and getattr(s, 'base_discount_amount', 0) > 0:
+            events.append({
+                'date': s.date,
+                'type': 'discount',
+                'desc': f"Discount (Inv #{s.invoice_number}): Reversal due to overdue",
+                'inv': s.invoice_number,
+                'debit': 0,
+                'credit': 0,
+                'status': '-'
+            })
+        elif effective_discount > 0:
             events.append({
                 'date': s.date,
                 'type': 'discount',
                 'desc': f"Discount (Inv #{s.invoice_number})",
                 'inv': s.invoice_number,
                 'debit': 0,
-                'credit': effective_discount,
+                'credit': float(effective_discount or 0),
                 'status': '-'
             })
             
