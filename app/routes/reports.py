@@ -266,6 +266,12 @@ def inventory_details_report():
 def cogs_report():
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
+    
+    if not start_date and not end_date:
+        today = datetime.utcnow()
+        start_date = today.replace(day=1).strftime('%Y-%m-%d')
+        end_date = today.strftime('%Y-%m-%d')
+    
     category = request.args.get('category', 'all')
     search = request.args.get('search', '')
 
