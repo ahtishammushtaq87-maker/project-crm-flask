@@ -104,6 +104,7 @@
                         <th>Discount</th>
                         <th>Profit</th>
                         <th>Profit %</th>
+                        <th>Invoices Used</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -126,10 +127,18 @@
                                 {{ "%.1f"|format(p.profit_percent) }}%
                             </span>
                         </td>
+                        <td>
+                            <span class="small font-weight-bold">inv -(</span>
+                            {% for inv_id, inv_num in p.invoices|sort(attribute='1') %}
+                                <a href="{{ url_for('sales.invoice_detail', id=inv_id) }}" class="text-primary text-decoration-none" title="View Invoice {{ inv_num }}">
+                                    {{ inv_num }}</a>{% if not loop.last %},{% endif %}
+                            {% endfor %}
+                            <span class="small font-weight-bold">)</span>
+                        </td>
                     </tr>
                     {% endfor %}
                     {% if not products %}
-                    <tr><td colspan="11" class="text-center py-4 text-muted">No COGS data found for selected filters.</td></tr>
+                    <tr><td colspan="12" class="text-center py-4 text-muted">No COGS data found for selected filters.</td></tr>
                     {% endif %}
                 </tbody>
             </table>

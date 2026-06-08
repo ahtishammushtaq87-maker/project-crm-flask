@@ -317,13 +317,16 @@ def cogs_report():
                 'revenue': 0,
                 'discount': 0,
                 'profit': 0,
-                'profit_percent': 0
+                'profit_percent': 0,
+                'invoices': set() # Store (id, number) tuples
             }
 
         product_stats[prod.id]['quantity_sold'] += item.quantity
         product_stats[prod.id]['cogs'] += cogs
         product_stats[prod.id]['revenue'] += revenue
         product_stats[prod.id]['discount'] += item_discount
+        if sale:
+            product_stats[prod.id]['invoices'].add((sale.id, sale.invoice_number))
         
         # Net Profit = (Gross Revenue - Discount) - COGS
         product_stats[prod.id]['profit'] = (product_stats[prod.id]['revenue'] - product_stats[prod.id]['discount']) - product_stats[prod.id]['cogs']
@@ -1006,12 +1009,15 @@ def download_report(format, report_type):
                     'Revenue': 0,
                     'Discount': 0,
                     'Profit': 0,
-                    'Profit %': 0
+                    'Profit %': 0,
+                    'Invoices': set()
                 }
             product_stats[prod.id]['Qty Sold'] += item.quantity
             product_stats[prod.id]['COGS'] = float(product_stats[prod.id]['COGS']) + cogs if isinstance(product_stats[prod.id]['COGS'], (int, float)) else cogs
             product_stats[prod.id]['Revenue'] = float(product_stats[prod.id]['Revenue']) + revenue if isinstance(product_stats[prod.id]['Revenue'], (int, float)) else revenue
             product_stats[prod.id]['Discount'] = float(product_stats[prod.id]['Discount']) + item_discount if isinstance(product_stats[prod.id]['Discount'], (int, float)) else item_discount
+            if sale:
+                product_stats[prod.id]['Invoices'].add(str(sale.invoice_number))
             
             # Profit = (Revenue - Discount) - COGS
             net_sales = float(product_stats[prod.id]['Revenue']) - float(product_stats[prod.id]['Discount'])
@@ -1024,7 +1030,7 @@ def download_report(format, report_type):
                 product_stats[prod.id]['Profit %'] = -100 if float(product_stats[prod.id]['COGS']) > 0 else 0
 
         title = "COGS Report"
-        headers = ['Product', 'SKU', 'Category', 'Qty Sold', 'Cost Price', 'COGS', 'Revenue', 'Discount', 'Profit', 'Profit %']
+        headers = ['Product', 'SKU', 'Category', 'Qty Sold', 'Cost Price', 'COGS', 'Revenue', 'Discount', 'Profit', 'Profit %', 'Invoices Used']
         data = [{
             'Product': p['Product'],
             'SKU': p['SKU'],
@@ -1035,7 +1041,8 @@ def download_report(format, report_type):
             'Revenue': f"{p['Revenue']:.2f}",
             'Discount': f"{p['Discount']:.2f}",
             'Profit': f"{p['Profit']:.2f}",
-            'Profit %': f"{p['Profit %']:.1f}%"
+            'Profit %': f"{p['Profit %']:.1f}%",
+            'Invoices Used': f"Inv-({', '.join(sorted(list(p['Invoices'])))})"
         } for p in sorted(product_stats.values(), key=lambda x: x['Product'])]
 
     elif report_type == 'expense':
