@@ -262,13 +262,17 @@
                                     value="{{ today if today is defined else '' }}">
                             </div>
                             <div class="col-12">
-                                <label class="form-label fw-semibold"><i
-                                        class="fas fa-image me-1 text-muted"></i>Payment Proof / Receipt
-                                    (Optional)</label>
+                                <label class="form-label fw-semibold" for="payImageInput">
+                                    <i class="fas fa-image me-1 text-danger"></i>Payment Proof / Receipt
+                                    <span class="text-danger">*</span>
+                                </label>
                                 <input type="file" name="payment_image" class="form-control" accept="image/*,.pdf"
-                                    id="payImageInput" onchange="previewPayImage(this)">
+                                    id="payImageInput" onchange="previewPayImage(this)" required>
+                                <div id="payProofError" class="text-danger small mt-1" style="display:none;">
+                                    <i class="fas fa-exclamation-circle me-1"></i>Payment proof is required. Please upload a receipt, cheque scan, or bank screenshot.
+                                </div>
                                 <small class="text-muted">Upload cheque scan, bank receipt screenshot, or any payment
-                                    document</small>
+                                    document (required)</small>
                                 <div id="payImagePreview" class="mt-2" style="display:none;">
                                     <img id="payImgThumb" src="" alt="Preview" class="img-thumbnail"
                                         style="max-height:120px;">
@@ -816,7 +820,11 @@
     function previewPayImage(input) {
         const preview = document.getElementById('payImagePreview');
         const img = document.getElementById('payImgThumb');
+        const errorDiv = document.getElementById('payProofError');
         if (input.files && input.files[0]) {
+            // Hide error if user selects a file
+            if (errorDiv) errorDiv.style.display = 'none';
+            input.classList.remove('is-invalid');
             const reader = new FileReader();
             reader.onload = function (e) {
                 img.src = e.target.result;
@@ -827,6 +835,30 @@
             preview.style.display = 'none';
         }
     }
+
+    // Enforce payment proof required on submit
+    (function () {
+        var payModal = document.getElementById('payModal');
+        if (!payModal) return;
+        var payForm = payModal.querySelector('form');
+        if (!payForm) return;
+        payForm.addEventListener('submit', function (e) {
+            var fileInput = document.getElementById('payImageInput');
+            var errorDiv = document.getElementById('payProofError');
+            if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (errorDiv) errorDiv.style.display = 'block';
+                if (fileInput) {
+                    fileInput.classList.add('is-invalid');
+                    fileInput.focus();
+                }
+                return false;
+            }
+            if (errorDiv) errorDiv.style.display = 'none';
+            if (fileInput) fileInput.classList.remove('is-invalid');
+        });
+    })();
 
     document.addEventListener('DOMContentLoaded', function () {
         // Auto-show modal from URL hash (useful for redirects from entity popups)

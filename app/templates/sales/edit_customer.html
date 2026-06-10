@@ -114,10 +114,12 @@
                             <label class="form-label fw-bold">Address</label>
                             <div class="row g-2">
                                 <div class="col-12">
-                                    <input type="text" id="address_line_1" class="form-control" placeholder="Address Line 1 (Street, Building)">
+                                    <input type="text" id="address_line_1" class="form-control"
+                                        placeholder="Address Line 1 (Street, Building)">
                                 </div>
                                 <div class="col-12">
-                                    <input type="text" id="address_line_2" class="form-control" placeholder="Address Line 2 (Apartment, Suite, Unit)">
+                                    <input type="text" id="address_line_2" class="form-control"
+                                        placeholder="Address Line 2 (Apartment, Suite, Unit)">
                                 </div>
                             </div>
                             <div style="display:none;">
@@ -149,25 +151,28 @@
 
                         <!-- Customer Image Upload -->
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Customer Image <span class="text-muted fw-normal">(Optional)</span></label>
+                            <label class="form-label fw-bold">Customer Image <span
+                                    class="text-muted fw-normal">(Optional)</span></label>
                             <div class="d-flex align-items-start gap-3">
                                 <div>
                                     {% if customer.image_path %}
-                                    <img id="imagePreview" src="{{ url_for('static', filename=customer.image_path) }}" alt="Customer Image"
-                                         style="width:90px;height:90px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6;">
+                                    <img id="imagePreview" src="{{ url_for('static', filename=customer.image_path) }}"
+                                        alt="Customer Image"
+                                        style="width:90px;height:90px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6;">
                                     <div id="imagePlaceholder" style="display:none;"></div>
                                     {% else %}
                                     <img id="imagePreview" src="" alt="Preview"
-                                         style="width:90px;height:90px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6;display:none;">
+                                        style="width:90px;height:90px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6;display:none;">
                                     <div id="imagePlaceholder"
-                                         style="width:90px;height:90px;border-radius:50%;border:2px dashed #adb5bd;display:flex;align-items:center;justify-content:center;background:#f8f9fa;color:#adb5bd;">
+                                        style="width:90px;height:90px;border-radius:50%;border:2px dashed #adb5bd;display:flex;align-items:center;justify-content:center;background:#f8f9fa;color:#adb5bd;">
                                         <i class="fas fa-user fa-2x"></i>
                                     </div>
                                     {% endif %}
                                 </div>
                                 <div class="flex-fill">
                                     {{ form.image(class="form-control", id="customerImageInput", accept="image/*") }}
-                                    <div class="form-text">Upload a new image to replace the current one. Accepted formats: JPG, PNG, GIF, WebP.</div>
+                                    <div class="form-text">Upload a new image to replace the current one. Accepted
+                                        formats: JPG, PNG, GIF, WebP.</div>
                                 </div>
                             </div>
                         </div>
