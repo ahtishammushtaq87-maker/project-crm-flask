@@ -233,9 +233,29 @@ def create_invoice():
         invoice_number = f"{settings.invoice_prefix}{settings.next_number}{settings.invoice_suffix}"
         settings.next_number += 1
 
-        # Determine approval: admin-created invoices are pre-approved; staff need admin approval
         creator_is_admin = (current_user.role == 'admin')
 
+        # Check discount conditions
+        discount_violations = []
+        settings = InvoiceSettings.query.first()
+        if settings and settings.product_discount_conditions:
+            try:
+                conditions = json.loads(settings.product_discount_conditions)
+                item_product_ids = [item['product_id'] for item in sale_items]
+                for cond in conditions:
+                    if cond['product_id'] in item_product_ids:
+                        min_allowed = float(cond.get('min_discount', 0))
+                        max_allowed = float(cond.get('max_discount', 0))
+                        
+                        if discount < min_allowed:
+                            discount_violations.append(f"Discount PKR {discount} is less than min PKR {min_allowed}")
+                        if max_allowed > 0 and discount > max_allowed:
+                            discount_violations.append(f"Discount PKR {discount} is more than max PKR {max_allowed}")
+            except Exception:
+                pass
+
+        violation_found = len(discount_violations) > 0
+        
         sale = Sale(
             invoice_number=invoice_number,
             customer_id=customer_id if customer_id != '0' else None,
@@ -252,12 +272,16 @@ def create_invoice():
             currency_id=request.form.get('currency_id', None),
             exchange_rate=float(request.form.get('exchange_rate', 1)),
             salesman_id=salesman_id if salesman_id and salesman_id != '0' else None,
-            paid_amount=advance_applied,
+            paid_amount=advance_applied if not violation_found else 0, # Don't apply yet if violation
             created_by=current_user.id,
-            is_approved=creator_is_admin,
-            approved_by=current_user.id if creator_is_admin else None,
-            approved_at=datetime.utcnow() if creator_is_admin else None
+            is_approved=creator_is_admin and not violation_found,
+            approved_by=current_user.id if (creator_is_admin and not violation_found) else None,
+            approved_at=datetime.utcnow() if (creator_is_admin and not violation_found) else None,
+            discount_violation="; ".join(discount_violations) if violation_found else None
         )
+
+        if violation_found:
+            flash(f"Notice: This invoice requires admin approval due to discount conditions: {'; '.join(discount_violations)}", 'warning')
 
         due_date_str = request.form.get('due_date')
         if due_date_str:
@@ -271,7 +295,7 @@ def create_invoice():
         db.session.flush()
         
         # Handle advance application - link to customer advances
-        if customer_id and customer_id != '0' and advance_applied > 0:
+        if customer_id and customer_id != '0' and advance_applied > 0 and not violation_found:
             customer = Customer.query.get(int(customer_id))
             remaining_to_apply = advance_applied
             
@@ -462,6 +486,34 @@ def edit_invoice(id):
                 sale.overdue_date = sale.due_date
             except ValueError:
                 sale.due_date = None
+
+        # Check discount conditions
+        discount_violations = []
+        settings = InvoiceSettings.query.first()
+        if settings and settings.product_discount_conditions:
+            try:
+                conditions = json.loads(settings.product_discount_conditions)
+                item_product_ids = [item['product_id'] for item in sale_items]
+                for cond in conditions:
+                    if cond['product_id'] in item_product_ids:
+                        min_allowed = float(cond.get('min_discount', 0))
+                        max_allowed = float(cond.get('max_discount', 0))
+                        if discount < min_allowed:
+                            discount_violations.append(f"Discount PKR {discount} is less than min PKR {min_allowed}")
+                        if max_allowed > 0 and discount > max_allowed:
+                            discount_violations.append(f"Discount PKR {discount} is more than max PKR {max_allowed}")
+            except Exception:
+                pass
+        
+        if discount_violations:
+            sale.is_approved = False
+            sale.discount_violation = "; ".join(discount_violations)
+            flash(f"Notice: This invoice requires admin approval due to discount conditions: {'; '.join(discount_violations)}", 'warning')
+        else:
+            if sale.discount_violation: # Violation fixed
+                sale.discount_violation = None
+                if current_user.role == 'admin':
+                    sale.is_approved = True
 
         # Add items & update inventory
         for item in sale_items:
@@ -675,6 +727,34 @@ def approve_invoice(id):
     sale.is_approved = True
     sale.approved_by = current_user.id
     sale.approved_at = datetime.utcnow()
+    
+    # Handle delayed advance application if present
+    if sale.advance_applied > 0 and not sale.adjusted_advances:
+        customer_id = sale.customer_id
+        if customer_id:
+            customer = Customer.query.get(customer_id)
+            remaining_to_apply = sale.advance_applied
+            
+            # Get advances sorted by date (oldest first)
+            advances = CustomerAdvance.query.filter_by(customer_id=customer_id, is_adjusted=False, is_approved=True).order_by(CustomerAdvance.date).all()
+            
+            for adv in advances:
+                if remaining_to_apply <= 0:
+                    break
+                    
+                available = adv.remaining_balance
+                if available > 0:
+                    apply_amt = min(available, remaining_to_apply)
+                    adv.applied_amount += apply_amt
+                    remaining_to_apply -= apply_amt
+                    
+                    if adv.remaining_balance <= 0:
+                        adv.is_adjusted = True
+                    adv.adjusted_invoice_id = sale.id
+            
+            # Update paid amount on sale now that advance is applied
+            sale.paid_amount += (sale.advance_applied - remaining_to_apply)
+
     # Also auto-approve any pending payments on this invoice when the invoice itself is approved
     pending_payments = Payment.query.filter_by(invoice_id=sale.id, is_approved=False).all()
     for pmt in pending_payments:
@@ -682,6 +762,7 @@ def approve_invoice(id):
         pmt.is_approved = True
         pmt.approved_by = current_user.id
         pmt.approved_at = datetime.utcnow()
+    sale.calculate_totals()
     sale.update_status()
     db.session.commit()
     log_activity('Sales', f'Approved Invoice #{sale.invoice_number}',
@@ -2157,12 +2238,17 @@ def invoice_settings():
             settings.overdue_restricted_groups = json.dumps(form.overdue_restricted_groups.data)
         else:
             settings.overdue_restricted_groups = None
+
+        settings.product_discount_conditions = form.product_discount_conditions.data
             
         db.session.commit()
         flash('Invoice settings updated successfully.', 'success')
         return redirect(url_for('sales.invoice_settings'))
     
-    return render_template('sales/invoice_settings.html', settings=settings, form=form)
+    # Get products for condition selector
+    products = Product.query.filter_by(is_active=True).order_by(Product.name).all()
+    
+    return render_template('sales/invoice_settings.html', settings=settings, form=form, products=products)
 
 
 # ===== CUSTOMER ADVANCE ROUTES =====

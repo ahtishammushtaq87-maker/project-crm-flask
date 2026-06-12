@@ -2,6 +2,102 @@
 
 {% block title %}Invoice Settings{% endblock %}
 
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
+<style>
+    .select2-container--bootstrap-5 {
+        width: 100% !important;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    let conditions = [];
+    try {
+        conditions = JSON.parse($('#product_discount_conditions_json').val()) || [];
+    } catch(e) {
+        conditions = [];
+    }
+
+    function renderTable() {
+        const tbody = $('#conditions_table tbody');
+        tbody.empty();
+        
+        if (conditions.length === 0) {
+            tbody.append('<tr><td colspan="4" class="text-center text-muted py-3">No product conditions defined.</td></tr>');
+            return;
+        }
+
+        conditions.forEach((c, index) => {
+            const productText = $(`#product_selector option[value="${c.product_id}"]`).data('name') || `Product #${c.product_id}`;
+            tbody.append(`
+                <tr>
+                    <td><strong>${productText}</strong></td>
+                    <td class="text-end">PKR ${parseFloat(c.min_discount).toLocaleString()}</td>
+                    <td class="text-end">PKR ${parseFloat(c.max_discount).toLocaleString()}</td>
+                    <td class="text-center">
+                        <button type="button" class="btn btn-sm btn-outline-danger remove-condition" data-index="${index}">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `);
+        });
+    }
+
+    $('#add_condition_btn').click(function() {
+        const productId = $('#product_selector').val();
+        const minVal = parseFloat($('#min_discount_input').val()) || 0;
+        const maxVal = parseFloat($('#max_discount_input').val()) || 0;
+
+        if (!productId) {
+            alert('Please select a product.');
+            return;
+        }
+
+        if (maxVal < minVal) {
+            alert('Max discount cannot be less than Min discount.');
+            return;
+        }
+
+        // Check if product already has a condition
+        const existingIndex = conditions.findIndex(c => c.product_id == productId);
+        if (existingIndex > -1) {
+            if (!confirm('This product already has a condition. Update it?')) return;
+            conditions[existingIndex] = { product_id: parseInt(productId), min_discount: minVal, max_discount: maxVal };
+        } else {
+            conditions.push({ product_id: parseInt(productId), min_discount: minVal, max_discount: maxVal });
+        }
+
+        $('#product_discount_conditions_json').val(JSON.stringify(conditions));
+        renderTable();
+        
+        // Reset inputs
+        $('#min_discount_input').val('');
+        $('#max_discount_input').val('');
+        $('#product_selector').val('').trigger('change');
+    });
+
+    $(document).on('click', '.remove-condition', function() {
+        const index = $(this).data('index');
+        conditions.splice(index, 1);
+        $('#product_discount_conditions_json').val(JSON.stringify(conditions));
+        renderTable();
+    });
+
+    renderTable();
+
+    // Initialize Select2
+    $('.searchable-select').select2({
+        theme: 'bootstrap-5'
+    });
+});
+</script>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -112,6 +208,54 @@
                             <label for="overdue_restricted_groups" class="form-label">Restricted Customer Groups for Overdue Discount</label>
                             {{ form.overdue_restricted_groups(class="form-select", size="5") }}
                             <div class="form-text">Selected groups will NOT be able to receive discounts on overdue invoices unless overridden. Hold Ctrl to select multiple.</div>
+                        </div>
+
+                        <hr>
+                        <h6>Product Discount Conditions</h6>
+                        <div class="alert alert-info py-2">
+                            <small><i class="fas fa-info-circle me-1"></i> If staff gives a discount outside these ranges for the specified products, the invoice will require <strong>Admin Approval</strong>.</small>
+                        </div>
+                        
+                        <div class="row g-3 align-items-end mb-3">
+                            <div class="col-md-5">
+                                <label class="form-label small fw-bold">Select Product</label>
+                                <select id="product_selector" class="form-select searchable-select">
+                                    <option value="">Search Finished Good...</option>
+                                    {% for p in products %}
+                                    <option value="{{ p.id }}" data-name="{{ p.name }}">{{ p.name }} ({{ p.sku }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold">Min Discount (PKR)</label>
+                                <input type="number" id="min_discount_input" class="form-control" placeholder="0" step="0.01">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold">Max Discount (PKR)</label>
+                                <input type="number" id="max_discount_input" class="form-control" placeholder="0" step="0.01">
+                            </div>
+                            <div class="col-md-1">
+                                <button type="button" id="add_condition_btn" class="btn btn-success"><i class="fas fa-plus"></i></button>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover table-sm border align-middle" id="conditions_table">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Product</th>
+                                        <th class="text-end">Min Allowed</th>
+                                        <th class="text-end">Max Allowed</th>
+                                        <th class="text-center" style="width: 80px;">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Rows added dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div style="display:none;">
+                            {{ form.product_discount_conditions(id="product_discount_conditions_json") }}
                         </div>
 
                         <button type="submit" class="btn btn-primary">Save Settings</button>

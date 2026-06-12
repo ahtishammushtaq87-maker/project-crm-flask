@@ -56,6 +56,7 @@ class InvoiceSettingsForm(FlaskForm):
     payment_terms = TextAreaField('Payment Terms')
     notes = TextAreaField('Notes')
     overdue_restricted_groups = SelectMultipleField('Restricted Customer Groups for Overdue Discount', coerce=int)
+    product_discount_conditions = TextAreaField('Product Discount Conditions (JSON)') # Hidden or shown for debug
 
 class PurchaseSettingsForm(FlaskForm):
     default_notes = TextAreaField('Default Purchase Bill Notes')

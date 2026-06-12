@@ -603,6 +603,7 @@ class Sale(db.Model):
     is_approved = db.Column(db.Boolean, default=True, index=True)  # True for admin-created, False for staff-created
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
+    discount_violation = db.Column(db.Text, nullable=True)
     
     # Relationships
     items = db.relationship('SaleItem', backref='sale', lazy=True, cascade='all, delete-orphan')
@@ -658,13 +659,41 @@ class Sale(db.Model):
                 discount_amount = self.subtotal * (self.discount / 100)
             else:
                 discount_amount = self.discount
-        
-        # Calculate total = subtotal + tax + delivery - discount
-        self.total = self.subtotal + self.tax + self.delivery_charge - discount_amount
+        # Only apply discount if the invoice is approved
+        applied_discount = 0
+        if self.is_approved:
+            applied_discount = discount_amount
+            
+        # Calculate total = subtotal + tax + delivery - applied_discount
+        self.total = self.subtotal + self.tax + self.delivery_charge - applied_discount
         
         # Ensure total is not negative
         if self.total < 0:
             self.total = 0
+
+        # Check Product Discount Conditions
+        violations = []
+        if settings and settings.product_discount_conditions:
+            import json
+            try:
+                conditions = json.loads(settings.product_discount_conditions)
+                item_product_ids = [item.product_id for item in self.items]
+                for cond in conditions:
+                    if cond['product_id'] in item_product_ids:
+                        min_allowed = float(cond.get('min_discount', 0))
+                        max_allowed = float(cond.get('max_discount', 0))
+                        
+                        if discount_amount < min_allowed:
+                            violations.append(f"Discount PKR {discount_amount} is less than Rule Minimum (PKR {min_allowed})")
+                        if max_allowed > 0 and discount_amount > max_allowed:
+                            violations.append(f"Discount PKR {discount_amount} is greater than Rule Maximum (PKR {max_allowed})")
+            except:
+                pass
+        
+        if violations:
+            self.discount_violation = "; ".join(violations)
+        else:
+            self.discount_violation = None
             
     @property
     def is_discount_restricted(self):
@@ -1209,6 +1238,8 @@ class InvoiceSettings(db.Model):
             return json.loads(self.overdue_restricted_groups)
         except:
             return []
+
+    product_discount_conditions = db.Column(db.Text) # JSON list: [{product_id, min_discount, max_discount}]
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
