@@ -3,7 +3,7 @@ from app.utils import permission_required
 from flask_login import login_required, current_user
 from app import db
 from app.models import (Sale, SaleItem, SaleReturn, SaleReturnItem, Product, ProductWarehouseStock, Warehouse,
-                        Customer, SaleReturnSettings, CustomerGroup, Salesman)
+                        Customer, SaleReturnSettings, CustomerGroup, Salesman, CustomerAdvance)
 from app.forms import SaleReturnSettingsForm
 from datetime import datetime
 from app.routes.filters import apply_saved_filter_to_query
@@ -262,19 +262,30 @@ def create_return():
         )
         db.session.add(return_item)
 
-    # Update sale totals - reduce sale total by return amount
-    sale.subtotal -= subtotal
-    sale.tax -= tax
-    sale.total -= total
-    if sale.total < 0:
-        sale.total = 0
-
-    # Adjust paid amount if needed
-    if sale.paid_amount > sale.total:
-        sale.paid_amount = sale.total
-
-    # Update sale status
+    # Update sale totals and status
+    sale.calculate_totals()
     sale.update_status()
+
+    # Adjust paid amount if needed and create advance for excess
+    if sale.paid_amount > sale.total:
+        excess = sale.paid_amount - sale.total
+        
+        # Create a customer advance for the excess
+        advance = CustomerAdvance(
+            customer_id=sale.customer_id,
+            amount=excess,
+            date=datetime.now().date(),
+            description=f"Auto-generated from Return {return_number} excess (Invoice #{sale.invoice_number})",
+            is_approved=True,
+            created_by=current_user.id
+        )
+        db.session.add(advance)
+        
+        # Adjust sale paid_amount to exactly match the new total
+        sale.paid_amount = sale.total
+        flash(f'Excess payment of PKR {excess:,.2f} has been converted to a customer advance.', 'info')
+    elif sale.paid_amount > sale.total: # Fallback safety
+        sale.paid_amount = sale.total
 
     # Update return settings next number
     settings.next_number = next_return_num + 1
@@ -381,13 +392,48 @@ def delete_return(id):
                     if log.rejected_qty <= 0:
                         db.session.delete(log)
 
-    # Restore sale totals
-    sale.subtotal += sale_return.subtotal
-    sale.tax += sale_return.tax
-    sale.total += sale_return.total
-    sale.update_status()
-
+    # --- Reverse financial changes made when the return was created ---
+    
+    # 1. Find and delete any auto-generated advance that was created for excess credit
+    #    from this return. The description contains the return number as the identifier.
+    auto_advance = CustomerAdvance.query.filter(
+        CustomerAdvance.customer_id == sale.customer_id,
+        CustomerAdvance.description.like(f"%Return {sale_return.return_number} excess%")
+    ).first()
+    
+    excess_from_advance = 0.0
+    if auto_advance:
+        excess_from_advance = float(auto_advance.amount)
+        db.session.delete(auto_advance)
+    
+    # 2. Capture return total BEFORE removing the return from the relationship
+    return_total = float(sale_return.total or 0)
+    
+    # 3. Explicitly remove the return so calculate_totals doesn't count it.
+    if sale_return in sale.returns:
+        sale.returns.remove(sale_return)
     db.session.delete(sale_return)
+
+    # 4. Recalculate invoice totals (this restores the original higher total)
+    sale.calculate_totals()
+    
+    # 5. Restore paid_amount from the ACTUAL payment records (ground truth).
+    #    Do NOT try to add/subtract amounts — just sum what's really been paid.
+    from app.models import Payment as PaymentModel
+    actual_paid = db.session.query(
+        db.func.coalesce(db.func.sum(PaymentModel.amount), 0)
+    ).filter(
+        PaymentModel.invoice_id == sale.id,
+        PaymentModel.is_approved == True
+    ).scalar()
+    
+    # Also include any advance that was applied directly to this invoice
+    advance_applied = float(sale.advance_applied or 0)
+    
+    # Cap at the restored invoice total
+    sale.paid_amount = min(float(actual_paid) + advance_applied, sale.total)
+    
+    sale.update_status()
     db.session.commit()
     flash('Return deleted successfully. Sale totals have been restored.', 'success')
     return redirect(url_for('returns.return_list'))

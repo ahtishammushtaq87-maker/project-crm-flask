@@ -637,35 +637,72 @@ class Sale(db.Model):
         self.updated_at = datetime.utcnow()
     
     def calculate_totals(self):
-        """Calculate invoice totals including delivery and advance"""
-        self.subtotal = sum(item.total for item in self.items)
+        """Calculate invoice totals including delivery, returns and discounts"""
+        # Calculate base from items
+        items_subtotal = sum(item.total for item in self.items)
+        items_tax = items_subtotal * (self.tax_rate / 100)
         
-        # Calculate tax
-        self.tax = self.subtotal * (self.tax_rate / 100)
+        # Deduct returns (using ret.total which accounts for subtotal + tax - return_discount)
+        returns_total = sum(ret.total for ret in self.returns)
+        
+        self.subtotal = items_subtotal - sum(ret.subtotal for ret in self.returns)
+        self.tax = items_tax - sum(ret.tax for ret in self.returns)
+        # Total will be calculated later including delivery and discount, 
+        # but we need to ensure returns_total is subtracted at the end.
         
         # Check if overdue rule applies to this customer's group
         rule_applies = False
         settings = InvoiceSettings.query.first()
         if settings:
+            from app.models import CustomerGroup # Ensure available or use relationship
             restricted_groups = settings.restricted_group_ids
             if self.customer and self.customer.group_id in restricted_groups:
                 rule_applies = True
         
         # Calculate discount - suspended if overdue unless forced AND rule applies
+        # Important: discount is usually on original price, but we should be careful 
+        # not to let total go negative if returns are large.
         if self.is_overdue and not self.ignore_overdue_discount and rule_applies:
             discount_amount = 0
         else:
             if self.discount_type == 'percentage':
-                discount_amount = self.subtotal * (self.discount / 100)
+                # Apply percentage discount to ORIGINAL subtotal or net? 
+                # Usually original, but here we'll use items_subtotal to be safe.
+                discount_amount = items_subtotal * (self.discount / 100)
             else:
                 discount_amount = self.discount
+                
         # Only apply discount if the invoice is approved
         applied_discount = 0
         if self.is_approved:
             applied_discount = discount_amount
             
-        # Calculate total = subtotal + tax + delivery - applied_discount
+        # Calculate total = subtotal + tax + delivery - applied_discount - returns_total
+        # Note: self.subtotal and self.tax already had returns deducted, 
+        # but we use returns_total to ensure return-specific discounts are also handled.
+        # Actually, if we use ret.total, we are subtracting (subtotal + tax - disc).
+        # Since self.subtotal and self.tax ALREADY subtracted ret.subtotal and ret.tax,
+        # subtracting ret.total would be double counting subtotal/tax.
+        
+        # CORRECT LOGIC:
+        # Grand Total = (ItemsSubtotal + ItemsTax + Delivery - ItemsDiscount) - (ReturnsTotal)
+        # However, self.subtotal/tax are already returns-deducted.
+        
         self.total = self.subtotal + self.tax + self.delivery_charge - applied_discount
+        # Add back any return discounts that were subtracted twice if using self.subtotal
+        # Actually, let's keep it simple:
+        # Total = Subtotal + Tax + Delivery - Discount
+        # Since Subtotal and Tax are already net-of-returns, this is correct.
+        # BUT we must also SUBTRACT the return discounts to the customer (they get back less).
+        # Wait, if they get back LESS, the invoice total should go down by LESS.
+        # So we should actually ADD the return discounts to the total.
+        
+        return_discounts = sum(ret.discount for ret in self.returns)
+        self.total += return_discounts
+        
+        # Ensure total is not negative
+        if self.total < 0:
+            self.total = 0
         
         # Ensure total is not negative
         if self.total < 0:
@@ -760,6 +797,17 @@ class SaleItem(db.Model):
         """Subtotal before delivery fee"""
         return self.quantity * self.unit_price
     
+    @property
+    def return_quantity(self):
+        """Sum of quantity returned for this product on this sale"""
+        total_returned = 0
+        if self.sale and self.sale.returns:
+            for ret in self.sale.returns:
+                for item in ret.items:
+                    if item.product_id == self.product_id:
+                        total_returned += item.quantity
+        return total_returned
+
     def __repr__(self):
         return f'<SaleItem {self.sale_id} - {self.product_id}>'
 
@@ -1432,6 +1480,8 @@ class Task(db.Model):
     status = db.Column(db.Enum('Pending', 'In Progress', 'Completed', 'Cancelled', name='task_status'), default='Pending')
     priority = db.Column(db.Enum('Low', 'Medium', 'High', 'Critical', name='task_priority'), default='Medium')
     due_date = db.Column(db.DateTime)
+    reminder_at = db.Column(db.DateTime, nullable=True) # When to show the alarm
+    is_notification_shown = db.Column(db.Boolean, default=False) # To avoid duplicate alarms
     assigned_to_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     created_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

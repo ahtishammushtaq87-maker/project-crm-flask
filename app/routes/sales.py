@@ -1353,6 +1353,17 @@ def customer_export_pdf(id, is_public=False):
                 'debit': 0,
                 'credit': float(effective_discount or 0)
             })
+
+        # Advance Applied (Credit)
+        if getattr(s, 'advance_applied', 0) > 0:
+            events.append({
+                'date': s.date,
+                'type': 'advance_applied',
+                'desc': f"Advance Applied (Inv #{s.invoice_number})",
+                'inv': s.invoice_number,
+                'debit': 0,
+                'credit': float(s.advance_applied or 0)
+            })
             
     for p in payments:
         if selected_ids and (not p.invoice or p.invoice.invoice_number not in selected_ids):
@@ -1378,10 +1389,10 @@ def customer_export_pdf(id, is_public=False):
         events.append({
             'date': dt,
             'type': 'advance',
-            'desc': f"Advance Received: {a.description or ''}",
+            'desc': f"Advance Received: {a.description or ''} (PKR {float(a.amount or 0):,.2f})",
             'inv': '-',
             'debit': 0,
-            'credit': float(a.amount or 0)
+            'credit': 0 # User requested that Advance Received should not have credit/debit effect in ledger
         })
         
     for r in returns:
@@ -1684,6 +1695,7 @@ def customer_export_pdf(id, is_public=False):
     total_sales = 0
     total_discounts = 0
     total_paid = 0
+    total_advances_applied = 0
 
     for e in events:
         debit = e['debit']
@@ -1693,6 +1705,7 @@ def customer_export_pdf(id, is_public=False):
         if e['type'] == 'sale': total_sales += debit
         elif e['type'] == 'discount': total_discounts += credit
         elif e['type'] == 'payment': total_paid += credit
+        elif e['type'] == 'advance_applied': total_advances_applied += credit
 
         table_data.append([
             Paragraph(e['date'].strftime("%d/%m/%Y"), s_TblCellC),
@@ -1744,6 +1757,8 @@ def customer_export_pdf(id, is_public=False):
         [Paragraph("Total Discounts Given", s_TotalLabel), Paragraph(pkr(total_discounts), s_TotalValue)],
         [Paragraph("Total Payments Received", s_TotalLabel), Paragraph(pkr(total_paid), s_TotalValue)],
         [Paragraph("Total Advances Received", s_TotalLabel), Paragraph(pkr(float(customer.total_advances_received or 0)), s_TotalValue)],
+        [Paragraph("Total Advances Applied", s_TotalLabel), Paragraph(pkr(total_advances_applied), s_TotalValue)],
+        [Paragraph("Remaining Advance Balance", s_TotalLabel), Paragraph(pkr(float(customer.remaining_advance_balance or 0)), s_TotalValue)],
         [Paragraph("<b>Closing Balance / Outstanding</b>", s_GrandLabel), Paragraph(pkr(running_balance), s_GrandValue)],
     ]
     
@@ -2738,7 +2753,10 @@ def customer_ledger_json(id):
             'type': 'sale',
             'invoice_number': s.invoice_number,
             'desc': f"Invoice #{s.invoice_number}",
-            'debit': float(s.subtotal or 0) + float(s.tax or 0) + float(s.delivery_charge or 0),
+            # Use ORIGINAL gross item total (before returns). Returns are shown as
+            # separate credit entries — using the post-return s.subtotal here would
+            # double-subtract them, making the running balance wildly negative.
+            'debit': float(sum(item.total for item in s.items)) * (1 + float(s.tax_rate or 0) / 100) + float(s.delivery_charge or 0),
             'credit': 0,
             'status': display_status,
             'obj': s
@@ -2769,6 +2787,19 @@ def customer_ledger_json(id):
                 'status': '-',
                 'obj': s
             })
+
+        # Advance Applied (Credit)
+        if hasattr(s, 'advance_applied') and s.advance_applied and s.advance_applied > 0:
+            events.append({
+                'date': s.date,
+                'type': 'advance_applied',
+                'invoice_number': s.invoice_number,
+                'desc': f"Advance Applied (Inv #{s.invoice_number})",
+                'debit': 0,
+                'credit': float(s.advance_applied or 0),
+                'status': '-',
+                'obj': s
+            })
     
     for p in payments:
         events.append({
@@ -2789,9 +2820,10 @@ def customer_ledger_json(id):
             'date': dt,
             'type': 'advance',
             'invoice_number': '-',
-            'desc': f"Advance Received: {a.description or ''}",
+            'desc': f"Advance Received: {a.description or ''} (PKR {float(a.amount or 0):,.2f})",
+            # User requested that Advance Received should not have credit/debit effect in ledger
             'debit': 0,
-            'credit': float(a.amount or 0),
+            'credit': 0,
             'status': '-',
             'obj': a
         })
@@ -2827,6 +2859,7 @@ def customer_ledger_json(id):
     total_sales = 0
     total_discounts = 0
     total_paid = 0
+    total_advances_applied = 0
     
     for e in events:
         debit = e['debit']
@@ -2839,6 +2872,8 @@ def customer_ledger_json(id):
             total_discounts += credit
         elif e['type'] == 'payment':
             total_paid += credit
+        elif e['type'] == 'advance_applied':
+            total_advances_applied += credit
             
         ledger_entries.append({
             'date': e['date'].strftime('%d/%m/%Y'),
@@ -2849,15 +2884,16 @@ def customer_ledger_json(id):
             'invoice_balance': 0, # Not applicable in detailed ledger
             'running_balance': running_balance,
             'status': e['status'],
-            'aging': '-' if e['type'] != 'sale' else '-', # Bucket calculation could be added here
+            'aging': '-' if e['type'] != 'sale' else '-', 
             'entity_id': e['obj'].id if 'obj' in e and hasattr(e['obj'], 'id') else None,
-            'entity_type': e['type'] if e['type'] in ['sale', 'return', 'advance', 'payment'] else None
+            'entity_type': e['type'] if e['type'] in ['sale', 'return', 'advance', 'payment', 'advance_applied'] else None
         })
 
     summary = {
         'total_sales': total_sales,
         'total_discounts': total_discounts,
         'total_advances': float(customer.total_advances_received or 0),
+        'total_advances_applied': total_advances_applied,
         'remaining_advance': float(customer.remaining_advance_balance or 0),
         'total_paid': total_paid,
         'total_outstanding': running_balance,
@@ -2926,6 +2962,18 @@ def customer_ledger_excel(id):
                 'status': '-'
             })
             
+        # Advance Applied (Credit)
+        if hasattr(s, 'advance_applied') and s.advance_applied and s.advance_applied > 0:
+            events.append({
+                'date': s.date,
+                'type': 'advance_applied',
+                'desc': f"Advance Applied (Inv #{s.invoice_number})",
+                'inv': s.invoice_number,
+                'debit': 0,
+                'credit': float(s.advance_applied or 0),
+                'status': '-'
+            })
+            
     for p in payments:
         events.append({
             'date': p.date,
@@ -2945,7 +2993,8 @@ def customer_ledger_excel(id):
             'desc': f"Advance Received: {a.description or ''}",
             'inv': '-',
             'debit': 0,
-            'credit': float(a.amount or 0),
+            # Informational only — does not affect balance
+            'credit': 0,
             'status': '-'
         })
         
@@ -2995,6 +3044,7 @@ def customer_ledger_excel(id):
     total_sales_sum = 0
     total_discounts_sum = 0
     total_paid_sum = 0
+    total_advances_applied_sum = 0
     total_advances_sum = float(customer.total_advances_received or 0)
 
     # Data Rows
@@ -3010,6 +3060,9 @@ def customer_ledger_excel(id):
         if e['type'] == 'sale': total_sales_sum += debit
         elif e['type'] == 'discount': total_discounts_sum += credit
         elif e['type'] == 'payment': total_paid_sum += credit
+        elif e['type'] == 'advance_applied': 
+            total_paid_sum += credit
+            total_advances_applied_sum += credit
         
         d_str = e['date'].strftime('%d/%m/%Y') if hasattr(e['date'], 'strftime') else str(e['date'])
         
@@ -3031,8 +3084,10 @@ def customer_ledger_excel(id):
     summary_rows = [
         ("Total Sales", total_sales_sum),
         ("Total Discounts", total_discounts_sum),
-        ("Total Advances", total_advances_sum),
-        ("Total Paid", total_paid_sum),
+        ("Total Advances Received", total_advances_sum),
+        ("Total Advances Applied", total_advances_applied_sum),
+        ("Remaining Advance Balance", float(customer.remaining_advance_balance or 0)),
+        ("Total Paid/Applied", total_paid_sum),
         ("Outstanding Balance", running_balance)
     ]
     

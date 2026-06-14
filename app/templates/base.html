@@ -21,6 +21,14 @@
             color: white;
         }
 
+        .text-white {
+            color: rgb(0 0 0) !important;
+        }
+
+        .text-white-50 {
+            color: rgb(0, 0, 0) !important;
+        }
+
         /* ── File Upload Enhancement Styling ── */
         .file-upload-dragover {
             outline: 2px dashed #667eea !important;
@@ -1769,7 +1777,100 @@
             // Initialize on page load
             document.addEventListener('DOMContentLoaded', function () {
                 AppNotifications.init();
+
+                // Initialize Task Polling
+                if (typeof initTaskPolling === 'function') {
+                    initTaskPolling();
+                }
             });
+
+            // Task Polling System
+            function initTaskPolling() {
+                const alarmSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+                let shownTaskIds = new Set();
+                let currentTasks = [];
+
+                const taskModalEl = document.getElementById('taskAlarmModal');
+                const taskModal = new bootstrap.Modal(taskModalEl, { backdrop: 'static', keyboard: false });
+
+                function pollTasks() {
+                    fetch('{{ url_for("users.poll_tasks") }}')
+                        .then(response => response.json())
+                        .then(tasks => {
+                            if (!tasks || tasks.length === 0) return;
+
+                            let newTasks = tasks.filter(t => !shownTaskIds.has(t.id));
+                            if (newTasks.length > 0) {
+                                currentTasks = [...currentTasks, ...newTasks];
+                                newTasks.forEach(t => shownTaskIds.add(t.id));
+
+                                updateModalContent();
+                                alarmSound.play().catch(e => console.log("Audio play blocked: " + e));
+
+                                // Show modal if not already showing
+                                if (!taskModalEl.classList.contains('show')) {
+                                    taskModal.show();
+                                }
+                            }
+                        })
+                        .catch(err => console.error('Task poll failed:', err));
+                }
+
+                function updateModalContent() {
+                    const listContainer = document.getElementById('taskAlarmList');
+                    listContainer.innerHTML = currentTasks.map(task => `
+                        <div class="task-alarm-item p-3 mb-3 border-start border-danger border-4 bg-white shadow-sm rounded">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h5 class="fw-bold mb-0">${task.title}</h5>
+                                <span class="badge bg-danger rounded-pill">Priority: ${task.priority}</span>
+                            </div>
+                            <p class="text-muted small mb-3">${task.description || 'No description'}</p>
+                            <div class="form-check bg-light p-2 rounded border">
+                                <input class="form-check-input ms-0 me-2 task-complete-check" type="checkbox" id="complete_${task.id}" data-task-id="${task.id}" style="width: 20px; height: 20px;">
+                                <label class="form-check-label fw-bold" for="complete_${task.id}">
+                                    Task Complete
+                                </label>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+                document.getElementById('confirmTaskAlarm').onclick = async function () {
+                    let completedCount = 0;
+
+                    for (const task of currentTasks) {
+                        try {
+                            const check = document.getElementById(`complete_${task.id}`);
+                            const isComplete = check && check.checked;
+
+                            if (isComplete) {
+                                await fetch(`/users/tasks/complete/${task.id}`, { method: 'POST' });
+                                completedCount++;
+                            }
+                            // Always acknowledge so it doesn't reappear
+                            await fetch(`/users/tasks/acknowledge/${task.id}`, { method: 'POST' });
+                        } catch (e) {
+                            console.error("Action failed for task " + task.id, e);
+                        }
+                    }
+
+                    if (completedCount > 0) {
+                        Toast.show(`${completedCount} tasks marked as completed!`, 'success');
+                        if (window.location.pathname.includes('/users/tasks')) {
+                            location.reload();
+                        }
+                    }
+
+                    currentTasks = [];
+                    // We don't clear shownTaskIds so they don't immediately pop up again in this session
+                    // if the server poll hasn't updated its state yet.
+                    taskModal.hide();
+                };
+
+                // Poll every 30 seconds
+                pollTasks();
+                setInterval(pollTasks, 30000);
+            }
 
             // Bulk actions helper
             function initBulkActions(config) {
@@ -2209,7 +2310,8 @@
                             <a id="downloadLedgerPDF" href="#" target="_blank" class="btn btn-sm btn-light shadow-sm">
                                 <i class="fas fa-file-pdf me-1 text-danger"></i> PDF
                             </a>
-                            <button id="shareLedgerPDFBtn" class="btn btn-sm btn-light shadow-sm" onclick="shareLedgerPDF()">
+                            <button id="shareLedgerPDFBtn" class="btn btn-sm btn-light shadow-sm"
+                                onclick="shareLedgerPDF()">
                                 <i class="fab fa-whatsapp me-1 text-success"></i> Share
                             </button>
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
@@ -2293,8 +2395,16 @@
                                                     id="summaryTotalDiscounts"></span>
                                             </div>
                                             <div class="d-flex justify-content-between mb-2">
-                                                <span class="text-muted">Total Advances:</span>
+                                                <span class="text-muted">Advances Received:</span>
                                                 <span class="text-info fw-bold fs-5" id="summaryTotalAdvances"></span>
+                                            </div>
+                                            <div class="d-flex justify-content-between mb-2">
+                                                <span class="text-muted">Advances Applied:</span>
+                                                <span class="text-warning fw-bold fs-5" id="summaryTotalAdvancesApplied"></span>
+                                            </div>
+                                            <div class="d-flex justify-content-between mb-2">
+                                                <span class="text-muted">Remaining Advance:</span>
+                                                <span class="text-info fw-bold fs-5" id="summaryRemainingAdvance"></span>
                                             </div>
                                             <div class="d-flex justify-content-between mb-2 pb-2 border-bottom">
                                                 <span class="text-muted">Total Paid:</span>
@@ -2310,6 +2420,32 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Task Alarm Modal -->
+        <div class="modal fade" id="taskAlarmModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1"
+            aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-danger shadow-lg">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title"><i class="fas fa-bell fa-beat me-2"></i>TASK REMINDER!</h5>
+                    </div>
+                    <div class="modal-body py-4">
+                        <div class="text-center mb-3">
+                            <i class="fas fa-clock text-danger fa-4x mb-3 animate-pulse"></i>
+                            <h3 class="fw-bold text-danger">TASK ALARM!</h3>
+                        </div>
+                        <div id="taskAlarmList" class="task-alarm-container"
+                            style="max-height: 400px; overflow-y: auto;">
+                            <!-- Task items with individual checkboxes will be injected here -->
+                        </div>
+                    </div>
+                    <div class="modal-footer justify-content-center border-0 pb-4">
+                        <button type="button" class="btn btn-danger px-5 py-2 fw-bold" id="confirmTaskAlarm">OKAY, I
+                            UNDERSTAND</button>
                     </div>
                 </div>
             </div>
@@ -2545,6 +2681,8 @@
                             document.getElementById('summaryTotalSales').textContent = `PKR${(data.summary.total_sales || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
                             document.getElementById('summaryTotalDiscounts').textContent = `PKR${(data.summary.total_discounts || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
                             document.getElementById('summaryTotalAdvances').textContent = `PKR${(data.summary.total_advances || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                            document.getElementById('summaryTotalAdvancesApplied').textContent = `PKR${(data.summary.total_advances_applied || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                            document.getElementById('summaryRemainingAdvance').textContent = `PKR${(data.summary.remaining_advance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
                             document.getElementById('summaryTotalPaid').textContent = `PKR${(data.summary.total_paid || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
                             document.getElementById('summaryOutstanding').textContent = `PKR${(data.summary.total_outstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
                         }

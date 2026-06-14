@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, abort
+from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, jsonify
 from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
@@ -447,7 +447,7 @@ def create_task():
             description=form.description.data,
             priority=form.priority.data,
             status=form.status.data,
-            due_date=form.due_date.data,
+            reminder_at=form.reminder_at.data,
             assigned_to_id=form.assigned_to_id.data,
             created_by_id=current_user.id
         )
@@ -514,3 +514,77 @@ def update_task_status(id):
         db.session.commit()
         flash(f'Task status updated to {new_status}.', 'success')
     return redirect(url_for('users.list_tasks'))
+
+@bp.route('/tasks/edit/<int:id>', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def edit_task(id):
+    task = Task.query.get_or_404(id)
+    form = TaskForm(obj=task)
+    form.assigned_to_id.choices = [(u.id, f"{u.username} ({u.role})") for u in User.query.all()]
+    
+    if form.validate_on_submit():
+        task.title = form.title.data
+        task.description = form.description.data
+        task.priority = form.priority.data
+        task.status = form.status.data
+        task.reminder_at = form.reminder_at.data
+        task.assigned_to_id = form.assigned_to_id.data
+        
+        # Reset notification shown if reminder time changed and is in future
+        if task.reminder_at and task.reminder_at > datetime.utcnow():
+            task.is_notification_shown = False
+            
+        db.session.commit()
+        log_activity('Tasks', f'Updated Task: {task.title}', f'Assigned to: {task.assigned_to.username}')
+        flash('Task updated successfully.', 'success')
+        return redirect(url_for('users.list_tasks'))
+        
+    return render_template('tasks/edit.html', form=form, task=task)
+
+@bp.route('/tasks/poll')
+@login_required
+def poll_tasks():
+    # Only poll for current user's assigned tasks
+    now = datetime.now()
+    due_tasks = Task.query.filter(
+        Task.assigned_to_id == current_user.id,
+        Task.reminder_at <= now,
+        Task.is_notification_shown == False,
+        Task.status.in_(['Pending', 'In Progress'])
+    ).all()
+    
+    tasks_data = []
+    for task in due_tasks:
+        tasks_data.append({
+            'id': task.id,
+            'title': task.title,
+            'description': task.description or '',
+            'priority': task.priority.name if hasattr(task.priority, 'name') else str(task.priority)
+        })
+    
+    return jsonify(tasks_data)
+
+@bp.route('/tasks/complete/<int:id>', methods=['POST'])
+@login_required
+def complete_task_ajax(id):
+    task = Task.query.get_or_404(id)
+    if current_user.role != 'admin' and task.assigned_to_id != current_user.id:
+        return jsonify({'success': False, 'message': 'Permission denied'}), 403
+        
+    task.status = 'Completed'
+    db.session.commit()
+    
+    log_activity('Tasks', f'Completed Task: {task.title}', 'Update via Alarm Popup')
+    return jsonify({'success': True, 'message': 'Task marked as completed'})
+
+@bp.route('/tasks/acknowledge/<int:id>', methods=['POST'])
+@login_required
+def acknowledge_task(id):
+    task = Task.query.get_or_404(id)
+    if current_user.role != 'admin' and task.assigned_to_id != current_user.id:
+        return jsonify({'success': False, 'message': 'Permission denied'}), 403
+        
+    task.is_notification_shown = True
+    db.session.commit()
+    return jsonify({'success': True, 'message': 'Reminder acknowledged'})

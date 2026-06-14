@@ -441,7 +441,7 @@
                         {% set has_item_delivery = sum_item_delivery > 0 %}
                         {% set show_delivery_col = has_item_delivery %}
                         {% set show_discount_col = effective_discount > 0 %}
-                        {% set base_cols = 6 %}
+                        {% set base_cols = 7 %}
                         {% set total_cols = base_cols + (1 if show_delivery_col else 0) + (1 if show_discount_col else
                         0) %}
                         {% set label_colspan = total_cols - 1 %}
@@ -453,6 +453,7 @@
                                     <th>#</th>
                                     <th>Product</th>
                                     <th class="text-center">Qty</th>
+                                    <th class="text-center text-danger">Ret. Qty</th>
                                     <th class="text-end">Unit Price</th>
                                     <th class="text-end">Subtotal</th>
                                     {% if show_delivery_col %}
@@ -486,6 +487,13 @@
                                         {% endif %}
                                     </td>
                                     <td class="text-center">{{ '{:,.2f}'.format(item.quantity) }}</td>
+                                    <td class="text-center text-danger">
+                                        {% if item.return_quantity > 0 %}
+                                        {{ '{:,.2f}'.format(item.return_quantity) }}
+                                        {% else %}
+                                        -
+                                        {% endif %}
+                                    </td>
                                     <td class="text-end">PKR {{ "{:,.2f}".format(item.unit_price) }}</td>
                                     <td class="text-end">PKR {{ "{:,.2f}".format(item_subtotal) }}</td>
                                     {% if show_delivery_col %}

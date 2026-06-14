@@ -378,7 +378,7 @@ class TaskForm(FlaskForm):
     description = TextAreaField('Description')
     priority = SelectField('Priority', choices=[('Low', 'Low'), ('Medium', 'Medium'), ('High', 'High'), ('Critical', 'Critical')], default='Medium')
     status = SelectField('Status', choices=[('Pending', 'Pending'), ('In Progress', 'In Progress'), ('Completed', 'Completed'), ('Cancelled', 'Cancelled')], default='Pending')
-    due_date = DateField('Due Date', validators=[Optional()])
+    reminder_at = DateTimeField('Reminder Date & Time', format='%Y-%m-%dT%H:%M', validators=[Optional()])
     assigned_to_id = SelectField('Assign To', coerce=int, validators=[DataRequired()])
 
 class BOMForm(FlaskForm):
