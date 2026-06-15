@@ -73,9 +73,9 @@
                             </select>
                         </div>
                         <div class="mb-3">
-                            <label for="salesmanSelect" class="form-label">Salesman</label>
-                            <select name="salesman_id" class="form-control" id="salesmanSelect">
-                                <option value="0">No Salesman</option>
+                            <label for="salesmanSelect" class="form-label">Salesman <span class="text-danger">*</span></label>
+                            <select name="salesman_id" class="form-control" id="salesmanSelect" required>
+                                <option value="">Select Salesman</option>
                                 {% for salesman in salesmen %}
                                 <option value="{{ salesman.id }}" {% if sale.salesman_id==salesman.id %}selected{% endif
                                     %}>

@@ -85,7 +85,7 @@ class PurchaseReturnSettingsForm(FlaskForm):
 
 class SaleForm(FlaskForm):
     customer_id = SelectField('Customer', coerce=int, validators=[DataRequired()])
-    salesman_id = SelectField('Salesman', coerce=int, validators=[Optional()])
+    salesman_id = SelectField('Salesman', coerce=lambda x: int(x) if x and str(x).isdigit() else None, validators=[InputRequired()])
     date = DateField('Date', validators=[DataRequired()])
 
 class CustomerForm(FlaskForm):

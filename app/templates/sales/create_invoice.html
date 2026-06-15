@@ -104,10 +104,10 @@
                             </select>
                         </div>
                         <div class="mb-3">
-                            <label for="salesmanSelect" class="form-label">Salesman</label>
+                            <label for="salesmanSelect" class="form-label">Salesman <span class="text-danger">*</span></label>
                             <div class="input-group">
-                                <select name="salesman_id" class="form-control" id="salesmanSelect">
-                                    <option value="0">No Salesman</option>
+                                <select name="salesman_id" class="form-control" id="salesmanSelect" required>
+                                    <option value="">Select Salesman</option>
                                     {% for salesman in salesmen %}
                                     <option value="{{ salesman.id }}">{{ salesman.name }}</option>
                                     {% endfor %}

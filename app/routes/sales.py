@@ -171,7 +171,7 @@ def create_invoice():
     customer_total_advances = {c.id: float(c.total_advances_received) for c in customers}
     
     form.customer_id.choices = [(0, 'Walk-in Customer')] + [(c.id, c.name) for c in customers]
-    form.salesman_id.choices = [(0, 'No Salesman')] + [(s.id, s.name) for s in Salesman.query.filter_by(is_active=True).all()]
+    form.salesman_id.choices = [('', 'Select Salesman')] + [(s.id, s.name) for s in Salesman.query.filter_by(is_active=True).all()]
     
     if request.method == 'POST':
         customer_id = request.form.get('customer_id')
@@ -390,7 +390,7 @@ def edit_invoice(id):
     salesmen = Salesman.query.filter_by(is_active=True).all()
 
     form.customer_id.choices = [(0, 'Walk-in Customer')] + [(c.id, c.name) for c in customers]
-    form.salesman_id.choices = [(0, 'No Salesman')] + [(s.id, s.name) for s in salesmen]
+    form.salesman_id.choices = [('', 'Select Salesman')] + [(s.id, s.name) for s in salesmen]
 
     if request.method == 'POST':
         # Revert old inventory
@@ -1318,97 +1318,99 @@ def customer_export_pdf(id, is_public=False):
     # Only include approved payments
     payments = Payment.query.filter(Payment.invoice_id.in_(sale_ids), Payment.is_approved == True).order_by(Payment.date.asc()).all() if sale_ids else []
     
-    events = []
-    for s in sales_q:
-        if selected_ids and s.invoice_number not in selected_ids:
-            continue
-            
-        events.append({
-            'date': s.date,
-            'type': 'sale',
-            'desc': f"Invoice #{s.invoice_number}",
-            'inv': s.invoice_number,
-            'debit': float(s.subtotal or 0) + float(s.tax or 0) + float(s.delivery_charge or 0),
-            'credit': 0
-        })
-        # Apply overdue restriction logic
-        is_restricted = getattr(s, 'is_discount_restricted', False)
-        effective_discount = getattr(s, 'effective_discount_amount', 0)
-        
-        if is_restricted and getattr(s, 'base_discount_amount', 0) > 0:
-            events.append({
-                'date': s.date,
-                'type': 'discount',
-                'desc': f"Discount (Inv #{s.invoice_number}): Reversal due to overdue",
-                'inv': s.invoice_number,
-                'debit': 0,
-                'credit': 0
-            })
-        elif effective_discount > 0:
-            events.append({
-                'date': s.date,
-                'type': 'discount',
-                'desc': f"Discount (Inv #{s.invoice_number})",
-                'inv': s.invoice_number,
-                'debit': 0,
-                'credit': float(effective_discount or 0)
-            })
-
-        # Advance Applied (Credit)
-        if getattr(s, 'advance_applied', 0) > 0:
-            events.append({
-                'date': s.date,
-                'type': 'advance_applied',
-                'desc': f"Advance Applied (Inv #{s.invoice_number})",
-                'inv': s.invoice_number,
-                'debit': 0,
-                'credit': float(s.advance_applied or 0)
-            })
-            
-    for p in payments:
-        if selected_ids and (not p.invoice or p.invoice.invoice_number not in selected_ids):
-            continue
-            
-        events.append({
-            'date': p.date,
-            'type': 'payment',
-            'desc': f"Payment ({p.method or 'Cash'})",
-            'inv': p.invoice.invoice_number if p.invoice else '-',
-            'debit': 0,
-            'credit': float(p.amount or 0)
-        })
-        
+    # Build advances as a sorted list to interleave by date
+    advance_events = []
     for a in advances:
-        # Advances don't have invoice numbers to filter by in this logic easily, 
-        # but if we are filtering, we might want to skip them or include them. 
-        # For now, let's include them unless we have a specific ID scheme for them.
-        if selected_ids: continue # Skip advances if specific invoices are selected
-        
-        # Convert date to datetime for sorting
+        if selected_ids: continue  # Skip advances if filtering to specific invoices
         dt = _dt.combine(a.date, _time.min)
-        events.append({
+        advance_events.append((dt, {
             'date': dt,
             'type': 'advance',
             'desc': f"Advance Received: {a.description or ''} (PKR {float(a.amount or 0):,.2f})",
             'inv': '-',
             'debit': 0,
-            'credit': 0 # User requested that Advance Received should not have credit/debit effect in ledger
-        })
-        
-    for r in returns:
-        if selected_ids and r.return_number not in selected_ids:
+            'credit': 0
+        }))
+    advance_events.sort(key=lambda x: x[0])
+    adv_idx = 0
+
+    # Build events grouped per-invoice:
+    # Invoice → its payments → its discount → its advance_applied → its returns
+    # Standalone advances are interleaved before each invoice by date.
+    events = []
+    for s in sorted(sales_q, key=lambda x: x.date):
+        if selected_ids and s.invoice_number not in selected_ids:
             continue
-            
+
+        # Insert any advances that occurred before or on this invoice's date
+        while adv_idx < len(advance_events) and advance_events[adv_idx][0].date() <= s.date.date():
+            events.append(advance_events[adv_idx][1])
+            adv_idx += 1
+
+        # 1. The invoice itself
         events.append({
-            'date': r.date,
-            'type': 'return',
-            'desc': f"Sales Return #{r.return_number}",
-            'inv': r.return_number,
-            'debit': 0,
-            'credit': float(r.total or 0)
+            'date': s.date,
+            'type': 'sale',
+            'desc': f"Invoice #{s.invoice_number}",
+            'inv': s.invoice_number,
+            'debit': float(sum(item.total for item in s.items)) * (1 + float(s.tax_rate or 0) / 100) + float(s.delivery_charge or 0),
+            'credit': 0
         })
-        
-    events.sort(key=lambda x: x['date'])
+
+        # 2. Payments for this invoice (sorted by date)
+        for p in sorted(s.payments, key=lambda x: x.date):
+            if not getattr(p, 'is_approved', True):
+                continue
+            events.append({
+                'date': p.date,
+                'type': 'payment',
+                'desc': f"Payment ({p.method or 'Cash'})",
+                'inv': s.invoice_number,
+                'debit': 0,
+                'credit': float(p.amount or 0)
+            })
+
+        # 3. Discount for this invoice
+        is_restricted = getattr(s, 'is_discount_restricted', False)
+        effective_discount = getattr(s, 'effective_discount_amount', 0)
+        if is_restricted and getattr(s, 'base_discount_amount', 0) > 0:
+            events.append({
+                'date': s.date, 'type': 'discount',
+                'desc': f"Discount (Inv #{s.invoice_number}): Reversal due to overdue",
+                'inv': s.invoice_number, 'debit': 0, 'credit': 0
+            })
+        elif effective_discount > 0:
+            events.append({
+                'date': s.date, 'type': 'discount',
+                'desc': f"Discount (Inv #{s.invoice_number})",
+                'inv': s.invoice_number, 'debit': 0,
+                'credit': float(effective_discount or 0)
+            })
+
+        # 4. Advance Applied for this invoice
+        if getattr(s, 'advance_applied', 0) > 0:
+            events.append({
+                'date': s.date, 'type': 'advance_applied',
+                'desc': f"Advance Applied (Inv #{s.invoice_number})",
+                'inv': s.invoice_number, 'debit': 0,
+                'credit': float(s.advance_applied or 0)
+            })
+
+        # 5. Returns for this invoice (sorted by date)
+        for r in sorted(s.returns, key=lambda x: x.date):
+            if selected_ids and r.return_number not in selected_ids:
+                continue
+            events.append({
+                'date': r.date, 'type': 'return',
+                'desc': f"Sales Return #{r.return_number}",
+                'inv': r.return_number, 'debit': 0,
+                'credit': float(r.total or 0)
+            })
+
+    # Append any remaining advances after all invoices
+    while adv_idx < len(advance_events):
+        events.append(advance_events[adv_idx][1])
+        adv_idx += 1
     
     output = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -1701,6 +1703,10 @@ def customer_export_pdf(id, is_public=False):
         debit = e['debit']
         credit = e['credit']
         running_balance += (debit - credit)
+        # If balance goes below zero, clamp to 0. The excess credit is treated as
+        # a pending advance and must NOT carry over to subtract from future invoices.
+        if running_balance < 0:
+            running_balance = 0
         
         if e['type'] == 'sale': total_sales += debit
         elif e['type'] == 'discount': total_discounts += credit
@@ -1713,7 +1719,7 @@ def customer_export_pdf(id, is_public=False):
             Paragraph(e['inv'], s_TblCellC),
             Paragraph(pkr(debit), s_TblCell),
             Paragraph(pkr(credit), s_TblCell),
-            Paragraph(pkr(running_balance), s_TblCell)
+            Paragraph(pkr(max(0, running_balance)), s_TblCell)
         ])
 
     tbl = Table(table_data, colWidths=Cols, repeatRows=1)
@@ -1759,7 +1765,7 @@ def customer_export_pdf(id, is_public=False):
         [Paragraph("Total Advances Received", s_TotalLabel), Paragraph(pkr(float(customer.total_advances_received or 0)), s_TotalValue)],
         [Paragraph("Total Advances Applied", s_TotalLabel), Paragraph(pkr(total_advances_applied), s_TotalValue)],
         [Paragraph("Remaining Advance Balance", s_TotalLabel), Paragraph(pkr(float(customer.remaining_advance_balance or 0)), s_TotalValue)],
-        [Paragraph("<b>Closing Balance / Outstanding</b>", s_GrandLabel), Paragraph(pkr(running_balance), s_GrandValue)],
+        [Paragraph("<b>Closing Balance / Outstanding</b>", s_GrandLabel), Paragraph(pkr(max(0, running_balance)), s_GrandValue)],
     ]
     
     sum_w = 4.0 * inch
@@ -2738,110 +2744,109 @@ def customer_ledger_json(id):
     
     today = datetime.utcnow().date()
     
-    # Combine all events into a single sorted list
+    # Build advances as a sorted list to interleave by date
+    advance_events_list = []
+    for a in advances:
+        dt = datetime.combine(a.date, datetime.min.time())
+        advance_events_list.append((dt, {
+            'date': dt,
+            'type': 'advance',
+            'invoice_number': '-',
+            'desc': f"Advance Received: {a.description or ''} (PKR {float(a.amount or 0):,.2f})",
+            'debit': 0,
+            'credit': 0,
+            'status': '-',
+            'obj': a
+        }))
+    advance_events_list.sort(key=lambda x: x[0])
+    adv_idx = 0
+
+    # Build events grouped per-invoice:
+    # Invoice → its payments → its discount → its advance_applied → its returns
+    # Standalone advances are interleaved before each invoice by date.
     events = []
-    
     for s in sales:
         # Determine status for ledger display
         display_status = (s.status or 'unpaid').capitalize()
         if s.is_overdue:
             display_status = 'Overdue'
 
-        # Gross Sale (Debit)
+        # Insert any advances that occurred before or on this invoice's date
+        while adv_idx < len(advance_events_list) and advance_events_list[adv_idx][0].date() <= s.date.date():
+            events.append(advance_events_list[adv_idx][1])
+            adv_idx += 1
+
+        # 1. The invoice itself
         events.append({
             'date': s.date,
             'type': 'sale',
             'invoice_number': s.invoice_number,
             'desc': f"Invoice #{s.invoice_number}",
-            # Use ORIGINAL gross item total (before returns). Returns are shown as
-            # separate credit entries — using the post-return s.subtotal here would
-            # double-subtract them, making the running balance wildly negative.
             'debit': float(sum(item.total for item in s.items)) * (1 + float(s.tax_rate or 0) / 100) + float(s.delivery_charge or 0),
             'credit': 0,
             'status': display_status,
             'obj': s
         })
-        # Discount (Credit)
+
+        # 2. Payments for this invoice (sorted by date)
+        for p in sorted(s.payments, key=lambda x: x.date):
+            if not getattr(p, 'is_approved', True):
+                continue
+            events.append({
+                'date': p.date,
+                'type': 'payment',
+                'invoice_number': s.invoice_number,
+                'desc': f"Payment Received ({p.method or 'Cash'})",
+                'debit': 0,
+                'credit': float(p.amount or 0),
+                'status': '-',
+                'obj': p
+            })
+
+        # 3. Discount for this invoice
         is_restricted = getattr(s, 'is_discount_restricted', False)
         effective_discount = getattr(s, 'effective_discount_amount', 0)
-        
         if is_restricted and getattr(s, 'base_discount_amount', 0) > 0:
             events.append({
-                'date': s.date,
-                'type': 'discount',
+                'date': s.date, 'type': 'discount',
                 'invoice_number': s.invoice_number,
                 'desc': f"Discount (Inv #{s.invoice_number}): Reversal due to overdue",
-                'debit': 0,
-                'credit': 0,
-                'status': '-',
-                'obj': s
+                'debit': 0, 'credit': 0, 'status': '-', 'obj': s
             })
         elif effective_discount > 0:
             events.append({
-                'date': s.date,
-                'type': 'discount',
+                'date': s.date, 'type': 'discount',
                 'invoice_number': s.invoice_number,
                 'desc': f"Discount (Inv #{s.invoice_number})",
-                'debit': 0,
-                'credit': float(effective_discount or 0),
-                'status': '-',
-                'obj': s
+                'debit': 0, 'credit': float(effective_discount or 0),
+                'status': '-', 'obj': s
             })
 
-        # Advance Applied (Credit)
+        # 4. Advance Applied for this invoice
         if hasattr(s, 'advance_applied') and s.advance_applied and s.advance_applied > 0:
             events.append({
-                'date': s.date,
-                'type': 'advance_applied',
+                'date': s.date, 'type': 'advance_applied',
                 'invoice_number': s.invoice_number,
                 'desc': f"Advance Applied (Inv #{s.invoice_number})",
-                'debit': 0,
-                'credit': float(s.advance_applied or 0),
-                'status': '-',
-                'obj': s
+                'debit': 0, 'credit': float(s.advance_applied or 0),
+                'status': '-', 'obj': s
             })
-    
-    for p in payments:
-        events.append({
-            'date': p.date,
-            'type': 'payment',
-            'invoice_number': p.invoice.invoice_number if p.invoice else '-',
-            'desc': f"Payment Received ({p.method or 'Cash'})",
-            'debit': 0,
-            'credit': float(p.amount or 0),
-            'status': '-',
-            'obj': p
-        })
-        
-    for a in advances:
-        # Convert date to datetime for sorting if necessary
-        dt = datetime.combine(a.date, datetime.min.time())
-        events.append({
-            'date': dt,
-            'type': 'advance',
-            'invoice_number': '-',
-            'desc': f"Advance Received: {a.description or ''} (PKR {float(a.amount or 0):,.2f})",
-            # User requested that Advance Received should not have credit/debit effect in ledger
-            'debit': 0,
-            'credit': 0,
-            'status': '-',
-            'obj': a
-        })
-        
-    for r in returns:
-        events.append({
-            'date': r.date,
-            'type': 'return',
-            'invoice_number': r.return_number,
-            'desc': f"Sales Return #{r.return_number}",
-            'debit': 0,
-            'credit': float(r.total or 0),
-            'status': (r.status or 'completed').capitalize(),
-            'obj': r
-        })
-        
-    # Sort events by date
-    events.sort(key=lambda x: x['date'])
+
+        # 5. Returns for this invoice (sorted by date)
+        for r in sorted(s.returns, key=lambda x: x.date):
+            events.append({
+                'date': r.date, 'type': 'return',
+                'invoice_number': r.return_number,
+                'desc': f"Sales Return #{r.return_number}",
+                'debit': 0, 'credit': float(r.total or 0),
+                'status': (r.status or 'completed').capitalize(),
+                'obj': r
+            })
+
+    # Append any remaining advances after all invoices
+    while adv_idx < len(advance_events_list):
+        events.append(advance_events_list[adv_idx][1])
+        adv_idx += 1
     
     # Calculate Aging Buckets (on current unpaid invoices only)
     aging_buckets = {'0-30': 0, '31-60': 0, '61-90': 0, '91-180': 0, '>180': 0}
@@ -2865,6 +2870,10 @@ def customer_ledger_json(id):
         debit = e['debit']
         credit = e['credit']
         running_balance += (debit - credit)
+        # If balance goes below zero, clamp to 0. The excess credit is treated as
+        # a pending advance and must NOT carry over to subtract from future invoices.
+        if running_balance < 0:
+            running_balance = 0
         
         if e['type'] == 'sale':
             total_sales += debit
@@ -2882,7 +2891,7 @@ def customer_ledger_json(id):
             'debit': debit,
             'credit': credit,
             'invoice_balance': 0, # Not applicable in detailed ledger
-            'running_balance': running_balance,
+            'running_balance': max(0, running_balance),
             'status': e['status'],
             'aging': '-' if e['type'] != 'sale' else '-', 
             'entity_id': e['obj'].id if 'obj' in e and hasattr(e['obj'], 'id') else None,
@@ -2896,7 +2905,7 @@ def customer_ledger_json(id):
         'total_advances_applied': total_advances_applied,
         'remaining_advance': float(customer.remaining_advance_balance or 0),
         'total_paid': total_paid,
-        'total_outstanding': running_balance,
+        'total_outstanding': max(0, running_balance),
         'aging_buckets': aging_buckets
     }
     
