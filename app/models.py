@@ -1482,6 +1482,7 @@ class Task(db.Model):
     due_date = db.Column(db.DateTime)
     reminder_at = db.Column(db.DateTime, nullable=True) # When to show the alarm
     is_notification_shown = db.Column(db.Boolean, default=False) # To avoid duplicate alarms
+    is_email_sent = db.Column(db.Boolean, default=False) # To avoid duplicate emails
     assigned_to_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     created_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -1489,6 +1490,24 @@ class Task(db.Model):
     
     def __repr__(self):
         return f'<Task {self.title}>'
+
+class TaskSettings(db.Model):
+    """Configuration for Task Notifications (SMTP)"""
+    __tablename__ = 'task_settings'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    smtp_server = db.Column(db.String(120), default='smtp.gmail.com')
+    smtp_port = db.Column(db.Integer, default=587)
+    smtp_user = db.Column(db.String(120))
+    smtp_password = db.Column(db.String(120))
+    sender_email = db.Column(db.String(120))
+    notification_email = db.Column(db.String(120)) # Where to send alerts
+    is_enabled = db.Column(db.Boolean, default=False)
+    
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<TaskSettings {self.id}>'
 
 class BOM(db.Model):
     """Bill of Materials"""

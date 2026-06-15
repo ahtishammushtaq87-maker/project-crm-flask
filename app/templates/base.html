@@ -1794,7 +1794,12 @@
                 const taskModal = new bootstrap.Modal(taskModalEl, { backdrop: 'static', keyboard: false });
 
                 function pollTasks() {
-                    fetch('{{ url_for("users.poll_tasks") }}')
+                    // Send local time to server in YYYY-MM-DDTHH:MM:SS format
+                    const now = new Date();
+                    const offset = now.getTimezoneOffset() * 60000;
+                    const localISOTime = new Date(now - offset).toISOString().slice(0, -1);
+                    
+                    fetch(`{{ url_for("users.poll_tasks") }}?client_time=${localISOTime}`)
                         .then(response => response.json())
                         .then(tasks => {
                             if (!tasks || tasks.length === 0) return;

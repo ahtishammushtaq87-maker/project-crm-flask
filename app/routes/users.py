@@ -2,8 +2,9 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
-from app.models import User, Task
-from app.forms import UserForm, UserEditForm, TaskForm
+from app.models import User, Task, TaskSettings
+from app.forms import UserForm, UserEditForm, TaskForm, TaskSettingsForm
+from app.services.mail_service import send_task_email
 from datetime import datetime
 from functools import wraps
 
@@ -546,7 +547,19 @@ def edit_task(id):
 @login_required
 def poll_tasks():
     # Only poll for current user's assigned tasks
-    now = datetime.now()
+    client_time_str = request.args.get('client_time')
+    if client_time_str:
+        try:
+            # client_time is sent as a local ISO-like string: YYYY-MM-DDTHH:MM:SS.sss
+            # We strip any zone info if present and parse as naive to match DB format
+            clean_time = client_time_str.split('Z')[0].split('+')[0]
+            now = datetime.fromisoformat(clean_time)
+        except Exception as e:
+            print(f"Error parsing client_time: {e}")
+            now = datetime.now()
+    else:
+        now = datetime.now()
+
     due_tasks = Task.query.filter(
         Task.assigned_to_id == current_user.id,
         Task.reminder_at <= now,
@@ -556,6 +569,15 @@ def poll_tasks():
     
     tasks_data = []
     for task in due_tasks:
+        # Trigger Email Notification if not already sent
+        if not task.is_email_sent:
+            success, msg = send_task_email(task)
+            if success:
+                task.is_email_sent = True
+                db.session.commit()
+            else:
+                print(f"Email failed for task {task.id}: {msg}")
+
         tasks_data.append({
             'id': task.id,
             'title': task.title,
@@ -564,6 +586,26 @@ def poll_tasks():
         })
     
     return jsonify(tasks_data)
+
+@bp.route('/tasks/settings', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def task_settings():
+    settings = TaskSettings.query.first()
+    if not settings:
+        settings = TaskSettings()
+        db.session.add(settings)
+        db.session.commit()
+        
+    form = TaskSettingsForm(obj=settings)
+    
+    if form.validate_on_submit():
+        form.populate_obj(settings)
+        db.session.commit()
+        flash('Task settings updated successfully.', 'success')
+        return redirect(url_for('users.task_settings'))
+        
+    return render_template('tasks/settings.html', form=form, settings=settings)
 
 @bp.route('/tasks/complete/<int:id>', methods=['POST'])
 @login_required
@@ -577,6 +619,28 @@ def complete_task_ajax(id):
     
     log_activity('Tasks', f'Completed Task: {task.title}', 'Update via Alarm Popup')
     return jsonify({'success': True, 'message': 'Task marked as completed'})
+
+@bp.route('/tasks/settings/test', methods=['POST'])
+@login_required
+@admin_required
+def test_task_email():
+    from app.services.mail_service import send_task_email
+    from app.models import Task
+    
+    # Create a dummy task for testing
+    dummy_task = Task(
+        title="Test Task Notification", 
+        description="This is a test email from your ERP system.", 
+        priority="Medium", 
+        reminder_at=datetime.now(),
+        assigned_to=current_user
+    )
+    
+    success, msg = send_task_email(dummy_task)
+    if success:
+        return jsonify({'success': True, 'message': 'Test email sent successfully!'})
+    else:
+        return jsonify({'success': False, 'message': f'Failed to send test email: {msg}'})
 
 @bp.route('/tasks/acknowledge/<int:id>', methods=['POST'])
 @login_required

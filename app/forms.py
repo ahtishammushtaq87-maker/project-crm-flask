@@ -381,6 +381,16 @@ class TaskForm(FlaskForm):
     reminder_at = DateTimeField('Reminder Date & Time', format='%Y-%m-%dT%H:%M', validators=[Optional()])
     assigned_to_id = SelectField('Assign To', coerce=int, validators=[DataRequired()])
 
+class TaskSettingsForm(FlaskForm):
+    smtp_server = StringField('SMTP Server', validators=[DataRequired()], default='smtp.gmail.com')
+    smtp_port = IntegerField('SMTP Port', validators=[DataRequired()], default=587)
+    smtp_user = StringField('SMTP Username', validators=[DataRequired()])
+    smtp_password = StringField('SMTP Password', validators=[DataRequired()])
+    sender_email = StringField('Sender Email', validators=[DataRequired(), Email()])
+    notification_email = StringField('Notification Receiver Email', validators=[DataRequired(), Email()])
+    is_enabled = BooleanField('Enable Email Notifications', default=False)
+    submit = SubmitField('Save Settings')
+
 class BOMForm(FlaskForm):
     name = StringField('BOM Name', validators=[DataRequired()])
     product_id = SelectField('Finished Product', coerce=int, validators=[DataRequired()])

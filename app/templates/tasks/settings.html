@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}Task Settings{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-cog me-2"></i>Task Notification Settings
+                    </h5>
+                    <div class="d-flex gap-2">
+                        <button type="button" id="testSmtpBtnTop" class="btn btn-info btn-sm shadow-sm" style="font-weight: 600;">
+                            <i class="fas fa-paper-plane me-1"></i> Test SMTP Now
+                        </button>
+                        <a href="{{ url_for('users.list_tasks') }}" class="btn btn-light btn-sm">
+                            <i class="fas fa-arrow-left me-1"></i> Back to Tasks
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        {{ form.hidden_tag() }}
+                        
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <div class="form-check form-switch p-3 bg-light rounded border">
+                                    {{ form.is_enabled(class="form-check-input", style="margin-left: 0; scale: 1.2;") }}
+                                    <label class="form-check-label h6 mb-0 ms-4" for="is_enabled">
+                                        Enable Email Notifications for Task Alarms
+                                    </label>
+                                </div>
+                                <small class="text-muted mt-1 d-block">
+                                    When enabled, a notification email will be sent whenever a task reminder time is reached.
+                                </small>
+                            </div>
+                        </div>
+
+                        <h6 class="border-bottom pb-2 mb-3 mt-4">
+                            <i class="fas fa-paper-plane me-2"></i>SMTP Configuration
+                        </h6>
+                        
+                        <div class="row">
+                            <div class="col-md-8 mb-3">
+                                <label class="form-label">{{ form.smtp_server.label }}</label>
+                                {{ form.smtp_server(class="form-control", placeholder="e.g. smtp.gmail.com") }}
+                                {% for error in form.smtp_server.errors %}
+                                    <div class="text-danger small">{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">{{ form.smtp_port.label }}</label>
+                                {{ form.smtp_port(class="form-control", placeholder="587") }}
+                                {% for error in form.smtp_port.errors %}
+                                    <div class="text-danger small">{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">{{ form.smtp_user.label }}</label>
+                                {{ form.smtp_user(class="form-control", placeholder="your-email@gmail.com") }}
+                                {% for error in form.smtp_user.errors %}
+                                    <div class="text-danger small">{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">{{ form.smtp_password.label }}</label>
+                                {{ form.smtp_password(class="form-control", type="password", placeholder="SMTP Password or App Password") }}
+                                {% for error in form.smtp_password.errors %}
+                                    <div class="text-danger small">{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <h6 class="border-bottom pb-2 mb-3 mt-4">
+                            <i class="fas fa-envelope me-2"></i>Email Addresses
+                        </h6>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">{{ form.sender_email.label }}</label>
+                                {{ form.sender_email(class="form-control", placeholder="notifications@yourdomain.com") }}
+                                {% for error in form.sender_email.errors %}
+                                    <div class="text-danger small">{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">{{ form.notification_email.label }}</label>
+                                {{ form.notification_email(class="form-control", placeholder="receiver@example.com") }}
+                                {% for error in form.notification_email.errors %}
+                                    <div class="text-danger small">{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <div class="mt-4 border-top pt-3 d-flex justify-content-end">
+                            {{ form.submit(class="btn btn-primary px-4") }}
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const testBtn = document.getElementById('testSmtpBtnTop');
+    if (testBtn) {
+        testBtn.onclick = function() {
+            const btn = this;
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Sending...';
+            
+            console.log("Starting SMTP test...");
+            
+            fetch('{{ url_for("users.test_task_email") }}', { 
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                console.log("SMTP Test result:", data);
+                if (data.success) {
+                    if (typeof Toast !== 'undefined') {
+                        Toast.show(data.message, 'success');
+                    } else {
+                        alert(data.message);
+                    }
+                    // Remove any existing error alert
+                    const oldAlert = document.getElementById('smtpErrorAlert');
+                    if (oldAlert) oldAlert.remove();
+                } else {
+                    // Show detailed error alert
+                    showErrorAlert(data.message);
+                    if (typeof Toast !== 'undefined') {
+                        Toast.show('SMTP Test Failed', 'danger');
+                    }
+                }
+            })
+            .catch(err => {
+                console.error("SMTP Test failed:", err);
+                showErrorAlert('Network error or server failed: ' + err);
+            })
+            .finally(() => {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            });
+        };
+
+        function showErrorAlert(message) {
+            // Remove old alert if exists
+            const oldAlert = document.getElementById('smtpErrorAlert');
+            if (oldAlert) oldAlert.remove();
+
+            const alertHtml = `
+                <div id="smtpErrorAlert" class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
+                    <strong><i class="fas fa-exclamation-triangle me-2"></i>Email Failed!</strong>
+                    <hr>
+                    <p class="mb-0 small" style="word-break: break-all;">${message}</p>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            `;
+            const form = document.querySelector('form');
+            form.insertAdjacentHTML('beforebegin', alertHtml);
+            
+            // Scroll to alert
+            document.getElementById('smtpErrorAlert').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    } else {
+        console.error("Test SMTP button not found!");
+    }
+});
+</script>
+{% endblock %}

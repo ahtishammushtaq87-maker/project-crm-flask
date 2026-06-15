@@ -5,13 +5,18 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="fas fa-tasks me-2"></i>Tasks</h2>
-    {% if current_user.role == 'admin' %}
-        {% if current_user.has_permission('users', 'add') %}
-<a href="{{ url_for('users.create_task') }}" class="btn btn-primary">
-        <i class="fas fa-plus me-2"></i>Assign New Task
-    </a>
-{% endif %}    
-    {% endif %}
+    <div class="d-flex gap-2">
+        {% if current_user.role == 'admin' %}
+            <a href="{{ url_for('users.task_settings') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-cog me-2"></i>Task Settings
+            </a>
+            {% if current_user.has_permission('users', 'add') %}
+            <a href="{{ url_for('users.create_task') }}" class="btn btn-primary">
+                <i class="fas fa-plus me-2"></i>Assign New Task
+            </a>
+            {% endif %}
+        {% endif %}
+    </div>
 </div>
 
 <div class="row">
