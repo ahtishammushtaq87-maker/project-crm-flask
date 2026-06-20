@@ -44,11 +44,19 @@ def invoices():
             Sale.due_date < datetime.utcnow()
         )
     elif status == 'unapproved':
-        # Show invoices that are themselves unapproved, OR have unapproved payments, OR have unapproved advances
+        # Show invoices that are themselves unapproved, OR have PENDING (not rejected) payments/advances
         query = query.filter(
             (Sale.is_approved == False) |
-            (Sale.payments.any(Payment.is_approved == False)) |
-            (Sale.adjusted_advances.any(CustomerAdvance.is_approved == False))
+            (Sale.payments.any((Payment.is_approved == False) & (Payment.is_rejected == False))) |
+            (Sale.adjusted_advances.any((CustomerAdvance.is_approved == False) & (CustomerAdvance.is_rejected == False)))
+        )
+    elif status == 'rejected_items':
+        # Show invoices that are themselves REJECTED (e.g. discount rules)
+        # OR have ANY rejected payment or advance
+        query = query.filter(
+            (Sale.is_rejected == True) |
+            (Sale.payments.any(Payment.is_rejected == True)) |
+            (Sale.adjusted_advances.any(CustomerAdvance.is_rejected == True))
         )
     elif status != 'all':
         query = query.filter(Sale.status == status)
@@ -112,6 +120,14 @@ def invoices():
     unapproved_advances_all = CustomerAdvance.query.filter(CustomerAdvance.is_approved == False, CustomerAdvance.is_rejected == False).all()
     unapproved_advance_total = sum(a.amount for a in unapproved_advances_all)
     unapproved_advance_count = len(unapproved_advances_all)
+    
+    # NEW: Calculate rejected items count for the new tab (Invoices OR Payments OR Advances)
+    rejected_items_all = Sale.query.filter(
+        (Sale.is_rejected == True) |
+        (Sale.payments.any(Payment.is_rejected == True)) |
+        (Sale.adjusted_advances.any(CustomerAdvance.is_rejected == True))
+    ).all()
+    rejected_item_count = len(rejected_items_all)
     # ──────────────────────────────────────────────────────────────────────
 
     # Identify overdue invoices with suspended discounts (regardless of tab filter)
@@ -155,7 +171,14 @@ def invoices():
                          unapproved_invoice_total=unapproved_invoice_total,
                          unapproved_invoice_count=unapproved_invoice_count,
                          unapproved_payment_total=unapproved_payment_total,
-                         unapproved_payment_count=unapproved_payment_count, unapproved_invoices_all=unapproved_invoices_all, unapproved_payments_all=unapproved_payments_all, unapproved_advance_total=unapproved_advance_total, unapproved_advance_count=unapproved_advance_count, unapproved_advances_all=unapproved_advances_all, suspended_discount_invoices=suspended_discount_invoices)
+                         unapproved_payment_count=unapproved_payment_count, 
+                         unapproved_invoices_all=unapproved_invoices_all, 
+                         unapproved_payments_all=unapproved_payments_all, 
+                         unapproved_advance_total=unapproved_advance_total, 
+                         unapproved_advance_count=unapproved_advance_count, 
+                         unapproved_advances_all=unapproved_advances_all, 
+                         rejected_item_count=rejected_item_count,
+                         suspended_discount_invoices=suspended_discount_invoices)
 
 @bp.route('/invoice/create', methods=['GET', 'POST'])
 @login_required
