@@ -908,11 +908,16 @@ class PurchaseBill(db.Model):
         self.updated_at = datetime.utcnow()
     
     def calculate_totals(self):
-        """Calculate bill totals"""
-        self.subtotal = sum(item.total for item in self.items)
+        """Calculate bill totals net of returns"""
+        items_subtotal = sum(item.total for item in self.items)
+        items_tax = items_subtotal * (self.tax_rate / 100)
         
-        # Calculate tax
-        self.tax = self.subtotal * (self.tax_rate / 100)
+        # Calculate returns to deduct
+        returns_subtotal = sum(ret.subtotal for ret in self.purchase_returns) if hasattr(self, 'purchase_returns') else 0
+        returns_tax = sum(ret.tax for ret in self.purchase_returns) if hasattr(self, 'purchase_returns') else 0
+        
+        self.subtotal = items_subtotal - returns_subtotal
+        self.tax = items_tax - returns_tax
         
         # Calculate discount
         if self.discount_type == 'percentage':

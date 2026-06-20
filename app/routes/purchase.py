@@ -170,6 +170,8 @@ def create_bill():
                 )
                 bill.items.append(item)
         
+        # IMPORTANT: Flush to session so items are linked before calculation
+        db.session.flush()
         bill.calculate_totals()
 
         # Update paid amount from "Advance Paid" field in template
@@ -359,8 +361,10 @@ def edit_bill(id):
                 bill.items.append(item)
                 # NOTE: inventory NOT updated on edit — user must re-receive
 
+        # IMPORTANT: Flush to session so items are linked before calculation
+        db.session.flush()
         bill.calculate_totals()
-
+        
         # Cap paid amount if it now exceeds total
         if bill.paid_amount > bill.total:
             bill.paid_amount = bill.total

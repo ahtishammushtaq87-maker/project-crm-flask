@@ -341,6 +341,9 @@ def create_invoice():
                         adv.is_adjusted = True
                         adv.adjusted_invoice_id = sale.id
         
+        db.session.add(sale)
+        db.session.flush()
+
         # Add items
         for item in sale_items:
             sale_item = SaleItem(
@@ -376,6 +379,11 @@ def create_invoice():
                         db.session.add(wh_stock)
                     wh_stock.quantity -= item['quantity']
         
+        # IMPORTANT: Trigger the official total calculation from the model
+        # This ensures the stored 'total' matches the model logic 100%
+        sale.calculate_totals()
+        sale.update_status()
+
         db.session.commit()
         
         log_activity('Sales', f'Created Invoice #{sale.invoice_number}', 
