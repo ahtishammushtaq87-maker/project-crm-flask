@@ -4,30 +4,59 @@
 
 {% block content %}
 <style>
-    .bg-info-soft { background-color: rgba(66, 153, 225, 0.25); }
-    .bg-primary-soft { background-color: rgba(102, 126, 234, 0.25); }
-    .bg-success-soft { background-color: rgba(72, 187, 120, 0.25); }
-    .bg-warning-soft { background-color: rgba(236, 201, 75, 0.25); }
-    .bg-secondary-soft { background-color: rgba(160, 174, 192, 0.25); }
-    .bg-warning1{background-color: rgba(236, 201, 75, 0.25) !important; color: red !important;}
+    .bg-info-soft {
+        background-color: rgba(66, 153, 225, 0.25);
+    }
+
+    .bg-primary-soft {
+        background-color: rgba(102, 126, 234, 0.25);
+    }
+
+    .bg-success-soft {
+        background-color: rgba(72, 187, 120, 0.25);
+    }
+
+    .bg-warning-soft {
+        background-color: rgba(236, 201, 75, 0.25);
+    }
+
+    .bg-secondary-soft {
+        background-color: rgba(160, 174, 192, 0.25);
+    }
+
+    .bg-warning1 {
+        background-color: rgba(236, 201, 75, 0.25) !important;
+        color: red !important;
+    }
+
     @media (max-width: 767px) {
-       .btn {font-size: 12px; padding: 6px 10px;}
-       .h2, h2 {font-size: calc(1.25rem + -1.1vw);} 
-       .fa-3x {font-size: 2em;}
+        .btn {
+            font-size: 12px;
+            padding: 6px 10px;
+        }
+
+        .h2,
+        h2 {
+            font-size: calc(1.25rem + -1.1vw);
+        }
+
+        .fa-3x {
+            font-size: 2em;
+        }
     }
 </style>
 <div id="module-context" data-module="staff" style="display:none;"></div>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="fas fa-users-cog me-2"></i>Staff Management</h2>
     <div class="btn-group">
-                {% if current_user.has_permission('salary', 'add') %}
+        {% if current_user.has_permission('salary', 'add') %}
         <a href="{{ url_for('salary.bulk_upload_staff') }}" class="btn btn-outline-primary">
             <i class="fas fa-file-upload me-2"></i> Bulk Add
         </a>
         <a href="{{ url_for('salary.add_staff') }}" class="btn btn-primary">
             <i class="fas fa-plus me-2"></i>Add Staff
         </a>
-        {% endif %}        
+        {% endif %}
         <a href="{{ url_for('salary.advance_list') }}" class="btn btn-info text-white">
             <i class="fas fa-hand-holding-usd me-2"></i>Advances
         </a>
@@ -44,7 +73,8 @@
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <div class="text-uppercase small fw-bold mb-1 opacity-75">Total Monthly Salary</div>
-                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='monthly_salary')) }}</h3>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='monthly_salary'))
+                            }}</h3>
                     </div>
                     <div class="opacity-50">
                         <i class="fas fa-money-bill-wave fa-3x"></i>
@@ -59,7 +89,8 @@
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <div class="text-uppercase small fw-bold mb-1 opacity-75">Initial Joining Advance</div>
-                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='joining_advance')) }}</h3>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='joining_advance'))
+                            }}</h3>
                     </div>
                     <div class="opacity-50">
                         <i class="fas fa-handshake fa-3x"></i>
@@ -74,9 +105,10 @@
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <div class="text-uppercase small fw-bold mb-1 opacity-75">Total Advance Deducted</div>
-                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='total_paid_advance')) }}</h3>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members |
+                            sum(attribute='total_paid_advance')) }}</h3>
                         <div class="mt-2 small opacity-75">
-                            Regular: {{ "%.2f"|format(staff_members | sum(attribute='total_paid_regular_advance')) }} | 
+                            Regular: {{ "%.2f"|format(staff_members | sum(attribute='total_paid_regular_advance')) }} |
                             J.A: {{ "%.2f"|format(staff_members | sum(attribute='joining_advance_paid')) }}
                         </div>
                     </div>
@@ -93,7 +125,8 @@
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <div class="text-uppercase small fw-bold mb-1 opacity-75">Regular Pending Advance</div>
-                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='total_outstanding_advance')) }}</h3>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members |
+                            sum(attribute='total_outstanding_advance')) }}</h3>
                     </div>
                     <div class="opacity-50">
                         <i class="fas fa-hand-holding-usd fa-3x"></i>
@@ -108,7 +141,8 @@
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <div class="text-uppercase small fw-bold mb-1 opacity-75">Remaining Joining Advance</div>
-                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='remaining_joining_advance')) }}</h3>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members |
+                            sum(attribute='remaining_joining_advance')) }}</h3>
                     </div>
                     <div class="opacity-50">
                         <i class="fas fa-hand-holding-usd fa-3x"></i>
@@ -124,7 +158,8 @@
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <div class="text-uppercase small fw-bold mb-1 opacity-75">Total Bonus Paid</div>
-                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='total_bonus_paid')) }}</h3>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='total_bonus_paid'))
+                            }}</h3>
                     </div>
                     <div class="opacity-50">
                         <i class="fas fa-gift fa-3x"></i>
@@ -136,12 +171,13 @@
 
     <!--Net Paid block-->
     <div class="col-lg-4 col-md-6 mb-3">
-        <div class="card shadow-sm border-0 bg-dark text-white h-100">
+        <div class="card shadow-sm border-0 bg-warning-soft text-white h-100">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <div class="text-uppercase small fw-bold mb-1 opacity-75">Total Net Salary Paid</div>
-                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | map(attribute='salary_payments') | map('sum', attribute='net_salary') | sum) }}</h3>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | map(attribute='salary_payments') |
+                            map('sum', attribute='net_salary') | sum) }}</h3>
                     </div>
                     <div class="opacity-50">
                         <i class="fas fa-wallet fa-3x"></i>
@@ -160,7 +196,7 @@
                 <select name="staff_id" id="staff_id" class="form-select searchable-select">
                     <option value="">All Staff</option>
                     {% for s in all_staff %}
-                    <option value="{{ s.id }}" {% if selected_staff_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+                    <option value="{{ s.id }}" {% if selected_staff_id==s.id %}selected{% endif %}>{{ s.name }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -169,7 +205,7 @@
                 <select name="designation" id="designation" class="form-select searchable-select">
                     <option value="">All Designations</option>
                     {% for d in designations %}
-                    <option value="{{ d }}" {% if selected_designation == d %}selected{% endif %}>{{ d }}</option>
+                    <option value="{{ d }}" {% if selected_designation==d %}selected{% endif %}>{{ d }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -177,17 +213,20 @@
                 <label for="status" class="form-label small text-muted text-uppercase fw-bold">Status</label>
                 <select name="status" id="status" class="form-select">
                     <option value="">All Statuses</option>
-                    <option value="active" {% if selected_status == 'active' %}selected{% endif %}>Active Only</option>
-                    <option value="inactive" {% if selected_status == 'inactive' %}selected{% endif %}>Inactive Only</option>
+                    <option value="active" {% if selected_status=='active' %}selected{% endif %}>Active Only</option>
+                    <option value="inactive" {% if selected_status=='inactive' %}selected{% endif %}>Inactive Only
+                    </option>
                 </select>
             </div>
             <div class="col-md-2">
                 <label for="start_date" class="form-label small text-muted text-uppercase fw-bold">Joined From</label>
-                <input type="date" name="start_date" id="start_date" class="form-control" value="{{ selected_start_date or '' }}">
+                <input type="date" name="start_date" id="start_date" class="form-control"
+                    value="{{ selected_start_date or '' }}">
             </div>
             <div class="col-md-2">
                 <label for="end_date" class="form-label small text-muted text-uppercase fw-bold">Joined To</label>
-                <input type="date" name="end_date" id="end_date" class="form-control" value="{{ selected_end_date or '' }}">
+                <input type="date" name="end_date" id="end_date" class="form-control"
+                    value="{{ selected_end_date or '' }}">
             </div>
             <div class="col-12 d-flex justify-content-end align-items-center mt-3">
                 <a href="{{ url_for('salary.staff_list') }}" class="btn btn-light rounded-pill px-4 me-2">
@@ -200,127 +239,149 @@
         </form>
     </div>
 </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0 datatable-export" data-export-title="Staff List">
-                <thead class="bg-light text-muted small text-uppercase">
-                    <tr>
-                        <th style="width: 40px;" class="text-center no-export border-0 px-3">
-                            <input type="checkbox" id="selectAll" class="form-check-input" onclick="document.querySelectorAll('.staff-checkbox').forEach(cb => cb.checked = this.checked)">
-                        </th>
-                        <th class="px-4 border-0">Staff Name</th>
-                        <th>Designation</th>
-                        <th>Base Salary</th>
-                        <th>Att. Salary</th>
-                        <th>Absents</th>
-                        <th>Total Hours</th>
-                        <th>J.A. Initial</th>
-                        <th>J.A. Remain</th>
-                        <th>J.A. Paid</th>
-                        <th>Bonus</th>
-                        <th>Adv. Deduct</th>
-                        <th>Adv. Pending</th>
-                        <th>Other Deduct</th>
-                        <th>Net Paid</th>
-                        <th>Agreement</th>
-                        <th>Status</th>
-                        <th class="text-end px-4 no-export">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for staff in staff_members %}
-                    <tr>
-                        <td class="text-center px-3 no-export">
-                            <input type="checkbox" class="form-check-input staff-checkbox" value="{{ staff.id }}">
-                        </td>
-                        <td class="px-4">
-                            <div class="d-flex align-items-center">
-                                <div class="avatar-sm bg-primary-soft text-primary rounded-circle me-3 p-2">
-                                    <i class="fas fa-user"></i>
-                                </div>
-                                <div>
-                                    <h6 class="mb-0">
-                                        <a href="javascript:void(0)" class="staff-history-trigger text-decoration-none text-dark hover-primary" data-staff-id="{{ staff.id }}" title="Click to view history">
-                                            {{ staff.name }}
-                                        </a>
-                                    </h6>
-                                    <small class="text-muted">Joined: {{ staff.joining_date }}</small>
-                                </div>
+<div class="card-body p-0">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 datatable-export" data-export-title="Staff List">
+            <thead class="bg-light text-muted small text-uppercase">
+                <tr>
+                    <th style="width: 40px;" class="text-center no-export border-0 px-3">
+                        <input type="checkbox" id="selectAll" class="form-check-input"
+                            onclick="document.querySelectorAll('.staff-checkbox').forEach(cb => cb.checked = this.checked)">
+                    </th>
+                    <th class="px-4 border-0">Staff Name</th>
+                    <th>Designation</th>
+                    <th>Base Salary</th>
+                    <th>Att. Salary</th>
+                    <th>Absents</th>
+                    <th>Total Hours</th>
+                    <th>J.A. Initial</th>
+                    <th>J.A. Remain</th>
+                    <th>J.A. Paid</th>
+                    <th>Bonus</th>
+                    <th>Adv. Deduct</th>
+                    <th>Adv. Pending</th>
+                    <th>Other Deduct</th>
+                    <th>Net Paid</th>
+                    <th>Agreement</th>
+                    <th>Status</th>
+                    <th class="text-end px-4 no-export">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for staff in staff_members %}
+                <tr>
+                    <td class="text-center px-3 no-export">
+                        <input type="checkbox" class="form-check-input staff-checkbox" value="{{ staff.id }}">
+                    </td>
+                    <td class="px-4">
+                        <div class="d-flex align-items-center">
+                            <div class="avatar-sm bg-primary-soft text-primary rounded-circle me-3 p-2">
+                                <i class="fas fa-user"></i>
                             </div>
-                        </td>
-                        <td>{{ staff.designation or '---' }}</td>
-                        <td>{{ "%.2f" % staff.monthly_salary }}</td>
-                        <td class="text-primary fw-bold">{{ "%.2f" % staff.get_attendance_earnings(start_date_obj, end_date_obj) }}</td>
-                        <td class="text-danger fw-bold text-center">{{ staff.get_absents_count(start_date_obj, end_date_obj) }}</td>
-                        <td class="text-info fw-bold text-center">{{ "%.1f" % staff.get_total_hours(start_date_obj, end_date_obj) }}h</td>
-                        <td>{{ "%.2f" % (staff.joining_advance or 0) }}</td>
-                        <td class="text-info">{{ "%.2f" % (staff.remaining_joining_advance or 0) }}</td>
-                        <td class="text-success">{{ "%.2f" % staff.get_joining_adv_paid(start_date_obj, end_date_obj) }}</td>
-                        <td class="text-success">+{{ "%.2f" % staff.get_bonus_paid(start_date_obj, end_date_obj) }}</td>
-                        <td class="text-danger">-{{ "%.2f" % staff.get_regular_adv_deducted(start_date_obj, end_date_obj) }}</td>
-                        <td>
-                            {% set outstanding = staff.get_outstanding_advance(start_date_obj, end_date_obj) %}
-                            <span class="badge {% if outstanding > 0 %}bg-warning text-dark{% else %}bg-light text-muted{% endif %} px-2 py-1">
-                                {{ "%.2f" % outstanding }}
-                            </span>
-                        </td>
-                        <td class="text-danger">-{{ "%.2f" % staff.get_other_deductions(start_date_obj, end_date_obj) }}</td>
-                        <td><strong class="text-primary">{{ "%.2f" % ([staff.get_net_paid(start_date_obj, end_date_obj), 0] | max) }}</strong></td>
-                        <td>
-                            {% if staff.agreement_letter %}
-                            <a href="{{ url_for('static', filename=staff.agreement_letter) }}" target="_blank" class="btn btn-sm btn-outline-info">
-                                <i class="fas fa-file-download"></i> View
+                            <div>
+                                <h6 class="mb-0">
+                                    <a href="javascript:void(0)"
+                                        class="staff-history-trigger text-decoration-none text-dark hover-primary"
+                                        data-staff-id="{{ staff.id }}" title="Click to view history">
+                                        {{ staff.name }}
+                                    </a>
+                                </h6>
+                                <small class="text-muted">Joined: {{ staff.joining_date }}</small>
+                            </div>
+                        </div>
+                    </td>
+                    <td>{{ staff.designation or '---' }}</td>
+                    <td>{{ "%.2f" % staff.monthly_salary }}</td>
+                    <td class="text-primary fw-bold">{{ "%.2f" % staff.get_attendance_earnings(start_date_obj,
+                        end_date_obj) }}</td>
+                    <td class="text-danger fw-bold text-center">{{ staff.get_absents_count(start_date_obj, end_date_obj)
+                        }}</td>
+                    <td class="text-info fw-bold text-center">{{ "%.1f" % staff.get_total_hours(start_date_obj,
+                        end_date_obj) }}h</td>
+                    <td>{{ "%.2f" % (staff.joining_advance or 0) }}</td>
+                    <td class="text-info">{{ "%.2f" % (staff.remaining_joining_advance or 0) }}</td>
+                    <td class="text-success">{{ "%.2f" % staff.get_joining_adv_paid(start_date_obj, end_date_obj) }}
+                    </td>
+                    <td class="text-success">+{{ "%.2f" % staff.get_bonus_paid(start_date_obj, end_date_obj) }}</td>
+                    <td class="text-danger">-{{ "%.2f" % staff.get_regular_adv_deducted(start_date_obj, end_date_obj) }}
+                    </td>
+                    <td>
+                        {% set outstanding = staff.get_outstanding_advance(start_date_obj, end_date_obj) %}
+                        <span
+                            class="badge {% if outstanding > 0 %}bg-warning text-dark{% else %}bg-light text-muted{% endif %} px-2 py-1">
+                            {{ "%.2f" % outstanding }}
+                        </span>
+                    </td>
+                    <td class="text-danger">-{{ "%.2f" % staff.get_other_deductions(start_date_obj, end_date_obj) }}
+                    </td>
+                    <td><strong class="text-primary">{{ "%.2f" % ([staff.get_net_paid(start_date_obj, end_date_obj), 0]
+                            | max) }}</strong></td>
+                    <td>
+                        {% if staff.agreement_letter %}
+                        <a href="{{ url_for('static', filename=staff.agreement_letter) }}" target="_blank"
+                            class="btn btn-sm btn-outline-info">
+                            <i class="fas fa-file-download"></i> View
+                        </a>
+                        {% else %}
+                        <span class="text-muted small">No letter</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span
+                            class="badge {% if staff.is_active %}bg-success-soft text-success{% else %}bg-secondary-soft text-secondary{% endif %} px-2 py-1">
+                            {{ 'Active' if staff.is_active else 'Inactive' }}
+                        </span>
+                    </td>
+                    <td class="text-end px-4 no-export">
+                        <div class="btn-group">
+                            <a href="{{ url_for('salary.staff_payments', id=staff.id) }}" class="btn btn-sm btn-light"
+                                title="View Salary History">
+                                <i class="fas fa-history text-info"></i>
                             </a>
-                            {% else %}
-                            <span class="text-muted small">No letter</span>
+                            {% if current_user.has_permission('salary', 'edit') %}
+                            <a href="{{ url_for('salary.edit_staff', id=staff.id) }}" class="btn btn-sm btn-light"
+                                title="Edit Staff">
+                                <i class="fas fa-edit text-primary"></i>
+                            </a>
                             {% endif %}
-                        </td>
-                        <td>
-                            <span class="badge {% if staff.is_active %}bg-success-soft text-success{% else %}bg-secondary-soft text-secondary{% endif %} px-2 py-1">
-                                {{ 'Active' if staff.is_active else 'Inactive' }}
-                            </span>
-                        </td>
-                        <td class="text-end px-4 no-export">
-                            <div class="btn-group">
-                                <a href="{{ url_for('salary.staff_payments', id=staff.id) }}" class="btn btn-sm btn-light" title="View Salary History">
-                                    <i class="fas fa-history text-info"></i>
-                                </a>
-                                                                {% if current_user.has_permission('salary', 'edit') %}
-<a href="{{ url_for('salary.edit_staff', id=staff.id) }}" class="btn btn-sm btn-light" title="Edit Staff">
-                                    <i class="fas fa-edit text-primary"></i>
-                                </a>
-{% endif %}                                
-                                <a href="{{ url_for('salary.pay_salary', staff_id=staff.id) }}" class="btn btn-sm btn-light" title="Pay Salary">
-                                    <i class="fas fa-money-bill-wave text-success"></i>
-                                </a>
-                                                                {% if current_user.has_permission('salary', 'delete') %}
-<form method="POST" action="{{ url_for('salary.delete_staff', id=staff.id) }}" class="d-inline">
-                                    <button type="submit" class="btn btn-sm btn-light" title="Delete Staff" onclick="return confirm('Are you sure you want to delete this staff member? This will delete all their salary history and advances.')">
-                                        <i class="fas fa-trash text-danger"></i>
-                                    </button>
-                                </form>
-{% endif %}                                
-                            </div>
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr>
-                        <td colspan="6" class="text-center py-4 text-muted">No staff members found. Add your first staff to get started.</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+                            <a href="{{ url_for('salary.pay_salary', staff_id=staff.id) }}" class="btn btn-sm btn-light"
+                                title="Pay Salary">
+                                <i class="fas fa-money-bill-wave text-success"></i>
+                            </a>
+                            {% if current_user.has_permission('salary', 'delete') %}
+                            <form method="POST" action="{{ url_for('salary.delete_staff', id=staff.id) }}"
+                                class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-light" title="Delete Staff"
+                                    onclick="return confirm('Are you sure you want to delete this staff member? This will delete all their salary history and advances.')">
+                                    <i class="fas fa-trash text-danger"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="text-center py-4 text-muted">No staff members found. Add your first staff to
+                        get started.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
+</div>
 </div>
 
 <!-- Staff History Modal -->
-<div class="modal fade" id="staffHistoryModal" tabindex="-1" aria-labelledby="staffHistoryModalLabel" aria-hidden="true">
+<div class="modal fade" id="staffHistoryModal" tabindex="-1" aria-labelledby="staffHistoryModalLabel"
+    aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden;">
-            <div class="modal-header border-0 pb-0" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); backdrop-filter: blur(10px);">
+            <div class="modal-header border-0 pb-0"
+                style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); backdrop-filter: blur(10px);">
                 <div class="d-flex align-items-center w-100">
-                    <div class="avatar-md bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3 shadow-sm" style="width: 50px; height: 50px;">
+                    <div class="avatar-md bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3 shadow-sm"
+                        style="width: 50px; height: 50px;">
                         <i class="fas fa-user-tie fa-lg"></i>
                     </div>
                     <div>
@@ -329,7 +390,8 @@
                     </div>
                     <div class="ms-auto d-flex align-items-center">
                         <div id="modalAgreementContainer" class="me-3"></div>
-                        <button type="button" class="btn-close shadow-none" data-bs-dismiss="modal" aria-label="Close"></button>
+                        <button type="button" class="btn-close shadow-none" data-bs-dismiss="modal"
+                            aria-label="Close"></button>
                     </div>
                 </div>
             </div>
@@ -377,14 +439,20 @@
 </div>
 
 <style>
-    .bg-light-soft { background-color: rgba(248, 249, 250, 0.7); }
-    .hover-primary:hover { color: #4c51bf !important; text-decoration: underline !important; }
-    
+    .bg-light-soft {
+        background-color: rgba(248, 249, 250, 0.7);
+    }
+
+    .hover-primary:hover {
+        color: #4c51bf !important;
+        text-decoration: underline !important;
+    }
+
     #staffHistoryModal .modal-content {
         background: rgba(255, 255, 255, 0.95);
         backdrop-filter: blur(5px);
     }
-    
+
     .stat-card-inner {
         padding: 15px;
         border-radius: 15px;
@@ -393,19 +461,35 @@
         height: 100%;
         border-left: 4px solid #4c51bf;
     }
-    
-    .stat-label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: #718096; margin-bottom: 5px; }
-    .stat-value { font-size: 1.1rem; font-weight: 800; color: #2d3748; }
+
+    .stat-label {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: #718096;
+        margin-bottom: 5px;
+    }
+
+    .stat-value {
+        font-size: 1.1rem;
+        font-weight: 800;
+        color: #2d3748;
+    }
 
     @media (max-width: 576px) {
-        .stat-card-inner { padding: 10px; }
-        .stat-value { font-size: 0.9rem; }
+        .stat-card-inner {
+            padding: 10px;
+        }
+
+        .stat-value {
+            font-size: 0.9rem;
+        }
     }
 </style>
 
 {% block extra_js %}
 <script>
-    $(document).ready(function() {
+    $(document).ready(function () {
         $('.searchable-select').select2({
             theme: 'bootstrap-5',
             width: '100%',
@@ -416,76 +500,76 @@
 </script>
 {% if auto_download_id %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    window.open('{{ url_for("salary.download_pay_stub", id=auto_download_id) }}', '_blank');
-});
+    document.addEventListener('DOMContentLoaded', function () {
+        window.open('{{ url_for("salary.download_pay_stub", id=auto_download_id) }}', '_blank');
+    });
 </script>
 {% endif %}
 {% endblock %}
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const historyTriggers = document.querySelectorAll('.staff-history-trigger');
-    const historyModal = new bootstrap.Modal(document.getElementById('staffHistoryModal'));
-    
-    historyTriggers.forEach(trigger => {
-        trigger.addEventListener('click', function() {
-            const staffId = this.dataset.staffId;
-            fetchStaffHistory(staffId);
-        });
-    });
+    document.addEventListener('DOMContentLoaded', function () {
+        const historyTriggers = document.querySelectorAll('.staff-history-trigger');
+        const historyModal = new bootstrap.Modal(document.getElementById('staffHistoryModal'));
 
-    function fetchStaffHistory(staffId) {
-        // Show loading state or at least find the elements
-        const bodyContent = document.getElementById('modalHistoryBody');
-        bodyContent.innerHTML = '<tr><td colspan="9" class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></td></tr>';
-        
-        // Pass current URL parameters to respect filters
-        const currentParams = window.location.search;
-        const apiUrl = `/salary/api/staff-history/${staffId}${currentParams}`;
-
-        fetch(apiUrl)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    populateModal(data);
-                    historyModal.show();
-                } else {
-                    alert('Error: ' + (data.message || 'Could not fetch history'));
-                }
-            })
-            .catch(error => {
-                console.error('Error fetching staff history:', error);
-                alert('An error occurred while fetching staff history.');
+        historyTriggers.forEach(trigger => {
+            trigger.addEventListener('click', function () {
+                const staffId = this.dataset.staffId;
+                fetchStaffHistory(staffId);
             });
-    }
+        });
 
-    function populateModal(data) {
-        const staff = data.staff_info;
-        const payments = data.payments;
-        
-        // Header
-        document.getElementById('staffHistoryModalLabel').innerText = staff.name;
-        document.getElementById('modalStaffSubtext').innerText = `${staff.designation} | Joined: ${staff.joining_date}`;
-        
-        // Agreement Button
-        const agreementContainer = document.getElementById('modalAgreementContainer');
-        if (staff.agreement_letter) {
-            agreementContainer.innerHTML = `
+        function fetchStaffHistory(staffId) {
+            // Show loading state or at least find the elements
+            const bodyContent = document.getElementById('modalHistoryBody');
+            bodyContent.innerHTML = '<tr><td colspan="9" class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></td></tr>';
+
+            // Pass current URL parameters to respect filters
+            const currentParams = window.location.search;
+            const apiUrl = `/salary/api/staff-history/${staffId}${currentParams}`;
+
+            fetch(apiUrl)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        populateModal(data);
+                        historyModal.show();
+                    } else {
+                        alert('Error: ' + (data.message || 'Could not fetch history'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching staff history:', error);
+                    alert('An error occurred while fetching staff history.');
+                });
+        }
+
+        function populateModal(data) {
+            const staff = data.staff_info;
+            const payments = data.payments;
+
+            // Header
+            document.getElementById('staffHistoryModalLabel').innerText = staff.name;
+            document.getElementById('modalStaffSubtext').innerText = `${staff.designation} | Joined: ${staff.joining_date}`;
+
+            // Agreement Button
+            const agreementContainer = document.getElementById('modalAgreementContainer');
+            if (staff.agreement_letter) {
+                agreementContainer.innerHTML = `
                 <a href="/static/${staff.agreement_letter}" target="_blank" class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm">
                     <i class="fas fa-file-contract me-2"></i>View Agreement
                 </a>
             `;
-        } else {
-            agreementContainer.innerHTML = `
+            } else {
+                agreementContainer.innerHTML = `
                 <button class="btn btn-light btn-sm rounded-pill px-3 border" disabled>
                     <i class="fas fa-file-contract me-2 text-muted"></i>No Agreement
                 </button>
             `;
-        }
-        
-        // Summary Stats
-        const summaryHtml = `
+            }
+
+            // Summary Stats
+            const summaryHtml = `
             <div class="col-6 col-md-3">
                 <div class="stat-card-inner border-primary">
                     <div class="stat-label">Base Salary</div>
@@ -547,15 +631,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
             </div>
         `;
-        document.getElementById('modalSummaryStats').innerHTML = summaryHtml;
-        
-        // History Table
-        let rowsHtml = '';
-        if (payments.length === 0) {
-            rowsHtml = '<tr><td colspan="9" class="text-center py-4 text-muted">No payment history found.</td></tr>';
-        } else {
-            payments.forEach(p => {
-                rowsHtml += `
+            document.getElementById('modalSummaryStats').innerHTML = summaryHtml;
+
+            // History Table
+            let rowsHtml = '';
+            if (payments.length === 0) {
+                rowsHtml = '<tr><td colspan="9" class="text-center py-4 text-muted">No payment history found.</td></tr>';
+            } else {
+                payments.forEach(p => {
+                    rowsHtml += `
                     <tr>
                         <td class="ps-4 fw-bold text-dark">${p.month}/${p.year}</td>
                         <td>${p.base_salary.toLocaleString()}</td>
@@ -578,10 +662,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         </td>
                     </tr>
                 `;
-            });
+                });
+            }
+            document.getElementById('modalHistoryBody').innerHTML = rowsHtml;
         }
-        document.getElementById('modalHistoryBody').innerHTML = rowsHtml;
-    }
-});
+    });
 </script>
 {% endblock %}

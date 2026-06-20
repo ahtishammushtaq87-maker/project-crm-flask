@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from app.models import (
     db, Sale, PurchaseBill, Expense, Warehouse, Customer, Vendor,
     SaleReturn, PurchaseReturn, Product, Transaction, Payment,
-    ManufacturingOrder, ManufacturingOrderItem, BOM
+    ManufacturingOrder, ManufacturingOrderItem, BOM, BOMItem
 )
 from datetime import datetime
 
@@ -269,6 +269,7 @@ def get_entity_details(entity_type, entity_id):
             data['total_mfg_count'] = len(mo_items_as_component) + len(mo_as_finished_good)
 
             data['actions'] = [
+                {'label': 'Where Used ?', 'url': 'javascript:void(0)', 'btn_class': 'btn-outline-indigo', 'onclick': f"showBOMAnalysis({entity.id})"},
                 {'label': 'Complete History', 'url': url_for('inventory.product_full_history', id=entity.id), 'btn_class': 'btn-primary'},
                 {'label': 'Price History', 'url': 'javascript:void(0)', 'btn_class': 'btn-success', 'onclick': f"showPriceHistory({entity.id}, '{entity.name.replace(chr(39), chr(92)+chr(39))}'); bootstrap.Modal.getInstance(document.getElementById('entityHistoryModal')).hide();"},
                 {'label': 'Edit', 'url': url_for('inventory.edit_product', id=entity.id), 'btn_class': 'btn-info', 'permission': 'inventory.edit'},
@@ -300,5 +301,79 @@ def get_entity_details(entity_type, entity_id):
         data['success'] = True
     except Exception as e:
         data['error'] = str(e)
+
+    return jsonify(data)
+
+@bp.route('/product-bom-analysis/<int:product_id>')
+@login_required
+def get_product_bom_analysis(product_id):
+    """Provides parent-child analysis for a product in terms of BOM and Manufacturing"""
+    product = Product.query.get_or_404(product_id)
+    
+    data = {
+        'success': True,
+        'product': {
+            'id': product.id,
+            'name': product.name,
+            'sku': product.sku,
+            'quantity': product.quantity,
+            'unit': product.unit or 'pcs'
+        },
+        'as_parent': [],
+        'as_component': []
+    }
+
+    # 1. Analysis as a Finished Good (Parent)
+    boms_as_parent = BOM.query.filter_by(product_id=product.id).all()
+    for bom in boms_as_parent:
+        # Get Manufacturing Orders for this BOM
+        mos = ManufacturingOrder.query.filter_by(bom_id=bom.id).filter(ManufacturingOrder.status != 'Completed').all()
+        # Sum quantities
+        total_to_produce = sum(mo.quantity_to_produce for mo in mos)
+        produced_so_far = sum(mo.produced_qty or 0 for mo in mos)
+        
+        bom_data = {
+            'bom_id': bom.id,
+            'bom_name': bom.name,
+            'version': bom.version,
+            'is_active': bom.is_active,
+            'total_to_produce': total_to_produce,
+            'produced_so_far': produced_so_far,
+            'projected_qty': product.quantity + (total_to_produce - produced_so_far),
+            'children': []
+        }
+        
+        for item in bom.items:
+            bom_data['children'].append({
+                'id': item.component.id,
+                'sku': item.component.sku,
+                'name': item.component.name,
+                'quantity_per_unit': item.quantity,
+                'current_stock': item.component.quantity
+            })
+        
+        data['as_parent'].append(bom_data)
+
+    # 2. Analysis as a Component (Child)
+    bom_items_as_child = BOMItem.query.filter_by(component_id=product.id).all()
+    for item in bom_items_as_child:
+        bom = item.bom
+        # Total required for active MOs
+        mo_items = ManufacturingOrderItem.query.filter_by(component_id=product.id).join(ManufacturingOrder).filter(
+            ManufacturingOrder.bom_id == bom.id,
+            ManufacturingOrder.status == 'In Progress'
+        ).all()
+        
+        total_required_active = sum(mo_item.quantity_required - mo_item.quantity_consumed for mo_item in mo_items)
+        
+        data['as_component'].append({
+            'parent_id': bom.product.id if bom.product else None,
+            'parent_sku': bom.product.sku if bom.product else 'N/A',
+            'parent_name': bom.product.name if bom.product else 'Unknown',
+            'bom_version': bom.version,
+            'quantity_used': item.quantity,
+            'required_active_mo': total_required_active,
+            'procurement_need': max(0, total_required_active - product.quantity)
+        })
 
     return jsonify(data)

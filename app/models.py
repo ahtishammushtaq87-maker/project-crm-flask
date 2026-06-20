@@ -601,6 +601,8 @@ class Sale(db.Model):
     token_expiry = db.Column(db.DateTime, nullable=True)
     # Approval workflow: staff-created invoices require admin approval before counting in sales totals
     is_approved = db.Column(db.Boolean, default=True, index=True)  # True for admin-created, False for staff-created
+    is_rejected = db.Column(db.Boolean, default=False, index=True)
+    rejection_reason = db.Column(db.Text, nullable=True)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
     discount_violation = db.Column(db.Text, nullable=True)
@@ -1060,6 +1062,8 @@ class Payment(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     # Approval workflow: staff-recorded payments require admin approval before updating paid_amount
     is_approved = db.Column(db.Boolean, default=True, index=True)  # True for admin-created, False for staff-created
+    is_rejected = db.Column(db.Boolean, default=False, index=True)
+    rejection_reason = db.Column(db.Text, nullable=True)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
 
@@ -1487,6 +1491,11 @@ class Task(db.Model):
     created_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # New fields: task group label and linked overdue invoice
+    task_group_name = db.Column(db.String(100), nullable=True)  # Free-text group label
+    linked_invoice_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=True)  # Linked overdue invoice
+    linked_invoice = db.relationship('Sale', foreign_keys=[linked_invoice_id], backref='linked_tasks', lazy=True)
     
     def __repr__(self):
         return f'<Task {self.title}>'
@@ -1508,6 +1517,17 @@ class TaskSettings(db.Model):
 
     def __repr__(self):
         return f'<TaskSettings {self.id}>'
+
+class TaskGroup(db.Model):
+    """Named group for organizing tasks (managed by admin, selected on tasks)"""
+    __tablename__ = 'task_groups'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<TaskGroup {self.name}>'
 
 class BOM(db.Model):
     """Bill of Materials"""
@@ -2125,6 +2145,8 @@ class CustomerAdvance(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     # Approval workflow: staff-recorded advances require admin approval before being available for use
     is_approved = db.Column(db.Boolean, default=True, index=True)  # True for admin-created, False for staff-created
+    is_rejected = db.Column(db.Boolean, default=False, index=True)
+    rejection_reason = db.Column(db.Text, nullable=True)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
 

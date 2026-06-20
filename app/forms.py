@@ -380,6 +380,8 @@ class TaskForm(FlaskForm):
     status = SelectField('Status', choices=[('Pending', 'Pending'), ('In Progress', 'In Progress'), ('Completed', 'Completed'), ('Cancelled', 'Cancelled')], default='Pending')
     reminder_at = DateTimeField('Reminder Date & Time', format='%Y-%m-%dT%H:%M', validators=[Optional()])
     assigned_to_id = SelectField('Assign To', coerce=int, validators=[DataRequired()])
+    task_group_name = StringField('Task Group Name', validators=[Optional()])
+    linked_invoice_id = SelectField('Linked Overdue Invoice', coerce=lambda x: int(x) if x and str(x).isdigit() else None, validators=[Optional()])
 
 class TaskSettingsForm(FlaskForm):
     smtp_server = StringField('SMTP Server', validators=[DataRequired()], default='smtp.gmail.com')

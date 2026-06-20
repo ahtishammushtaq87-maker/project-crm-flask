@@ -2,7 +2,7 @@
  * Entity History Handler
  * Handles global entity history triggers and modal population
  */
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     const modalElement = document.getElementById('entityHistoryModal');
     if (!modalElement) return;
 
@@ -15,10 +15,10 @@ document.addEventListener('DOMContentLoaded', function() {
     let _currentInventoryEntityId = null;
 
     // Global click handler for better conflict management
-    document.addEventListener('click', function(e) {
+    document.addEventListener('click', function (e) {
         const trigger = e.target.closest('.entity-history-trigger');
         if (!trigger) return;
-        
+
         // Explicitly stop propagation to prevent other row/image listeners from firing
         e.stopPropagation();
 
@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Handle data loading when modal is opened via Bootstrap Data API
-    modalElement.addEventListener('show.bs.modal', function(event) {
+    modalElement.addEventListener('show.bs.modal', function (event) {
         const trigger = event.relatedTarget;
         if (!trigger || !trigger.classList.contains('entity-history-trigger')) {
             return;
@@ -87,7 +87,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Called when user changes the history limit dropdown
-    window._reloadInventoryHistory = function(limitValue) {
+    window._reloadInventoryHistory = function (limitValue) {
         if (!_currentInventoryEntityId) return;
         showLoading();
         fetch(`/api/entity-details/inventory/${_currentInventoryEntityId}?history_limit=${limitValue}`)
@@ -130,7 +130,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function populateModal(data) {
         modalTitle.textContent = data.title;
-        
+
         let html = '';
 
         // Image if available (Profile size)
@@ -170,7 +170,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <h6 class="mb-0 fw-bold"><i class="fas fa-history me-2"></i> Full History</h6>
                     <div class="d-flex align-items-center gap-2">
                         <span class="text-muted small me-1">Show:</span>
-                        ${['5','10','20','all'].map(v => `
+                        ${['5', '10', '20', 'all'].map(v => `
                             <button class="btn btn-sm ${currentLimit === v ? 'btn-primary' : 'btn-outline-secondary'} py-0 px-2"
                                 onclick="_reloadInventoryHistory('${v}')" style="font-size:0.8rem;">
                                 ${v === 'all' ? 'All' : v}
@@ -275,7 +275,7 @@ document.addEventListener('DOMContentLoaded', function() {
             html += '<h6 class="mb-3 fw-bold"><i class="fas fa-history me-2"></i> Full History</h6>';
             if (data.history && data.history.length > 0) {
                 html += '<div class="row">';
-                
+
                 // Sold History Column
                 html += '<div class="col-md-6 border-end">';
                 html += '<h6 class="text-success"><i class="fas fa-arrow-up me-1"></i> Sold History</h6>';
@@ -297,7 +297,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     html += '<p class="text-muted small">No recent sales.</p>';
                 }
                 html += '</div>';
-                
+
                 // Purchase History Column
                 html += '<div class="col-md-6">';
                 html += '<h6 class="text-primary"><i class="fas fa-arrow-down me-1"></i> Purchase History</h6>';
@@ -319,7 +319,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     html += '<p class="text-muted small">No recent purchases.</p>';
                 }
                 html += '</div>';
-                
+
                 html += '</div>'; // End row
             } else {
                 html += '<p class="text-muted small">No history records found for this entity.</p>';
@@ -364,4 +364,189 @@ document.addEventListener('DOMContentLoaded', function() {
         footerHtml += '<button type="button" class="btn btn-secondary btn-premium" data-bs-dismiss="modal">Close</button>';
         modalFooter.innerHTML = footerHtml;
     }
+
+    /**
+     * Where Used ? Logic
+     */
+    window.showBOMAnalysis = function (productId) {
+        modalTitle.textContent = 'BOM Parent-Child Analysis...';
+        modalBody.innerHTML = `
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status" style="color: #6610f2 !important;">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2 text-muted">Analyzing BOM relationships...</p>
+            </div>
+        `;
+
+        fetch(`/api/product-bom-analysis/${productId}`)
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) {
+                    modalBody.innerHTML = `<div class="alert alert-danger">${data.error || 'Failed to load Where Used ?'}</div>`;
+                    return;
+                }
+
+                modalTitle.textContent = `Where Used ?: ${data.product.sku} - ${data.product.name}`;
+
+                let html = '';
+
+                // Header with current stock and back button
+                html += `
+                    <div class="alert alert-light border mb-3 p-2 d-flex justify-content-between align-items-center shadow-sm">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-indigo text-white rounded-circle d-flex align-items-center justify-content-center me-2" style="width: 32px; height: 32px;">
+                                <i class="fas fa-warehouse"></i>
+                            </div>
+                            <div>
+                                <div class="small text-muted" style="font-size:0.7rem; line-height:1;">Current Inventory</div>
+                                <div class="fw-bold" style="font-size:0.9rem;">${data.product.quantity} ${data.product.unit}</div>
+                            </div>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary rounded-pill px-3" onclick="_reloadInventoryHistory('5')">
+                            <i class="fas fa-arrow-left me-1"></i> Back to History
+                        </button>
+                    </div>
+                `;
+
+                // 1. Finished Good (Parent) Analysis
+                if (data.as_parent.length > 0) {
+                    html += `
+                        <div class="mb-4">
+                            <h6 class="fw-bold text-indigo mb-2 d-flex align-items-center">
+                                <i class="fas fa-box-open me-2"></i> Finished Good (Parent)
+                                <span class="badge bg-indigo ms-2" style="font-size:0.65rem;">${data.as_parent.length} BOM Versions</span>
+                            </h6>
+                    `;
+
+                    data.as_parent.forEach(bom => {
+                        html += `
+                            <div class="card mb-3 border-light shadow-sm">
+                                <div class="card-header bg-light d-flex justify-content-between py-1 px-3 align-items-center border-bottom">
+                                    <span class="small fw-bold text-dark">
+                                        <i class="fas fa-file-invoice me-1"></i> 
+                                        <strong>[${data.product.sku}]</strong> ${data.product.name} 
+                                        <span class="text-muted small ms-1">(BOM: ${bom.bom_name})</span>
+                                    </span>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="badge bg-secondary" style="font-size:0.65rem;">Vers: ${bom.version}</span>
+                                        ${bom.is_active ? '<span class="badge bg-success" style="font-size:0.65rem;">Active</span>' : ''}
+                                    </div>
+                                </div>
+                                <div class="card-body p-3">
+                                    <div class="row g-2 mb-3 text-center">
+                                        <div class="col-4 border-end">
+                                            <div class="text-muted small">In Production</div>
+                                            <div class="fw-bold text-primary">${bom.total_to_produce}</div>
+                                        </div>
+                                        <div class="col-4 border-end">
+                                            <div class="text-muted small">Produced</div>
+                                            <div class="fw-bold text-success">${bom.produced_so_far}</div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="text-muted small">Post-Production</div>
+                                            <div class="fw-bold text-dark">${bom.projected_qty}</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <h6 class="small fw-bold mb-2 text-muted px-1"><i class="fas fa-list me-1"></i> Child Item Breakdown:</h6>
+                                    <div class="table-responsive rounded border">
+                                        <table class="table table-sm table-hover mb-0" style="font-size:0.8rem;">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>SKU / Name</th>
+                                                    <th class="text-center">Qty / BOM</th>
+                                                    <th class="text-center">Current Stock</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${bom.children.map(child => `
+                                                    <tr>
+                                                        <td>
+                                                            <div class="fw-bold text-indigo">${child.sku}</div>
+                                                            <div class="text-muted small" style="font-size:0.7rem;">${child.name}</div>
+                                                        </td>
+                                                        <td class="text-center align-middle">${child.quantity_per_unit}</td>
+                                                        <td class="text-center align-middle">
+                                                            <span class="badge ${child.current_stock < child.quantity_per_unit ? 'bg-danger' : 'bg-light text-dark border'}">
+                                                                ${child.current_stock}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                `).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                }
+
+                // 2. Component (Child) Analysis
+                if (data.as_component.length > 0) {
+                    html += `
+                        <div class="mb-3">
+                            <h6 class="fw-bold text-success mb-2 d-flex align-items-center">
+                                <i class="fas fa-project-diagram me-2"></i> Component (Child) Usage
+                                <span class="badge bg-success ms-2" style="font-size:0.65rem;">Linked to ${data.as_component.length} Parents</span>
+                            </h6>
+                            <div class="table-responsive rounded border shadow-sm">
+                                <table class="table table-sm table-hover mb-0" style="font-size:0.8rem;">
+                                    <thead class="table-success text-white">
+                                        <tr>
+                                            <th>Component [SKU] Name</th>
+                                            <th>Used In (Parent)</th>
+                                            <th class="text-center">BOM</th>
+                                            <th class="text-center">Qty Used</th>
+                                            <th class="text-center">Req. (Active MO)</th>
+                                            <th class="text-center">Procure Need</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${data.as_component.map(usage => `
+                                            <tr class="${usage.procurement_need > 0 ? 'table-warning' : ''}">
+                                                <td>
+                                                    <div class="fw-bold text-dark">${data.product.sku}</div>
+                                                    <div class="text-muted small">${data.product.name}</div>
+                                                </td>
+                                                <td>
+                                                    <div class="fw-bold text-success">${usage.parent_sku}</div>
+                                                    <div class="text-muted small">${usage.parent_name}</div>
+                                                </td>
+                                                <td class="text-center align-middle">${usage.bom_version}</td>
+                                                <td class="text-center align-middle">${usage.quantity_used}</td>
+                                                <td class="text-center align-middle">${usage.required_active_mo}</td>
+                                                <td class="text-center align-middle">
+                                                    ${usage.procurement_need > 0
+                            ? `<span class="badge bg-danger"><i class="fas fa-shopping-cart me-1"></i> Buy ${usage.procurement_need}</span>`
+                            : '<span class="badge bg-success">OK</span>'
+                        }
+                                                </td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                if (data.as_parent.length === 0 && data.as_component.length === 0) {
+                    html += `
+                        <div class="text-center py-4">
+                            <i class="fas fa-info-circle fa-2x text-muted mb-2"></i>
+                            <p class="text-muted">This product is not currently linked to any Bill of Materials (BOM) as a parent or component.</p>
+                        </div>
+                    `;
+                }
+
+                modalBody.innerHTML = html;
+            })
+            .catch(err => {
+                console.error(err);
+                modalBody.innerHTML = `<div class="alert alert-danger">Network error while fetching Where Used ?.</div>`;
+            });
+    };
 });

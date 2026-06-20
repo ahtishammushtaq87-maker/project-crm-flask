@@ -65,6 +65,17 @@
     }
 </style>
 <div class="container-fluid">
+    {% if sale.is_rejected %}
+    <div class="alert alert-danger border-left-danger shadow-sm mb-4" role="alert">
+        <div class="d-flex align-items-center">
+            <i class="fas fa-times-circle fa-2x me-3"></i>
+            <div>
+                <h5 class="alert-heading mb-1 fw-bold">Invoice Rejected by Administrator</h5>
+                <p class="mb-0"><strong>Reason:</strong> {{ sale.rejection_reason or 'No specific reason provided.' }}</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2 invoice-header-row">
         <div>
             <h2 class="h3 mb-0 text-gray-800">
@@ -78,9 +89,15 @@
                 sale.status | capitalize }}
             </span>
             {% if not sale.is_approved %}
-            <span class="badge bg-warning text-dark ms-1" title="Waiting for admin approval">
-                <i class="fas fa-hourglass-half me-1"></i>Pending Approval
-            </span>
+                {% if sale.is_rejected %}
+                <span class="badge bg-danger ms-1" title="Rejected by Admin: {{ sale.rejection_reason or 'No reason provided' }}">
+                    <i class="fas fa-times-circle me-1"></i>Rejected
+                </span>
+                {% else %}
+                <span class="badge bg-warning text-dark ms-1" title="Waiting for admin approval">
+                    <i class="fas fa-hourglass-half me-1"></i>Pending Approval
+                </span>
+                {% endif %}
             {% endif %}
         </div>
         <div class="btn-group flex-wrap gap-1">
@@ -127,13 +144,16 @@
             <a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left me-1"></i>Back
             </a>
-            {% if current_user.role == 'admin' and not sale.is_approved %}
+            {% if current_user.role == 'admin' and not sale.is_approved and not sale.is_rejected %}
             <form action="{{ url_for('sales.approve_invoice', id=sale.id) }}" method="POST" class="d-inline">
                 <button type="submit" class="btn btn-success fw-bold"
                     onclick="return confirm('Approve invoice {{ sale.invoice_number }}? It will count in sales totals.')">
                     <i class="fas fa-check-circle me-1"></i>Approve Invoice
                 </button>
             </form>
+            <button type="button" class="btn btn-outline-danger fw-bold" data-bs-toggle="modal" data-bs-target="#rejectInvoiceModal">
+                <i class="fas fa-times-circle me-1"></i>Reject Invoice
+            </button>
             {% endif %}
         </div>
     </div>
@@ -593,21 +613,20 @@
                             </thead>
                             <tbody>
                                 {% for payment in payments | sort(attribute='date', reverse=True) %}
-                                <tr class="{% if not payment.is_approved %}table-warning{% endif %}">
-                                    <td>
-                                        {{ payment.date.strftime(date_format) }}
-                                        <br><small class="text-muted">{{ payment.date.strftime('%H:%M') }}</small>
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-secondary">{{ payment.method or 'Cash' }}</span>
-                                    </td>
-                                    <td class="text-muted small">{{ payment.reference_number or '&mdash;' }}</td>
                                     <td
-                                        class="text-end fw-bold {% if payment.is_approved %}text-success{% else %}text-warning{% endif %}">
+                                        class="text-end fw-bold {% if payment.is_approved %}text-success{% elif payment.is_rejected %}text-danger{% else %}text-warning{% endif %}">
                                         PKR {{ "{:,.2f}".format(payment.amount) }}
                                         {% if not payment.is_approved %}
-                                        <br><small class="text-warning"><i
-                                                class="fas fa-hourglass-half me-1"></i>Pending</small>
+                                            {% if payment.is_rejected %}
+                                            <br><small class="text-danger fw-bold">
+                                                <i class="fas fa-times-circle me-1"></i>Rejected
+                                            </small>
+                                            <br><small class="text-muted italic" style="font-style: italic;">
+                                                Reason: {{ payment.rejection_reason or 'No reason provided' }}
+                                            </small>
+                                            {% else %}
+                                            <br><small class="text-warning"><i class="fas fa-hourglass-half me-1"></i>Pending</small>
+                                            {% endif %}
                                         {% endif %}
                                     </td>
                                     <td>
@@ -634,8 +653,8 @@
                                     </td>
                                     <td class="text-muted small">{{ payment.notes or '&mdash;' }}</td>
                                     <td class="text-center">
-                                        {% if current_user.role == 'admin' and not payment.is_approved %}
-                                        <!-- Admin approve button -->
+                                        {# 1. Admin Actions for Pending Items #}
+                                        {% if current_user.role == 'admin' and not payment.is_approved and not payment.is_rejected %}
                                         <form method="POST"
                                             action="{{ url_for('sales.approve_payment', id=sale.id, pay_id=payment.id) }}"
                                             class="d-inline">
@@ -645,13 +664,27 @@
                                                 <i class="fas fa-check"></i> Approve
                                             </button>
                                         </form>
-                                        {% elif payment.is_approved %}
+                                        <button type="button" class="btn btn-sm btn-outline-danger fw-bold" 
+                                            title="Reject this payment"
+                                            data-bs-toggle="modal" data-bs-target="#rejectPaymentModal"
+                                            data-payment-id="{{ payment.id }}"
+                                            data-payment-amount="{{ '{:,.2f}'.format(payment.amount) }}">
+                                            <i class="fas fa-times"></i> Reject
+                                        </button>
+                                        {% endif %}
+
+                                        {# 2. Edit Action (for approved items) #}
+                                        {% if payment.is_approved and current_user.has_permission('sales', 'edit') %}
                                         <button type="button"
                                             class="btn btn-sm btn-outline-primary edit-payment-btn me-1"
                                             data-bs-toggle="modal" data-bs-target="#editPaymentModal{{ payment.id }}">
                                             <i class="fas fa-edit"></i>
                                         </button>
-                                        {% if current_user.has_permission('sales', 'delete') %}
+                                        {% endif %}
+
+                                        {# 3. Delete Action (Approved or Admin-only for Rejected) #}
+                                        {% if (payment.is_approved and current_user.has_permission('sales', 'delete')) or 
+                                              (payment.is_rejected and current_user.role == 'admin') %}
                                         <form method="POST"
                                             action="{{ url_for('sales.delete_payment', id=sale.id, pay_id=payment.id) }}"
                                             class="d-inline" style="display: inline-block;">
@@ -661,7 +694,6 @@
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         </form>
-                                        {% endif %}
                                         {% endif %}
                                     </td>
                                 </tr>
@@ -814,6 +846,59 @@
 </div>
 {% endfor %}
 
+<!-- Reject Invoice Modal -->
+<div class="modal fade" id="rejectInvoiceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('sales.reject_invoice', id=sale.id) }}" method="POST">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="fas fa-times-circle me-2"></i>Reject Invoice</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to reject invoice <strong>{{ sale.invoice_number }}</strong>?</p>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Reason for Rejection</label>
+                        <textarea name="reason" class="form-control" rows="3" placeholder="Explain why this invoice is being rejected..." required></textarea>
+                    </div>
+                    <div class="alert alert-warning small">
+                        <i class="fas fa-exclamation-triangle me-1"></i> This invoice will remain in the system but will be marked as "Rejected" and excluded from sales totals.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Confirm Rejection</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Reject Payment Modal -->
+<div class="modal fade" id="rejectPaymentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="rejectPaymentForm" action="" method="POST">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="fas fa-times-circle me-2"></i>Reject Payment</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Rejecting payment of <strong id="rejectPaymentAmount"></strong>.</p>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Reason for Rejection</label>
+                        <textarea name="reason" class="form-control" rows="3" placeholder="Explain why this payment is being rejected..." required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Confirm Rejection</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
     function shareInvoicePDF(btn) {
         const pdfUrl = btn.getAttribute('data-pdf-url');
@@ -904,6 +989,22 @@
                 }
             });
         });
+
+        // Reject Payment Modal Handler
+        const rejectPaymentModal = document.getElementById('rejectPaymentModal');
+        if (rejectPaymentModal) {
+            rejectPaymentModal.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                const paymentId = button.getAttribute('data-payment-id');
+                const amount = button.getAttribute('data-payment-amount');
+                
+                const form = this.querySelector('#rejectPaymentForm');
+                const amountSpan = this.querySelector('#rejectPaymentAmount');
+                
+                form.action = `/sales/invoice/{{ sale.id }}/payment/${paymentId}/reject`;
+                amountSpan.textContent = `PKR ${amount}`;
+            });
+        }
 
         // Delete payment confirmation
         document.querySelectorAll('.delete-payment-btn').forEach(btn => {

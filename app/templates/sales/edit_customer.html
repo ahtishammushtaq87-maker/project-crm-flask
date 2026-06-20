@@ -213,6 +213,34 @@
         const hiddenInput = document.getElementById('sub_customers_data');
         const form = hiddenInput.closest('form');
 
+        function updateRequirements() {
+            const rows = wrapper.querySelectorAll('.sub-customer-row');
+            rows.forEach((row, index) => {
+                const nameInput = row.querySelector('.sub-name');
+                const removeBtn = row.querySelector('.remove-sub-btn');
+                
+                if (index === 0) {
+                    nameInput.required = true;
+                    nameInput.placeholder = "Sub Customer Name *";
+                    if (rows.length === 1) {
+                        removeBtn.classList.add('disabled');
+                        removeBtn.style.opacity = '0.5';
+                        removeBtn.style.pointerEvents = 'none';
+                    } else {
+                        removeBtn.classList.remove('disabled');
+                        removeBtn.style.opacity = '1';
+                        removeBtn.style.pointerEvents = 'auto';
+                    }
+                } else {
+                    nameInput.required = false;
+                    nameInput.placeholder = "Sub Customer Name";
+                    removeBtn.classList.remove('disabled');
+                    removeBtn.style.opacity = '1';
+                    removeBtn.style.pointerEvents = 'auto';
+                }
+            });
+        }
+
         function createRow(name = '', phone = '') {
             const div = document.createElement('div');
             div.className = 'row mb-2 sub-customer-row';
@@ -232,16 +260,21 @@
 
             div.querySelector('.remove-sub-btn').addEventListener('click', function () {
                 div.remove();
+                updateRequirements();
             });
 
             wrapper.appendChild(div);
+            updateRequirements();
         }
 
         // Populate existing rows
         const existingDataStr = '{{ customer.sub_customers_list|tojson|safe }}';
         const existingData = existingDataStr !== 'null' ? JSON.parse(existingDataStr) : [];
-        if (Array.isArray(existingData)) {
+        if (Array.isArray(existingData) && existingData.length > 0) {
             existingData.forEach(item => createRow(item.name, item.phone));
+        } else {
+            // Ensure at least one row exists if none in DB
+            createRow();
         }
 
         addBtn.addEventListener('click', function () {

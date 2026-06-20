@@ -1,8 +1,7 @@
 {% extends "base.html" %}
-
 {% block title %}Edit Task{% endblock %}
-
 {% block content %}
+
 <div class="container py-4">
     <div class="row justify-content-center">
         <div class="col-md-8">
@@ -13,53 +12,98 @@
                 <div class="card-body">
                     <form method="POST" action="">
                         {{ form.csrf_token }}
+
+                        {# Title #}
                         <div class="mb-3">
-                            <label for="title" class="form-label">Task Title</label>
+                            <label class="form-label">Task Title</label>
                             {{ form.title(class="form-control" + (" is-invalid" if form.title.errors else "")) }}
-                            {% for error in form.title.errors %}
-                                <div class="invalid-feedback">{{ error }}</div>
-                            {% endfor %}
+                            {% for e in form.title.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
                         </div>
+
+                        {# Description #}
                         <div class="mb-3">
-                            <label for="description" class="form-label">Description</label>
+                            <label class="form-label">Description</label>
                             {{ form.description(class="form-control" + (" is-invalid" if form.description.errors else ""), rows="4") }}
-                            {% for error in form.description.errors %}
-                                <div class="invalid-feedback">{{ error }}</div>
-                            {% endfor %}
                         </div>
+
+                        {# ── Task Group (Select2 searchable dropdown from DB groups) ── #}
+                        <div class="mb-3">
+                            <label class="form-label">
+                                <i class="fas fa-layer-group me-1 text-info"></i>Task Group
+                                <small class="text-muted">(optional)</small>
+                                <a href="{{ url_for('users.list_tasks') }}#taskGroupModal" class="ms-2 small text-info">
+                                    <i class="fas fa-cog me-1"></i>Manage Groups
+                                </a>
+                            </label>
+                            <select id="taskGroupSelect" name="task_group_name" class="form-select">
+                                <option value="">— No Group —</option>
+                                {% for g in task_groups %}
+                                <option value="{{ g.name }}"
+                                    {% if task.task_group_name == g.name %}selected{% endif %}>
+                                    {{ g.name }}
+                                </option>
+                                {% endfor %}
+                                {# If task has a group name not in DB groups (legacy free-text) show it too #}
+                                {% if task.task_group_name and task.task_group_name not in (task_groups | map(attribute='name') | list) %}
+                                <option value="{{ task.task_group_name }}" selected>{{ task.task_group_name }} (custom)</option>
+                                {% endif %}
+                            </select>
+                            <div class="form-text text-muted">Groups are managed via the "Task Groups" button on the Tasks page.</div>
+                        </div>
+
+                        {# Priority & Status #}
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label for="priority" class="form-label">Priority</label>
-                                {{ form.priority(class="form-select" + (" is-invalid" if form.priority.errors else "")) }}
-                                {% for error in form.priority.errors %}
-                                    <div class="invalid-feedback">{{ error }}</div>
-                                {% endfor %}
+                                <label class="form-label">Priority</label>
+                                {{ form.priority(class="form-select") }}
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="status" class="form-label">Status</label>
-                                {{ form.status(class="form-select" + (" is-invalid" if form.status.errors else "")) }}
-                                {% for error in form.status.errors %}
-                                    <div class="invalid-feedback">{{ error }}</div>
-                                {% endfor %}
+                                <label class="form-label">Status</label>
+                                {{ form.status(class="form-select") }}
                             </div>
                         </div>
+
+                        {# Reminder & Assign To #}
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label for="reminder_at" class="form-label">Reminder Date & Time</label>
+                                <label class="form-label">Reminder Date &amp; Time</label>
                                 {{ form.reminder_at(class="form-control" + (" is-invalid" if form.reminder_at.errors else ""), type="datetime-local") }}
-                                {% for error in form.reminder_at.errors %}
-                                    <div class="invalid-feedback">{{ error }}</div>
-                                {% endfor %}
                                 <div class="form-text text-muted">A popup alarm will show at this time.</div>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="assigned_to_id" class="form-label">Assign To</label>
-                                {{ form.assigned_to_id(class="form-select" + (" is-invalid" if form.assigned_to_id.errors else "")) }}
-                                {% for error in form.assigned_to_id.errors %}
-                                    <div class="invalid-feedback">{{ error }}</div>
-                                {% endfor %}
+                                <label class="form-label">Assign To</label>
+                                {{ form.assigned_to_id(class="form-select") }}
                             </div>
                         </div>
+
+                        {# ── Overdue Invoice (Select2 searchable) ── #}
+                        <div class="mb-3">
+                            <label class="form-label">
+                                <i class="fas fa-file-invoice-dollar me-1 text-danger"></i>Link Overdue Sales Invoice
+                                <small class="text-muted">(optional)</small>
+                            </label>
+                            {% if overdue_sales or task.linked_invoice %}
+                            <select id="invoiceSelect" name="linked_invoice_id" class="form-select">
+                                <option value="0">— None —</option>
+                                {% for s in overdue_sales %}
+                                <option value="{{ s.id }}" {% if task.linked_invoice_id == s.id %}selected{% endif %}>
+                                    {{ s.invoice_number }} | {{ s.customer.name if s.customer else 'N/A' }} | Due: {{ s.due_date.strftime('%Y-%m-%d') if s.due_date else '' }} | Balance: {{ "%.2f"|format(s.balance_due) }}
+                                </option>
+                                {% endfor %}
+                                {# Previously linked invoice no longer overdue – still show for reference #}
+                                {% if task.linked_invoice and task.linked_invoice_id not in (overdue_sales | map(attribute='id') | list) %}
+                                <option value="{{ task.linked_invoice.id }}" selected>
+                                    {{ task.linked_invoice.invoice_number }} | {{ task.linked_invoice.customer.name if task.linked_invoice.customer else 'N/A' }} (was linked)
+                                </option>
+                                {% endif %}
+                            </select>
+                            <div class="form-text text-muted"><i class="fas fa-info-circle me-1"></i>Only unpaid invoices past their due date are shown.</div>
+                            {% else %}
+                            <div class="alert alert-success py-2 mb-0"><i class="fas fa-check-circle me-2"></i>No overdue invoices at this time.</div>
+                            <input type="hidden" name="linked_invoice_id" value="0">
+                            {% endif %}
+                        </div>
+
                         <div class="d-grid gap-2 mt-4">
                             <button type="submit" class="btn btn-warning">Update Task</button>
                             <a href="{{ url_for('users.list_tasks') }}" class="btn btn-outline-secondary">Cancel</a>
@@ -70,4 +114,31 @@
         </div>
     </div>
 </div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    $('#taskGroupSelect').select2({
+        theme: 'bootstrap-5',
+        placeholder: 'Search or select a group…',
+        allowClear: true,
+        width: '100%'
+    });
+    if ($('#invoiceSelect').length > 0) {
+        $('#invoiceSelect').select2({
+            theme: 'bootstrap-5',
+            placeholder: 'Search invoice number or customer…',
+            allowClear: true,
+            width: '100%'
+        });
+    }
+
+    // Autofocus fix for Select2 search field
+    $(document).on('select2:open', () => {
+        document.querySelector('.select2-search__field').focus();
+    });
+});
+</script>
 {% endblock %}

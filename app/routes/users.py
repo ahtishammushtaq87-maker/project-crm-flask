@@ -2,10 +2,10 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
-from app.models import User, Task, TaskSettings
+from app.models import User, Task, TaskSettings, Sale, TaskGroup
 from app.forms import UserForm, UserEditForm, TaskForm, TaskSettingsForm
 from app.services.mail_service import send_task_email
-from datetime import datetime
+from datetime import datetime, date
 from functools import wraps
 
 bp = Blueprint('users', __name__)
@@ -428,11 +428,37 @@ def edit_user(id):
 @bp.route('/tasks')
 @login_required
 def list_tasks():
-    if current_user.role == 'admin':
-        tasks = Task.query.all()
-    else:
-        tasks = Task.query.filter_by(assigned_to_id=current_user.id).all()
-    return render_template('tasks/index.html', tasks=tasks)
+    # ── Filters ────────────────────────────────────────────────────────
+    group_filter = request.args.get('group', '').strip()
+    invoice_id = request.args.get('invoice_id', '').strip()
+    
+    query = Task.query
+    if current_user.role != 'admin':
+        query = query.filter_by(assigned_to_id=current_user.id)
+        
+    if group_filter:
+        query = query.filter_by(task_group_name=group_filter)
+    if invoice_id:
+        query = query.filter_by(linked_invoice_id=invoice_id)
+        
+    tasks = query.order_by(Task.reminder_at.desc()).all()
+    # ───────────────────────────────────────────────────────────────────
+
+    task_groups = TaskGroup.query.order_by(TaskGroup.name).all()
+    
+    # Get unique linked invoices that exist in tasks for the filter dropdown
+    linked_invoice_ids = db.session.query(Task.linked_invoice_id).filter(Task.linked_invoice_id != None).distinct().all()
+    unique_ids = [i[0] for i in linked_invoice_ids]
+    linked_invoices = Sale.query.filter(Sale.id.in_(unique_ids)).order_by(Sale.invoice_number.desc()).all() if unique_ids else []
+
+    from flask_wtf.csrf import generate_csrf
+    return render_template('tasks/index.html', 
+                         tasks=tasks, 
+                         task_groups=task_groups,
+                         linked_invoices=linked_invoices,
+                         group_filter=group_filter,
+                         invoice_filter_id=invoice_id,
+                         csrf_token_value=generate_csrf())
 
 @bp.route('/tasks/create', methods=['GET', 'POST'])
 @login_required
@@ -441,8 +467,28 @@ def create_task():
     form = TaskForm()
     # Populate users for assignment
     form.assigned_to_id.choices = [(u.id, f"{u.username} ({u.role})") for u in User.query.all()]
+
+    # Populate overdue invoices dropdown
+    today = date.today()
+    overdue_sales = Sale.query.filter(
+        Sale.status != 'paid',
+        Sale.due_date != None,
+        Sale.due_date < datetime.combine(today, datetime.min.time())
+    ).order_by(Sale.due_date.asc()).all()
+    invoice_choices = [(0, '— None —')] + [
+        (s.id, f"{s.invoice_number} | {s.customer.name if s.customer else 'N/A'} | Due: {s.due_date.strftime('%Y-%m-%d') if s.due_date else ''}")
+        for s in overdue_sales
+    ]
+    form.linked_invoice_id.choices = invoice_choices
+
+    # Collect existing group names for autocomplete suggestions
+    existing_groups = db.session.query(Task.task_group_name).filter(
+        Task.task_group_name != None, Task.task_group_name != ''
+    ).distinct().all()
+    group_suggestions = [g[0] for g in existing_groups]
     
     if form.validate_on_submit():
+        linked_inv = form.linked_invoice_id.data if form.linked_invoice_id.data else None
         task = Task(
             title=form.title.data,
             description=form.description.data,
@@ -450,7 +496,9 @@ def create_task():
             status=form.status.data,
             reminder_at=form.reminder_at.data,
             assigned_to_id=form.assigned_to_id.data,
-            created_by_id=current_user.id
+            created_by_id=current_user.id,
+            task_group_name=form.task_group_name.data.strip() if form.task_group_name.data else None,
+            linked_invoice_id=linked_inv
         )
         db.session.add(task)
         db.session.commit()
@@ -459,7 +507,8 @@ def create_task():
         
         flash('Task assigned successfully.', 'success')
         return redirect(url_for('users.list_tasks'))
-    return render_template('tasks/create.html', form=form)
+    task_groups = TaskGroup.query.order_by(TaskGroup.name).all()
+    return render_template('tasks/create.html', form=form, task_groups=task_groups, overdue_sales=overdue_sales)
 
 @bp.route('/delete/<int:id>', methods=['POST'])
 @login_required
@@ -523,6 +572,30 @@ def edit_task(id):
     task = Task.query.get_or_404(id)
     form = TaskForm(obj=task)
     form.assigned_to_id.choices = [(u.id, f"{u.username} ({u.role})") for u in User.query.all()]
+
+    # Populate overdue invoices dropdown
+    today = date.today()
+    overdue_sales = Sale.query.filter(
+        Sale.status != 'paid',
+        Sale.due_date != None,
+        Sale.due_date < datetime.combine(today, datetime.min.time())
+    ).order_by(Sale.due_date.asc()).all()
+    invoice_choices = [(0, '— None —')] + [
+        (s.id, f"{s.invoice_number} | {s.customer.name if s.customer else 'N/A'} | Due: {s.due_date.strftime('%Y-%m-%d') if s.due_date else ''}")
+        for s in overdue_sales
+    ]
+    # If the task's linked invoice is not in overdue list (e.g. it was paid), still include it
+    if task.linked_invoice_id and task.linked_invoice_id not in [c[0] for c in invoice_choices]:
+        if task.linked_invoice:
+            inv = task.linked_invoice
+            invoice_choices.append((inv.id, f"{inv.invoice_number} | {inv.customer.name if inv.customer else 'N/A'} (was linked)"))
+    form.linked_invoice_id.choices = invoice_choices
+
+    # Collect existing group names for autocomplete suggestions
+    existing_groups = db.session.query(Task.task_group_name).filter(
+        Task.task_group_name != None, Task.task_group_name != ''
+    ).distinct().all()
+    group_suggestions = [g[0] for g in existing_groups]
     
     if form.validate_on_submit():
         task.title = form.title.data
@@ -531,6 +604,8 @@ def edit_task(id):
         task.status = form.status.data
         task.reminder_at = form.reminder_at.data
         task.assigned_to_id = form.assigned_to_id.data
+        task.task_group_name = form.task_group_name.data.strip() if form.task_group_name.data else None
+        task.linked_invoice_id = form.linked_invoice_id.data if form.linked_invoice_id.data else None
         
         # Reset notification shown if reminder time changed and is in future
         if task.reminder_at and task.reminder_at > datetime.utcnow():
@@ -541,7 +616,8 @@ def edit_task(id):
         flash('Task updated successfully.', 'success')
         return redirect(url_for('users.list_tasks'))
         
-    return render_template('tasks/edit.html', form=form, task=task)
+    task_groups = TaskGroup.query.order_by(TaskGroup.name).all()
+    return render_template('tasks/edit.html', form=form, task=task, task_groups=task_groups, overdue_sales=overdue_sales)
 
 @bp.route('/tasks/poll')
 @login_required
@@ -652,3 +728,43 @@ def acknowledge_task(id):
     task.is_notification_shown = True
     db.session.commit()
     return jsonify({'success': True, 'message': 'Reminder acknowledged'})
+
+# ─── Task Group Management (AJAX) ───────────────────────────────────────────
+
+@bp.route('/tasks/groups/list', methods=['GET'])
+@login_required
+@admin_required
+def list_task_groups():
+    """Return all task groups as JSON."""
+    groups = TaskGroup.query.order_by(TaskGroup.name).all()
+    return jsonify([{'id': g.id, 'name': g.name} for g in groups])
+
+@bp.route('/tasks/groups/add', methods=['POST'])
+@login_required
+@admin_required
+def add_task_group():
+    """Add a new task group via AJAX POST {name: str}."""
+    name = (request.json or {}).get('name', '').strip()
+    if not name:
+        return jsonify({'success': False, 'message': 'Group name is required.'}), 400
+    if TaskGroup.query.filter_by(name=name).first():
+        return jsonify({'success': False, 'message': f'Group "{name}" already exists.'}), 409
+    group = TaskGroup(name=name)
+    db.session.add(group)
+    db.session.commit()
+    log_activity('Tasks', f'Created Task Group: {name}', '')
+    return jsonify({'success': True, 'id': group.id, 'name': group.name})
+
+@bp.route('/tasks/groups/delete/<int:group_id>', methods=['POST'])
+@login_required
+@admin_required
+def delete_task_group(group_id):
+    """Delete a task group. Clears task_group_name on linked tasks."""
+    group = TaskGroup.query.get_or_404(group_id)
+    group_name = group.name
+    # Clear the group name from any tasks that use it
+    Task.query.filter_by(task_group_name=group_name).update({'task_group_name': None})
+    db.session.delete(group)
+    db.session.commit()
+    log_activity('Tasks', f'Deleted Task Group: {group_name}', '')
+    return jsonify({'success': True, 'message': f'Group "{group_name}" deleted.'})

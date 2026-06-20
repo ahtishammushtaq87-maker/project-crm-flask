@@ -100,16 +100,16 @@ def invoices():
     total_balance = sum(sale.balance_due for sale in sales)
     
     # ── Unapproved summary (for alert box at top of page) ─────────────────
-    # Always calculated regardless of which tab is active
-    unapproved_invoices_all = Sale.query.filter(Sale.is_approved == False).all()
+    # Always calculated regardless of which tab is active - EXCLUDE rejected items
+    unapproved_invoices_all = Sale.query.filter(Sale.is_approved == False, Sale.is_rejected == False).all()
     unapproved_invoice_total = sum(s.total for s in unapproved_invoices_all)
     unapproved_invoice_count = len(unapproved_invoices_all)
 
-    unapproved_payments_all = Payment.query.filter(Payment.is_approved == False).all()
+    unapproved_payments_all = Payment.query.filter(Payment.is_approved == False, Payment.is_rejected == False).all()
     unapproved_payment_total = sum(p.amount for p in unapproved_payments_all)
     unapproved_payment_count = len(unapproved_payments_all)
 
-    unapproved_advances_all = CustomerAdvance.query.filter(CustomerAdvance.is_approved == False).all()
+    unapproved_advances_all = CustomerAdvance.query.filter(CustomerAdvance.is_approved == False, CustomerAdvance.is_rejected == False).all()
     unapproved_advance_total = sum(a.amount for a in unapproved_advances_all)
     unapproved_advance_count = len(unapproved_advances_all)
     # ──────────────────────────────────────────────────────────────────────
@@ -771,6 +771,31 @@ def approve_invoice(id):
     return redirect(url_for('sales.invoice_detail', id=id))
 
 
+@bp.route('/invoice/<int:id>/reject', methods=['POST'])
+@login_required
+def reject_invoice(id):
+    """Admin rejects a pending invoice — mark it as rejected with a reason."""
+    if current_user.role != 'admin':
+        flash('Only admin can reject invoices.', 'danger')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
+    sale = Sale.query.get_or_404(id)
+    if sale.is_approved:
+        flash('Cannot reject an already approved invoice.', 'warning')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
+    reason = request.form.get('reason', '').strip()
+    sale.is_rejected = True
+    sale.is_approved = False
+    sale.rejection_reason = reason
+    db.session.commit()
+
+    log_activity('Sales', f'Rejected Invoice #{sale.invoice_number}',
+                 f'Rejected by {current_user.username}. Reason: {reason or "No reason provided"}')
+    flash(f'Invoice {sale.invoice_number} has been rejected.', 'warning')
+    return redirect(url_for('sales.invoice_detail', id=id))
+
+
 @bp.route('/invoice/<int:id>/payment/<int:pay_id>/approve', methods=['POST'])
 @login_required
 def approve_payment(id, pay_id):
@@ -798,6 +823,33 @@ def approve_payment(id, pay_id):
     log_activity('Sales', f'Approved Payment #{payment.payment_number} on Invoice #{sale.invoice_number}',
                  f'Amount: PKR {payment.amount:,.2f} approved by {current_user.username}')
     flash(f'Payment of PKR {payment.amount:,.2f} approved and applied to invoice!', 'success')
+    return redirect(url_for('sales.invoice_detail', id=id))
+
+
+@bp.route('/invoice/<int:id>/payment/<int:pay_id>/reject', methods=['POST'])
+@login_required
+def reject_payment(id, pay_id):
+    """Admin rejects a pending payment."""
+    if current_user.role != 'admin':
+        flash('Only admin can reject payments.', 'danger')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
+    sale = Sale.query.get_or_404(id)
+    payment = Payment.query.filter_by(id=pay_id, invoice_id=sale.id).first_or_404()
+
+    if payment.is_approved:
+        flash('Cannot reject an already approved payment.', 'warning')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
+    reason = request.form.get('reason', '').strip()
+    payment.is_rejected = True
+    payment.is_approved = False
+    payment.rejection_reason = reason
+    db.session.commit()
+
+    log_activity('Sales', f'Rejected Payment on Invoice #{sale.invoice_number}',
+                 f'Amount: PKR {payment.amount:,.2f} rejected by {current_user.username}. Reason: {reason}')
+    flash(f'Payment of PKR {payment.amount:,.2f} rejected.', 'warning')
     return redirect(url_for('sales.invoice_detail', id=id))
 
 
@@ -2339,6 +2391,31 @@ def approve_advance(id, adv_id):
                  f'Amount: PKR {advance.amount:,.2f} approved by {current_user.username}')
                  
     flash(f'Advance of PKR {advance.amount:,.2f} approved successfully!', 'success')
+    return redirect(url_for('sales.customer_profile', id=id))
+
+
+@bp.route('/customer/<int:id>/advance/<int:adv_id>/reject', methods=['POST'])
+@login_required
+def reject_advance(id, adv_id):
+    """Admin rejects a pending customer advance."""
+    if current_user.role != 'admin':
+        flash('Only admin can reject advances.', 'danger')
+        return redirect(url_for('sales.customer_profile', id=id))
+
+    advance = CustomerAdvance.query.get_or_404(adv_id)
+    if advance.is_approved:
+        flash('Cannot reject an already approved advance.', 'warning')
+        return redirect(url_for('sales.customer_profile', id=id))
+
+    reason = request.form.get('reason', '').strip()
+    advance.is_rejected = True
+    advance.is_approved = False
+    advance.rejection_reason = reason
+    db.session.commit()
+
+    log_activity('Customers', f'Rejected Advance from {advance.customer.name}',
+                 f'Amount: PKR {advance.amount:,.2f} rejected by {current_user.username}. Reason: {reason}')
+    flash(f'Advance of PKR {advance.amount:,.2f} has been rejected.', 'warning')
     return redirect(url_for('sales.customer_profile', id=id))
 
 

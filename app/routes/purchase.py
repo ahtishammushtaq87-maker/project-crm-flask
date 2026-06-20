@@ -261,20 +261,38 @@ def edit_bill(id):
     if request.method == 'POST':
         # Only revert inventory if stock was already received for this bill
         if bill.inventory_received:
-            for item in bill.items:
-                product = Product.query.get(item.product_id)
-                if product:
-                    product.update_quantity(-item.quantity)
-                    # Revert from the specific warehouse used in the item
-                    if item.warehouse_id:
-                        wh_stock = ProductWarehouseStock.query.filter_by(
-                            product_id=item.product_id,
-                            warehouse_id=item.warehouse_id
-                        ).first()
-                        if wh_stock:
-                            wh_stock.quantity -= item.quantity
-                            if wh_stock.quantity < 0:
-                                wh_stock.quantity = 0
+            if bill.bill_receives:
+                for receive in bill.bill_receives:
+                    for bri in receive.receive_items:
+                        product = Product.query.get(bri.product_id)
+                        if product:
+                            product.update_quantity(-bri.quantity_received)
+                            # Revert from the specific warehouse in the receive item
+                            if bri.warehouse_id:
+                                wh_stock = ProductWarehouseStock.query.filter_by(
+                                    product_id=bri.product_id,
+                                    warehouse_id=bri.warehouse_id
+                                ).first()
+                                if wh_stock:
+                                    wh_stock.quantity -= bri.quantity_received
+                                    if wh_stock.quantity < 0:
+                                        wh_stock.quantity = 0
+            else:
+                # Fallback for legacy bills
+                for item in bill.items:
+                    product = Product.query.get(item.product_id)
+                    if product:
+                        product.update_quantity(-item.quantity)
+                        # Revert from the specific warehouse used in the item
+                        if item.warehouse_id:
+                            wh_stock = ProductWarehouseStock.query.filter_by(
+                                product_id=item.product_id,
+                                warehouse_id=item.warehouse_id
+                            ).first()
+                            if wh_stock:
+                                wh_stock.quantity -= item.quantity
+                                if wh_stock.quantity < 0:
+                                    wh_stock.quantity = 0
 
         # Safely remove old cost price history entries if not referenced by BOM items
         old_history_entries = CostPriceHistory.query.filter_by(purchase_bill_id=bill.id).all()
@@ -1114,10 +1132,50 @@ def delete_bill(id):
     bill = PurchaseBill.query.get_or_404(id)
     # Only revert inventory if stock was already received
     if bill.inventory_received:
-        for item in bill.items:
-            product = Product.query.get(item.product_id)
-            if product:
-                product.update_quantity(-item.quantity)
+        # Use BillReceive records for accurate reversal if they exist
+        if bill.bill_receives:
+            for receive in bill.bill_receives:
+                for bri in receive.receive_items:
+                    product = Product.query.get(bri.product_id)
+                    if product:
+                        product.update_quantity(-bri.quantity_received)
+                        # Revert from the specific warehouse in the receive item
+                        if bri.warehouse_id:
+                            wh_stock = ProductWarehouseStock.query.filter_by(
+                                product_id=bri.product_id,
+                                warehouse_id=bri.warehouse_id
+                            ).first()
+                            if wh_stock:
+                                wh_stock.quantity -= bri.quantity_received
+                                if wh_stock.quantity < 0:
+                                    wh_stock.quantity = 0
+        else:
+            # Fallback for legacy bills without receive records
+            for item in bill.items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    product.update_quantity(-item.quantity)
+                    # Revert from the specific warehouse in the bill item
+                    if item.warehouse_id:
+                        wh_stock = ProductWarehouseStock.query.filter_by(
+                            product_id=item.product_id,
+                            warehouse_id=item.warehouse_id
+                        ).first()
+                        if wh_stock:
+                            wh_stock.quantity -= item.quantity
+                            if wh_stock.quantity < 0:
+                                wh_stock.quantity = 0
+
+    # Handle cost adjustments / BOM versioning
+    for item in bill.items:
+        try:
+            user_id = current_user.id if current_user.is_authenticated else 1
+            BOMVersioningService.check_and_update_bom_for_cost_changes(
+                product_id=item.product_id,
+                created_by_id=user_id
+            )
+        except:
+            pass
 
     # Delete associated bill image if exists
     if bill.bill_image_path:
@@ -1130,7 +1188,7 @@ def delete_bill(id):
 
     db.session.delete(bill)
     db.session.commit()
-    flash('Purchase bill deleted successfully.', 'success')
+    flash('Purchase bill deleted successfully. Inventory and warehouse stocks have been reversed.', 'success')
     return redirect(url_for('purchase.bills'))
 
 @bp.route('/bills/bulk-delete', methods=['POST'])
@@ -1149,11 +1207,37 @@ def bulk_delete_bills():
             continue
             
         try:
-            # Revert inventory
-            for item in bill.items:
-                product = Product.query.get(item.product_id)
-                if product:
-                    product.update_quantity(-item.quantity)
+            # Revert inventory (Global + Warehouse)
+            if bill.inventory_received:
+                if bill.bill_receives:
+                    for receive in bill.bill_receives:
+                        for bri in receive.receive_items:
+                            product = Product.query.get(bri.product_id)
+                            if product:
+                                product.update_quantity(-bri.quantity_received)
+                                if bri.warehouse_id:
+                                    wh_stock = ProductWarehouseStock.query.filter_by(
+                                        product_id=bri.product_id,
+                                        warehouse_id=bri.warehouse_id
+                                    ).first()
+                                    if wh_stock:
+                                        wh_stock.quantity -= bri.quantity_received
+                                        if wh_stock.quantity < 0:
+                                            wh_stock.quantity = 0
+                else:
+                    for item in bill.items:
+                        product = Product.query.get(item.product_id)
+                        if product:
+                            product.update_quantity(-item.quantity)
+                            if item.warehouse_id:
+                                wh_stock = ProductWarehouseStock.query.filter_by(
+                                    product_id=item.product_id,
+                                    warehouse_id=item.warehouse_id
+                                ).first()
+                                if wh_stock:
+                                    wh_stock.quantity -= item.quantity
+                                    if wh_stock.quantity < 0:
+                                        wh_stock.quantity = 0
             
             db.session.delete(bill)
             deleted_count += 1
