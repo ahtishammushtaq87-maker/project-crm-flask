@@ -570,6 +570,108 @@ def update_tax(id):
     
     return redirect(request.referrer or url_for('purchase.bill_detail', id=id))
 
+@bp.route('/bill/<int:id>/cancel', methods=['POST'])
+@login_required
+@permission_required('purchases', action='edit')
+def cancel_bill(id):
+    """Cancel specific quantities of items and settle the bill"""
+    bill = PurchaseBill.query.get_or_404(id)
+    
+    if bill.status == 'cancelled':
+        flash('Bill is already cancelled.', 'warning')
+        return redirect(url_for('purchase.bill_detail', id=id))
+        
+    try:
+        total_cancelled_value = 0
+        
+        # Process each item's cancelled quantity from form
+        for item in bill.items:
+            # Field name in form will be cancel_qty_{item.id}
+            field_name = f'cancel_qty_{item.id}'
+            qty_to_cancel = float(request.form.get(field_name, 0))
+            
+            # Validation: cannot cancel more than (Total - Received)
+            # Fetch already received qty for this item
+            received_qty = 0
+            for br in bill.bill_receives:
+                for bri in br.receive_items:
+                    if bri.purchase_item_id == item.id:
+                        received_qty += bri.quantity_received
+            
+            max_cancellable = max(0, item.quantity - received_qty)
+            if qty_to_cancel > max_cancellable:
+                qty_to_cancel = max_cancellable
+                
+            if qty_to_cancel > 0:
+                item.cancelled_quantity = qty_to_cancel
+                # Calculate value (proportional to item total)
+                # item.total includes its subtotal and item-level discount/tax if any
+                item_value = (item.total / item.quantity) * qty_to_cancel
+                total_cancelled_value += item_value
+        
+        # Update bill-level cancellation
+        # We use the sum of item values as the cancelled_amount
+        bill.cancelled_amount = total_cancelled_value
+        bill.cancelled_at = datetime.utcnow()
+        bill.status = 'cancelled'
+        
+        # Add to notes
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+        msg = f"\n[Cancelled on {now_str}] Itemized cancellation performed. Total waived: PKR {total_cancelled_value:,.2f}"
+        bill.notes = (bill.notes or "") + msg
+        
+        db.session.commit()
+        
+        log_activity('Purchase', f'Cancelled Bill #{bill.bill_number}', 
+                    f'Cancelled Amount: PKR {total_cancelled_value:,.2f}')
+        
+        flash(f'Bill #{bill.bill_number} has been cancelled with itemized quantities.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error cancelling bill: {str(e)}', 'danger')
+        
+    return redirect(url_for('purchase.bill_detail', id=id))
+
+@bp.route('/bill/<int:id>/reverse-cancel', methods=['POST'])
+@login_required
+@permission_required('purchases', action='edit')
+def reverse_cancel_bill(id):
+    """Undo the cancellation of a bill"""
+    bill = PurchaseBill.query.get_or_404(id)
+    
+    if bill.status != 'cancelled':
+        flash('Bill is not cancelled.', 'warning')
+        return redirect(url_for('purchase.bill_detail', id=id))
+        
+    try:
+        # Clear item-level cancellations
+        for item in bill.items:
+            item.cancelled_quantity = 0
+            
+        # Clear bill-level cancellation data
+        bill.cancelled_amount = 0
+        bill.cancelled_at = None
+        
+        # Reset status to something other than 'cancelled' so update_status() doesn't return early
+        bill.status = 'unpaid'
+        bill.update_status()
+        
+        # Add to notes
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+        bill.notes = (bill.notes or "") + f"\n[Rerversed on {now_str}] Cancellation was reversed. Balance restored."
+        
+        db.session.commit()
+        
+        log_activity('Purchase', f'Reversed Cancellation of Bill #{bill.bill_number}', 
+                    'Balance Restored')
+        
+        flash(f'Cancellation of Bill #{bill.bill_number} has been reversed.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error reversing cancellation: {str(e)}', 'danger')
+        
+    return redirect(url_for('purchase.bill_detail', id=id))
+
 @bp.route('/bill/<int:id>/pdf')
 @login_required
 def bill_pdf(id):

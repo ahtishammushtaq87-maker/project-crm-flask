@@ -851,8 +851,10 @@ class PurchaseBill(db.Model):
     shipping_charge = db.Column(db.Float, default=0)
     advance_applied = db.Column(db.Float, default=0)  # Advance from vendor profile applied to this bill
     total = db.Column(db.Float, default=0)
-    status = db.Column(Enum('paid', 'unpaid', 'partial', 'return', 'partial_return', name='payment_status'), default='unpaid', index=True)
+    status = db.Column(Enum('paid', 'unpaid', 'partial', 'return', 'partial_return', 'cancelled', name='payment_status'), default='unpaid', index=True)
     paid_amount = db.Column(db.Float, default=0)
+    cancelled_amount = db.Column(db.Float, default=0)
+    cancelled_at = db.Column(db.DateTime, nullable=True)
     bill_image_path = db.Column(db.String(255))  # Path to uploaded bill image
     notes = db.Column(db.Text)
     inventory_received = db.Column(db.Boolean, default=False)  # True when stock has been received into inventory
@@ -874,7 +876,7 @@ class PurchaseBill(db.Model):
     def balance_due(self):
         """Calculate remaining balance owed to vendor (excludes shipping)"""
         vendor_payable = self.total - self.shipping_charge
-        balance = vendor_payable - self.paid_amount
+        balance = vendor_payable - self.paid_amount - self.cancelled_amount
         return max(0, balance)
     
     @property
@@ -899,7 +901,10 @@ class PurchaseBill(db.Model):
     def update_status(self):
         """Update payment status based on paid amount towards vendor (excludes shipping)"""
         vendor_payable = self.total - self.shipping_charge
-        if self.paid_amount >= vendor_payable:
+        if self.status == 'cancelled':
+            return
+            
+        if self.paid_amount + self.cancelled_amount >= vendor_payable:
             self.status = 'paid'
         elif self.paid_amount > 0:
             self.status = 'partial'
@@ -959,6 +964,7 @@ class PurchaseItem(db.Model):
     shipping_charge = db.Column(db.Float, default=0)  # Per-item shipping cost
     warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
     total = db.Column(db.Float, nullable=False)
+    cancelled_quantity = db.Column(db.Float, default=0)
     
     warehouse = db.relationship('Warehouse', backref='purchase_items', lazy=True)
     

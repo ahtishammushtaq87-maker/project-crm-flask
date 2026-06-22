@@ -97,8 +97,29 @@
             {% else %}
             <span class="badge bg-success ms-2"><i class="fas fa-check me-1"></i>Inventory Received</span>
             {% endif %}
+            {% if bill.status == 'cancelled' %}
+            <span class="badge bg-danger ms-2"><i class="fas fa-times me-1"></i>Settled (Cancelled)</span>
+            {% endif %}
         </div>
-        <div class="btn-group flex-wrap gap-1">
+        <div class="d-flex flex-wrap gap-1 header-actions-container">
+            {% if (bill.status|lower) != 'cancelled' and (bill.status|lower) != 'paid' and (bill.status|lower) != 'partially paid' and current_user.has_permission('purchases', 'edit') %}
+            {# Only show cancel if NOT already cancelled or fully paid. Note: update_status might set it to partial, so we check that too #}
+            {% endif %}
+            
+            {# Corrected visibility conditions #}
+            {% if (bill.status|lower) != 'cancelled' and (bill.status|lower) != 'paid' and current_user.has_permission('purchases', 'edit') %}
+            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelBillModal">
+                <i class="fas fa-ban me-1"></i>Cancel Remaining
+            </button>
+            {% endif %}
+
+            {% if (bill.status|lower) == 'cancelled' and current_user.has_permission('purchases', 'edit') %}
+            <form action="{{ url_for('purchase.reverse_cancel_bill', id=bill.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to REVERSE this cancellation? The original balance will be restored.');">
+                <button type="submit" class="btn btn-outline-primary shadow-sm">
+                    <i class="fas fa-undo me-1"></i>Reverse Cancellation
+                </button>
+            </form>
+            {% endif %}
             <a href="{{ url_for('purchase.bill_pdf', id=bill.id) }}" class="btn btn-info" target="_blank">
                 <i class="fas fa-file-pdf me-1"></i>PDF
             </a>
@@ -198,12 +219,12 @@
                                                 {% endfor %}
                                             </select>
                                         </td>
-                                        <td class="text-center">{{ '{:,.3f}'.format(item.quantity) }}</td>
+                                        <td class="text-center">{{ '{:,.2f}'.format(item.quantity) }}</td>
                                         <td class="text-center text-success fw-semibold">{{
-                                            '{:,.3f}'.format(already_received) }}</td>
+                                            '{:,.2f}'.format(already_received) }}</td>
                                         <td
                                             class="text-center {% if pending > 0 %}text-warning fw-bold{% else %}text-muted{% endif %}">
-                                            {{ '{:,.3f}'.format(pending) }}
+                                            {{ '{:,.2f}'.format(pending) }}
                                         </td>
                                         <td class="text-center">
                                             <input type="number" name="qty_{{ item.id }}"
@@ -468,6 +489,69 @@
         </div>
     </div>
 
+    <!-- Cancel Bill Modal -->
+    <div class="modal fade" id="cancelBillModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <form action="{{ url_for('purchase.cancel_bill', id=bill.id) }}" method="POST">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title"><i class="fas fa-ban me-2"></i>Cancel Items & Settle Bill</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-warning small">
+                            <i class="fas fa-info-circle me-1"></i> 
+                            Specify the quantity for each item that should be <strong>cancelled/waived</strong>. 
+                            The financial total will be recalculated based on these quantities.
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Product</th>
+                                        <th class="text-center">Bill Qty</th>
+                                        <th class="text-center text-success">Received</th>
+                                        <th class="text-center text-danger">Cancel Qty</th>
+                                        <th class="text-end">Unit Price</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in bill.items %}
+                                    {% set received = received_qty_map.get(item.id, 0) %}
+                                    {% set cancellable = (item.quantity - received) %}
+                                    {% set max_cancel = cancellable if cancellable > 0 else 0 %}
+                                    <tr>
+                                        <td>
+                                            <strong>{{ item.product.name }}</strong>
+                                            {% if item.product.sku %}<br><small class="text-muted">{{ item.product.sku }}</small>{% endif %}
+                                        </td>
+                                        <td class="text-center">{{ '{:,.2f}'.format(item.quantity) }}</td>
+                                        <td class="text-center text-success">{{ '{:,.2f}'.format(received) }}</td>
+                                        <td>
+                                            <input type="number" step="0.01" min="0" max="{{ max_cancel }}" 
+                                                   name="cancel_qty_{{ item.id }}" 
+                                                   value="{{ '{:.2f}'.format(max_cancel) }}" 
+                                                   class="form-control form-control-sm text-center text-danger fw-bold border-danger">
+                                            <div class="text-center small text-muted mt-1">Max: {{ '{:,.2f}'.format(max_cancel) }}</div>
+                                        </td>
+                                        <td class="text-end small">PKR {{ "{:,.2f}".format(item.unit_price) }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="submit" class="btn btn-danger" onclick="return confirm('Confirm cancellation? This will mark the bill as settled.')">
+                            <i class="fas fa-check me-1"></i>Settle Cancellation
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- ═══════════════════════════════════════════════
          MAIN ROW
     ════════════════════════════════════════════════ -->
@@ -584,6 +668,12 @@
                             <td class="text-end text-success fw-semibold">PKR {{ "{:,.2f}".format(bill.paid_amount) }}
                             </td>
                         </tr>
+                        {% if bill.cancelled_amount > 0 %}
+                        <tr>
+                            <td class="text-danger">Cancelled Amount</td>
+                            <td class="text-end text-danger fw-semibold">PKR {{ "{:,.2f}".format(bill.cancelled_amount) }}</td>
+                        </tr>
+                        {% endif %}
                         <tr class="border-top">
                             <td
                                 class="fw-bold {% if bill.balance_due > 0 %}text-danger{% else %}text-success{% endif %}">
@@ -648,6 +738,9 @@
                                     <th class="text-center">Warehouse</th>
                                     <th class="text-center">Bill Qty</th>
                                     <th class="text-center text-success">Received</th>
+                                    {% if bill.status == 'cancelled' %}
+                                    <th class="text-center text-danger">Cancelled</th>
+                                    {% endif %}
                                     <th class="text-end">Unit Price</th>
                                     <th class="text-end">Item Total</th>
                                     {% if bill.shipping_charge > 0 %}
@@ -662,6 +755,8 @@
                                 > 0
                                 else 0 %}
                                 {% set already_received = received_qty_map.get(item.id, 0) %}
+                                {% set cancelled_qty = item.cancelled_quantity if item.cancelled_quantity > 0 else 0 %}
+                                {% set cancelled_val = cancelled_qty * item.unit_price %}
                                 <tr>
                                     <td>{{ loop.index }}</td>
                                     <td>
@@ -675,14 +770,19 @@
                                         <span class="text-muted small">—</span>
                                         {% endif %}
                                     </td>
-                                    <td class="text-center">{{ '{:,.3f}'.format(item.quantity) }}</td>
+                                    <td class="text-center">{{ '{:,.2f}'.format(item.quantity) }}</td>
                                     <td class="text-center">
                                         {% if already_received > 0 %}
-                                        <span class="badge bg-success">{{ '{:,.3f}'.format(already_received) }}</span>
+                                        <span class="badge bg-success">{{ '{:,.2f}'.format(already_received) }}</span>
                                         {% else %}
                                         <span class="badge bg-secondary">0</span>
                                         {% endif %}
                                     </td>
+                                    {% if bill.status == 'cancelled' %}
+                                    <td class="text-center text-danger fw-bold">
+                                        {{ '{:,.2f}'.format(cancelled_qty) if cancelled_qty > 0 else '0' }}
+                                    </td>
+                                    {% endif %}
                                     <td class="text-end">PKR {{ "{:,.2f}".format(item.unit_price) }}</td>
                                     <td class="text-end">PKR {{ "{:,.2f}".format(item.total) }}</td>
                                     {% if bill.shipping_charge > 0 %}
@@ -699,7 +799,7 @@
                                     <th colspan="{% if bill.shipping_charge > 0 %}5{% else %}4{% endif %}"
                                         class="text-end">
                                         Subtotal</th>
-                                    <th class="text-end">{{ '{:,.3f}'.format(bill.items | sum(attribute='quantity')) }}
+                                    <th class="text-end">{{ '{:,.2f}'.format(bill.items | sum(attribute='quantity')) }}
                                     </th>
                                     <th class="text-end"></th>
                                     <th class="text-end">PKR {{ "{:,.2f}".format(bill.subtotal) }}</th>
@@ -730,6 +830,12 @@
                                         Total</th>
                                     <th class="text-end fs-6">PKR {{ "{:,.2f}".format(bill.total) }}</th>
                                 </tr>
+                                {% if bill.status == 'cancelled' %}
+                                <tr class="table-danger">
+                                    <th colspan="{{ '8' if bill.shipping_charge > 0 else '7' }}" class="text-end text-danger">Total Cancelled Value (Items)</th>
+                                    <th class="text-end text-danger fs-6">PKR {{ "{:,.2f}".format(bill.cancelled_amount) }}</th>
+                                </tr>
+                                {% endif %}
                             </tfoot>
                         </table>
                     </div>
@@ -788,7 +894,7 @@
                                                         {% endif %}
                                                     </td>
                                                     <td class="text-center text-success fw-bold">{{
-                                                        '{:,.3f}'.format(ri.quantity_received) }}</td>
+                                                        '{:,.2f}'.format(ri.quantity_received) }}</td>
                                                     <td class="text-center">
                                                         {% if current_user.has_permission('purchases', 'delete') %}
                                                         <form method="POST"
@@ -1085,7 +1191,12 @@
                 <div class="card shadow mb-4">
                     <div class="card-body">
                         <h6><i class="fas fa-sticky-note me-2"></i>Notes</h6>
-                        <p class="mb-0 text-muted">{{ bill.notes }}</p>
+                        {% set note_lines = bill.notes.split('\n') %}
+                        {% if note_lines|length > 2 %}
+                        <p class="mb-0 text-muted" style="white-space: pre-line;">{{ note_lines[-2:] | join('\n') }}</p>
+                        {% else %}
+                        <p class="mb-0 text-muted" style="white-space: pre-line;">{{ bill.notes }}</p>
+                        {% endif %}
                     </div>
                 </div>
                 {% endif %}

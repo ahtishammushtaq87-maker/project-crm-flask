@@ -377,20 +377,30 @@ class ProfessionalPDFGenerator:
             headers += ['SKU']
         if show_item_code:
             headers += ['Item Code']
-        headers += ['Qty', 'Unit Price', 'Amount']
+        # Only add Cancelled column if any item has a cancelled quantity
+        show_cancelled = getattr(self, 'is_purchase', False) and getattr(self, '_has_cancelled_items', False)
+        if show_cancelled:
+            headers += ['Qty', 'Unit Price', 'Cancelled', 'Amount']
+        else:
+            headers += ['Qty', 'Unit Price', 'Amount']
 
         header_row = [Paragraph(f"<b>{h}</b>", self.styles['TblHeader']) for h in headers]
 
         if show_sku and show_item_code:
-            col_w = [0.385*inch, 2.75*inch, 0.77*inch, 0.77*inch, 0.605*inch, 0.66*inch, 0.715*inch]
+            col_w = [0.385*inch, 2.3*inch, 0.7*inch, 0.7*inch, 0.6*inch, 0.6*inch, 0.7*inch]
+            if show_cancelled: col_w.insert(6, 0.8*inch)
         elif show_sku:
-            col_w = [0.385*inch, 3.08*inch, 0.88*inch, 0.77*inch, 1.1*inch, 0.935*inch]
+            col_w = [0.385*inch, 3.0*inch, 0.8*inch, 0.7*inch, 1.0*inch, 0.9*inch]
+            if show_cancelled: col_w.insert(5, 0.8*inch)
         elif show_item_code:
-            col_w = [0.385*inch, 3.3*inch, 0.88*inch, 0.55*inch, 1.1*inch, 1.1*inch]
+            col_w = [0.385*inch, 3.0*inch, 0.8*inch, 0.7*inch, 1.0*inch, 0.9*inch]
+            if show_cancelled: col_w.insert(5, 0.8*inch)
         else:
-            col_w = [0.385*inch, 3.85*inch, 0.715*inch, 1.21*inch, 1.21*inch]
+            col_w = [0.385*inch, 3.85*inch, 0.715*inch, 1.1*inch, 1.1*inch]
+            if show_cancelled: col_w.insert(4, 0.8*inch)
 
-        # Scale column widths so the items table matches the terms & conditions box width
+        # Scale column widths so the items table matches the info boxes and notes (TABLE_WIDTH)
+        # This ensures the table aligns with Statement/Locations boxes and the Notes section
         total_current = sum(col_w)
         col_w = [w * TABLE_WIDTH / total_current for w in col_w]
 
@@ -408,7 +418,7 @@ class ProfessionalPDFGenerator:
                 row.append(Paragraph(item.get('item_code', '-'), self.styles['TblCell']))
             qty = item.get('quantity', 0)
             unit = item.get('unit', '')
-            qty_str = f"{qty:,.3f}" if isinstance(qty, (int, float)) else str(qty)
+            qty_str = f"{qty:,.2f}" if isinstance(qty, (int, float)) else str(qty)
             
             # Show unit in quantity column if it's a purchase bill
             if getattr(self, 'is_purchase', False):
@@ -419,8 +429,14 @@ class ProfessionalPDFGenerator:
                 if unit and unit != '-':
                     qty_str = f"{qty_str} {unit}"
             row += [Paragraph(qty_str, self.styles['TblCell']),
-                    Paragraph(item.get('rate', '-'),        self.styles['TblCell']),
-                    Paragraph(item.get('amount', '-'),      self.styles['TblCell'])]
+                    Paragraph(item.get('rate', '-'),        self.styles['TblCell'])]
+            
+            if show_cancelled:
+                cq = item.get('cancelled_quantity', 0) or 0
+                cq_str = f"{cq:,.2f}" if cq > 0 else "-"
+                row.append(Paragraph(cq_str, self.styles['TblCell']))
+
+            row.append(Paragraph(item.get('amount', '-'),      self.styles['TblCell']))
             table_data.append(row)
 
         if len(table_data) == 1:
@@ -524,7 +540,7 @@ class ProfessionalPDFGenerator:
                     terms_content.append(Paragraph(line.strip(), self.styles['NotesText']))
         
         if terms_content:
-            terms_tbl = Table([[item] for item in terms_content], colWidths=[7.4 * inch])
+            terms_tbl = Table([[item] for item in terms_content], colWidths=[TABLE_WIDTH])
             terms_tbl.setStyle(TableStyle([
                 ('VALIGN',        (0,0), (-1,-1), 'TOP'),
                 ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
@@ -539,14 +555,10 @@ class ProfessionalPDFGenerator:
         # ── Compose Final Layout ───────────────────────────────────────────────
         # Row 1: Bank box (50% width) + Totals table (50% width) side by side
         if bank_tbl:
-            row1 = Table([[bank_tbl, '', tot_tbl]], colWidths=[3.7*inch, 0.1*inch, 3.7*inch])
+            row1 = Table([[bank_tbl, '', tot_tbl]], colWidths=[3.7*inch, TABLE_WIDTH - 7.4*inch, 3.7*inch])
         else:
-            if is_purchase:
-                # Left-align totals for purchase bill
-                row1 = Table([[tot_tbl, '']], colWidths=[0.4*inch, 0.3*inch])
-            else:
-                # Keep existing behavior for invoices and others
-                row1 = Table([[tot_tbl]], colWidths=[3.7*inch])
+            # Right-align totals box within the full TABLE_WIDTH
+            row1 = Table([['', tot_tbl]], colWidths=[TABLE_WIDTH - 3.7*inch, 3.7*inch])
         row1.setStyle(TableStyle([
             ('VALIGN',        (0,0), (-1,-1), 'TOP'),
             ('ALIGN',         (1,0), (1,-1),  'LEFT'),
@@ -933,28 +945,40 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             reference_data['Project'] = obj.project.name if obj.project else ""
 
         items = []
+        has_cancelled = False
         for item in obj.items:
-            # Get unit from item if it exists, otherwise from product
             unit_val = getattr(item, 'unit', None)
             if (not unit_val or unit_val == '-') and item.product:
                 unit_val = getattr(item.product, 'unit', '-')
-                
+
+            cq = getattr(item, 'cancelled_quantity', 0) or 0
+            if cq > 0:
+                has_cancelled = True
+
             entry = {
-                'description': item.product.name if item.product else "Unknown Product",
-                'quantity':    item.quantity,
-                'unit':        unit_val or '-',
-                'rate':        f"{currency}{item.unit_price:,.2f}",
-                'amount':      f"{currency}{item.total:,.2f}",
+                'description':        item.product.name if item.product else "Unknown Product",
+                'quantity':           item.quantity,
+                'unit':               unit_val or '-',
+                'rate':               f"{currency}{item.unit_price:,.2f}",
+                'amount':             f"{currency}{item.total:,.2f}",
+                'cancelled_quantity': cq,
             }
             if item.product and hasattr(item.product, 'sku') and item.product.sku:
                 entry['sku'] = item.product.sku
             items.append(entry)
 
+        # Tell the generator whether to render the Cancelled column
+        generator._has_cancelled_items = has_cancelled
+
         totals = [("Subtotal", f"{currency}{obj.subtotal:,.2f}"),
                   ("Tax",      f"{currency}{obj.tax:,.2f}"),
-                  ("Discount", f"-{currency}{obj.discount:,.2f}"),
-                  ("Shipping", f"{currency}{obj.shipping_charge:,.2f}"),
-                  ("Total Due",f"{currency}{obj.total:,.2f}")]
+                  ("Discount", f"-{currency}{obj.discount:,.2f}")]
+        
+        # Shipping removed from PDF as per user request
+        if obj.cancelled_amount > 0:
+            totals += [("Cancelled Amount", f"-{currency}{obj.cancelled_amount:,.2f}")]
+            
+        totals += [("Total Due",f"{currency}{obj.total - obj.shipping_charge:,.2f}")]
         if hasattr(obj, 'advance_applied') and obj.advance_applied and obj.advance_applied > 0:
             totals += [("Advance Applied", f"-{currency}{obj.advance_applied:,.2f}"),
                        ("Balance Due",     f"{currency}{obj.balance_due:,.2f}")]
@@ -962,7 +986,16 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             totals += [("Amount Paid", f"{currency}{obj.paid_amount:,.2f}"),
                        ("Balance Due", f"{currency}{obj.balance_due:,.2f}")]
 
-        notes = obj.notes or ''
+        # Build clean notes — strip internal audit lines ([Cancelled…] / [Reversed…])
+        import re as _re
+        raw_notes = obj.notes or ''
+        clean_lines = [
+            ln for ln in raw_notes.splitlines()
+            if not _re.match(r'\s*\[(Cancelled|Rerversed|Reversed)', ln)
+        ]
+        notes = '\n'.join(clean_lines).strip()
+
+        # Append useful bill info
         if obj.due_date:
             if notes: notes += '\n'
             notes += f"Due Date: {obj.due_date.strftime('%d-%m-%Y')}"
@@ -972,6 +1005,12 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
         if obj.po_id and obj.source_po:
             if notes: notes += '\n'
             notes += f"Purchase Order: {obj.source_po.po_number}"
+
+        # If cancelled, add a clean one-line summary
+        if obj.status == 'cancelled' and obj.cancelled_at and obj.cancelled_amount > 0:
+            if notes: notes += '\n'
+            notes += (f"Cancellation Date: {obj.cancelled_at.strftime('%d-%m-%Y %H:%M')} — "
+                      f"Cancelled Amount: {currency}{obj.cancelled_amount:,.2f}")
 
         terms = (settings.default_terms.strip() if settings and getattr(settings, 'default_terms', None) else '')
         dn    = (settings.default_notes.strip() if settings and getattr(settings, 'default_notes', None) else '')
