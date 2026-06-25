@@ -2,8 +2,11 @@
 
 {% block title %}Payment Methods{% endblock %}
 
+{% from 'components/approval_notification.html' import pending_approval_alert with context %}
+
 {% block content %}
 <div class="container-fluid">
+    {{ pending_approval_alert('payment_method') }}
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Payment Methods</h2>
                 {% if current_user.has_permission('accounting', 'add') %}
@@ -22,6 +25,7 @@
                             <th>Name</th>
                             <th>Description</th>
                             <th>Status</th>
+                            <th class="no-export">Approval</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -37,6 +41,10 @@
                                 <span class="badge bg-danger">Inactive</span>
                                 {% endif %}
                             </td>
+                            <td class="no-export">
+                                {% from 'components/approval_widget.html' import approval_widget with context %}
+                                {{ approval_widget('payment_method', method) }}
+                            </td>
                             <td>
                                                                 {% if current_user.has_permission('accounting', 'edit') %}
 <a href="{{ url_for('accounting.edit_payment_method', id=method.id) }}" 
@@ -44,7 +52,7 @@
                                     <i class="fas fa-edit"></i>
                                 </a>
 {% endif %}                                
-                                <button class="btn btn-sm btn-danger" onclick="deleteMethod({{ method.id }}, '{{ method.name|e }}')" title="Delete">
+                                <button class="btn btn-sm btn-danger" onclick="deleteMethod('{{ method.id }}', '{{ method.name|e }}')" title="Delete">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </td>

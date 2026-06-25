@@ -199,6 +199,12 @@ class Vendor(db.Model):
     
     is_active = db.Column(db.Boolean, default=True)
     image_path = db.Column(db.String(255))  # Path to vendor image
+    # Universal approval fields
+    is_approved = db.Column(db.Boolean, default=False)
+    is_rejected = db.Column(db.Boolean, default=False)
+    rejection_reason = db.Column(db.Text)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -265,6 +271,12 @@ class CustomerGroup(db.Model):
     name = db.Column(db.String(100), nullable=False, unique=True, index=True)
     description = db.Column(db.Text)
     is_active = db.Column(db.Boolean, default=True)
+    # Universal approval fields
+    is_approved = db.Column(db.Boolean, default=True)
+    is_rejected = db.Column(db.Boolean, default=False)
+    rejection_reason = db.Column(db.Text)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -315,6 +327,12 @@ class Customer(db.Model):
     sub_customers = db.Column(db.Text, nullable=True) # JSON string of list of sub-customers
     image_path = db.Column(db.String(255), nullable=True)  # Path to customer image
     is_active = db.Column(db.Boolean, default=True)
+    # Universal approval fields
+    is_approved = db.Column(db.Boolean, default=False)
+    is_rejected = db.Column(db.Boolean, default=False)
+    rejection_reason = db.Column(db.Text)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -345,6 +363,26 @@ class Customer(db.Model):
     def outstanding_balance(self):
         """Outstanding balance from approved sales only"""
         return sum(sale.total - sale.paid_amount for sale in self.sales if sale.status != 'paid' and sale.is_approved)
+
+    @property
+    def health_status(self):
+        """
+        Determine customer health flag color based on overdue invoices.
+        - 'danger' (Red): 30+ days overdue
+        - 'warning' (Yellow): Overdue but < 30 days
+        - 'success' (Green): No overdue invoices
+        """
+        # We only care about approved sales that are overdue
+        overdue_sales = [s for s in self.sales if s.is_overdue and s.is_approved]
+        if not overdue_sales:
+            return 'success'
+        
+        # Check if any sale is 30+ days overdue
+        # (days_overdue property was added to Sale model in previous step)
+        if any(s.days_overdue >= 30 for s in overdue_sales):
+            return 'danger'
+        
+        return 'warning'
     
     @property
     def total_delivery_charges(self):
@@ -390,6 +428,12 @@ class Salesman(db.Model):
     group_assigned = db.Column(db.String(100), nullable=True) # Legacy field
     commission_rate = db.Column(db.Float, default=0) # Commission percentage
     is_active = db.Column(db.Boolean, default=True)
+    # Universal approval fields
+    is_approved = db.Column(db.Boolean, default=False)
+    is_rejected = db.Column(db.Boolean, default=False)
+    rejection_reason = db.Column(db.Text)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -412,6 +456,12 @@ class Warehouse(db.Model):
     email = db.Column(db.String(120))
     manager = db.Column(db.String(100))
     is_active = db.Column(db.Boolean, default=True)
+    # Universal approval fields
+    is_approved = db.Column(db.Boolean, default=False)
+    is_rejected = db.Column(db.Boolean, default=False)
+    rejection_reason = db.Column(db.Text)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -456,6 +506,12 @@ class Product(db.Model):
     is_manufactured = db.Column(db.Boolean, default=False)
     finished_good_price = db.Column(db.Float, nullable=True)
     warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
+    # Universal approval fields
+    is_approved = db.Column(db.Boolean, default=False)
+    is_rejected = db.Column(db.Boolean, default=False)
+    rejection_reason = db.Column(db.Text)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -529,6 +585,12 @@ class ProductCategory(db.Model):
     name = db.Column(db.String(100), nullable=False, unique=True, index=True)
     description = db.Column(db.Text)
     is_active = db.Column(db.Boolean, default=True)
+    # Universal approval fields
+    is_approved = db.Column(db.Boolean, default=False)
+    is_rejected = db.Column(db.Boolean, default=False)
+    rejection_reason = db.Column(db.Text)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -606,6 +668,7 @@ class Sale(db.Model):
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
     discount_violation = db.Column(db.Text, nullable=True)
+    stock_updated = db.Column(db.Boolean, default=False)
     
     # Relationships
     items = db.relationship('SaleItem', backref='sale', lazy=True, cascade='all, delete-orphan')
@@ -627,6 +690,15 @@ class Sale(db.Model):
             check_date = self.due_date.date() if self.due_date else self.date.date()
             return datetime.utcnow().date() > check_date
         return False
+    
+    @property
+    def days_overdue(self):
+        """Calculate days since due date"""
+        if self.is_overdue:
+            check_date = self.due_date.date() if self.due_date else self.date.date()
+            delta = datetime.utcnow().date() - check_date
+            return delta.days
+        return 0
     
     def update_status(self):
         """Update payment status based on paid amount"""
@@ -863,6 +935,12 @@ class PurchaseBill(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     access_token = db.Column(db.String(100), unique=True, nullable=True, index=True)
     token_expiry = db.Column(db.DateTime, nullable=True)
+    # Approval workflow: staff-created bills require admin approval before counting in totals
+    is_approved = db.Column(db.Boolean, default=True, index=True)
+    is_rejected = db.Column(db.Boolean, default=False, index=True)
+    rejection_reason = db.Column(db.Text, nullable=True)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     
     # Relationships
     items = db.relationship('PurchaseItem', backref='bill', lazy=True, cascade='all, delete-orphan')
@@ -1072,7 +1150,7 @@ class Payment(db.Model):
     image_path = db.Column(db.String(255))  # Path to uploaded payment receipt/bill image
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     # Approval workflow: staff-recorded payments require admin approval before updating paid_amount
-    is_approved = db.Column(db.Boolean, default=True, index=True)  # True for admin-created, False for staff-created
+    is_approved = db.Column(db.Boolean, default=False, index=True)  # True for admin-created, False for staff-created
     is_rejected = db.Column(db.Boolean, default=False, index=True)
     rejection_reason = db.Column(db.Text, nullable=True)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
@@ -1112,6 +1190,12 @@ class ExpenseCategory(db.Model):
     name = db.Column(db.String(100), nullable=False, unique=True, index=True)
     description = db.Column(db.Text)
     is_active = db.Column(db.Boolean, default=True)
+    # Universal approval fields
+    is_approved = db.Column(db.Boolean, default=False)
+    is_rejected = db.Column(db.Boolean, default=False)
+    rejection_reason = db.Column(db.Text)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Relationships
@@ -1128,6 +1212,12 @@ class PaymentMethod(db.Model):
     name = db.Column(db.String(100), nullable=False, unique=True, index=True)
     description = db.Column(db.Text)
     is_active = db.Column(db.Boolean, default=True)
+    # Universal approval fields
+    is_approved = db.Column(db.Boolean, default=False)
+    is_rejected = db.Column(db.Boolean, default=False)
+    rejection_reason = db.Column(db.Text)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     def __repr__(self):
@@ -1155,6 +1245,11 @@ class Expense(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     status = db.Column(db.String(20), default='pending', index=True)  # pending, confirmed, rejected
+    is_approved = db.Column(db.Boolean, default=False, index=True)
+    is_rejected = db.Column(db.Boolean, default=False, index=True)
+    rejection_reason = db.Column(db.Text, nullable=True)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     
     # Monthly distribution fields
     is_monthly_divided = db.Column(db.Boolean, default=False)  # Whether expense is divided across month
@@ -1405,6 +1500,11 @@ class SaleReturn(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_approved = db.Column(db.Boolean, default=False, index=True)
+    is_rejected = db.Column(db.Boolean, default=False, index=True)
+    rejection_reason = db.Column(db.Text, nullable=True)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
 
     # Relationships
     # Relationship moved to Sale model for cascade deletion
@@ -1443,6 +1543,11 @@ class PurchaseReturn(db.Model):
     total = db.Column(db.Float, default=0)
     reason = db.Column(db.Text)
     status = db.Column(Enum('pending', 'approved', 'completed', name='purchase_return_status'), default='pending', index=True)
+    is_approved = db.Column(db.Boolean, default=False, index=True)
+    is_rejected = db.Column(db.Boolean, default=False, index=True)
+    rejection_reason = db.Column(db.Text, nullable=True)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     returned_to_inventory = db.Column(db.Boolean, default=False)
     refund_amount = db.Column(db.Float, default=0)
     refund_status = db.Column(Enum('none', 'pending', 'paid', name='purchase_refund_status'), default='none', index=True)
@@ -1552,6 +1657,12 @@ class BOM(db.Model):
     overhead_cost = db.Column(db.Float, default=0)
     total_cost = db.Column(db.Float, default=0)
     is_active = db.Column(db.Boolean, default=True)  # Only latest version is active
+    # Universal approval fields (using is_approved_flag to not conflict with is_active)
+    is_approved_flag = db.Column(db.Boolean, default=False)
+    is_rejected = db.Column(db.Boolean, default=False)
+    rejection_reason = db.Column(db.Text)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -2050,6 +2161,12 @@ class ManufacturingOrder(db.Model):
     actual_overhead_cost = db.Column(db.Float, default=0)
     total_cost = db.Column(db.Float, default=0)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    # Universal approval fields
+    is_approved = db.Column(db.Boolean, default=False)
+    is_rejected = db.Column(db.Boolean, default=False)
+    rejection_reason = db.Column(db.Text)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -2128,6 +2245,11 @@ class VendorAdvance(db.Model):
     adjusted_bill_id = db.Column(db.Integer, db.ForeignKey('purchase_bills.id'), nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_approved = db.Column(db.Boolean, default=False, index=True)
+    is_rejected = db.Column(db.Boolean, default=False, index=True)
+    rejection_reason = db.Column(db.Text, nullable=True)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
 
     adjusted_bill = db.relationship('PurchaseBill', backref='adjusted_advances', lazy=True)
 
@@ -2248,8 +2370,16 @@ class BillPayment(db.Model):
     image_path = db.Column(db.String(255))  # Upload receipt/payment proof
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Approval workflow: staff-recorded payments require admin approval before updating paid_amount
+    is_approved = db.Column(db.Boolean, default=False, index=True)  # True for admin-created, False for staff-created
+    is_rejected = db.Column(db.Boolean, default=False, index=True)
+    rejection_reason = db.Column(db.Text, nullable=True)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
+    advance_id = db.Column(db.Integer, db.ForeignKey('vendor_advances.id'), nullable=True)
 
-    creator = db.relationship('User', backref='bill_payments_created', lazy=True)
+    creator = db.relationship('User', foreign_keys=[created_by], backref='bill_payments_created', lazy=True)
+    approver = db.relationship('User', foreign_keys=[approved_by], lazy=True)
 
     def __repr__(self):
         return f'<BillPayment bill={self.bill_id} amount={self.amount}>'

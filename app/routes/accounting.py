@@ -1080,20 +1080,24 @@ def add_expense():
         
         # Determine the active mode
         mode = request.form.get('overhead_mode', 'bulk')
-        
-        # Determine target status based on user role
-        target_status = 'confirmed' if current_user.is_admin else 'pending'
+        is_admin = getattr(current_user, 'is_admin', False)
+        target_status = 'confirmed' if is_admin else 'pending'
         
         # Handle bill image upload
         bill_path = None
         if 'bill_image' in request.files:
             bill_file = request.files['bill_image']
             if bill_file and bill_file.filename:
-                filename = secure_filename(bill_file.filename)
-                bill_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
-                os.makedirs(os.path.dirname(bill_path), exist_ok=True)
-                bill_file.save(bill_path)
-                bill_path = bill_path.replace('\\', '/')
+                import time, uuid
+                original_filename = secure_filename(bill_file.filename)
+                unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                filename = f"{unique_prefix}_{original_filename}"
+                
+                full_bill_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
+                os.makedirs(os.path.dirname(full_bill_path), exist_ok=True)
+                bill_file.save(full_bill_path)
+                # Store path relative to project root
+                bill_path = f"app/static/uploads/bills/{filename}"
         
         common_kwargs = dict(
             date=form.date.data,
@@ -1108,6 +1112,10 @@ def add_expense():
             is_monthly_divided=form.is_monthly_divided.data,
             monthly_start_date=form.monthly_start_date.data if form.is_monthly_divided.data else None,
             monthly_end_date=form.monthly_end_date.data if form.is_monthly_divided.data else None,
+            is_approved=is_admin,
+            approved_by=current_user.id if is_admin else None,
+            approved_at=datetime.utcnow() if is_admin else None,
+            is_rejected=False
         )
         
         # Get expense number settings
@@ -1659,11 +1667,16 @@ def edit_expense(id):
             if 'bill_image' in request.files:
                 bill_file = request.files['bill_image']
                 if bill_file and bill_file.filename:
-                    filename = secure_filename(bill_file.filename)
+                    import time, uuid
+                    original_filename = secure_filename(bill_file.filename)
+                    unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                    filename = f"{unique_prefix}_{original_filename}"
+                    
                     bill_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
                     os.makedirs(os.path.dirname(bill_path), exist_ok=True)
                     bill_file.save(bill_path)
-                    expense.bill_image_path = bill_path.replace('\\', '/')
+                    # Store path relative to project root
+                    expense.bill_image_path = f"app/static/uploads/bills/{filename}"
                     
             # Handle monthly division
             if has_column('expenses', 'is_monthly_divided'):
@@ -1870,16 +1883,20 @@ def add_expense_category():
 @login_required
 @permission_required('accounting', action='edit')
 def confirm_expense(id):
-    if not current_user.is_admin:
+    if not getattr(current_user, 'is_admin', False):
         flash('Only admins can confirm expenses.', 'danger')
         return redirect(url_for('accounting.expenses'))
         
     expense = Expense.query.get_or_404(id)
-    if expense.status == 'confirmed':
+    if expense.is_approved:
         flash('Expense is already confirmed.', 'info')
         return redirect(url_for('accounting.expenses'))
         
     expense.status = 'confirmed'
+    expense.is_approved = True
+    expense.is_rejected = False
+    expense.approved_by = current_user.id
+    expense.approved_at = datetime.utcnow()
     
     # Apply side effects (MO updates)
     if expense.is_bom_overhead and expense.mo_id:
@@ -1921,12 +1938,18 @@ def confirm_expense(id):
 @login_required
 @permission_required('accounting', action='edit')
 def reject_expense(id):
-    if not current_user.is_admin:
+    if not getattr(current_user, 'is_admin', False):
         flash('Only admins can reject expenses.', 'danger')
         return redirect(url_for('accounting.expenses'))
         
     expense = Expense.query.get_or_404(id)
+    reason = request.form.get('reason', '')
+    
     expense.status = 'rejected'
+    expense.is_approved = False
+    expense.is_rejected = True
+    expense.rejection_reason = reason
+    
     db.session.commit()
     flash(f'Expense {expense.expense_number} rejected.', 'warning')
     return redirect(url_for('accounting.expenses'))

@@ -2,16 +2,20 @@
 
 {% block title %}Purchase Return {{ return_obj.return_number }}{% endblock %}
 
+{% from 'components/approval_widget.html' import approval_widget with context %}
 {% block content %}
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Return {{ return_obj.return_number }}</h2>
+    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
+        <div class="d-flex align-items-center">
+            <h2 class="h3 mb-0 text-gray-800 me-3">Return {{ return_obj.return_number }}</h2>
+            {{ approval_widget(module='purchase_return', entity=return_obj) }}
+        </div>
         <div>
-                        {% if current_user.has_permission('purchases', 'edit') %}
-<a href="{{ url_for('purchase.edit_purchase_return', id=return_obj.id) }}" class="btn btn-primary">
+            {% if current_user.has_permission('purchases', 'edit') %}
+            <a href="{{ url_for('purchase.edit_purchase_return', id=return_obj.id) }}" class="btn btn-primary">
                 <i class="fas fa-edit"></i> Edit
             </a>
-{% endif %}            
+            {% endif %}            
                         {% if current_user.has_permission('purchases', 'delete') %}
 <form method="POST" action="{{ url_for('purchase.delete_purchase_return', id=return_obj.id) }}" style="display:inline;" onsubmit="return confirm('Delete this return? This will restore product quantities and bill totals.');">
                 <button type="submit" class="btn btn-danger">

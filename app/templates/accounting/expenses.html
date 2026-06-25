@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-
 {% block title %}Expenses{% endblock %}
+{% from 'components/approval_widget.html' import approval_widget with context %}
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
@@ -117,11 +117,14 @@
 {% endif %}
 {% endblock %}
 
+{% from 'components/approval_notification.html' import pending_approval_alert with context %}
+
 {% block content %}
 <!-- Module context for universal filter -->
 <div id="module-context" data-module="expense" style="display:none;"></div>
 
 <div class="container-fluid">
+    {{ pending_approval_alert('expense') }}
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Expenses</h2>
         <div>
@@ -282,8 +285,8 @@
                             <th>Amount</th>
                             <th>Daily Amount</th>
                             <th class="no-export">Bill</th>
-                            <th>Status</th>
-                            <th class="no-export">Actions</th>
+                            <th class="text-center">Approval</th>
+                            <th class="text-center no-export">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -368,50 +371,30 @@
                                 {% endif %}
                             </td>
                             <td>
-                                {% if exp.status == 'pending' %}
-                                <span class="badge bg-warning text-dark">Pending</span>
-                                {% elif exp.status == 'confirmed' %}
-                                <span class="badge bg-success">Confirmed</span>
-                                {% elif exp.status == 'rejected' %}
-                                <span class="badge bg-danger">Rejected</span>
-                                {% else %}
-                                <span class="badge bg-secondary">{{ exp.status|capitalize }}</span>
-                                {% endif %}
-                                
-                                {% if exp.is_shifted %}
-                                <div class="mt-1">
-                                    <span class="badge bg-info text-dark">
+                                <div class="d-flex flex-column gap-1 align-items-start">
+                                    <div class="d-flex align-items-center">
+                                        {{ approval_widget(module='expense', entity=exp) }}
+                                        {% if current_user.is_admin and not exp.is_shifted %}
+                                        <button type="button" class="btn btn-sm btn-outline-primary ms-1" 
+                                                data-bs-toggle="modal" 
+                                                data-bs-target="#shiftExpenseModal"
+                                                data-expense-id="{{ exp.id }}"
+                                                data-expense-amount="{{ exp.amount }}"
+                                                data-expense-desc="{{ exp.description or '' }}"
+                                                title="Shift to PD Project">
+                                            <i class="fas fa-share-square"></i>
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                    {% if exp.is_shifted %}
+                                    <span class="badge bg-info text-dark" style="font-size:0.7rem;">
                                         <i class="fas fa-project-diagram me-1"></i> Shifted to PD
                                     </span>
+                                    {% endif %}
                                 </div>
-                                {% endif %}
                             </td>
                             <td class="no-export">
                                 <div class="btn-group" role="group">
-                                    {% if current_user.is_admin and exp.status == 'pending' %}
-                                    <form method="POST" action="{{ url_for('accounting.confirm_expense', id=exp.id) }}"
-                                        style="display:inline;" class="me-1">
-                                        <button type="submit" class="btn btn-sm btn-success" title="Confirm">
-                                            <i class="fas fa-check"></i>
-                                        </button>
-                                    </form>
-                                    <form method="POST" action="{{ url_for('accounting.reject_expense', id=exp.id) }}"
-                                        style="display:inline;" class="me-1">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Reject">
-                                            <i class="fas fa-times"></i>
-                                        </button>
-                                    </form>
-                                    {% endif %}
-                                    
-                                    {% if current_user.is_admin and not exp.is_shifted %}
-                                    <button type="button" class="btn btn-sm btn-outline-primary shift-to-pd-btn me-1" 
-                                            data-bs-toggle="modal" data-bs-target="#shiftExpenseModal"
-                                            data-expense-id="{{ exp.id }}" data-expense-amount="{{ exp.amount }}"
-                                            data-expense-desc="{{ exp.description or '' }}" title="Shift to PD Project">
-                                        <i class="fas fa-share-square"></i>
-                                    </button>
-                                    {% endif %}
-
                                     {% if current_user.has_permission('accounting', 'edit') and not exp.is_shifted %}
                                     <a href="{{ url_for('accounting.edit_expense', id=exp.id) }}"
                                         class="btn btn-sm btn-warning" title="Edit">
@@ -529,6 +512,28 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Initialize Bulk Actions
+    if (typeof initBulkActions === 'function') {
+        initBulkActions({
+            selectAllId: 'selectAll',
+            checkboxClass: 'expense-checkbox',
+            bulkDeleteBtnId: 'bulkDeleteBtn',
+            deleteUrl: "{{ url_for('accounting.bulk_delete_expenses') }}",
+            entityName: 'expenses'
+        });
+    }
+
+    // Initialize Select2 for filters
+    $('.searchable-select').each(function () {
+        var placeholder = $(this).data('placeholder');
+        $(this).select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            allowClear: true,
+            placeholder: placeholder
+        });
+    });
+
     const shiftModal = document.getElementById('shiftExpenseModal');
     if (shiftModal) {
         shiftModal.addEventListener('show.bs.modal', function(event) {

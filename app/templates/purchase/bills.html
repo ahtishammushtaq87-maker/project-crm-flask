@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Purchase Bills{% endblock %}
+{% from 'components/approval_widget.html' import approval_widget with context %}
 
 {% block extra_js %}
 <script>
@@ -57,7 +58,10 @@
         }
     }
 </style>
+{% from 'components/approval_notification.html' import pending_approval_alert with context %}
+
 <div class="container-fluid list-page">
+    {{ pending_approval_alert('purchase_bill') }}
     <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
         <h2 class="h3 mb-0 text-gray-800">Purchase Order</h2>
         <div class="btn-group">
@@ -79,6 +83,7 @@
     {% set bill_totals = namespace(paid_total=0, partial_total=0, partial_unpaid=0, unpaid_total=0, overdue_total=0,
     total_shipping=0) %}
     {% for bill in bills %}
+    {% if bill.is_approved and not bill.is_rejected and bill.status != 'cancelled' %}
     {% set bill_totals.total_shipping = bill_totals.total_shipping + bill.shipping_charge %}
     {% if bill.status == 'paid' %}
     {% set bill_totals.paid_total = bill_totals.paid_total + bill.paid_amount %}
@@ -92,6 +97,7 @@
 
     {% if bill.is_overdue %}
     {% set bill_totals.overdue_total = bill_totals.overdue_total + bill.balance_due %}
+    {% endif %}
     {% endif %}
     {% endfor %}
 
@@ -292,7 +298,8 @@
                             <th class="text-end">Total</th>
                             <th class="text-end">Paid</th>
                             <th class="text-end text-danger">Balance</th>
-                            <th class="text-center">Status</th>
+                            <th class="text-center">Payment</th>
+                            <th class="text-center">Approval</th>
                             <th class="text-center no-export">Actions</th>
                         </tr>
                     </thead>
@@ -322,15 +329,12 @@
                             <td class="text-end">PKR{{ "{:,.2f}".format(bill.paid_amount) }}</td>
                             <td class="text-end text-danger fw-bold">PKR{{ "{:,.2f}".format(bill.balance_due) }}</td>
                             <td class="text-center">
-                                {% if bill.is_overdue %}
-                                <span class="badge bg-danger">Overdue</span>
-                                {% elif bill.status == 'paid' %}
-                                <span class="badge bg-success">Paid</span>
-                                {% elif bill.status == 'partial' %}
-                                <span class="badge bg-warning">Partial</span>
-                                {% else %}
-                                <span class="badge bg-danger">Unpaid</span>
-                                {% endif %}
+                                <span class="badge {% if bill.status == 'paid' %}bg-success{% elif bill.status == 'partial' %}bg-warning text-dark{% else %}bg-danger{% endif %} shadow-sm">
+                                    {{ bill.status | capitalize }}
+                                </span>
+                            </td>
+                            <td class="text-center">
+                                {{ approval_widget(module='purchase_bill', entity=bill) }}
                             </td>
                             <td class="text-center no-export">
                                 <div class="btn-group btn-group-sm">

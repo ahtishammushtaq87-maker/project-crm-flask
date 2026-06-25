@@ -357,27 +357,30 @@ def create_invoice():
             )
             db.session.add(sale_item)
 
-            # Update inventory (global + per-warehouse)
-            product = Product.query.get(item['product_id'])
-            if product:
-                # reduce total product quantity
-                product.update_quantity(-item['quantity'])
+        if sale.is_approved:
+            for item in sale_items:
+                # Update inventory (global + per-warehouse)
+                product = Product.query.get(item['product_id'])
+                if product:
+                    # reduce total product quantity
+                    product.update_quantity(-item['quantity'])
 
-                # Update per-warehouse stock if warehouse selected
-                wh_id = item.get('warehouse_id')
-                if wh_id:
-                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=wh_id).first()
-                    if not wh_stock:
-                        wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=wh_id, quantity=0)
-                        db.session.add(wh_stock)
-                    wh_stock.quantity -= item['quantity']
-                elif product.warehouse_id:
-                    # Legacy fallback
-                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=product.warehouse_id).first()
-                    if not wh_stock:
-                        wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=product.warehouse_id, quantity=0)
-                        db.session.add(wh_stock)
-                    wh_stock.quantity -= item['quantity']
+                    # Update per-warehouse stock if warehouse selected
+                    wh_id = item.get('warehouse_id')
+                    if wh_id:
+                        wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=wh_id).first()
+                        if not wh_stock:
+                            wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=wh_id, quantity=0)
+                            db.session.add(wh_stock)
+                        wh_stock.quantity -= item['quantity']
+                    elif product.warehouse_id:
+                        # Legacy fallback
+                        wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=product.warehouse_id).first()
+                        if not wh_stock:
+                            wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=product.warehouse_id, quantity=0)
+                            db.session.add(wh_stock)
+                        wh_stock.quantity -= item['quantity']
+            sale.stock_updated = True
         
         # IMPORTANT: Trigger the official total calculation from the model
         # This ensures the stored 'total' matches the model logic 100%
@@ -699,12 +702,18 @@ def pay_invoice(id):
         if 'payment_image' in request.files:
             payment_file = request.files['payment_image']
             if payment_file and payment_file.filename:
-                filename = secure_filename(payment_file.filename)
+                import time, uuid
+                original_filename = secure_filename(payment_file.filename)
+                # Generate a truly unique filename using timestamp and uuid
+                unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                filename = f"{unique_prefix}_{original_filename}"
+                
                 upload_dir = os.path.join('app', 'static', 'uploads', 'sale_payments')
                 os.makedirs(upload_dir, exist_ok=True)
                 file_path = os.path.join(upload_dir, filename)
                 payment_file.save(file_path)
-                image_path = file_path.replace('\\', '/')
+                # Store path relative to project root (required by payment_image route)
+                image_path = f"app/static/uploads/sale_payments/{filename}"
         
         # Create Payment record for history tracking
         payment_date_str = request.form.get('payment_date', '')
@@ -917,12 +926,17 @@ def edit_payment(id, pay_id):
         if 'payment_image' in request.files:
             payment_file = request.files['payment_image']
             if payment_file and payment_file.filename:
-                filename = secure_filename(payment_file.filename)
+                import time, uuid
+                original_filename = secure_filename(payment_file.filename)
+                unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                filename = f"{unique_prefix}_{original_filename}"
+                
                 upload_dir = os.path.join('app', 'static', 'uploads', 'sale_payments')
                 os.makedirs(upload_dir, exist_ok=True)
                 file_path = os.path.join(upload_dir, filename)
                 payment_file.save(file_path)
-                payment.image_path = file_path.replace('\\', '/')
+                # Store path relative to project root (required by payment_image route)
+                payment.image_path = f"app/static/uploads/sale_payments/{filename}"
 
         # IMPORTANT: Update payment amount BEFORE calculating delta effect on sale
         payment.amount = new_amount
@@ -1992,7 +2006,11 @@ def add_customer():
         if 'image' in request.files:
             image_file = request.files['image']
             if image_file and image_file.filename:
-                filename = secure_filename(image_file.filename)
+                import time, uuid
+                original_filename = secure_filename(image_file.filename)
+                unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                filename = f"{unique_prefix}_{original_filename}"
+                
                 upload_dir = os.path.join('app', 'static', 'uploads', 'customers')
                 os.makedirs(upload_dir, exist_ok=True)
                 file_path = os.path.join(upload_dir, filename)
@@ -2054,7 +2072,11 @@ def edit_customer(id):
         if 'image' in request.files:
             image_file = request.files['image']
             if image_file and image_file.filename:
-                filename = secure_filename(image_file.filename)
+                import time, uuid
+                original_filename = secure_filename(image_file.filename)
+                unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                filename = f"{unique_prefix}_{original_filename}"
+                
                 upload_dir = os.path.join('app', 'static', 'uploads', 'customers')
                 os.makedirs(upload_dir, exist_ok=True)
                 file_path = os.path.join(upload_dir, filename)

@@ -64,12 +64,15 @@
 </style>
 {% endblock %}
 
+{% from 'components/approval_notification.html' import pending_approval_alert with context %}
+
 {% block content %}
 <div id="imgPopup" class="img-popup-overlay" onclick="closeImgPopup()">
     <img src="" id="popupImg" class="img-popup-content">
 </div>
 
 <div class="container-fluid">
+    {{ pending_approval_alert('vendor') }}
 	<div class="d-flex justify-content-between align-items-center mb-4">
 		<h2>Vendors</h2>
 		<div class="d-flex gap-2">
@@ -179,6 +182,7 @@
 							<th>Total Purchases</th>
 							<th>Outstanding</th>
 							<th>Status</th>
+							<th class="no-export">Approval</th>
 							<th class="no-export">Actions</th>
 						</tr>
 					</thead>
@@ -228,6 +232,10 @@
                                     {{ 'Active' if vendor.is_active else 'Inactive' }}
                                 </span>
                             </td>
+							<td class="no-export">
+								{% from 'components/approval_widget.html' import approval_widget with context %}
+								{{ approval_widget('vendor', vendor) }}
+							</td>
 							<td class="no-export text-nowrap">
 								<div class="btn-group">
 									<a href="{{ url_for('purchase.vendor_profile', id=vendor.id) }}"

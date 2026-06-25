@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Sales Invoices{% endblock %}
+{% from 'components/approval_widget.html' import approval_widget with context %}
 
 {% block content %}
 <style>
@@ -59,6 +60,7 @@
     <!-- Summary Boxes -->
     {% set sale_totals = namespace(collected=0, partial_total=0, partial_unpaid=0, unpaid=0, overdue=0) %}
     {% for sale in sales %}
+    {% if sale.is_approved and not sale.is_rejected and sale.status != 'cancelled' %}
     {% if sale.status == 'paid' %}
     {% set sale_totals.collected = sale_totals.collected + sale.total %}
     {% elif sale.status == 'partial' %}
@@ -71,6 +73,7 @@
 
     {% if sale.is_overdue %}
     {% set sale_totals.overdue = sale_totals.overdue + (sale.total - sale.paid_amount) %}
+    {% endif %}
     {% endif %}
     {% endfor %}
 
@@ -437,9 +440,7 @@
                         <th class="text-end">Paid</th>
                         <th class="text-end text-danger">Balance</th>
                         <th class="text-center">Status</th>
-                        {% if current_user.role == 'admin' %}
                         <th class="text-center">Approval</th>
-                        {% endif %}
                         <th class="text-center no-export">Actions</th>
                     </tr>
                 </thead>
@@ -464,7 +465,7 @@
                             <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal"
                                 data-bs-target="#entityHistoryModal" data-entity-type="customer"
                                 data-entity-id="{{ sale.customer.id }}">
-                                {{ sale.customer.name }}
+                                <i class="fas fa-flag text-{{ sale.customer.health_status }} me-1" title="Customer Health Status"></i>{{ sale.customer.name }}
                             </a>
                             {% else %}
                             Walk-in Customer
@@ -479,7 +480,7 @@
                             sale.paid_amount) }}</td>
                         <td class="text-center">
                             {% if sale.is_overdue %}
-                            <span class="badge bg-danger shadow-sm">Overdue</span>
+                            <span class="badge bg-danger shadow-sm">Overdue ({{ sale.days_overdue }} days)</span>
                             {% elif sale.status == 'paid' %}
                             <span class="badge bg-success shadow-sm">Paid</span>
                             {% elif sale.status == 'partial' %}
@@ -551,29 +552,9 @@
                                 {% endif %}
                             </div>
                         </td>
-                        {% if current_user.is_admin %}
                         <td class="text-center">
-                            {% if sale.is_approved %}
-                            <span class="badge bg-success shadow-sm"><i class="fas fa-check me-1"></i>Approved</span>
-                            {% elif sale.is_rejected %}
-                            <span class="badge bg-danger shadow-sm" title="Rejection Reason: {{ sale.rejection_reason or 'No reason provided' }}"><i class="fas fa-times-circle me-1"></i>Rejected</span>
-                            {% else %}
-                            <div class="d-flex flex-column gap-1">
-                                <form action="{{ url_for('sales.approve_invoice', id=sale.id) }}" method="POST"
-                                    class="d-inline">
-                                    <button type="submit" class="btn btn-warning btn-sm fw-bold border-0 shadow-sm w-100"
-                                        onclick="return confirm('Approve invoice {{ sale.invoice_number }}? It will count in sales totals.')">
-                                        <i class="fas fa-check me-1"></i>Approve
-                                    </button>
-                                </form>
-                                <button type="button" class="btn btn-outline-danger btn-sm fw-bold shadow-sm w-100 trigger-reject-modal"
-                                    data-invoice-id="{{ sale.id }}" data-invoice-number="{{ sale.invoice_number }}">
-                                    <i class="fas fa-times me-1"></i>Reject
-                                </button>
-                            </div>
-                            {% endif %}
+                            {{ approval_widget(module='sale', entity=sale) }}
                         </td>
-                        {% endif %}
                         <td class="text-center no-export">
                             <div class="btn-group btn-group-sm">
                                 <a href="{{ url_for('sales.invoice_detail', id=sale.id) }}"

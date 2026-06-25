@@ -1,0 +1,53 @@
+{% macro approval_widget(module, entity, extra_class='') -%}
+{#
+    Universal approval widget.
+    Renders a status badge (read-only for all users) and an action dropdown (admin only).
+ #}
+{% set ns = namespace(config=None) %}
+{% set ns.config = approval_service.get_config(module) %}
+{% if ns.config %}
+{% set config = ns.config %}
+{% set status = approval_service.get_status(entity, module) %}
+{% set badge_class = approval_service.get_badge_class(status) %}
+{% set badge_icon = approval_service.get_badge_icon(status) %}
+{% set is_admin = current_user.is_authenticated and current_user.is_admin %}
+{% set actions = approval_service.get_available_actions(entity, module) %}
+
+<div class="approval-dropdown {{ extra_class }} approval-widget" data-module="{{ module }}" data-item-id="{{ entity.id }}" data-status="{{ status }}">
+    <div class="approval-badge status-{{ status }}" title="Status: {{ status|capitalize }}{% if status == 'rejected' %} — {{ entity.rejection_reason if entity.rejection_reason else '' }}{% endif %}">
+        <i class="fas {{ badge_icon }}"></i> {{ status|capitalize }}
+        {% if is_admin and actions %}
+        <i class="fas fa-chevron-down ms-1" style="font-size: 0.7rem; opacity: 0.7;"></i>
+        {% endif %}
+    </div>
+    
+    {% if is_admin and actions %}
+    <div class="approval-menu">
+        {% if 'approve' in actions %}
+        <button class="approval-item approve approval-action" data-action="approve" data-entity-id="{{ entity.id }}" data-module="{{ module }}">
+            <i class="fas fa-check"></i> Approve
+        </button>
+        {% endif %}
+        
+        {% if 'reject' in actions %}
+        <button class="approval-item reject approval-action" data-action="reject" data-entity-id="{{ entity.id }}" data-module="{{ module }}">
+            <i class="fas fa-times"></i> Reject
+        </button>
+        {% endif %}
+
+        {% if 'cancel' in actions %}
+        <button class="approval-item cancel approval-action" data-action="cancel" data-entity-id="{{ entity.id }}" data-module="{{ module }}">
+            <i class="fas fa-ban"></i> Cancel
+        </button>
+        {% endif %}
+
+        {% if 'draft' in actions %}
+        <button class="approval-item draft approval-action" data-action="draft" data-entity-id="{{ entity.id }}" data-module="{{ module }}">
+            <i class="fas fa-file"></i> Set to Draft
+        </button>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+{%- endmacro %}

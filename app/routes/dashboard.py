@@ -57,6 +57,8 @@ def index():
     # Total Sales — only count admin-approved invoices
     total_sales = db.session.query(func.sum(Sale.total)).filter(
         Sale.is_approved == True,
+        Sale.is_rejected == False,
+        Sale.status != 'cancelled',
         Sale.date >= start_datetime,
         Sale.date <= end_datetime
     ).scalar() or 0
@@ -67,6 +69,8 @@ def index():
         .join(Product, SaleItem.product_id == Product.id)\
         .filter(
             Sale.is_approved == True,
+            Sale.is_rejected == False,
+            Sale.status != 'cancelled',
             Sale.date >= start_datetime,
             Sale.date <= end_datetime
         )\
@@ -74,6 +78,9 @@ def index():
 
     # Total Purchases (Inventory Addition)
     total_purchases = db.session.query(func.sum(PurchaseBill.total)).filter(
+        PurchaseBill.is_approved == True,
+        PurchaseBill.is_rejected == False,
+        PurchaseBill.status != 'cancelled',
         PurchaseBill.date >= start_datetime,
         PurchaseBill.date <= end_datetime
     ).scalar() or 0
@@ -271,6 +278,8 @@ def index():
     # Outstanding Payments — ALL unpaid invoices regardless of date (snapshot, not period metric)
     outstanding = db.session.query(func.sum(Sale.total - Sale.paid_amount)).filter(
         Sale.is_approved == True,
+        Sale.is_rejected == False,
+        Sale.status != 'cancelled',
         Sale.status != 'paid'
     ).scalar() or 0
     
@@ -298,6 +307,9 @@ def index():
     
     # Recent Sales
     recent_sales = Sale.query.filter(
+        Sale.is_approved == True,
+        Sale.is_rejected == False,
+        Sale.status != 'cancelled',
         Sale.date >= start_datetime,
         Sale.date <= end_datetime
     ).order_by(Sale.date.desc()).limit(10).all()
@@ -308,6 +320,9 @@ def index():
     for i in range(6, -1, -1):
         date = chart_end - timedelta(days=i)
         day_sales = db.session.query(func.sum(Sale.total)).filter(
+            Sale.is_approved == True,
+            Sale.is_rejected == False,
+            Sale.status != 'cancelled',
             func.date(Sale.date) == date.date()
         ).scalar() or 0
         sales_chart.append({

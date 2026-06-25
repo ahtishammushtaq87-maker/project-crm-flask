@@ -34,7 +34,10 @@
         margin-bottom: 0px !important;
     }
 </style>
+{% from 'components/approval_notification.html' import pending_approval_alert with context %}
+
 <div class="container-fluid list-page">
+    {{ pending_approval_alert('tool_receiving') }}
     <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
         <h2 class="h3 mb-0 text-gray-800">Receiving Voucher</h2>
         <div class="btn-group">
@@ -150,6 +153,7 @@
                             <th>Items / SKU</th>
                             <th class="text-end">Shipping</th>
                             <th class="text-end">Total Amount</th>
+                            <th class="no-export">Approval</th>
                             <th class="text-center no-export">Actions</th>
                         </tr>
                     </thead>
@@ -180,6 +184,10 @@
                             </td>
                             <td class="text-end text-muted small">PKR{{ "{:,.2f}".format(rec.shipping_charges) }}</td>
                             <td class="text-end fw-bold">PKR{{ "{:,.2f}".format(rec.total_amount) }}</td>
+                            <td class="no-export">
+                                {% from 'components/approval_widget.html' import approval_widget with context %}
+                                {{ approval_widget('tool_receiving', rec) }}
+                            </td>
                             <td class="text-center no-export">
                                 <div class="btn-group btn-group-sm">
                                     {% if rec.bill_image_path %}

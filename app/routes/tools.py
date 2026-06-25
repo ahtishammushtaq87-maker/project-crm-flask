@@ -109,13 +109,17 @@ def create_receiving():
         if 'bill_image' in request.files:
             bill_file = request.files['bill_image']
             if bill_file and bill_file.filename:
-                import os
+                import os, time, uuid
                 from werkzeug.utils import secure_filename
-                filename = secure_filename(bill_file.filename)
+                original_filename = secure_filename(bill_file.filename)
+                unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                filename = f"{unique_prefix}_{original_filename}"
+                
                 bill_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
                 os.makedirs(os.path.dirname(bill_path), exist_ok=True)
                 bill_file.save(bill_path)
-                bill_image_path = bill_path.replace('\\', '/')
+                # Store path relative to project root
+                bill_image_path = f"app/static/uploads/bills/{filename}"
 
         # 1. Create ToolReceiving
         receiving = ToolReceiving(
@@ -382,13 +386,17 @@ def create_delivering():
         if 'bill_image' in request.files:
             bill_file = request.files['bill_image']
             if bill_file and bill_file.filename:
-                import os
+                import os, time, uuid
                 from werkzeug.utils import secure_filename
-                filename = secure_filename(bill_file.filename)
+                original_filename = secure_filename(bill_file.filename)
+                unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                filename = f"{unique_prefix}_{original_filename}"
+                
                 bill_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
                 os.makedirs(os.path.dirname(bill_path), exist_ok=True)
                 bill_file.save(bill_path)
-                bill_image_path = bill_path.replace('\\', '/')
+                # Store path relative to project root
+                bill_image_path = f"app/static/uploads/bills/{filename}"
         
         
         # 2. Create ToolDelivering
@@ -615,13 +623,17 @@ def edit_receiving(id):
         if 'bill_image' in request.files:
             bill_file = request.files['bill_image']
             if bill_file and bill_file.filename:
-                import os
+                import os, time, uuid
                 from werkzeug.utils import secure_filename
-                filename = secure_filename(bill_file.filename)
+                original_filename = secure_filename(bill_file.filename)
+                unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                filename = f"{unique_prefix}_{original_filename}"
+                
                 bill_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
                 os.makedirs(os.path.dirname(bill_path), exist_ok=True)
                 bill_file.save(bill_path)
-                receiving.bill_image_path = bill_path.replace('\\', '/')
+                # Store path relative to project root
+                receiving.bill_image_path = f"app/static/uploads/bills/{filename}"
         
         # BOM Overhead Allocation logic
         is_bom_overhead = request.form.get('is_bom_overhead') == 'on'

@@ -14,6 +14,7 @@
     <!-- DataTables & Buttons CSS -->
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/approval.css') }}">
     <style>
         .sidebar {
             min-height: 100vh;
@@ -2714,6 +2715,7 @@
                         spinner.style.display = 'none';
                         content.style.display = 'block';
 
+
                         // Correctly re-initialize DataTable to recognize the new rows and remove "No records found"
                         if (typeof initExportDataTable === 'function') {
                             initExportDataTable('#ledgerTable', `Ledger_${data.customer_name.replace(/\s+/g, '_')}`);
@@ -2732,16 +2734,12 @@
             /* ── Global File Upload Enhancement (Drag&Drop + Paste) ── */
             (function () {
                 function setupFileUploadEnhancement() {
-                    // Target all file inputs that haven't been enhanced yet
                     const fileInputs = document.querySelectorAll('input[type="file"]:not([data-enhanced="true"])');
 
                     fileInputs.forEach(input => {
                         input.dataset.enhanced = "true";
-
-                        // Use the closest container (usually .mb-3 or the immediate parent)
                         let container = input.closest('.mb-3') || input.closest('.input-group') || input.parentElement;
 
-                        // Prevent browser defaults for drag events
                         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
                             container.addEventListener(eventName, e => {
                                 e.preventDefault();
@@ -2749,7 +2747,6 @@
                             }, false);
                         });
 
-                        // Visual feedback when dragging over
                         ['dragenter', 'dragover'].forEach(eventName => {
                             container.addEventListener(eventName, () => {
                                 container.classList.add('file-upload-dragover');
@@ -2762,7 +2759,6 @@
                             }, false);
                         });
 
-                        // Handle dropped files
                         container.addEventListener('drop', (e) => {
                             const dt = e.dataTransfer;
                             if (dt && dt.files.length > 0) {
@@ -2770,7 +2766,6 @@
                             }
                         }, false);
 
-                        // Handle pasted files (when input is focused)
                         input.addEventListener('paste', (e) => {
                             const files = e.clipboardData.files;
                             if (files && files.length > 0) {
@@ -2778,34 +2773,27 @@
                             }
                         });
 
-                        // Also allow pasting when the container is focused or clicked
                         container.addEventListener('click', () => input.focus());
                     });
                 }
 
                 function handleFiles(files, input) {
                     if (files.length === 0) return;
-
-                    // Create a new DataTransfer to populate the file input
                     const dt = new DataTransfer();
                     for (let i = 0; i < files.length; i++) {
                         dt.items.add(files[i]);
                     }
                     input.files = dt.files;
-
-                    // Dispatch change event to trigger existing previews/logic
                     const event = new Event('change', { bubbles: true });
                     input.dispatchEvent(event);
                 }
 
-                // Initial setup
                 if (document.readyState === 'loading') {
                     document.addEventListener('DOMContentLoaded', setupFileUploadEnhancement);
                 } else {
                     setupFileUploadEnhancement();
                 }
 
-                // Watch for new inputs (e.g. in modals or dynamic rows)
                 const observer = new MutationObserver((mutations) => {
                     let needsSetup = false;
                     mutations.forEach(m => {
@@ -2815,7 +2803,157 @@
                 });
                 observer.observe(document.body, { childList: true, subtree: true });
             })();
-        </script>
-</body>
 
+            /* ── Universal Approval Handling ────────────────────────────────────────── */
+            window.UniversalApproval = (function () {
+                let currentModule = null, currentItemId = null, currentAction = null;
+
+                function showRejectionModal(module, itemId) {
+                    currentModule = module; currentItemId = itemId; currentAction = 'reject';
+                    const labelMap = { sale: 'Invoice', payment: 'Payment', advance: 'Advance', expense: 'Expense', sale_return: 'Sale Return', purchase_return: 'Purchase Return', purchase_order: 'Purchase Order', vendor_advance: 'Vendor Advance' };
+                    const label = labelMap[module] || 'Record';
+                    document.getElementById('rejectionModalLabel').textContent = `Reject ${label} #${itemId}`;
+                    document.getElementById('rejectionReason').value = '';
+                    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('rejectionModal'));
+                    modal.show();
+                }
+
+                async function submitApproval(action, reason) {
+                    if (!currentModule || !currentItemId) return;
+                    const payload = { module: currentModule, item_id: currentItemId, action: action };
+                    if (action === 'reject') {
+                        payload.reason = reason || document.getElementById('rejectionReason')?.value || '';
+                    }
+                    try {
+                        const resp = await fetch("{{ url_for('api.universal_approval') }}", {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                            body: JSON.stringify(payload)
+                        });
+                        const data = await resp.json();
+                        if (data.success) {
+                            showToast(data.message || 'Action completed.', 'success');
+                            setTimeout(() => location.reload(), 800);
+                        } else {
+                            showToast(data.message || 'Action failed.', 'danger');
+                        }
+                    } catch (err) {
+                        showToast('Network error.', 'danger');
+                        console.error(err);
+                    } finally {
+                        const modal = bootstrap.Modal.getInstance(document.getElementById('rejectionModal'));
+                        if (modal) modal.hide();
+                        currentModule = currentItemId = currentAction = null;
+                    }
+                }
+
+                function getCsrfToken() {
+                    const meta = document.querySelector('meta[name=csrf-token]');
+                    if (meta) return meta.content;
+                    const input = document.querySelector('input[name=csrf_token]');
+                    return input ? input.value : '';
+                }
+
+                function showToast(message, type) {
+                    const toastId = 'approval-toast-' + Date.now();
+                    const html = `<div id="${toastId}" class="toast align-items-center text-bg-${type} border-0" role="alert" style="min-width:280px;">
+                        <div class="d-flex"><div class="toast-body">${message}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>
+                    </div>`;
+                    let container = document.getElementById('approval-toast-container');
+                    if (!container) {
+                        container = document.createElement('div');
+                        container.id = 'approval-toast-container';
+                        container.className = 'toast-container position-fixed top-0 end-0 p-3';
+                        container.style.zIndex = '99999';
+                        document.body.appendChild(container);
+                    }
+                    container.insertAdjacentHTML('beforeend', html);
+                    const el = document.getElementById(toastId);
+                    if (el) new bootstrap.Toast(el, { delay: 3000 }).show();
+                }
+
+                document.addEventListener('click', function (e) {
+                    const badge = e.target.closest('.approval-badge');
+                    if (badge) {
+                        const menu = badge.nextElementSibling;
+                        if (menu && menu.classList.contains('approval-menu')) {
+                            const isShowing = menu.classList.contains('show');
+                            document.querySelectorAll('.approval-menu.show').forEach(m => m.classList.remove('show'));
+                            if (!isShowing) menu.classList.add('show');
+                            return;
+                        }
+                    }
+
+                    if (!e.target.closest('.approval-dropdown')) {
+                        document.querySelectorAll('.approval-menu.show').forEach(m => m.classList.remove('show'));
+                    }
+
+                    const actionBtn = e.target.closest('.approval-action');
+                    if (!actionBtn) return;
+                    
+                    actionBtn.closest('.approval-menu')?.classList.remove('show');
+                    e.preventDefault();
+                    const action = actionBtn.dataset.action;
+                    const module = actionBtn.dataset.module;
+                    const itemId = actionBtn.dataset.entityId || actionBtn.closest('.approval-widget')?.dataset.itemId;
+
+                    if (!module || !itemId) return;
+
+                    if (action === 'reject') {
+                        showRejectionModal(module, itemId);
+                        return;
+                    }
+                    if (action === 'cancel' && !confirm('Are you sure you want to cancel this record?')) return;
+                    if (action === 'draft' && !confirm('Set this record to Draft?')) return;
+                    if (action === 'approve' && !confirm('Approve this record? Calculations will proceed based on this approval.')) return;
+
+                    currentModule = module;
+                    currentItemId = itemId;
+                    submitApproval(action);
+                });
+
+                document.addEventListener('click', function (e) {
+                    if (e.target.id === 'confirmRejection') {
+                        const reason = document.getElementById('rejectionReason')?.value?.trim();
+                        if (!reason) {
+                            alert('Please provide a rejection reason.');
+                            return;
+                        }
+                        submitApproval('reject', reason);
+                    }
+                });
+
+                return { showRejectionModal, submitApproval };
+            })();
+        </script>
+
+        <!-- Universal Approval Rejection Modal -->
+        <div class="modal fade" id="rejectionModal" tabindex="-1" aria-labelledby="rejectionModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title" id="rejectionModalLabel"><i class="fas fa-times-circle me-2"></i>Reject Record</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-warning border-0 shadow-sm mb-3">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            The staff or manager who created this record will be notified of the rejection.
+                        </div>
+                        <div class="mb-3">
+                            <label for="rejectionReason" class="form-label fw-bold small text-muted">Rejection Reason <span class="text-danger">*</span></label>
+                            <textarea class="form-control" id="rejectionReason" rows="4" placeholder="Enter the reason for rejection..."></textarea>
+                            <div class="form-text">This message will be visible to the record creator.</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-danger fw-bold" id="confirmRejection">
+                            <i class="fas fa-times me-1"></i>Confirm Rejection
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
 </html>

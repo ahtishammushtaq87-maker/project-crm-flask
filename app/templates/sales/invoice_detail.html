@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from 'components/approval_widget.html' import approval_widget with context %}
 {% block title %}Invoice {{ sale.invoice_number }}{% endblock %}
 {% block content %}
 {% set effective_discount = 0 if (sale.is_discount_restricted or not sale.is_approved) else sale.discount %}
@@ -81,71 +82,22 @@
     }
 </style>
 <div class="container-fluid">
-    {% if sale.is_rejected %}
-    <div class="alert alert-danger border-left-danger shadow-sm mb-4" role="alert">
-        <div class="d-flex align-items-center">
-            <div style="background:rgba(220,53,69,0.1); border-radius:50%; width:48px; height:48px; display:flex; align-items:center; justify-content:center;" class="me-3">
-                <i class="fas fa-times-circle fa-lg text-danger"></i>
-            </div>
-            <div>
-                <h5 class="alert-heading mb-1 fw-bold text-danger">Invoice Rejected by Administrator</h5>
-                <p class="mb-0"><strong>Reason:</strong> {{ sale.rejection_reason or 'No specific reason provided.' }}</p>
-            </div>
-        </div>
-    </div>
-    {% endif %}
 
-    {% if not sale.is_approved and sale.discount_violation and not sale.is_rejected %}
-    <div class="alert alert-warning border-left-warning shadow-sm mb-4 premium-alert" role="alert" style="background: #fff8e1; border-left: 5px solid #ffc107 !important;">
-        <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
-            <div class="d-flex align-items-center">
-                <div style="background:rgba(255,193,7,0.2); border-radius:50%; width:48px; height:48px; display:flex; align-items:center; justify-content:center;" class="me-3">
-                    <i class="fas fa-exclamation-triangle fa-lg text-warning"></i>
-                </div>
-                <div>
-                    <h5 class="alert-heading mb-1 fw-bold text-dark">Discount Rule Violation</h5>
-                    <p class="mb-0 text-danger fw-bold small"><i class="fas fa-info-circle me-1"></i>{{ sale.discount_violation }}</p>
-                    <small class="text-muted">This invoice requires admin approval because the discount exceeds allowed limits.</small>
-                </div>
-            </div>
-            {% if current_user.role == 'admin' %}
-            <div class="d-flex gap-2">
-                <form action="{{ url_for('sales.approve_invoice', id=sale.id) }}" method="POST">
-                    <button type="submit" class="btn btn-success btn-sm px-3 shadow-sm border-0" onclick="return confirm('Approve this discount/invoice?')">
-                        <i class="fas fa-check me-1"></i>Approve
-                    </button>
-                </form>
-                <button type="button" class="btn btn-outline-danger btn-sm px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#rejectInvoiceModal">
-                    <i class="fas fa-times me-1"></i>Reject
-                </button>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-    {% endif %}
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2 invoice-header-row">
         <div>
             <h2 class="h3 mb-0 text-gray-800">
                 <i class="fas fa-file-invoice me-2 text-primary"></i>Invoice: {{ sale.invoice_number }}
             </h2>
             <small class="text-muted">{{ sale.date.strftime(date_format) }}</small>
+            
+            {# {{ approval_widget(module='sale', entity=sale, extra_class='ms-2') }} #}
+
             <span
-                class="badge {% if sale.status == 'paid' %}bg-success{% elif sale.status == 'partial' %}bg-warning text-dark{% else %}bg-danger{% endif %} ms-2">
+                class="badge {% if sale.is_overdue %}bg-danger{% elif sale.status == 'paid' %}bg-success{% elif sale.status == 'partial' %}bg-warning text-dark{% else %}bg-danger{% endif %} ms-2">
                 <i
-                    class="fas {% if sale.status == 'paid' %}fa-check{% elif sale.status == 'partial' %}fa-clock{% else %}fa-times{% endif %} me-1"></i>{{
-                sale.status | capitalize }}
+                    class="fas {% if sale.is_overdue %}fa-exclamation-triangle{% elif sale.status == 'paid' %}fa-check{% elif sale.status == 'partial' %}fa-clock{% else %}fa-times{% endif %} me-1"></i>
+                {% if sale.is_overdue %}Overdue ({{ sale.days_overdue }} days){% else %}{{ sale.status | capitalize }}{% endif %}
             </span>
-            {% if not sale.is_approved %}
-                {% if sale.is_rejected %}
-                <span class="badge bg-danger ms-1" title="Rejected by Admin: {{ sale.rejection_reason or 'No reason provided' }}">
-                    <i class="fas fa-times-circle me-1"></i>Rejected
-                </span>
-                {% else %}
-                <span class="badge bg-warning text-dark ms-1" title="Waiting for admin approval">
-                    <i class="fas fa-hourglass-half me-1"></i>Pending Approval
-                </span>
-                {% endif %}
-            {% endif %}
         </div>
         <div class="btn-group flex-wrap gap-1">
             <a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" class="btn btn-info" target="_blank">
@@ -167,6 +119,7 @@
             </button>
             {% endif %}
             {% endif %}
+            {% if sale.is_approved %}
             {% if sale.status != 'paid' %}
             <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#discountModal">
                 <i class="fas fa-tag me-1"></i>Discount
@@ -178,11 +131,20 @@
             </button>
             {% endif %}
             {% endif %}
+
+            {% if sale.paid_amount < sale.total %}
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#payModal">
+                <i class="fas fa-plus me-1"></i>Record Payment
+            </button>
+            {% endif %}
+
             {% if current_user.has_permission('returns', 'add') %}
             <a href="{{ url_for('returns.create_return', sale_id=sale.id) }}" class="btn btn-danger">
                 <i class="fas fa-undo me-1"></i>Return
             </a>
             {% endif %}
+            {% endif %}
+
             {% if current_user.has_permission('sales', 'add') %}
             <a href="{{ url_for('sales.create_invoice') }}" class="btn btn-outline-primary">
                 <i class="fas fa-plus me-1"></i>New Invoice
@@ -191,17 +153,6 @@
             <a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left me-1"></i>Back
             </a>
-            {% if current_user.role == 'admin' and not sale.is_approved and not sale.is_rejected %}
-            <form action="{{ url_for('sales.approve_invoice', id=sale.id) }}" method="POST" class="d-inline">
-                <button type="submit" class="btn btn-success fw-bold"
-                    onclick="return confirm('Approve invoice {{ sale.invoice_number }}? It will count in sales totals.')">
-                    <i class="fas fa-check-circle me-1"></i>Approve Invoice
-                </button>
-            </form>
-            <button type="button" class="btn btn-outline-danger fw-bold" data-bs-toggle="modal" data-bs-target="#rejectInvoiceModal">
-                <i class="fas fa-times-circle me-1"></i>Reject Invoice
-            </button>
-            {% endif %}
         </div>
     </div>
 
@@ -379,7 +330,7 @@
                         {% if sale.customer %}
                         <a href="{{ url_for('sales.customer_profile', id=sale.customer.id) }}"
                             class="text-decoration-none fw-bold text-primary">
-                            {{ sale.customer.name }}
+                            <i class="fas fa-flag text-{{ sale.customer.health_status }} me-1" title="Customer Health Status"></i>{{ sale.customer.name }}
                         </a>
                         {% else %}
                         Walk-in Customer
@@ -508,7 +459,7 @@
                         {% set has_item_delivery = sum_item_delivery > 0 %}
                         {% set show_delivery_col = has_item_delivery %}
                         {% set show_discount_col = effective_discount > 0 %}
-                        {% set base_cols = 7 %}
+                        {% set base_cols = 9 %}
                         {% set total_cols = base_cols + (1 if show_delivery_col else 0) + (1 if show_discount_col else
                         0) %}
                         {% set label_colspan = total_cols - 1 %}
@@ -522,6 +473,7 @@
                                     <th class="text-center">Qty</th>
                                     <th class="text-center text-danger">Ret. Qty</th>
                                     <th class="text-end">Unit Price</th>
+                                    <th class="text-end text-muted">Cost</th>
                                     <th class="text-end">Subtotal</th>
                                     {% if show_delivery_col %}
                                     <th class="text-end text-info"><i class="fas fa-truck me-1"></i>Delivery</th>
@@ -529,6 +481,7 @@
                                     {% if show_discount_col %}
                                     <th class="text-end text-success">Discount</th>
                                     {% endif %}
+                                    <th class="text-end text-success">Profit</th>
                                     <th class="text-end">Total</th>
                                 </tr>
                             </thead>
@@ -562,6 +515,13 @@
                                         {% endif %}
                                     </td>
                                     <td class="text-end">PKR {{ "{:,.2f}".format(item.unit_price) }}</td>
+                                    <td class="text-end text-muted">
+                                        {% if item.product %}
+                                        PKR {{ "{:,.2f}".format(item.product.cost_price) }}
+                                        {% else %}
+                                        -
+                                        {% endif %}
+                                    </td>
                                     <td class="text-end">PKR {{ "{:,.2f}".format(item_subtotal) }}</td>
                                     {% if show_delivery_col %}
                                     <td class="text-end text-info">PKR {{ "{:,.2f}".format(item.delivery_fee) }}</td>
@@ -569,6 +529,23 @@
                                     {% if show_discount_col %}
                                     <td class="text-end text-success">-Rs {{ "{:,.2f}".format(item_discount) }}</td>
                                     {% endif %}
+                                    <td class="text-end">
+                                        {% if item.product %}
+                                            {% set item_cost_total = item.quantity * item.product.cost_price %}
+                                            {# Net profit includes item's share of overall invoice discount #}
+                                            {% set net_profit = item.total - item_cost_total - item_discount %}
+                                            {% set profit_margin = (net_profit / (item.total - item_discount) * 100) if (item.total - item_discount) > 0 else 0 %}
+                                            
+                                            <div class="fw-bold {% if net_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                                PKR {{ "{:,.2f}".format(net_profit) }}
+                                            </div>
+                                            <small class="{% if profit_margin >= 0 %}text-success{% else %}text-danger{% endif %} text-nowrap">
+                                                {{ "{:.1f}% Margin".format(profit_margin) }}
+                                            </small>
+                                        {% else %}
+                                        -
+                                        {% endif %}
+                                    </td>
                                     <td class="text-end fw-semibold">PKR {{ "{:,.2f}".format(item.total) }}</td>
                                 </tr>
                                 {% endfor %}
@@ -655,26 +632,21 @@
                                     <th class="text-end">Amount</th>
                                     <th>Receipt</th>
                                     <th>Notes</th>
+                                    <th class="text-center">Approval Status</th>
                                     <th class="text-center">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for payment in payments | sort(attribute='date', reverse=True) %}
-                                    <td
-                                        class="text-end fw-bold {% if payment.is_approved %}text-success{% elif payment.is_rejected %}text-danger{% else %}text-warning{% endif %}">
+                                <tr>
+                                    <td>
+                                        {{ payment.date.strftime(date_format) }}
+                                        <br><small class="text-muted">{{ payment.date.strftime('%H:%M') }}</small>
+                                    </td>
+                                    <td>{{ payment.method }}</td>
+                                    <td>{{ payment.reference_number or '&mdash;' }}</td>
+                                    <td class="text-end fw-bold {% if payment.is_approved %}text-success{% elif payment.is_rejected %}text-danger{% else %}text-warning{% endif %}">
                                         PKR {{ "{:,.2f}".format(payment.amount) }}
-                                        {% if not payment.is_approved %}
-                                            {% if payment.is_rejected %}
-                                            <br><small class="text-danger fw-bold">
-                                                <i class="fas fa-times-circle me-1"></i>Rejected
-                                            </small>
-                                            <br><small class="text-muted italic" style="font-style: italic;">
-                                                Reason: {{ payment.rejection_reason or 'No reason provided' }}
-                                            </small>
-                                            {% else %}
-                                            <br><small class="text-warning"><i class="fas fa-hourglass-half me-1"></i>Pending</small>
-                                            {% endif %}
-                                        {% endif %}
                                     </td>
                                     <td>
                                         {% if payment.image_path %}
@@ -700,25 +672,10 @@
                                     </td>
                                     <td class="text-muted small">{{ payment.notes or '&mdash;' }}</td>
                                     <td class="text-center">
-                                        {# 1. Admin Actions for Pending Items #}
-                                        {% if current_user.role == 'admin' and not payment.is_approved and not payment.is_rejected %}
-                                        <form method="POST"
-                                            action="{{ url_for('sales.approve_payment', id=sale.id, pay_id=payment.id) }}"
-                                            class="d-inline">
-                                            <button type="submit" class="btn btn-sm btn-success fw-bold me-1"
-                                                title="Approve this payment"
-                                                onclick="return confirm('Approve this payment? It will update the invoice paid amount.')">
-                                                <i class="fas fa-check"></i> Approve
-                                            </button>
-                                        </form>
-                                        <button type="button" class="btn btn-sm btn-outline-danger fw-bold" 
-                                            title="Reject this payment"
-                                            data-bs-toggle="modal" data-bs-target="#rejectPaymentModal"
-                                            data-payment-id="{{ payment.id }}"
-                                            data-payment-amount="{{ '{:,.2f}'.format(payment.amount) }}">
-                                            <i class="fas fa-times"></i> Reject
-                                        </button>
-                                        {% endif %}
+                                        {{ approval_widget(module='payment', entity=payment) }}
+                                    </td>
+                                    <td class="text-center">
+
 
                                         {# 2. Edit Action (for approved items) #}
                                         {% if payment.is_approved and current_user.has_permission('sales', 'edit') %}

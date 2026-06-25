@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, url_for, request
+from flask import Blueprint, jsonify, url_for, request, current_app
 from flask_login import login_required, current_user
 from app.models import (
     db, Sale, PurchaseBill, Expense, Warehouse, Customer, Vendor,
@@ -377,3 +377,67 @@ def get_product_bom_analysis(product_id):
         })
 
     return jsonify(data)
+
+
+# ── Universal Approval API ────────────────────────────────────────────────────
+
+@bp.route('/universal-approval', methods=['POST'])
+@login_required
+def universal_approval():
+    """
+    Unified approval endpoint. Accepts JSON body:
+    {
+        "module": "sale" | "payment" | "advance" | "expense" | "sale_return"
+              | "purchase_return" | "purchase_order" | "purchase_bill",
+        "item_id": <int>,
+        "action": "approve" | "reject" | "cancel" | "draft",
+        "reason": "<optional rejection reason>"
+    }
+    Returns JSON with success/failure.
+    Admin-only.
+    """
+    from app.services.approval_service import ApprovalService
+
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Only admin can perform approval actions.'}), 403
+
+    data = request.get_json(silent=True) or {}
+    module = data.get('module', '').strip().lower()
+    item_id = data.get('item_id')
+    action = data.get('action', '').strip().lower()
+    reason = data.get('reason', '').strip()
+
+    if not module or not item_id or not action:
+        return jsonify({'success': False, 'message': 'Missing module, item_id, or action.'}), 400
+
+    supported = ApprovalService.get_supported_modules()
+    if module not in supported:
+        return jsonify({'success': False, 'message': f"Unsupported module: {module}"}), 400
+
+    config = ApprovalService.get_config(module)
+    if action not in config.get('actions', []):
+        return jsonify({'success': False, 'message': f"Action '{action}' not valid for {module}."}), 400
+
+    try:
+        if action == 'approve':
+            entity, msg = ApprovalService.approve(module, item_id)
+        elif action == 'reject':
+            if not reason:
+                return jsonify({'success': False, 'message': 'Rejection reason is required.'}), 400
+            entity, msg = ApprovalService.reject(module, item_id, reason)
+        elif action in ('cancel', 'draft'):
+            entity, msg = ApprovalService.set_status(module, item_id, action)
+        else:
+            return jsonify({'success': False, 'message': f"Unknown action: {action}"}), 400
+
+        return jsonify({
+            'success': True,
+            'message': msg,
+            'status': ApprovalService.get_status(entity, module),
+            'badge_class': ApprovalService.get_badge_class(ApprovalService.get_status(entity, module)),
+        })
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 404
+    except Exception as e:
+        current_app.logger.error(f"Universal approval error: {e}")
+        return jsonify({'success': False, 'message': 'Server error during approval.'}), 500

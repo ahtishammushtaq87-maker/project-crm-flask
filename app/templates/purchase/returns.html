@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}Purchase Returns{% endblock %}
+{% from 'components/approval_widget.html' import approval_widget with context %}
 
 {% block extra_js %}
 <script>
@@ -27,8 +28,11 @@
 </script>
 {% endblock %}
 
+{% from 'components/approval_notification.html' import pending_approval_alert with context %}
+
 {% block content %}
 <div class="container-fluid">
+    {{ pending_approval_alert('purchase_return') }}
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Purchase Returns</h2>
         <div class="btn-group">
@@ -161,13 +165,7 @@
                             </td>
                             <td>PKR{{ "%.2f"|format(ret.total) }}</td>
                             <td>
-                                {% if ret.status == 'completed' %}
-                                <span class="badge bg-success">{{ ret.status|title }}</span>
-                                {% elif ret.status == 'approved' %}
-                                <span class="badge bg-info">{{ ret.status|title }}</span>
-                                {% else %}
-                                <span class="badge bg-warning">{{ ret.status|title }}</span>
-                                {% endif %}
+                                {{ approval_widget(module='purchase_return', entity=ret) }}
                             </td>
                             <td>
                                 {% if ret.refund_status == 'paid' %}

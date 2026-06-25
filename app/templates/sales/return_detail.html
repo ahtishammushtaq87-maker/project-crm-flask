@@ -2,10 +2,14 @@
 
 {% block title %}Return {{ sale_return.return_number }}{% endblock %}
 
+{% from 'components/approval_widget.html' import approval_widget with context %}
 {% block content %}
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Return {{ sale_return.return_number }}</h2>
+    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
+        <div class="d-flex align-items-center">
+            <h2 class="h3 mb-0 text-gray-800 me-3">Return {{ sale_return.return_number }}</h2>
+            {{ approval_widget(module='sale_return', entity=sale_return) }}
+        </div>
         <div>
             <a href="{{ url_for('returns.return_list') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Returns

@@ -203,6 +203,7 @@ def create_return():
             break
         next_return_num += 1
 
+    is_admin = getattr(current_user, 'is_admin', False)
     sale_return = SaleReturn(
         return_number=return_number,
         sale_id=sale.id,
@@ -214,7 +215,10 @@ def create_return():
         discount=discount,
         total=total,
         reason=request.form.get('reason', ''),
-        status='pending',
+        status='approved' if is_admin else 'pending',
+        is_approved=is_admin,
+        approved_by=current_user.id if is_admin else None,
+        approved_at=datetime.utcnow() if is_admin else None,
         returned_to_inventory=False,
         created_by=current_user.id
     )
@@ -222,34 +226,35 @@ def create_return():
     db.session.add(sale_return)
     db.session.flush()
 
-    # Create production log for rejected quantities (before returning to inventory)
-    return_date = sale_return.date.date() if sale_return.date else datetime.now().date()
-    for item in return_items:
-        from app.models import ProductionLog
-        product = Product.query.get(item['product_id'])
-        
-        existing_log = ProductionLog.query.filter_by(
-            date=return_date,
-            sku_id=product.id,
-            shift='Sales Return'
-        ).first()
-        
-        if existing_log:
-            existing_log.rejected_qty += item['quantity']
-            if existing_log.operator and 'Return' not in existing_log.operator:
-                existing_log.operator += f", Return: {sale_return.return_number}"
-        else:
-            production_log = ProductionLog(
+    if sale_return.is_approved:
+        # Create production log for rejected quantities (before returning to inventory)
+        return_date = sale_return.date.date() if sale_return.date else datetime.now().date()
+        for item in return_items:
+            from app.models import ProductionLog
+            product = Product.query.get(item['product_id'])
+            
+            existing_log = ProductionLog.query.filter_by(
                 date=return_date,
                 sku_id=product.id,
-                shift='Sales Return',
-                operator=f'Customer: {sale_return.sale.customer.name if sale_return.sale and sale_return.sale.customer else "Unknown"}',
-                qty_produced=0,
-                rejected_qty=item['quantity'],
-                notes=f'Rejected from Return: {sale_return.return_number}',
-                created_by=current_user.id
-            )
-            db.session.add(production_log)
+                shift='Sales Return'
+            ).first()
+            
+            if existing_log:
+                existing_log.rejected_qty += item['quantity']
+                if existing_log.operator and 'Return' not in existing_log.operator:
+                    existing_log.operator += f", Return: {sale_return.return_number}"
+            else:
+                production_log = ProductionLog(
+                    date=return_date,
+                    sku_id=product.id,
+                    shift='Sales Return',
+                    operator=f'Customer: {sale_return.sale.customer.name if sale_return.sale and sale_return.sale.customer else "Unknown"}',
+                    qty_produced=0,
+                    rejected_qty=item['quantity'],
+                    notes=f'Rejected from Return: {sale_return.return_number}',
+                    created_by=current_user.id
+                )
+                db.session.add(production_log)
 
     for item in return_items:
         return_item = SaleReturnItem(
@@ -262,30 +267,31 @@ def create_return():
         )
         db.session.add(return_item)
 
-    # Update sale totals and status
-    sale.calculate_totals()
-    sale.update_status()
+    # Update sale totals and status if approved
+    if sale_return.is_approved:
+        sale.calculate_totals()
+        sale.update_status()
 
-    # Adjust paid amount if needed and create advance for excess
-    if sale.paid_amount > sale.total:
-        excess = sale.paid_amount - sale.total
-        
-        # Create a customer advance for the excess
-        advance = CustomerAdvance(
-            customer_id=sale.customer_id,
-            amount=excess,
-            date=datetime.now().date(),
-            description=f"Auto-generated from Return {return_number} excess (Invoice #{sale.invoice_number})",
-            is_approved=True,
-            created_by=current_user.id
-        )
-        db.session.add(advance)
-        
-        # Adjust sale paid_amount to exactly match the new total
-        sale.paid_amount = sale.total
-        flash(f'Excess payment of PKR {excess:,.2f} has been converted to a customer advance.', 'info')
-    elif sale.paid_amount > sale.total: # Fallback safety
-        sale.paid_amount = sale.total
+        # Adjust paid_amount if needed and create advance for excess
+        if sale.paid_amount > sale.total:
+            excess = sale.paid_amount - sale.total
+            
+            # Create a customer advance for the excess
+            advance = CustomerAdvance(
+                customer_id=sale.customer_id,
+                amount=excess,
+                date=datetime.now().date(),
+                description=f"Auto-generated from Return {return_number} excess (Invoice #{sale.invoice_number})",
+                is_approved=True,
+                created_by=current_user.id
+            )
+            db.session.add(advance)
+            
+            # Adjust sale paid_amount to exactly match the new total
+            sale.paid_amount = sale.total
+            flash(f'Excess payment of PKR {excess:,.2f} has been converted to a customer advance.', 'info')
+        elif sale.paid_amount > sale.total: # Fallback safety
+            sale.paid_amount = sale.total
 
     # Update return settings next number
     settings.next_number = next_return_num + 1
@@ -300,6 +306,103 @@ def create_return():
 def return_detail(id):
     sale_return = SaleReturn.query.get_or_404(id)
     return render_template('sales/return_detail.html', sale_return=sale_return)
+
+
+@bp.route('/<int:id>/approve', methods=['POST'])
+@login_required
+@permission_required('returns', action='edit')
+def approve_return(id):
+    if not getattr(current_user, 'is_admin', False):
+        flash('Only admins can approve returns.', 'danger')
+        return redirect(url_for('returns.return_detail', id=id))
+        
+    sale_return = SaleReturn.query.get_or_404(id)
+    
+    if sale_return.is_approved:
+        flash('This return is already approved.', 'warning')
+        return redirect(url_for('returns.return_detail', id=id))
+
+    # Set approval fields
+    sale_return.is_approved = True
+    sale_return.is_rejected = False
+    sale_return.status = 'approved'
+    sale_return.approved_by = current_user.id
+    sale_return.approved_at = datetime.utcnow()
+    
+    # 1. Update sale totals and status
+    sale = sale_return.sale
+    sale.calculate_totals()
+    sale.update_status()
+
+    # 2. Adjust paid_amount if needed and create advance for excess
+    if sale.paid_amount > sale.total:
+        excess = sale.paid_amount - sale.total
+        from app.models import CustomerAdvance
+        advance = CustomerAdvance(
+            customer_id=sale.customer_id,
+            amount=excess,
+            date=datetime.now().date(),
+            description=f"Auto-generated from Return {sale_return.return_number} excess (Invoice #{sale.invoice_number})",
+            is_approved=True,
+            created_by=current_user.id
+        )
+        db.session.add(advance)
+        sale.paid_amount = sale.total
+        flash(f'Excess payment of PKR {excess:,.2f} has been converted to a customer advance.', 'info')
+
+    # 3. Create production log for rejected quantities
+    return_date = sale_return.date.date() if sale_return.date else datetime.now().date()
+    for item in sale_return.items:
+        from app.models import ProductionLog, Product
+        product = Product.query.get(item.product_id)
+        
+        existing_log = ProductionLog.query.filter_by(
+            date=return_date,
+            sku_id=product.id,
+            shift='Sales Return'
+        ).first()
+        
+        if existing_log:
+            existing_log.rejected_qty += item.quantity
+            if existing_log.operator and 'Return' not in existing_log.operator:
+                existing_log.operator += f", Return: {sale_return.return_number}"
+        else:
+            production_log = ProductionLog(
+                date=return_date,
+                sku_id=product.id,
+                shift='Sales Return',
+                operator=f'Customer: {sale.customer.name if sale.customer else "Unknown"}',
+                qty_produced=0,
+                rejected_qty=item.quantity,
+                notes=f'Rejected from Return: {sale_return.return_number}',
+                created_by=current_user.id
+            )
+            db.session.add(production_log)
+
+    db.session.commit()
+    flash(f'Return {sale_return.return_number} approved successfully!', 'success')
+    return redirect(url_for('returns.return_detail', id=id))
+
+
+@bp.route('/<int:id>/reject', methods=['POST'])
+@login_required
+@permission_required('returns', action='edit')
+def reject_return(id):
+    if not getattr(current_user, 'is_admin', False):
+        flash('Only admins can reject returns.', 'danger')
+        return redirect(url_for('returns.return_detail', id=id))
+
+    sale_return = SaleReturn.query.get_or_404(id)
+    reason = request.form.get('reason', '')
+    
+    sale_return.is_approved = False
+    sale_return.is_rejected = True
+    sale_return.rejection_reason = reason
+    sale_return.status = 'rejected'
+    
+    db.session.commit()
+    flash(f'Return {sale_return.return_number} has been rejected.', 'warning')
+    return redirect(url_for('returns.return_detail', id=id))
 
 
 @bp.route('/<int:id>/return-to-inventory', methods=['POST'])

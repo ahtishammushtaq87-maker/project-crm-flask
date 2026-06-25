@@ -117,8 +117,11 @@
 </style>
 {% endblock %}
 
+{% from 'components/approval_notification.html' import pending_approval_alert with context %}
+
 {% block content %}
 <div class="container-fluid">
+    {{ pending_approval_alert('customer') }}
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Customers</h2>
         <div class="d-flex gap-2">
@@ -271,6 +274,7 @@
                             <th>Total Sales</th>
                             <th>Outstanding</th>
                             <th>Status</th>
+                            <th class="no-export">Approval</th>
                             <th class="no-export">Actions</th>
                         </tr>
                     </thead>
@@ -298,12 +302,11 @@
                                 {% endif %}
                             </td>
 
-                            <!-- Name -->
                             <td>
                                 <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal"
                                     data-bs-target="#entityHistoryModal" data-entity-type="customer"
                                     data-entity-id="{{ customer.id }}">
-                                    {{ customer.name }}
+                                    <i class="fas fa-flag text-{{ customer.health_status }} me-1" title="Customer Health Status"></i>{{ customer.name }}
                                 </a>
                             </td>
 
@@ -364,6 +367,10 @@
                                 </span>
                             </td>
 
+                            <td class="no-export">
+                                {% from 'components/approval_widget.html' import approval_widget with context %}
+                                {{ approval_widget('customer', customer) }}
+                            </td>
                             <!-- Actions -->
                             <td class="no-export">
                                 <div class="btn-group" role="group">

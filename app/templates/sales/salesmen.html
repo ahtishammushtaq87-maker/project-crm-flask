@@ -2,8 +2,11 @@
 
 {% block title %}Salesmen{% endblock %}
 
+{% from 'components/approval_notification.html' import pending_approval_alert with context %}
+
 {% block content %}
 <div class="container-fluid">
+    {{ pending_approval_alert('salesman') }}
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Salesmen</h2>
                 {% if current_user.has_permission('sales', 'add') %}
@@ -26,6 +29,7 @@
                             <th>Commission Rate</th>
                             <th>Status</th>
                             <th>Created At</th>
+                            <th class="no-export">Approval</th>
                             <th class="text-end no-export">Actions</th>
                         </tr>
                     </thead>
@@ -51,6 +55,10 @@
                                 {% endif %}
                             </td>
                             <td>{{ salesman.created_at.strftime('%Y-%m-%d') }}</td>
+                            <td class="no-export">
+                                {% from 'components/approval_widget.html' import approval_widget with context %}
+                                {{ approval_widget('salesman', salesman) }}
+                            </td>
                             <td class="text-end no-export">
                                                                 {% if current_user.has_permission('sales', 'edit') %}
 <a href="{{ url_for('sales.edit_salesman', id=salesman.id) }}" class="btn btn-sm btn-outline-primary">

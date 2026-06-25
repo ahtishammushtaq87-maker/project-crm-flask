@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from 'components/approval_widget.html' import approval_widget with context %}
 {% block title %}Purchase Bill: {{ bill.bill_number }}{% endblock %}
 {% block content %}
 <style>
@@ -92,13 +93,11 @@
                 <i class="fas fa-file-invoice me-2 text-primary"></i>Purchase Bill: {{ bill.bill_number }}
             </h2>
             <small class="text-muted">{{ bill.date.strftime(date_format) }}</small>
+            {# {{ approval_widget(module='purchase_bill', entity=bill, extra_class='ms-2') }} #}
             {% if not bill.inventory_received %}
             <span class="badge bg-warning text-dark ms-2"><i class="fas fa-clock me-1"></i>Pending Receive</span>
             {% else %}
             <span class="badge bg-success ms-2"><i class="fas fa-check me-1"></i>Inventory Received</span>
-            {% endif %}
-            {% if bill.status == 'cancelled' %}
-            <span class="badge bg-danger ms-2"><i class="fas fa-times me-1"></i>Settled (Cancelled)</span>
             {% endif %}
         </div>
         <div class="d-flex flex-wrap gap-1 header-actions-container">
@@ -113,13 +112,6 @@
             </button>
             {% endif %}
 
-            {% if (bill.status|lower) == 'cancelled' and current_user.has_permission('purchases', 'edit') %}
-            <form action="{{ url_for('purchase.reverse_cancel_bill', id=bill.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to REVERSE this cancellation? The original balance will be restored.');">
-                <button type="submit" class="btn btn-outline-primary shadow-sm">
-                    <i class="fas fa-undo me-1"></i>Reverse Cancellation
-                </button>
-            </form>
-            {% endif %}
             <a href="{{ url_for('purchase.bill_pdf', id=bill.id) }}" class="btn btn-info" target="_blank">
                 <i class="fas fa-file-pdf me-1"></i>PDF
             </a>
@@ -139,18 +131,31 @@
             </button>
             {% endif %}
             {% endif %}
-            {% if bill.paid_amount < bill.total %} <button type="button" class="btn btn-warning" data-bs-toggle="modal"
+
+            {% if bill.is_approved %}
+            {% if (bill.status|lower) == 'cancelled' and current_user.has_permission('purchases', 'edit') %}
+            <form action="{{ url_for('purchase.reverse_cancel_bill', id=bill.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to REVERSE this cancellation? The original balance will be restored.');">
+                <button type="submit" class="btn btn-outline-primary shadow-sm">
+                    <i class="fas fa-undo me-1"></i>Reverse Cancellation
+                </button>
+            </form>
+            {% endif %}
+            
+            {% if bill.paid_amount < bill.total %} 
+            <button type="button" class="btn btn-warning" data-bs-toggle="modal"
                 data-bs-target="#payModal">
                 <i class="fas fa-plus me-1"></i>Pay
-                </button>
+            </button>
+            {% endif %}
+            
+            <!-- Receive Quantity Button -->
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#receiveModal">
+                <i class="fas fa-boxes me-1"></i>Receive Qty
+                {% if bill.inventory_received %}
+                <span class="badge bg-light text-dark ms-1">{{ bill.bill_receives|length }}</span>
                 {% endif %}
-                <!-- Receive Quantity Button -->
-                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#receiveModal">
-                    <i class="fas fa-boxes me-1"></i>Receive Qty
-                    {% if bill.inventory_received %}
-                    <span class="badge bg-light text-dark ms-1">{{ bill.bill_receives|length }}</span>
-                    {% endif %}
-                </button>
+            </button>
+            {% endif %}
                 {% if current_user.has_permission('purchases', 'add') %}
                 <a href="{{ url_for('purchase.create_purchase_return', bill_id=bill.id) }}" class="btn btn-danger">
                     <i class="fas fa-undo me-1"></i>Return
@@ -946,6 +951,8 @@
                                         <th class="text-end">Amount</th>
                                         <th>Receipt</th>
                                         <th>Notes</th>
+                                        <th class="text-center">Approval Status</th>
+                                        <th class="text-center">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -985,6 +992,9 @@
                                             {% endif %}
                                         </td>
                                         <td class="text-muted small">{{ pay.notes or '—' }}</td>
+                                        <td class="text-center">
+                                            {{ approval_widget(module='bill_payment', entity=pay) }}
+                                        </td>
                                         <td class="text-center">
                                             <button type="button"
                                                 class="btn btn-sm btn-outline-primary edit-payment-btn me-1"

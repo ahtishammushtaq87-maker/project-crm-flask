@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Purchase Orders{% endblock %}
+{% from 'components/approval_widget.html' import approval_widget with context %}
 {% block content %}
 <div class="container-fluid">
     <!-- Header -->
@@ -85,24 +86,13 @@
                             </td>
                             <td class="text-end fw-bold">PKR {{ '{:,.0f}'.format(po.total) }}</td>
                             <td class="text-center">
-                                <span class="badge
-                                    {% if po.status == 'Draft' %}bg-secondary
-                                    {% elif po.status == 'Confirmed' %}bg-primary
-                                    {% elif po.status == 'Converted' %}bg-success
-                                    {% else %}bg-danger{% endif %}">
-                                    {{ po.status }}
-                                </span>
+                                {{ approval_widget(module='purchase_order', entity=po) }}
                             </td>
                             <td class="text-center no-export">
                                 <div class="btn-group btn-group-sm">
                                     <a href="{{ url_for('purchase.po_detail', id=po.id) }}" class="btn btn-outline-primary" title="View">
                                         <i class="fas fa-eye"></i>
                                     </a>
-                                    {% if po.status == 'Draft' %}
-                                    <form action="{{ url_for('purchase.confirm_po', id=po.id) }}" method="POST" class="d-inline">
-                                        <button class="btn btn-outline-success" type="submit" title="Confirm"><i class="fas fa-check"></i></button>
-                                    </form>
-                                    {% endif %}
                                 </div>
                             </td>
                         </tr>

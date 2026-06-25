@@ -1,0 +1,20 @@
+{% macro pending_approval_alert(module) %}
+    {% if current_user.role == 'admin' %}
+        {% set pending_count = approval_service.get_pending_count(module) %}
+        {% if pending_count > 0 %}
+            <div class="alert alert-warning premium-alert alert-dismissible fade show mb-4" role="alert">
+                <div class="alert-content">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <div>
+                        <h6 class="mb-0 fw-bold">Pending Approvals</h6>
+                        <small>
+                            There are <strong>{{ pending_count }}</strong> items in this module awaiting your approval. 
+                            Please review them in the table below to finalize their status.
+                        </small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endif %}
+    {% endif %}
+{% endmacro %}

@@ -2,9 +2,12 @@
 
 {% block title %}Manufacturing Orders{% endblock %}
 
+{% from 'components/approval_notification.html' import pending_approval_alert with context %}
+
 {% block content %}
 <div id="module-context" data-module="manufacturing_order" style="display:none;"></div>
 <div class="container-fluid">
+    {{ pending_approval_alert('manufacturing_order') }}
     <div class="d-sm-flex align-items-center justify-content-between mb-4">
         <h1 class="h3 mb-0 text-gray-800">Manufacturing Orders</h1>
         {% if current_user.has_permission('manufacturing', 'add') %}
@@ -37,6 +40,7 @@
                             <th>Remaining</th>
                             <th>Start Date</th>
                             <th>Total Cost</th>
+                            <th class="no-export">Approval</th>
                             <th class="no-export">Actions</th>
                         </tr>
                     </thead>
@@ -65,6 +69,10 @@
                             <td><span class="badge bg-light text-dark border">{{ ord.remaining_qty }}</span></td>
                             <td>{{ ord.start_date.strftime('%d-%b-%Y') if ord.start_date else '-' }}</td>
                             <td>PKR {{ "%.2f"|format(ord.total_cost) }}</td>
+                            <td class="no-export">
+                                {% from 'components/approval_widget.html' import approval_widget with context %}
+                                {{ approval_widget('manufacturing_order', ord) }}
+                            </td>
                             <td class="no-export">
                                 <a href="{{ url_for('manufacturing.order_details', id=ord.id) }}"
                                     class="btn btn-info btn-sm" title="View Details">

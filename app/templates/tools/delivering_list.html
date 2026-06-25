@@ -185,8 +185,11 @@
 </script>
 {% endblock %}
 
+{% from 'components/approval_notification.html' import pending_approval_alert with context %}
+
 {% block content %}
 <div class="container-fluid list-page">
+    {{ pending_approval_alert('tool_delivering') }}
     <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
         <h2 class="h3 mb-0 text-gray-800">Delivering Voucher</h2>
         <div class="btn-group">
@@ -259,6 +262,7 @@
                             <th>Invoice No</th>
                             <th>Items / SKU</th>
                             <th>Total Amount</th>
+                            <th class="no-export">Approval</th>
                             <th class="text-center no-export">Actions</th>
                         </tr>
                     </thead>
@@ -298,6 +302,10 @@
                             <td>
                                 <div class="fw-bold text-primary">{{ "{:,.2f}".format(del.total_amount or 0) }}</div>
                                 <small class="text-muted">{{ del.items|length }} items</small>
+                            </td>
+                            <td class="no-export">
+                                {% from 'components/approval_widget.html' import approval_widget with context %}
+                                {{ approval_widget('tool_delivering', del) }}
                             </td>
                             <td class="text-center no-export">
                                 <div class="btn-group btn-group-sm">

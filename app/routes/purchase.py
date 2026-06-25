@@ -154,7 +154,8 @@ def create_bill():
             currency_id=request.form.get('currency_id'),
             exchange_rate=float(request.form.get('exchange_rate', 1)),
             notes=request.form.get('notes'),
-            created_by=current_user.id
+            created_by=current_user.id,
+            is_approved=(current_user.role == 'admin')
         )
         
         db.session.add(bill)
@@ -782,15 +783,18 @@ def pay_bill(id):
     payment_method = request.form.get('payment_method', 'cash')
 
     vendor = bill.vendor
+    is_admin = (current_user.role == 'admin')
     total_payment = 0
     method_label = payment_method.capitalize()
+    last_advance_id = None
 
     try:
         if payment_method == 'cash':
             amount = float(request.form.get('amount', 0))
             if amount > 0:
                 total_payment = amount
-                bill.paid_amount += amount
+                if is_admin:
+                    bill.paid_amount += amount
 
         elif payment_method == 'advance':
             advance_id = request.form.get('selected_advance_id')
@@ -799,14 +803,16 @@ def pay_bill(id):
                 if advance and advance.vendor_id == vendor.id:
                     can_apply = min(advance.remaining_balance, bill.balance_due)
                     if can_apply > 0:
-                        advance.applied_amount += can_apply
-                        bill.paid_amount += can_apply
-                        if advance.applied_amount >= advance.amount:
-                            advance.is_adjusted = True
-                            advance.adjusted_bill_id = bill.id
-                        else:
-                            advance.adjusted_bill_id = bill.id
                         total_payment = can_apply
+                        last_advance_id = advance.id
+                        if is_admin:
+                            advance.applied_amount += can_apply
+                            bill.paid_amount += can_apply
+                            if advance.applied_amount >= advance.amount:
+                                advance.is_adjusted = True
+                                advance.adjusted_bill_id = bill.id
+                            else:
+                                advance.adjusted_bill_id = bill.id
 
         elif payment_method == 'mixed':
             advance_ids = request.form.getlist('value')
@@ -821,23 +827,27 @@ def pay_bill(id):
                 if advance and advance.vendor_id == vendor.id:
                     can_apply = min(advance.remaining_balance, bill.balance_due)
                     if can_apply > 0:
-                        advance.applied_amount += can_apply
-                        bill.paid_amount += can_apply
                         total_payment += can_apply
-                        if advance.applied_amount >= advance.amount:
-                            advance.is_adjusted = True
-                            advance.adjusted_bill_id = bill.id
-                        else:
-                            advance.adjusted_bill_id = bill.id
+                        last_advance_id = advance.id # Stores the last one used for simple tracking
+                        if is_admin:
+                            advance.applied_amount += can_apply
+                            bill.paid_amount += can_apply
+                            if advance.applied_amount >= advance.amount:
+                                advance.is_adjusted = True
+                                advance.adjusted_bill_id = bill.id
+                            else:
+                                advance.adjusted_bill_id = bill.id
 
             # After advances, determine remaining total due (including shipping)
             remaining_total = bill.total - bill.paid_amount
             if cash_amount > 0 and remaining_total > 0:
                 cash_to_apply = min(cash_amount, remaining_total)
-                bill.paid_amount += cash_to_apply
                 total_payment += cash_to_apply
+                if is_admin:
+                    bill.paid_amount += cash_to_apply
 
-        bill.update_status()
+        if is_admin:
+            bill.update_status()
 
         # ── Save BillPayment record ──────────────────────────────────────
         if total_payment > 0:
@@ -847,7 +857,11 @@ def pay_bill(id):
                 payment_method=method_label,
                 reference_number=request.form.get('reference_number', '').strip() or None,
                 notes=request.form.get('pay_notes', '').strip() or None,
-                created_by=current_user.id
+                created_by=current_user.id,
+                is_approved=is_admin,
+                approved_by=current_user.id if is_admin else None,
+                approved_at=datetime.utcnow() if is_admin else None,
+                advance_id=last_advance_id
             )
             # Handle payment image upload
             if 'pay_image' in request.files:
@@ -1997,11 +2011,15 @@ def create_po():
         # If advance amount is paid, also record it as vendor advance
         advance_amount = float(request.form.get('advance_amount', 0))
         if advance_amount > 0:
+            is_admin = getattr(current_user, 'is_admin', False)
             vendor_advance = VendorAdvance(
                 vendor_id=vendor_id,
                 amount=advance_amount,
                 date=datetime.utcnow().date(),
                 description=f'Advance for PO {po_number}',
+                is_approved=is_admin,
+                approved_by=current_user.id if is_admin else None,
+                approved_at=datetime.utcnow() if is_admin else None,
                 created_by=current_user.id
             )
             db.session.add(vendor_advance)
@@ -2438,6 +2456,7 @@ def create_purchase_return():
             break
         next_return_num += 1
 
+    is_admin = getattr(current_user, 'is_admin', False)
     purchase_return = PurchaseReturn(
         return_number=return_number,
         bill_id=bill.id,
@@ -2449,7 +2468,10 @@ def create_purchase_return():
         discount=discount,
         total=total,
         reason=request.form.get('reason', ''),
-        status='pending',
+        status='approved' if is_admin else 'pending',
+        is_approved=is_admin,
+        approved_by=current_user.id if is_admin else None,
+        approved_at=datetime.utcnow() if is_admin else None,
         returned_to_inventory=False,
         refund_status='none',
         created_by=current_user.id
@@ -2470,48 +2492,50 @@ def create_purchase_return():
         )
         db.session.add(return_item)
 
+    if purchase_return.is_approved:
         # Subtract from inventory
-        product = Product.query.get(item['product_id'])
-        if product:
-            # decrease global product quantity
-            product.update_quantity(-item['quantity'])
+        for item in return_items:
+            product = Product.query.get(item['product_id'])
+            if product:
+                # decrease global product quantity
+                product.update_quantity(-item['quantity'])
 
-            # decrease per-warehouse stock if specified
-            wh_id = item.get('warehouse_id')
-            if wh_id:
-                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=wh_id).first()
-                if not wh_stock:
-                    wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=wh_id, quantity=0)
-                    db.session.add(wh_stock)
-                wh_stock.quantity -= item['quantity']
-            elif product.warehouse_id:
-                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=product.warehouse_id).first()
-                if not wh_stock:
-                    wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=product.warehouse_id, quantity=0)
-                    db.session.add(wh_stock)
-                wh_stock.quantity -= item['quantity']
+                # decrease per-warehouse stock if specified
+                wh_id = item.get('warehouse_id')
+                if wh_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=wh_id).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=wh_id, quantity=0)
+                        db.session.add(wh_stock)
+                    wh_stock.quantity -= item['quantity']
+                elif product.warehouse_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=product.warehouse_id).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=product.warehouse_id, quantity=0)
+                        db.session.add(wh_stock)
+                    wh_stock.quantity -= item['quantity']
 
-    # Update bill totals - reduce bill total by return amount
-    bill.subtotal -= subtotal
-    bill.tax -= tax
-    bill.total -= total
-    if bill.total < 0:
-        bill.total = 0
+        # Update bill totals - reduce bill total by return amount
+        bill.subtotal -= subtotal
+        bill.tax -= tax
+        bill.total -= total
+        if bill.total < 0:
+            bill.total = 0
 
-    # Adjust paid amount if needed
-    if bill.paid_amount > 0:
-        if bill.total < bill.paid_amount:
-            bill.paid_amount = bill.total
+        # Adjust paid amount if needed
+        if bill.paid_amount > 0:
+            if bill.total < bill.paid_amount:
+                bill.paid_amount = bill.total
 
-    # Update bill status based on return
-    original_total = bill.total + total  # Restore original to compare
-    if original_total > 0:
-        if bill.total == 0 or total >= original_total:
-            bill.status = 'return'
-        elif total > 0 and bill.total < original_total:
-            bill.status = 'partial_return'
-        else:
-            bill.status = bill.status  # Keep existing status
+        # Update bill status based on return
+        original_total = bill.total + total  # Restore original to compare
+        if original_total > 0:
+            if bill.total == 0 or total >= original_total:
+                bill.status = 'return'
+            elif total > 0 and bill.total < original_total:
+                bill.status = 'partial_return'
+            else:
+                bill.status = bill.status  # Keep existing status
 
     # Update return settings next number
     settings.next_number = next_return_num + 1
@@ -2527,6 +2551,95 @@ def purchase_return_detail(id):
     """View purchase return detail"""
     purchase_return = PurchaseReturn.query.get_or_404(id)
     return render_template('purchase/return_detail.html', return_obj=purchase_return)
+
+
+@bp.route('/return/<int:id>/approve', methods=['POST'])
+@login_required
+@permission_required('purchases', action='edit')
+def approve_purchase_return(id):
+    if not getattr(current_user, 'is_admin', False):
+        flash('Only admins can approve purchase returns.', 'danger')
+        return redirect(url_for('purchase.purchase_return_detail', id=id))
+        
+    purchase_return = PurchaseReturn.query.get_or_404(id)
+    
+    if purchase_return.is_approved:
+        flash('This return is already approved.', 'warning')
+        return redirect(url_for('purchase.purchase_return_detail', id=id))
+
+    # Set approval fields
+    purchase_return.is_approved = True
+    purchase_return.is_rejected = False
+    purchase_return.status = 'approved'
+    purchase_return.approved_by = current_user.id
+    purchase_return.approved_at = datetime.utcnow()
+    
+    # Apply side effects (Inventory and Bill update)
+    bill = purchase_return.bill
+    
+    # 1. Subtract from inventory
+    for item in purchase_return.items:
+        product = Product.query.get(item.product_id)
+        if product:
+            product.update_quantity(-item.quantity)
+            wh_id = item.warehouse_id
+            if wh_id:
+                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
+                if not wh_stock:
+                    wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=wh_id, quantity=0)
+                    db.session.add(wh_stock)
+                wh_stock.quantity -= item.quantity
+            elif product.warehouse_id:
+                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=product.warehouse_id).first()
+                if not wh_stock:
+                    wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=product.warehouse_id, quantity=0)
+                    db.session.add(wh_stock)
+                wh_stock.quantity -= item.quantity
+
+    # 2. Update bill totals
+    bill.subtotal -= purchase_return.subtotal
+    bill.tax -= purchase_return.tax
+    bill.total -= purchase_return.total
+    if bill.total < 0:
+        bill.total = 0
+
+    # 3. Adjust paid amount if needed
+    if bill.paid_amount > 0:
+        if bill.total < bill.paid_amount:
+            bill.paid_amount = bill.total
+
+    # 4. Update bill status
+    original_total = bill.total + purchase_return.total
+    if original_total > 0:
+        if bill.total == 0 or purchase_return.total >= original_total:
+            bill.status = 'return'
+        elif purchase_return.total > 0 and bill.total < original_total:
+            bill.status = 'partial_return'
+
+    db.session.commit()
+    flash(f'Purchase return {purchase_return.return_number} approved successfully!', 'success')
+    return redirect(url_for('purchase.purchase_return_detail', id=id))
+
+
+@bp.route('/return/<int:id>/reject', methods=['POST'])
+@login_required
+@permission_required('purchases', action='edit')
+def reject_purchase_return(id):
+    if not getattr(current_user, 'is_admin', False):
+        flash('Only admins can reject purchase returns.', 'danger')
+        return redirect(url_for('purchase.purchase_return_detail', id=id))
+
+    purchase_return = PurchaseReturn.query.get_or_404(id)
+    reason = request.form.get('reason', '')
+    
+    purchase_return.is_approved = False
+    purchase_return.is_rejected = True
+    purchase_return.rejection_reason = reason
+    purchase_return.status = 'rejected'
+    
+    db.session.commit()
+    flash(f'Purchase return {purchase_return.return_number} has been rejected.', 'warning')
+    return redirect(url_for('purchase.purchase_return_detail', id=id))
 
 
 @bp.route('/return/<int:id>/mark_returned', methods=['POST'])
@@ -3461,4 +3574,45 @@ def public_purchase(token):
         response.headers['Expires'] = '0'
         return response
     except Exception as e:
-        return f"Error generating PDF: {str(e)}", 500
+        return str(e), 500
+
+
+@bp.route('/vendor-advance/<int:id>/approve', methods=['POST'])
+@login_required
+def approve_vendor_advance(id):
+    if not getattr(current_user, 'is_admin', False):
+        flash('Only admins can approve advances.', 'danger')
+        return redirect(request.referrer or url_for('purchase.vendor_list'))
+        
+    advance = VendorAdvance.query.get_or_404(id)
+    if advance.is_approved:
+        flash('Advance is already approved.', 'info')
+        return redirect(request.referrer or url_for('purchase.vendor_detail', id=advance.vendor_id))
+        
+    advance.is_approved = True
+    advance.is_rejected = False
+    advance.approved_by = current_user.id
+    advance.approved_at = datetime.utcnow()
+    
+    db.session.commit()
+    flash('Vendor advance approved successfully.', 'success')
+    return redirect(request.referrer or url_for('purchase.vendor_detail', id=advance.vendor_id))
+
+
+@bp.route('/vendor-advance/<int:id>/reject', methods=['POST'])
+@login_required
+def reject_vendor_advance(id):
+    if not getattr(current_user, 'is_admin', False):
+        flash('Only admins can reject advances.', 'danger')
+        return redirect(request.referrer or url_for('purchase.vendor_list'))
+        
+    advance = VendorAdvance.query.get_or_404(id)
+    reason = request.form.get('reason', '')
+    
+    advance.is_approved = False
+    advance.is_rejected = True
+    advance.rejection_reason = reason
+    
+    db.session.commit()
+    flash('Vendor advance rejected.', 'warning')
+    return redirect(request.referrer or url_for('purchase.vendor_detail', id=advance.vendor_id))

@@ -1,9 +1,12 @@
 {% extends "base.html" %}
 
 {% block title %}Sales Returns{% endblock %}
+{% from 'components/approval_widget.html' import approval_widget with context %}
+{% from 'components/approval_notification.html' import pending_approval_alert with context %}
 
 {% block content %}
 <div class="container-fluid">
+    {{ pending_approval_alert('sale_return') }}
     <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
         <h2 class="h3 mb-0 text-gray-800">Sales Returns</h2>
                 {% if current_user.has_permission('returns', 'add') %}
@@ -169,18 +172,18 @@
                                     {{ ret.sale.invoice_number if ret.sale else '-' }}
                                 </a>
                             </td>
-                            <td>{{ ret.customer.name if ret.customer else 'Walk-in Customer' }}</td>
+                            <td>
+                                {% if ret.customer %}
+                                <i class="fas fa-flag text-{{ ret.customer.health_status }} me-1" title="Customer Health Status"></i>{{ ret.customer.name }}
+                                {% else %}
+                                Walk-in Customer
+                                {% endif %}
+                            </td>
                             <td>PKR{{ "%.2f"|format(ret.subtotal) }}</td>
                             <td>PKR{{ "%.2f"|format(ret.tax) }}</td>
                             <td><strong>PKR{{ "%.2f"|format(ret.total) }}</strong></td>
                             <td>
-                                {% if ret.status == 'completed' %}
-                                <span class="badge bg-success">Completed</span>
-                                {% elif ret.status == 'approved' %}
-                                <span class="badge bg-info">Approved</span>
-                                {% else %}
-                                <span class="badge bg-warning">Pending</span>
-                                {% endif %}
+                                {{ approval_widget(module='sale_return', entity=ret) }}
                             </td>
                             <td>
                                 {% if ret.returned_to_inventory %}
@@ -208,7 +211,7 @@
                         {% endfor %}
                         {% if not returns %}
                         <tr>
-                            <td colspan="9" class="text-center py-4 text-muted">No returns found.</td>
+                            <td colspan="11" class="text-center py-4 text-muted">No returns found.</td>
                         </tr>
                         {% endif %}
                     </tbody>

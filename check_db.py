@@ -1,17 +1,20 @@
-import sqlite3
-import os
+import sqlite3, os
 
-databases = ['instance/crm.db', 'instance/database.db', 'instance/project_crm.db']
-
-for db_path in databases:
-    if os.path.exists(db_path):
-        print(f"\nTables in {db_path}:")
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-        tables = cursor.fetchall()
-        for table in tables:
-            print(f"  - {table[0]}")
+dbs = [
+    'instance/project_crm.db',
+    'instance/crm.db',
+    'instance/project.db',
+    'project.db',
+]
+for db in dbs:
+    try:
+        conn = sqlite3.connect(db)
+        c = conn.cursor()
+        c.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = [r[0] for r in c.fetchall()]
+        print(f"{db}: {len(tables)} tables")
+        if tables:
+            print(f"  First 10: {tables[:10]}")
         conn.close()
-    else:
-        print(f"\n{db_path} does not exist.")
+    except Exception as e:
+        print(f"{db}: ERROR - {e}")

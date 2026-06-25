@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}{{ vendor.name }} - Vendor Profile{% endblock %}
+{% from 'components/approval_widget.html' import approval_widget with context %}
 
 {% block content %}
 <style>
@@ -323,6 +324,7 @@
                             <th>Date</th>
                             <th>Description / Purpose</th>
                             <th class="text-end">Amount (PKR)</th>
+                            <th class="text-center">Approval</th>
                             <th class="text-center">Status</th>
                             <th>Adjusted Against</th>
                             <th class="text-center" style="min-width:160px;">Actions</th>
@@ -336,6 +338,9 @@
                             <td>{{ adv.description or '—' }}</td>
                             <td class="text-end fw-bold {% if not adv.is_adjusted %}text-warning{% endif %}">
                                 PKR {{ '{:,.0f}'.format(adv.amount) }}
+                            </td>
+                            <td class="text-center">
+                                {{ approval_widget(module='vendor_advance', entity=adv) }}
                             </td>
                             <td class="text-center">
                                 {% if adv.is_adjusted %}

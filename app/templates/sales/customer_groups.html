@@ -2,8 +2,11 @@
 
 {% block title %}Customer Groups{% endblock %}
 
+{% from 'components/approval_notification.html' import pending_approval_alert with context %}
+
 {% block content %}
 <div class="container-fluid">
+    {{ pending_approval_alert('customer_group') }}
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Customer Groups</h2>
                 {% if current_user.has_permission('sales', 'add') %}
@@ -23,6 +26,7 @@
                             <th>Description</th>
                             <th>Customers</th>
                             <th>Created At</th>
+                            <th class="no-export">Approval</th>
                             <th class="text-end">Actions</th>
                         </tr>
                     </thead>
@@ -33,6 +37,10 @@
                             <td>{{ group.description or '-' }}</td>
                             <td><span class="badge bg-info text-white">{{ group.customers|length }}</span></td>
                             <td>{{ group.created_at.strftime('%Y-%m-%d') }}</td>
+                            <td class="no-export">
+                                {% from 'components/approval_widget.html' import approval_widget with context %}
+                                {{ approval_widget('customer_group', group) }}
+                            </td>
                             <td class="text-end">
                                                                 {% if current_user.has_permission('sales', 'edit') %}
 <a href="{{ url_for('sales.edit_customer_group', id=group.id) }}" class="btn btn-sm btn-outline-primary">

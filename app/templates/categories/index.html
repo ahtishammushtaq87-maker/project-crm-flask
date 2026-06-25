@@ -2,8 +2,11 @@
 
 {% block title %}Product Categories{% endblock %}
 
+{% from 'components/approval_notification.html' import pending_approval_alert with context %}
+
 {% block content %}
 <div class="container-fluid">
+    {{ pending_approval_alert('product_category') }}
     <div class="d-sm-flex align-items-center justify-content-between mb-4">
         <h1 class="h3 mb-0 text-gray-800">Product Categories</h1>
                 {% if current_user.has_permission('categories', 'add') %}
@@ -36,6 +39,7 @@
                             <th>Description</th>
                             <th>Products</th>
                             <th>Status</th>
+                            <th class="no-export">Approval</th>
                             <th class="no-export">Actions</th>
                         </tr>
                     </thead>
@@ -53,6 +57,10 @@
                                 {% else %}
                                 <span class="badge bg-secondary">Inactive</span>
                                 {% endif %}
+                            </td>
+                            <td class="no-export">
+                                {% from 'components/approval_widget.html' import approval_widget with context %}
+                                {{ approval_widget('product_category', category) }}
                             </td>
                             <td class="no-export">
                                                                 {% if current_user.has_permission('categories', 'edit') %}

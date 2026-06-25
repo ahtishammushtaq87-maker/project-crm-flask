@@ -2,9 +2,12 @@
 
 {% block title %}Bills of Material{% endblock %}
 
+{% from 'components/approval_notification.html' import pending_approval_alert with context %}
+
 {% block content %}
 <div id="module-context" data-module="bom" style="display:none;"></div>
 <div class="container-fluid">
+    {{ pending_approval_alert('bom') }}
     <div class="d-sm-flex align-items-center justify-content-between mb-4">
         <h1 class="h3 mb-0 text-gray-800">Bills of Material (BOM)</h1>
         {% if current_user.has_permission('manufacturing', 'add') %}
@@ -35,6 +38,7 @@
                             <th>Components</th>
                             <th>Labor Cost</th>
                             <th>Total Cost</th>
+                            <th class="no-export">Approval</th>
                             <th class="no-export">Actions</th>
                         </tr>
                     </thead>
@@ -59,6 +63,10 @@
                             <td>{{ bom.items|length }} items</td>
                             <td>PKR {{ "%.2f"|format(bom.labor_cost) }}</td>
                             <td>PKR {{ "%.2f"|format(bom.total_cost) }}</td>
+                            <td class="no-export">
+                                {% from 'components/approval_widget.html' import approval_widget with context %}
+                                {{ approval_widget('bom', bom) }}
+                            </td>
                             <td class="no-export">
                                 <a href="{{ url_for('manufacturing.bom_details', id=bom.id) }}"
                                     class="btn btn-info btn-sm">

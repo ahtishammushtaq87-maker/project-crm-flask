@@ -4,8 +4,11 @@
 
 
 
+{% from 'components/approval_notification.html' import pending_approval_alert with context %}
+
 {% block content %}
 <div class="container-fluid">
+    {{ pending_approval_alert('product') }}
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Products</h2>
         <div class="d-flex align-items-center">
@@ -276,6 +279,7 @@
                             <th>Unit</th>
                             <th>Stock Value</th>
                             <th>Status</th>
+                            <th class="no-export">Approval</th>
                             <th class="no-export">Price History</th>
                             <th class="no-export">Actions</th>
                         </tr>
@@ -354,6 +358,10 @@
                                     {% else %}
                                     <span class="badge bg-success">In Stock</span>
                                     {% endif %}
+                            </td>
+                            <td class="no-export">
+                                {% from 'components/approval_widget.html' import approval_widget with context %}
+                                {{ approval_widget('product', product) }}
                             </td>
                             <td class="no-export">
                                 <button type="button" class="btn btn-sm btn-info btn-show-history"

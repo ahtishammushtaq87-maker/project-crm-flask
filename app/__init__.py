@@ -429,4 +429,8 @@ def create_app(config_class=Config):
     import json
     app.jinja_env.filters['from_json'] = json.loads
 
+    # Register approval service as Jinja global for templates
+    from app.services.approval_service import ApprovalService
+    app.jinja_env.globals['approval_service'] = ApprovalService
+
     return app
