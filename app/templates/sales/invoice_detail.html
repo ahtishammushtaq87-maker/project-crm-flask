@@ -6,6 +6,7 @@
 <style>
     /* ── Mobile Responsiveness: Invoice Detail ── */
     @media (max-width: 767.98px) {
+
         /* Header: title + buttons wrap cleanly */
         .invoice-header-row {
             flex-direction: column !important;
@@ -53,7 +54,8 @@
 
     /* Ensure tables don't look squashed on small/medium screens */
     .table-mobile-scroll table {
-        min-width: 900px; /* Comfortably fits all columns */
+        min-width: 900px;
+        /* Comfortably fits all columns */
     }
 
     /* Override min-width for specifically identified smaller tables */
@@ -72,11 +74,13 @@
         border-bottom: 2px solid #e3e6f0 !important;
         font-weight: 700;
     }
+
     .table-premium tbody td {
         vertical-align: middle;
         color: #5a5c69;
         font-size: 0.85rem;
     }
+
     .table-premium tr:hover {
         background-color: rgba(78, 115, 223, 0.03);
     }
@@ -89,14 +93,15 @@
                 <i class="fas fa-file-invoice me-2 text-primary"></i>Invoice: {{ sale.invoice_number }}
             </h2>
             <small class="text-muted">{{ sale.date.strftime(date_format) }}</small>
-            
+
             {# {{ approval_widget(module='sale', entity=sale, extra_class='ms-2') }} #}
 
             <span
                 class="badge {% if sale.is_overdue %}bg-danger{% elif sale.status == 'paid' %}bg-success{% elif sale.status == 'partial' %}bg-warning text-dark{% else %}bg-danger{% endif %} ms-2">
                 <i
                     class="fas {% if sale.is_overdue %}fa-exclamation-triangle{% elif sale.status == 'paid' %}fa-check{% elif sale.status == 'partial' %}fa-clock{% else %}fa-times{% endif %} me-1"></i>
-                {% if sale.is_overdue %}Overdue ({{ sale.days_overdue }} days){% else %}{{ sale.status | capitalize }}{% endif %}
+                {% if sale.is_overdue %}Overdue ({{ sale.days_overdue }} days){% else %}{{ sale.status | capitalize }}{%
+                endif %}
             </span>
         </div>
         <div class="btn-group flex-wrap gap-1">
@@ -132,27 +137,27 @@
             {% endif %}
             {% endif %}
 
-            {% if sale.paid_amount < sale.total %}
-            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#payModal">
+            {% if sale.paid_amount < sale.total %} <button type="button" class="btn btn-primary" data-bs-toggle="modal"
+                data-bs-target="#payModal">
                 <i class="fas fa-plus me-1"></i>Record Payment
-            </button>
-            {% endif %}
+                </button>
+                {% endif %}
 
-            {% if current_user.has_permission('returns', 'add') %}
-            <a href="{{ url_for('returns.create_return', sale_id=sale.id) }}" class="btn btn-danger">
-                <i class="fas fa-undo me-1"></i>Return
-            </a>
-            {% endif %}
-            {% endif %}
+                {% if current_user.has_permission('returns', 'add') %}
+                <a href="{{ url_for('returns.create_return', sale_id=sale.id) }}" class="btn btn-danger">
+                    <i class="fas fa-undo me-1"></i>Return
+                </a>
+                {% endif %}
+                {% endif %}
 
-            {% if current_user.has_permission('sales', 'add') %}
-            <a href="{{ url_for('sales.create_invoice') }}" class="btn btn-outline-primary">
-                <i class="fas fa-plus me-1"></i>New Invoice
-            </a>
-            {% endif %}
-            <a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary">
-                <i class="fas fa-arrow-left me-1"></i>Back
-            </a>
+                {% if current_user.has_permission('sales', 'add') %}
+                <a href="{{ url_for('sales.create_invoice') }}" class="btn btn-outline-primary">
+                    <i class="fas fa-plus me-1"></i>New Invoice
+                </a>
+                {% endif %}
+                <a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left me-1"></i>Back
+                </a>
         </div>
     </div>
 
@@ -330,7 +335,8 @@
                         {% if sale.customer %}
                         <a href="{{ url_for('sales.customer_profile', id=sale.customer.id) }}"
                             class="text-decoration-none fw-bold text-primary">
-                            <i class="fas fa-flag text-{{ sale.customer.health_status }} me-1" title="Customer Health Status"></i>{{ sale.customer.name }}
+                            <i class="fas fa-flag text-{{ sale.customer.health_status }} me-1"
+                                title="Customer Health Status"></i>{{ sale.customer.name }}
                         </a>
                         {% else %}
                         Walk-in Customer
@@ -472,14 +478,14 @@
                                     <th>Product</th>
                                     <th class="text-center">Qty</th>
                                     <th class="text-center text-danger">Ret. Qty</th>
-                                    <th class="text-end">Unit Price</th>
+                                    <th class="text-end">List Price</th>
                                     <th class="text-end text-muted">Cost</th>
                                     <th class="text-end">Subtotal</th>
                                     {% if show_delivery_col %}
                                     <th class="text-end text-info"><i class="fas fa-truck me-1"></i>Delivery</th>
                                     {% endif %}
                                     {% if show_discount_col %}
-                                    <th class="text-end text-success">Discount</th>
+                                    <th class="text-end text-success">Unit Discount</th>
                                     {% endif %}
                                     <th class="text-end text-success">Profit</th>
                                     <th class="text-end">Total</th>
@@ -531,17 +537,20 @@
                                     {% endif %}
                                     <td class="text-end">
                                         {% if item.product %}
-                                            {% set item_cost_total = item.quantity * item.product.cost_price %}
-                                            {# Net profit includes item's share of overall invoice discount #}
-                                            {% set net_profit = item.total - item_cost_total - item_discount %}
-                                            {% set profit_margin = (net_profit / (item.total - item_discount) * 100) if (item.total - item_discount) > 0 else 0 %}
-                                            
-                                            <div class="fw-bold {% if net_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                                PKR {{ "{:,.2f}".format(net_profit) }}
-                                            </div>
-                                            <small class="{% if profit_margin >= 0 %}text-success{% else %}text-danger{% endif %} text-nowrap">
-                                                {{ "{:.1f}% Margin".format(profit_margin) }}
-                                            </small>
+                                        {% set item_cost_total = item.quantity * item.product.cost_price %}
+                                        {# Net profit includes item's share of overall invoice discount #}
+                                        {% set net_profit = item.total - item_cost_total - item_discount %}
+                                        {% set profit_margin = (net_profit / (item.total - item_discount) * 100) if
+                                        (item.total - item_discount) > 0 else 0 %}
+
+                                        <div
+                                            class="fw-bold {% if net_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                            PKR {{ "{:,.2f}".format(net_profit) }}
+                                        </div>
+                                        <small
+                                            class="{% if profit_margin >= 0 %}text-success{% else %}text-danger{% endif %} text-nowrap">
+                                            {{ "{:.1f}% Margin".format(profit_margin) }}
+                                        </small>
                                         {% else %}
                                         -
                                         {% endif %}
@@ -574,15 +583,18 @@
                                     <th colspan="{{ label_colspan }}" class="text-end text-success">
                                         Discount
                                         {% if not sale.is_approved %}
-                                        <span class="badge bg-warning text-dark ms-1" style="font-size: 0.6rem; vertical-align: middle;">PENDING APPROVAL</span>
+                                        <span class="badge bg-warning text-dark ms-1"
+                                            style="font-size: 0.6rem; vertical-align: middle;">PENDING APPROVAL</span>
                                         {% endif %}
                                     </th>
                                     <th class="text-end text-success">
                                         {% if sale.is_approved %}
-                                            -Rs {{ "{:,.2f}".format(effective_discount) }}
+                                        -Rs {{ "{:,.2f}".format(effective_discount) }}
                                         {% else %}
-                                            <span class="text-muted" style="text-decoration: line-through;">-Rs {{ "{:,.2f}".format(sale.discount) }}</span>
-                                            <div class="small fw-normal text-danger" style="font-size: 0.7rem;">Not Applied (Awaiting Admin)</div>
+                                        <span class="text-muted" style="text-decoration: line-through;">-Rs {{
+                                            "{:,.2f}".format(sale.discount) }}</span>
+                                        <div class="small fw-normal text-danger" style="font-size: 0.7rem;">Not Applied
+                                            (Awaiting Admin)</div>
                                         {% endif %}
                                     </th>
                                 </tr>
@@ -645,7 +657,8 @@
                                     </td>
                                     <td>{{ payment.method }}</td>
                                     <td>{{ payment.reference_number or '&mdash;' }}</td>
-                                    <td class="text-end fw-bold {% if payment.is_approved %}text-success{% elif payment.is_rejected %}text-danger{% else %}text-warning{% endif %}">
+                                    <td
+                                        class="text-end fw-bold {% if payment.is_approved %}text-success{% elif payment.is_rejected %}text-danger{% else %}text-warning{% endif %}">
                                         PKR {{ "{:,.2f}".format(payment.amount) }}
                                     </td>
                                     <td>
@@ -687,8 +700,9 @@
                                         {% endif %}
 
                                         {# 3. Delete Action (Approved or Admin-only for Rejected) #}
-                                        {% if (payment.is_approved and current_user.has_permission('sales', 'delete')) or 
-                                              (payment.is_rejected and current_user.role == 'admin') %}
+                                        {% if (payment.is_approved and current_user.has_permission('sales', 'delete'))
+                                        or
+                                        (payment.is_rejected and current_user.role == 'admin') %}
                                         <form method="POST"
                                             action="{{ url_for('sales.delete_payment', id=sale.id, pay_id=payment.id) }}"
                                             class="d-inline" style="display: inline-block;">
@@ -863,10 +877,12 @@
                     <p>Are you sure you want to reject invoice <strong>{{ sale.invoice_number }}</strong>?</p>
                     <div class="mb-3">
                         <label class="form-label fw-bold">Reason for Rejection</label>
-                        <textarea name="reason" class="form-control" rows="3" placeholder="Explain why this invoice is being rejected..." required></textarea>
+                        <textarea name="reason" class="form-control" rows="3"
+                            placeholder="Explain why this invoice is being rejected..." required></textarea>
                     </div>
                     <div class="alert alert-warning small">
-                        <i class="fas fa-exclamation-triangle me-1"></i> This invoice will remain in the system but will be marked as "Rejected" and excluded from sales totals.
+                        <i class="fas fa-exclamation-triangle me-1"></i> This invoice will remain in the system but will
+                        be marked as "Rejected" and excluded from sales totals.
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -891,7 +907,8 @@
                     <p>Rejecting payment of <strong id="rejectPaymentAmount"></strong>.</p>
                     <div class="mb-3">
                         <label class="form-label fw-bold">Reason for Rejection</label>
-                        <textarea name="reason" class="form-control" rows="3" placeholder="Explain why this payment is being rejected..." required></textarea>
+                        <textarea name="reason" class="form-control" rows="3"
+                            placeholder="Explain why this payment is being rejected..." required></textarea>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -915,8 +932,10 @@
                 <div class="modal-body p-4">
                     <p class="mb-3 text-muted small">The staff will see this reason in their 'Rejected Items' tab.</p>
                     <div class="form-group mb-0">
-                        <label class="form-label fw-bold small">Rejection Reason <span class="text-danger">*</span></label>
-                        <textarea name="reason" class="form-control" rows="3" placeholder="e.g. Discount too high, price incorrect..." required></textarea>
+                        <label class="form-label fw-bold small">Rejection Reason <span
+                                class="text-danger">*</span></label>
+                        <textarea name="reason" class="form-control" rows="3"
+                            placeholder="e.g. Discount too high, price incorrect..." required></textarea>
                     </div>
                 </div>
                 <div class="modal-footer bg-light border-0">
@@ -943,8 +962,10 @@
                         <h4 class="mb-0 fw-bold text-danger" id="rejectPaymentAmount">PKR 0.00</h4>
                     </div>
                     <div class="form-group mb-0">
-                        <label class="form-label fw-bold small">Reason for Rejection <span class="text-danger">*</span></label>
-                        <textarea name="reason" class="form-control" rows="3" placeholder="e.g. Receipt image unclear, amount mismatch..." required></textarea>
+                        <label class="form-label fw-bold small">Reason for Rejection <span
+                                class="text-danger">*</span></label>
+                        <textarea name="reason" class="form-control" rows="3"
+                            placeholder="e.g. Receipt image unclear, amount mismatch..." required></textarea>
                     </div>
                 </div>
                 <div class="modal-footer bg-light border-0">
@@ -1054,10 +1075,10 @@
                 const button = event.relatedTarget;
                 const paymentId = button.getAttribute('data-payment-id');
                 const amount = button.getAttribute('data-payment-amount');
-                
+
                 const form = this.querySelector('#rejectPaymentForm');
                 const amountSpan = this.querySelector('#rejectPaymentAmount');
-                
+
                 form.action = `/sales/invoice/{{ sale.id }}/payment/${paymentId}/reject`;
                 amountSpan.textContent = `PKR ${amount}`;
             });
