@@ -2731,6 +2731,7 @@
         {% block extra_js %}{% endblock %}
 
         <script>
+            /* ── Global IIFE wrapper opens here ─────────────────────────────────── */
             /* ── Global File Upload Enhancement (Drag&Drop + Paste) ── */
             (function () {
                 function setupFileUploadEnhancement() {
@@ -2875,11 +2876,13 @@
                 document.addEventListener('click', function (e) {
                     const badge = e.target.closest('.approval-badge');
                     if (badge) {
-                        const menu = badge.nextElementSibling;
-                        if (menu && menu.classList.contains('approval-menu')) {
+                        const menu = badge.closest('.approval-dropdown')?.querySelector('.approval-menu');
+                        if (menu) {
                             const isShowing = menu.classList.contains('show');
                             document.querySelectorAll('.approval-menu.show').forEach(m => m.classList.remove('show'));
                             if (!isShowing) menu.classList.add('show');
+                            e.preventDefault();
+                            e.stopPropagation();
                             return;
                         }
                     }
@@ -2893,6 +2896,7 @@
                     
                     actionBtn.closest('.approval-menu')?.classList.remove('show');
                     e.preventDefault();
+                    e.stopPropagation();
                     const action = actionBtn.dataset.action;
                     const module = actionBtn.dataset.module;
                     const itemId = actionBtn.dataset.entityId || actionBtn.closest('.approval-widget')?.dataset.itemId;
@@ -2910,7 +2914,7 @@
                     currentModule = module;
                     currentItemId = itemId;
                     submitApproval(action);
-                });
+                }, true); // Run in capture phase to bypass stopPropagation from other libraries
 
                 document.addEventListener('click', function (e) {
                     if (e.target.id === 'confirmRejection') {
@@ -2923,9 +2927,227 @@
                     }
                 });
 
-                return { showRejectionModal, submitApproval };
+                return { showRejectionModal, submitApproval, showToast };
+            })();
+
+        </script>
+
+        {% if current_user.is_authenticated and current_user.is_admin %}
+        <script>
+            /* ── Universal Bulk Approval Dashboard Controller (admin-only) ─────────── */
+            (function () {
+                let selectedIds = [];
+                let activeModule = null;
+
+                function getCheckedIds(checkboxClass) {
+                    const checkedCheckboxes = Array.from(document.querySelectorAll(`.${checkboxClass}:checked`));
+                    return checkedCheckboxes.map(cb => cb.value);
+                }
+
+                function setupBulkApprovalController() {
+                    // Try to find if there is an approval table on this page
+                    const firstWidget = document.querySelector('.approval-widget');
+                    if (!firstWidget) return; // No approval widgets on this page, skip
+
+                    activeModule = firstWidget.dataset.module;
+                    if (!activeModule) return;
+
+                    // Automatically determine checkbox class.
+                    const tbodyCheckboxes = document.querySelectorAll('table tbody td:first-child input[type="checkbox"], table tbody input.form-check-input');
+                    if (tbodyCheckboxes.length === 0) return;
+
+                    // Find primary class of checkboxes
+                    let checkboxClass = null;
+                    for (let cb of tbodyCheckboxes) {
+                        for (let cls of cb.classList) {
+                            if (cls.endsWith('-checkbox')) {
+                                checkboxClass = cls;
+                                break;
+                            }
+                        }
+                        if (checkboxClass) break;
+                    }
+                    if (!checkboxClass) {
+                        const firstCb = tbodyCheckboxes[0];
+                        firstCb.classList.add('gen-approval-cb');
+                        checkboxClass = 'gen-approval-cb';
+                        tbodyCheckboxes.forEach(cb => cb.classList.add('gen-approval-cb'));
+                    }
+
+                    // Look for button container in header to inject Bulk Actions dropdown
+                    const container = getHeaderButtonContainer();
+                    if (!container) return;
+
+                    // Check if dropdown already exists
+                    let bulkDropdown = document.getElementById('universalBulkApprovalDropdown');
+                    if (!bulkDropdown) {
+                        const btnGroup = document.createElement('div');
+                        btnGroup.className = 'dropdown d-inline-block me-2 d-none';
+                        btnGroup.id = 'universalBulkApprovalDropdown';
+                        btnGroup.innerHTML = `
+                            <button class="btn btn-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="border-radius: 6px; padding: 6px 12px; font-weight: 500;">
+                                <i class="fas fa-check-double me-1"></i> Bulk Status
+                            </button>
+                            <ul class="dropdown-menu shadow border-0" style="z-index: 100000; border-radius: 8px;">
+                                <li><a class="dropdown-item text-success fw-bold bulk-app-action" href="javascript:void(0)" data-action="approve"><i class="fas fa-check me-2"></i>Approve Selected</a></li>
+                                <li><a class="dropdown-item text-danger fw-bold bulk-app-action" href="javascript:void(0)" data-action="reject"><i class="fas fa-times me-2"></i>Reject Selected</a></li>
+                                <li><a class="dropdown-item text-warning fw-bold bulk-app-action" href="javascript:void(0)" data-action="cancel"><i class="fas fa-ban me-2"></i>Cancel Selected</a></li>
+                                <li><a class="dropdown-item text-muted fw-bold bulk-app-action" href="javascript:void(0)" data-action="draft"><i class="fas fa-file-alt me-2"></i>Set as Draft</a></li>
+                            </ul>
+                        `;
+                        container.insertBefore(btnGroup, container.firstChild);
+                        bulkDropdown = btnGroup;
+                    }
+
+                    function updateBulkDropdownState() {
+                        selectedIds = getCheckedIds(checkboxClass);
+                        if (selectedIds.length > 0) {
+                            bulkDropdown.classList.remove('d-none');
+                            bulkDropdown.querySelector('button').innerHTML = `<i class="fas fa-check-double me-1"></i> Bulk Status (${selectedIds.length})`;
+                        } else {
+                            bulkDropdown.classList.add('d-none');
+                        }
+                    }
+
+                    // Attach listener to selectAll and checkboxes
+                    document.addEventListener('change', function (e) {
+                        if (e.target && (e.target.classList.contains(checkboxClass) || e.target.id === 'selectAll')) {
+                            setTimeout(updateBulkDropdownState, 50);
+                        }
+                    });
+
+                    updateBulkDropdownState();
+
+                    // Wire up action items inside bulk dropdown
+                    bulkDropdown.querySelectorAll('.bulk-app-action').forEach(item => {
+                        item.addEventListener('click', function (e) {
+                            e.preventDefault();
+                            const action = this.dataset.action;
+                            if (selectedIds.length === 0) return;
+
+                            if (action === 'reject') {
+                                document.getElementById('bulkRejectionReason').value = '';
+                                const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkRejectionModal'));
+                                modal.show();
+                                return;
+                            }
+
+                            if (action === 'cancel' && !confirm('Are you sure you want to cancel these ' + selectedIds.length + ' records?')) return;
+                            if (action === 'draft' && !confirm('Set these ' + selectedIds.length + ' records as Draft?')) return;
+                            if (action === 'approve' && !confirm('Approve these ' + selectedIds.length + ' records?')) return;
+
+                            submitBulkAction(action);
+                        });
+                    });
+                }
+
+                async function submitBulkAction(action, reason) {
+                    if (selectedIds.length === 0 || !activeModule) return;
+                    
+                    const payload = {
+                        module: activeModule,
+                        item_ids: selectedIds,
+                        action: action
+                    };
+                    if (action === 'reject') {
+                        payload.reason = reason;
+                    }
+
+                    try {
+                        const resp = await fetch("{{ url_for('api.universal_bulk_approval') }}", {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                            body: JSON.stringify(payload)
+                        });
+                        const data = await resp.json();
+                        if (data.success) {
+                            showToast(data.message || 'Bulk actions applied successfully.', 'success');
+                            setTimeout(() => location.reload(), 1000);
+                        } else {
+                            showToast(data.message || 'Bulk action failed.', 'danger');
+                        }
+                    } catch (err) {
+                        showToast('Network error during bulk action.', 'danger');
+                        console.error(err);
+                    } finally {
+                        const modal = bootstrap.Modal.getInstance(document.getElementById('bulkRejectionModal'));
+                        if (modal) modal.hide();
+                    }
+                }
+
+                function getCsrfToken() {
+                    const meta = document.querySelector('meta[name=csrf-token]');
+                    if (meta) return meta.content;
+                    const input = document.querySelector('input[name=csrf_token]');
+                    return input ? input.value : '';
+                }
+
+                function showToast(message, type) {
+                    if (window.UniversalApproval && typeof window.UniversalApproval.showToast === 'function') {
+                        window.UniversalApproval.showToast(message, type);
+                        return;
+                    }
+                    const toastId = 'bulk-toast-' + Date.now();
+                    const html = `<div id="${toastId}" class="toast align-items-center text-bg-${type} border-0" role="alert" style="min-width:280px;">
+                        <div class="d-flex"><div class="toast-body">${message}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>
+                    </div>`;
+                    let container = document.getElementById('approval-toast-container');
+                    if (!container) {
+                        container = document.createElement('div');
+                        container.id = 'approval-toast-container';
+                        container.className = 'toast-container position-fixed top-0 end-0 p-3';
+                        container.style.zIndex = '99999';
+                        document.body.appendChild(container);
+                    }
+                    container.insertAdjacentHTML('beforeend', html);
+                    const el = document.getElementById(toastId);
+                    if (el) new bootstrap.Toast(el, { delay: 3000 }).show();
+                }
+
+                function getHeaderButtonContainer() {
+                    const bulkDel = document.getElementById('bulkDeleteBtn');
+                    if (bulkDel && bulkDel.parentElement) {
+                        return bulkDel.parentElement;
+                    }
+                    
+                    const flexHeader = document.querySelector('.d-flex.justify-content-between.align-items-center');
+                    if (flexHeader) {
+                        if (flexHeader.children.length > 1) {
+                            const lastChild = flexHeader.lastElementChild;
+                            if (lastChild.tagName === 'DIV' || lastChild.classList.contains('btn-group')) {
+                                return lastChild;
+                            }
+                        }
+                        let container = flexHeader.querySelector('.btn-group, div:not(h2):not(h3):not(h4)');
+                        if (!container) {
+                            container = document.createElement('div');
+                            container.className = 'btn-group';
+                            flexHeader.appendChild(container);
+                        }
+                        return container;
+                    }
+                    return null;
+                }
+
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', setupBulkApprovalController);
+                } else {
+                    setupBulkApprovalController();
+                }
+
+                document.addEventListener('click', function (e) {
+                    if (e.target.id === 'confirmBulkRejection') {
+                        const reason = document.getElementById('bulkRejectionReason')?.value?.trim();
+                        if (!reason) {
+                            alert('Please provide a rejection reason.');
+                            return;
+                        }
+                        submitBulkAction('reject', reason);
+                    }
+                });
             })();
         </script>
+        {% endif %}
 
         <!-- Universal Approval Rejection Modal -->
         <div class="modal fade" id="rejectionModal" tabindex="-1" aria-labelledby="rejectionModalLabel" aria-hidden="true">
@@ -2955,5 +3177,34 @@
                 </div>
             </div>
         </div>
+
+        <!-- Universal Bulk Approval Rejection Modal -->
+        <div class="modal fade" id="bulkRejectionModal" tabindex="-1" aria-labelledby="bulkRejectionModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title" id="bulkRejectionModalLabel"><i class="fas fa-times-circle me-2"></i>Bulk Reject Selected Records</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-warning border-0 shadow-sm mb-3">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            All selected records will be rejected.
+                        </div>
+                        <div class="mb-3">
+                            <label for="bulkRejectionReason" class="form-label fw-bold small text-muted">Rejection Reason <span class="text-danger">*</span></label>
+                            <textarea class="form-control" id="bulkRejectionReason" rows="4" placeholder="Enter the reason for rejection..."></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-danger fw-bold" id="confirmBulkRejection">
+                            <i class="fas fa-times me-1"></i>Confirm Rejection
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </body>
 </html>
+

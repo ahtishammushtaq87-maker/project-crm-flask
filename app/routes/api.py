@@ -441,3 +441,69 @@ def universal_approval():
     except Exception as e:
         current_app.logger.error(f"Universal approval error: {e}")
         return jsonify({'success': False, 'message': 'Server error during approval.'}), 500
+
+
+@bp.route('/universal-bulk-approval', methods=['POST'])
+@login_required
+def universal_bulk_approval():
+    """
+    Unified bulk approval endpoint. Accepts JSON body:
+    {
+        "module": "sale" | "payment" | ... ,
+        "item_ids": [<int>, <int>, ...],
+        "action": "approve" | "reject" | "cancel" | "draft",
+        "reason": "<optional rejection reason>"
+    }
+    Returns JSON with success counts and messages.
+    Admin-only.
+    """
+    from app.services.approval_service import ApprovalService
+
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Only admin can perform approval actions.'}), 403
+
+    data = request.get_json(silent=True) or {}
+    module = data.get('module', '').strip().lower()
+    item_ids = data.get('item_ids', [])
+    action = data.get('action', '').strip().lower()
+    reason = data.get('reason', '').strip()
+
+    if not module or not item_ids or not action:
+        return jsonify({'success': False, 'message': 'Missing module, item_ids, or action.'}), 400
+
+    supported = ApprovalService.get_supported_modules()
+    if module not in supported:
+        return jsonify({'success': False, 'message': f"Unsupported module: {module}"}), 400
+
+    config = ApprovalService.get_config(module)
+    if action not in config.get('actions', []):
+        return jsonify({'success': False, 'message': f"Action '{action}' not valid for {module}."}), 400
+
+    if action == 'reject' and not reason:
+        return jsonify({'success': False, 'message': 'Rejection reason is required.'}), 400
+
+    success_count = 0
+    errors = []
+
+    for item_id in item_ids:
+        try:
+            if action == 'approve':
+                ApprovalService.approve(module, item_id)
+            elif action == 'reject':
+                ApprovalService.reject(module, item_id, reason)
+            elif action in ('cancel', 'draft'):
+                ApprovalService.set_status(module, item_id, action)
+            success_count += 1
+        except Exception as e:
+            errors.append(f"ID {item_id}: {str(e)}")
+
+    if errors:
+        msg = f"Processed {success_count} of {len(item_ids)} successfully. Errors: {'; '.join(errors)}"
+        return jsonify({'success': success_count > 0, 'message': msg, 'success_count': success_count, 'errors': errors})
+
+    return jsonify({
+        'success': True,
+        'message': f"Successfully performed '{action}' on {success_count} item(s).",
+        'success_count': success_count
+    })
+
