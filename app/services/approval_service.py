@@ -543,6 +543,11 @@ class ApprovalService:
             setattr(entity, config['status_field'], new_status)
 
         from app import db
+        # Trigger post status change hook on reject
+        status_hook = getattr(cls, f"_post_status_change_{module}", None)
+        if status_hook:
+            status_hook(entity, 'reject')
+
         db.session.commit()
         msg = f"{config['label']} {cls.get_entity_label(entity, module)} rejected"
         detail = f"Reason: {reason}" if reason else None
@@ -584,9 +589,10 @@ class ApprovalService:
             setattr(entity, config['status_field'], actual_status)
 
         from app import db
-        # Universal post-status hooks
-        if module == 'sale':
-            cls._post_status_change_sale(entity, universal_status)
+        # Universal post-status hooks (dynamically resolved)
+        status_hook = getattr(cls, f"_post_status_change_{module}", None)
+        if status_hook:
+            status_hook(entity, universal_status)
 
         db.session.commit()
         msg = f"{config['label']} {cls.get_entity_label(entity, module)} set to {universal_status}"
@@ -872,3 +878,90 @@ class ApprovalService:
             if bill:
                 bill.paid_amount = (bill.paid_amount or 0) + payment.amount
                 bill.update_status()
+
+    @classmethod
+    def _post_approve_tool_receiving(cls, receiving):
+        """Increase inventory when receiving is approved."""
+        if not receiving.stock_updated:
+            from app import db
+            from app.models import Product, ProductWarehouseStock
+            for item in receiving.items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    product.update_quantity(item.quantity)
+                    product.cost_price = item.unit_price
+                    if item.warehouse_id:
+                        wh_stock = ProductWarehouseStock.query.filter_by(
+                            product_id=item.product_id, warehouse_id=item.warehouse_id
+                        ).first()
+                        if not wh_stock:
+                            wh_stock = ProductWarehouseStock(
+                                product_id=item.product_id, warehouse_id=item.warehouse_id, quantity=0.0
+                            )
+                            db.session.add(wh_stock)
+                        wh_stock.quantity += item.quantity
+            receiving.stock_updated = True
+            db.session.commit()
+
+    @classmethod
+    def _post_status_change_tool_receiving(cls, receiving, new_status):
+        """Revert inventory additions if tool receiving status changes to draft/reject/cancel."""
+        if new_status in ('draft', 'cancel', 'reject') and receiving.stock_updated:
+            from app import db
+            from app.models import Product, ProductWarehouseStock
+            for item in receiving.items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    product.update_quantity(-item.quantity)
+                    wh_id = getattr(item, 'warehouse_id', None)
+                    if wh_id:
+                        wh_stock = ProductWarehouseStock.query.filter_by(
+                            product_id=item.product_id, warehouse_id=wh_id
+                        ).first()
+                        if wh_stock:
+                            wh_stock.quantity = max(0.0, wh_stock.quantity - item.quantity)
+            receiving.stock_updated = False
+            db.session.commit()
+
+    @classmethod
+    def _post_approve_tool_delivering(cls, delivering):
+        """Decrease inventory when delivering is approved."""
+        if not delivering.stock_updated:
+            from app import db
+            from app.models import Product, ProductWarehouseStock
+            for item in delivering.items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    product.update_quantity(-item.quantity)
+                    if item.warehouse_id:
+                        wh_stock = ProductWarehouseStock.query.filter_by(
+                            product_id=item.product_id, warehouse_id=item.warehouse_id
+                        ).first()
+                        if not wh_stock:
+                            wh_stock = ProductWarehouseStock(
+                                product_id=item.product_id, warehouse_id=item.warehouse_id, quantity=0.0
+                            )
+                            db.session.add(wh_stock)
+                        wh_stock.quantity = max(0.0, wh_stock.quantity - item.quantity)
+            delivering.stock_updated = True
+            db.session.commit()
+
+    @classmethod
+    def _post_status_change_tool_delivering(cls, delivering, new_status):
+        """Revert inventory deduction if tool delivering status changes to draft/reject/cancel."""
+        if new_status in ('draft', 'cancel', 'reject') and delivering.stock_updated:
+            from app import db
+            from app.models import Product, ProductWarehouseStock
+            for item in delivering.items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    product.update_quantity(item.quantity)
+                    wh_id = getattr(item, 'warehouse_id', None)
+                    if wh_id:
+                        wh_stock = ProductWarehouseStock.query.filter_by(
+                            product_id=item.product_id, warehouse_id=wh_id
+                        ).first()
+                        if wh_stock:
+                            wh_stock.quantity += item.quantity
+            delivering.stock_updated = False
+            db.session.commit()

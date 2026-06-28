@@ -3079,6 +3079,7 @@ class ToolReceiving(db.Model):
     rejection_reason = db.Column(db.Text, nullable=True)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
+    stock_updated = db.Column(db.Boolean, default=False)  # True once inventory has been adjusted
 
     # BOM Overhead Allocation fields
     is_bom_overhead = db.Column(db.Boolean, default=False)
@@ -3132,6 +3133,7 @@ class ToolDelivering(db.Model):
     rejection_reason = db.Column(db.Text, nullable=True)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
+    stock_updated = db.Column(db.Boolean, default=False)  # True once inventory has been adjusted
     
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
     sale_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=True)

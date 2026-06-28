@@ -244,7 +244,8 @@ def create_receiving():
             receiving.allocated_ids = ",".join(allocated_ids)
             acc_settings.next_number = next_num
         
-        # 3. Create Items and Update Inventory
+        # 3. Create Items (stock will be updated ONLY upon approval)
+        creator_is_admin = (current_user.role == 'admin')
         for item in valid_items:
             rec_item = ToolReceivingItem(
                 receiving_id=receiving.id,
@@ -255,26 +256,33 @@ def create_receiving():
                 warehouse_id=item['warehouse_id']
             )
             db.session.add(rec_item)
-            
-            # Update quantity (Receiving increases stock)
-            product = Product.query.get(item['product_id'])
-            if product:
-                product.update_quantity(item['quantity'])
-                product.cost_price = item['unit_price']
-                # Update per-warehouse stock
-                if item['warehouse_id']:
-                    wh_stock = ProductWarehouseStock.query.filter_by(
-                        product_id=item['product_id'],
-                        warehouse_id=item['warehouse_id']
-                    ).first()
-                    if not wh_stock:
-                        wh_stock = ProductWarehouseStock(
+
+        # Auto-approve and update stock if admin creates
+        if creator_is_admin:
+            receiving.is_approved = True
+            receiving.approved_by = current_user.id
+            receiving.approved_at = datetime.utcnow()
+            for item in valid_items:
+                product = Product.query.get(item['product_id'])
+                if product:
+                    product.update_quantity(item['quantity'])
+                    product.cost_price = item['unit_price']
+                    if item['warehouse_id']:
+                        wh_stock = ProductWarehouseStock.query.filter_by(
                             product_id=item['product_id'],
-                            warehouse_id=item['warehouse_id'],
-                            quantity=0.0
-                        )
-                        db.session.add(wh_stock)
-                    wh_stock.quantity += item['quantity']
+                            warehouse_id=item['warehouse_id']
+                        ).first()
+                        if not wh_stock:
+                            wh_stock = ProductWarehouseStock(
+                                product_id=item['product_id'],
+                                warehouse_id=item['warehouse_id'],
+                                quantity=0.0
+                            )
+                            db.session.add(wh_stock)
+                        wh_stock.quantity += item['quantity']
+            receiving.stock_updated = True
+        else:
+            flash(f'Receiving Voucher #{receiving_number} submitted — pending admin approval. Inventory is NOT updated yet.', 'info')
         
         db.session.commit()
         
@@ -428,25 +436,33 @@ def create_delivering():
                 warehouse_id=item['warehouse_id']
             )
             db.session.add(del_item)
-            
-            # Update quantity
-            product = Product.query.get(item['product_id'])
-            if product:
-                product.update_quantity(-item['quantity'])
-                # Deduct per-warehouse stock
-                if item['warehouse_id']:
-                    wh_stock = ProductWarehouseStock.query.filter_by(
-                        product_id=item['product_id'],
-                        warehouse_id=item['warehouse_id']
-                    ).first()
-                    if not wh_stock:
-                        wh_stock = ProductWarehouseStock(
+
+        # Deduct stock ONLY if admin creates (auto-approved), else defer to approval
+        creator_is_admin = (current_user.role == 'admin')
+        if creator_is_admin:
+            delivering.is_approved = True
+            delivering.approved_by = current_user.id
+            delivering.approved_at = datetime.utcnow()
+            for item in valid_items:
+                product = Product.query.get(item['product_id'])
+                if product:
+                    product.update_quantity(-item['quantity'])
+                    if item['warehouse_id']:
+                        wh_stock = ProductWarehouseStock.query.filter_by(
                             product_id=item['product_id'],
-                            warehouse_id=item['warehouse_id'],
-                            quantity=0.0
-                        )
-                        db.session.add(wh_stock)
-                    wh_stock.quantity = max(0, wh_stock.quantity - item['quantity'])
+                            warehouse_id=item['warehouse_id']
+                        ).first()
+                        if not wh_stock:
+                            wh_stock = ProductWarehouseStock(
+                                product_id=item['product_id'],
+                                warehouse_id=item['warehouse_id'],
+                                quantity=0.0
+                            )
+                            db.session.add(wh_stock)
+                        wh_stock.quantity = max(0, wh_stock.quantity - item['quantity'])
+            delivering.stock_updated = True
+        else:
+            flash(f'Delivery Voucher #{delivering_number} submitted — pending admin approval. Inventory is NOT updated yet.', 'info')
                 
         db.session.commit()
         
@@ -467,19 +483,19 @@ def create_delivering():
 def delete_receiving(id):
     receiving = ToolReceiving.query.get_or_404(id)
     
-    # 1. Revert inventory
-    for item in receiving.items:
-        product = Product.query.get(item.product_id)
-        if product:
-            product.update_quantity(-item.quantity)
-        # Revert per-warehouse stock
-        if item.warehouse_id:
-            wh_stock = ProductWarehouseStock.query.filter_by(
-                product_id=item.product_id,
-                warehouse_id=item.warehouse_id
-            ).first()
-            if wh_stock:
-                wh_stock.quantity = max(0, wh_stock.quantity - item.quantity)
+    # 1. Revert inventory ONLY if stock was actually added (voucher was approved)
+    if receiving.stock_updated:
+        for item in receiving.items:
+            product = Product.query.get(item.product_id)
+            if product:
+                product.update_quantity(-item.quantity)
+            if item.warehouse_id:
+                wh_stock = ProductWarehouseStock.query.filter_by(
+                    product_id=item.product_id,
+                    warehouse_id=item.warehouse_id
+                ).first()
+                if wh_stock:
+                    wh_stock.quantity = max(0, wh_stock.quantity - item.quantity)
             
     # 2. Delete linked overhead expenses and update MO costs
     expenses = Expense.query.filter_by(reference=receiving.receiving_number).all()
@@ -504,19 +520,19 @@ def delete_receiving(id):
 def delete_delivering(id):
     delivering = ToolDelivering.query.get_or_404(id)
     
-    # 1. Revert inventory
-    for item in delivering.items:
-        product = Product.query.get(item.product_id)
-        if product:
-            product.update_quantity(item.quantity)
-        # Revert per-warehouse stock
-        if item.warehouse_id:
-            wh_stock = ProductWarehouseStock.query.filter_by(
-                product_id=item.product_id,
-                warehouse_id=item.warehouse_id
-            ).first()
-            if wh_stock:
-                wh_stock.quantity += item.quantity
+    # 1. Revert inventory ONLY if stock was actually deducted (voucher was approved)
+    if delivering.stock_updated:
+        for item in delivering.items:
+            product = Product.query.get(item.product_id)
+            if product:
+                product.update_quantity(item.quantity)
+            if item.warehouse_id:
+                wh_stock = ProductWarehouseStock.query.filter_by(
+                    product_id=item.product_id,
+                    warehouse_id=item.warehouse_id
+                ).first()
+                if wh_stock:
+                    wh_stock.quantity += item.quantity
             
     # 2. Delete linked expense
     if delivering.expense:
@@ -545,19 +561,20 @@ def edit_receiving(id):
     products = Product.query.filter_by(is_active=True).all()
     
     if request.method == 'POST':
-        # Revert old inventory (Receiving was +, so revert is -)
-        for item in receiving.items:
-            product = Product.query.get(item.product_id)
-            if product:
-                product.update_quantity(-item.quantity)
-            # Revert per-warehouse stock
-            if item.warehouse_id:
-                wh_stock = ProductWarehouseStock.query.filter_by(
-                    product_id=item.product_id,
-                    warehouse_id=item.warehouse_id
-                ).first()
-                if wh_stock:
-                    wh_stock.quantity = max(0, wh_stock.quantity - item.quantity)
+        # Revert old inventory ONLY if stock was previously added (voucher was approved)
+        if receiving.stock_updated:
+            for item in receiving.items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    product.update_quantity(-item.quantity)
+                if item.warehouse_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(
+                        product_id=item.product_id,
+                        warehouse_id=item.warehouse_id
+                    ).first()
+                    if wh_stock:
+                        wh_stock.quantity = max(0, wh_stock.quantity - item.quantity)
+            receiving.stock_updated = False
         
         # Delete old items
         ToolReceivingItem.query.filter_by(receiving_id=receiving.id).delete()
@@ -578,6 +595,7 @@ def edit_receiving(id):
         prices = request.form.getlist('price[]')
         
         total_items_amount = 0
+        new_items = []
         for i in range(len(product_ids)):
             if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
                 qty = float(quantities[i])
@@ -597,26 +615,29 @@ def edit_receiving(id):
                     warehouse_id=item_wh_id
                 )
                 db.session.add(item)
-                
-                # Update inventory (Receiving increases stock)
-                product = Product.query.get(int(product_ids[i]))
+                new_items.append({'product_id': int(product_ids[i]), 'quantity': qty, 'unit_price': price, 'warehouse_id': item_wh_id})
+        
+        # Re-apply stock if voucher is currently approved
+        if receiving.is_approved:
+            for it in new_items:
+                product = Product.query.get(it['product_id'])
                 if product:
-                    product.update_quantity(qty)
-                    product.cost_price = price
-                    # Update per-warehouse stock
-                    if item_wh_id:
+                    product.update_quantity(it['quantity'])
+                    product.cost_price = it['unit_price']
+                    if it['warehouse_id']:
                         wh_stock = ProductWarehouseStock.query.filter_by(
-                            product_id=int(product_ids[i]),
-                            warehouse_id=item_wh_id
+                            product_id=it['product_id'],
+                            warehouse_id=it['warehouse_id']
                         ).first()
                         if not wh_stock:
                             wh_stock = ProductWarehouseStock(
-                                product_id=int(product_ids[i]),
-                                warehouse_id=item_wh_id,
+                                product_id=it['product_id'],
+                                warehouse_id=it['warehouse_id'],
                                 quantity=0.0
                             )
                             db.session.add(wh_stock)
-                        wh_stock.quantity += qty
+                        wh_stock.quantity += it['quantity']
+            receiving.stock_updated = True
         
         receiving.total_amount = total_items_amount + receiving.shipping_charges
         
@@ -795,19 +816,20 @@ def edit_delivering(id):
     warehouses = Warehouse.query.filter_by(is_active=True).all()
     
     if request.method == 'POST':
-        # Revert old inventory
-        for item in delivering.items:
-            product = Product.query.get(item.product_id)
-            if product:
-                product.update_quantity(item.quantity)
-            # Revert per-warehouse stock deduction
-            if item.warehouse_id:
-                wh_stock = ProductWarehouseStock.query.filter_by(
-                    product_id=item.product_id,
-                    warehouse_id=item.warehouse_id
-                ).first()
-                if wh_stock:
-                    wh_stock.quantity += item.quantity
+        # Revert old inventory ONLY if stock was previously deducted (voucher was approved)
+        if delivering.stock_updated:
+            for item in delivering.items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    product.update_quantity(item.quantity)
+                if item.warehouse_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(
+                        product_id=item.product_id,
+                        warehouse_id=item.warehouse_id
+                    ).first()
+                    if wh_stock:
+                        wh_stock.quantity += item.quantity
+            delivering.stock_updated = False
         
         # Delete old items
         ToolDeliveringItem.query.filter_by(delivering_id=delivering.id).delete()
@@ -829,6 +851,7 @@ def edit_delivering(id):
         warehouse_ids = request.form.getlist('warehouse_id[]')
         
         total_items_amount = 0
+        new_del_items = []
         for i in range(len(product_ids)):
             if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
                 qty = float(quantities[i])
@@ -845,26 +868,32 @@ def edit_delivering(id):
                     warehouse_id=int(warehouse_ids[i]) if i < len(warehouse_ids) and warehouse_ids[i] else None
                 )
                 db.session.add(item)
-                
-                # Update inventory
-                product = Product.query.get(int(product_ids[i]))
+                new_del_items.append({
+                    'product_id': int(product_ids[i]),
+                    'quantity': qty,
+                    'warehouse_id': int(warehouse_ids[i]) if i < len(warehouse_ids) and warehouse_ids[i] else None
+                })
+        
+        # Re-apply stock deduction if voucher is currently approved
+        if delivering.is_approved:
+            for it in new_del_items:
+                product = Product.query.get(it['product_id'])
                 if product:
-                    product.update_quantity(-qty)
-                # Deduct per-warehouse stock
-                wh_id = int(warehouse_ids[i]) if i < len(warehouse_ids) and warehouse_ids[i] else None
-                if wh_id:
-                    wh_stock = ProductWarehouseStock.query.filter_by(
-                        product_id=int(product_ids[i]),
-                        warehouse_id=wh_id
-                    ).first()
-                    if not wh_stock:
-                        wh_stock = ProductWarehouseStock(
-                            product_id=int(product_ids[i]),
-                            warehouse_id=wh_id,
-                            quantity=0.0
-                        )
-                        db.session.add(wh_stock)
-                    wh_stock.quantity = max(0, wh_stock.quantity - qty)
+                    product.update_quantity(-it['quantity'])
+                    if it['warehouse_id']:
+                        wh_stock = ProductWarehouseStock.query.filter_by(
+                            product_id=it['product_id'],
+                            warehouse_id=it['warehouse_id']
+                        ).first()
+                        if not wh_stock:
+                            wh_stock = ProductWarehouseStock(
+                                product_id=it['product_id'],
+                                warehouse_id=it['warehouse_id'],
+                                quantity=0.0
+                            )
+                            db.session.add(wh_stock)
+                        wh_stock.quantity = max(0, wh_stock.quantity - it['quantity'])
+            delivering.stock_updated = True
         
         delivering.total_amount = total_items_amount + delivering.shipping_charges
         

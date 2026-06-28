@@ -427,30 +427,32 @@ def edit_invoice(id):
     form.salesman_id.choices = [('', 'Select Salesman')] + [(s.id, s.name) for s in salesmen]
 
     if request.method == 'POST':
-        # Revert old inventory
-        for item in sale.items:
-            product = Product.query.get(item.product_id)
-            if product:
-                # restore total quantity
-                product.update_quantity(item.quantity)
+        # Revert old inventory ONLY if stock was previously deducted (i.e. sale was approved)
+        if sale.stock_updated:
+            for item in sale.items:
+                product = Product.query.get(item.product_id)
+                if product:
+                    # restore total quantity
+                    product.update_quantity(item.quantity)
 
-                # restore per-warehouse quantity if used
-                try:
-                    wh_id = getattr(item, 'warehouse_id', None)
-                except Exception:
-                    wh_id = None
-                if wh_id:
-                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
-                    if not wh_stock:
-                        wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=wh_id, quantity=0)
-                        db.session.add(wh_stock)
-                    wh_stock.quantity += item.quantity
-                elif product.warehouse_id:
-                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=product.warehouse_id).first()
-                    if not wh_stock:
-                        wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=product.warehouse_id, quantity=0)
-                        db.session.add(wh_stock)
-                    wh_stock.quantity += item.quantity
+                    # restore per-warehouse quantity if used
+                    try:
+                        wh_id = getattr(item, 'warehouse_id', None)
+                    except Exception:
+                        wh_id = None
+                    if wh_id:
+                        wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
+                        if not wh_stock:
+                            wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=wh_id, quantity=0)
+                            db.session.add(wh_stock)
+                        wh_stock.quantity += item.quantity
+                    elif product.warehouse_id:
+                        wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=product.warehouse_id).first()
+                        if not wh_stock:
+                            wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=product.warehouse_id, quantity=0)
+                            db.session.add(wh_stock)
+                        wh_stock.quantity += item.quantity
+            sale.stock_updated = False
 
         # Delete old items
         SaleItem.query.filter_by(sale_id=sale.id).delete()
@@ -549,7 +551,7 @@ def edit_invoice(id):
                 if current_user.role == 'admin':
                     sale.is_approved = True
 
-        # Add items & update inventory
+        # Add items & update inventory (only deduct stock if sale is approved)
         for item in sale_items:
             sale_item = SaleItem(
                 sale_id=sale.id,
@@ -562,24 +564,27 @@ def edit_invoice(id):
             )
             db.session.add(sale_item)
 
-            # update inventory
-            product = Product.query.get(item['product_id'])
-            if product:
-                product.update_quantity(-item['quantity'])
+        # Only deduct inventory if the sale is currently approved
+        if sale.is_approved:
+            for item in sale_items:
+                product = Product.query.get(item['product_id'])
+                if product:
+                    product.update_quantity(-item['quantity'])
 
-                wh_id = item.get('warehouse_id')
-                if wh_id:
-                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=wh_id).first()
-                    if not wh_stock:
-                        wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=wh_id, quantity=0)
-                        db.session.add(wh_stock)
-                    wh_stock.quantity -= item['quantity']
-                elif product.warehouse_id:
-                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=product.warehouse_id).first()
-                    if not wh_stock:
-                        wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=product.warehouse_id, quantity=0)
-                        db.session.add(wh_stock)
-                    wh_stock.quantity -= item['quantity']
+                    wh_id = item.get('warehouse_id')
+                    if wh_id:
+                        wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=wh_id).first()
+                        if not wh_stock:
+                            wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=wh_id, quantity=0)
+                            db.session.add(wh_stock)
+                        wh_stock.quantity -= item['quantity']
+                    elif product.warehouse_id:
+                        wh_stock = ProductWarehouseStock.query.filter_by(product_id=item['product_id'], warehouse_id=product.warehouse_id).first()
+                        if not wh_stock:
+                            wh_stock = ProductWarehouseStock(product_id=item['product_id'], warehouse_id=product.warehouse_id, quantity=0)
+                            db.session.add(wh_stock)
+                        wh_stock.quantity -= item['quantity']
+            sale.stock_updated = True
 
         sale.calculate_totals()
         # Preserve paid amount; update status accordingly
@@ -605,30 +610,31 @@ def edit_invoice(id):
 @permission_required('sales', action='delete')
 def delete_invoice(id):
     sale = Sale.query.get_or_404(id)
-    # Restore inventory for sold items
-    for item in sale.items:
-        product = Product.query.get(item.product_id)
-        if product:
-            # restore total quantity
-            product.update_quantity(item.quantity)
+    # Only restore inventory if stock was actually deducted (sale was approved at some point)
+    if sale.stock_updated:
+        for item in sale.items:
+            product = Product.query.get(item.product_id)
+            if product:
+                # restore total quantity
+                product.update_quantity(item.quantity)
 
-            # restore per-warehouse quantity if sale item recorded a warehouse
-            try:
-                wh_id = getattr(item, 'warehouse_id', None)
-            except Exception:
-                wh_id = None
-            if wh_id:
-                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
-                if not wh_stock:
-                    wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=wh_id, quantity=0)
-                    db.session.add(wh_stock)
-                wh_stock.quantity += item.quantity
-            elif product.warehouse_id:
-                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=product.warehouse_id).first()
-                if not wh_stock:
-                    wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=product.warehouse_id, quantity=0)
-                    db.session.add(wh_stock)
-                wh_stock.quantity += item.quantity
+                # restore per-warehouse quantity if sale item recorded a warehouse
+                try:
+                    wh_id = getattr(item, 'warehouse_id', None)
+                except Exception:
+                    wh_id = None
+                if wh_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=wh_id, quantity=0)
+                        db.session.add(wh_stock)
+                    wh_stock.quantity += item.quantity
+                elif product.warehouse_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=product.warehouse_id).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=product.warehouse_id, quantity=0)
+                        db.session.add(wh_stock)
+                    wh_stock.quantity += item.quantity
 
     invoice_num = sale.invoice_number
     cust_name = sale.customer.name if sale.customer else "Walk-in Customer"
@@ -659,11 +665,21 @@ def bulk_delete_invoices():
             continue
             
         try:
-            # Restore inventory
-            for item in sale.items:
-                product = Product.query.get(item.product_id)
-                if product:
-                    product.update_quantity(item.quantity)
+            # Only restore inventory if stock was actually deducted
+            if sale.stock_updated:
+                for item in sale.items:
+                    product = Product.query.get(item.product_id)
+                    if product:
+                        product.update_quantity(item.quantity)
+                        wh_id = getattr(item, 'warehouse_id', None)
+                        if wh_id:
+                            wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
+                            if wh_stock:
+                                wh_stock.quantity += item.quantity
+                        elif product.warehouse_id:
+                            wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=product.warehouse_id).first()
+                            if wh_stock:
+                                wh_stock.quantity += item.quantity
             
             db.session.delete(sale)
             deleted_count += 1
@@ -804,6 +820,28 @@ def approve_invoice(id):
         pmt.approved_at = datetime.utcnow()
     sale.calculate_totals()
     sale.update_status()
+
+    # Deduct inventory on approval if not already done (e.g. staff-created invoice)
+    if not sale.stock_updated:
+        for item in sale.items:
+            product = Product.query.get(item.product_id)
+            if product:
+                product.update_quantity(-item.quantity)
+                wh_id = getattr(item, 'warehouse_id', None)
+                if wh_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=wh_id, quantity=0)
+                        db.session.add(wh_stock)
+                    wh_stock.quantity -= item.quantity
+                elif product.warehouse_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=product.warehouse_id).first()
+                    if not wh_stock:
+                        wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=product.warehouse_id, quantity=0)
+                        db.session.add(wh_stock)
+                    wh_stock.quantity -= item.quantity
+        sale.stock_updated = True
+
     db.session.commit()
     log_activity('Sales', f'Approved Invoice #{sale.invoice_number}',
                  f'Approved by {current_user.username}. Pending payments also approved: {len(pending_payments)}')
