@@ -18,6 +18,7 @@ def index():
     date_from_str = request.args.get('date_from')
     date_to_str = request.args.get('date_to')
     search = request.args.get('search', '')
+    action_type = request.args.get('action_type', '')  # 'approval' | 'regular' | ''
 
     query = ActivityLog.query
 
@@ -48,6 +49,12 @@ def index():
             ActivityLog.module.ilike(f'%{search}%')
         ))
 
+    # Action type filter: approval entries have module starting with 'Approval'
+    if action_type == 'approval':
+        query = query.filter(ActivityLog.module.ilike('Approval%'))
+    elif action_type == 'regular':
+        query = query.filter(~ActivityLog.module.ilike('Approval%'))
+
     logs = query.order_by(ActivityLog.timestamp.desc()).all()
     users = User.query.filter_by(is_active=True).all()
     
@@ -61,6 +68,7 @@ def index():
                            modules=modules,
                            selected_user_id=int(user_id) if user_id else None,
                            selected_module=module,
+                           selected_action_type=action_type,
                            date_from=date_from_str,
                            date_to=date_to_str,
                            search=search)

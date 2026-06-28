@@ -517,7 +517,9 @@ class ApprovalService:
 
         from app import db
         db.session.commit()
-        return entity, f"{config['label']} {cls.get_entity_label(entity, module)} approved"
+        msg = f"{config['label']} {cls.get_entity_label(entity, module)} approved"
+        cls._log_approval_action(module, config['label'], cls.get_entity_label(entity, module), 'Approved')
+        return entity, msg
 
     @classmethod
     def reject(cls, module, item_id, reason=''):
@@ -542,7 +544,10 @@ class ApprovalService:
 
         from app import db
         db.session.commit()
-        return entity, f"{config['label']} {cls.get_entity_label(entity, module)} rejected"
+        msg = f"{config['label']} {cls.get_entity_label(entity, module)} rejected"
+        detail = f"Reason: {reason}" if reason else None
+        cls._log_approval_action(module, config['label'], cls.get_entity_label(entity, module), 'Rejected', detail)
+        return entity, msg
 
     @classmethod
     def set_status(cls, module, item_id, universal_status):
@@ -584,7 +589,46 @@ class ApprovalService:
             cls._post_status_change_sale(entity, universal_status)
 
         db.session.commit()
-        return entity, f"{config['label']} {cls.get_entity_label(entity, module)} set to {universal_status}"
+        msg = f"{config['label']} {cls.get_entity_label(entity, module)} set to {universal_status}"
+        action_label = 'Cancelled' if universal_status == 'cancel' else 'Set to Draft'
+        cls._log_approval_action(module, config['label'], cls.get_entity_label(entity, module), action_label)
+        return entity, msg
+
+    @classmethod
+    def _log_approval_action(cls, module, label, record_label, action_verb, extra_detail=None):
+        """
+        Write a structured entry to the ActivityLog for any approval/rejection/status action.
+        Safe — never raises; silently skips if outside request context.
+        """
+        try:
+            from app.utils import log_activity
+            module_display = {
+                'sale': 'Sales', 'payment': 'Sales', 'advance': 'Sales',
+                'sale_return': 'Returns', 'purchase_return': 'Returns',
+                'purchase_order': 'Purchase', 'purchase_bill': 'Purchase',
+                'bill_payment': 'Purchase', 'vendor_advance': 'Purchase',
+                'expense': 'Expenses', 'tool_receiving': 'Tools',
+                'tool_delivering': 'Tools', 'manufacturing_order': 'Manufacturing',
+                'bom': 'Manufacturing', 'product': 'Inventory',
+                'customer': 'Customers', 'vendor': 'Vendors',
+                'salesman': 'Staff', 'warehouse': 'Inventory',
+                'product_category': 'Inventory', 'payment_method': 'Settings',
+                'customer_group': 'Customers', 'expense_category': 'Expenses',
+            }.get(module, 'Approval')
+
+            action_str = f"{action_verb} {label} #{record_label}"
+            details_parts = [f"Module: {label}", f"Record: {record_label}", f"Action: {action_verb}"]
+            if extra_detail:
+                details_parts.append(extra_detail)
+            details_str = " | ".join(details_parts)
+
+            log_activity(
+                module=f"Approval – {module_display}",
+                action=action_str,
+                details=details_str
+            )
+        except Exception:
+            pass  # Never break core approval logic because of logging
 
     @classmethod
     def _post_status_change_sale(cls, sale, new_status):

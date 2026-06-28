@@ -3073,6 +3073,13 @@ class ToolReceiving(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Approval workflow
+    is_approved = db.Column(db.Boolean, default=False, index=True)
+    is_rejected = db.Column(db.Boolean, default=False, index=True)
+    rejection_reason = db.Column(db.Text, nullable=True)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
+
     # BOM Overhead Allocation fields
     is_bom_overhead = db.Column(db.Boolean, default=False)
     overhead_type = db.Column(db.String(20)) # 'mo', 'bulk'
@@ -3088,6 +3095,7 @@ class ToolReceiving(db.Model):
     requester = db.relationship('Staff', foreign_keys=[requester_id], backref='tool_requests', lazy=True)
     customer = db.relationship('Customer', foreign_keys=[customer_id], lazy=True)
     sale = db.relationship('Sale', foreign_keys=[sale_id], lazy=True)
+    approver = db.relationship('User', foreign_keys=[approved_by], backref='tool_receiving_approvals', lazy=True)
 
 class ToolReceivingItem(db.Model):
     __tablename__ = 'tool_receiving_items'
@@ -3117,6 +3125,13 @@ class ToolDelivering(db.Model):
     requester_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Approval workflow
+    is_approved = db.Column(db.Boolean, default=False, index=True)
+    is_rejected = db.Column(db.Boolean, default=False, index=True)
+    rejection_reason = db.Column(db.Text, nullable=True)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
     
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
     sale_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=True)
@@ -3128,6 +3143,7 @@ class ToolDelivering(db.Model):
     requester = db.relationship('Staff', foreign_keys=[requester_id], backref='tool_delivery_requests', lazy=True)
     customer = db.relationship('Customer', foreign_keys=[customer_id], lazy=True)
     sale = db.relationship('Sale', foreign_keys=[sale_id], lazy=True)
+    approver = db.relationship('User', foreign_keys=[approved_by], backref='tool_delivering_approvals', lazy=True)
 
 class ToolDeliveringItem(db.Model):
     __tablename__ = 'tool_delivering_items'

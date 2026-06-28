@@ -6,8 +6,8 @@
 <div class="container-fluid px-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h2 class="fw-bold mb-0">Activity Log</h2>
-            <p class="text-muted small mb-0">Track all actions performed across the dashboard</p>
+            <h2 class="fw-bold mb-0"><i class="fas fa-history me-2 text-primary"></i>Activity Log</h2>
+            <p class="text-muted small mb-0">Track all actions performed across the dashboard, including approvals &amp; rejections</p>
         </div>
         <div class="d-flex gap-2">
             <a href="{{ url_for('activity_log.index') }}" class="btn btn-outline-secondary">
@@ -47,11 +47,19 @@
                         {% endfor %}
                     </select>
                 </div>
+                <div class="col-md-1">
+                    <label class="form-label small fw-bold text-muted mb-1">Action Type</label>
+                    <select name="action_type" class="form-select form-select-sm" id="actionTypeFilter">
+                        <option value="">- All -</option>
+                        <option value="approval" {% if request.args.get('action_type') == 'approval' %}selected{% endif %}>Approvals Only</option>
+                        <option value="regular" {% if request.args.get('action_type') == 'regular' %}selected{% endif %}>Regular Only</option>
+                    </select>
+                </div>
                 <div class="col-md-2">
                     <label class="form-label small fw-bold text-muted mb-1">From Date</label>
                     <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-1">
                     <label class="form-label small fw-bold text-muted mb-1">To Date</label>
                     <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
                 </div>
@@ -59,7 +67,7 @@
                     <button type="submit" class="btn btn-sm btn-primary px-3">
                         <i class="fas fa-filter me-1"></i>Filter
                     </button>
-                    {% if selected_user_id or selected_module or date_from or date_to or search %}
+                    {% if selected_user_id or selected_module or date_from or date_to or search or request.args.get('action_type') %}
                     <a href="{{ url_for('activity_log.index') }}" class="btn btn-sm btn-outline-secondary">
                         <i class="fas fa-times me-1"></i>Clear
                     </a>
@@ -89,7 +97,13 @@
                     </thead>
                     <tbody>
                         {% for log in logs %}
-                        <tr>
+                        {%- set is_approval = 'Approval' in (log.module or '') -%}
+                        {%- set action_lower = (log.action or '')|lower -%}
+                        {%- set act_approved  = action_lower.startswith('approved')  -%}
+                        {%- set act_rejected  = action_lower.startswith('rejected')  -%}
+                        {%- set act_cancelled = action_lower.startswith('cancelled') -%}
+                        {%- set act_draft     = action_lower.startswith('set to draft') -%}
+                        <tr class="{% if is_approval %}approval-row{% endif %}">
                             <td class="text-center px-3 no-export">
                                 <input type="checkbox" class="form-check-input log-checkbox" value="{{ log.id }}">
                             </td>
@@ -103,19 +117,47 @@
                             </td>
                             <td>
                                 <div class="d-flex align-items-center">
-                                    <div class="avatar-sm bg-primary-soft text-primary rounded-circle me-2 d-flex align-items-center justify-content-center" style="width: 30px; height: 30px; background-color: #e7f1ff;">
-                                        <i class="fas fa-user small"></i>
+                                    {%- set avatar_icon = 'fa-shield-halved text-warning' if is_approval else 'fa-user text-primary' -%}
+                                    <div class="avatar-sm rounded-circle me-2 d-flex align-items-center justify-content-center {% if is_approval %}avatar-approval{% else %}avatar-regular{% endif %}"
+                                         style="width:30px;height:30px;">
+                                        <i class="fas {{ avatar_icon }} small"></i>
                                     </div>
-                                    <span class="small fw-semibold">{{ log.user.username if log.user else 'System' }}</span>
+                                    <div>
+                                        <span class="small fw-semibold d-block">{{ log.user.username if log.user else 'System' }}</span>
+                                        {% if log.user %}
+                                        <span class="badge rounded-pill {% if log.user.role == 'admin' %}bg-danger{% else %}bg-secondary{% endif %} text-white" style="font-size:0.6rem;">{{ log.user.role }}</span>
+                                        {% endif %}
+                                    </div>
                                 </div>
                             </td>
                             <td>
+                                {% if is_approval %}
+                                <span class="badge rounded-pill bg-warning text-dark border px-2 py-1">
+                                    <i class="fas fa-shield-halved me-1"></i>{{ log.module }}
+                                </span>
+                                {% else %}
                                 <span class="badge rounded-pill bg-light text-dark border px-3">
                                     {{ log.module }}
                                 </span>
+                                {% endif %}
                             </td>
                             <td>
+                                {% if is_approval %}
+                                    {% if act_approved %}
+                                    <span class="badge bg-success px-2 py-1 me-1"><i class="fas fa-check me-1"></i>Approved</span>
+                                    {% elif act_rejected %}
+                                    <span class="badge bg-danger px-2 py-1 me-1"><i class="fas fa-times me-1"></i>Rejected</span>
+                                    {% elif act_cancelled %}
+                                    <span class="badge bg-secondary px-2 py-1 me-1"><i class="fas fa-ban me-1"></i>Cancelled</span>
+                                    {% elif act_draft %}
+                                    <span class="badge bg-info px-2 py-1 me-1"><i class="fas fa-file me-1"></i>Set to Draft</span>
+                                    {% else %}
+                                    <span class="badge bg-warning text-dark px-2 py-1 me-1"><i class="fas fa-gavel me-1"></i>Approval</span>
+                                    {% endif %}
+                                    <span class="small fw-bold text-dark">{{ log.action }}</span>
+                                {% else %}
                                 <span class="fw-bold text-primary small">{{ log.action }}</span>
+                                {% endif %}
                             </td>
                             <td>
                                 <span class="text-muted small text-truncate d-inline-block" style="max-width: 300px;" title="{{ log.details }}">
@@ -130,8 +172,10 @@
                                 <div class="modal fade" id="detailsModal{{ log.id }}" tabindex="-1">
                                     <div class="modal-dialog modal-dialog-centered">
                                         <div class="modal-content border-0 shadow">
-                                            <div class="modal-header bg-light">
-                                                <h6 class="modal-title fw-bold">Activity Details</h6>
+                                            <div class="modal-header {% if is_approval %}bg-warning text-dark{% else %}bg-light{% endif %}">
+                                                <h6 class="modal-title fw-bold">
+                                                    {% if is_approval %}<i class="fas fa-shield-halved me-2"></i>Approval Details{% else %}Activity Details{% endif %}
+                                                </h6>
                                                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                             </div>
                                             <div class="modal-body">
@@ -223,7 +267,11 @@
 </script>
 <style>
     .bg-primary-soft { background-color: #e7f1ff; }
+    .avatar-approval { background-color: #fff3cd; }
+    .avatar-regular  { background-color: #e7f1ff; }
     .table-hover tbody tr:hover { background-color: #f8faff; }
+    .table-hover tbody tr.approval-row { background-color: #fffef0; }
+    .table-hover tbody tr.approval-row:hover { background-color: #fff8d6; }
     .select2-container--bootstrap-5 .select2-selection--single { height: 31px !important; font-size: 0.875rem !important; }
     .select2-container--bootstrap-5 .select2-selection__rendered { line-height: 29px !important; }
 </style>
