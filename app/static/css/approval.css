@@ -70,16 +70,13 @@
 }
 
 .approval-menu {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    z-index: 9999; /* Higher than table rows */
-    min-width: 160px;
-    margin-top: 8px;
-    background: rgba(255, 255, 255, 0.95);
+    position: fixed;
+    z-index: 99999;
+    min-width: 170px;
+    background: rgba(255, 255, 255, 0.98);
     backdrop-filter: blur(10px);
     border-radius: 12px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0,0,0,0.05);
     padding: 8px;
     display: none;
     animation: fadeInSlide 0.2s ease-out;
@@ -132,6 +129,11 @@
 .approval-item.draft:hover {
     color: #1976d2;
     background-color: #e3f2fd;
+}
+
+.approval-item.pending:hover {
+    color: #f57c00;
+    background-color: #fff8e1;
 }
 
 @keyframes fadeInSlide {

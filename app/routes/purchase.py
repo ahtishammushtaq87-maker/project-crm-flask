@@ -387,6 +387,8 @@ def edit_bill(id):
                     bill.bill_image_path = os.path.join('uploads', 'bills', filename).replace('\\', '/')
 
         db.session.commit()
+        log_activity('Purchase', f'Updated Bill #{bill.bill_number}',
+                    f'Vendor: {bill.vendor.name}, Total: {bill.total}')
         flash('Purchase bill updated successfully! Inventory and cost prices have been updated.', 'success')
         return redirect(url_for('purchase.bill_detail', id=bill.id))
 
@@ -472,8 +474,10 @@ def update_shipping(id):
         
         bill.update_status()
         db.session.commit()
+        log_activity('Purchase', f'Updated Shipping on Bill #{bill.bill_number}',
+                    f'Old: PKR {old_shipping:,.2f}, New: PKR {new_shipping:,.2f}')
         flash(f'Shipping charge updated to PKR {new_shipping:,.2f}. Product costs recalculated!', 'success')
-        
+
     except ValueError:
         flash('Invalid shipping amount', 'danger')
     except Exception as e:
@@ -561,8 +565,10 @@ def update_tax(id):
         
         bill.update_status()
         db.session.commit()
+        log_activity('Purchase', f'Updated Tax on Bill #{bill.bill_number}',
+                    f'Old: {old_tax_rate}%, New: {new_tax_rate}%')
         flash(f'Tax rate updated to {new_tax_rate}%. Product costs recalculated!', 'success')
-        
+
     except ValueError:
         flash('Invalid tax rate', 'danger')
     except Exception as e:
@@ -880,6 +886,9 @@ def pay_bill(id):
             db.session.add(bp_record)
 
         db.session.commit()
+        if total_payment > 0:
+            log_activity('Purchase', f'Recorded Payment on Bill #{bill.bill_number}',
+                        f'Amount: PKR {total_payment:,.2f}, Method: {method_label}')
 
         if total_payment > 0:
             flash(f'Payment of PKR {total_payment:,.2f} recorded successfully! ({method_label})', 'success')
@@ -946,6 +955,8 @@ def edit_bill_payment(id, pay_id):
         bill.update_status()
 
         db.session.commit()
+        log_activity('Purchase', f'Updated Payment on Bill #{bill.bill_number}',
+                    f'Old: PKR {old_amount:,.2f}, New: PKR {new_amount:,.2f}')
         flash(f'Payment updated: PKR{new_amount:,.2f} ({payment.payment_method})', 'success')
         return redirect(url_for('purchase.bill_detail', id=bill.id))
 
@@ -1005,6 +1016,8 @@ def delete_bill_payment(id, pay_id):
     
     db.session.delete(payment)
     db.session.commit()
+    log_activity('Purchase', f'Deleted Payment on Bill #{bill.bill_number}',
+                f'Amount: PKR {payment.amount:,.2f}')
     flash(f'Payment deleted. Balance updated.', 'success')
     return redirect(url_for('purchase.bill_detail', id=bill.id))
 
@@ -1141,6 +1154,8 @@ def receive_quantity(id):
         if received_any:
             bill.inventory_received = True
             db.session.commit()
+            log_activity('Purchase', f'Received Stock for Bill #{bill.bill_number}',
+                        f'Vendor: {bill.vendor.name}')
             flash('Quantity received and inventory updated successfully!', 'success')
         else:
             db.session.rollback()
@@ -1164,8 +1179,10 @@ def apply_discount(id):
         bill.update_status()
         
         db.session.commit()
+        log_activity('Purchase', f'Applied Discount on Bill #{bill.bill_number}',
+                    f'Discount: PKR {discount_amount:,.2f}')
         flash(f'Discount of PKR {discount_amount} applied successfully!', 'success')
-    
+
     return redirect(request.referrer or url_for('purchase.bill_detail', id=bill.id))
 
 @bp.route('/bill/receive/<int:id>/delete', methods=['POST'])
@@ -1238,11 +1255,13 @@ def delete_receive(id):
             bill.inventory_received = False
         
         db.session.commit()
+        log_activity('Purchase', f'Reversed Receive for Bill #{bill.bill_number}',
+                    f'Vendor: {bill.vendor.name}')
         flash('Receive entry reversed successfully!', 'success')
     except Exception as e:
         db.session.rollback()
         flash(f'Error reversing receive: {str(e)}', 'danger')
-    
+
     return redirect(request.referrer or url_for('purchase.bill_detail', id=bill.id))
 
 @bp.route('/bill/<int:id>/delete', methods=['POST'])
@@ -1306,8 +1325,12 @@ def delete_bill(id):
         except Exception as e:
             print(f"Warning: Could not delete bill image: {e}")
 
+    bill_number = bill.bill_number
+    vendor_name = bill.vendor.name
     db.session.delete(bill)
     db.session.commit()
+    log_activity('Purchase', f'Deleted Bill #{bill_number}',
+                f'Vendor: {vendor_name}')
     flash('Purchase bill deleted successfully. Inventory and warehouse stocks have been reversed.', 'success')
     return redirect(url_for('purchase.bills'))
 
@@ -1523,12 +1546,15 @@ def bulk_upload_vendor():
                     errors.append(f'Row {idx + 2}: {str(e)}')
             
             db.session.commit()
-            
+            if added > 0:
+                log_activity('Vendors', f'Bulk Uploaded Vendors',
+                            f'{added} vendors added')
+
             if added > 0:
                 flash(f'Successfully added {added} vendors!', 'success')
             if errors:
                 flash(f'Errors: {"; ".join(errors[:10])}', 'warning')
-            
+
             return redirect(url_for('purchase.vendors'))
             
         except Exception as e:
@@ -1684,6 +1710,8 @@ def vendor_give_advance(id):
     )
     db.session.add(advance)
     db.session.commit()
+    log_activity('Vendors', f'Recorded Advance for {vendor.name}',
+                f'Amount: PKR {amount:,.2f}')
     flash(f'Advance of PKR {amount:,.2f} recorded for {vendor.name}.', 'success')
     return redirect(url_for('purchase.vendor_profile', id=id))
 
@@ -1719,9 +1747,13 @@ def vendor_adjust_advance(id, adv_id):
                     advance.is_adjusted = True
                     advance.adjusted_bill_id = bill.id
                     db.session.commit()
+                    log_activity('Vendors', f'Adjusted Advance Against Bill #{bill.bill_number}',
+                                f'Amount: PKR {apply_amount:,.2f}, Fully Applied')
                     flash(f'Advance of PKR {apply_amount:,.2f} fully applied to bill {bill.bill_number}.', 'success')
                 else:
                     db.session.commit()
+                    log_activity('Vendors', f'Adjusted Advance Against Bill #{bill.bill_number}',
+                                f'Amount: PKR {apply_amount:,.2f}, Remaining: PKR {advance.remaining_balance:,.2f}')
                     flash(f'Advance of PKR {apply_amount:,.2f} applied to bill {bill.bill_number}. Remaining PKR {advance.remaining_balance:,.2f} still available as advance.', 'success')
             return redirect(url_for('purchase.vendor_profile', id=id))
     return redirect(url_for('purchase.vendor_profile', id=id))
@@ -1744,8 +1776,11 @@ def vendor_delete_advance(id, adv_id):
             bill.paid_amount = max(0, bill.paid_amount - advance.applied_amount)
             bill.update_status()
     
+    advance_amount = advance.amount
     db.session.delete(advance)
     db.session.commit()
+    log_activity('Vendors', f'Deleted Vendor Advance',
+                f'Amount: PKR {advance_amount:,.2f}')
     flash('Advance deleted and any applied amount has been reversed.', 'success')
     return redirect(url_for('purchase.vendor_profile', id=id))
 
@@ -1785,9 +1820,11 @@ def edit_vendor(id):
                 vendor.image_path = image_path.replace('\\', '/')
         
         db.session.commit()
+        log_activity('Vendors', f'Updated Vendor: {vendor.name}',
+                    f'Vendor ID: {vendor.id}')
         flash('Vendor updated successfully!', 'success')
         return redirect(url_for('purchase.vendors'))
-    
+
     return render_template('purchase/edit_vendor.html', form=form, vendor=vendor)
 
 @bp.route('/vendor/<int:id>/delete', methods=['POST'])
@@ -1801,8 +1838,11 @@ def delete_vendor(id):
         flash('Cannot delete vendor as they have associated transaction records.', 'danger')
         return redirect(url_for('purchase.vendors'))
 
+    vendor_name = vendor.name
     db.session.delete(vendor)
     db.session.commit()
+    log_activity('Vendors', f'Deleted Vendor: {vendor_name}',
+                f'Vendor removed')
     flash('Vendor deleted successfully!', 'success')
     return redirect(url_for('purchase.vendors'))
 
@@ -2025,6 +2065,8 @@ def create_po():
             db.session.add(vendor_advance)
         
         db.session.commit()
+        log_activity('Purchase', f'Created PO #{po.po_number}',
+                    f'Vendor: {Vendor.query.get(vendor_id).name}, Total: {po.total}')
         flash(f'Purchase Order {po.po_number} created!', 'success')
         return redirect(url_for('purchase.po_detail', id=po.id))
 
@@ -2108,6 +2150,8 @@ def confirm_po(id):
     if po.status == 'Draft':
         po.status = 'Confirmed'
         db.session.commit()
+        log_activity('Purchase', f'Confirmed PO #{po.po_number}',
+                    f'Vendor: {po.vendor.name}')
         flash(f'Purchase Order {po.po_number} confirmed. You can now create a bill from it.', 'success')
     else:
         flash('Only Draft orders can be confirmed.', 'warning')
@@ -2121,6 +2165,8 @@ def cancel_po(id):
     if po.status in ('Draft', 'Confirmed'):
         po.status = 'Cancelled'
         db.session.commit()
+        log_activity('Purchase', f'Cancelled PO #{po.po_number}',
+                    f'Vendor: {po.vendor.name}')
         flash(f'Purchase Order {po.po_number} cancelled.', 'warning')
     else:
         flash('Cannot cancel a Converted or already Cancelled order.', 'danger')
@@ -2177,7 +2223,8 @@ def convert_po_to_bill(id):
     bill.calculate_totals()
     po.status = 'Converted'
     db.session.commit()
-
+    log_activity('Purchase', f'Converted PO #{po.po_number} to Bill #{bill.bill_number}',
+                f'Vendor: {po.vendor.name}, Total: {bill.total}')
     flash(f'Bill {bill.bill_number} created from PO {po.po_number}!', 'success')
     return redirect(url_for('purchase.bill_detail', id=bill.id))
 
@@ -2187,8 +2234,11 @@ def convert_po_to_bill(id):
 @permission_required('purchases', action='delete')
 def delete_po(id):
     po = PurchaseOrder.query.get_or_404(id)
+    po_number = po.po_number
     db.session.delete(po)
     db.session.commit()
+    log_activity('Purchase', f'Deleted PO #{po_number}',
+                f'Purchase Order removed')
     flash('Purchase Order deleted.', 'success')
     return redirect(url_for('purchase.purchase_orders'))
 
@@ -2541,6 +2591,8 @@ def create_purchase_return():
     settings.next_number = next_return_num + 1
 
     db.session.commit()
+    log_activity('Purchase', f'Created Return #{return_number}',
+                f'Bill: #{bill.bill_number}, Total: {total}')
     flash(f'Purchase return {return_number} created successfully!', 'success')
     return redirect(url_for('purchase.purchase_return_detail', id=purchase_return.id))
 
@@ -2617,6 +2669,8 @@ def approve_purchase_return(id):
             bill.status = 'partial_return'
 
     db.session.commit()
+    log_activity('Purchase', f'Approved Return #{purchase_return.return_number}',
+                f'Bill: #{bill.bill_number}')
     flash(f'Purchase return {purchase_return.return_number} approved successfully!', 'success')
     return redirect(url_for('purchase.purchase_return_detail', id=id))
 
@@ -2638,6 +2692,8 @@ def reject_purchase_return(id):
     purchase_return.status = 'rejected'
     
     db.session.commit()
+    log_activity('Purchase', f'Rejected Return #{purchase_return.return_number}',
+                f'Reason: {reason or "N/A"}')
     flash(f'Purchase return {purchase_return.return_number} has been rejected.', 'warning')
     return redirect(url_for('purchase.purchase_return_detail', id=id))
 
@@ -2668,6 +2724,8 @@ def mark_purchase_returned(id):
         purchase_return.returned_to_inventory = True
         purchase_return.status = 'completed'
         db.session.commit()
+        log_activity('Purchase', f'Marked Return #{purchase_return.return_number} as Returned',
+                    f'Items returned to inventory')
         flash('Items successfully returned to inventory and stock levels updated.', 'success')
     else:
         flash('Items already returned to inventory.', 'info')
@@ -2706,6 +2764,8 @@ def process_purchase_refund(id):
         db.session.add(vendor_advance)
     
     db.session.commit()
+    log_activity('Purchase', f'Processed Refund for Return #{purchase_return.return_number}',
+                f'Amount: PKR {refund_amount:,.2f}')
     flash(f'Refund of PKR{refund_amount:,.2f} processed to vendor.', 'success')
     return redirect(url_for('purchase.purchase_return_detail', id=id))
 
@@ -2798,6 +2858,8 @@ def edit_purchase_return(id):
             bill.update_status()
 
         db.session.commit()
+        log_activity('Purchase', f'Updated Return #{purchase_return.return_number}',
+                    f'Bill: #{bill.bill_number if bill else "N/A"}')
         flash(f'Return {purchase_return.return_number} updated successfully!', 'success')
         return redirect(url_for('purchase.purchase_return_detail', id=id))
     
@@ -2864,7 +2926,8 @@ def delete_purchase_return(id):
     return_number = purchase_return.return_number
     db.session.delete(purchase_return)
     db.session.commit()
-    
+    log_activity('Purchase', f'Deleted Return #{return_number}',
+                f'Return removed')
     flash(f'Return {return_number} deleted successfully. Inventory has been restored where applicable.', 'success')
     return redirect(url_for('purchase.purchase_return_list'))
 
@@ -3593,8 +3656,10 @@ def approve_vendor_advance(id):
     advance.is_rejected = False
     advance.approved_by = current_user.id
     advance.approved_at = datetime.utcnow()
-    
+
     db.session.commit()
+    log_activity('Vendors', f'Approved Vendor Advance',
+                f'Amount: PKR {advance.amount:,.2f}')
     flash('Vendor advance approved successfully.', 'success')
     return redirect(request.referrer or url_for('purchase.vendor_detail', id=advance.vendor_id))
 
@@ -3612,7 +3677,9 @@ def reject_vendor_advance(id):
     advance.is_approved = False
     advance.is_rejected = True
     advance.rejection_reason = reason
-    
+
     db.session.commit()
+    log_activity('Vendors', f'Rejected Vendor Advance',
+                f'Amount: PKR {advance.amount:,.2f}, Reason: {reason or "N/A"}')
     flash('Vendor advance rejected.', 'warning')
     return redirect(request.referrer or url_for('purchase.vendor_detail', id=advance.vendor_id))

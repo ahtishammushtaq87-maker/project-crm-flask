@@ -117,7 +117,7 @@
                         <tr>
                             <td>{{ log.date.strftime('%d-%m-%Y') }}</td>
                             <td>{{ log.product.sku if log.product else '' }}</td>
-                            <td>{{ log.product.name if log.product else '' }}</td>
+                            <td class="{% if log.product and log.product.margin_color %}text-{{ log.product.margin_color }} fw-bold{% endif %}">{{ log.product.name if log.product else '' }}</td>
                             <td>{{ log.shift or '-' }}</td>
                             <td>{{ log.operator or '-' }}</td>
                             <td class="text-success">{{ log.qty_produced|int }}</td>

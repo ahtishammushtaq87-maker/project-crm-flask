@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
-from app.utils import permission_required
+from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
 from app.models import Product, BOM, BOMItem, ManufacturingOrder, ManufacturingOrderItem, StockMovement, BOMVersion, Company, Expense, ManufacturingOrderHistory, ProductionLog, ProductionTarget, Warehouse, ProductWarehouseStock
@@ -136,7 +136,8 @@ def add_bom():
         # We capture the BOM structure/cost in the version record, but don't the product.cost_price yet
         # Product cost will be updated upon production completion
         db.session.commit()
-        
+        log_activity('Manufacturing', f'Created BOM: {bom.name}', f'Product: {bom.product.name if bom.product else "N/A"}, Version: v1')
+
         flash('Bill of Materials created successfully (v1).', 'success')
         return redirect(url_for('manufacturing.boms'))
         
@@ -250,7 +251,8 @@ def edit_bom(id):
 
         # Structure updated, versioned, but product.cost_price remains untouched until production
         db.session.commit()
-        
+        log_activity('Manufacturing', f'Updated BOM: {bom.name}', f'Product: {bom.product.name if bom.product else "N/A"}, Version: {bom.version}')
+
         flash('Bill of Materials updated successfully.', 'success')
         return redirect(url_for('manufacturing.bom_details', id=bom.id))
         
@@ -325,9 +327,12 @@ def delete_bom(id):
         BOMItem.query.filter_by(bom_id=id).delete(synchronize_session=False)
         
         # 4. Now delete the BOM itself
+        bom_name = bom.name
+        bom_product_name = bom.product.name if bom.product else "N/A"
         db.session.delete(bom)
         db.session.commit()
-        
+        log_activity('Manufacturing', f'Deleted BOM: {bom_name}', f'Product: {bom_product_name}')
+
         flash('BOM deleted successfully.', 'success')
         return redirect(url_for('manufacturing.boms'))
     
@@ -432,7 +437,8 @@ def add_order():
         mo.total_cost = mo.actual_labor_cost + mo.actual_material_cost + mo.actual_overhead_cost
         
         db.session.commit()
-        
+        log_activity('Manufacturing', f'Created Manufacturing Order: {order_number}', f'BOM: {bom.name}, Qty: {mo.quantity_to_produce}')
+
         # Ensure Production Target exists for this product/month
         if mo.start_date:
             target_month = mo.start_date.month
@@ -521,6 +527,7 @@ def edit_order(id):
             order.total_cost = order.actual_labor_cost + order.actual_material_cost + (order.actual_overhead_cost or 0)
         
         db.session.commit()
+        log_activity('Manufacturing', f'Updated Manufacturing Order: {order.order_number}', f'BOM: {order.bom.name}, Qty: {order.quantity_to_produce}')
         # Ensure Production Target exists for this product/month after edit
         if order.start_date:
             target_month = order.start_date.month
@@ -576,6 +583,7 @@ def complete_order(id):
         order.produced_qty = order.quantity_to_produce
         order.end_date = datetime.now().date()
         db.session.commit()
+        log_activity('Manufacturing', f'Completed Manufacturing Order: {order.order_number}', f'Status: Completed')
         flash('Order marked as completed.', 'success')
         return redirect(url_for('manufacturing.order_details', id=order.id))
 
@@ -731,6 +739,7 @@ def complete_order(id):
             target.produced_qty += qty_to_process
     
     db.session.commit()
+    log_activity('Manufacturing', f'Completed Manufacturing Order: {order.order_number}', f'Qty Produced: {qty_to_process}, Status: Completed')
     flash('Manufacturing Order completed successfully. Stock adjusted and product cost updated.', 'success')
     return redirect(url_for('manufacturing.order_details', id=order.id))
 
@@ -917,6 +926,7 @@ def partial_complete_order(id):
             target.produced_qty += qty_produced
             
     db.session.commit()
+    log_activity('Manufacturing', f'Partial Completion of MO: {order.order_number}', f'Qty Produced: {qty_produced}, Status: {order.status}')
     flash(f'Successfully produced {qty_produced} units. Overhead applied and reset for remaining.', 'success')
     return redirect(url_for('manufacturing.order_details', id=order.id))
 
@@ -1021,10 +1031,12 @@ def delete_history_batch(id):
             target.produced_qty -= batch.quantity_produced
 
         # 7. Delete the history record itself
+        batch_qty = batch.quantity_produced
         db.session.delete(batch)
-        
+
         db.session.commit()
-        flash(f'Batch of {batch.quantity_produced} items reversed. Inventory and overhead have been restored.', 'success')
+        log_activity('Manufacturing', f'Reversed Batch for MO: {order.order_number}', f'Qty Reversed: {batch_qty}')
+        flash(f'Batch of {batch_qty} items reversed. Inventory and overhead have been restored.', 'success')
         
     except Exception as e:
         db.session.rollback()
@@ -1119,9 +1131,11 @@ def delete_order(id):
     for exp in linked_expenses:
         db.session.delete(exp)
     
+    order_number = order.order_number
     db.session.delete(order)
     db.session.commit()
-    
+    log_activity('Manufacturing', f'Deleted Manufacturing Order: {order_number}', '')
+
     flash('Manufacturing Order deleted successfully. Linked overhead expenses have been released.', 'success')
     return redirect(url_for('manufacturing.orders'))
 

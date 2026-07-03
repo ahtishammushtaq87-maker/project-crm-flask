@@ -80,7 +80,7 @@
                             <tbody>
                                 {% for item in return_obj.items %}
                                 <tr>
-                                    <td>{{ item.product.name if item.product else 'Unknown' }}</td>
+                                    <td class="{% if item.product and item.product.margin_color %}text-{{ item.product.margin_color }} fw-bold{% endif %}">{{ item.product.name if item.product else 'Unknown' }}</td>
                                     <td>{{ item.quantity }}</td>
                                     <td>PKR{{ "%.2f"|format(item.unit_price) }}</td>
                                     <td>PKR{{ "%.2f"|format(item.total) }}</td>

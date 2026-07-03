@@ -146,8 +146,9 @@
                             <input type="number" name="tax_rate" class="form-control" step="0.01" value="{{ sale.tax_rate }}">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Discount</label>
-                            <input type="number" name="discount" class="form-control" step="0.01" value="0">
+                            <label class="form-label">Discount <span class="text-muted fw-normal">(auto)</span></label>
+                            <input type="number" name="discount" id="discountInput" class="form-control bg-light" step="0.01" value="0" readonly
+                                title="Auto-calculated: each item's original per-unit discount prorated for the quantity being returned">
                         </div>
                         <hr>
                         <div class="mb-2">
@@ -185,6 +186,7 @@
                                     <th>Original Qty</th>
                                     <th>Return Qty</th>
                                     <th>Unit Price</th>
+                                    <th>Discount</th>
                                     <th>Total</th>
                                     <th></th>
                                 </tr>
@@ -218,11 +220,15 @@
                                 </td>
                                 <td>
                                     <input type="number" name="quantity[]" class="form-control quantity" step="0.01"
-                                           max="{{ item.quantity }}" required>
+                                           max="{{ item.quantity }}" data-orig-discount="{{ item.discount or 0 }}"
+                                           data-orig-qty="{{ item.quantity }}" required>
                                 </td>
                                 <td>
                                     <input type="number" name="price[]" class="form-control price" step="0.01"
                                            value="{{ item.unit_price }}" {% if not current_user.is_admin %}readonly{% endif %}>
+                                </td>
+                                <td>
+                                    <span class="item-discount text-success">PKR0.00</span>
                                 </td>
                                 <td>
                                     <span class="item-total">PKR0.00</span>
@@ -247,6 +253,7 @@
     </form>
     {% endif %}
 </div>
+{% endblock %}
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
@@ -280,7 +287,17 @@
                 newRow.querySelector('.price').setAttribute('readonly', true);
             }
         }
-        
+
+        // Manually added rows aren't tied to an original sale item, so there's
+        // nothing to prorate a discount from — clear the cloned attributes.
+        const newQtyInput = newRow.querySelector('.quantity');
+        if (newQtyInput) {
+            newQtyInput.setAttribute('data-orig-discount', '0');
+            newQtyInput.setAttribute('data-orig-qty', '0');
+            newQtyInput.removeAttribute('max');
+        }
+
+        newRow.querySelector('.item-discount').textContent = 'PKR0.00';
         newRow.querySelector('.item-total').textContent = 'PKR0.00';
         document.getElementById('itemsBody').appendChild(newRow);
         
@@ -316,25 +333,39 @@
     }
 
     function calculateItemTotal(row) {
-        const quantity = parseFloat(row.querySelector('.quantity').value) || 0;
+        const qtyInput = row.querySelector('.quantity');
+        const quantity = parseFloat(qtyInput.value) || 0;
         const price = parseFloat(row.querySelector('.price').value) || 0;
         const total = quantity * price;
         row.querySelector('.item-total').textContent = `PKR${total.toFixed(2)}`;
+
+        // Preview only — the server recomputes this authoritatively from the
+        // original invoice item, so this can't be used to inflate a discount.
+        const origDiscount = parseFloat(qtyInput.getAttribute('data-orig-discount')) || 0;
+        const origQty = parseFloat(qtyInput.getAttribute('data-orig-qty')) || 0;
+        let itemDiscount = 0;
+        if (origQty > 0 && origDiscount > 0) {
+            itemDiscount = Math.min((origDiscount / origQty) * quantity, origDiscount);
+        }
+        row.querySelector('.item-discount').textContent = `PKR${itemDiscount.toFixed(2)}`;
+
         calculateTotals();
     }
 
     function calculateTotals() {
-        let subtotal = 0;
-        document.querySelectorAll('.item-total').forEach(totalSpan => {
-            const total = parseFloat(totalSpan.textContent.replace('PKR', '')) || 0;
-            subtotal += total;
+        let subtotal = 0, discount = 0;
+        document.querySelectorAll('.item-row').forEach(row => {
+            subtotal += parseFloat(row.querySelector('.item-total').textContent.replace('PKR', '')) || 0;
+            discount += parseFloat(row.querySelector('.item-discount').textContent.replace('PKR', '')) || 0;
         });
 
         const taxRate = parseFloat(document.querySelector('input[name="tax_rate"]').value) || 0;
         const tax = subtotal * (taxRate / 100);
-        const discountInput = document.querySelector('input[name="discount"]');
-        const discount = discountInput ? (parseFloat(discountInput.value) || 0) : 0;
         const total = subtotal + tax - discount;
+
+        // Header discount is always the sum of the per-item prorated discounts (read-only field)
+        const discountInput = document.querySelector('input[name="discount"]');
+        if (discountInput) discountInput.value = discount.toFixed(2);
 
         document.getElementById('subtotal').textContent = `PKR${subtotal.toFixed(2)}`;
         document.getElementById('tax').textContent = `PKR${tax.toFixed(2)}`;
@@ -357,15 +388,11 @@
         initSelect2('.searchable-select');
         initSelect2('.warehouse-select', '— Select Warehouse —');
         document.querySelectorAll('.item-row').forEach(attachItemEvents);
-        
-        const discountInput = document.querySelector('input[name="discount"]');
-        if (discountInput) discountInput.addEventListener('input', calculateTotals);
-        
+
         const taxInput = document.querySelector('input[name="tax_rate"]');
         if (taxInput) taxInput.addEventListener('input', calculateTotals);
         
         calculateTotals();
     });
 </script>
-{% endblock %}
 {% endblock %}

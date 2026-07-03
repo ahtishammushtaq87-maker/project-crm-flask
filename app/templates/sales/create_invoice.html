@@ -7,70 +7,137 @@
 <link rel="stylesheet"
     href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
 <style>
-    /* Select2 Premium Styling */
     .select2-container--bootstrap-5 {
         width: 100% !important;
         display: block !important;
         box-sizing: border-box !important;
     }
 
-    /* Mobile-friendly Select2 adjustments */
     @media (max-width: 768px) {
         .select2-container--bootstrap-5 .select2-selection {
             height: 38px !important;
-            /* Balanced size */
             display: flex;
             align-items: center;
             font-size: 14px !important;
         }
-
         .select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered {
             line-height: 38px !important;
             padding-left: 10px !important;
         }
-
         .select2-container--bootstrap-5 .select2-selection--single .select2-selection__arrow {
             height: 36px !important;
         }
-
         .select2-search__field {
             font-size: 16px !important;
-            /* Keep 16px to prevent auto-zoom jump */
             padding: 6px 10px !important;
         }
-
         .select2-results__option {
             padding: 10px 12px !important;
-            /* Standard touch targets */
             font-size: 14px;
         }
+        #itemsTable { min-width: 820px; }
+    }
 
-        #itemsTable {
-            min-width: 800px;
-            /* Force horizontal scroll on mobile */
+    #itemsTable {
+        table-layout: fixed;
+        width: 100%;
+    }
+    #itemsTable td {
+        vertical-align: middle;
+    }
+    #itemsTable td .select2-container {
+        max-width: 100% !important;
+        width: 100% !important;
+        display: block !important;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+    }
+    #itemsTable td .select2-container .select2-selection {
+        height: 30px !important;
+        min-height: 30px !important;
+        font-size: 0.78rem;
+        touch-action: manipulation;
+    }
+    #itemsTable td .select2-container .select2-selection__rendered {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        display: block;
+        line-height: 28px;
+        padding-right: 20px;
+        font-size: 0.78rem;
+    }
+    .select2-container--open .select2-dropdown {
+        max-width: 350px;
+    }
+    .select2-container--open .select2-search__field {
+        font-size: 16px !important;
+        padding: 6px 8px !important;
+    }
+    @media (max-width: 768px) {
+        .table-responsive {
+            -webkit-overflow-scrolling: touch;
         }
+        #itemsTable td .select2-container .select2-selection {
+            height: 36px !important;
+            min-height: 36px !important;
+        }
+        #itemsTable td .select2-container .select2-selection__rendered {
+            line-height: 34px;
+        }
+        #itemsTable col:nth-child(1) { width: 15% !important; }
+        #itemsTable col:nth-child(2) { width: 15% !important; }
+    }
+    #itemsTable .form-control-sm,
+    #itemsTable .form-select-sm {
+        padding: 0.2rem 0.35rem;
+        font-size: 0.78rem;
+    }
+    #itemsTable .item-total,
+    #itemsTable .item-profit {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        display: block;
+    }
+
+    .summary-line {
+        display: flex;
+        justify-content: space-between;
+        padding: 3px 0;
+    }
+    .summary-line.total-line {
+        border-top: 2px solid #dee2e6;
+        margin-top: 4px;
+        padding-top: 8px;
+    }
+    .profit-cell {
+        font-size: 0.78rem;
+        line-height: 1.25;
     }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <h2 class="mb-4">Create New Invoice</h2>
+    <h2 class="mb-3">Create New Invoice</h2>
 
     <form method="POST" id="invoiceForm">
         <div class="row">
-            <div class="col-md-6">
-                <div class="card mb-3">
-                    <div class="card-header">
-                        <h5>Invoice Details</h5>
+            <!-- LEFT COLUMN: Invoice Details + Summary stacked -->
+            <div class="col-lg-4 col-md-5 col-12">
+                <!-- Invoice Details -->
+                <div class="card mb-3 shadow-sm">
+                    <div class="card-header bg-primary bg-opacity-10 py-2">
+                        <h6 class="mb-0 fw-bold text-primary"><i class="fas fa-file-invoice me-2"></i>Invoice Details</h6>
                     </div>
-                    <div class="card-body">
-                        <div class="mb-3">
+                    <div class="card-body py-2">
+                        <div class="mb-2">
                             <div class="d-flex justify-content-between align-items-center">
-                                <label for="customerSelect" class="form-label">Customer</label>
-                                <button type="button" class="btn btn-sm btn-outline-primary py-0" onclick="showCustomerLedger(document.getElementById('customerSelect').value)">Ledger()</button>
+                                <label for="customerSelect" class="form-label mb-0 small fw-semibold">Customer</label>
+                                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1" style="font-size:0.7rem;" onclick="showCustomerLedger(document.getElementById('customerSelect').value)">Ledger</button>
                             </div>
-                            <select name="customer_id" class="form-control" id="customerSelect"
+                            <select name="customer_id" class="form-control form-control-sm" id="customerSelect"
                                 onchange="updateCustomerInfo()">
                                 <option value="0">Walk-in Customer</option>
                                 {% for customer in form.customer_id.choices[1:] %}
@@ -81,202 +148,238 @@
                                 {% endfor %}
                             </select>
                         </div>
-                        <div id="customerAdvanceInfo" class="alert alert-info">
+                        <div id="customerAdvanceInfo" class="alert alert-info py-1 px-2 mb-2 small">
                             <i class="fas fa-hand-holding-usd me-1"></i>
-                            <strong>Customer Advance:</strong>
+                            <strong>Advance:</strong>
                             <span id="availableAdvance">Select a customer</span>
                         </div>
-                        <div id="customerAdvanceDetails" class="mb-3" style="display:none;">
-                            <label class="form-label text-warning fw-bold">
+                        <div id="customerAdvanceDetails" class="mb-2" style="display:none;">
+                            <label class="form-label text-warning fw-bold small mb-1">
                                 <i class="fas fa-list me-1"></i>Available Advances
                             </label>
                             <div id="advanceListContainer" class="bg-light rounded p-2"
-                                style="max-height: 150px; overflow-y: auto;">
+                                style="max-height: 120px; overflow-y: auto; font-size: 0.78rem;">
                             </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="vendorSelect" class="form-label">Vendor (Optional)</label>
-                            <select name="vendor_id" class="form-control" id="vendorSelect">
+                        <div class="mb-2">
+                            <label for="vendorSelect" class="form-label mb-0 small fw-semibold">Vendor (Optional)</label>
+                            <select name="vendor_id" class="form-control form-control-sm" id="vendorSelect">
                                 <option value="0">None</option>
                                 {% for vendor in vendors %}
                                 <option value="{{ vendor.id }}">{{ vendor.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="mb-3">
-                            <label for="salesmanSelect" class="form-label">Salesman <span class="text-danger">*</span></label>
-                            <div class="input-group">
-                                <select name="salesman_id" class="form-control" id="salesmanSelect" required>
-                                    <option value="">Select Salesman</option>
-                                    {% for salesman in salesmen %}
-                                    <option value="{{ salesman.id }}">{{ salesman.name }}</option>
-                                    {% endfor %}
-                                </select>
+                        <div class="mb-2">
+                            <label for="salesmanSelect" class="form-label mb-0 small fw-semibold">Salesman <span class="text-danger">*</span></label>
+                            <select name="salesman_id" class="form-control form-control-sm" id="salesmanSelect" required>
+                                <option value="">Select Salesman</option>
+                                {% for salesman in salesmen %}
+                                <option value="{{ salesman.id }}">{{ salesman.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-6">
+                                <label for="dateInput" class="form-label mb-0 small fw-semibold">Date</label>
+                                <input type="date" name="date" class="form-control form-control-sm" id="dateInput"
+                                    value="{{ now.strftime('%Y-%m-%d') }}" required>
+                            </div>
+                            <div class="col-6">
+                                <label for="dueDateInput" class="form-label mb-0 small fw-semibold">Due Date</label>
+                                <input type="date" name="due_date" class="form-control form-control-sm" id="dueDateInput"
+                                    value="{{ now.strftime('%Y-%m-%d') }}">
                             </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="dateInput" class="form-label">Date</label>
-                            <input type="date" name="date" class="form-control" id="dateInput"
-                                value="{{ now.strftime('%Y-%m-%d') }}" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="statusSelect" class="form-label">Status</label>
-                            <select name="status" class="form-control" id="statusSelect">
+                        <div class="mb-1">
+                            <label for="statusSelect" class="form-label mb-0 small fw-semibold">Status</label>
+                            <select name="status" class="form-control form-control-sm" id="statusSelect">
                                 <option value="draft">Draft</option>
                                 <option value="unpaid" selected>Unpaid</option>
                                 <option value="paid">Paid</option>
                                 <option value="partial">Partial</option>
                             </select>
                         </div>
-                        <div class="mb-3">
-                            <label for="dueDateInput" class="form-label">Due Date</label>
-                            <input type="date" name="due_date" class="form-control" id="dueDateInput"
-                                value="{{ now.strftime('%Y-%m-%d') }}">
-                        </div>
                     </div>
                 </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card mb-3">
-                    <div class="card-header">
-                        <h5>Summary</h5>
+
+                <!-- Summary -->
+                <div class="card mb-3 shadow-sm">
+                    <div class="card-header bg-warning bg-opacity-10 py-2">
+                        <h6 class="mb-0 fw-bold text-warning"><i class="fas fa-calculator me-2"></i>Summary</h6>
                     </div>
-                    <div class="card-body">
-                        <div class="mb-3">
-                            <label for="discountInput" class="form-label">Discount</label>
-                            <input type="number" name="discount" id="discountInput" class="form-control" step="0.01"
-                                value="0">
-                            <div class="form-check mt-1">
-                                <input class="form-check-input" type="checkbox" name="ignore_overdue_discount" id="ignoreOverdueCheck">
-                                <label class="form-check-label small text-info" for="ignoreOverdueCheck">
-                                    Override Overdue Restriction
-                                </label>
+                    <div class="card-body py-2">
+                        <div class="row g-2 mb-2">
+                            <div class="col-6">
+                                <label for="discountInput" class="form-label mb-0 small fw-semibold">Discount <span class="text-muted fw-normal">(auto)</span></label>
+                                <input type="number" name="discount" id="discountInput" class="form-control form-control-sm bg-light" step="0.01" value="0" readonly title="Auto-calculated as the sum of each item's Discount field">
+                            </div>
+                            <div class="col-6">
+                                <label for="taxRateInput" class="form-label mb-0 small fw-semibold">Tax Rate (%)</label>
+                                <input type="number" name="tax_rate" id="taxRateInput" class="form-control form-control-sm" step="0.01" value="0">
                             </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="taxRateInput" class="form-label">Tax Rate (%)</label>
-                            <input type="number" name="tax_rate" id="taxRateInput" class="form-control" step="0.01"
-                                value="0">
-                        </div>
-                        <div class="mb-3">
-                            <label for="deliveryChargeInput" class="form-label">Delivery Charge (PKR)</label>
-                            <input type="number" name="delivery_charge" id="deliveryChargeInput" class="form-control"
-                                step="0.01" value="0">
-                        </div>
-                        <div class="mb-3">
-                            <label for="advanceAppliedInput" class="form-label">
-                                <i class="fas fa-hand-holding-usd me-1 text-warning"></i>Advance Applied (PKR)
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" name="ignore_overdue_discount" id="ignoreOverdueCheck">
+                            <label class="form-check-label" style="font-size:0.72rem;" for="ignoreOverdueCheck">
+                                Override Overdue Restriction
                             </label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-warning text-dark"><i
-                                        class="fas fa-hand-holding-usd"></i></span>
-                                <input type="number" name="advance_applied" id="advanceAppliedInput"
-                                    class="form-control border-warning" step="0.01" value="0">
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-6">
+                                <label for="deliveryChargeInput" class="form-label mb-0 small fw-semibold">Delivery Charge</label>
+                                <input type="number" name="delivery_charge" id="deliveryChargeInput" class="form-control form-control-sm" step="0.01" value="0">
                             </div>
-                            <small class="text-muted">Available advance will be shown after selecting customer</small>
+                            <div class="col-6">
+                                <label for="advanceAppliedInput" class="form-label mb-0 small fw-semibold">Advance Applied</label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-warning text-dark py-0"><i class="fas fa-hand-holding-usd"></i></span>
+                                    <input type="number" name="advance_applied" id="advanceAppliedInput"
+                                        class="form-control border-warning" step="0.01" value="0">
+                                </div>
+                            </div>
                         </div>
-                        <hr>
-                        <div class="mb-2">
-                            <strong>Subtotal:</strong> <span id="subtotal">PKR0.00</span>
+                        <hr class="my-2">
+                        <div class="summary-line small">
+                            <span class="text-muted">Subtotal:</span>
+                            <span id="subtotal" class="fw-bold">PKR0.00</span>
                         </div>
-                        <div class="mb-2">
-                            <strong>Tax:</strong> <span id="tax">PKR0.00</span>
+                        <div class="summary-line small">
+                            <span class="text-muted">Tax:</span>
+                            <span id="tax">PKR0.00</span>
                         </div>
-                        <div class="mb-2">
-                            <strong>Discount:</strong> <span id="discountDisplay">PKR0.00</span>
+                        <div class="summary-line small">
+                            <span class="text-muted">Discount:</span>
+                            <span id="discountDisplay" class="text-danger">PKR0.00</span>
                         </div>
-                        <div class="mb-2">
-                            <strong>Delivery:</strong> <span id="deliveryDisplay">PKR0.00</span>
+                        <div class="summary-line small">
+                            <span class="text-muted">Delivery:</span>
+                            <span id="deliveryDisplay">PKR0.00</span>
                         </div>
-                        <div class="mb-2">
-                            <strong>Advance:</strong> <span id="advanceDisplay">PKR0.00</span>
+                        <div class="summary-line small">
+                            <span class="text-muted">Advance:</span>
+                            <span id="advanceDisplay" class="text-info">PKR0.00</span>
                         </div>
-                        <hr>
-                        <div class="mb-2">
-                            <h4>Total: <span id="total">PKR0.00</span></h4>
+                        <div class="summary-line total-line">
+                            <span class="fw-bold">Total:</span>
+                            <span id="total" class="fw-bold text-primary fs-5">PKR0.00</span>
+                        </div>
+                        <hr class="my-1">
+                        <div class="summary-line small">
+                            <span class="text-muted">Total Profit:</span>
+                            <span id="totalProfit" class="fw-bold text-success">PKR0.00</span>
+                        </div>
+                        <div class="summary-line small">
+                            <span class="text-muted">Margin:</span>
+                            <span id="totalMargin" class="fw-bold text-success">0.0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-grid gap-2 mb-3">
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Create Invoice</button>
+                    <a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary btn-sm">Cancel</a>
+                </div>
+            </div>
+
+            <!-- RIGHT COLUMN: Items Table (wider) -->
+            <div class="col-lg-8 col-md-7 col-12">
+                <div class="card mb-3 shadow-sm">
+                    <div class="card-header bg-success bg-opacity-10 py-2 d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0 fw-bold text-success"><i class="fas fa-boxes me-2"></i>Items</h6>
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-sm btn-outline-info py-0 px-2" onclick="showCustomerLedger(document.getElementById('customerSelect').value)">
+                                <i class="fas fa-file-invoice-dollar me-1"></i>Ledger
+                            </button>
+                            <button type="button" class="btn btn-sm btn-primary py-0 px-2" onclick="addItem()">
+                                <i class="fas fa-plus me-1"></i>Add Item
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-sm mb-0" id="itemsTable">
+                                <colgroup>
+                                    <col style="width:22%;">
+                                    <col style="width:13%;">
+                                    <col style="width:6%;">
+                                    <col style="width:9%;">
+                                    <col style="width:9%;">
+                                    <col style="width:9%;">
+                                    <col style="width:7%;">
+                                    <col style="width:10%;">
+                                    <col style="width:9%;">
+                                    <col style="width:4%;">
+                                </colgroup>
+                                <thead class="table-light">
+                                    <tr class="small text-center">
+                                        <th class="text-start">Product</th>
+                                        <th>Warehouse</th>
+                                        <th>Qty</th>
+                                        <th>Cost</th>
+                                        <th>Price</th>
+                                        <th>Discount</th>
+                                        <th>Del.</th>
+                                        <th>Total</th>
+                                        <th>Profit</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="itemsBody">
+                                    <tr class="item-row">
+                                        <td>
+                                            <select name="product_id[]" class="form-select form-select-sm product-select" id="productSelect1" required>
+                                                <option value="">Select Product</option>
+                                                {% for product in products %}
+                                                <option value="{{ product.id }}" data-price="{{ product.unit_price }}" data-cost="{{ product.cost_price }}">
+                                                    {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity }})
+                                                </option>
+                                                {% endfor %}
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select name="warehouse_id[]" class="form-select form-select-sm warehouse-select searchable-select">
+                                                <option value="">Select</option>
+                                                {% if warehouses %}
+                                                    {% for warehouse in warehouses %}
+                                                    <option value="{{ warehouse.id }}">{{ warehouse.name }}</option>
+                                                    {% endfor %}
+                                                {% endif %}
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <input type="number" name="quantity[]" id="quantity1" class="form-control form-control-sm quantity text-center" step="1" required>
+                                        </td>
+                                        <td>
+                                            <input type="text" class="form-control form-control-sm cost-display bg-light text-center" readonly tabindex="-1" value="-">
+                                        </td>
+                                        <td>
+                                            <input type="number" name="price[]" id="price1" class="form-control form-control-sm price text-center" step="0.01" {% if not current_user.is_admin %}readonly{% endif %}>
+                                        </td>
+                                        <td>
+                                            <input type="number" name="discount[]" id="discount1" class="form-control form-control-sm item-discount text-center" step="0.01" value="0" min="0">
+                                        </td>
+                                        <td>
+                                            <input type="number" name="delivery[]" id="delivery1" class="form-control form-control-sm delivery text-center" step="0.01" value="0">
+                                        </td>
+                                        <td class="text-end">
+                                            <span class="item-total fw-bold small">PKR0.00</span>
+                                        </td>
+                                        <td class="profit-cell text-center">
+                                            <span class="item-profit">-</span>
+                                        </td>
+                                        <td class="text-center">
+                                            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1" onclick="removeItem(this)">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
-
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Items</h5>
-                <div class="btn-group">
-                    <button type="button" class="btn btn-sm btn-outline-info" onclick="showCustomerLedger(document.getElementById('customerSelect').value)">Ledger()</button>
-                    <button type="button" class="btn btn-sm btn-primary" onclick="addItem()">
-                        <i class="fas fa-plus"></i> Add Item
-                    </button>
-                </div>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-bordered mb-0" id="itemsTable" style="table-layout: fixed; width: 100%;">
-                        <thead class="table-light">
-                            <tr>
-                                <th style="width: 35%;">Product</th>
-                                <th style="width: 15%;">Warehouse</th>
-                                <th style="width: 15%;">Quantity</th>
-                                <th style="width: 15%;">Unit Price</th>
-                                <th style="width: 10%;">Delivery</th>
-                                <th style="width: 10%;">Total</th>
-                                <th style="width: 40px;"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="itemsBody">
-                            <tr class="item-row">
-                                <td>
-                                    <select name="product_id[]" class="form-select product-select" id="productSelect1"
-                                        required>
-                                        <option value="">Select Product</option>
-                                        {% for product in products %}
-                                        <option value="{{ product.id }}" data-price="{{ product.unit_price }}">
-                                            {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity }})
-                                        </option>
-                                        {% endfor %}
-                                    </select>
-                                </td>
-                                <td>
-                                    <select name="warehouse_id[]" class="form-select warehouse-select searchable-select">
-                                        <option value="">Select Warehouse</option>
-                                        {% if warehouses %}
-                                            {% for warehouse in warehouses %}
-                                            <option value="{{ warehouse.id }}">{{ warehouse.name }}</option>
-                                            {% endfor %}
-                                        {% endif %}
-                                    </select>
-                                </td>
-                                <td>
-                                    <input type="number" name="quantity[]" id="quantity1" class="form-control quantity"
-                                        step="1" required>
-                                </td>
-                                <td>
-                                    <input type="number" name="price[]" id="price1" class="form-control price"
-                                        step="0.01" {% if not current_user.is_admin %}readonly{% endif %}>
-                                </td>
-                                <td>
-                                    <input type="number" name="delivery[]" id="delivery1" class="form-control delivery"
-                                        step="0.01" value="0">
-                                </td>
-                                <td>
-                                    <span class="item-total">PKR0.00</span>
-                                </td>
-                                <td>
-                                    <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <div class="mt-3">
-            <button type="submit" class="btn btn-primary">Create Invoice</button>
-            <a href="{{ url_for('sales.invoices') }}" class="btn btn-secondary">Cancel</a>
         </div>
     </form>
 </div>
@@ -299,13 +402,10 @@
         const selectedOption = select.options[select.selectedIndex];
 
         if (select.value == '0') {
-            infoDiv.className = 'alert alert-info';
-            infoDiv.innerHTML = '<i class="fas fa-hand-holding-usd me-1"></i><strong>Customer Advance:</strong> Select a customer';
+            infoDiv.className = 'alert alert-info py-1 px-2 mb-2 small';
+            infoDiv.innerHTML = '<i class="fas fa-hand-holding-usd me-1"></i><strong>Advance:</strong> Select a customer';
             advanceDetailsDiv.style.display = 'none';
-            if (advanceInput) {
-                advanceInput.max = 0;
-                advanceInput.value = 0;
-            }
+            if (advanceInput) { advanceInput.max = 0; advanceInput.value = 0; }
             return;
         }
 
@@ -319,12 +419,7 @@
                 if (data.advances && data.advances.length > 0) {
                     let advanceHtml = '<table class="table table-sm mb-0"><thead><tr><th>Date</th><th>Amount</th><th>Applied</th><th>Balance</th></tr></thead><tbody>';
                     data.advances.forEach(adv => {
-                        advanceHtml += `<tr>
-                        <td>${adv.date}</td>
-                        <td>PKR ${adv.amount.toFixed(2)}</td>
-                        <td>PKR ${adv.applied.toFixed(2)}</td>
-                        <td class="${adv.balance > 0 ? 'text-warning fw-bold' : 'text-success'}">PKR ${adv.balance.toFixed(2)}</td>
-                    </tr>`;
+                        advanceHtml += `<tr><td>${adv.date}</td><td>PKR ${adv.amount.toFixed(2)}</td><td>PKR ${adv.applied.toFixed(2)}</td><td class="${adv.balance > 0 ? 'text-warning fw-bold' : 'text-success'}">PKR ${adv.balance.toFixed(2)}</td></tr>`;
                     });
                     advanceHtml += '</tbody></table>';
                     advanceListContainer.innerHTML = advanceHtml;
@@ -335,21 +430,13 @@
                 }
 
                 if (advance > 0) {
-                    infoDiv.className = 'alert alert-success';
-                    infoDiv.innerHTML = '<i class="fas fa-check-circle me-1"></i><strong>Available Advance:</strong> PKR ' + advance.toFixed(2) + ' <span class="text-muted">| Total: PKR ' + total.toFixed(2) + '</span>';
-                    if (advanceInput) {
-                        advanceInput.max = advance;
-                        if (parseFloat(advanceInput.value) > advance) {
-                            advanceInput.value = advance;
-                        }
-                    }
+                    infoDiv.className = 'alert alert-success py-1 px-2 mb-2 small';
+                    infoDiv.innerHTML = '<i class="fas fa-check-circle me-1"></i><strong>Advance:</strong> PKR ' + advance.toFixed(2) + ' <span class="text-muted">| Total: PKR ' + total.toFixed(2) + '</span>';
+                    if (advanceInput) { advanceInput.max = advance; if (parseFloat(advanceInput.value) > advance) advanceInput.value = advance; }
                 } else {
-                    infoDiv.className = 'alert alert-secondary';
-                    infoDiv.innerHTML = '<i class="fas fa-info-circle me-1"></i><strong>Available Advance:</strong> PKR 0.00 <span class="text-muted">| Total: PKR ' + total.toFixed(2) + '</span>';
-                    if (advanceInput) {
-                        advanceInput.max = 0;
-                        advanceInput.value = 0;
-                    }
+                    infoDiv.className = 'alert alert-secondary py-1 px-2 mb-2 small';
+                    infoDiv.innerHTML = '<i class="fas fa-info-circle me-1"></i><strong>Advance:</strong> PKR 0.00 <span class="text-muted">| Total: PKR ' + total.toFixed(2) + '</span>';
+                    if (advanceInput) { advanceInput.max = 0; advanceInput.value = 0; }
                 }
                 calculateTotals();
             })
@@ -357,11 +444,11 @@
                 console.error('Error fetching advances:', error);
                 advanceDetailsDiv.style.display = 'none';
                 if (advance > 0) {
-                    infoDiv.className = 'alert alert-success';
-                    infoDiv.innerHTML = '<i class="fas fa-check-circle me-1"></i><strong>Available Advance:</strong> PKR ' + advance.toFixed(2) + ' <span class="text-muted">| Total: PKR ' + total.toFixed(2) + '</span>';
+                    infoDiv.className = 'alert alert-success py-1 px-2 mb-2 small';
+                    infoDiv.innerHTML = '<i class="fas fa-check-circle me-1"></i><strong>Advance:</strong> PKR ' + advance.toFixed(2);
                 } else {
-                    infoDiv.className = 'alert alert-secondary';
-                    infoDiv.innerHTML = '<i class="fas fa-info-circle me-1"></i><strong>Available Advance:</strong> PKR 0.00 <span class="text-muted">| Total: PKR ' + total.toFixed(2) + '</span>';
+                    infoDiv.className = 'alert alert-secondary py-1 px-2 mb-2 small';
+                    infoDiv.innerHTML = '<i class="fas fa-info-circle me-1"></i><strong>Advance:</strong> PKR 0.00';
                 }
                 calculateTotals();
             });
@@ -369,36 +456,25 @@
 
     function addItem() {
         const newRow = document.querySelector('.item-row').cloneNode(true);
-
-        // --- CLEAN UP SELECT2 FROM CLONE ---
         $(newRow).find('.select2-container').remove();
         const $select = $(newRow).find('.product-select');
         $select.removeClass('select2-hidden-accessible');
-        $select.removeAttr('data-select2-id');
-        $select.removeAttr('aria-hidden');
+        $select.removeAttr('data-select2-id').removeAttr('aria-hidden');
         $select.find('option').removeAttr('data-select2-id');
-
-        // CRITICAL: Remove hardcoded IDs to prevent conflicts (Fixes "previous dropdown opens" bug)
         newRow.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
-        // ------------------------------------
-
         newRow.querySelectorAll('input, select').forEach(input => input.value = '');
         newRow.querySelector('.quantity').value = '1';
         newRow.querySelector('.price').value = '0';
-        if (newRow.querySelector('.price')) {
-            if (isAdmin) {
-                newRow.querySelector('.price').removeAttribute('readonly');
-            } else {
-                newRow.querySelector('.price').setAttribute('readonly', true);
-            }
-        }
+        if (isAdmin) { newRow.querySelector('.price').removeAttribute('readonly'); }
+        else { newRow.querySelector('.price').setAttribute('readonly', true); }
+        newRow.querySelector('.item-discount').value = '0';
         newRow.querySelector('.delivery').value = '0';
+        newRow.querySelector('.cost-display').value = '-';
         newRow.querySelector('.item-total').textContent = 'PKR0.00';
+        newRow.querySelector('.item-profit').textContent = '-';
         document.getElementById('itemsBody').appendChild(newRow);
-
         initSelect2($(newRow).find('.product-select'), 'Search or select product');
         initSelect2($(newRow).find('.warehouse-select'), '— Select Warehouse —');
-
         attachItemEvents(newRow);
     }
 
@@ -414,111 +490,138 @@
         const quantityInput = row.querySelector('.quantity');
         const priceInput = row.querySelector('.price');
         const deliveryInput = row.querySelector('.delivery');
+        const discountInput = row.querySelector('.item-discount');
 
         $productSelect.on('change', function () {
-            const selectedOption = $(this).find(':selected');
-            const price = selectedOption.attr('data-price') || 0;
-            priceInput.value = price;
+            const opt = $(this).find(':selected');
+            priceInput.value = opt.attr('data-price') || 0;
+            const cost = parseFloat(opt.attr('data-cost')) || 0;
+            row.querySelector('.cost-display').value = cost > 0 ? cost.toFixed(2) : '-';
             calculateItemTotal(row);
         });
 
         quantityInput.addEventListener('input', () => calculateItemTotal(row));
         priceInput.addEventListener('input', () => calculateItemTotal(row));
         deliveryInput.addEventListener('input', () => calculateItemTotal(row));
+        discountInput.addEventListener('input', () => calculateItemTotal(row));
     }
 
     function calculateItemTotal(row) {
-        const quantity = parseFloat(row.querySelector('.quantity').value) || 0;
+        const qty = parseFloat(row.querySelector('.quantity').value) || 0;
         const price = parseFloat(row.querySelector('.price').value) || 0;
         const delivery = parseFloat(row.querySelector('.delivery').value) || 0;
-        const total = quantity * price + delivery;
+        const discount = parseFloat(row.querySelector('.item-discount').value) || 0;
+        const costVal = parseFloat(row.querySelector('.cost-display').value) || 0;
+        const total = qty * price + delivery - discount;
         row.querySelector('.item-total').textContent = `PKR${total.toFixed(2)}`;
+
+        const profitEl = row.querySelector('.item-profit');
+        if (costVal > 0 && price > 0) {
+            const revenue = qty * price;
+            const profit = (price - costVal) * qty - discount;
+            const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+            const cls = profit >= 0 ? 'text-success' : 'text-danger';
+            const fmtProfit = profit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            profitEl.innerHTML = `<span class="${cls} fw-bold">${fmtProfit}</span><br><span class="${cls}" style="font-size:0.68rem;">${margin.toFixed(1)}% Margin</span>`;
+        } else {
+            profitEl.textContent = '-';
+        }
         calculateTotals();
     }
 
     function calculateTotals() {
-        let subtotal = 0;
-        document.querySelectorAll('.item-total').forEach(totalSpan => {
-            const total = parseFloat(totalSpan.textContent.replace('PKR', '')) || 0;
-            subtotal += total;
+        // Subtotal is computed from the raw fields (not the displayed item-total,
+        // which now nets out the per-item discount) so the discount is only ever
+        // applied once — here, via the aggregated discount field below.
+        let subtotal = 0, totalCost = 0, itemDiscountSum = 0;
+        document.querySelectorAll('.item-row').forEach(row => {
+            const qty = parseFloat(row.querySelector('.quantity').value) || 0;
+            const price = parseFloat(row.querySelector('.price').value) || 0;
+            const delivery = parseFloat(row.querySelector('.delivery').value) || 0;
+            const cost = parseFloat(row.querySelector('.cost-display').value) || 0;
+            subtotal += qty * price + delivery;
+            totalCost += cost * qty;
+            itemDiscountSum += parseFloat(row.querySelector('.item-discount').value) || 0;
         });
+
+        // Header discount is always the sum of the per-item discounts (read-only field)
+        const discountInput = document.querySelector('input[name="discount"]');
+        discountInput.value = itemDiscountSum.toFixed(2);
 
         const taxRate = parseFloat(document.querySelector('input[name="tax_rate"]').value) || 0;
         const tax = subtotal * (taxRate / 100);
-        const discount = parseFloat(document.querySelector('input[name="discount"]').value) || 0;
-        const delivery_charge = parseFloat(document.querySelector('input[name="delivery_charge"]').value) || 0;
+        const discount = itemDiscountSum;
+        const deliveryCharge = parseFloat(document.querySelector('input[name="delivery_charge"]').value) || 0;
 
         const select = document.getElementById('customerSelect');
         const advanceInput = document.querySelector('input[name="advance_applied"]');
         let availableAdvance = 0;
-
         if (select && select.value != '0') {
-            const selectedOption = select.options[select.selectedIndex];
-            availableAdvance = parseFloat(selectedOption.getAttribute('data-advance')) || 0;
+            availableAdvance = parseFloat(select.options[select.selectedIndex].getAttribute('data-advance')) || 0;
         }
+        let advanceApplied = parseFloat(advanceInput.value) || 0;
+        if (advanceApplied > availableAdvance) { advanceApplied = availableAdvance; advanceInput.value = availableAdvance; }
 
-        let advance_applied = parseFloat(advanceInput.value) || 0;
-        if (advance_applied > availableAdvance) {
-            advance_applied = availableAdvance;
-            advanceInput.value = availableAdvance;
-        }
-
-        // Check if overdue (for live calculation on backdated invoices)
         const dueDateVal = document.getElementById('dueDateInput').value;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const today = new Date(); today.setHours(0,0,0,0);
         const dueDate = dueDateVal ? new Date(dueDateVal) : null;
         const isOverdue = dueDate && dueDate < today;
         const overrideRestricted = document.getElementById('ignoreOverdueCheck').checked;
-        
         const effectiveDiscount = (isOverdue && !overrideRestricted) ? 0 : discount;
 
-        const total = subtotal + tax + delivery_charge - effectiveDiscount - advance_applied;
+        const total = subtotal + tax + deliveryCharge - effectiveDiscount - advanceApplied;
 
         document.getElementById('subtotal').textContent = `PKR${subtotal.toFixed(2)}`;
         document.getElementById('tax').textContent = `PKR${tax.toFixed(2)}`;
         document.getElementById('discountDisplay').textContent = `PKR${effectiveDiscount.toFixed(2)}`;
-        document.getElementById('deliveryDisplay').textContent = `PKR${delivery_charge.toFixed(2)}`;
-        document.getElementById('advanceDisplay').textContent = `PKR${advance_applied.toFixed(2)}`;
+        document.getElementById('deliveryDisplay').textContent = `PKR${deliveryCharge.toFixed(2)}`;
+        document.getElementById('advanceDisplay').textContent = `PKR${advanceApplied.toFixed(2)}`;
         document.getElementById('total').textContent = `PKR${total.toFixed(2)}`;
+
+        const totalProfit = subtotal - totalCost - effectiveDiscount;
+        const totalMargin = subtotal > 0 ? ((subtotal - totalCost - effectiveDiscount) / subtotal) * 100 : 0;
+        const pc = totalProfit >= 0 ? 'text-success' : 'text-danger';
+        document.getElementById('totalProfit').textContent = `PKR${totalProfit.toFixed(2)}`;
+        document.getElementById('totalProfit').className = `fw-bold ${pc}`;
+        document.getElementById('totalMargin').textContent = `${totalMargin.toFixed(1)}%`;
+        document.getElementById('totalMargin').className = `fw-bold ${pc}`;
     }
 
-    // Add event listeners for restriction awareness
     document.getElementById('ignoreOverdueCheck').addEventListener('change', calculateTotals);
     document.getElementById('dueDateInput').addEventListener('change', calculateTotals);
 
-    // ── Helper to init Select2 ──────────────────────────────────────────────
     function initSelect2(selector, placeholder = 'Search or select', width = '100%') {
-        const $el = $(selector).select2({
+        $(selector).select2({
             theme: 'bootstrap-5',
             placeholder: placeholder,
             allowClear: true,
-            width: width,
-            dropdownParent: $(document.body) // Fixes clipping in scrollable tables
-        });
-
-        // Auto-focus search field when opened
-        $el.on('select2:open', function () {
-            setTimeout(() => {
-                const searchField = document.querySelector('.select2-container--open .select2-search__field');
-                if (searchField) {
-                    searchField.focus();
-                }
-            }, 50);
+            width: 'resolve',
+            dropdownParent: $(document.body)
         });
     }
 
     $(document).ready(function () {
         updateCustomerInfo();
-
-        // Initialize Select2 for all selectors
         initSelect2('#customerSelect', '— Search or Select Customer —');
         initSelect2('#vendorSelect', '— Search or Select Vendor —');
         initSelect2('#salesmanSelect', '— Search or Select Salesman —');
+
+        document.querySelectorAll('.item-row').forEach(attachItemEvents);
         initSelect2('.product-select', '— Search or Select Product —');
         initSelect2('.warehouse-select', '— Select Warehouse —');
 
-        document.querySelectorAll('.item-row').forEach(attachItemEvents);
+        // Mobile fix: force Select2 open on tap inside scrollable table
+        if ('ontouchstart' in window) {
+            $(document).on('touchend', '#itemsTable .select2-container', function(e) {
+                var $select = $(this).siblings('select');
+                if ($select.length && !$(this).hasClass('select2-container--open')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    $select.select2('open');
+                }
+            });
+        }
+
         document.querySelector('input[name="discount"]').addEventListener('input', calculateTotals);
         document.querySelector('input[name="tax_rate"]').addEventListener('input', calculateTotals);
         document.querySelector('input[name="delivery_charge"]').addEventListener('input', calculateTotals);
@@ -527,16 +630,13 @@
         $('#saveSalesmanBtn').on('click', function () {
             const name = $('#newSalesmanName').val();
             if (!name) return alert('Name is required');
-
             $.post("{{ url_for('sales.quick_add_salesman') }}", { name: name }, function (data) {
                 if (data.success) {
                     const newOption = new Option(data.salesman.name, data.salesman.id, true, true);
                     $('#salesmanSelect').append(newOption).trigger('change');
                     $('#quickAddSalesmanModal').modal('hide');
                     $('#newSalesmanName').val('');
-                } else {
-                    alert(data.message);
-                }
+                } else { alert(data.message); }
             });
         });
     });

@@ -24,6 +24,48 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 
 bp = Blueprint('sales', __name__)
 
+
+def validate_item_discounts(sale_items):
+    """
+    Check each line item's OWN discount against that item's product-specific
+    min/max discount rule (InvoiceSettings.product_discount_conditions).
+    Returns a list of human-readable violation messages (empty if all pass).
+    """
+    violations = []
+    settings = InvoiceSettings.query.first()
+    if not settings or not settings.product_discount_conditions:
+        return violations
+
+    try:
+        conditions = json.loads(settings.product_discount_conditions)
+    except Exception:
+        return violations
+
+    rules_by_product = {}
+    for cond in conditions:
+        try:
+            rules_by_product[cond['product_id']] = cond
+        except Exception:
+            continue
+
+    for item in sale_items:
+        cond = rules_by_product.get(item['product_id'])
+        if not cond:
+            continue
+        item_discount = item.get('discount', 0) or 0
+        min_allowed = float(cond.get('min_discount', 0))
+        max_allowed = float(cond.get('max_discount', 0))
+        product = Product.query.get(item['product_id'])
+        product_label = product.name if product else f"Product #{item['product_id']}"
+
+        if item_discount < min_allowed:
+            violations.append(f"{product_label}: Discount PKR {item_discount} is less than min PKR {min_allowed}")
+        if max_allowed > 0 and item_discount > max_allowed:
+            violations.append(f"{product_label}: Discount PKR {item_discount} is more than max PKR {max_allowed}")
+
+    return violations
+
+
 @bp.route('/invoices')
 @login_required
 def invoices():
@@ -208,23 +250,25 @@ def create_invoice():
         quantities = request.form.getlist('quantity[]')
         prices = request.form.getlist('price[]')
         deliveries = request.form.getlist('delivery[]')
+        item_discounts = request.form.getlist('discount[]')
         warehouses = request.form.getlist('warehouse_id[]')
-        
+
         subtotal = 0
         item_delivery_total = 0
         sale_items = []
-        
+
         for i in range(len(product_ids)):
             if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
                 product = Product.query.get(int(product_ids[i]))
                 quantity = float(quantities[i])
                 price = float(prices[i])
                 delivery_fee = float(deliveries[i]) if i < len(deliveries) else 0
+                item_discount = float(item_discounts[i]) if i < len(item_discounts) and item_discounts[i] else 0
                 item_subtotal = quantity * price
                 total = item_subtotal + delivery_fee
                 subtotal += total
                 item_delivery_total += delivery_fee
-                
+
                 wh = None
                 try:
                     wh = int(warehouses[i]) if i < len(warehouses) and warehouses[i] else None
@@ -237,12 +281,15 @@ def create_invoice():
                     'quantity': quantity,
                     'unit_price': price,
                     'delivery_fee': delivery_fee,
+                    'discount': item_discount,
                     'total': total
                 })
-        
+
         tax_rate = float(request.form.get('tax_rate', 0))
         tax = subtotal * (tax_rate / 100)
-        discount = float(request.form.get('discount', 0))
+        # Discount is always the sum of the per-item discounts entered above.
+        # Recomputed server-side (never trust the readonly header field the browser posts).
+        discount = sum(item['discount'] for item in sale_items)
         delivery_charge = float(request.form.get('delivery_charge', 0))
         advance_applied = float(request.form.get('advance_applied', 0))
 
@@ -258,24 +305,10 @@ def create_invoice():
 
         creator_is_admin = (current_user.role == 'admin')
 
-        # Check discount conditions
-        discount_violations = []
-        settings = InvoiceSettings.query.first()
-        if settings and settings.product_discount_conditions:
-            try:
-                conditions = json.loads(settings.product_discount_conditions)
-                item_product_ids = [item['product_id'] for item in sale_items]
-                for cond in conditions:
-                    if cond['product_id'] in item_product_ids:
-                        min_allowed = float(cond.get('min_discount', 0))
-                        max_allowed = float(cond.get('max_discount', 0))
-                        
-                        if discount < min_allowed:
-                            discount_violations.append(f"Discount PKR {discount} is less than min PKR {min_allowed}")
-                        if max_allowed > 0 and discount > max_allowed:
-                            discount_violations.append(f"Discount PKR {discount} is more than max PKR {max_allowed}")
-            except Exception:
-                pass
+        # Check discount conditions: each item's OWN discount is validated against
+        # that item's product-specific min/max rule (rules are per-product, so with
+        # per-item discounts now available each line must be checked individually).
+        discount_violations = validate_item_discounts(sale_items)
 
         violation_found = len(discount_violations) > 0
         
@@ -288,6 +321,7 @@ def create_invoice():
             tax_rate=tax_rate,
             tax=tax,
             discount=discount,
+            discount_type='fixed',  # discount is always the summed PKR amount of per-item discounts
             delivery_charge=delivery_charge,
             advance_applied=advance_applied,
             total=total,
@@ -353,6 +387,7 @@ def create_invoice():
                 quantity=item['quantity'],
                 unit_price=item['unit_price'],
                 delivery_fee=item.get('delivery_fee', 0),
+                discount=item.get('discount', 0),
                 total=item['total']
             )
             db.session.add(sale_item)
@@ -409,7 +444,22 @@ def invoice_detail(id):
     # Get payment methods for dropdown and existing payments for display
     payment_methods = PaymentMethod.query.filter_by(is_active=True).order_by(PaymentMethod.name).all()
     payments = Payment.query.filter_by(invoice_id=sale.id).order_by(Payment.date.desc()).all()
-    return render_template('sales/invoice_detail.html', sale=sale, returns=returns, date_format=date_format, payment_methods=payment_methods, payments=payments, today=datetime.utcnow().strftime('%Y-%m-%d'))
+    
+    other_invoices = []
+    if sale.customer_id:
+        other_invoices = Sale.query.filter(
+            Sale.customer_id == sale.customer_id,
+            Sale.id != sale.id
+        ).order_by(Sale.date.desc()).all()
+        
+    return render_template('sales/invoice_detail.html', 
+                           sale=sale, 
+                           returns=returns, 
+                           date_format=date_format, 
+                           payment_methods=payment_methods, 
+                           payments=payments, 
+                           today=datetime.utcnow().strftime('%Y-%m-%d'),
+                           other_invoices=other_invoices)
 
 @bp.route('/invoice/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -467,6 +517,7 @@ def edit_invoice(id):
         quantities = request.form.getlist('quantity[]')
         prices = request.form.getlist('price[]')
         deliveries = request.form.getlist('delivery[]')
+        item_discounts = request.form.getlist('discount[]')
         warehouses = request.form.getlist('warehouse_id[]')
 
         subtotal = 0
@@ -478,6 +529,7 @@ def edit_invoice(id):
                 quantity = float(quantities[i])
                 price = float(prices[i])
                 delivery_fee = float(deliveries[i]) if i < len(deliveries) else 0
+                item_discount = float(item_discounts[i]) if i < len(item_discounts) and item_discounts[i] else 0
                 item_subtotal = quantity * price
                 total = item_subtotal + delivery_fee
                 subtotal += total
@@ -494,12 +546,14 @@ def edit_invoice(id):
                     'quantity': quantity,
                     'unit_price': price,
                     'delivery_fee': delivery_fee,
+                    'discount': item_discount,
                     'total': total
                 })
 
         tax_rate = float(request.form.get('tax_rate', 0))
         tax = subtotal * (tax_rate / 100)
-        discount = float(request.form.get('discount', 0))
+        # Discount is always the sum of the per-item discounts entered above.
+        discount = sum(item['discount'] for item in sale_items)
         delivery_charge = float(request.form.get('delivery_charge', 0))
 
         sale.customer_id = customer_id if customer_id != '0' else None
@@ -510,6 +564,7 @@ def edit_invoice(id):
         sale.tax_rate = tax_rate
         sale.tax = tax
         sale.discount = discount
+        sale.discount_type = 'fixed'
         sale.delivery_charge = delivery_charge
         sale.advance_applied = float(request.form.get('advance_applied', sale.advance_applied or 0))
         sale.currency_id = request.form.get('currency_id') or None
@@ -523,24 +578,10 @@ def edit_invoice(id):
             except ValueError:
                 sale.due_date = None
 
-        # Check discount conditions
-        discount_violations = []
-        settings = InvoiceSettings.query.first()
-        if settings and settings.product_discount_conditions:
-            try:
-                conditions = json.loads(settings.product_discount_conditions)
-                item_product_ids = [item['product_id'] for item in sale_items]
-                for cond in conditions:
-                    if cond['product_id'] in item_product_ids:
-                        min_allowed = float(cond.get('min_discount', 0))
-                        max_allowed = float(cond.get('max_discount', 0))
-                        if discount < min_allowed:
-                            discount_violations.append(f"Discount PKR {discount} is less than min PKR {min_allowed}")
-                        if max_allowed > 0 and discount > max_allowed:
-                            discount_violations.append(f"Discount PKR {discount} is more than max PKR {max_allowed}")
-            except Exception:
-                pass
-        
+        # Check discount conditions: each item's OWN discount is validated against
+        # that item's product-specific min/max rule.
+        discount_violations = validate_item_discounts(sale_items)
+
         if discount_violations:
             sale.is_approved = False
             sale.discount_violation = "; ".join(discount_violations)
@@ -560,6 +601,7 @@ def edit_invoice(id):
                 quantity=item['quantity'],
                 unit_price=item['unit_price'],
                 delivery_fee=item.get('delivery_fee', 0),
+                discount=item.get('discount', 0),
                 total=item['total']
             )
             db.session.add(sale_item)
@@ -757,11 +799,13 @@ def pay_invoice(id):
         db.session.add(payment)
         
         db.session.commit()
+        log_activity('Sales', f'Recorded Payment on Invoice #{sale.invoice_number}',
+                    f'Amount: PKR {amount:,.2f}, Method: {payment_method}, Approved: {payer_is_admin}')
         if payer_is_admin:
             flash(f'Payment of PKR {amount:,.2f} recorded and approved successfully!', 'success')
         else:
             flash(f'Payment of PKR {amount:,.2f} submitted — pending admin approval.', 'info')
-    
+
     return redirect(url_for('sales.invoice_detail', id=sale.id))
 
 
@@ -985,6 +1029,8 @@ def edit_payment(id, pay_id):
         safe_update_paid_amount(sale, delta)
 
         db.session.commit()
+        log_activity('Sales', f'Updated Payment #{payment.payment_number} on Invoice #{sale.invoice_number}',
+                    f'Old Amount: PKR {old_amount:,.2f}, New Amount: PKR {new_amount:,.2f}')
         flash(f'Payment updated: PKR{new_amount:,.2f} ({payment.method})', 'success')
         return redirect(url_for('sales.invoice_detail', id=sale.id))
 
@@ -1018,8 +1064,12 @@ def delete_payment(id, pay_id):
         except:
             pass
     
+    pay_num = payment.payment_number
+    pay_amount = payment.amount
     db.session.delete(payment)
     db.session.commit()
+    log_activity('Sales', f'Deleted Payment #{pay_num} on Invoice #{sale.invoice_number}',
+                f'Amount: PKR {pay_amount:,.2f}')
     flash(f'Payment deleted. Balance updated.', 'success')
     return redirect(url_for('sales.invoice_detail', id=sale.id))
 
@@ -1058,7 +1108,12 @@ def apply_discount(id):
     # Use 'or 0' to handle empty string inputs safely
     discount_amount_raw = request.form.get('discount_amount', '0')
     discount_amount = float(discount_amount_raw if discount_amount_raw.strip() else 0)
-    
+
+    # Optional: target specific item(s) on this invoice. Only ids that actually
+    # belong to this sale are honored (never trust ids from the client blindly).
+    requested_item_ids = {int(i) for i in request.form.getlist('item_ids[]') if i.strip().isdigit()}
+    target_items = [item for item in sale.items if item.id in requested_item_ids] if requested_item_ids else []
+
     # Track if any significant change happened
     changes_made = False
 
@@ -1075,11 +1130,27 @@ def apply_discount(id):
         if sale.is_overdue and not sale.ignore_overdue_discount and rule_applies:
             flash('Cannot add discount to an overdue invoice without "Override Restriction" selected.', 'warning')
             return redirect(request.referrer or url_for('sales.invoice_detail', id=sale.id))
-            
+
         sale.discount += discount_amount
-        flash(f'Discount of PKR {discount_amount:,.2f} applied successfully!', 'success')
-        log_activity('Sales', f'Applied Discount to Invoice #{sale.invoice_number}', 
-                    f'Amount: {discount_amount}, Customer: {sale.customer.name if sale.customer else "Walk-in"}')
+
+        if target_items:
+            # Prorate the discount evenly across the selected items (bulk-safe:
+            # any rounding remainder goes to the last item so shares sum exactly
+            # to discount_amount), and reflect it on each item's Discount column.
+            share = round(discount_amount / len(target_items), 2)
+            allocated = 0
+            for idx, item in enumerate(target_items):
+                portion = share if idx < len(target_items) - 1 else round(discount_amount - allocated, 2)
+                item.discount = (item.discount or 0) + portion
+                allocated += portion
+            item_names = ', '.join(item.product.name if item.product else f'Item #{item.id}' for item in target_items)
+            flash(f'Discount of PKR {discount_amount:,.2f} applied successfully and prorated across: {item_names}.', 'success')
+            log_activity('Sales', f'Applied Discount to Invoice #{sale.invoice_number}',
+                        f'Amount: {discount_amount}, Items: {item_names}, Customer: {sale.customer.name if sale.customer else "Walk-in"}')
+        else:
+            flash(f'Discount of PKR {discount_amount:,.2f} applied successfully!', 'success')
+            log_activity('Sales', f'Applied Discount to Invoice #{sale.invoice_number}',
+                        f'Amount: {discount_amount}, Customer: {sale.customer.name if sale.customer else "Walk-in"}')
         changes_made = True
     
     if ignore_overdue != had_override:
@@ -1153,6 +1224,8 @@ def apply_advance_to_overdue(id):
         remaining_to_apply -= use
 
     db.session.commit()
+    log_activity('Sales', f'Applied Advance to Overdue Invoice #{sale.invoice_number}',
+                f'Amount: PKR {apply_amount:,.2f}, Customer: {customer.name}')
     flash(f'Advance of PKR {apply_amount:,.2f} applied to overdue invoice successfully!', 'success')
     return redirect(url_for('sales.invoice_detail', id=sale.id))
 
@@ -1322,12 +1395,14 @@ def bulk_upload_customer():
                     errors.append(f'Row {idx + 2}: {str(e)}')
             
             db.session.commit()
-            
+            if added > 0:
+                log_activity('Customers', f'Bulk Uploaded Customers', f'Added {added} customers via Excel upload')
+
             if added > 0:
                 flash(f'Successfully added {added} customers!', 'success')
             if errors:
                 flash(f'Errors: {"; ".join(errors[:10])}', 'warning')
-            
+
             return redirect(url_for('sales.customers'))
             
         except Exception as e:
@@ -1489,7 +1564,8 @@ def customer_export_pdf(id, is_public=False):
             'desc': f"Invoice #{s.invoice_number}",
             'inv': s.invoice_number,
             'debit': float(sum(item.total for item in s.items)) * (1 + float(s.tax_rate or 0) / 100) + float(s.delivery_charge or 0),
-            'credit': 0
+            'credit': 0,
+            'sale_obj': s
         })
 
         # 2. Payments for this invoice (sorted by date)
@@ -1758,8 +1834,16 @@ def customer_export_pdf(id, is_public=False):
     GAP_W = 0.2 * inch
     
     # Box 1: Customer Details
+    hs = customer.health_status
+    if hs == 'danger':
+        flag_label = '<font color="#e74a3b">● 30+ Days Overdue</font>'
+    elif hs == 'warning':
+        flag_label = '<font color="#f6c23e">● Overdue</font>'
+    else:
+        flag_label = '<font color="#1cc88a">● On Time</font>'
+
     b1_rows = []
-    b1_rows.append(f"<b>Name:</b> {customer.company_name or customer.name}")
+    b1_rows.append(f"<b>Name:</b> {customer.company_name or customer.name}  {flag_label}")
     if customer.email:   b1_rows.append(f"<b>Email:</b> {customer.email}")
     if customer.phone:   b1_rows.append(f"<b>Phone:</b> {customer.phone}")
     if customer.address: b1_rows.append(f"<b>Address:</b> {customer.address}")
@@ -1807,13 +1891,20 @@ def customer_export_pdf(id, is_public=False):
     elements.append(Spacer(1, 15))
 
     # LEDGER TABLE
-    headers = ['Date', 'Description', 'Invoice #', 'Debit', 'Credit', 'Balance']
+    headers = ['Date', 'Description', 'Invoice #', 'Status', 'Debit', 'Credit', 'Balance']
     header_row = [Paragraph(f"<b>{h}</b>", s_TblHeader) for h in headers]
     table_data = [header_row]
 
     TABLE_WIDTH = 7.5 * inch
-    # Weights: 2, 4, 1.5, 2.1, 2.2, 2.2 (Total = 14)
-    Cols = [(w/14.0)*TABLE_WIDTH for w in [2, 4, 1.5, 2.1, 2.2, 2.2]]
+    # Weights: 1.8, 3.2, 1.3, 1.8, 1.9, 1.9, 2.1 (Total = 14)
+    Cols = [(w/14.0)*TABLE_WIDTH for w in [1.8, 3.2, 1.3, 1.8, 1.9, 1.9, 2.1]]
+
+    FLAG_GREEN  = colors.HexColor("#1cc88a")
+    FLAG_YELLOW = colors.HexColor("#f6c23e")
+    FLAG_RED    = colors.HexColor("#e74a3b")
+    s_StatusGreen  = ParagraphStyle('StatusGreen',  parent=styles['Normal'], fontSize=7, textColor=FLAG_GREEN,  fontName='Helvetica-Bold', alignment=TA_CENTER)
+    s_StatusYellow = ParagraphStyle('StatusYellow', parent=styles['Normal'], fontSize=7, textColor=FLAG_YELLOW, fontName='Helvetica-Bold', alignment=TA_CENTER)
+    s_StatusRed    = ParagraphStyle('StatusRed',    parent=styles['Normal'], fontSize=7, textColor=FLAG_RED,    fontName='Helvetica-Bold', alignment=TA_CENTER)
 
     def pkr(val):
         return f"PKR {val:,.2f}"
@@ -1823,6 +1914,7 @@ def customer_export_pdf(id, is_public=False):
     table_data.append([
         Paragraph("-", s_TblCellC),
         Paragraph("Opening Balance", s_TblCellL),
+        Paragraph("-", s_TblCellC),
         Paragraph("-", s_TblCellC),
         Paragraph(pkr(opening_balance) if opening_balance > 0 else "0.00", s_TblCell),
         Paragraph(pkr(abs(opening_balance)) if opening_balance < 0 else "0.00", s_TblCell),
@@ -1848,10 +1940,25 @@ def customer_export_pdf(id, is_public=False):
         elif e['type'] == 'payment': total_paid += credit
         elif e['type'] == 'advance_applied': total_advances_applied += credit
 
+        status_cell = Paragraph("-", s_TblCellC)
+        sale_ref = e.get('sale_obj')
+        if e['type'] == 'sale' and sale_ref:
+            hs = sale_ref.invoice_health_status
+            if hs == 'danger':
+                status_cell = Paragraph(f"● Overdue ({sale_ref.days_overdue}d)", s_StatusRed)
+            elif hs == 'warning':
+                status_cell = Paragraph(f"● Overdue ({sale_ref.days_overdue}d)", s_StatusYellow)
+            else:
+                if sale_ref.status == 'paid':
+                    status_cell = Paragraph("● Paid", s_StatusGreen)
+                else:
+                    status_cell = Paragraph("● On Time", s_StatusGreen)
+
         table_data.append([
             Paragraph(e['date'].strftime("%d/%m/%Y"), s_TblCellC),
             Paragraph(e['desc'], s_TblCellL),
             Paragraph(e['inv'], s_TblCellC),
+            status_cell,
             Paragraph(pkr(debit), s_TblCell),
             Paragraph(pkr(credit), s_TblCell),
             Paragraph(pkr(max(0, running_balance)), s_TblCell)
@@ -2139,8 +2246,10 @@ def delete_customer(id):
         flash('Cannot delete customer as they have associated sales records.', 'danger')
         return redirect(url_for('sales.customers'))
 
+    cust_name = customer.name
     db.session.delete(customer)
     db.session.commit()
+    log_activity('Customers', f'Deleted Customer: {cust_name}', f'ID: {id}')
     flash('Customer deleted successfully!', 'success')
     return redirect(url_for('sales.customers'))
 
@@ -2175,7 +2284,8 @@ def bulk_delete_customers():
             
     if deleted_count > 0:
         db.session.commit()
-        
+        log_activity('Customers', f'Bulk Deleted Customers', f'Deleted {deleted_count} customers')
+
     message = f'Successfully deleted {deleted_count} customers.'
     if skipped_count > 0:
         message += f' Skipped {skipped_count} customers with associated records.'
@@ -2353,6 +2463,7 @@ def company_settings():
             company.signature_path = None
 
         db.session.commit()
+        log_activity('Settings', f'Updated Company Settings', f'Company: {company.name}')
         flash('Company settings updated successfully!', 'success')
         return redirect(url_for('sales.company_settings'))
 
@@ -2406,6 +2517,7 @@ def invoice_settings():
         settings.product_discount_conditions = form.product_discount_conditions.data
             
         db.session.commit()
+        log_activity('Settings', f'Updated Invoice Settings', f'Prefix: {settings.invoice_prefix}, Next #: {settings.next_number}')
         flash('Invoice settings updated successfully.', 'success')
         return redirect(url_for('sales.invoice_settings'))
     
@@ -2451,7 +2563,9 @@ def customer_receive_advance(id):
     )
     db.session.add(advance)
     db.session.commit()
-    
+    log_activity('Customers', f'Received Advance from {customer.name}',
+                f'Amount: PKR {amount:,.2f}, Approved: {creator_is_admin}')
+
     if creator_is_admin:
         flash(f'Advance of PKR {amount:,.2f} recorded and approved successfully.', 'success')
     else:
@@ -2558,6 +2672,8 @@ def customer_apply_advance(customer_id, adv_id):
     invoice.update_status()
     
     db.session.commit()
+    log_activity('Customers', f'Applied Advance to Invoice #{invoice.invoice_number}',
+                f'Amount: PKR {apply_amount:,.2f}, Customer ID: {customer_id}')
     flash(f'Advance of PKR {apply_amount:,.2f} applied to invoice {invoice.invoice_number}.', 'success')
     return redirect(url_for('sales.customer_profile', id=customer_id))
 
@@ -2603,6 +2719,8 @@ def customer_delete_advance(customer_id, adv_id):
     
     db.session.delete(advance)
     db.session.commit()
+    log_activity('Customers', f'Deleted Advance from {customer_name}',
+                f'Amount: PKR {amount:,.2f}')
     flash(f'Advance of PKR {amount:,.2f} from {customer_name} has been deleted.', 'success')
     return redirect(url_for('sales.customer_profile', id=customer_id))
 
@@ -2649,6 +2767,8 @@ def customer_unapply_advance(customer_id, adv_id):
     advance.adjusted_invoice_id = None
     
     db.session.commit()
+    log_activity('Customers', f'Unapplied Advance for Customer ID {customer_id}',
+                f'Amount: PKR {advance.amount:,.2f}')
     flash(f'Advance of PKR {advance.amount:,.2f} has been unapplied from invoices.', 'success')
     return redirect(url_for('sales.customer_profile', id=customer_id))
 
@@ -2681,6 +2801,7 @@ def add_salesman():
         )
         db.session.add(salesman)
         db.session.commit()
+        log_activity('Sales', f'Added Salesman: {salesman.name}', f'ID: {salesman.id}')
         flash('Salesman added successfully!', 'success')
         return redirect(url_for('sales.salesmen_list'))
     return render_template('sales/salesman_form.html', form=form, title='Add Salesman')
@@ -2703,6 +2824,7 @@ def edit_salesman(id):
         salesman.group_id = form.group_id.data if form.group_id.data != 0 else None
         salesman.is_active = form.is_active.data
         db.session.commit()
+        log_activity('Sales', f'Updated Salesman: {salesman.name}', f'ID: {salesman.id}')
         flash('Salesman updated successfully!', 'success')
         return redirect(url_for('sales.salesmen_list'))
     return render_template('sales/salesman_form.html', form=form, title='Edit Salesman', salesman=salesman)
@@ -2715,8 +2837,10 @@ def delete_salesman(id):
     if salesman.sales:
         flash('Cannot delete salesman with associated sales records.', 'danger')
         return redirect(url_for('sales.salesmen_list'))
+    sm_name = salesman.name
     db.session.delete(salesman)
     db.session.commit()
+    log_activity('Sales', f'Deleted Salesman: {sm_name}', f'ID: {id}')
     flash('Salesman deleted successfully.', 'info')
     return redirect(url_for('sales.salesmen_list'))
 
@@ -2733,7 +2857,8 @@ def quick_add_salesman():
     salesman = Salesman(name=name, group_id=group_id if group_id and group_id != '0' else None)
     db.session.add(salesman)
     db.session.commit()
-    
+    log_activity('Sales', f'Quick Added Salesman: {salesman.name}', f'ID: {salesman.id}')
+
     return jsonify({
         'success': True, 
         'salesman': {
@@ -2756,9 +2881,10 @@ def quick_add_salesman_group():
     group = SalesmanGroup(name=name)
     db.session.add(group)
     db.session.commit()
-    
+    log_activity('Sales', f'Quick Added Salesman Group: {group.name}', f'ID: {group.id}')
+
     return jsonify({
-        'success': True, 
+        'success': True,
         'group': {
             'id': group.id,
             'name': group.name
@@ -2785,6 +2911,7 @@ def add_customer_group():
         )
         db.session.add(group)
         db.session.commit()
+        log_activity('Customers', f'Added Customer Group: {group.name}', f'ID: {group.id}')
         flash('Customer Group added successfully!', 'success')
         return redirect(url_for('sales.customer_groups_list'))
     return render_template('sales/customer_group_form.html', form=form, title='Add Customer Group')
@@ -2799,6 +2926,7 @@ def edit_customer_group(id):
         group.name = form.name.data
         group.description = form.description.data
         db.session.commit()
+        log_activity('Customers', f'Updated Customer Group: {group.name}', f'ID: {group.id}')
         flash('Customer Group updated successfully!', 'success')
         return redirect(url_for('sales.customer_groups_list'))
     return render_template('sales/customer_group_form.html', form=form, title='Edit Customer Group', group=group)
@@ -2811,8 +2939,10 @@ def delete_customer_group(id):
     if group.customers:
         flash('Cannot delete group with associated customers.', 'danger')
         return redirect(url_for('sales.customer_groups_list'))
+    grp_name = group.name
     db.session.delete(group)
     db.session.commit()
+    log_activity('Customers', f'Deleted Customer Group: {grp_name}', f'ID: {id}')
     flash('Customer Group deleted successfully.', 'info')
     return redirect(url_for('sales.customer_groups_list'))
 
@@ -2830,9 +2960,10 @@ def quick_add_customer_group():
     group = CustomerGroup(name=name)
     db.session.add(group)
     db.session.commit()
-    
+    log_activity('Customers', f'Quick Added Customer Group: {group.name}', f'ID: {group.id}')
+
     return jsonify({
-        'success': True, 
+        'success': True,
         'group': {
             'id': group.id,
             'name': group.name
@@ -2937,7 +3068,8 @@ def customer_ledger_json(id):
         # Determine status for ledger display
         display_status = (s.status or 'unpaid').capitalize()
         if s.is_overdue:
-            display_status = 'Overdue'
+            days = s.days_overdue
+            display_status = f'Overdue ({days}d)'
 
         # Insert any advances that occurred before or on this invoice's date
         while adv_idx < len(advance_events_list) and advance_events_list[adv_idx][0].date() <= s.date.date():
@@ -2953,6 +3085,8 @@ def customer_ledger_json(id):
             'debit': float(sum(item.total for item in s.items)) * (1 + float(s.tax_rate or 0) / 100) + float(s.delivery_charge or 0),
             'credit': 0,
             'status': display_status,
+            'flag_color': s.invoice_health_status,
+            'days_overdue': s.days_overdue,
             'obj': s
         })
 
@@ -3058,10 +3192,12 @@ def customer_ledger_json(id):
             'customer_name': customer.name,
             'debit': debit,
             'credit': credit,
-            'invoice_balance': 0, # Not applicable in detailed ledger
+            'invoice_balance': 0,
             'running_balance': max(0, running_balance),
             'status': e['status'],
-            'aging': '-' if e['type'] != 'sale' else '-', 
+            'flag_color': e.get('flag_color', ''),
+            'days_overdue': e.get('days_overdue', 0),
+            'aging': '-' if e['type'] != 'sale' else '-',
             'entity_id': e['obj'].id if 'obj' in e and hasattr(e['obj'], 'id') else None,
             'entity_type': e['type'] if e['type'] in ['sale', 'return', 'advance', 'payment', 'advance_applied'] else None
         })
@@ -3080,6 +3216,7 @@ def customer_ledger_json(id):
     return jsonify({
         'customer_name': customer.name,
         'customer_phone': customer.phone,
+        'customer_health': customer.health_status,
         'access_token': customer.valid_access_token,
         'entries': ledger_entries,
         'summary': summary

@@ -174,7 +174,7 @@
                             </td>
                             <td>
                                 {% if ret.customer %}
-                                <i class="fas fa-flag text-{{ ret.customer.health_status }} me-1" title="Customer Health Status"></i>{{ ret.customer.name }}
+                                <i class="fas fa-flag text-{{ ret.sale.invoice_health_status if ret.sale else 'success' }} me-1" title="Invoice: {% if ret.sale and ret.sale.invoice_health_status == 'danger' %}30+ days overdue{% elif ret.sale and ret.sale.invoice_health_status == 'warning' %}Overdue ({{ ret.sale.days_overdue }} days){% else %}On time{% endif %}"></i>{{ ret.customer.name }}
                                 {% else %}
                                 Walk-in Customer
                                 {% endif %}

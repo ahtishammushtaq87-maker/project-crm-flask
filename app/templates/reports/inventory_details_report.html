@@ -162,7 +162,7 @@
                                 <input type="checkbox" class="form-check-input inventory-details-checkbox" value="{{ pm.product.id }}">
                             </td>
                             <td>{{ pm.product.sku }}</td>
-                            <td><strong>{{ pm.product.name }}</strong></td>
+                            <td><strong class="{% if pm.product.margin_color %}text-{{ pm.product.margin_color }}{% endif %}">{{ pm.product.name }}</strong></td>
                             <td>{{ pm.product.category.name if pm.product.category else '-' }}</td>
                             <td>{{ pm.warehouse }}</td>
                             <td>{{ pm.current_stock }}</td>

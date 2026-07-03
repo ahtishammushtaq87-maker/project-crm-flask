@@ -151,7 +151,7 @@
                                 <input type="checkbox" class="form-check-input bom-checkbox" value="{{ v.id }}">
                             </td>
                             <td><span class="fw-bold">{{ v.bom.name }}</span></td>
-                            <td>{{ v.bom.product.name }}</td>
+                            <td class="{% if v.bom.product.margin_color %}text-{{ v.bom.product.margin_color }} fw-bold{% endif %}">{{ v.bom.product.name }}</td>
                             <td><span class="badge bg-primary">{{ v.version_number }}</span></td>
                             <td>PKR {{ "%.2f"|format(v.labor_cost) }}</td>
                             <td>PKR {{ "%.2f"|format(v.overhead_cost) }}</td>
@@ -215,7 +215,7 @@
                                 <input type="checkbox" class="form-check-input bom-checkbox" value="{{ b.id }}">
                             </td>
                             <td><span class="fw-bold">{{ b.name }}</span></td>
-                            <td>{{ b.product.name }}</td>
+                            <td class="{% if b.product.margin_color %}text-{{ b.product.margin_color }} fw-bold{% endif %}">{{ b.product.name }}</td>
                             <td><span class="badge bg-secondary">{{ b.version }}</span></td>
                             <td class="text-center">{{ b.items|length }}</td>
                             <td>PKR {{ "%.2f"|format(b.labor_cost) }}</td>

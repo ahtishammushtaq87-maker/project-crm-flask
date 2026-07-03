@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
-from app.utils import permission_required
+from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
 from app.models import (Sale, SaleItem, SaleReturn, SaleReturnItem, Product, ProductWarehouseStock, Warehouse,
@@ -137,6 +137,13 @@ def create_return():
     prices = request.form.getlist('price[]')
     warehouses = request.form.getlist('warehouse_id[]')
 
+    # Map each product to its original sale item so returned quantities can be
+    # prorated against that item's own discount (computed server-side only —
+    # never trusted from client input, to prevent discount manipulation on returns).
+    original_items_by_product = {}
+    for si in sale.items:
+        original_items_by_product.setdefault(si.product_id, si)
+
     subtotal = 0
     return_items = []
 
@@ -154,12 +161,22 @@ def create_return():
             except Exception:
                 wh = None
 
+            # Prorate the original item's discount for the quantity being returned,
+            # e.g. 5 qty / PKR 500 discount = PKR 100 per unit; returning 3 units
+            # prorates PKR 300 to this return (capped at the original discount).
+            item_discount = 0.0
+            original_item = original_items_by_product.get(product.id)
+            if original_item and original_item.quantity > 0 and original_item.discount:
+                per_unit_discount = original_item.discount / original_item.quantity
+                item_discount = round(min(per_unit_discount * quantity, original_item.discount), 2)
+
             return_items.append({
                 'product_id': product.id,
                 'warehouse_id': wh,
                 'quantity': quantity,
                 'unit_price': price,
-                'total': total
+                'total': total,
+                'discount': item_discount
             })
 
     if not return_items:
@@ -168,7 +185,8 @@ def create_return():
 
     tax_rate = float(request.form.get('tax_rate', 0))
     tax = subtotal * (tax_rate / 100)
-    discount = float(request.form.get('discount', 0))
+    # Discount is always the sum of the per-item prorated discounts computed above.
+    discount = sum(item['discount'] for item in return_items)
     total = subtotal + tax - discount
 
     # Generate return number using settings
@@ -263,6 +281,7 @@ def create_return():
             warehouse_id=item.get('warehouse_id'),
             quantity=item['quantity'],
             unit_price=item['unit_price'],
+            discount=item.get('discount', 0),
             total=item['total']
         )
         db.session.add(return_item)
@@ -297,6 +316,7 @@ def create_return():
     settings.next_number = next_return_num + 1
 
     db.session.commit()
+    log_activity('Returns', f'Created Sale Return #{return_number}', f'Invoice: {sale.invoice_number}, Total: {sale_return.total}')
     flash(f'Return {return_number} created successfully!', 'success')
     return redirect(url_for('returns.return_detail', id=sale_return.id))
 
@@ -380,6 +400,7 @@ def approve_return(id):
             db.session.add(production_log)
 
     db.session.commit()
+    log_activity('Returns', f'Approved Sale Return #{sale_return.return_number}', f'Approved by {current_user.username}')
     flash(f'Return {sale_return.return_number} approved successfully!', 'success')
     return redirect(url_for('returns.return_detail', id=id))
 
@@ -401,6 +422,7 @@ def reject_return(id):
     sale_return.status = 'rejected'
     
     db.session.commit()
+    log_activity('Returns', f'Rejected Sale Return #{sale_return.return_number}', f'Reason: {reason}')
     flash(f'Return {sale_return.return_number} has been rejected.', 'warning')
     return redirect(url_for('returns.return_detail', id=id))
 
@@ -443,6 +465,7 @@ def return_to_inventory(id):
     sale_return.returned_to_inventory = True
     sale_return.status = 'completed'
     db.session.commit()
+    log_activity('Returns', f'Returned to Inventory #{sale_return.return_number}', f'Items restored to stock')
 
     flash(f'Return {sale_return.return_number} items added back to inventory.', 'success')
     return redirect(url_for('returns.return_detail', id=id))
@@ -509,9 +532,10 @@ def delete_return(id):
         excess_from_advance = float(auto_advance.amount)
         db.session.delete(auto_advance)
     
-    # 2. Capture return total BEFORE removing the return from the relationship
+    # 2. Capture return total and number BEFORE removing the return from the relationship
     return_total = float(sale_return.total or 0)
-    
+    deleted_return_number = sale_return.return_number
+
     # 3. Explicitly remove the return so calculate_totals doesn't count it.
     if sale_return in sale.returns:
         sale.returns.remove(sale_return)
@@ -519,7 +543,7 @@ def delete_return(id):
 
     # 4. Recalculate invoice totals (this restores the original higher total)
     sale.calculate_totals()
-    
+
     # 5. Restore paid_amount from the ACTUAL payment records (ground truth).
     #    Do NOT try to add/subtract amounts — just sum what's really been paid.
     from app.models import Payment as PaymentModel
@@ -529,15 +553,16 @@ def delete_return(id):
         PaymentModel.invoice_id == sale.id,
         PaymentModel.is_approved == True
     ).scalar()
-    
+
     # Also include any advance that was applied directly to this invoice
     advance_applied = float(sale.advance_applied or 0)
-    
+
     # Cap at the restored invoice total
     sale.paid_amount = min(float(actual_paid) + advance_applied, sale.total)
-    
+
     sale.update_status()
     db.session.commit()
+    log_activity('Returns', f'Deleted Sale Return #{deleted_return_number}', f'Sale totals restored')
     flash('Return deleted successfully. Sale totals have been restored.', 'success')
     return redirect(url_for('returns.return_list'))
 
@@ -578,6 +603,7 @@ def sale_return_settings():
         settings.return_suffix = form.return_suffix.data or ''
         settings.next_number = form.next_number.data or 1
         db.session.commit()
+        log_activity('Returns', 'Updated Sale Return Settings', f'Prefix: {settings.return_prefix}')
         flash('Sale return settings updated successfully.', 'success')
         return redirect(url_for('returns.sale_return_settings'))
     return render_template('sales/sale_return_settings.html', settings=settings, form=form)

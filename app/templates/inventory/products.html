@@ -319,7 +319,7 @@
                                     {{ product.sku }}
                                 </a>
                             </td>
-                            <td><strong>{{ product.name }}</strong></td>
+                            <td><strong class="{% if product.margin_color %}text-{{ product.margin_color }}{% endif %}">{{ product.name }}</strong></td>
                             <td>{{ product.category.name if product.category else '-' }}</td>
                             <td>
                                 {% set active_stocks = product.warehouse_stocks | selectattr('quantity', 'ne', 0) | list

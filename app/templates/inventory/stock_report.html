@@ -65,7 +65,7 @@
                         {% for product in products %}
                         <tr>
                             <td>{{ product.sku }}</td>
-                            <td>{{ product.name }}</td>
+                            <td class="{% if product.margin_color %}text-{{ product.margin_color }} fw-bold{% endif %}">{{ product.name }}</td>
                             <td>{{ product.category or '-' }}</td>
                             <td class="text-end">{{ product.quantity | format_qty(product.unit) }}</td>
                             <td class="text-end">PKR{{ "{:,.2f}".format(product.cost_price) }}</td>

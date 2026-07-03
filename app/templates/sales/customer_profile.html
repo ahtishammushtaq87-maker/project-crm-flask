@@ -229,6 +229,74 @@
 </div>
 {% endif %}
 
+<!-- Approved Sales Invoices -->
+<div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+        <h6 class="m-0 font-weight-bold text-success"><i class="fas fa-file-invoice me-2"></i>Sales Invoices ({{ sales|length }})</h6>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Invoice #</th>
+                        <th>Date</th>
+                        <th>Due Date</th>
+                        <th>Amount</th>
+                        <th>Paid</th>
+                        <th>Balance</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if sales %}
+                    {% for sale in sales %}
+                    <tr>
+                        <td>
+                            <a href="{{ url_for('sales.invoice_detail', id=sale.id) }}">
+                                <i class="fas fa-flag text-{{ sale.invoice_health_status }} me-1" title="{% if sale.invoice_health_status == 'danger' %}30+ days overdue{% elif sale.invoice_health_status == 'warning' %}Overdue ({{ sale.days_overdue }} days){% else %}On time{% endif %}"></i>
+                                <strong>{{ sale.invoice_number }}</strong>
+                            </a>
+                        </td>
+                        <td>{{ sale.date.strftime('%d-%b-%Y') }}</td>
+                        <td>{{ sale.due_date.strftime('%d-%b-%Y') if sale.due_date else '-' }}</td>
+                        <td>PKR {{ '{:,.2f}'.format(sale.total) }}</td>
+                        <td>PKR {{ '{:,.2f}'.format(sale.paid_amount) }}</td>
+                        <td class="{% if sale.total - sale.paid_amount > 0 %}text-danger fw-bold{% else %}text-success{% endif %}">
+                            PKR {{ '{:,.2f}'.format(sale.total - sale.paid_amount) }}
+                        </td>
+                        <td class="text-center">
+                            {% if sale.is_overdue %}
+                            <span class="badge bg-{{ 'danger' if sale.days_overdue >= 30 else 'warning' }} shadow-sm">
+                                Overdue ({{ sale.days_overdue }} days)
+                            </span>
+                            {% elif sale.status == 'paid' %}
+                            <span class="badge bg-success shadow-sm">Paid</span>
+                            {% elif sale.status == 'partial' %}
+                            <span class="badge bg-warning shadow-sm">Partial</span>
+                            {% else %}
+                            <span class="badge bg-danger shadow-sm">Unpaid</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{{ url_for('sales.invoice_detail', id=sale.id) }}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-4">No invoices found</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 <!-- Customer Advances Table -->
 <div class="card shadow mb-4">
     <div class="card-header py-3 d-flex justify-content-between align-items-center">

@@ -415,7 +415,8 @@ def universal_approval():
         return jsonify({'success': False, 'message': f"Unsupported module: {module}"}), 400
 
     config = ApprovalService.get_config(module)
-    if action not in config.get('actions', []):
+    valid_actions = list(config.get('actions', [])) + ['pending']
+    if action not in valid_actions:
         return jsonify({'success': False, 'message': f"Action '{action}' not valid for {module}."}), 400
 
     try:
@@ -425,7 +426,7 @@ def universal_approval():
             if not reason:
                 return jsonify({'success': False, 'message': 'Rejection reason is required.'}), 400
             entity, msg = ApprovalService.reject(module, item_id, reason)
-        elif action in ('cancel', 'draft'):
+        elif action in ('cancel', 'draft', 'pending'):
             entity, msg = ApprovalService.set_status(module, item_id, action)
         else:
             return jsonify({'success': False, 'message': f"Unknown action: {action}"}), 400

@@ -353,7 +353,7 @@
                         {% for item in s.items %}
                         <tr>
                             <td>{{ s.invoice_number }}</td>
-                            <td>{{ item.product.name }}</td>
+                            <td class="{% if item.product.margin_color %}text-{{ item.product.margin_color }} fw-bold{% endif %}">{{ item.product.name }}</td>
                             <td>{{ item.quantity }}</td>
                             <td class="text-end">{{ "{:,.2f}".format(item.product.cost_price or 0) }}</td>
                             <td class="text-end">{{ "{:,.2f}".format((item.product.cost_price or 0) * item.quantity) }}
@@ -426,7 +426,7 @@
                         {% for o in manufacturing_orders %}
                         <tr>
                             <td>{{ o.order_number }}</td>
-                            <td>{{ o.bom.product.name }}</td>
+                            <td class="{% if o.bom.product.margin_color %}text-{{ o.bom.product.margin_color }} fw-bold{% endif %}">{{ o.bom.product.name }}</td>
                             <td>{{ o.end_date.strftime('%Y-%m-%d') if o.end_date else '-' }}</td>
                             <td class="text-end">{{ "{:,.2f}".format(o.total_cost) }}</td>
                         </tr>

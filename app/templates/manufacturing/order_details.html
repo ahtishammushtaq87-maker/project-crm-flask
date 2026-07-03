@@ -48,7 +48,7 @@
                 <div class="card-body">
                     <dl class="row mb-0">
                         <dt class="col-sm-5 text-truncate">Target Product</dt>
-                        <dd class="col-sm-7 fw-bold text-primary">
+                        <dd class="col-sm-7 fw-bold {% if order.bom.product.margin_color %}text-{{ order.bom.product.margin_color }}{% else %}text-primary{% endif %}">
                             {{ order.bom.product.name }}
                             <div class="small mt-1">
                                 <span class="badge bg-light text-success border">Stock: {{ (order.bom.product.quantity -

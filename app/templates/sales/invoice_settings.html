@@ -22,26 +22,36 @@ $(document).ready(function() {
         conditions = [];
     }
 
+    function fmtPKR(val) {
+        return 'PKR ' + parseFloat(val).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+
     function renderTable() {
         const tbody = $('#conditions_table tbody');
         tbody.empty();
-        
+
         if (conditions.length === 0) {
-            tbody.append('<tr><td colspan="4" class="text-center text-muted py-3">No product conditions defined.</td></tr>');
+            tbody.append('<tr><td colspan="7" class="text-center text-muted py-3">No product conditions defined.</td></tr>');
             return;
         }
 
         conditions.forEach((c, index) => {
             const productOpt = $(`#product_selector option[value="${c.product_id}"]`);
             const productText = productOpt.data('name') || `Product #${c.product_id}`;
-            const sellingPrice = productOpt.data('price') || 0;
-            
+            const sellingPrice = parseFloat(productOpt.data('price')) || 0;
+            const costPrice = parseFloat(productOpt.data('cost')) || 0;
+            const profit = sellingPrice - costPrice;
+            const margin = sellingPrice > 0 ? ((profit / sellingPrice) * 100).toFixed(1) : 0;
+            const profitCls = profit >= 0 ? 'text-success' : 'text-danger';
+
             tbody.append(`
                 <tr>
                     <td><strong>${productText}</strong></td>
-                    <td class="text-end">PKR ${parseFloat(sellingPrice).toLocaleString()}</td>
-                    <td class="text-end">PKR ${parseFloat(c.min_discount).toLocaleString()}</td>
-                    <td class="text-end">PKR ${parseFloat(c.max_discount).toLocaleString()}</td>
+                    <td class="text-end">${fmtPKR(sellingPrice)}</td>
+                    <td class="text-end text-secondary">${fmtPKR(costPrice)}</td>
+                    <td class="text-end ${profitCls} fw-bold">${fmtPKR(profit)}<br><small>${margin}%</small></td>
+                    <td class="text-end">${fmtPKR(c.min_discount)}</td>
+                    <td class="text-end">${fmtPKR(c.max_discount)}</td>
                     <td class="text-center">
                         <button type="button" class="btn btn-sm btn-outline-danger remove-condition" data-index="${index}">
                             <i class="fas fa-trash"></i>
@@ -94,11 +104,28 @@ $(document).ready(function() {
 
     renderTable();
 
-    // Handle product selection change to show price
+    // Handle product selection change to show price, cost, profit, margin
     $('#product_selector').on('change', function() {
         const option = $(this).find(':selected');
-        const price = option.data('price') || 0;
-        $('#selected_product_price').val(parseFloat(price).toLocaleString(undefined, {minimumFractionDigits: 2}));
+        const price = parseFloat(option.data('price')) || 0;
+        const cost = parseFloat(option.data('cost')) || 0;
+
+        if (!option.val()) {
+            $('#selected_product_price').val('-');
+            $('#selected_product_cost').val('-');
+            $('#selected_product_profit').val('-');
+            $('#selected_product_margin').val('-');
+            return;
+        }
+
+        const profit = price - cost;
+        const margin = price > 0 ? ((profit / price) * 100).toFixed(1) : 0;
+        const profitColor = profit >= 0 ? '#198754' : '#dc3545';
+
+        $('#selected_product_price').val(fmtPKR(price));
+        $('#selected_product_cost').val(fmtPKR(cost));
+        $('#selected_product_profit').val(fmtPKR(profit)).css('color', profitColor);
+        $('#selected_product_margin').val(margin + '%').css('color', profitColor);
     });
 
     // Initialize Select2
@@ -227,25 +254,40 @@ $(document).ready(function() {
                             <small><i class="fas fa-info-circle me-1"></i> If staff gives a discount outside these ranges for the specified products, the invoice will require <strong>Admin Approval</strong>.</small>
                         </div>
                         
-                        <div class="row g-2 align-items-end mb-3">
+                        <div class="row g-2 align-items-end mb-2">
                             <div class="col-md-4">
                                 <label class="form-label small fw-bold">Select Product</label>
                                 <select id="product_selector" class="form-select searchable-select">
                                     <option value="">Search Finished Good...</option>
                                     {% for p in products %}
-                                    <option value="{{ p.id }}" data-name="{{ p.name }}" data-price="{{ p.unit_price or 0 }}">{{ p.name }} ({{ p.sku }})</option>
+                                    <option value="{{ p.id }}" data-name="{{ p.name }}" data-price="{{ p.unit_price or 0 }}" data-cost="{{ p.cost_price or 0 }}">{{ p.name }} ({{ p.sku }})</option>
                                     {% endfor %}
                                 </select>
                             </div>
                             <div class="col-md-2">
                                 <label class="form-label small fw-bold text-primary">Selling Price</label>
-                                <input type="text" id="selected_product_price" class="form-control bg-light fw-bold" readonly value="0.00">
+                                <input type="text" id="selected_product_price" class="form-control form-control-sm bg-light fw-bold" readonly value="-">
                             </div>
                             <div class="col-md-2">
+                                <label class="form-label small fw-bold text-secondary">Cost Price</label>
+                                <input type="text" id="selected_product_cost" class="form-control form-control-sm bg-light" readonly value="-">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold text-success">Profit</label>
+                                <input type="text" id="selected_product_profit" class="form-control form-control-sm bg-light fw-bold" readonly value="-">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold text-success">Margin</label>
+                                <input type="text" id="selected_product_margin" class="form-control form-control-sm bg-light fw-bold" readonly value="-">
+                            </div>
+                        </div>
+                        <div class="row g-2 align-items-end mb-3">
+                            <div class="col-md-4"></div>
+                            <div class="col-md-3">
                                 <label class="form-label small fw-bold">Min Discount</label>
                                 <input type="number" id="min_discount_input" class="form-control" placeholder="0" step="0.01">
                             </div>
-                            <div class="col-md-2">
+                            <div class="col-md-3">
                                 <label class="form-label small fw-bold">Max Discount</label>
                                 <input type="number" id="max_discount_input" class="form-control" placeholder="0" step="0.01">
                             </div>
@@ -260,6 +302,8 @@ $(document).ready(function() {
                                     <tr>
                                         <th>Product</th>
                                         <th class="text-end">Selling Price</th>
+                                        <th class="text-end">Cost Price</th>
+                                        <th class="text-end">Profit</th>
                                         <th class="text-end">Min Allowed</th>
                                         <th class="text-end">Max Allowed</th>
                                         <th class="text-center" style="width: 80px;">Action</th>

@@ -46,6 +46,12 @@
             <i class="fas fa-file"></i> Set to Draft
         </button>
         {% endif %}
+
+        {% if 'pending' in actions %}
+        <button class="approval-item pending approval-action" data-action="pending" data-entity-id="{{ entity.id }}" data-module="{{ module }}">
+            <i class="fas fa-clock"></i> Set to Pending
+        </button>
+        {% endif %}
     </div>
     {% endif %}
 </div>

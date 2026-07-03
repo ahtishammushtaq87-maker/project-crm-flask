@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, send_file
-from app.utils import permission_required
+from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
 from app.models import ProductionTarget, ProductionLog, Product, BOM, SaleItem, Sale, ManufacturingOrder
@@ -302,6 +302,7 @@ def set_target():
                     curr_target.overhead_cost_per_unit = overhead_cost_per_unit
             
             db.session.commit()
+            log_activity('Production', f'Saved Production Targets', f'Month: {month}/{year}')
             flash('Targets saved successfully.', 'success')
             return redirect(url_for('production.index', month=month, year=year))
         except Exception as e:
@@ -325,9 +326,11 @@ def delete_target(id):
         target = ProductionTarget.query.get_or_404(id)
         month = target.month
         year = target.year
-        
+        target_sku_id = target.sku_id
+
         db.session.delete(target)
         db.session.commit()
+        log_activity('Production', f'Deleted Production Target', f'Product ID: {target_sku_id}, Month: {month}/{year}')
         flash('Target deleted successfully.', 'success')
         return redirect(url_for('production.index', month=month, year=year))
     except Exception as e:
@@ -432,6 +435,7 @@ def add_log():
                     production_product.cost_price = active_bom.total_cost
                 
             db.session.commit()
+            log_activity('Production', f'{"Updated" if log_id else "Created"} Production Log', f'Product ID: {sku_id}, Qty: {produced_qty}')
             flash('Production log saved and inventory updated.', 'success')
             return redirect(url_for('production.logs'))
         except Exception as e:
@@ -451,7 +455,8 @@ def delete_log(id):
     log = ProductionLog.query.get_or_404(id)
     sku_id = log.sku_id
     qty = log.qty_produced
-    
+    log_product_name = log.product.name if log.product else "N/A"
+
     try:
         # Reverse stock
         product = Product.query.get(sku_id)
@@ -478,6 +483,7 @@ def delete_log(id):
             
         db.session.delete(log)
         db.session.commit()
+        log_activity('Production', f'Deleted Production Log', f'Product: {log_product_name}, Qty: {qty}')
         flash('Production log deleted and stock reversed.', 'success')
     except Exception as e:
         db.session.rollback()
@@ -574,6 +580,7 @@ def api_update_target():
             return jsonify({'success': False, 'message': 'Invalid field'}), 400
             
         db.session.commit()
+        log_activity('Production', f'Updated target {field}', f'Target ID: {target_id}, Value: {value}')
         return jsonify({'success': True, 'message': 'Updated successfully'})
     except ValueError:
         return jsonify({'success': False, 'message': 'Invalid number format'}), 400

@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify
-from app.utils import permission_required
+from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
 from app.models import Staff, Attendance
@@ -132,6 +132,7 @@ def clock_in(staff_id):
         existing.deduct_reason = deduct_reason
         existing.notes = notes
         db.session.commit()
+        log_activity('Attendance', f'Updated shift details for {staff.name}', f'Date: {today}')
         flash(f'{staff.name}\'s deduction/notes updated.', 'success')
         return redirect(url_for('attendance.index'))
     
@@ -159,6 +160,7 @@ def clock_in(staff_id):
         existing.notes = notes
     
     db.session.commit()
+    log_activity('Attendance', f'Clocked In: {staff.name}', f'Date: {today}')
     flash(f'{staff.name} clocked in at {datetime.now().strftime("%H:%M:%S")}', 'success')
     return redirect(url_for('attendance.index'))
 
@@ -201,6 +203,7 @@ def clock_out(staff_id):
     attendance.calculate_earned_amount()
     
     db.session.commit()
+    log_activity('Attendance', f'Clocked Out: {staff.name}', f'Date: {today}, Hours: {attendance.get_time_summary()}')
     flash(f'{staff.name} clocked out at {attendance.clock_out.strftime("%H:%M:%S")}. Worked: {attendance.get_time_summary()}', 'success')
     return redirect(url_for('attendance.index'))
 
@@ -259,6 +262,7 @@ def mark_holiday(staff_id):
         record.calculate_earned_amount()
     
     db.session.commit()
+    log_activity('Attendance', f'Marked Holiday: {staff.name}', f'Date: {holiday_date}')
     flash(f'Marked {holiday_date} as holiday for {staff.name}. Monthly working days and rates recalculated.', 'success')
     return redirect(url_for('attendance.index'))
 
@@ -312,6 +316,7 @@ def mark_absent(staff_id):
     existing.calculate_hourly_rate()
 
     db.session.commit()
+    log_activity('Attendance', f'Marked Absent: {staff.name}', f'Date: {absent_date}')
     flash(f'{staff.name} marked as absent on {absent_date}.', 'warning')
     return redirect(url_for('attendance.index'))
 
@@ -377,6 +382,7 @@ def process_absences():
         current_check += timedelta(days=1)
 
     db.session.commit()
+    log_activity('Attendance', f'Bulk processed absences', f'Range: {date_from} to {date_to}, Marked: {marked_count}')
     flash(f'Processed absences from {date_from} to {date_to}: {marked_count} total staff-days marked absent.', 'success')
     return redirect(url_for('attendance.index'))
 
@@ -398,6 +404,9 @@ def edit_attendance(attendance_id):
         notes = request.form.get('notes')
         
         try:
+            # Remember holiday state before edit so we know if the working-day divisor changes
+            was_holiday = attendance.is_holiday
+
             # 1. Update the main date field
             if date_str:
                 attendance.date = datetime.strptime(date_str, '%Y-%m-%d').date()
@@ -439,8 +448,25 @@ def edit_attendance(attendance_id):
             # Recalculate based on new state
             attendance.calculate_hours_worked()
             attendance.calculate_earned_amount() # This also recalculates hourly rate based on the date
-            
+
+            # CRITICAL: If the holiday flag changed, the working-day divisor for this staff's
+            # whole month changed too. Recalculate every other record in that month so they
+            # don't stay stuck on the pre-edit rate (same fix already applied in mark_holiday()).
+            if is_holiday != was_holiday:
+                from sqlalchemy import extract
+                all_month_records = Attendance.query.filter(
+                    Attendance.staff_id == attendance.staff_id,
+                    extract('year', Attendance.date) == attendance.date.year,
+                    extract('month', Attendance.date) == attendance.date.month,
+                    Attendance.id != attendance.id
+                ).all()
+
+                for record in all_month_records:
+                    record.calculate_hourly_rate()
+                    record.calculate_earned_amount()
+
             db.session.commit()
+            log_activity('Attendance', f'Updated Attendance: {attendance.staff.name}', f'Date: {attendance.date}')
             flash('Attendance record updated!', 'success')
             return redirect(url_for('attendance.index'))
         except ValueError as e:
@@ -455,8 +481,10 @@ def delete_attendance(attendance_id):
     """Delete attendance record"""
     attendance = Attendance.query.get_or_404(attendance_id)
     staff_name = attendance.staff.name
+    att_date = attendance.date
     db.session.delete(attendance)
     db.session.commit()
+    log_activity('Attendance', f'Deleted Attendance: {staff_name}', f'Date: {att_date}')
     flash(f'Attendance record for {staff_name} deleted.', 'info')
     return redirect(url_for('attendance.index'))
 
@@ -649,6 +677,7 @@ def bulk_upload():
             
             if added > 0:
                 db.session.commit()
+                log_activity('Attendance', f'Bulk uploaded attendance', f'Records added: {added}')
                 flash(f'Successfully added {added} attendance records!', 'success')
             
             if errors:

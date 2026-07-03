@@ -41,7 +41,8 @@ def create_app(config_class=Config):
             ProductRelease, ProductRevisionHistory, SharedCostAllocation, ProductAttachment,
             PurchaseReturn, PurchaseReturnItem, Unit, ActivityLog,
             ToolReceiving, ToolReceivingItem, ToolDelivering, ToolDeliveringItem, ToolSettings,
-            ProductWarehouseStock, Media
+            ProductWarehouseStock, Media,
+            RecoveryTask, RecoveryLog
         )
         from app.filter_models import SavedFilter
         
@@ -120,7 +121,9 @@ def create_app(config_class=Config):
             'tool_delivering_items': ToolDeliveringItem,
             'tool_settings': ToolSettings,
             'product_warehouse_stock': ProductWarehouseStock,
-            'media': Media
+            'media': Media,
+            'recovery_tasks': RecoveryTask,
+            'recovery_logs': RecoveryLog,
         }
         
         try:
@@ -247,6 +250,7 @@ def create_app(config_class=Config):
     from app.routes.activity_log import bp as activity_log_bp
     from app.routes.tools import bp as tools_bp
     from app.routes.media import bp as media_bp
+    from app.routes.recovery import bp as recovery_bp
 
     app.register_blueprint(dashboard_bp, url_prefix='/')
     app.register_blueprint(accounting_bp, url_prefix='/accounting')
@@ -271,6 +275,7 @@ def create_app(config_class=Config):
     app.register_blueprint(activity_log_bp, url_prefix='/activity-log')
     app.register_blueprint(tools_bp, url_prefix='/tools')
     app.register_blueprint(media_bp, url_prefix='/media')
+    app.register_blueprint(recovery_bp, url_prefix='/recovery')
     
     @app.context_processor
     def inject_company():
@@ -432,5 +437,31 @@ def create_app(config_class=Config):
     # Register approval service as Jinja global for templates
     from app.services.approval_service import ApprovalService
     app.jinja_env.globals['approval_service'] = ApprovalService
+
+    @app.context_processor
+    def inject_pending_approvals():
+        from flask_login import current_user
+        if not current_user.is_authenticated or current_user.role != 'admin':
+            return dict(total_pending_approvals=0, pending_approval_details=[])
+        try:
+            details = []
+            total = 0
+            module_labels = {
+                'sale': 'Invoices', 'payment': 'Payments', 'advance': 'Advances',
+                'expense': 'Expenses', 'sale_return': 'Sale Returns',
+                'purchase_return': 'Purchase Returns', 'purchase_bill': 'Purchase Bills',
+                'purchase_order': 'Purchase Orders', 'bill_payment': 'Bill Payments',
+                'product': 'Products', 'tool_receiving': 'Receiving', 'tool_delivering': 'Delivering',
+                'bom': 'BOMs', 'manufacturing_order': 'Manufacturing Orders',
+                'vendor_advance': 'Vendor Advances',
+            }
+            for module in module_labels:
+                count = ApprovalService.get_pending_count(module)
+                if count > 0:
+                    details.append({'module': module, 'label': module_labels[module], 'count': count})
+                    total += count
+            return dict(total_pending_approvals=total, pending_approval_details=details)
+        except Exception:
+            return dict(total_pending_approvals=0, pending_approval_details=[])
 
     return app

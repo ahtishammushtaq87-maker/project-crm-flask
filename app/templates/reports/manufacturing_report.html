@@ -140,7 +140,7 @@
                             </td>
                             <td><span class="fw-bold">{{ o.order_number }}</span></td>
                             <td>{{ o.start_date.strftime('%Y-%m-%d') if o.start_date else 'N/A' }}</td>
-                            <td>{{ o.bom.product.name }}</td>
+                            <td class="{% if o.bom.product.margin_color %}text-{{ o.bom.product.margin_color }} fw-bold{% endif %}">{{ o.bom.product.name }}</td>
                             <td class="text-center">{{ o.quantity_to_produce }}</td>
                             <td>PKR {{ "%.2f"|format(o.actual_material_cost or 0) }}</td>
                             <td>PKR {{ "%.2f"|format(o.actual_labor_cost or 0) }}</td>

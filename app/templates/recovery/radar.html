@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Recovery Radar{% endblock %}
+
+{% block extra_css %}
+<style>
+    .radar-section-title { font-size:.85rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; }
+    .radar-card { border-left: 4px solid; border-radius:6px; }
+    .radar-card.due-today      { border-color:#0d6efd; }
+    .radar-card.promise-missed { border-color:#dc3545; }
+    .radar-card.promise-today  { border-color:#198754; }
+    .radar-card.partial        { border-color:#0dcaf0; }
+    .radar-card.no-payment     { border-color:#fd7e14; }
+    .radar-card.high-risk      { border-color:#6f42c1; }
+    .mini-row { font-size:.8rem; }
+    .risk-badge.critical { background:#dc3545; color:#fff; }
+    .risk-badge.high     { background:#fd7e14; color:#fff; }
+    .risk-badge.medium   { background:#ffc107; color:#212529; }
+    .risk-badge.low      { background:#198754; color:#fff; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Macro must be defined before first use ── #}
+{% macro task_mini_row(task) %}
+{% set inv = task.invoice %}
+<div class="d-flex justify-content-between align-items-center border-bottom py-1 mini-row">
+    <div class="text-truncate me-2" style="max-width:60%;">
+        {% if inv %}
+        <a href="{{ url_for('recovery.task_detail', task_id=task.id) }}" class="fw-semibold text-decoration-none">
+            {{ inv.invoice_number }}
+        </a>
+        — {{ inv.customer.name if inv.customer else '—' }}
+        {% else %}Task #{{ task.id }}{% endif %}
+    </div>
+    <div class="d-flex align-items-center gap-1 flex-shrink-0">
+        {% if inv %}
+        <span class="text-danger fw-semibold">{{ "{:,.0f}".format(inv.balance_due) }}</span>
+        {% endif %}
+        <span class="badge risk-badge {{ task.risk_level }} px-2">{{ task.risk_level[:3] | upper }}</span>
+        <a href="{{ url_for('recovery.task_detail', task_id=task.id) }}"
+           class="btn btn-outline-primary btn-sm py-0 px-1">
+            <i class="fas fa-eye"></i>
+        </a>
+    </div>
+</div>
+{% endmacro %}
+
+<div class="container-fluid">
+
+    <div class="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
+        <h2 class="h4 mb-0"><i class="fas fa-broadcast-tower me-2 text-primary"></i> Recovery Radar</h2>
+        <a href="{{ url_for('recovery.dashboard') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left me-1"></i> Full Dashboard
+        </a>
+    </div>
+
+    {# Salesman filter #}
+    <form method="GET" class="row g-2 mb-4 align-items-end">
+        <div class="col-auto">
+            <label class="form-label mb-1 small">Filter by Salesman</label>
+            <select name="salesman" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="">All Salesmen</option>
+                {% for s in salesmen %}
+                <option value="{{ s.id }}" {% if salesman_id|string == s.id|string %}selected{% endif %}>{{ s.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </form>
+
+    <div class="row g-3">
+
+        {# ── Due Today ─── #}
+        <div class="col-12 col-md-6">
+            <div class="card radar-card due-today h-100">
+                <div class="card-header py-2 bg-primary text-white d-flex justify-content-between align-items-center">
+                    <span class="radar-section-title"><i class="fas fa-calendar-day me-1"></i> Due Today</span>
+                    <span class="badge bg-light text-dark">{{ due_today|length }}</span>
+                </div>
+                <div class="card-body p-2">
+                    {% if due_today %}
+                        {% for t in due_today %}{{ task_mini_row(t) }}{% endfor %}
+                    {% else %}<div class="text-muted small fst-italic">None</div>{% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# ── Promise Missed ─── #}
+        <div class="col-12 col-md-6">
+            <div class="card radar-card promise-missed h-100">
+                <div class="card-header py-2 bg-danger text-white d-flex justify-content-between align-items-center">
+                    <span class="radar-section-title"><i class="fas fa-times-circle me-1"></i> Promise Missed</span>
+                    <span class="badge bg-light text-dark">{{ promise_missed|length }}</span>
+                </div>
+                <div class="card-body p-2">
+                    {% if promise_missed %}
+                        {% for t in promise_missed %}{{ task_mini_row(t) }}{% endfor %}
+                    {% else %}<div class="text-muted small fst-italic">None</div>{% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# ── Promise Today ─── #}
+        <div class="col-12 col-md-6">
+            <div class="card radar-card promise-today h-100">
+                <div class="card-header py-2 bg-success text-white d-flex justify-content-between align-items-center">
+                    <span class="radar-section-title"><i class="fas fa-handshake me-1"></i> Promise Today</span>
+                    <span class="badge bg-light text-dark">{{ promise_today|length }}</span>
+                </div>
+                <div class="card-body p-2">
+                    {% if promise_today %}
+                        {% for t in promise_today %}{{ task_mini_row(t) }}{% endfor %}
+                    {% else %}<div class="text-muted small fst-italic">None</div>{% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# ── Partial Balance ─── #}
+        <div class="col-12 col-md-6">
+            <div class="card radar-card partial h-100">
+                <div class="card-header py-2 bg-info text-white d-flex justify-content-between align-items-center">
+                    <span class="radar-section-title"><i class="fas fa-adjust me-1"></i> Partial Balance</span>
+                    <span class="badge bg-light text-dark">{{ partial_balance|length }}</span>
+                </div>
+                <div class="card-body p-2">
+                    {% if partial_balance %}
+                        {% for t in partial_balance %}{{ task_mini_row(t) }}{% endfor %}
+                    {% else %}<div class="text-muted small fst-italic">None</div>{% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# ── No Payment Received ─── #}
+        <div class="col-12 col-md-6">
+            <div class="card radar-card no-payment h-100">
+                <div class="card-header py-2 bg-warning text-dark d-flex justify-content-between align-items-center">
+                    <span class="radar-section-title"><i class="fas fa-ban me-1"></i> No Payment Received</span>
+                    <span class="badge bg-dark">{{ no_payment|length }}</span>
+                </div>
+                <div class="card-body p-2">
+                    {% if no_payment %}
+                        {% for t in no_payment %}{{ task_mini_row(t) }}{% endfor %}
+                    {% else %}<div class="text-muted small fst-italic">None</div>{% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# ── High Risk ─── #}
+        <div class="col-12 col-md-6">
+            <div class="card radar-card high-risk h-100">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center"
+                     style="background:#6f42c1;">
+                    <span class="radar-section-title text-white"><i class="fas fa-skull-crossbones me-1"></i> High Risk</span>
+                    <span class="badge bg-light text-dark">{{ high_risk|length }}</span>
+                </div>
+                <div class="card-body p-2">
+                    {% if high_risk %}
+                        {% for t in high_risk %}{{ task_mini_row(t) }}{% endfor %}
+                    {% else %}<div class="text-muted small fst-italic">None</div>{% endif %}
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

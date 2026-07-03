@@ -108,7 +108,7 @@
                                 <tr>
                                     <td>
                                         <span class="fw-bold">{{ item.product.sku }}</span><br>
-                                        <small class="text-muted">{{ item.product.name }}</small>
+                                        <small class="{% if item.product.margin_color %}text-{{ item.product.margin_color }} fw-bold{% else %}text-muted{% endif %}">{{ item.product.name }}</small>
                                     </td>
                                     <td class="text-center fw-bold text-danger">{{ item.quantity }}</td>
                                     <td>PKR {{ "{:,.2f}".format(item.product.unit_price) }}</td>

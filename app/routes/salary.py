@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, send_file
-from app.utils import permission_required
+from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
 from app.models import Staff, SalaryAdvance, SalaryPayment, Attendance
@@ -92,6 +92,7 @@ def recalculate_all_salaries():
                 record.calculate_earned_amount()
         
         db.session.commit()
+        log_activity('Salary', 'Recalculated all salaries', 'All staff daily rates and current month attendance updated')
         flash('Successfully recalculated all staff salaries and current month attendance rates!', 'success')
     except Exception as e:
         db.session.rollback()
@@ -130,6 +131,7 @@ def add_staff():
         staff.calculate_daily_salary()  # Calculate daily salary
         db.session.add(staff)
         db.session.commit()
+        log_activity('Salary', f'Added Staff: {staff.name}', f'Designation: {staff.designation}, Salary: {staff.monthly_salary}')
         flash('Staff member added successfully!', 'success')
         return redirect(url_for('salary.staff_list'))
     return render_template('salary/staff_form.html', form=form, title="Add Staff")
@@ -169,6 +171,7 @@ def edit_staff(id):
             
         staff.calculate_daily_salary()  # Recalculate daily salary
         db.session.commit()
+        log_activity('Salary', f'Updated Staff: {staff.name}', f'Designation: {staff.designation}, Salary: {staff.monthly_salary}')
         flash('Staff details updated!', 'success')
         return redirect(url_for('salary.staff_list'))
     return render_template('salary/staff_form.html', form=form, title="Edit Staff")
@@ -178,8 +181,10 @@ def edit_staff(id):
 @permission_required('salary', action='delete')
 def delete_staff(id):
     staff = Staff.query.get_or_404(id)
+    staff_name = staff.name
     db.session.delete(staff)
     db.session.commit()
+    log_activity('Salary', f'Deleted Staff: {staff_name}', '')
     flash('Staff member deleted.', 'info')
     return redirect(url_for('salary.staff_list'))
 
@@ -259,6 +264,7 @@ def bulk_upload_staff():
             
             db.session.commit()
             if added > 0:
+                log_activity('Salary', f'Bulk uploaded staff', f'Records added: {added}')
                 flash(f'Successfully added {added} staff members!', 'success')
             if errors:
                 flash(f'Errors: {"; ".join(errors[:10])}', 'warning')
@@ -354,6 +360,7 @@ def bulk_delete_advances():
         else:
             skipped += 1
     db.session.commit()
+    log_activity('Salary', f'Bulk Deleted Advances', f'Deleted {deleted} advance(s), Skipped {skipped}')
     msg = f'Deleted {deleted} advance(s).'
     if skipped:
         msg += f' {skipped} skipped (already deducted).'
@@ -375,6 +382,7 @@ def add_advance():
         )
         db.session.add(advance)
         db.session.commit()
+        log_activity('Salary', f'Added Advance for: {advance.staff.name}', f'Amount: {advance.amount}')
         flash('Salary advance recorded!', 'success')
         return redirect(url_for('salary.advance_list'))
     return render_template('salary/advance_form.html', form=form, title="Record Advance")
@@ -387,8 +395,11 @@ def delete_advance(id):
     if advance.is_deducted:
         flash('Cannot delete a deducted advance. Delete the salary payment first.', 'danger')
         return redirect(url_for('salary.advance_list'))
+    advance_staff_name = advance.staff.name if advance.staff else 'Unknown'
+    advance_amount = advance.amount
     db.session.delete(advance)
     db.session.commit()
+    log_activity('Salary', f'Deleted Advance for: {advance_staff_name}', f'Amount: {advance_amount}')
     flash('Salary advance deleted.', 'info')
     return redirect(url_for('salary.advance_list'))
 
@@ -547,6 +558,7 @@ def pay_salary(staff_id):
                     deducted_so_far += remaining_to_deduct
         
         db.session.commit()
+        log_activity('Salary', f'Processed Salary for: {staff.name}', f'Month: {payment.month}/{payment.year}, Net: {payment.net_salary}')
         flash(f'Salary processed for {staff.name}. Payment ID: {payment.id}', 'success')
         return redirect(url_for('salary.payment_list_with_download', paid=payment.id))
 
@@ -571,8 +583,11 @@ def delete_payment(id):
             if staff.remaining_joining_advance > (staff.joining_advance or 0):
                 staff.remaining_joining_advance = staff.joining_advance
 
+    payment_staff = Staff.query.get(payment.staff_id)
+    payment_info = f'Month: {payment.month}/{payment.year}, Net: {payment.net_salary}'
     db.session.delete(payment)
     db.session.commit()
+    log_activity('Salary', f'Deleted Salary Payment for: {payment_staff.name if payment_staff else "Unknown"}', payment_info)
     flash('Salary payment deleted. Regular and joining advances have been reverted.', 'info')
     return redirect(url_for('salary.payment_list'))
 
@@ -793,6 +808,7 @@ def bulk_upload_payment():
             
             db.session.commit()
             if added > 0:
+                log_activity('Salary', f'Bulk uploaded payments', f'Records added: {added}')
                 flash(f'Successfully added {added} payments!', 'success')
             if errors:
                 flash(f'Errors: {"; ".join(errors[:10])}', 'warning')

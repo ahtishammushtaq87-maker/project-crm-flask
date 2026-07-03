@@ -136,6 +136,12 @@ class User(UserMixin, db.Model):
     can_add_media = db.Column(db.Boolean, default=False)
     can_delete_media = db.Column(db.Boolean, default=False)
 
+    # Sales Recovery Module Permissions
+    can_view_recovery = db.Column(db.Boolean, default=True)
+    can_add_recovery = db.Column(db.Boolean, default=False)
+    can_edit_recovery = db.Column(db.Boolean, default=False)
+    can_delete_recovery = db.Column(db.Boolean, default=False)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -539,6 +545,21 @@ class Product(db.Model):
         return 0
     
     @property
+    def margin_percent(self):
+        if self.unit_price > 0:
+            return ((self.unit_price - self.cost_price) / self.unit_price) * 100
+        return 0
+
+    @property
+    def margin_color(self):
+        m = self.margin_percent
+        if m < 25:
+            return 'danger'
+        if m < 30:
+            return 'warning'
+        return ''
+
+    @property
     def is_low_stock(self):
         """Check if product is low in stock"""
         return self.quantity <= self.reorder_level
@@ -699,7 +720,23 @@ class Sale(db.Model):
             delta = datetime.utcnow().date() - check_date
             return delta.days
         return 0
-    
+
+    @property
+    def invoice_health_status(self):
+        """
+        Per-invoice flag color based on THIS invoice's overdue status.
+        - 'danger' (Red): 30+ days overdue
+        - 'warning' (Yellow): Overdue but < 30 days
+        - 'success' (Green): Not overdue (paid, on-time, or no due date passed)
+        """
+        if self.status == 'paid':
+            return 'success'
+        if self.is_overdue:
+            if self.days_overdue >= 30:
+                return 'danger'
+            return 'warning'
+        return 'success'
+
     def update_status(self):
         """Update payment status based on paid amount"""
         if self.paid_amount >= self.total:
@@ -782,25 +819,31 @@ class Sale(db.Model):
         if self.total < 0:
             self.total = 0
 
-        # Check Product Discount Conditions
+        # Check Product Discount Conditions: each item's OWN discount is validated
+        # against that item's product-specific min/max rule (mirrors the same
+        # per-item check performed in routes/sales.py at invoice create/edit time).
         violations = []
         if settings and settings.product_discount_conditions:
             import json
             try:
                 conditions = json.loads(settings.product_discount_conditions)
-                item_product_ids = [item.product_id for item in self.items]
-                for cond in conditions:
-                    if cond['product_id'] in item_product_ids:
-                        min_allowed = float(cond.get('min_discount', 0))
-                        max_allowed = float(cond.get('max_discount', 0))
-                        
-                        if discount_amount < min_allowed:
-                            violations.append(f"Discount PKR {discount_amount} is less than Rule Minimum (PKR {min_allowed})")
-                        if max_allowed > 0 and discount_amount > max_allowed:
-                            violations.append(f"Discount PKR {discount_amount} is greater than Rule Maximum (PKR {max_allowed})")
+                rules_by_product = {c['product_id']: c for c in conditions if 'product_id' in c}
+                for item in self.items:
+                    cond = rules_by_product.get(item.product_id)
+                    if not cond:
+                        continue
+                    min_allowed = float(cond.get('min_discount', 0))
+                    max_allowed = float(cond.get('max_discount', 0))
+                    item_discount = item.discount or 0
+                    product_label = item.product.name if item.product else f"Product #{item.product_id}"
+
+                    if item_discount < min_allowed:
+                        violations.append(f"{product_label}: Discount PKR {item_discount} is less than Rule Minimum (PKR {min_allowed})")
+                    if max_allowed > 0 and item_discount > max_allowed:
+                        violations.append(f"{product_label}: Discount PKR {item_discount} is greater than Rule Maximum (PKR {max_allowed})")
             except:
                 pass
-        
+
         if violations:
             self.discount_violation = "; ".join(violations)
         else:
@@ -882,6 +925,22 @@ class SaleItem(db.Model):
                         total_returned += item.quantity
         return total_returned
 
+    @property
+    def returned_discount(self):
+        """Sum of this item's discount already prorated to returns of this product on this sale"""
+        total_returned = 0
+        if self.sale and self.sale.returns:
+            for ret in self.sale.returns:
+                for item in ret.items:
+                    if item.product_id == self.product_id:
+                        total_returned += item.discount or 0
+        return total_returned
+
+    @property
+    def remaining_discount(self):
+        """This item's original discount minus the portion already prorated away to returns"""
+        return max((self.discount or 0) - self.returned_discount, 0)
+
     def __repr__(self):
         return f'<SaleItem {self.sale_id} - {self.product_id}>'
 
@@ -896,9 +955,15 @@ class SaleReturnItem(db.Model):
     warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
     quantity = db.Column(db.Float, nullable=False)
     unit_price = db.Column(db.Float, nullable=False)
+    discount = db.Column(db.Float, default=0)
     total = db.Column(db.Float, nullable=False)
 
     product = db.relationship('Product', backref='return_items', lazy=True)
+
+    @property
+    def net_total(self):
+        """Total after this item's prorated discount"""
+        return self.total - (self.discount or 0)
 
     def __repr__(self):
         return f'<SaleReturnItem {self.return_id} - {self.product_id}>'
@@ -1612,6 +1677,18 @@ class Task(db.Model):
     task_group_name = db.Column(db.String(100), nullable=True)  # Free-text group label
     linked_invoice_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=True)  # Linked overdue invoice
     linked_invoice = db.relationship('Sale', foreign_keys=[linked_invoice_id], backref='linked_tasks', lazy=True)
+
+    # Recovery reminder support: ties this Task back to the RecoveryTask it was
+    # scheduled from, and groups sibling Task rows created for one bulk
+    # multi-user recovery reminder so completing one clears it for everyone
+    # (recovery_task_id is the authoritative "this is a recovery reminder" flag —
+    # deliberately separate from linked_invoice_id, which staff can also set on
+    # ordinary tasks via the general Tasks screen and must not be swept in here).
+    recovery_task_id = db.Column(db.Integer, db.ForeignKey('recovery_tasks.id'), nullable=True, index=True)
+    recovery_task = db.relationship('RecoveryTask', foreign_keys=[recovery_task_id], backref='reminder_tasks', lazy=True)
+    reminder_batch_id = db.Column(db.String(36), nullable=True, index=True)
+    is_escalation_broadcast_shown = db.Column(db.Boolean, default=False)
+    is_completion_broadcast_shown = db.Column(db.Boolean, default=False)
     
     def __repr__(self):
         return f'<Task {self.title}>'
@@ -3184,3 +3261,121 @@ class Media(db.Model):
 
     def __repr__(self):
         return f'<Media {self.filename}>'
+
+
+class RecoveryTask(db.Model):
+    """One recovery task per overdue invoice, auto-created by the automation job."""
+    __tablename__ = 'recovery_tasks'
+
+    id = db.Column(db.Integer, primary_key=True)
+    invoice_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=False, index=True)
+    salesman_id = db.Column(db.Integer, db.ForeignKey('salesmen.id'), nullable=True, index=True)
+
+    # OVERDUE | PARTIAL_RECOVERY | PROMISED_PAYMENT | FOLLOW_UP_REQUIRED | CLOSED_PAID | CLOSED_WRITTEN_OFF
+    recovery_status = db.Column(db.String(30), default='OVERDUE', index=True)
+
+    promise_date = db.Column(db.Date, nullable=True)
+    promised_amount = db.Column(db.Float, nullable=True)
+    broken_promise_count = db.Column(db.Integer, default=0)
+    next_follow_up_date = db.Column(db.Date, nullable=True)
+
+    # low | medium | high | critical
+    risk_level = db.Column(db.String(20), default='medium', index=True)
+    priority = db.Column(db.Integer, default=1)
+
+    is_escalated = db.Column(db.Boolean, default=False)
+    escalated_at = db.Column(db.DateTime, nullable=True)
+
+    closed_reason = db.Column(db.Text, nullable=True)
+    closed_at = db.Column(db.DateTime, nullable=True)
+    closed_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    invoice = db.relationship('Sale', backref=db.backref('recovery_task', uselist=False))
+    salesman = db.relationship('Salesman', backref='recovery_tasks', lazy=True)
+    logs = db.relationship(
+        'RecoveryLog', backref='task', lazy=True,
+        cascade='all, delete-orphan',
+        order_by='RecoveryLog.created_at.desc()'
+    )
+
+    @property
+    def last_log(self):
+        return self.logs[0] if self.logs else None
+
+    @property
+    def overdue_days(self):
+        from datetime import date
+        if self.invoice and self.invoice.due_date:
+            due = self.invoice.due_date.date() if hasattr(self.invoice.due_date, 'date') else self.invoice.due_date
+            return max(0, (date.today() - due).days)
+        return 0
+
+    @property
+    def last_payment_date(self):
+        if self.invoice and self.invoice.payments:
+            approved = [p.date for p in self.invoice.payments if p.is_approved]
+            return max(approved) if approved else None
+        return None
+
+    @property
+    def days_since_last_payment(self):
+        from datetime import date
+        lpd = self.last_payment_date
+        if lpd:
+            d = lpd.date() if hasattr(lpd, 'date') else lpd
+            return (date.today() - d).days
+        return None
+
+    def compute_risk_level(self):
+        overdue = self.overdue_days
+        broken = self.broken_promise_count
+        if overdue >= 90 or broken >= 3:
+            return 'critical'
+        if overdue >= 45 or broken >= 2:
+            return 'high'
+        if overdue >= 15 or broken >= 1:
+            return 'medium'
+        return 'low'
+
+    def __repr__(self):
+        return f'<RecoveryTask invoice={self.invoice_id} status={self.recovery_status}>'
+
+
+class RecoveryLog(db.Model):
+    """Conversation / follow-up log entry for a recovery task."""
+    __tablename__ = 'recovery_logs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('recovery_tasks.id'), nullable=False, index=True)
+
+    # general | promised_payment | partial_payment | no_response | escalated
+    response_type = db.Column(db.String(30), default='general')
+    note = db.Column(db.Text, nullable=False)
+
+    promised_amount = db.Column(db.Float, nullable=True)
+    promise_date = db.Column(db.Date, nullable=True)
+    next_follow_up_date = db.Column(db.Date, nullable=True)
+
+    logged_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Set when this log entry came from a scheduled "Send Reminder" popup alarm;
+    # matches the Task(s).reminder_batch_id created alongside it, so the
+    # Conversation Log can show a live countdown / completed status for it.
+    reminder_batch_id = db.Column(db.String(36), nullable=True, index=True)
+
+    logged_by_user = db.relationship('User', backref='recovery_logs')
+
+    @property
+    def reminder_task(self):
+        """One representative Task from this log's reminder batch (all siblings
+        share the same status/reminder_at, so any one reflects the group)."""
+        if not self.reminder_batch_id:
+            return None
+        return Task.query.filter_by(reminder_batch_id=self.reminder_batch_id).first()
+
+    def __repr__(self):
+        return f'<RecoveryLog task={self.task_id} type={self.response_type}>'

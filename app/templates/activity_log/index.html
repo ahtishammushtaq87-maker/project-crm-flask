@@ -103,6 +103,7 @@
                         {%- set act_rejected  = action_lower.startswith('rejected')  -%}
                         {%- set act_cancelled = action_lower.startswith('cancelled') -%}
                         {%- set act_draft     = action_lower.startswith('set to draft') -%}
+                        {%- set act_pending   = action_lower.startswith('set to pending') -%}
                         <tr class="{% if is_approval %}approval-row{% endif %}">
                             <td class="text-center px-3 no-export">
                                 <input type="checkbox" class="form-check-input log-checkbox" value="{{ log.id }}">
@@ -151,6 +152,8 @@
                                     <span class="badge bg-secondary px-2 py-1 me-1"><i class="fas fa-ban me-1"></i>Cancelled</span>
                                     {% elif act_draft %}
                                     <span class="badge bg-info px-2 py-1 me-1"><i class="fas fa-file me-1"></i>Set to Draft</span>
+                                    {% elif act_pending %}
+                                    <span class="badge bg-warning text-dark px-2 py-1 me-1"><i class="fas fa-clock me-1"></i>Set to Pending</span>
                                     {% else %}
                                     <span class="badge bg-warning text-dark px-2 py-1 me-1"><i class="fas fa-gavel me-1"></i>Approval</span>
                                     {% endif %}

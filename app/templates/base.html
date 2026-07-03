@@ -23,11 +23,11 @@
         }
 
         .text-white {
-            color: rgb(0 0 0) !important;
+            color: rgb(255 255 255) !important;
         }
 
         .text-white-50 {
-            color: rgb(0, 0, 0) !important;
+            color: rgba(255, 255, 255, 0.5) !important;
         }
 
         /* ── File Upload Enhancement Styling ── */
@@ -912,6 +912,11 @@
                 <a class="nav-link" href="{{ url_for('sales.salesmen_list') }}">
                     <i class="fas fa-user-tag me-2"></i> Salesmen
                 </a>
+                {% if current_user.is_admin or current_user.can_view_recovery %}
+                <a class="nav-link" href="{{ url_for('recovery.dashboard') }}">
+                    <i class="fas fa-satellite-dish me-2"></i> Sales Recovery
+                </a>
+                {% endif %}
                 {% endif %}
                 {% if current_user.is_admin or current_user.can_view_purchases %}
                 <a class="nav-link" href="{{ url_for('purchase.bills') }}">
@@ -1125,6 +1130,11 @@
                             <i class="fas fa-user-tag me-2"></i> Salesmen
                         </a>
                         {% endif %}
+                        {% if current_user.is_admin or current_user.can_view_recovery %}
+                        <a class="nav-link" href="{{ url_for('recovery.dashboard') }}">
+                            <i class="fas fa-satellite-dish me-2"></i> Sales Recovery
+                        </a>
+                        {% endif %}
                         {% if current_user.is_admin or current_user.can_view_purchases %}
                         <a class="nav-link" href="{{ url_for('purchase.bills') }}">
                             <i class="fas fa-truck me-2"></i> Purchase
@@ -1329,6 +1339,17 @@
                     {% endfor %}
                     {% endif %}
                     {% endwith %}
+
+                    {% if total_pending_approvals > 0 %}
+                    <div class="alert alert-warning alert-dismissible fade show py-2 px-3 d-flex align-items-center flex-wrap gap-2" role="alert" style="font-size:0.85rem;">
+                        <i class="fas fa-clock me-1"></i>
+                        <strong>{{ total_pending_approvals }} Pending Approval{{ 's' if total_pending_approvals > 1 else '' }}:</strong>
+                        {% for item in pending_approval_details %}
+                        <span class="badge bg-warning text-dark">{{ item.label }} ({{ item.count }})</span>
+                        {% endfor %}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close" style="font-size:0.7rem;"></button>
+                    </div>
+                    {% endif %}
                 </div>
 
                 <!-- Page Content Internal Padding Container -->
@@ -1361,8 +1382,9 @@
             {% set error_count = get_flashed_messages(with_categories=true) | selectattr(0, 'equalto', 'danger') | list
             |
             length %}
-            {% if error_count > 0 %}
-            <span class="notification-badge">{{ error_count }}</span>
+            {% set bell_count = error_count + total_pending_approvals %}
+            {% if bell_count > 0 %}
+            <span class="notification-badge">{{ bell_count }}</span>
             {% endif %}
         </div>
 
@@ -1802,6 +1824,11 @@
                 if (typeof initTaskPolling === 'function') {
                     initTaskPolling();
                 }
+
+                // Initialize Recovery Reminder Broadcast Polling (admin only)
+                if (typeof initRecoveryBroadcastPolling === 'function') {
+                    initRecoveryBroadcastPolling();
+                }
             });
 
             // Task Polling System
@@ -1895,6 +1922,61 @@
                 // Poll every 30 seconds
                 pollTasks();
                 setInterval(pollTasks, 30000);
+            }
+
+            // Recovery Reminder Broadcast Polling (admin-only site-wide notices:
+            // "could not call" escalations after 8h, and "task complete" successes)
+            function initRecoveryBroadcastPolling() {
+                const modalEl = document.getElementById('recoveryBroadcastModal');
+                if (!modalEl) return; // not an admin — nothing to poll
+
+                const modal = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+                let currentMessages = [];
+
+                function pollBroadcasts() {
+                    const now = new Date();
+                    const offset = now.getTimezoneOffset() * 60000;
+                    const localISOTime = new Date(now - offset).toISOString().slice(0, -1);
+
+                    fetch(`{{ url_for("recovery.poll_broadcasts") }}?client_time=${localISOTime}`)
+                        .then(response => response.json())
+                        .then(messages => {
+                            if (!messages || messages.length === 0) return;
+                            currentMessages = messages;
+
+                            const listEl = document.getElementById('recoveryBroadcastList');
+                            listEl.innerHTML = messages.map(m => `
+                                <div class="p-2 mb-2 border-start border-4 ${m.kind === 'escalation' ? 'border-danger' : 'border-success'} bg-light rounded">
+                                    <i class="fas ${m.kind === 'escalation' ? 'fa-triangle-exclamation text-danger' : 'fa-circle-check text-success'} me-2"></i>
+                                    ${m.text}
+                                </div>
+                            `).join('');
+
+                            if (!modalEl.classList.contains('show')) {
+                                modal.show();
+                            }
+                        })
+                        .catch(err => console.error('Recovery broadcast poll failed:', err));
+                }
+
+                document.getElementById('confirmRecoveryBroadcast').onclick = async function () {
+                    for (const m of currentMessages) {
+                        try {
+                            await fetch(`/recovery/broadcasts/dismiss/${m.id}`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                                body: `kind=${encodeURIComponent(m.kind)}`
+                            });
+                        } catch (e) {
+                            console.error('Dismiss failed for broadcast ' + m.id, e);
+                        }
+                    }
+                    currentMessages = [];
+                    modal.hide();
+                };
+
+                pollBroadcasts();
+                setInterval(pollBroadcasts, 30000);
             }
 
             // Bulk actions helper
@@ -2476,6 +2558,26 @@
             </div>
         </div>
 
+        {% if current_user.is_authenticated and current_user.is_admin %}
+        <!-- Recovery Reminder Broadcast Modal (admin-only) -->
+        <div class="modal fade" id="recoveryBroadcastModal" data-bs-backdrop="static" data-bs-keyboard="false"
+            tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content shadow-lg">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title"><i class="fas fa-phone-volume me-2"></i>Recovery Follow-up Update</h5>
+                    </div>
+                    <div class="modal-body py-3">
+                        <div id="recoveryBroadcastList" style="max-height: 350px; overflow-y: auto;"></div>
+                    </div>
+                    <div class="modal-footer justify-content-center border-0 pb-3">
+                        <button type="button" class="btn btn-primary px-5 fw-bold" id="confirmRecoveryBroadcast">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <script src="{{ url_for('static', filename='js/entity_handler.js') }}"></script>
         <script>
             // Enhanced Bulk Action Helper
@@ -2634,7 +2736,8 @@
                 fetch(`/sales/customer/${targetId}/ledger-json`)
                     .then(response => response.json())
                     .then(data => {
-                        document.getElementById('ledgerCustomerName').textContent = data.customer_name;
+                        const healthFlag = data.customer_health || 'success';
+                        document.getElementById('ledgerCustomerName').innerHTML = `<i class="fas fa-flag text-${healthFlag} me-2" title="Customer Health: ${healthFlag === 'danger' ? '30+ days overdue' : healthFlag === 'warning' ? 'Overdue' : 'On time'}"></i>${data.customer_name}`;
                         document.getElementById('agingCustomerName').textContent = data.customer_name;
 
                         document.getElementById('downloadLedgerExcel').href = `/sales/customer/${targetId}/ledger-excel`;
@@ -2652,9 +2755,18 @@
                             tr.className = entry.invoice_number === 'Opening Balance' ? 'table-secondary fw-bold' : '';
 
                             let statusClass = 'bg-secondary';
+                            const statusText = entry.status || '-';
                             if (entry.status === 'Paid') statusClass = 'bg-success';
                             else if (entry.status === 'Partial') statusClass = 'bg-warning text-dark';
-                            else if (entry.status === 'Unpaid' || entry.status === 'Overdue') statusClass = 'bg-danger';
+                            else if (entry.status === 'Unpaid') statusClass = 'bg-danger';
+                            else if (statusText.startsWith('Overdue')) {
+                                statusClass = (entry.days_overdue >= 30) ? 'bg-danger' : 'bg-warning text-dark';
+                            }
+
+                            let flagHtml = '';
+                            if (entry.flag_color === 'danger') flagHtml = '<i class="fas fa-flag text-danger me-1" title="30+ days overdue"></i>';
+                            else if (entry.flag_color === 'warning') flagHtml = `<i class="fas fa-flag text-warning me-1" title="Overdue (${entry.days_overdue} days)"></i>`;
+                            else if (entry.flag_color === 'success') flagHtml = '<i class="fas fa-flag text-success me-1" title="On time"></i>';
 
                             const invoiceLink = (entry.entity_id && entry.entity_type)
                                 ? `<a href="javascript:void(0)" class="entity-history-trigger" data-entity-type="${entry.entity_type}" data-entity-id="${entry.entity_id}">${entry.invoice_number}</a>`
@@ -2671,7 +2783,7 @@
                             <td class="text-end fw-bold text-success">PKR${entry.credit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td class="text-end fw-bold text-danger">PKR${entry.invoice_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td class="text-end fw-bold">PKR${entry.running_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                            <td class="text-center"><span class="badge ${statusClass}">${entry.status}</span></td>
+                            <td class="text-center">${flagHtml}<span class="badge ${statusClass}">${entry.status}</span></td>
                             <td class="text-center text-nowrap"><span class="small font-monospace">${entry.aging}</span></td>
                         `;
                             ledgerBody.appendChild(tr);
@@ -2880,7 +2992,13 @@
                         if (menu) {
                             const isShowing = menu.classList.contains('show');
                             document.querySelectorAll('.approval-menu.show').forEach(m => m.classList.remove('show'));
-                            if (!isShowing) menu.classList.add('show');
+                            if (!isShowing) {
+                                // Position menu using fixed coords so it escapes table overflow
+                                const rect = badge.getBoundingClientRect();
+                                menu.style.top = (rect.bottom + 4) + 'px';
+                                menu.style.left = Math.max(8, rect.right - 170) + 'px';
+                                menu.classList.add('show');
+                            }
                             e.preventDefault();
                             e.stopPropagation();
                             return;
@@ -2893,8 +3011,8 @@
 
                     const actionBtn = e.target.closest('.approval-action');
                     if (!actionBtn) return;
-                    
-                    actionBtn.closest('.approval-menu')?.classList.remove('show');
+
+                    document.querySelectorAll('.approval-menu.show').forEach(m => m.classList.remove('show'));
                     e.preventDefault();
                     e.stopPropagation();
                     const action = actionBtn.dataset.action;
@@ -2909,12 +3027,21 @@
                     }
                     if (action === 'cancel' && !confirm('Are you sure you want to cancel this record?')) return;
                     if (action === 'draft' && !confirm('Set this record to Draft?')) return;
+                    if (action === 'pending' && !confirm('Set this record back to Pending?')) return;
                     if (action === 'approve' && !confirm('Approve this record? Calculations will proceed based on this approval.')) return;
 
                     currentModule = module;
                     currentItemId = itemId;
                     submitApproval(action);
-                }, true); // Run in capture phase to bypass stopPropagation from other libraries
+                }, true);
+
+                // Close approval dropdown on scroll/resize
+                window.addEventListener('scroll', function() {
+                    document.querySelectorAll('.approval-menu.show').forEach(m => m.classList.remove('show'));
+                }, true);
+                window.addEventListener('resize', function() {
+                    document.querySelectorAll('.approval-menu.show').forEach(m => m.classList.remove('show'));
+                });
 
                 document.addEventListener('click', function (e) {
                     if (e.target.id === 'confirmRejection') {

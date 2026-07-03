@@ -160,6 +160,10 @@ def create_user():
             can_delete_delivering=form.can_delete_delivering.data,
             can_delete_media=form.can_delete_media.data,
             can_delete_activity_logs=form.can_delete_activity_logs.data,
+            can_view_recovery=form.can_view_recovery.data,
+            can_add_recovery=form.can_add_recovery.data,
+            can_edit_recovery=form.can_edit_recovery.data,
+            can_delete_recovery=form.can_delete_recovery.data,
         )
         # Set password - form is now required to have a password
         if form.password.data and form.password.data.strip():
@@ -300,6 +304,10 @@ def edit_user(id):
         user.can_delete_delivering = form.can_delete_delivering.data
         user.can_delete_media = form.can_delete_media.data
         user.can_delete_activity_logs = form.can_delete_activity_logs.data
+        user.can_view_recovery = form.can_view_recovery.data
+        user.can_add_recovery = form.can_add_recovery.data
+        user.can_edit_recovery = form.can_edit_recovery.data
+        user.can_delete_recovery = form.can_delete_recovery.data
         if form.password.data and form.password.data.strip():
             user.set_password(form.password.data)
         db.session.commit()
@@ -422,6 +430,10 @@ def edit_user(id):
         form.can_delete_delivering.data = getattr(user, 'can_delete_delivering', False)
         form.can_delete_media.data = getattr(user, 'can_delete_media', False)
         form.can_delete_activity_logs.data = getattr(user, 'can_delete_activity_logs', False)
+        form.can_view_recovery.data = getattr(user, 'can_view_recovery', True)
+        form.can_add_recovery.data = getattr(user, 'can_add_recovery', False)
+        form.can_edit_recovery.data = getattr(user, 'can_edit_recovery', False)
+        form.can_delete_recovery.data = getattr(user, 'can_delete_recovery', False)
     return render_template('users/edit.html', form=form, user=user)
 
 # Task Management Routes
@@ -689,10 +701,25 @@ def complete_task_ajax(id):
     task = Task.query.get_or_404(id)
     if current_user.role != 'admin' and task.assigned_to_id != current_user.id:
         return jsonify({'success': False, 'message': 'Permission denied'}), 403
-        
+
     task.status = 'Completed'
+
+    # Bulk recovery reminders (sent to several users at once) share a
+    # reminder_batch_id: completing one clears it for every assigned user.
+    # Siblings are pre-flagged so only the actor's own row gets announced in
+    # the admin "task complete" broadcast (avoids one message per assignee).
+    if task.reminder_batch_id:
+        siblings = Task.query.filter(
+            Task.reminder_batch_id == task.reminder_batch_id,
+            Task.id != task.id
+        ).all()
+        for sib in siblings:
+            sib.status = 'Completed'
+            sib.is_notification_shown = True
+            sib.is_completion_broadcast_shown = True
+
     db.session.commit()
-    
+
     log_activity('Tasks', f'Completed Task: {task.title}', 'Update via Alarm Popup')
     return jsonify({'success': True, 'message': 'Task marked as completed'})
 

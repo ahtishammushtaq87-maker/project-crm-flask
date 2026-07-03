@@ -378,14 +378,16 @@ class ApprovalService:
             if status_val == 'cancelled':
                 return 'cancelled'
             if is_rejected:
-                # If it's rejected, check if it was actually a "cancel" action fallback
                 reason_field = config.get('reason_field')
                 if reason_field and getattr(entity, reason_field, '') == 'Cancelled by Admin':
                     return 'cancelled'
                 return 'rejected'
             if is_approved:
                 return 'approved'
-            return 'draft'
+            # Check if entity has an explicit 'draft' marker via status field
+            if status_val == 'draft':
+                return 'draft'
+            return 'pending'
         else:
             actual_status = getattr(entity, config['status_field'], '')
             sv = config.get('status_values', {})
@@ -456,8 +458,10 @@ class ApprovalService:
                     actions.append('reject')
                 elif action == 'cancel' and status != 'cancelled':
                     actions.append('cancel')
-                elif action == 'draft' and status != 'draft':
+                elif action == 'draft' and status != 'draft' and status != 'pending':
                     actions.append('draft')
+            if status != 'pending':
+                actions.append('pending')
             return actions
 
         # Non-admins follow normal terminal state rules
@@ -564,10 +568,11 @@ class ApprovalService:
         entity = cls.get_entity(module, item_id)
 
         if config.get('use_boolean_flags'):
-            if universal_status == 'draft':
+            if universal_status in ('draft', 'pending'):
                 setattr(entity, config.get('approve_field', 'is_approved'), False)
                 setattr(entity, config.get('reject_field', 'is_rejected'), False)
-                # Reset cancelled if exists
+                if config.get('reason_field'):
+                    setattr(entity, config['reason_field'], None)
                 if hasattr(entity, 'status') and getattr(entity, 'status') == 'cancelled':
                     setattr(entity, 'status', 'unpaid')
             elif universal_status == 'cancel':
@@ -596,7 +601,8 @@ class ApprovalService:
 
         db.session.commit()
         msg = f"{config['label']} {cls.get_entity_label(entity, module)} set to {universal_status}"
-        action_label = 'Cancelled' if universal_status == 'cancel' else 'Set to Draft'
+        action_labels = {'cancel': 'Cancelled', 'draft': 'Set to Draft', 'pending': 'Set to Pending'}
+        action_label = action_labels.get(universal_status, f'Set to {universal_status.capitalize()}')
         cls._log_approval_action(module, config['label'], cls.get_entity_label(entity, module), action_label)
         return entity, msg
 

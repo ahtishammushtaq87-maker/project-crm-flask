@@ -52,7 +52,7 @@
                             </td>
                             <td><strong>{{ ord.order_number }}</strong></td>
                             <td>
-                                {{ ord.bom.product.name }}<br>
+                                <span class="{% if ord.bom.product.margin_color %}text-{{ ord.bom.product.margin_color }} fw-bold{% endif %}">{{ ord.bom.product.name }}</span><br>
                                 <small class="text-muted">BOM: {{ ord.bom.name }}</small>
                             </td>
                             <td>

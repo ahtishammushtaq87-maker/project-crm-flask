@@ -291,7 +291,7 @@
                             {% set ship_alloc = (item.quantity / total_qty * po.shipping_charge) if total_qty > 0 else 0 %}
                             <tr>
                                 <td>{{ loop.index }}</td>
-                                <td><strong>{{ item.product.name }}</strong></td>
+                                <td><strong class="{% if item.product.margin_color %}text-{{ item.product.margin_color }}{% endif %}">{{ item.product.name }}</strong></td>
                                 <td class="text-center">
                                     {% if item.warehouse %}
                                     <span class="badge bg-light text-dark">{{ item.warehouse.name }}</span>

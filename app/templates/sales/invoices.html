@@ -465,7 +465,7 @@
                             <a href="javascript:void(0)" class="entity-history-trigger" data-bs-toggle="modal"
                                 data-bs-target="#entityHistoryModal" data-entity-type="customer"
                                 data-entity-id="{{ sale.customer.id }}">
-                                <i class="fas fa-flag text-{{ sale.customer.health_status }} me-1" title="Customer Health Status"></i>{{ sale.customer.name }}
+                                <i class="fas fa-flag text-{{ sale.invoice_health_status }} me-1" title="Invoice: {% if sale.invoice_health_status == 'danger' %}30+ days overdue{% elif sale.invoice_health_status == 'warning' %}Overdue ({{ sale.days_overdue }} days){% else %}On time{% endif %}"></i>{{ sale.customer.name }}
                             </a>
                             {% else %}
                             Walk-in Customer

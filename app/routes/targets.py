@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, send_file
-from app.utils import permission_required
+from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
 from app.models import MonthlyTarget, ManufacturingOrder, Sale, SaleItem, Product, BOM, Company
@@ -63,6 +63,7 @@ def set_target():
         
         try:
             db.session.commit()
+            log_activity('Targets', f'Updated Monthly Target', f'Month: {month}/{year}')
             flash(f'Target for {month}/{year} updated successfully.', 'success')
             return redirect(url_for('targets.index'))
         except Exception as e:
@@ -242,7 +243,10 @@ def delete_target(id):
         return redirect(url_for('targets.index'))
         
     target = MonthlyTarget.query.get_or_404(id)
+    target_month = target.month
+    target_year = target.year
     db.session.delete(target)
     db.session.commit()
+    log_activity('Targets', f'Deleted Monthly Target', f'Month: {target_month}/{target_year}')
     flash('Target deleted.', 'success')
     return redirect(url_for('targets.index'))

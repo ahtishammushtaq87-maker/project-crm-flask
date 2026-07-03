@@ -212,7 +212,7 @@
                                 <input type="checkbox" class="form-check-input inventory-checkbox" value="{{ product.id }}">
                             </td>
                             <td class="px-4 font-weight-bold">{{ product.sku }}</td>
-                            <td>{{ product.name }}</td>
+                            <td class="{% if product.margin_color %}text-{{ product.margin_color }} fw-bold{% endif %}">{{ product.name }}</td>
                             <td><span class="badge bg-light text-dark">{{ product.category.name if product.category else '-' }}</span></td>
                             <td>{{ product.warehouse.name if product.warehouse else '-' }}</td>
                             <td>{{ product.quantity | format_qty(product.unit) }} {{ product.unit }}</td>

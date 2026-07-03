@@ -14,7 +14,7 @@
                     <li class="breadcrumb-item active">{{ product.sku }}</li>
                 </ol>
             </nav>
-            <h2 class="h3 mb-0 fw-bold text-gradient-primary">Complete History: {{ product.name }}</h2>
+            <h2 class="h3 mb-0 fw-bold {% if product.margin_color %}text-{{ product.margin_color }}{% else %}text-gradient-primary{% endif %}">Complete History: {{ product.name }}</h2>
         </div>
         <div class="col-md-6 text-md-end mt-3 mt-md-0">
             <!--<button class="btn btn-premium-secondary me-2" id="recalculateBtn">

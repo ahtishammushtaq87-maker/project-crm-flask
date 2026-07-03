@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
-from app.utils import permission_required
+from app.utils import permission_required, log_activity
 from flask_login import login_required
 from app import db
 from app.models import ProductCategory
@@ -45,6 +45,7 @@ def create_category():
         try:
             db.session.add(category)
             db.session.commit()
+            log_activity('Categories', f'Created Category: {category.name}', f'Description: {category.description or "N/A"}')
             flash('Category created successfully!', 'success')
             return redirect(url_for('categories.categories'))
         except Exception as e:
@@ -81,6 +82,7 @@ def edit_category(id):
         
         try:
             db.session.commit()
+            log_activity('Categories', f'Updated Category: {category.name}', f'ID: {category.id}')
             flash('Category updated successfully!', 'success')
             return redirect(url_for('categories.categories'))
         except Exception as e:
@@ -101,9 +103,12 @@ def delete_category(id):
         return redirect(url_for('categories.categories'))
     
     try:
+        category_name = category.name
+        category_id = category.id
         db.session.delete(category)
         db.session.commit()
-        flash(f'Category "{category.name}" deleted successfully!', 'success')
+        log_activity('Categories', f'Deleted Category: {category_name}', f'ID: {category_id}')
+        flash(f'Category "{category_name}" deleted successfully!', 'success')
     except Exception as e:
         db.session.rollback()
         flash(f'Error deleting category: {str(e)}', 'error')

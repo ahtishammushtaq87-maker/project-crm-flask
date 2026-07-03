@@ -282,6 +282,7 @@ def add_account():
             account = Account(name=name, code=code, type=typ, parent_id=parent_id if parent_id else None, description=description)
             db.session.add(account)
             db.session.commit()
+            log_activity('Accounting', f'Created Account: {name}', f'Type: {typ}, Code: {code or "N/A"}')
             flash('Account created successfully', 'success')
             return redirect(url_for('accounting.accounts'))
         flash('Please provide required fields', 'danger')
@@ -301,6 +302,7 @@ def edit_account(id):
         account.parent_id = request.form.get('parent_id') or None
         account.description = request.form.get('description')
         db.session.commit()
+        log_activity('Accounting', f'Updated Account: {account.name}', f'Type: {account.type}, Code: {account.code or "N/A"}')
         flash('Account updated successfully', 'success')
         return redirect(url_for('accounting.accounts'))
     parents = Account.query.filter(Account.id != account.id, Account.parent_id == None).order_by(Account.name).all()
@@ -312,8 +314,10 @@ def edit_account(id):
 @permission_required('accounting', action='delete')
 def delete_account(id):
     account = Account.query.get_or_404(id)
+    acct_name = account.name
     db.session.delete(account)
     db.session.commit()
+    log_activity('Accounting', f'Deleted Account: {acct_name}', f'ID: {id}')
     flash('Account deleted successfully', 'success')
     return redirect(url_for('accounting.accounts'))
 
@@ -600,6 +604,7 @@ def add_transaction():
         )
         db.session.add(transaction)
         db.session.commit()
+        log_activity('Accounting', f'Created Transaction: {tn}', f'Amount: {amount}, Type: {reference_type or "manual"}')
         flash('Transaction mapped', 'success')
         return redirect(url_for('accounting.transactions'))
     return render_template('accounting/add_transaction.html', accounts=accounts, invoices=invoices, now=now, prefill=prefill)
@@ -610,8 +615,10 @@ def add_transaction():
 def delete_transaction(id):
     transaction = Transaction.query.get_or_404(id)
     try:
+        txn_num = transaction.transaction_number
         db.session.delete(transaction)
         db.session.commit()
+        log_activity('Accounting', f'Deleted Transaction: {txn_num}', f'ID: {id}')
         flash('Transaction mapping removed successfully.', 'success')
     except Exception as e:
         db.session.rollback()
@@ -700,6 +707,7 @@ def add_payment():
                 sale.update_status()
 
         db.session.commit()
+        log_activity('Accounting', f'Created Payment: {payment_number}', f'Amount: {amount}, Method: {method}')
         flash('Payment recorded', 'success')
         return redirect(url_for('accounting.payments'))
     return render_template('accounting/add_payment.html', invoices=invoices, date_today=datetime.utcnow().strftime('%Y-%m-%d'))
@@ -731,14 +739,17 @@ def delete_payment(id):
     for txn in associated_txns:
         db.session.delete(txn)
         
+    pay_num = payment.payment_number
+    pay_amount = payment.amount
     try:
         db.session.delete(payment)
         db.session.commit()
+        log_activity('Accounting', f'Deleted Payment: {pay_num}', f'Amount: {pay_amount}')
         flash('Payment deleted successfully.', 'success')
     except Exception as e:
         db.session.rollback()
         flash(f'Error deleting payment: {str(e)}', 'error')
-        
+
     return redirect(request.referrer or url_for('accounting.payments'))
 
 @bp.route('/trial-balance')
@@ -1794,13 +1805,15 @@ def edit_expense(id):
                     new_mo.total_cost = (new_mo.actual_material_cost or 0) + (new_mo.actual_labor_cost or 0) + new_mo.actual_overhead_cost
                     
         db.session.commit()
-        
+        log_activity('Accounting', f'Updated Expense: {expense.expense_number}',
+                    f'Amount: {expense.amount}, Description: {expense.description}')
+
         # Trigger BOM versioning if overhead status changed or if currently set as overhead
         # This handles both cases: adding overhead and removing overhead
         bom_to_update = None
         new_is_overhead = expense.is_bom_overhead if has_column('expenses', 'is_bom_overhead') else False
         overhead_status_changed = old_is_overhead != new_is_overhead
-        
+
         if (overhead_status_changed or new_is_overhead) and is_confirmed:
             # Determine which BOM to update
             if new_is_overhead:
@@ -1874,6 +1887,7 @@ def add_expense_category():
         )
         db.session.add(category)
         db.session.commit()
+        log_activity('Accounting', f'Created Expense Category: {category.name}', f'ID: {category.id}')
         flash('Expense category added successfully', 'success')
         return redirect(url_for('accounting.expense_categories'))
     
@@ -1931,6 +1945,8 @@ def confirm_expense(id):
                 print(f"Error updating BOM during confirmation: {e}")
                 
     db.session.commit()
+    log_activity('Accounting', f'Confirmed Expense: {expense.expense_number}',
+                f'Amount: {expense.amount}, Description: {expense.description}')
     flash(f'Expense {expense.expense_number} confirmed successfully.', 'success')
     return redirect(url_for('accounting.expenses'))
 
@@ -1951,6 +1967,8 @@ def reject_expense(id):
     expense.rejection_reason = reason
     
     db.session.commit()
+    log_activity('Accounting', f'Rejected Expense: {expense.expense_number}',
+                f'Reason: {reason or "No reason provided"}')
     flash(f'Expense {expense.expense_number} rejected.', 'warning')
     return redirect(url_for('accounting.expenses'))
 
@@ -1968,6 +1986,7 @@ def edit_expense_category(id):
         category.name = form.name.data
         category.description = form.description.data
         db.session.commit()
+        log_activity('Accounting', f'Updated Expense Category: {category.name}', f'ID: {category.id}')
         flash('Expense category updated successfully', 'success')
         return redirect(url_for('accounting.expense_categories'))
     
@@ -1985,8 +2004,10 @@ def delete_expense_category(id):
         flash('Cannot delete category that has expenses associated with it', 'error')
         return redirect(url_for('accounting.expense_categories'))
     
+    cat_name = category.name
     db.session.delete(category)
     db.session.commit()
+    log_activity('Accounting', f'Deleted Expense Category: {cat_name}', f'ID: {id}')
     flash('Expense category deleted successfully', 'success')
     return redirect(url_for('accounting.expense_categories'))
 
@@ -2012,6 +2033,8 @@ def expense_settings():
         settings.next_number = form.next_number.data or 1
         
         db.session.commit()
+        log_activity('Settings', f'Updated Expense Number Settings',
+                    f'Prefix: {settings.expense_prefix}, Next #: {settings.next_number}')
         flash('Expense number settings updated successfully.', 'success')
         return redirect(url_for('accounting.expense_settings'))
     
@@ -2041,6 +2064,7 @@ def add_payment_method():
         )
         db.session.add(method)
         db.session.commit()
+        log_activity('Accounting', f'Created Payment Method: {method.name}', f'ID: {method.id}')
         flash('Payment method added successfully', 'success')
         return redirect(url_for('accounting.payment_methods'))
     
@@ -2060,6 +2084,7 @@ def edit_payment_method(id):
         method.name = form.name.data
         method.description = form.description.data
         db.session.commit()
+        log_activity('Accounting', f'Updated Payment Method: {method.name}', f'ID: {method.id}')
         flash('Payment method updated successfully', 'success')
         return redirect(url_for('accounting.payment_methods'))
     
@@ -2077,8 +2102,10 @@ def delete_payment_method(id):
         flash('Cannot delete payment method that is associated with existing expenses', 'danger')
         return redirect(url_for('accounting.payment_methods'))
     
+    method_name = method.name
     db.session.delete(method)
     db.session.commit()
+    log_activity('Accounting', f'Deleted Payment Method: {method_name}', f'ID: {id}')
     flash('Payment method deleted successfully', 'success')
     return redirect(url_for('accounting.payment_methods'))
 
@@ -2111,7 +2138,9 @@ def reset_bom_overhead(bom_id):
         db.session.delete(expense)
     
     db.session.commit()
-    
+    log_activity('Accounting', f'Reset BOM Overhead for BOM ID {bom_id}',
+                f'Deleted {expense_count} expense(s), Total: PKR {total_amount}')
+
     # Recalculate BOM overhead (should be 0 now)
     try:
         # Safe user_id resolution

@@ -50,7 +50,7 @@
                             </td>
                             <td>{{ bom.name }}</td>
                             <td>
-                                <strong>{{ bom.product.name }}</strong><br>
+                                <strong class="{% if bom.product.margin_color %}text-{{ bom.product.margin_color }}{% endif %}">{{ bom.product.name }}</strong><br>
                                 <small class="text-muted">{{ bom.product.sku }}</small>
                             </td>
                             <td>

@@ -4,6 +4,39 @@
 {% block content %}
 {% set effective_discount = 0 if (sale.is_discount_restricted or not sale.is_approved) else sale.discount %}
 <style>
+    /* ── Fix: keep selected Select2 tags inside the input box (discount item picker) ── */
+    .select2-container--bootstrap-5 .select2-selection--multiple {
+        min-height: 38px;
+        height: auto !important;
+        max-height: 120px;
+        overflow-y: auto;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        padding: 4px 6px;
+    }
+    .select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__rendered {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 0;
+        width: 100%;
+    }
+    .select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__choice {
+        margin: 0;
+        padding: 2px 6px;
+        font-size: 0.82rem;
+        max-width: 100%;
+        white-space: normal;
+        word-break: break-word;
+    }
+    .select2-container--bootstrap-5 .select2-selection--multiple .select2-search {
+        margin: 0;
+        padding: 0;
+        flex: 1 1 80px;
+        min-width: 60px;
+    }
+
     /* ── Mobile Responsiveness: Invoice Detail ── */
     @media (max-width: 767.98px) {
 
@@ -180,6 +213,18 @@
                             <input type="number" step="0.01" name="discount_amount" class="form-control"
                                 placeholder="0.00">
                         </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Apply to Item(s) <span class="text-muted fw-normal">(optional)</span></label>
+                            <select name="item_ids[]" id="discountItemSelect" class="form-select" multiple>
+                                {% for item in sale.items %}
+                                <option value="{{ item.id }}">
+                                    {{ item.product.name if item.product else 'Unknown Item' }}
+                                    (Qty: {{ '%g'|format(item.quantity) }}{% if item.discount %}, current discount: PKR {{ "{:,.2f}".format(item.discount) }}{% endif %})
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <div class="small text-muted mt-1">Leave blank to apply as a general invoice discount. Select one or more items to add this discount to their Discount column (split evenly across a bulk selection).</div>
+                        </div>
                         {% if sale.is_overdue %}
                         <div class="mb-3">
                             <div class="form-check form-switch border p-2 rounded bg-light">
@@ -335,8 +380,8 @@
                         {% if sale.customer %}
                         <a href="{{ url_for('sales.customer_profile', id=sale.customer.id) }}"
                             class="text-decoration-none fw-bold text-primary">
-                            <i class="fas fa-flag text-{{ sale.customer.health_status }} me-1"
-                                title="Customer Health Status"></i>{{ sale.customer.name }}
+                            <i class="fas fa-flag text-{{ sale.invoice_health_status }} me-1"
+                                title="Invoice: {% if sale.invoice_health_status == 'danger' %}30+ days overdue{% elif sale.invoice_health_status == 'warning' %}Overdue ({{ sale.days_overdue }} days){% else %}On time{% endif %}"></i>{{ sale.customer.name }}
                         </a>
                         {% else %}
                         Walk-in Customer
@@ -464,7 +509,8 @@
                         {% set sum_item_delivery = sale.items | sum(attribute='delivery_fee') %}
                         {% set has_item_delivery = sum_item_delivery > 0 %}
                         {% set show_delivery_col = has_item_delivery %}
-                        {% set show_discount_col = effective_discount > 0 %}
+                        {% set items_discount_sum = sale.items | sum(attribute='discount') %}
+                        {% set show_discount_col = effective_discount > 0 or items_discount_sum > 0 %}
                         {% set base_cols = 9 %}
                         {% set total_cols = base_cols + (1 if show_delivery_col else 0) + (1 if show_discount_col else
                         0) %}
@@ -494,13 +540,18 @@
                             <tbody>
                                 {% for item in sale.items %}
                                 {% set item_subtotal = item.quantity * item.unit_price %}
-                                {% set item_discount = (item.total / sale.subtotal * effective_discount) if
-                                sale.subtotal > 0
-                                else 0 %}
+                                {# Prefer the real per-item discount entered on this invoice, minus any portion
+                                   already prorated away to returns of this item. Fall back to a proportional
+                                   split of the header discount only for older invoices created before per-item
+                                   discounts existed (where item.discount is always 0).
+                                   Always show 0 if the overdue restriction has suspended the discount. #}
+                                {% set item_discount = 0 if sale.is_discount_restricted else (item.remaining_discount if
+                                items_discount_sum > 0 else ((item.total / sale.subtotal * effective_discount) if
+                                sale.subtotal > 0 else 0)) %}
                                 <tr>
                                     <td>{{ loop.index }}</td>
                                     <td>
-                                        <strong>{{ item.product.name if item.product else 'Deleted Product' }}</strong>
+                                        <strong class="{% if item.product and item.product.margin_color %}text-{{ item.product.margin_color }}{% endif %}">{{ item.product.name if item.product else 'Deleted Product' }}</strong>
                                         {% if item.product and item.product.sku %}<br>
                                         <small class="text-muted">
                                             <a href="javascript:void(0)"
@@ -794,6 +845,71 @@
             {% endif %}
         </div>
     </div>
+
+    <!-- Other Invoices Card -->
+    {% if other_invoices %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card shadow mb-4 border-start border-primary border-3">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        <i class="fas fa-file-invoice me-2"></i>Other Invoices for {{ sale.customer.name if sale.customer else 'this Customer' }}
+                    </h6>
+                    <span class="badge bg-primary">{{ other_invoices|length }} Invoice(s)</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive other-invoices-scroll" style="overflow-x: auto; -webkit-overflow-scrolling: touch; display: block; width: 100%; scrollbar-width: thin;">
+                        <style>
+                            .other-invoices-scroll table {
+                                min-width: 750px !important;
+                            }
+                        </style>
+                        <table class="table table-bordered table-premium mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Invoice #</th>
+                                    <th>Date</th>
+                                    <th>Salesman</th>
+                                    <th class="text-end">Grand Total</th>
+                                    <th class="text-end text-success">Paid Amount</th>
+                                    <th class="text-end text-danger">Balance Due</th>
+                                    <th class="text-center">Status</th>
+                                    <th class="text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for inv in other_invoices %}
+                                <tr>
+                                    <td>
+                                        <a href="{{ url_for('sales.invoice_detail', id=inv.id) }}" class="fw-bold text-decoration-none">
+                                            {{ inv.invoice_number }}
+                                        </a>
+                                    </td>
+                                    <td>{{ inv.date.strftime(date_format) }}</td>
+                                    <td>{{ inv.salesman.name if inv.salesman else 'N/A' }}</td>
+                                    <td class="text-end">PKR {{ "{:,.2f}".format(inv.total) }}</td>
+                                    <td class="text-end text-success">PKR {{ "{:,.2f}".format(inv.paid_amount) }}</td>
+                                    <td class="text-end text-danger">PKR {{ "{:,.2f}".format(inv.total - inv.paid_amount) }}</td>
+                                    <td class="text-center">
+                                        <span class="badge {% if inv.is_overdue %}bg-danger{% elif inv.status == 'paid' %}bg-success{% elif inv.status == 'partial' %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                                            {% if inv.is_overdue %}Overdue{% else %}{{ inv.status | capitalize }}{% endif %}
+                                        </span>
+                                    </td>
+                                    <td class="text-center">
+                                        <a href="{{ url_for('sales.invoice_detail', id=inv.id) }}" class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-eye"></i> View
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <!-- Edit Payment Modals -->
@@ -1099,6 +1215,18 @@
                 }
             });
         });
+
+        // Searchable multi-select for targeting the direct discount to specific item(s)
+        const discountItemSelect = document.getElementById('discountItemSelect');
+        if (discountItemSelect && window.jQuery && $.fn.select2) {
+            $(discountItemSelect).select2({
+                theme: 'bootstrap-5',
+                placeholder: 'Apply as general invoice discount (no item selected)',
+                allowClear: true,
+                width: '100%',
+                dropdownParent: $('#discountModal')
+            });
+        }
     });
 </script>
 {% endblock %}

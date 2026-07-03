@@ -45,7 +45,7 @@
                 <div class="card-body">
                     <dl class="row">
                         <dt class="col-sm-5 text-truncate">Target Product</dt>
-                        <dd class="col-sm-7"><strong>{{ bom.product.name }}</strong></dd>
+                        <dd class="col-sm-7"><strong class="{% if bom.product.margin_color %}text-{{ bom.product.margin_color }}{% endif %}">{{ bom.product.name }}</strong></dd>
 
                         <dt class="col-sm-5 text-truncate">Components Cost</dt>
                         <dd class="col-sm-7">PKR {{ "%.2f"|format(bom.total_cost - bom.labor_cost - bom.overhead_cost) }}</dd>

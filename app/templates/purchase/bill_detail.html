@@ -213,7 +213,7 @@
                                     {% set pending = item.quantity - already_received %}
                                     <tr>
                                         <td>
-                                            <strong>{{ item.product.name }}</strong>
+                                            <strong class="{% if item.product.margin_color %}text-{{ item.product.margin_color }}{% endif %}">{{ item.product.name }}</strong>
                                             {% if item.product.sku %}<br><small class="text-muted">{{ item.product.sku }}</small>{% endif %}
                                         </td>
                                         <td>
@@ -527,7 +527,7 @@
                                     {% set max_cancel = cancellable if cancellable > 0 else 0 %}
                                     <tr>
                                         <td>
-                                            <strong>{{ item.product.name }}</strong>
+                                            <strong class="{% if item.product.margin_color %}text-{{ item.product.margin_color }}{% endif %}">{{ item.product.name }}</strong>
                                             {% if item.product.sku %}<br><small class="text-muted">{{ item.product.sku }}</small>{% endif %}
                                         </td>
                                         <td class="text-center">{{ '{:,.2f}'.format(item.quantity) }}</td>
@@ -765,7 +765,7 @@
                                 <tr>
                                     <td>{{ loop.index }}</td>
                                     <td>
-                                        <strong>{{ item.product.name }}</strong>
+                                        <strong class="{% if item.product.margin_color %}text-{{ item.product.margin_color }}{% endif %}">{{ item.product.name }}</strong>
                                         {% if item.product.sku %}<br><small class="text-muted">{{ item.product.sku }}</small>{% endif %}
                                     </td>
                                     <td class="text-center">
@@ -888,7 +888,7 @@
                                                 {% for ri in recv.receive_items %}
                                                 <tr>
                                                     <td>
-                                                        <strong>{{ ri.product.name }}</strong>
+                                                        <strong class="{% if ri.product.margin_color %}text-{{ ri.product.margin_color }}{% endif %}">{{ ri.product.name }}</strong>
                                                         <small class="text-muted ms-1">{{ ri.product.sku }}</small>
                                                     </td>
                                                     <td class="text-center">
