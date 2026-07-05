@@ -434,6 +434,9 @@ class Salesman(db.Model):
     group_assigned = db.Column(db.String(100), nullable=True) # Legacy field
     commission_rate = db.Column(db.Float, default=0) # Commission percentage
     is_active = db.Column(db.Boolean, default=True)
+    # Links this salesman to a login user so Sales Recovery reminders pop up
+    # only for that user when they are logged in.
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     # Universal approval fields
     is_approved = db.Column(db.Boolean, default=False)
     is_rejected = db.Column(db.Boolean, default=False)
@@ -442,10 +445,11 @@ class Salesman(db.Model):
     approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationships
     sales = db.relationship('Sale', backref='salesman', lazy=True)
-    
+    login_user = db.relationship('User', foreign_keys=[user_id], backref='linked_salesmen', lazy=True)
+
     def __repr__(self):
         return f'<Salesman {self.name}>'
 
@@ -552,6 +556,10 @@ class Product(db.Model):
 
     @property
     def margin_color(self):
+        # Profit-margin colouring only applies to finished goods (manufactured
+        # items). Raw materials / other items keep their default colour.
+        if not self.is_manufactured:
+            return ''
         m = self.margin_percent
         if m < 25:
             return 'danger'
@@ -685,6 +693,9 @@ class Sale(db.Model):
     # Approval workflow: staff-created invoices require admin approval before counting in sales totals
     is_approved = db.Column(db.Boolean, default=True, index=True)  # True for admin-created, False for staff-created
     is_rejected = db.Column(db.Boolean, default=False, index=True)
+    # Draft lifecycle flag (separate from is_approved/is_rejected). A draft is a
+    # held invoice: not approved, not rejected, not counted as an active sale.
+    is_draft = db.Column(db.Boolean, default=False, index=True)
     rejection_reason = db.Column(db.Text, nullable=True)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
@@ -1685,7 +1696,8 @@ class Task(db.Model):
     # deliberately separate from linked_invoice_id, which staff can also set on
     # ordinary tasks via the general Tasks screen and must not be swept in here).
     recovery_task_id = db.Column(db.Integer, db.ForeignKey('recovery_tasks.id'), nullable=True, index=True)
-    recovery_task = db.relationship('RecoveryTask', foreign_keys=[recovery_task_id], backref='reminder_tasks', lazy=True)
+    recovery_task = db.relationship('RecoveryTask', foreign_keys=[recovery_task_id],
+                                    backref=db.backref('reminder_tasks', cascade='all, delete-orphan'), lazy=True)
     reminder_batch_id = db.Column(db.String(36), nullable=True, index=True)
     is_escalation_broadcast_shown = db.Column(db.Boolean, default=False)
     is_completion_broadcast_shown = db.Column(db.Boolean, default=False)
@@ -3293,7 +3305,10 @@ class RecoveryTask(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    invoice = db.relationship('Sale', backref=db.backref('recovery_task', uselist=False))
+    # Deleting the invoice deletes its recovery task (invoice_id is NOT NULL, so
+    # it must cascade-delete rather than null out the FK).
+    invoice = db.relationship('Sale', backref=db.backref('recovery_task', uselist=False,
+                              cascade='all, delete-orphan'))
     salesman = db.relationship('Salesman', backref='recovery_tasks', lazy=True)
     logs = db.relationship(
         'RecoveryLog', backref='task', lazy=True,
@@ -3304,6 +3319,16 @@ class RecoveryTask(db.Model):
     @property
     def last_log(self):
         return self.logs[0] if self.logs else None
+
+    @property
+    def next_reminder_at(self):
+        """Earliest scheduled reminder time among still-open reminder popups
+        for this recovery task (used to show a live countdown)."""
+        open_reminders = [
+            t.reminder_at for t in self.reminder_tasks
+            if t.reminder_at and t.status in ('Pending', 'In Progress')
+        ]
+        return min(open_reminders) if open_reminders else None
 
     @property
     def overdue_days(self):

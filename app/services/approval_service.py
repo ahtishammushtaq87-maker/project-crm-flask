@@ -28,6 +28,7 @@ class ApprovalService:
             'reason_field': 'rejection_reason',
             'approved_by_field': 'approved_by',
             'approved_at_field': 'approved_at',
+            'draft_field': 'is_draft',
             'default_is_approved': True,
             'actions': ['approve', 'reject', 'cancel', 'draft'],
         },
@@ -357,9 +358,14 @@ class ApprovalService:
         # Check for both is_approved=False and is_rejected=False
         approve_field = config.get('approve_field', 'is_approved')
         reject_field = config.get('reject_field', 'is_rejected')
-        
-        # We assume pending means not approved AND not rejected
-        count = model.query.filter_by(**{approve_field: False, reject_field: False}).count()
+
+        # We assume pending means not approved AND not rejected.
+        filters = {approve_field: False, reject_field: False}
+        # Drafts are held, not pending — exclude them where a draft flag exists.
+        draft_field = config.get('draft_field')
+        if draft_field:
+            filters[draft_field] = False
+        count = model.query.filter_by(**filters).count()
         return count
 
     @classmethod
@@ -384,7 +390,11 @@ class ApprovalService:
                 return 'rejected'
             if is_approved:
                 return 'approved'
-            # Check if entity has an explicit 'draft' marker via status field
+            # Explicit draft marker via a dedicated boolean flag (e.g. Sale.is_draft)
+            draft_field = config.get('draft_field')
+            if draft_field and getattr(entity, draft_field, False):
+                return 'draft'
+            # Or via a 'draft' status value (legacy)
             if status_val == 'draft':
                 return 'draft'
             return 'pending'
@@ -503,9 +513,11 @@ class ApprovalService:
         if config.get('use_boolean_flags'):
             setattr(entity, config['approve_field'], True)
             setattr(entity, config.get('reject_field', 'is_rejected'), False)
+            if config.get('draft_field'):
+                setattr(entity, config['draft_field'], False)
             setattr(entity, config['approved_by_field'], current_user.id)
             setattr(entity, config['approved_at_field'], datetime.utcnow())
-            
+
             # Reset cancelled status if applicable
             if hasattr(entity, 'status') and getattr(entity, 'status') == 'cancelled':
                 setattr(entity, 'status', 'unpaid') # Default back to unpaid
@@ -536,9 +548,11 @@ class ApprovalService:
         if config.get('use_boolean_flags'):
             setattr(entity, config.get('reject_field', 'is_rejected'), True)
             setattr(entity, config.get('approve_field', 'is_approved'), False)
+            if config.get('draft_field'):
+                setattr(entity, config['draft_field'], False)
             if config.get('reason_field'):
                 setattr(entity, config['reason_field'], reason or '')
-            
+
             # Reset cancelled status if applicable
             if hasattr(entity, 'status') and getattr(entity, 'status') == 'cancelled':
                 setattr(entity, 'status', 'unpaid')
@@ -567,6 +581,7 @@ class ApprovalService:
 
         entity = cls.get_entity(module, item_id)
 
+        draft_field = config.get('draft_field')
         if config.get('use_boolean_flags'):
             if universal_status in ('draft', 'pending'):
                 setattr(entity, config.get('approve_field', 'is_approved'), False)
@@ -575,7 +590,12 @@ class ApprovalService:
                     setattr(entity, config['reason_field'], None)
                 if hasattr(entity, 'status') and getattr(entity, 'status') == 'cancelled':
                     setattr(entity, 'status', 'unpaid')
+                # Persist the draft flag: True only for 'draft', cleared for 'pending'.
+                if draft_field:
+                    setattr(entity, draft_field, universal_status == 'draft')
             elif universal_status == 'cancel':
+                if draft_field:
+                    setattr(entity, draft_field, False)
                 if hasattr(entity, 'status') and 'cancelled' in str(type(entity).status.type.enums if hasattr(type(entity).status, 'type') and hasattr(type(entity).status.type, 'enums') else []):
                     setattr(entity, 'status', 'cancelled')
                     setattr(entity, config.get('approve_field', 'is_approved'), False) # Must be unapproved if cancelled

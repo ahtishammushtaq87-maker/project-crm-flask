@@ -517,9 +517,13 @@
 
         const profitEl = row.querySelector('.item-profit');
         if (costVal > 0 && price > 0) {
-            const revenue = qty * price;
-            const profit = (price - costVal) * qty - discount;
-            const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+            // Match the invoice-detail page exactly: line total includes delivery,
+            // and both profit and margin base are net of the item discount.
+            const lineTotal = qty * price + delivery;   // = stored SaleItem.total
+            const costTotal = costVal * qty;
+            const profit = lineTotal - costTotal - discount;
+            const base = lineTotal - discount;
+            const margin = base > 0 ? (profit / base) * 100 : 0;
             const cls = profit >= 0 ? 'text-success' : 'text-danger';
             const fmtProfit = profit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
             profitEl.innerHTML = `<span class="${cls} fw-bold">${fmtProfit}</span><br><span class="${cls}" style="font-size:0.68rem;">${margin.toFixed(1)}% Margin</span>`;

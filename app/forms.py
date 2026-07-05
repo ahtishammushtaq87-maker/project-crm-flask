@@ -501,6 +501,8 @@ class SalesmanForm(FlaskForm):
     phone = StringField('Phone')
     address = TextAreaField('Address')
     group_id = SelectField('Group Assign', coerce=int, validators=[Optional()])
+    # Link to a login user; recovery reminders will pop up only for this user.
+    user_id = SelectField('Linked Login User', coerce=int, validators=[Optional()])
     commission_rate = FloatField('Commission Rate (%)', default=0, validators=[Optional(), NumberRange(min=0, max=100)])
     is_active = BooleanField('Active', default=True)
 class CustomerGroupForm(FlaskForm):

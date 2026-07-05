@@ -666,13 +666,26 @@ def poll_tasks():
             else:
                 print(f"Email failed for task {task.id}: {msg}")
 
-        tasks_data.append({
+        entry = {
             'id': task.id,
             'title': task.title,
             'description': task.description or '',
-            'priority': task.priority.name if hasattr(task.priority, 'name') else str(task.priority)
-        })
-    
+            'priority': task.priority.name if hasattr(task.priority, 'name') else str(task.priority),
+            'is_recovery': task.recovery_task_id is not None,
+        }
+        # Recovery reminders carry extra context so the popup can offer
+        # "promise date + amount" capture and a paid/complete action.
+        if task.recovery_task_id:
+            rtask = task.recovery_task
+            inv = rtask.invoice if rtask else None
+            entry.update({
+                'recovery_task_id': task.recovery_task_id,
+                'invoice_number': inv.invoice_number if inv else '',
+                'customer_name': (inv.customer.name if inv and inv.customer else ''),
+                'balance': (inv.balance_due if inv else 0),
+            })
+        tasks_data.append(entry)
+
     return jsonify(tasks_data)
 
 @bp.route('/tasks/settings', methods=['GET', 'POST'])

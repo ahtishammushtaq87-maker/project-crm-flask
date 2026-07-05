@@ -180,15 +180,16 @@
                             Invoices requiring attention:
                             <div class="mt-2">
                                 {% for s in unapproved_invoices_all[:8] %}
-                                <div
-                                    class="alert alert-light py-1 px-2 mb-1 d-inline-block text-dark small border-0 shadow-sm">
-                                    <strong>{{ s.invoice_number }}</strong>:
+                                <a href="{{ url_for('sales.invoice_detail', id=s.id) }}"
+                                    class="btn btn-light btn-sm py-1 px-2 mb-1 me-1 d-inline-block text-dark small border shadow-sm text-decoration-none"
+                                    title="Click to open invoice {{ s.invoice_number }}">
+                                    <i class="fas fa-external-link-alt text-primary me-1"></i><strong class="text-primary">{{ s.invoice_number }}</strong>:
                                     {% if s.discount_violation %}
                                     <i class="fas fa-hand-holding-usd text-danger me-1"></i>{{ s.discount_violation }}
                                     {% else %}
                                     <i class="fas fa-clock text-warning me-1"></i>General Approval
                                     {% endif %}
-                                </div>
+                                </a>
                                 {% endfor %}
                                 {% if unapproved_invoice_count > 8 %}<span class="text-white ms-2">...and {{
                                     unapproved_invoice_count - 8 }} more</span>{% endif %}
@@ -413,6 +414,24 @@
                     <i class="fas fa-times-circle me-1"></i> Rejected Items
                     {% if rejected_item_count > 0 %}
                     <span class="badge bg-danger ms-1">{{ rejected_item_count }}</span>
+                    {% endif %}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link text-info fw-bold {% if current_status == 'draft' %}active{% endif %}"
+                    href="{{ url_for('sales.invoices', status='draft', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search, invoice_number=invoice_number, customer_id=customer_id, customer_group_id=customer_group_id) }}">
+                    <i class="fas fa-file me-1"></i> Draft
+                    {% if draft_count > 0 %}
+                    <span class="badge bg-info ms-1">{{ draft_count }}</span>
+                    {% endif %}
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link text-secondary fw-bold {% if current_status == 'cancelled' %}active{% endif %}"
+                    href="{{ url_for('sales.invoices', status='cancelled', from_date=from_date, to_date=to_date, salesman_id=salesman_id, search=search, invoice_number=invoice_number, customer_id=customer_id, customer_group_id=customer_group_id) }}">
+                    <i class="fas fa-ban me-1"></i> Cancelled
+                    {% if cancelled_count > 0 %}
+                    <span class="badge bg-secondary ms-1">{{ cancelled_count }}</span>
                     {% endif %}
                 </a>
             </li>

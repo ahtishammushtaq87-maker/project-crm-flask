@@ -9,7 +9,7 @@ Runs daily to:
 
 from datetime import date, datetime
 from app import db
-from app.models import Sale, RecoveryTask, RecoveryLog
+from app.models import Sale, RecoveryTask, RecoveryLog, Task
 
 
 def run_daily_automation():
@@ -19,6 +19,7 @@ def run_daily_automation():
         'tasks_closed': 0,
         'promises_missed': 0,
         'risk_updated': 0,
+        'reminders_created': 0,
         'errors': [],
     }
 
@@ -37,6 +38,9 @@ def run_daily_automation():
         except Exception as e:
             results['errors'].append(f'Invoice {invoice.invoice_number}: {e}')
 
+    # Flush so newly-created RecoveryTasks are visible to the query below.
+    db.session.flush()
+
     # Check promises on all open tasks
     open_tasks = RecoveryTask.query.filter(
         RecoveryTask.recovery_status.notin_(['CLOSED_PAID', 'CLOSED_WRITTEN_OFF'])
@@ -46,6 +50,9 @@ def run_daily_automation():
         try:
             _check_promise(task, today, results)
             _refresh_risk(task, results)
+            # Every open recovery task should have a live reminder for its
+            # linked salesman user (auto-created here, no-op if one exists).
+            _ensure_reminder(task, results)
         except Exception as e:
             results['errors'].append(f'Task {task.id}: {e}')
 
@@ -67,6 +74,7 @@ def _process_invoice(invoice, today, results):
         if existing_task and existing_task.recovery_status not in ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF'):
             existing_task.recovery_status = 'CLOSED_PAID'
             existing_task.closed_at = datetime.utcnow()
+            _cancel_reminders(existing_task)
             results['tasks_closed'] += 1
         return
 
@@ -119,12 +127,67 @@ def _refresh_risk(task, results):
         results['risk_updated'] += 1
 
 
+# ─── Reminder helpers ─────────────────────────────────────────────────────────
+
+_PRIORITY_MAP = {'low': 'Low', 'medium': 'Medium', 'high': 'High', 'critical': 'Critical'}
+
+
+def _ensure_reminder(rtask, results=None):
+    """Guarantee an open popup reminder exists for this recovery task, assigned
+    to the salesman's linked login user. No-op if the salesman is not linked to
+    a user or an open reminder already exists."""
+    salesman = rtask.salesman
+    if not salesman or not salesman.user_id:
+        return  # cannot target a login user — skip silently
+
+    existing = Task.query.filter(
+        Task.recovery_task_id == rtask.id,
+        Task.status.in_(['Pending', 'In Progress'])
+    ).first()
+    if existing:
+        return
+
+    invoice = rtask.invoice
+    customer_name = invoice.customer.name if invoice and invoice.customer else 'the customer'
+    inv_no = invoice.invoice_number if invoice else '—'
+    balance = invoice.balance_due if invoice else 0
+
+    reminder = Task(
+        title=f'Recovery: Call {customer_name}',
+        description=(f'Invoice {inv_no} is overdue. Balance PKR {balance:,.0f}. '
+                     f'Call {customer_name} and record their promised date & amount.'),
+        priority=_PRIORITY_MAP.get(rtask.risk_level, 'High'),
+        reminder_at=datetime.now(),           # fire immediately on next poll
+        assigned_to_id=salesman.user_id,
+        created_by_id=salesman.user_id,        # system-generated, self-owned
+        linked_invoice_id=rtask.invoice_id,
+        recovery_task_id=rtask.id,
+    )
+    db.session.add(reminder)
+    if results is not None:
+        results['reminders_created'] = results.get('reminders_created', 0) + 1
+
+
+def _cancel_reminders(rtask):
+    """Stop any open reminders popping once the recovery task is closed/paid."""
+    open_reminders = Task.query.filter(
+        Task.recovery_task_id == rtask.id,
+        Task.status.in_(['Pending', 'In Progress'])
+    ).all()
+    for r in open_reminders:
+        r.status = 'Cancelled'
+        r.is_notification_shown = True
+        r.is_escalation_broadcast_shown = True
+        r.is_completion_broadcast_shown = True
+
+
 def close_task_paid(invoice):
     """Call this after a payment is posted and invoice balance drops to zero."""
     task = invoice.recovery_task
     if task and task.recovery_status not in ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF'):
         task.recovery_status = 'CLOSED_PAID'
         task.closed_at = datetime.utcnow()
+        _cancel_reminders(task)
         db.session.commit()
 
 
@@ -136,6 +199,7 @@ def update_task_after_payment(invoice):
     if invoice.balance_due <= 0:
         task.recovery_status = 'CLOSED_PAID'
         task.closed_at = datetime.utcnow()
+        _cancel_reminders(task)
     elif invoice.status == 'partial':
         if task.recovery_status not in ('PROMISED_PAYMENT', 'FOLLOW_UP_REQUIRED', 'CLOSED_PAID', 'CLOSED_WRITTEN_OFF'):
             task.recovery_status = 'PARTIAL_RECOVERY'

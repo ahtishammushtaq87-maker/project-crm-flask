@@ -240,6 +240,17 @@
                             <span class="badge risk-badge {{ task.risk_level }}">{{ task.risk_level | capitalize
                                 }}</span>
                         </div>
+                        <div class="col-6">
+                            <div class="detail-label">Next Reminder</div>
+                            {% if task.next_reminder_at %}
+                            <span class="badge bg-warning text-dark reminder-countdown"
+                                data-reminder-at="{{ task.next_reminder_at.isoformat() }}">
+                                <i class="fas fa-stopwatch me-1"></i><span class="countdown-text">…</span>
+                            </span>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </div>
                         {% if task.promise_date %}
                         <div class="col-6">
                             <div class="detail-label">Promise Date</div>
@@ -282,28 +293,23 @@
                 <div class="card-footer bg-light p-2">
                     <div class="d-flex flex-wrap gap-1">
                         {% if is_open %}
-                        <button class="btn btn-sm btn-primary action-btn" data-bs-toggle="modal"
-                            data-bs-target="#addLogModal">
-                            <i class="fas fa-comment me-1"></i>Add Follow-up
-                        </button>
                         <button class="btn btn-sm btn-success action-btn" data-bs-toggle="modal"
                             data-bs-target="#promiseModal">
                             <i class="fas fa-handshake me-1"></i>Mark Promise
                         </button>
-                        <button class="btn btn-sm btn-outline-secondary action-btn" data-bs-toggle="modal"
-                            data-bs-target="#reminderModal">
-                            <i class="fas fa-bell me-1"></i>Send Reminder
-                        </button>
                         {% if current_user.is_admin or current_user.can_edit_recovery %}
-                        <button class="btn btn-sm btn-warning action-btn" data-bs-toggle="modal"
-                            data-bs-target="#escalateModal">
-                            <i class="fas fa-exclamation-triangle me-1"></i>Escalate
-                        </button>
                         <button class="btn btn-sm btn-outline-danger action-btn" data-bs-toggle="modal"
                             data-bs-target="#closeModal">
                             <i class="fas fa-times-circle me-1"></i>Close with Reason
                         </button>
                         {% endif %}
+                        {% endif %}
+                        {% if inv and inv.customer_id %}
+                        <button type="button" class="btn btn-sm btn-outline-info action-btn ledger-trigger"
+                            data-customer-id="{{ inv.customer_id }}"
+                            onclick="showCustomerLedger({{ inv.customer_id }})">
+                            <i class="fas fa-file-invoice-dollar me-1"></i>View Ledger
+                        </button>
                         {% endif %}
                         {% if inv %}
                         <a href="{{ url_for('sales.invoice_detail', id=inv.id) }}"
@@ -319,6 +325,42 @@
             <div class="alert alert-secondary mt-2 small">
                 <strong>Closed Reason:</strong> {{ task.closed_reason }}
                 {% if task.closed_at %} — {{ task.closed_at.strftime('%d-%m-%Y %H:%M') }}{% endif %}
+            </div>
+            {% endif %}
+
+            {# ── Payment Receipts / Bill Images (from the invoice payments) ── #}
+            {% set pay_images = inv.payments | selectattr('image_path') | list if inv else [] %}
+            {% if pay_images %}
+            <div class="card shadow-sm mt-3">
+                <div class="card-header py-2 bg-white">
+                    <strong class="small"><i class="fas fa-receipt me-1 text-success"></i>Payment Receipts</strong>
+                </div>
+                <div class="card-body p-2">
+                    <div class="d-flex flex-wrap gap-3">
+                        {% for payment in pay_images | sort(attribute='date', reverse=True) %}
+                        {% set pay_ext = payment.image_path.rsplit('.', 1)[1].lower() if '.' in payment.image_path else '' %}
+                        <div class="text-center" style="width:90px;">
+                            {% if pay_ext == 'pdf' %}
+                            <a href="{{ url_for('sales.payment_image', payment_id=payment.id) }}" target="_blank"
+                                class="btn btn-sm btn-outline-danger w-100">
+                                <i class="fas fa-file-pdf"></i> PDF
+                            </a>
+                            {% else %}
+                            <a href="{{ url_for('sales.payment_image', payment_id=payment.id) }}" target="_blank">
+                                <img src="{{ url_for('sales.payment_image', payment_id=payment.id) }}" alt="Receipt"
+                                    class="img-thumbnail" style="height:70px; width:90px; object-fit:cover; cursor:pointer;"
+                                    title="Click to view full size">
+                            </a>
+                            {% endif %}
+                            <div class="small fw-semibold mt-1">PKR {{ "{:,.0f}".format(payment.amount) }}</div>
+                            <div class="text-muted" style="font-size:.68rem;">
+                                {{ payment.date.strftime('%d-%m-%Y') if payment.date else '' }}
+                                {% if not payment.is_approved %}<span class="badge bg-warning text-dark">Pending</span>{% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
             </div>
             {% endif %}
         </div>
@@ -418,7 +460,8 @@
 {# Mark Promise #}
 <div class="modal fade" id="promiseModal" tabindex="-1">
     <div class="modal-dialog">
-        <form method="POST" action="{{ url_for('recovery.mark_promise', task_id=task.id) }}">
+        <form method="POST" action="{{ url_for('recovery.mark_promise', task_id=task.id) }}"
+            onsubmit="document.getElementById('promiseModalDateTime').value = document.getElementById('promiseModalDate').value ? (document.getElementById('promiseModalDate').value + 'T' + (document.getElementById('promiseModalTime').value || '09:00')) : '';">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Mark Promise</h5>
@@ -426,8 +469,18 @@
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label">Promise Date <span class="text-danger">*</span></label>
-                        <input type="date" name="promise_date" class="form-control" required>
+                        <label class="form-label">Promise Date &amp; Time <span class="text-danger">*</span></label>
+                        <div class="row g-2">
+                            <div class="col-7">
+                                <input type="date" id="promiseModalDate" class="form-control" required>
+                            </div>
+                            <div class="col-5">
+                                <input type="time" id="promiseModalTime" class="form-control" value="09:00">
+                            </div>
+                        </div>
+                        <input type="hidden" name="promise_date" id="promiseModalDateTime">
+                        <small class="text-muted">Pick the date and time the customer promised to pay. A reminder will
+                            pop up again at that moment.</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Promised Amount</label>
@@ -592,11 +645,12 @@
             if (!textEl || isNaN(target.getTime())) return;
 
             const diffMs = target - new Date();
-            const absMs = Math.abs(diffMs);
-            const h = Math.floor(absMs / 3600000);
-            const m = Math.floor((absMs % 3600000) / 60000);
-            const s = Math.floor((absMs % 60000) / 1000);
-            const formatted = `${h}h ${m}m ${s}s`;
+            const totalSec = Math.floor(Math.abs(diffMs) / 1000);
+            const d = Math.floor(totalSec / 86400);
+            const h = Math.floor((totalSec % 86400) / 3600);
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = totalSec % 60;
+            const formatted = d > 0 ? `${d}d ${h}h ${m}m ${s}s` : `${h}h ${m}m ${s}s`;
 
             if (diffMs > 0) {
                 textEl.textContent = `Reminder in ${formatted}`;

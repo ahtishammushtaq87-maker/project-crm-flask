@@ -15,6 +15,11 @@
 {% block extra_js %}
 <script>
 $(document).ready(function() {
+    // Names/prices for ALL active products, so existing saved conditions render
+    // correctly even if the product isn't a finished good (dropdown shows only
+    // finished goods for new selections).
+    const PRODUCT_LOOKUP = {{ product_lookup | tojson }};
+
     let conditions = [];
     try {
         conditions = JSON.parse($('#product_discount_conditions_json').val()) || [];
@@ -37,9 +42,10 @@ $(document).ready(function() {
 
         conditions.forEach((c, index) => {
             const productOpt = $(`#product_selector option[value="${c.product_id}"]`);
-            const productText = productOpt.data('name') || `Product #${c.product_id}`;
-            const sellingPrice = parseFloat(productOpt.data('price')) || 0;
-            const costPrice = parseFloat(productOpt.data('cost')) || 0;
+            const info = PRODUCT_LOOKUP[c.product_id] || {};
+            const productText = info.name || productOpt.data('name') || `Product #${c.product_id}`;
+            const sellingPrice = parseFloat(info.price != null ? info.price : productOpt.data('price')) || 0;
+            const costPrice = parseFloat(info.cost != null ? info.cost : productOpt.data('cost')) || 0;
             const profit = sellingPrice - costPrice;
             const margin = sellingPrice > 0 ? ((profit / sellingPrice) * 100).toFixed(1) : 0;
             const profitCls = profit >= 0 ? 'text-success' : 'text-danger';

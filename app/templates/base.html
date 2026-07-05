@@ -1869,8 +1869,57 @@
                 }
 
                 function updateModalContent() {
+                    // Reflect how many reminders are currently in the popup.
+                    const countBadge = document.getElementById('taskAlarmCount');
+                    const countText = document.getElementById('taskAlarmCountText');
+                    if (countBadge) countBadge.textContent = currentTasks.length;
+                    if (countText) countText.textContent = `${currentTasks.length} reminder${currentTasks.length === 1 ? '' : 's'}`;
+
                     const listContainer = document.getElementById('taskAlarmList');
-                    listContainer.innerHTML = currentTasks.map(task => `
+                    listContainer.innerHTML = currentTasks.map(task => {
+                        // Recovery reminders get extra promise capture + paid action.
+                        if (task.is_recovery) {
+                            const bal = Number(task.balance || 0).toLocaleString();
+                            return `
+                        <div class="task-alarm-item p-3 mb-3 border-start border-danger border-4 bg-white shadow-sm rounded">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h5 class="fw-bold mb-0">${task.title}</h5>
+                                <span class="badge bg-danger rounded-pill">Priority: ${task.priority}</span>
+                            </div>
+                            <p class="text-muted small mb-2">${task.description || ''}</p>
+                            <div class="bg-light p-2 rounded border mb-2 small">
+                                <div><strong>Invoice:</strong> ${task.invoice_number || '—'}</div>
+                                <div><strong>Customer:</strong> ${task.customer_name || '—'}</div>
+                                <div><strong>Balance:</strong> PKR ${bal}</div>
+                            </div>
+                            <div class="border rounded p-2 mb-2">
+                                <div class="fw-bold small mb-2"><i class="fas fa-handshake text-success me-1"></i>After calling, record the promise:</div>
+                                <div class="row g-2">
+                                    <div class="col-7">
+                                        <label class="form-label small mb-0">Promise Date</label>
+                                        <input type="date" class="form-control form-control-sm recovery-promise-date" id="promise_date_${task.id}">
+                                    </div>
+                                    <div class="col-5">
+                                        <label class="form-label small mb-0">Time</label>
+                                        <input type="time" class="form-control form-control-sm" id="promise_time_${task.id}" value="09:00">
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label small mb-0">Promised Amount</label>
+                                        <input type="number" step="0.01" min="0" class="form-control form-control-sm recovery-promise-amount" id="promise_amount_${task.id}" value="${task.balance || ''}">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-check bg-success bg-opacity-10 p-2 rounded border border-success">
+                                <input class="form-check-input ms-0 me-2 task-complete-check" type="checkbox" id="complete_${task.id}" data-task-id="${task.id}" style="width: 20px; height: 20px;">
+                                <label class="form-check-label fw-bold text-success" for="complete_${task.id}">
+                                    Payment collected — mark complete
+                                </label>
+                            </div>
+                            <div class="text-muted small mt-2"><i class="fas fa-info-circle me-1"></i>Close without action and you'll be reminded again in 1 minute.</div>
+                        </div>`;
+                        }
+                        // Standard task reminder (unchanged behaviour).
+                        return `
                         <div class="task-alarm-item p-3 mb-3 border-start border-danger border-4 bg-white shadow-sm rounded">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <h5 class="fw-bold mb-0">${task.title}</h5>
@@ -1883,39 +1932,88 @@
                                     Task Complete
                                 </label>
                             </div>
-                        </div>
-                    `).join('');
+                        </div>`;
+                    }).join('');
                 }
 
                 document.getElementById('confirmTaskAlarm').onclick = async function () {
                     let completedCount = 0;
+                    let recoveryChanged = false;   // promise/complete → refresh recovery views
+
+                    // Browser-local time so the server schedules the 1-min re-show
+                    // against the same clock poll_tasks compares with.
+                    const now = new Date();
+                    const offset = now.getTimezoneOffset() * 60000;
+                    const clientTime = new Date(now - offset).toISOString().slice(0, -1);
+                    const form = (obj) => Object.entries(obj).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+                    const POST = (url, body) => fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: form(body || {})
+                    });
 
                     for (const task of currentTasks) {
                         try {
                             const check = document.getElementById(`complete_${task.id}`);
                             const isComplete = check && check.checked;
 
-                            if (isComplete) {
-                                await fetch(`/users/tasks/complete/${task.id}`, { method: 'POST' });
-                                completedCount++;
+                            if (task.is_recovery) {
+                                // Recovery reminder priority: promise → complete → snooze.
+                                // A promise date always wins (means "not paid yet, remind me
+                                // later"), so the promise date + next-reminder timer are shown.
+                                const pd = document.getElementById(`promise_date_${task.id}`);
+                                const pt = document.getElementById(`promise_time_${task.id}`);
+                                const pa = document.getElementById(`promise_amount_${task.id}`);
+                                const promiseDay = pd ? pd.value : '';
+                                // Combine the date with the chosen time (default 09:00) so a
+                                // date-only pick still produces a valid promise datetime.
+                                const promiseDate = promiseDay
+                                    ? `${promiseDay}T${(pt && pt.value) ? pt.value : '09:00'}`
+                                    : '';
+                                if (promiseDate) {
+                                    await POST(`/recovery/reminder/${task.id}/promise`, {
+                                        promise_date: promiseDate,
+                                        promised_amount: pa ? (pa.value || 0) : 0,
+                                        client_time: clientTime
+                                    });
+                                    recoveryChanged = true;
+                                    // Rescheduled to the promise date — allow it to re-pop then.
+                                    shownTaskIds.delete(task.id);
+                                } else if (isComplete) {
+                                    await POST(`/recovery/reminder/${task.id}/complete`, {});
+                                    completedCount++;
+                                    recoveryChanged = true;
+                                } else {
+                                    // Dismissed with no action → nag again in 1 minute.
+                                    await POST(`/recovery/reminder/${task.id}/snooze`, { client_time: clientTime });
+                                    shownTaskIds.delete(task.id);
+                                }
+                            } else {
+                                // Standard task (unchanged).
+                                if (isComplete) {
+                                    await fetch(`/users/tasks/complete/${task.id}`, { method: 'POST' });
+                                    completedCount++;
+                                }
+                                await fetch(`/users/tasks/acknowledge/${task.id}`, { method: 'POST' });
                             }
-                            // Always acknowledge so it doesn't reappear
-                            await fetch(`/users/tasks/acknowledge/${task.id}`, { method: 'POST' });
                         } catch (e) {
                             console.error("Action failed for task " + task.id, e);
                         }
                     }
 
                     if (completedCount > 0) {
-                        Toast.show(`${completedCount} tasks marked as completed!`, 'success');
-                        if (window.location.pathname.includes('/users/tasks')) {
-                            location.reload();
-                        }
+                        Toast.show(`${completedCount} task(s) marked as completed!`, 'success');
+                    }
+
+                    // Refresh so the new promise date / status shows immediately.
+                    const path = window.location.pathname;
+                    if ((completedCount > 0 && path.includes('/users/tasks')) ||
+                        (recoveryChanged && path.includes('/recovery'))) {
+                        location.reload();
+                        return;
                     }
 
                     currentTasks = [];
-                    // We don't clear shownTaskIds so they don't immediately pop up again in this session
-                    // if the server poll hasn't updated its state yet.
                     taskModal.hide();
                 };
 
@@ -2543,7 +2641,10 @@
                     <div class="modal-body py-4">
                         <div class="text-center mb-3">
                             <i class="fas fa-clock text-danger fa-4x mb-3 animate-pulse"></i>
-                            <h3 class="fw-bold text-danger">TASK ALARM!</h3>
+                            <h3 class="fw-bold text-danger">TASK ALARM!
+                                <span id="taskAlarmCount" class="badge bg-danger rounded-pill align-middle ms-1">0</span>
+                            </h3>
+                            <div class="text-muted small"><span id="taskAlarmCountText">0 reminders</span></div>
                         </div>
                         <div id="taskAlarmList" class="task-alarm-container"
                             style="max-height: 400px; overflow-y: auto;">

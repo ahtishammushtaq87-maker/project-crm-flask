@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from app.utils import permission_required, log_activity
 from app import db
-from app.models import Sale, SaleItem, Product, ProductWarehouseStock, Warehouse, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman, CustomerGroup, Payment, PaymentMethod, SalesmanGroup
+from app.models import Sale, SaleItem, Product, ProductWarehouseStock, Warehouse, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman, CustomerGroup, Payment, PaymentMethod, SalesmanGroup, User
 from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm, SalesmanForm, CustomerGroupForm
 from datetime import datetime, date
 from sqlalchemy import func, or_, and_
@@ -79,29 +79,60 @@ def invoices():
     search = request.args.get('search', '')
     
     query = Sale.query
-    
+
+    # ── Universal-status expressions (aligned with ApprovalService.get_status) ──
+    # A Sale is "cancelled" when is_rejected + reason 'Cancelled by Admin' (the
+    # Sale status enum has no 'cancelled' value, so cancel uses that fallback).
+    CANCELLED_REASON = 'Cancelled by Admin'
+    is_cancelled = (Sale.is_rejected == True) & (Sale.rejection_reason == CANCELLED_REASON)
+    not_cancelled = (
+        (Sale.is_rejected == False) |
+        (Sale.rejection_reason.is_(None)) |
+        (Sale.rejection_reason != CANCELLED_REASON)
+    )
+    is_rejected_only = (Sale.is_rejected == True) & (
+        (Sale.rejection_reason.is_(None)) | (Sale.rejection_reason != CANCELLED_REASON)
+    )
+    is_draft_only = (Sale.is_rejected == False) & (Sale.is_approved == False) & (Sale.is_draft == True)
+    is_pending = (Sale.is_rejected == False) & (Sale.is_approved == False) & (Sale.is_draft == False)
+
     if status == 'overdue':
         query = query.filter(
+            not_cancelled,
+            Sale.is_draft == False,
             Sale.status != 'paid',
             Sale.due_date < datetime.utcnow()
         )
     elif status == 'unapproved':
-        # Show invoices that are themselves unapproved, OR have PENDING (not rejected) payments/advances
+        # Pending invoices, OR invoices with PENDING (not rejected) payments/advances.
+        # Draft/cancelled invoices are excluded entirely — their pending payment /
+        # discount approval moves with them into the Draft/Cancelled tabs.
         query = query.filter(
-            (Sale.is_approved == False) |
-            (Sale.payments.any((Payment.is_approved == False) & (Payment.is_rejected == False))) |
-            (Sale.adjusted_advances.any((CustomerAdvance.is_approved == False) & (CustomerAdvance.is_rejected == False)))
+            not_cancelled,
+            Sale.is_draft == False,
+            (
+                is_pending |
+                (Sale.payments.any((Payment.is_approved == False) & (Payment.is_rejected == False))) |
+                (Sale.adjusted_advances.any((CustomerAdvance.is_approved == False) & (CustomerAdvance.is_rejected == False)))
+            )
         )
     elif status == 'rejected_items':
-        # Show invoices that are themselves REJECTED (e.g. discount rules)
-        # OR have ANY rejected payment or advance
+        # Genuinely rejected invoices (excludes cancelled), OR any rejected payment/advance.
         query = query.filter(
-            (Sale.is_rejected == True) |
+            is_rejected_only |
             (Sale.payments.any(Payment.is_rejected == True)) |
             (Sale.adjusted_advances.any(CustomerAdvance.is_rejected == True))
         )
-    elif status != 'all':
-        query = query.filter(Sale.status == status)
+    elif status == 'cancelled':
+        query = query.filter(is_cancelled)
+    elif status == 'draft':
+        query = query.filter(is_draft_only)
+    elif status == 'all':
+        # Active invoices only — cancelled and drafts live in their own tabs.
+        query = query.filter(not_cancelled, Sale.is_draft == False)
+    else:
+        # paid / unpaid / partial payment-status tabs (exclude drafts & cancelled).
+        query = query.filter(Sale.status == status, not_cancelled, Sale.is_draft == False)
     
     if salesman_id:
         query = query.filter(Sale.salesman_id == salesman_id)
@@ -150,26 +181,42 @@ def invoices():
     total_balance = sum(sale.balance_due for sale in sales)
     
     # ── Unapproved summary (for alert box at top of page) ─────────────────
-    # Always calculated regardless of which tab is active - EXCLUDE rejected items
-    unapproved_invoices_all = Sale.query.filter(Sale.is_approved == False, Sale.is_rejected == False).all()
+    # Always calculated regardless of which tab is active. EXCLUDE rejected items,
+    # AND exclude anything belonging to a Draft or Cancelled invoice — those move
+    # into the Draft/Cancelled tabs and must not raise a top notification.
+    inv_draft_or_cancelled = (Sale.is_draft == True) | is_cancelled
+
+    unapproved_invoices_all = Sale.query.filter(
+        Sale.is_approved == False, Sale.is_rejected == False, Sale.is_draft == False
+    ).all()
     unapproved_invoice_total = sum(s.total for s in unapproved_invoices_all)
     unapproved_invoice_count = len(unapproved_invoices_all)
 
-    unapproved_payments_all = Payment.query.filter(Payment.is_approved == False, Payment.is_rejected == False).all()
+    unapproved_payments_all = Payment.query.filter(
+        Payment.is_approved == False, Payment.is_rejected == False,
+        ~Payment.invoice.has(inv_draft_or_cancelled)
+    ).all()
     unapproved_payment_total = sum(p.amount for p in unapproved_payments_all)
     unapproved_payment_count = len(unapproved_payments_all)
 
-    unapproved_advances_all = CustomerAdvance.query.filter(CustomerAdvance.is_approved == False, CustomerAdvance.is_rejected == False).all()
+    unapproved_advances_all = CustomerAdvance.query.filter(
+        CustomerAdvance.is_approved == False, CustomerAdvance.is_rejected == False,
+        ~CustomerAdvance.adjusted_invoice.has(inv_draft_or_cancelled)
+    ).all()
     unapproved_advance_total = sum(a.amount for a in unapproved_advances_all)
     unapproved_advance_count = len(unapproved_advances_all)
     
     # NEW: Calculate rejected items count for the new tab (Invoices OR Payments OR Advances)
     rejected_items_all = Sale.query.filter(
-        (Sale.is_rejected == True) |
+        is_rejected_only |
         (Sale.payments.any(Payment.is_rejected == True)) |
         (Sale.adjusted_advances.any(CustomerAdvance.is_rejected == True))
     ).all()
     rejected_item_count = len(rejected_items_all)
+
+    # Cancelled & Draft counts for their dedicated tabs
+    cancelled_count = Sale.query.filter(is_cancelled).count()
+    draft_count = Sale.query.filter(is_draft_only).count()
     # ──────────────────────────────────────────────────────────────────────
 
     # Identify overdue invoices with suspended discounts (regardless of tab filter)
@@ -220,6 +267,8 @@ def invoices():
                          unapproved_advance_count=unapproved_advance_count, 
                          unapproved_advances_all=unapproved_advances_all, 
                          rejected_item_count=rejected_item_count,
+                         cancelled_count=cancelled_count,
+                         draft_count=draft_count,
                          suspended_discount_invoices=suspended_discount_invoices)
 
 @bp.route('/invoice/create', methods=['GET', 'POST'])
@@ -2521,10 +2570,20 @@ def invoice_settings():
         flash('Invoice settings updated successfully.', 'success')
         return redirect(url_for('sales.invoice_settings'))
     
-    # Get products for condition selector
-    products = Product.query.filter_by(is_active=True).order_by(Product.name).all()
-    
-    return render_template('sales/invoice_settings.html', settings=settings, form=form, products=products)
+    # Product Discount Conditions selector: only finished goods (manufactured items).
+    products = Product.query.filter_by(is_active=True, is_manufactured=True).order_by(Product.name).all()
+
+    # Lookup for ALL active products so any previously-saved condition (including
+    # legacy non-finished-good entries) still renders its name/price correctly,
+    # even though such products are no longer selectable in the dropdown.
+    all_active = Product.query.filter_by(is_active=True).all()
+    product_lookup = {
+        p.id: {'name': p.name, 'price': p.unit_price or 0, 'cost': p.cost_price or 0}
+        for p in all_active
+    }
+
+    return render_template('sales/invoice_settings.html', settings=settings, form=form,
+                           products=products, product_lookup=product_lookup)
 
 
 # ===== CUSTOMER ADVANCE ROUTES =====
@@ -2788,7 +2847,9 @@ def add_salesman():
     form = SalesmanForm()
     groups = SalesmanGroup.query.filter_by(is_active=True).all()
     form.group_id.choices = [(0, '- Select Group -')] + [(g.id, g.name) for g in groups]
-    
+    users = User.query.filter_by(is_active=True).order_by(User.username).all()
+    form.user_id.choices = [(0, '- Not Linked -')] + [(u.id, u.username) for u in users]
+
     if form.validate_on_submit():
         salesman = Salesman(
             name=form.name.data,
@@ -2797,6 +2858,7 @@ def add_salesman():
             address=form.address.data,
             commission_rate=form.commission_rate.data,
             group_id=form.group_id.data if form.group_id.data != 0 else None,
+            user_id=form.user_id.data if form.user_id.data and form.user_id.data != 0 else None,
             is_active=form.is_active.data
         )
         db.session.add(salesman)
@@ -2814,7 +2876,11 @@ def edit_salesman(id):
     form = SalesmanForm(obj=salesman)
     groups = SalesmanGroup.query.filter_by(is_active=True).all()
     form.group_id.choices = [(0, '- Select Group -')] + [(g.id, g.name) for g in groups]
-    
+    users = User.query.filter_by(is_active=True).order_by(User.username).all()
+    form.user_id.choices = [(0, '- Not Linked -')] + [(u.id, u.username) for u in users]
+    if request.method == 'GET':
+        form.user_id.data = salesman.user_id or 0
+
     if form.validate_on_submit():
         salesman.name = form.name.data
         salesman.email = form.email.data
@@ -2822,6 +2888,7 @@ def edit_salesman(id):
         salesman.address = form.address.data
         salesman.commission_rate = form.commission_rate.data
         salesman.group_id = form.group_id.data if form.group_id.data != 0 else None
+        salesman.user_id = form.user_id.data if form.user_id.data and form.user_id.data != 0 else None
         salesman.is_active = form.is_active.data
         db.session.commit()
         log_activity('Sales', f'Updated Salesman: {salesman.name}', f'ID: {salesman.id}')

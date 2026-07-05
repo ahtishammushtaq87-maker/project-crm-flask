@@ -42,7 +42,7 @@ def create_app(config_class=Config):
             PurchaseReturn, PurchaseReturnItem, Unit, ActivityLog,
             ToolReceiving, ToolReceivingItem, ToolDelivering, ToolDeliveringItem, ToolSettings,
             ProductWarehouseStock, Media,
-            RecoveryTask, RecoveryLog
+            RecoveryTask, RecoveryLog, Salesman
         )
         from app.filter_models import SavedFilter
         
@@ -124,6 +124,7 @@ def create_app(config_class=Config):
             'media': Media,
             'recovery_tasks': RecoveryTask,
             'recovery_logs': RecoveryLog,
+            'salesmen': Salesman,
         }
         
         try:

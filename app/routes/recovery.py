@@ -26,27 +26,28 @@ def dashboard():
 
     today = date.today()
 
-    # Build base query
-    q = RecoveryTask.query
-
     salesman_filter = request.args.get('salesman', '')
     customer_filter = request.args.get('customer', '')
     status_filter = request.args.get('status', '')
     risk_filter = request.args.get('risk', '')
     tab = request.args.get('tab', 'all')
 
-    # Apply filters
-    if salesman_filter:
-        q = q.filter(RecoveryTask.salesman_id == salesman_filter)
-
+    # Shared base query with the dropdown filters. Used for BOTH the table and
+    # the KPI cards, so the cards reflect the same filter selection.
+    base = RecoveryTask.query
     if customer_filter:
-        q = q.join(Sale, RecoveryTask.invoice_id == Sale.id).filter(Sale.customer_id == customer_filter)
-
+        base = base.join(Sale, RecoveryTask.invoice_id == Sale.id)
+    if salesman_filter:
+        base = base.filter(RecoveryTask.salesman_id == salesman_filter)
+    if customer_filter:
+        base = base.filter(Sale.customer_id == customer_filter)
     if status_filter:
-        q = q.filter(RecoveryTask.recovery_status == status_filter)
-
+        base = base.filter(RecoveryTask.recovery_status == status_filter)
     if risk_filter:
-        q = q.filter(RecoveryTask.risk_level == risk_filter)
+        base = base.filter(RecoveryTask.risk_level == risk_filter)
+
+    # Table query = shared base + the active tab.
+    q = base
 
     # Tab filters
     if tab == 'overdue':
@@ -68,8 +69,9 @@ def dashboard():
 
     tasks = q.order_by(RecoveryTask.risk_level.desc(), RecoveryTask.updated_at.desc()).all()
 
-    # KPIs
-    all_open = RecoveryTask.query.filter(
+    # KPIs — computed from the SAME filtered base (minus the tab), restricted to
+    # open recovery tasks, so the top cards follow the applied filters.
+    all_open = base.filter(
         RecoveryTask.recovery_status.notin_(['CLOSED_PAID', 'CLOSED_WRITTEN_OFF'])
     ).all()
 
@@ -235,15 +237,17 @@ def mark_promise(task_id):
     promised_amount_str = request.form.get('promised_amount', '0')
     note = request.form.get('note', '').strip()
 
-    promise_date = _parse_date(promise_date_str)
+    promise_dt = _parse_datetime(promise_date_str)   # date OR date+time
     try:
         promised_amount = float(promised_amount_str)
     except (ValueError, TypeError):
         promised_amount = 0
 
-    if not promise_date:
+    if not promise_dt:
         flash('Promise date is required.', 'warning')
         return redirect(url_for('recovery.task_detail', task_id=task_id))
+
+    promise_date = promise_dt.date()
 
     task.recovery_status = 'PROMISED_PAYMENT'
     task.promise_date = promise_date
@@ -251,10 +255,13 @@ def mark_promise(task_id):
     task.next_follow_up_date = promise_date
     task.updated_at = datetime.utcnow()
 
+    # Re-arm the popup reminder to fire again at the promised date/time.
+    _rearm_reminder(task, promise_dt)
+
     log = RecoveryLog(
         task_id=task.id,
         response_type='promised_payment',
-        note=note or f'Customer promised PKR {promised_amount:,.0f} by {promise_date}.',
+        note=note or f'Customer promised PKR {promised_amount:,.0f} by {promise_dt.strftime("%d-%m-%Y %H:%M")}.',
         promised_amount=promised_amount,
         promise_date=promise_date,
         next_follow_up_date=promise_date,
@@ -263,7 +270,7 @@ def mark_promise(task_id):
     db.session.add(log)
     db.session.commit()
 
-    flash('Promise recorded.', 'success')
+    flash('Promise recorded. A reminder will pop up again at the promised time.', 'success')
     return redirect(url_for('recovery.task_detail', task_id=task_id))
 
 
@@ -434,15 +441,18 @@ def poll_broadcasts():
     now = _parse_client_time()
     messages = []
 
-    # Escalation: reminder time passed 8+ hours ago and the task is still open.
+    # Escalation: reminder was raised 8+ hours ago and is still not complete.
+    # Anchored on created_at (a stable point) rather than reminder_at, because
+    # each 1-minute "snooze" pushes reminder_at forward and would otherwise
+    # keep resetting the 8-hour SLA so it never fires.
     overdue_candidates = Task.query.filter(
         Task.recovery_task_id.isnot(None),
-        Task.reminder_at.isnot(None),
         Task.status.in_(['Pending', 'In Progress']),
         Task.is_escalation_broadcast_shown == False
     ).all()
     for t in overdue_candidates:
-        if now >= t.reminder_at + timedelta(hours=8):
+        anchor = t.created_at or t.reminder_at
+        if anchor and datetime.utcnow() >= anchor + timedelta(hours=8):
             inv = t.recovery_task.invoice if t.recovery_task else None
             customer_name = inv.customer.name if inv and inv.customer else 'the customer'
             messages.append({
@@ -487,6 +497,109 @@ def dismiss_broadcast(task_id):
     return jsonify({'success': True})
 
 
+# ─── Live Reminder Popup Actions (called from the global alarm popup) ─────────
+
+def _client_now_from_form():
+    """Browser-local 'now' posted from the popup, matching poll_tasks' clock."""
+    ct = request.form.get('client_time')
+    if ct:
+        try:
+            return datetime.fromisoformat(ct.split('Z')[0].split('+')[0])
+        except Exception:
+            pass
+    return datetime.now()
+
+
+@bp.route('/reminder/<int:reminder_id>/snooze', methods=['POST'])
+@login_required
+def reminder_snooze(reminder_id):
+    """Dismiss without completing → re-show again in 1 minute (until done)."""
+    reminder = Task.query.get_or_404(reminder_id)
+    if not reminder.recovery_task_id:
+        return jsonify({'success': False, 'message': 'Not a recovery reminder'}), 400
+    if current_user.role != 'admin' and reminder.assigned_to_id != current_user.id:
+        return jsonify({'success': False, 'message': 'Permission denied'}), 403
+
+    reminder.reminder_at = _client_now_from_form() + timedelta(minutes=1)
+    reminder.is_notification_shown = False
+    reminder.is_email_sent = True  # don't re-email on every 1-min re-show
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@bp.route('/reminder/<int:reminder_id>/promise', methods=['POST'])
+@login_required
+def reminder_promise(reminder_id):
+    """Capture the promised date + amount from the popup, snooze the reminder
+    until that date, and update the recovery task accordingly."""
+    reminder = Task.query.get_or_404(reminder_id)
+    if not reminder.recovery_task_id:
+        return jsonify({'success': False, 'message': 'Not a recovery reminder'}), 400
+    if current_user.role != 'admin' and reminder.assigned_to_id != current_user.id:
+        return jsonify({'success': False, 'message': 'Permission denied'}), 403
+
+    rtask = reminder.recovery_task
+    promise_dt = _parse_datetime(request.form.get('promise_date', ''))   # date OR date+time
+    try:
+        promised_amount = float(request.form.get('promised_amount', '0') or 0)
+    except (ValueError, TypeError):
+        promised_amount = 0
+
+    if not promise_dt:
+        return jsonify({'success': False, 'message': 'Promise date is required'}), 400
+
+    promise_date = promise_dt.date()
+
+    rtask.recovery_status = 'PROMISED_PAYMENT'
+    rtask.promise_date = promise_date
+    rtask.promised_amount = promised_amount
+    rtask.next_follow_up_date = promise_date
+    rtask.updated_at = datetime.utcnow()
+
+    # Re-arm this reminder to fire again at the exact promised date/time.
+    reminder.reminder_at = promise_dt
+    reminder.is_notification_shown = False
+    reminder.is_email_sent = False
+
+    db.session.add(RecoveryLog(
+        task_id=rtask.id,
+        response_type='promised_payment',
+        note=f'{current_user.username} recorded a promise: PKR {promised_amount:,.0f} by {promise_dt.strftime("%d-%m-%Y %H:%M")}.',
+        promised_amount=promised_amount,
+        promise_date=promise_date,
+        next_follow_up_date=promise_date,
+        logged_by=current_user.id,
+    ))
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@bp.route('/reminder/<int:reminder_id>/complete', methods=['POST'])
+@login_required
+def reminder_complete(reminder_id):
+    """Mark the reminder complete (payment collected / resolved). Triggers the
+    admin 'task complete' broadcast and logs it on the recovery task."""
+    reminder = Task.query.get_or_404(reminder_id)
+    if not reminder.recovery_task_id:
+        return jsonify({'success': False, 'message': 'Not a recovery reminder'}), 400
+    if current_user.role != 'admin' and reminder.assigned_to_id != current_user.id:
+        return jsonify({'success': False, 'message': 'Permission denied'}), 403
+
+    reminder.status = 'Completed'
+    reminder.is_notification_shown = True
+
+    rtask = reminder.recovery_task
+    if rtask:
+        db.session.add(RecoveryLog(
+            task_id=rtask.id,
+            response_type='general',
+            note=f'{current_user.username} marked the recovery reminder complete.',
+            logged_by=current_user.id,
+        ))
+    db.session.commit()
+    return jsonify({'success': True})
+
+
 # ─── Run Automation (admin) ───────────────────────────────────────────────────
 
 @bp.route('/run-automation', methods=['POST'])
@@ -502,6 +615,7 @@ def run_automation():
     flash(
         f"Automation complete: {results['tasks_created']} created, "
         f"{results['tasks_closed']} closed, "
+        f"{results.get('reminders_created', 0)} reminders raised, "
         f"{results['promises_missed']} promises missed, "
         f"{results['risk_updated']} risk levels updated."
         + (f" Errors: {len(results['errors'])}" if results['errors'] else ''),
@@ -510,7 +624,7 @@ def run_automation():
     return redirect(url_for('recovery.dashboard'))
 
 
-# ─── Helper ───────────────────────────────────────────────────────────────────
+# ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _parse_date(s):
     if not s:
@@ -521,3 +635,58 @@ def _parse_date(s):
         except ValueError:
             continue
     return None
+
+
+def _parse_datetime(s):
+    """Parse a promise value that may be a date OR a date+time (from a
+    datetime-local picker). Returns a datetime; date-only defaults to 09:00."""
+    if not s:
+        return None
+    s = s.strip()
+    for fmt in ('%Y-%m-%dT%H:%M', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M',
+                '%Y-%m-%d %H:%M:%S', '%d-%m-%Y %H:%M'):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    d = _parse_date(s)
+    if d:
+        return datetime.combine(d, datetime.min.time()).replace(hour=9)
+    return None
+
+
+def _rearm_reminder(rtask, when_dt):
+    """Make a popup reminder for this recovery task fire at `when_dt`.
+    Re-arms an existing open reminder, or creates one for the linked user."""
+    reminder = Task.query.filter(
+        Task.recovery_task_id == rtask.id,
+        Task.status.in_(['Pending', 'In Progress'])
+    ).order_by(Task.reminder_at.asc()).first()
+
+    if reminder:
+        reminder.reminder_at = when_dt
+        reminder.is_notification_shown = False
+        reminder.is_email_sent = False
+        return reminder
+
+    salesman = rtask.salesman
+    if not salesman or not salesman.user_id:
+        return None
+
+    invoice = rtask.invoice
+    customer_name = invoice.customer.name if invoice and invoice.customer else 'the customer'
+    inv_no = invoice.invoice_number if invoice else '—'
+    balance = invoice.balance_due if invoice else 0
+    reminder = Task(
+        title=f'Recovery: Call {customer_name}',
+        description=(f'Invoice {inv_no} is overdue. Balance PKR {balance:,.0f}. '
+                     f'Call {customer_name} and record their promised date & amount.'),
+        priority='High',
+        reminder_at=when_dt,
+        assigned_to_id=salesman.user_id,
+        created_by_id=salesman.user_id,
+        linked_invoice_id=rtask.invoice_id,
+        recovery_task_id=rtask.id,
+    )
+    db.session.add(reminder)
+    return reminder

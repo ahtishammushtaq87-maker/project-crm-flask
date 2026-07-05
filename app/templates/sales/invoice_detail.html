@@ -127,7 +127,7 @@
             </h2>
             <small class="text-muted">{{ sale.date.strftime(date_format) }}</small>
 
-            {# {{ approval_widget(module='sale', entity=sale, extra_class='ms-2') }} #}
+            {{ approval_widget(module='sale', entity=sale, extra_class='ms-2') }}
 
             <span
                 class="badge {% if sale.is_overdue %}bg-danger{% elif sale.status == 'paid' %}bg-success{% elif sale.status == 'partial' %}bg-warning text-dark{% else %}bg-danger{% endif %} ms-2">
@@ -141,6 +141,12 @@
             <a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" class="btn btn-info" target="_blank">
                 <i class="fas fa-file-pdf me-1"></i>PDF
             </a>
+            {% if sale.customer_id %}
+            <button type="button" class="btn btn-outline-info ledger-trigger" data-customer-id="{{ sale.customer_id }}"
+                onclick="showCustomerLedger({{ sale.customer_id }})">
+                <i class="fas fa-file-invoice-dollar me-1"></i>View Ledger
+            </button>
+            {% endif %}
             {% if current_user.has_permission('sales', 'edit') %}
             <a href="{{ url_for('sales.edit_invoice', id=sale.id) }}" class="btn btn-warning">
                 <i class="fas fa-edit me-1"></i>Edit

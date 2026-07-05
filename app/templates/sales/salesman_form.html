@@ -95,6 +95,17 @@ $(document).ready(function() {
                                 <div class="text-danger small">{{ error }}</div>
                                 {% endfor %}
                             </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Linked Login User
+                                    <i class="fas fa-info-circle text-muted small"
+                                       title="Recovery reminders for this salesman's overdue invoices will pop up only for this login user."></i>
+                                </label>
+                                {{ form.user_id(class="form-control select2", id="userSelect") }}
+                                <small class="text-muted">Search &amp; select the login account this salesman uses.</small>
+                                {% for error in form.user_id.errors %}
+                                <div class="text-danger small">{{ error }}</div>
+                                {% endfor %}
+                            </div>
                             <div class="col-12">
                                 <label class="form-label fw-bold">Address</label>
                                 {{ form.address(class="form-control", rows="3", placeholder="Full office or home address") }}
