@@ -498,7 +498,8 @@ def invoice_detail(id):
     if sale.customer_id:
         other_invoices = Sale.query.filter(
             Sale.customer_id == sale.customer_id,
-            Sale.id != sale.id
+            Sale.id != sale.id,
+            Sale.is_approved == True
         ).order_by(Sale.date.desc()).all()
         
     return render_template('sales/invoice_detail.html', 

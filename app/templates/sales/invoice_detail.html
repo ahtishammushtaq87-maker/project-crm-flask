@@ -451,6 +451,7 @@
                                 {% if sale.is_overdue %}
                                 {% if sale.is_discount_restricted %}
                                 <span class="badge bg-danger ms-1 small" style="font-size: 0.65rem;">UNAPPLY</span>
+                                <div class="text-danger" style="font-size: 0.6rem;">Unapplied: PKR {{ "{:,.2f}".format(sale.base_discount_amount) }}</div>
                                 {% else %}
                                 <span class="badge bg-success ms-1 small" style="font-size: 0.65rem;">APPLY</span>
                                 {% endif %}
@@ -867,19 +868,45 @@
                     <div class="table-responsive other-invoices-scroll" style="overflow-x: auto; -webkit-overflow-scrolling: touch; display: block; width: 100%; scrollbar-width: thin;">
                         <style>
                             .other-invoices-scroll table {
-                                min-width: 750px !important;
+                                min-width: 1000px !important;
                             }
                         </style>
+                        {# Safely compute column totals for the Other Invoices table #}
+                        {% set oi_totals = namespace(grand=0, paid=0, balance=0, discount=0, reversed=0) %}
+                        {% for inv in other_invoices %}
+                        {% set oi_totals.grand = oi_totals.grand + (inv.total or 0) %}
+                        {% set oi_totals.paid = oi_totals.paid + (inv.paid_amount or 0) %}
+                        {% set oi_totals.balance = oi_totals.balance + ((inv.total or 0) - (inv.paid_amount or 0)) %}
+                        {% set oi_totals.discount = oi_totals.discount + (inv.effective_discount_amount or 0) %}
+                        {% if inv.is_discount_restricted %}
+                        {% set oi_totals.reversed = oi_totals.reversed + (inv.base_discount_amount or 0) %}
+                        {% endif %}
+                        {% endfor %}
                         <table class="table table-bordered table-premium mb-0 align-middle">
                             <thead class="table-light">
+                                <tr class="table-primary">
+                                    <th colspan="3" class="text-end fw-bold">Totals ({{ other_invoices|length }} Invoice(s))</th>
+                                    <th class="text-end fw-bold text-success">
+                                        -Rs {{ "{:,.2f}".format(oi_totals.discount) }}
+                                        {% if oi_totals.reversed > 0 %}
+                                        <br><span class="badge bg-danger" style="font-size: 0.6rem;">Reversed +Rs {{ "{:,.2f}".format(oi_totals.reversed) }}</span>
+                                        {% endif %}
+                                    </th>
+                                    <th class="text-end fw-bold">PKR {{ "{:,.2f}".format(oi_totals.grand) }}</th>
+                                    <th class="text-end fw-bold text-success">PKR {{ "{:,.2f}".format(oi_totals.paid) }}</th>
+                                    <th class="text-end fw-bold text-danger">PKR {{ "{:,.2f}".format(oi_totals.balance) }}</th>
+                                    <th colspan="3"></th>
+                                </tr>
                                 <tr>
                                     <th>Invoice #</th>
                                     <th>Date</th>
                                     <th>Salesman</th>
+                                    <th class="text-end text-success">Discount</th>
                                     <th class="text-end">Grand Total</th>
                                     <th class="text-end text-success">Paid Amount</th>
                                     <th class="text-end text-danger">Balance Due</th>
                                     <th class="text-center">Status</th>
+                                    <th class="text-center">Approval</th>
                                     <th class="text-center">Action</th>
                                 </tr>
                             </thead>
@@ -893,6 +920,18 @@
                                     </td>
                                     <td>{{ inv.date.strftime(date_format) }}</td>
                                     <td>{{ inv.salesman.name if inv.salesman else 'N/A' }}</td>
+                                    <td class="text-end">
+                                        {% if inv.base_discount_amount > 0 %}
+                                        {% if inv.is_discount_restricted %}
+                                        <span class="text-muted" style="text-decoration: line-through;">-Rs {{ "{:,.2f}".format(inv.base_discount_amount) }}</span>
+                                        <br><span class="badge bg-danger" style="font-size: 0.6rem;" title="Discount reversed due to overdue restriction">Reversed +Rs {{ "{:,.2f}".format(inv.base_discount_amount) }}</span>
+                                        {% else %}
+                                        <span class="text-success">-Rs {{ "{:,.2f}".format(inv.effective_discount_amount) }}</span>
+                                        {% endif %}
+                                        {% else %}
+                                        <span class="text-muted">&mdash;</span>
+                                        {% endif %}
+                                    </td>
                                     <td class="text-end">PKR {{ "{:,.2f}".format(inv.total) }}</td>
                                     <td class="text-end text-success">PKR {{ "{:,.2f}".format(inv.paid_amount) }}</td>
                                     <td class="text-end text-danger">PKR {{ "{:,.2f}".format(inv.total - inv.paid_amount) }}</td>
@@ -900,6 +939,19 @@
                                         <span class="badge {% if inv.is_overdue %}bg-danger{% elif inv.status == 'paid' %}bg-success{% elif inv.status == 'partial' %}bg-warning text-dark{% else %}bg-danger{% endif %}">
                                             {% if inv.is_overdue %}Overdue{% else %}{{ inv.status | capitalize }}{% endif %}
                                         </span>
+                                    </td>
+                                    <td class="text-center">
+                                        {% if inv.is_rejected and inv.rejection_reason == 'Cancelled by Admin' %}
+                                        <span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>Cancelled</span>
+                                        {% elif inv.is_rejected %}
+                                        <span class="badge bg-danger" title="{{ inv.rejection_reason or 'Rejected' }}"><i class="fas fa-times-circle me-1"></i>Rejected</span>
+                                        {% elif inv.is_draft %}
+                                        <span class="badge bg-info text-dark"><i class="fas fa-file me-1"></i>Draft</span>
+                                        {% elif not inv.is_approved %}
+                                        <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Pending</span>
+                                        {% else %}
+                                        <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Approved</span>
+                                        {% endif %}
                                     </td>
                                     <td class="text-center">
                                         <a href="{{ url_for('sales.invoice_detail', id=inv.id) }}" class="btn btn-sm btn-outline-primary">
