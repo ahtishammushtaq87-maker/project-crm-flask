@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, jsonify
-from app.utils import permission_required, log_activity
+from app.utils import permission_required, log_activity, pk_now
 from flask_login import login_required, current_user
 from app import db
 from app.models import User, Task, TaskSettings, Sale, TaskGroup
@@ -444,10 +444,12 @@ def list_tasks():
     group_filter = request.args.get('group', '').strip()
     invoice_id = request.args.get('invoice_id', '').strip()
     
-    query = Task.query
+    # Recovery popup reminders (Sales Recovery module) are a separate, auto-
+    # managed concept — they must not appear in the general Tasks list.
+    query = Task.query.filter(Task.recovery_task_id.is_(None))
     if current_user.role != 'admin':
         query = query.filter_by(assigned_to_id=current_user.id)
-        
+
     if group_filter:
         query = query.filter_by(task_group_name=group_filter)
     if invoice_id:
@@ -459,7 +461,10 @@ def list_tasks():
     task_groups = TaskGroup.query.order_by(TaskGroup.name).all()
     
     # Get unique linked invoices that exist in tasks for the filter dropdown
-    linked_invoice_ids = db.session.query(Task.linked_invoice_id).filter(Task.linked_invoice_id != None).distinct().all()
+    # (excluding recovery reminders, which aren't shown in this list either)
+    linked_invoice_ids = db.session.query(Task.linked_invoice_id).filter(
+        Task.linked_invoice_id != None, Task.recovery_task_id.is_(None)
+    ).distinct().all()
     unique_ids = [i[0] for i in linked_invoice_ids]
     linked_invoices = Sale.query.filter(Sale.id.in_(unique_ids)).order_by(Sale.invoice_number.desc()).all() if unique_ids else []
 
@@ -644,9 +649,9 @@ def poll_tasks():
             now = datetime.fromisoformat(clean_time)
         except Exception as e:
             print(f"Error parsing client_time: {e}")
-            now = datetime.now()
+            now = pk_now()
     else:
-        now = datetime.now()
+        now = pk_now()
 
     due_tasks = Task.query.filter(
         Task.assigned_to_id == current_user.id,
@@ -674,15 +679,30 @@ def poll_tasks():
             'is_recovery': task.recovery_task_id is not None,
         }
         # Recovery reminders carry extra context so the popup can offer
-        # "promise date + amount" capture and a paid/complete action.
+        # "promise date + amount" capture and a paid/complete action. One
+        # popup Task can represent several of the customer's open invoices
+        # (consolidated by app.services.recovery_grouping), so list them all.
         if task.recovery_task_id:
             rtask = task.recovery_task
             inv = rtask.invoice if rtask else None
+
+            invoices = []
+            if inv and inv.customer_id:
+                from app.services.recovery_grouping import open_tasks_for_group
+                group_tasks = open_tasks_for_group(inv.customer_id, rtask.salesman_id)
+                invoices = [
+                    {'invoice_number': t.invoice.invoice_number, 'balance': t.invoice.balance_due}
+                    for t in group_tasks if t.invoice
+                ]
+            if not invoices and inv:
+                invoices = [{'invoice_number': inv.invoice_number, 'balance': inv.balance_due}]
+
             entry.update({
                 'recovery_task_id': task.recovery_task_id,
                 'invoice_number': inv.invoice_number if inv else '',
                 'customer_name': (inv.customer.name if inv and inv.customer else ''),
-                'balance': (inv.balance_due if inv else 0),
+                'invoices': invoices,
+                'balance': sum(i['balance'] for i in invoices),
             })
         tasks_data.append(entry)
 

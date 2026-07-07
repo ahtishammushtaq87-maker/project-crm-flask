@@ -4,6 +4,10 @@ from flask_login import login_required, current_user
 from datetime import date, datetime, timedelta
 from app import db
 from app.models import RecoveryTask, RecoveryLog, Sale, Salesman, Customer, CustomerGroup, Task, User
+from app.services.recovery_grouping import (
+    open_tasks_for_customer, open_tasks_for_group, rearm_group_reminder,
+)
+from app.utils import pk_now
 
 bp = Blueprint('recovery', __name__)
 
@@ -28,6 +32,7 @@ def dashboard():
 
     salesman_filter = request.args.get('salesman', '')
     customer_filter = request.args.get('customer', '')
+    invoice_filter = request.args.get('invoice', '')
     status_filter = request.args.get('status', '')
     risk_filter = request.args.get('risk', '')
     tab = request.args.get('tab', 'all')
@@ -35,12 +40,14 @@ def dashboard():
     # Shared base query with the dropdown filters. Used for BOTH the table and
     # the KPI cards, so the cards reflect the same filter selection.
     base = RecoveryTask.query
-    if customer_filter:
+    if customer_filter or invoice_filter:
         base = base.join(Sale, RecoveryTask.invoice_id == Sale.id)
     if salesman_filter:
         base = base.filter(RecoveryTask.salesman_id == salesman_filter)
     if customer_filter:
         base = base.filter(Sale.customer_id == customer_filter)
+    if invoice_filter:
+        base = base.filter(Sale.id == invoice_filter)
     if status_filter:
         base = base.filter(RecoveryTask.recovery_status == status_filter)
     if risk_filter:
@@ -69,6 +76,8 @@ def dashboard():
 
     tasks = q.order_by(RecoveryTask.risk_level.desc(), RecoveryTask.updated_at.desc()).all()
 
+    customer_groups = _group_tasks_by_customer(tasks)
+
     # KPIs — computed from the SAME filtered base (minus the tab), restricted to
     # open recovery tasks, so the top cards follow the applied filters.
     all_open = base.filter(
@@ -92,10 +101,13 @@ def dashboard():
     salesmen = Salesman.query.filter_by(is_active=True).order_by(Salesman.name).all()
     customers = Customer.query.filter_by(is_active=True).order_by(Customer.name).all() \
         if hasattr(Customer, 'is_active') else Customer.query.order_by(Customer.name).all()
+    invoices = Sale.query.join(RecoveryTask, RecoveryTask.invoice_id == Sale.id) \
+        .order_by(Sale.invoice_number.desc()).all()
 
     return render_template(
         'recovery/dashboard.html',
         tasks=tasks,
+        customer_groups=customer_groups,
         today=today,
         tab=tab,
         total_outstanding=total_outstanding,
@@ -106,8 +118,10 @@ def dashboard():
         escalated_count=escalated_count,
         salesmen=salesmen,
         customers=customers,
+        invoices=invoices,
         salesman_filter=salesman_filter,
         customer_filter=customer_filter,
+        invoice_filter=invoice_filter,
         status_filter=status_filter,
         risk_filter=risk_filter,
     )
@@ -177,7 +191,28 @@ def task_detail(task_id):
     task = RecoveryTask.query.get_or_404(task_id)
     today = date.today()
     staff_users = User.query.order_by(User.username).all()
-    return render_template('recovery/task_detail.html', task=task, today=today, staff_users=staff_users)
+
+    # This customer's other open invoices — shown alongside this one since a
+    # promise date set here (or from the dashboard) covers all of them.
+    sibling_tasks = []
+    group_balance = task.invoice.balance_due if task.invoice else 0
+    if task.invoice and task.invoice.customer_id:
+        sibling_tasks = [
+            t for t in open_tasks_for_customer(task.invoice.customer_id) if t.id != task.id
+        ]
+        group_balance += sum(t.invoice.balance_due for t in sibling_tasks if t.invoice)
+
+    # One popup reminder is shared across the whole customer group (see
+    # recovery_grouping), so the "Next Reminder" shown here should reflect
+    # the group's soonest reminder, not just this one task's own link.
+    reminder_times = [t.next_reminder_at for t in ([task] + sibling_tasks) if t.next_reminder_at]
+    group_next_reminder = min(reminder_times) if reminder_times else None
+
+    return render_template(
+        'recovery/task_detail.html', task=task, today=today, staff_users=staff_users,
+        sibling_tasks=sibling_tasks, group_balance=group_balance,
+        group_next_reminder=group_next_reminder,
+    )
 
 
 # ─── Add Follow-up Log ─────────────────────────────────────────────────────────
@@ -272,6 +307,73 @@ def mark_promise(task_id):
 
     flash('Promise recorded. A reminder will pop up again at the promised time.', 'success')
     return redirect(url_for('recovery.task_detail', task_id=task_id))
+
+
+# ─── Mark Promise for a whole customer (all their open invoices at once) ──────
+
+@bp.route('/customer/<int:customer_id>/mark-promise', methods=['POST'])
+@login_required
+def mark_promise_customer(customer_id):
+    # Lets this be triggered from either the dashboard's customer row or a
+    # single invoice's Task Detail page — sends staff back to wherever they
+    # started instead of always bouncing to the dashboard.
+    redirect_task_id = request.form.get('redirect_task_id', '').strip()
+    fallback = (redirect(url_for('recovery.task_detail', task_id=redirect_task_id))
+                if redirect_task_id else redirect(url_for('recovery.dashboard')))
+
+    if not (current_user.is_admin or current_user.can_add_recovery):
+        flash('Permission denied.', 'danger')
+        return fallback
+
+    tasks = open_tasks_for_customer(customer_id)
+    if not tasks:
+        flash('No open recovery invoices for this customer.', 'warning')
+        return fallback
+
+    promise_date_str = request.form.get('promise_date', '')
+    promised_amount_str = request.form.get('promised_amount', '0')
+    note = request.form.get('note', '').strip()
+
+    promise_dt = _parse_datetime(promise_date_str)   # date OR date+time
+    try:
+        promised_amount = float(promised_amount_str)
+    except (ValueError, TypeError):
+        promised_amount = 0
+
+    if not promise_dt:
+        flash('Promise date is required.', 'warning')
+        return fallback
+
+    promise_date = promise_dt.date()
+
+    for t in tasks:
+        t.recovery_status = 'PROMISED_PAYMENT'
+        t.promise_date = promise_date
+        t.promised_amount = promised_amount
+        t.next_follow_up_date = promise_date
+        t.updated_at = datetime.utcnow()
+        db.session.add(RecoveryLog(
+            task_id=t.id,
+            response_type='promised_payment',
+            note=note or f'Customer-wide promise: PKR {promised_amount:,.0f} by {promise_dt.strftime("%d-%m-%Y %H:%M")} (covers all open invoices).',
+            promised_amount=promised_amount,
+            promise_date=promise_date,
+            next_follow_up_date=promise_date,
+            logged_by=current_user.id,
+        ))
+
+    # Re-arm exactly one popup reminder per salesman this customer's open
+    # invoices are assigned to.
+    by_salesman = {}
+    for t in tasks:
+        by_salesman.setdefault(t.salesman_id, []).append(t)
+    for salesman_tasks in by_salesman.values():
+        rearm_group_reminder(salesman_tasks, promise_dt)
+
+    db.session.commit()
+
+    flash(f'Promise recorded for {len(tasks)} invoice(s). A reminder will pop up again at the promised time.', 'success')
+    return fallback
 
 
 # ─── Escalate ─────────────────────────────────────────────────────────────────
@@ -429,7 +531,7 @@ def _parse_client_time():
             return datetime.fromisoformat(clean_time)
         except Exception:
             pass
-    return datetime.now()
+    return pk_now()
 
 
 @bp.route('/broadcasts/poll')
@@ -507,7 +609,7 @@ def _client_now_from_form():
             return datetime.fromisoformat(ct.split('Z')[0].split('+')[0])
         except Exception:
             pass
-    return datetime.now()
+    return pk_now()
 
 
 @bp.route('/reminder/<int:reminder_id>/snooze', methods=['POST'])
@@ -550,26 +652,33 @@ def reminder_promise(reminder_id):
 
     promise_date = promise_dt.date()
 
-    rtask.recovery_status = 'PROMISED_PAYMENT'
-    rtask.promise_date = promise_date
-    rtask.promised_amount = promised_amount
-    rtask.next_follow_up_date = promise_date
-    rtask.updated_at = datetime.utcnow()
+    invoice = rtask.invoice
+    if invoice and invoice.customer_id:
+        group_tasks = open_tasks_for_group(invoice.customer_id, rtask.salesman_id) or [rtask]
+    else:
+        group_tasks = [rtask]
+
+    for t in group_tasks:
+        t.recovery_status = 'PROMISED_PAYMENT'
+        t.promise_date = promise_date
+        t.promised_amount = promised_amount
+        t.next_follow_up_date = promise_date
+        t.updated_at = datetime.utcnow()
+        db.session.add(RecoveryLog(
+            task_id=t.id,
+            response_type='promised_payment',
+            note=f'{current_user.username} recorded a promise: PKR {promised_amount:,.0f} by {promise_dt.strftime("%d-%m-%Y %H:%M")}.',
+            promised_amount=promised_amount,
+            promise_date=promise_date,
+            next_follow_up_date=promise_date,
+            logged_by=current_user.id,
+        ))
 
     # Re-arm this reminder to fire again at the exact promised date/time.
     reminder.reminder_at = promise_dt
     reminder.is_notification_shown = False
     reminder.is_email_sent = False
 
-    db.session.add(RecoveryLog(
-        task_id=rtask.id,
-        response_type='promised_payment',
-        note=f'{current_user.username} recorded a promise: PKR {promised_amount:,.0f} by {promise_dt.strftime("%d-%m-%Y %H:%M")}.',
-        promised_amount=promised_amount,
-        promise_date=promise_date,
-        next_follow_up_date=promise_date,
-        logged_by=current_user.id,
-    ))
     db.session.commit()
     return jsonify({'success': True})
 
@@ -626,6 +735,48 @@ def run_automation():
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
+_RISK_RANK = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1}
+
+
+def _group_tasks_by_customer(tasks):
+    """Fold a flat, already-sorted (risk desc, updated_at desc) list of
+    RecoveryTasks into one row per customer with aggregated totals, so a
+    customer with several overdue invoices shows as a single expandable row
+    instead of one row per invoice. Group order follows the first (most
+    urgent/recent) task encountered for each customer."""
+    groups = {}
+    order = []
+    for t in tasks:
+        inv = t.invoice
+        cust = inv.customer if inv else None
+        key = cust.id if cust else 0
+        if key not in groups:
+            groups[key] = {'customer': cust, 'tasks': []}
+            order.append(key)
+        groups[key]['tasks'].append(t)
+
+    customer_groups = []
+    for key in order:
+        g = groups[key]
+        gtasks = g['tasks']
+        invs = [t.invoice for t in gtasks if t.invoice]
+        promise_dates = [t.promise_date for t in gtasks if t.promise_date]
+        reminder_times = [t.next_reminder_at for t in gtasks if t.next_reminder_at]
+        customer_groups.append({
+            'customer': g['customer'],
+            'tasks': gtasks,
+            'invoice_count': len(gtasks),
+            'total': sum(i.total for i in invs),
+            'paid': sum(i.paid_amount for i in invs),
+            'balance': sum(i.balance_due for i in invs),
+            'worst_risk': max((t.risk_level for t in gtasks), key=lambda r: _RISK_RANK.get(r, 0), default='low'),
+            'any_escalated': any(t.is_escalated for t in gtasks),
+            'earliest_promise': min(promise_dates) if promise_dates else None,
+            'soonest_reminder': min(reminder_times) if reminder_times else None,
+        })
+    return customer_groups
+
+
 def _parse_date(s):
     if not s:
         return None
@@ -656,37 +807,12 @@ def _parse_datetime(s):
 
 
 def _rearm_reminder(rtask, when_dt):
-    """Make a popup reminder for this recovery task fire at `when_dt`.
-    Re-arms an existing open reminder, or creates one for the linked user."""
-    reminder = Task.query.filter(
-        Task.recovery_task_id == rtask.id,
-        Task.status.in_(['Pending', 'In Progress'])
-    ).order_by(Task.reminder_at.asc()).first()
-
-    if reminder:
-        reminder.reminder_at = when_dt
-        reminder.is_notification_shown = False
-        reminder.is_email_sent = False
-        return reminder
-
-    salesman = rtask.salesman
-    if not salesman or not salesman.user_id:
-        return None
-
+    """Make the popup reminder for this recovery task's customer+salesman
+    group fire at `when_dt` (one popup covers all of that customer's open
+    invoices for this salesman)."""
     invoice = rtask.invoice
-    customer_name = invoice.customer.name if invoice and invoice.customer else 'the customer'
-    inv_no = invoice.invoice_number if invoice else '—'
-    balance = invoice.balance_due if invoice else 0
-    reminder = Task(
-        title=f'Recovery: Call {customer_name}',
-        description=(f'Invoice {inv_no} is overdue. Balance PKR {balance:,.0f}. '
-                     f'Call {customer_name} and record their promised date & amount.'),
-        priority='High',
-        reminder_at=when_dt,
-        assigned_to_id=salesman.user_id,
-        created_by_id=salesman.user_id,
-        linked_invoice_id=rtask.invoice_id,
-        recovery_task_id=rtask.id,
-    )
-    db.session.add(reminder)
-    return reminder
+    if invoice and invoice.customer_id:
+        group_tasks = open_tasks_for_group(invoice.customer_id, rtask.salesman_id)
+    else:
+        group_tasks = [rtask]
+    return rearm_group_reminder(group_tasks or [rtask], when_dt)

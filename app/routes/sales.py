@@ -1124,11 +1124,19 @@ def delete_payment(id, pay_id):
     return redirect(url_for('sales.invoice_detail', id=sale.id))
 
 
+_NO_IMAGE_PLACEHOLDER_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="90" height="70" viewBox="0 0 90 70">'
+    '<rect width="90" height="70" fill="#f1f3f5"/>'
+    '<text x="45" y="39" font-family="sans-serif" font-size="10" fill="#adb5bd" '
+    'text-anchor="middle">No Image</text></svg>'
+)
+
+
 @bp.route('/payment/<int:payment_id>/image')
 @login_required
 def payment_image(payment_id):
     """Serve payment receipt image"""
-    from flask import current_app
+    from flask import current_app, Response
     payment = Payment.query.get_or_404(payment_id)
     if payment.image_path:
         # Stored path is relative to project root (e.g., 'app/static/uploads/sale_payments/xxx.png')
@@ -1139,8 +1147,11 @@ def payment_image(payment_id):
             file_path = os.path.join(project_root, payment.image_path)
         if os.path.exists(file_path):
             return send_file(file_path)
-    flash('Image not found', 'error')
-    return redirect(url_for('sales.invoice_detail', id=payment.invoice_id))
+    # File missing on this server (e.g. uploaded on another environment and
+    # never copied over) — this route is used directly as an <img> src, so a
+    # flash+redirect to an HTML page breaks image rendering; serve a small
+    # placeholder graphic instead.
+    return Response(_NO_IMAGE_PLACEHOLDER_SVG, mimetype='image/svg+xml')
 
 @bp.route('/invoice/<int:id>/discount', methods=['POST'])
 @login_required

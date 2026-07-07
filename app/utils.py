@@ -1,9 +1,17 @@
 """Payment management utility functions"""
 
 from calendar import monthrange
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from app.models import Sale, PurchaseBill
+
+PAKISTAN_TZ = ZoneInfo("Asia/Karachi")
+
+
+def pk_now():
+    """Current Pakistan wall-clock time, independent of the server OS's own timezone (VPS hosts often default to UTC)."""
+    return datetime.now(PAKISTAN_TZ).replace(tzinfo=None)
 
 
 def get_working_days_in_month(year, month):

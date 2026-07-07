@@ -757,7 +757,28 @@ class Sale(db.Model):
         else:
             self.status = 'unpaid'
         self.updated_at = datetime.utcnow()
-    
+        self._sync_recovery_task()
+
+    def _sync_recovery_task(self):
+        """Keep the linked RecoveryTask (Sales Recovery module) in sync so a
+        fully-paid invoice drops off the recovery dashboard immediately,
+        regardless of which payment route triggered the status change."""
+        rtask = self.recovery_task
+        if not rtask or rtask.recovery_status in ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF'):
+            return
+        if self.status == 'paid':
+            rtask.recovery_status = 'CLOSED_PAID'
+            rtask.closed_at = datetime.utcnow()
+            for t in rtask.reminder_tasks:
+                if t.status in ('Pending', 'In Progress'):
+                    t.status = 'Cancelled'
+                    t.is_notification_shown = True
+                    t.is_escalation_broadcast_shown = True
+                    t.is_completion_broadcast_shown = True
+        elif self.status == 'partial':
+            if rtask.recovery_status not in ('PROMISED_PAYMENT', 'FOLLOW_UP_REQUIRED'):
+                rtask.recovery_status = 'PARTIAL_RECOVERY'
+
     def calculate_totals(self):
         """Calculate invoice totals including delivery, returns and discounts"""
         # Calculate base from items
@@ -3356,12 +3377,11 @@ class RecoveryTask(db.Model):
 
     def compute_risk_level(self):
         overdue = self.overdue_days
-        broken = self.broken_promise_count
-        if overdue >= 90 or broken >= 3:
+        if overdue > 30:
             return 'critical'
-        if overdue >= 45 or broken >= 2:
+        if overdue >= 15:
             return 'high'
-        if overdue >= 15 or broken >= 1:
+        if overdue >= 10:
             return 'medium'
         return 'low'
 

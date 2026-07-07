@@ -16,6 +16,10 @@
     <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/approval.css') }}">
     <style>
+        .pk-live-clock {
+            color: #dc3545 !important;
+        }
+
         .sidebar {
             min-height: 100vh;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -1829,7 +1833,26 @@
                 if (typeof initRecoveryBroadcastPolling === 'function') {
                     initRecoveryBroadcastPolling();
                 }
+
+                // Live Pakistan clock shown under promise date/time pickers
+                // (reminder popup + Sales Recovery pages). Re-queries the DOM
+                // every tick so it also picks up elements rendered later
+                // (e.g. the alarm popup's dynamically-built list).
+                updatePakistanLiveClocks();
+                setInterval(updatePakistanLiveClocks, 1000);
             });
+
+            function updatePakistanLiveClocks() {
+                const els = document.querySelectorAll('.pk-live-clock');
+                if (!els.length) return;
+                const now = new Date().toLocaleString('en-GB', {
+                    timeZone: 'Asia/Karachi',
+                    day: '2-digit', month: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit',
+                    hour12: true
+                });
+                els.forEach(function (el) { el.textContent = now + ' PKT'; });
+            }
 
             // Task Polling System
             function initTaskPolling() {
@@ -1880,20 +1903,27 @@
                         // Recovery reminders get extra promise capture + paid action.
                         if (task.is_recovery) {
                             const bal = Number(task.balance || 0).toLocaleString();
+                            const invoices = Array.isArray(task.invoices) ? task.invoices : [];
+                            const invoiceBlock = invoices.length > 1
+                                ? `<div><strong>Invoices (${invoices.length}):</strong></div>
+                                   <ul class="mb-1 ps-3">
+                                       ${invoices.map(inv => `<li>${inv.invoice_number || '—'} — PKR ${Number(inv.balance || 0).toLocaleString()}</li>`).join('')}
+                                   </ul>`
+                                : `<div><strong>Invoice:</strong> ${task.invoice_number || '—'}</div>`;
                             return `
-                        <div class="task-alarm-item p-3 mb-3 border-start border-danger border-4 bg-white shadow-sm rounded">
-                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                <h5 class="fw-bold mb-0">${task.title}</h5>
+                        <div class="task-alarm-item p-2 mb-2 border-start border-danger border-4 bg-white shadow-sm rounded">
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h6 class="fw-bold mb-0">${task.title}</h6>
                                 <span class="badge bg-danger rounded-pill">Priority: ${task.priority}</span>
                             </div>
-                            <p class="text-muted small mb-2">${task.description || ''}</p>
-                            <div class="bg-light p-2 rounded border mb-2 small">
-                                <div><strong>Invoice:</strong> ${task.invoice_number || '—'}</div>
+                            <p class="text-muted small mb-1">${task.description || ''}</p>
+                            <div class="bg-light p-2 rounded border mb-1 small">
                                 <div><strong>Customer:</strong> ${task.customer_name || '—'}</div>
-                                <div><strong>Balance:</strong> PKR ${bal}</div>
+                                ${invoiceBlock}
+                                <div><strong>Total Balance:</strong> PKR ${bal}</div>
                             </div>
-                            <div class="border rounded p-2 mb-2">
-                                <div class="fw-bold small mb-2"><i class="fas fa-handshake text-success me-1"></i>After calling, record the promise:</div>
+                            <div class="border rounded p-2 mb-1">
+                                <div class="fw-bold small mb-1"><i class="fas fa-handshake text-success me-1"></i>After calling, record the promise:</div>
                                 <div class="row g-2">
                                     <div class="col-7">
                                         <label class="form-label small mb-0">Promise Date</label>
@@ -1902,6 +1932,9 @@
                                     <div class="col-5">
                                         <label class="form-label small mb-0">Time</label>
                                         <input type="time" class="form-control form-control-sm" id="promise_time_${task.id}" value="09:00">
+                                    </div>
+                                    <div class="col-12 text-muted" style="font-size:.72rem;">
+                                        <i class="fas fa-clock me-1"></i>Pakistan time now: <span class="pk-live-clock fw-semibold">—</span>
                                     </div>
                                     <div class="col-12">
                                         <label class="form-label small mb-0">Promised Amount</label>
@@ -1915,17 +1948,17 @@
                                     Payment collected — mark complete
                                 </label>
                             </div>
-                            <div class="text-muted small mt-2"><i class="fas fa-info-circle me-1"></i>Close without action and you'll be reminded again in 1 minute.</div>
+                            <div class="text-muted small mt-1"><i class="fas fa-info-circle me-1"></i>Close without action and you'll be reminded again in 1 minute.</div>
                         </div>`;
                         }
                         // Standard task reminder (unchanged behaviour).
                         return `
-                        <div class="task-alarm-item p-3 mb-3 border-start border-danger border-4 bg-white shadow-sm rounded">
-                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                <h5 class="fw-bold mb-0">${task.title}</h5>
+                        <div class="task-alarm-item p-2 mb-2 border-start border-danger border-4 bg-white shadow-sm rounded">
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <h6 class="fw-bold mb-0">${task.title}</h6>
                                 <span class="badge bg-danger rounded-pill">Priority: ${task.priority}</span>
                             </div>
-                            <p class="text-muted small mb-3">${task.description || 'No description'}</p>
+                            <p class="text-muted small mb-2">${task.description || 'No description'}</p>
                             <div class="form-check bg-light p-2 rounded border">
                                 <input class="form-check-input ms-0 me-2 task-complete-check" type="checkbox" id="complete_${task.id}" data-task-id="${task.id}" style="width: 20px; height: 20px;">
                                 <label class="form-check-label fw-bold" for="complete_${task.id}">
@@ -2633,25 +2666,24 @@
         <!-- Task Alarm Modal -->
         <div class="modal fade" id="taskAlarmModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1"
             aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content border-danger shadow-lg">
-                    <div class="modal-header bg-danger text-white">
+                    <div class="modal-header bg-danger text-white py-2">
                         <h5 class="modal-title"><i class="fas fa-bell fa-beat me-2"></i>TASK REMINDER!</h5>
                     </div>
-                    <div class="modal-body py-4">
-                        <div class="text-center mb-3">
-                            <i class="fas fa-clock text-danger fa-4x mb-3 animate-pulse"></i>
-                            <h3 class="fw-bold text-danger">TASK ALARM!
+                    <div class="modal-body py-2">
+                        <div class="text-center mb-2">
+                            <i class="fas fa-clock text-danger fa-2x mb-1 animate-pulse"></i>
+                            <h5 class="fw-bold text-danger mb-0">TASK ALARM!
                                 <span id="taskAlarmCount" class="badge bg-danger rounded-pill align-middle ms-1">0</span>
-                            </h3>
+                            </h5>
                             <div class="text-muted small"><span id="taskAlarmCountText">0 reminders</span></div>
                         </div>
-                        <div id="taskAlarmList" class="task-alarm-container"
-                            style="max-height: 400px; overflow-y: auto;">
+                        <div id="taskAlarmList" class="task-alarm-container">
                             <!-- Task items with individual checkboxes will be injected here -->
                         </div>
                     </div>
-                    <div class="modal-footer justify-content-center border-0 pb-4">
+                    <div class="modal-footer justify-content-center border-0 py-2">
                         <button type="button" class="btn btn-danger px-5 py-2 fw-bold" id="confirmTaskAlarm">OKAY, I
                             UNDERSTAND</button>
                     </div>

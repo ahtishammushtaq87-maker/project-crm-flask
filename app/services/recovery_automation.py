@@ -10,6 +10,7 @@ Runs daily to:
 from datetime import date, datetime
 from app import db
 from app.models import Sale, RecoveryTask, RecoveryLog, Task
+from app.utils import pk_now
 
 
 def run_daily_automation():
@@ -133,31 +134,31 @@ _PRIORITY_MAP = {'low': 'Low', 'medium': 'Medium', 'high': 'High', 'critical': '
 
 
 def _ensure_reminder(rtask, results=None):
-    """Guarantee an open popup reminder exists for this recovery task, assigned
-    to the salesman's linked login user. No-op if the salesman is not linked to
-    a user or an open reminder already exists."""
+    """Guarantee an open popup reminder exists for this recovery task's
+    customer+salesman group (one popup covers all of that customer's open
+    invoices for this salesman, not one per invoice). No-op if the salesman
+    is not linked to a user or a group reminder already exists."""
     salesman = rtask.salesman
     if not salesman or not salesman.user_id:
         return  # cannot target a login user — skip silently
 
-    existing = Task.query.filter(
-        Task.recovery_task_id == rtask.id,
-        Task.status.in_(['Pending', 'In Progress'])
-    ).first()
-    if existing:
+    invoice = rtask.invoice
+    if not invoice or not invoice.customer_id:
         return
 
-    invoice = rtask.invoice
-    customer_name = invoice.customer.name if invoice and invoice.customer else 'the customer'
-    inv_no = invoice.invoice_number if invoice else '—'
-    balance = invoice.balance_due if invoice else 0
+    from app.services.recovery_grouping import open_tasks_for_group, group_anchor_reminder, group_message
+
+    group_tasks = open_tasks_for_group(invoice.customer_id, rtask.salesman_id)
+    if group_anchor_reminder(group_tasks):
+        return  # this customer+salesman already has an open popup
+
+    title, desc = group_message(group_tasks or [rtask])
 
     reminder = Task(
-        title=f'Recovery: Call {customer_name}',
-        description=(f'Invoice {inv_no} is overdue. Balance PKR {balance:,.0f}. '
-                     f'Call {customer_name} and record their promised date & amount.'),
+        title=title,
+        description=desc,
         priority=_PRIORITY_MAP.get(rtask.risk_level, 'High'),
-        reminder_at=datetime.now(),           # fire immediately on next poll
+        reminder_at=pk_now(),                  # fire immediately on next poll
         assigned_to_id=salesman.user_id,
         created_by_id=salesman.user_id,        # system-generated, self-owned
         linked_invoice_id=rtask.invoice_id,
