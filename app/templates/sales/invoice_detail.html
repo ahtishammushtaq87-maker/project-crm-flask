@@ -591,7 +591,13 @@
                                     <td class="text-end text-info">PKR {{ "{:,.2f}".format(item.delivery_fee) }}</td>
                                     {% endif %}
                                     {% if show_discount_col %}
-                                    <td class="text-end text-success">-Rs {{ "{:,.2f}".format(item_discount) }}</td>
+                                    {% set item_discount_pct = (item_discount / item_subtotal * 100) if item_subtotal > 0 else 0 %}
+                                    <td class="text-end text-success">
+                                        -Rs {{ "{:,.2f}".format(item_discount) }}
+                                        {% if item_discount > 0 %}
+                                        <small class="text-danger d-block" style="font-size:.7rem;">({{ "{:.0f}".format(item_discount_pct) }}%)</small>
+                                        {% endif %}
+                                    </td>
                                     {% endif %}
                                     <td class="text-end">
                                         {% if item.product %}

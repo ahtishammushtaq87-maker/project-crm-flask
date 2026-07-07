@@ -66,6 +66,21 @@ def validate_item_discounts(sale_items):
     return violations
 
 
+def sellable_products(existing_product_ids=None):
+    """Products offered on invoice create/edit: restricted to items marked
+    "This is a Finished Good / Produced Item" (Product.is_manufactured) on
+    the product form, plus any products already used on the invoice being
+    edited so an old line referencing a non-finished-good item still
+    displays and can be saved."""
+    products = Product.query.filter_by(is_manufactured=True).all()
+    if existing_product_ids:
+        have_ids = {p.id for p in products}
+        missing_ids = set(existing_product_ids) - have_ids
+        if missing_ids:
+            products += Product.query.filter(Product.id.in_(missing_ids)).all()
+    return products
+
+
 @bp.route('/invoices')
 @login_required
 def invoices():
@@ -278,7 +293,7 @@ def create_invoice():
     form = SaleForm()
     customers = Customer.query.all()
     vendors = Vendor.query.all()
-    products = Product.query.all()
+    products = sellable_products()
     currencies = Currency.query.filter_by(is_active=True).all()
     
     customer_advances = {c.id: float(c.remaining_advance_balance) for c in customers}
@@ -519,7 +534,7 @@ def edit_invoice(id):
     form = SaleForm(obj=sale)
     customers = Customer.query.all()
     vendors = Vendor.query.all()
-    products = Product.query.all()
+    products = sellable_products(existing_product_ids=[item.product_id for item in sale.items])
     currencies = Currency.query.filter_by(is_active=True).all()
     salesmen = Salesman.query.filter_by(is_active=True).all()
 
