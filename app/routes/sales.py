@@ -66,6 +66,36 @@ def validate_item_discounts(sale_items):
     return violations
 
 
+def parse_installment_schedule(raw_json):
+    """
+    Parse the optional per-invoice installment schedule posted from the
+    create/edit invoice form (hidden `installment_schedule` field, JSON list
+    of {amount, due_date}). Silently drops malformed rows rather than
+    rejecting the whole invoice, mirroring validate_item_discounts() above.
+    Returns a JSON string ready for Sale.installment_schedule, or None.
+    """
+    if not raw_json:
+        return None
+    try:
+        raw = json.loads(raw_json)
+    except (ValueError, TypeError):
+        return None
+
+    cleaned = []
+    for item in raw:
+        try:
+            amount = float(item.get('amount', 0) or 0)
+            due_date_str = str(item.get('due_date', ''))
+            datetime.strptime(due_date_str, '%Y-%m-%d')  # validate format
+            if amount > 0:
+                cleaned.append({'amount': amount, 'due_date': due_date_str})
+        except (KeyError, ValueError, TypeError, AttributeError):
+            continue
+
+    cleaned.sort(key=lambda i: i['due_date'])
+    return json.dumps(cleaned) if cleaned else None
+
+
 def sellable_products(existing_product_ids=None):
     """Products offered on invoice create/edit: restricted to items marked
     "This is a Finished Good / Produced Item" (Product.is_manufactured) on
@@ -411,10 +441,12 @@ def create_invoice():
                 sale.overdue_date = sale.due_date
             except ValueError:
                 sale.due_date = None
-        
+
+        sale.installment_schedule = parse_installment_schedule(request.form.get('installment_schedule'))
+
         db.session.add(sale)
         db.session.flush()
-        
+
         # Handle advance application - link to customer advances
         if customer_id and customer_id != '0' and advance_applied > 0 and not violation_found:
             customer = Customer.query.get(int(customer_id))
@@ -511,10 +543,13 @@ def invoice_detail(id):
     
     other_invoices = []
     if sale.customer_id:
+        # Includes the invoice currently being viewed (badged "Current" in the
+        # template) so this table reads as the customer's full invoice list,
+        # not just the "other" ones. The current invoice always shows even if
+        # it's not yet approved; other invoices still require approval.
         other_invoices = Sale.query.filter(
             Sale.customer_id == sale.customer_id,
-            Sale.id != sale.id,
-            Sale.is_approved == True
+            or_(Sale.id == sale.id, Sale.is_approved == True)
         ).order_by(Sale.date.desc()).all()
         
     return render_template('sales/invoice_detail.html', 
@@ -642,6 +677,8 @@ def edit_invoice(id):
                 sale.overdue_date = sale.due_date
             except ValueError:
                 sale.due_date = None
+
+        sale.installment_schedule = parse_installment_schedule(request.form.get('installment_schedule'))
 
         # Check discount conditions: each item's OWN discount is validated against
         # that item's product-specific min/max rule.
@@ -819,35 +856,35 @@ def pay_invoice(id):
         if payer_is_admin:
             sale.paid_amount += amount
             sale.update_status()
-        
-        # Handle payment receipt image upload
-        image_path = None
-        if 'payment_image' in request.files:
-            payment_file = request.files['payment_image']
-            if payment_file and payment_file.filename:
-                import time, uuid
-                original_filename = secure_filename(payment_file.filename)
-                # Generate a truly unique filename using timestamp and uuid
-                unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
-                filename = f"{unique_prefix}_{original_filename}"
-                
-                upload_dir = os.path.join('app', 'static', 'uploads', 'sale_payments')
-                os.makedirs(upload_dir, exist_ok=True)
-                file_path = os.path.join(upload_dir, filename)
-                payment_file.save(file_path)
-                # Store path relative to project root (required by payment_image route)
-                image_path = f"app/static/uploads/sale_payments/{filename}"
-        
-        # Create Payment record for history tracking
+
         payment_date_str = request.form.get('payment_date', '')
         payment_date = datetime.strptime(payment_date_str, '%Y-%m-%d') if payment_date_str else datetime.utcnow()
         payment_method = request.form.get('payment_method', 'Cash')
-        payment_notes = request.form.get('payment_notes', '')
-        
+        payment_notes = request.form.get('pay_notes', '')
+
+        import time, uuid
+
+        # Handle payment receipt image upload (manual upload — used as-is if provided,
+        # regardless of method; Cash without one gets an auto-generated receipt below)
+        image_path = None
+        payment_file = request.files.get('payment_image')
+        if payment_file and payment_file.filename:
+            original_filename = secure_filename(payment_file.filename)
+            # Generate a truly unique filename using timestamp and uuid
+            unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+            filename = f"{unique_prefix}_{original_filename}"
+
+            upload_dir = os.path.join('app', 'static', 'uploads', 'sale_payments')
+            os.makedirs(upload_dir, exist_ok=True)
+            file_path = os.path.join(upload_dir, filename)
+            payment_file.save(file_path)
+            # Store path relative to project root (required by payment_image route)
+            image_path = f"app/static/uploads/sale_payments/{filename}"
+
         # Generate payment number
         last_payment = Payment.query.order_by(Payment.id.desc()).first()
         payment_num = f"PAY-{last_payment.id + 1 if last_payment else 1}"
-        
+
         payment = Payment(
             payment_number=payment_num,
             date=payment_date,
@@ -861,8 +898,30 @@ def pay_invoice(id):
             approved_by=current_user.id if payer_is_admin else None,
             approved_at=datetime.utcnow() if payer_is_admin else None
         )
+
+        # Cash payments don't require the manual upload — auto-generate a
+        # receipt PDF with the customer's full details in its place, so the
+        # Payment History "Receipt" column still has something to show.
+        if not image_path and payment_method == 'Cash':
+            try:
+                from app.pdf_utils import generate_payment_receipt_pdf
+                company = Company.query.first()
+                pdf_buffer = generate_payment_receipt_pdf(payment, sale, company)
+                unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                filename = f"{unique_prefix}_receipt_{payment_num}.pdf"
+                upload_dir = os.path.join('app', 'static', 'uploads', 'sale_payments')
+                os.makedirs(upload_dir, exist_ok=True)
+                file_path = os.path.join(upload_dir, filename)
+                with open(file_path, 'wb') as f:
+                    f.write(pdf_buffer.getvalue())
+                payment.image_path = f"app/static/uploads/sale_payments/{filename}"
+            except Exception as e:
+                # Never block a cash payment from being recorded just because
+                # the auto-receipt failed to generate.
+                current_app.logger.warning(f"Auto-receipt generation failed for payment on invoice {sale.invoice_number}: {e}")
+
         db.session.add(payment)
-        
+
         db.session.commit()
         log_activity('Sales', f'Recorded Payment on Invoice #{sale.invoice_number}',
                     f'Amount: PKR {amount:,.2f}, Method: {payment_method}, Approved: {payer_is_admin}')
@@ -1161,6 +1220,11 @@ def payment_image(payment_id):
             project_root = os.path.dirname(current_app.root_path)
             file_path = os.path.join(project_root, payment.image_path)
         if os.path.exists(file_path):
+            # Explicit inline PDF disposition: without this, some browsers/proxies
+            # fall back to a "Save As" download prompt instead of rendering the
+            # PDF in the new tab it was opened in (target="_blank" in the template).
+            if file_path.lower().endswith('.pdf'):
+                return send_file(file_path, mimetype='application/pdf', as_attachment=False)
             return send_file(file_path)
     # File missing on this server (e.g. uploaded on another environment and
     # never copied over) — this route is used directly as an <img> src, so a

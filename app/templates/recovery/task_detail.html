@@ -182,6 +182,45 @@
                         </div>
                     </div>
 
+                    {% if inv and inv.installments %}
+                    <div class="row g-2 mb-2 text-center">
+                        <div class="col-12">
+                            <div class="detail-label">Overdue Amount (installments)</div>
+                            <div class="detail-value text-danger">{{ "{:,.0f}".format(inv.overdue_amount) }}</div>
+                        </div>
+                    </div>
+                    <div class="table-responsive mb-2">
+                        <table class="table table-sm table-bordered mb-0">
+                            <thead class="table-light">
+                                <tr class="small text-center">
+                                    <th>#</th>
+                                    <th>Amount</th>
+                                    <th>Receivable On</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for i in inv.get_installment_status() %}
+                                <tr class="small text-center">
+                                    <td>{{ loop.index }}</td>
+                                    <td>{{ "{:,.0f}".format(i.amount) }}</td>
+                                    <td>{{ i.due_date.strftime('%d-%m-%Y') }}</td>
+                                    <td>
+                                        {% if i.status == 'paid' %}
+                                        <span class="badge bg-success">Paid</span>
+                                        {% elif i.status == 'overdue' %}
+                                        <span class="badge bg-danger">Overdue</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Upcoming</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+
                     <hr class="my-2">
 
                     <div class="row g-2 small mb-2">

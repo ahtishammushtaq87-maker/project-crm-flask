@@ -498,8 +498,8 @@
                         <td class="text-end text-danger fw-bold">PKR{{ "{:,.2f}".format(sale.total -
                             sale.paid_amount) }}</td>
                         <td class="text-center">
-                            {% if sale.is_overdue %}
-                            <span class="badge bg-danger shadow-sm">Overdue ({{ sale.days_overdue }} days)</span>
+                            {% if sale.effective_is_overdue %}
+                            <span class="badge bg-danger shadow-sm">Overdue ({{ sale.effective_days_overdue }} days)</span>
                             {% elif sale.status == 'paid' %}
                             <span class="badge bg-success shadow-sm">Paid</span>
                             {% elif sale.status == 'partial' %}

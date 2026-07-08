@@ -304,7 +304,10 @@ $(document).ready(function() {
     
     $('#billsTable').DataTable({
         stateSave: true,
-        pageLength: 25,
+        stateLoadParams: function (settings, data) {
+            data.length = -1;
+        },
+        pageLength: -1,
         lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
         order: [[1, 'desc']]
     });

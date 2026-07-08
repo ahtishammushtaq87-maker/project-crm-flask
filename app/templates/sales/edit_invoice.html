@@ -355,6 +355,65 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Payment Installments (optional) -->
+                <div class="card mb-3 shadow-sm">
+                    <div class="card-header bg-info bg-opacity-10 py-2">
+                        <h6 class="mb-0 fw-bold text-info"><i class="fas fa-calendar-check me-2"></i>Payment Installments
+                            <span class="text-muted fw-normal small">(optional)</span></h6>
+                    </div>
+                    <div class="card-body py-2">
+                        <div class="small text-muted mb-2">
+                            Split this invoice into dated tranches (e.g. PKR20,000 on 10-07-2026, PKR20,000 on 20-07-2026, PKR20,000 on 28-07-2026).
+                            Each tranche becomes overdue on its own if it isn't paid by its date, tracked independently of the single Due Date above.
+                        </div>
+                        <div class="row g-2 align-items-end mb-2">
+                            <div class="col-5 col-md-4">
+                                <label for="installmentAmountInput" class="form-label mb-0 small fw-semibold">Amount</label>
+                                <input type="number" id="installmentAmountInput" class="form-control form-control-sm" step="0.01" min="0" placeholder="0.00">
+                            </div>
+                            <div class="col-5 col-md-4">
+                                <label for="installmentDateInput" class="form-label mb-0 small fw-semibold">Receivable On</label>
+                                <input type="date" id="installmentDateInput" class="form-control form-control-sm">
+                            </div>
+                            <div class="col-2 col-md-4 d-flex gap-1">
+                                <button type="button" class="btn btn-sm btn-info flex-grow-1 text-white" id="addInstallmentBtn">
+                                    <i class="fas fa-plus me-1"></i>Add
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="cancelInstallmentEditBtn" title="Cancel edit">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="table-responsive" style="max-height: 200px; overflow-y: auto;">
+                            <table class="table table-sm table-bordered mb-1" id="installmentsTable">
+                                <thead class="table-light">
+                                    <tr class="small text-center">
+                                        <th style="width:32px;">#</th>
+                                        <th>Amount</th>
+                                        <th>Receivable On</th>
+                                        <th style="width:70px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="installmentsBody">
+                                    <tr id="noInstallmentsRow">
+                                        <td colspan="4" class="text-center text-muted small py-2">No installments added — invoice will use the single Due Date above.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="small">
+                            <span class="text-muted">Allocated:</span>
+                            <span id="installmentAllocated" class="fw-semibold">PKR0.00</span>
+                            <span class="text-muted ms-2">of Total:</span>
+                            <span id="installmentTotalRef" class="fw-semibold">PKR0.00</span>
+                            <span id="installmentMismatchWarning" class="text-warning ms-2" style="display:none;">
+                                <i class="fas fa-exclamation-triangle"></i> Allocated amount does not match the invoice total.
+                            </span>
+                        </div>
+                        <input type="hidden" name="installment_schedule" id="installmentScheduleJson" value="">
+                    </div>
+                </div>
             </div>
         </div>
     </form>
@@ -508,6 +567,124 @@
 
     document.getElementById('ignoreOverdueCheck').addEventListener('change', calculateTotals);
 
+    // ── Payment Installments (optional per-tranche due-date schedule) ──────
+    let installments = {{ sale.installments | tojson }};
+    let editingInstallmentIndex = -1;
+
+    function renderInstallments() {
+        const body = document.getElementById('installmentsBody');
+        body.innerHTML = '';
+
+        if (installments.length === 0) {
+            body.innerHTML = '<tr id="noInstallmentsRow"><td colspan="4" class="text-center text-muted small py-2">No installments added — invoice will use the single Due Date above.</td></tr>';
+        } else {
+            installments.forEach((inst, idx) => {
+                const tr = document.createElement('tr');
+                tr.className = 'small text-center' + (idx === editingInstallmentIndex ? ' table-warning' : '');
+                tr.innerHTML = `<td>${idx + 1}</td>` +
+                    `<td>PKR${parseFloat(inst.amount).toFixed(2)}</td>` +
+                    `<td>${inst.due_date}</td>` +
+                    `<td>` +
+                    `<button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 me-1" onclick="editInstallment(${idx})" title="Edit"><i class="fas fa-pen"></i></button>` +
+                    `<button type="button" class="btn btn-sm btn-outline-danger py-0 px-1" onclick="removeInstallment(${idx})" title="Remove"><i class="fas fa-trash"></i></button>` +
+                    `</td>`;
+                body.appendChild(tr);
+            });
+        }
+
+        document.getElementById('installmentScheduleJson').value = installments.length ? JSON.stringify(installments) : '';
+        updateInstallmentSummary();
+    }
+
+    function updateInstallmentSummary() {
+        const allocated = installments.reduce((sum, inst) => sum + (parseFloat(inst.amount) || 0), 0);
+        const totalText = (document.getElementById('total').textContent || '').replace(/[^0-9.]/g, '');
+        const invoiceTotal = parseFloat(totalText) || 0;
+
+        document.getElementById('installmentAllocated').textContent = `PKR${allocated.toFixed(2)}`;
+        document.getElementById('installmentTotalRef').textContent = `PKR${invoiceTotal.toFixed(2)}`;
+
+        const mismatchEl = document.getElementById('installmentMismatchWarning');
+        const hasMismatch = installments.length > 0 && Math.abs(allocated - invoiceTotal) > 0.01;
+        mismatchEl.style.display = hasMismatch ? 'inline' : 'none';
+    }
+
+    function setInstallmentEditMode(isEditing) {
+        const btn = document.getElementById('addInstallmentBtn');
+        const cancelBtn = document.getElementById('cancelInstallmentEditBtn');
+        if (isEditing) {
+            btn.innerHTML = '<i class="fas fa-check me-1"></i>Update';
+            btn.classList.remove('btn-info');
+            btn.classList.add('btn-success');
+            cancelBtn.classList.remove('d-none');
+        } else {
+            btn.innerHTML = '<i class="fas fa-plus me-1"></i>Add';
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-info');
+            cancelBtn.classList.add('d-none');
+        }
+    }
+
+    function addInstallment() {
+        const amountInput = document.getElementById('installmentAmountInput');
+        const dateInput = document.getElementById('installmentDateInput');
+        const amount = parseFloat(amountInput.value);
+        const dueDate = dateInput.value;
+
+        if (!amount || amount <= 0) { alert('Enter a valid installment amount.'); return; }
+        if (!dueDate) { alert('Select a receivable date for this installment.'); return; }
+
+        if (editingInstallmentIndex >= 0) {
+            installments[editingInstallmentIndex] = { amount: amount, due_date: dueDate };
+            editingInstallmentIndex = -1;
+        } else {
+            installments.push({ amount: amount, due_date: dueDate });
+        }
+        installments.sort((a, b) => a.due_date.localeCompare(b.due_date));
+
+        amountInput.value = '';
+        dateInput.value = '';
+        setInstallmentEditMode(false);
+        renderInstallments();
+    }
+
+    function editInstallment(idx) {
+        editingInstallmentIndex = idx;
+        document.getElementById('installmentAmountInput').value = installments[idx].amount;
+        document.getElementById('installmentDateInput').value = installments[idx].due_date;
+        setInstallmentEditMode(true);
+        renderInstallments();
+    }
+
+    function cancelInstallmentEdit() {
+        editingInstallmentIndex = -1;
+        document.getElementById('installmentAmountInput').value = '';
+        document.getElementById('installmentDateInput').value = '';
+        setInstallmentEditMode(false);
+        renderInstallments();
+    }
+
+    function removeInstallment(idx) {
+        installments.splice(idx, 1);
+        if (editingInstallmentIndex === idx) {
+            cancelInstallmentEdit();
+            return;
+        } else if (editingInstallmentIndex > idx) {
+            editingInstallmentIndex -= 1;
+        }
+        renderInstallments();
+    }
+
+    document.getElementById('addInstallmentBtn').addEventListener('click', addInstallment);
+    document.getElementById('cancelInstallmentEditBtn').addEventListener('click', cancelInstallmentEdit);
+
+    // Keep the "of Total" reference in sync whenever calculateTotals() updates
+    // the on-screen total, without needing to modify that function directly.
+    const installmentTotalWatcher = document.getElementById('total');
+    if (installmentTotalWatcher && window.MutationObserver) {
+        new MutationObserver(updateInstallmentSummary).observe(installmentTotalWatcher, { childList: true, characterData: true, subtree: true });
+    }
+
     function initSelect2(selector, placeholder = 'Search or select', width = '100%') {
         $(selector).select2({
             theme: 'bootstrap-5',
@@ -548,6 +725,7 @@
         document.querySelector('input[name="tax_rate"]').addEventListener('input', calculateTotals);
         document.querySelector('input[name="delivery_charge"]').addEventListener('input', calculateTotals);
         calculateTotals();
+        renderInstallments();
     });
 </script>
 {% endblock %}

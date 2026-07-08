@@ -885,6 +885,29 @@ def pay_bill(id):
                         bp_record.image_path = os.path.join('uploads', 'payments', filename).replace('\\', '/')
             db.session.add(bp_record)
 
+            # Cash payments don't require the manual upload — auto-generate a
+            # receipt PDF with the vendor's full details in its place, so the
+            # Payment History "Receipt" column still has something to show.
+            if payment_method == 'cash' and not bp_record.image_path:
+                try:
+                    db.session.flush()  # assign bp_record.id, used in the receipt filename/number
+                    from app.pdf_utils import generate_bill_payment_receipt_pdf
+                    company = Company.query.first()
+                    pdf_buffer = generate_bill_payment_receipt_pdf(bp_record, bill, company)
+                    import time, uuid
+                    unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                    filename = secure_filename(f"pay_{bill.bill_number}_{unique_prefix}_receipt.pdf")
+                    upload_dir = os.path.join(current_app.root_path, 'static', 'uploads', 'payments')
+                    os.makedirs(upload_dir, exist_ok=True)
+                    filepath = os.path.join(upload_dir, filename)
+                    with open(filepath, 'wb') as f:
+                        f.write(pdf_buffer.getvalue())
+                    bp_record.image_path = os.path.join('uploads', 'payments', filename).replace('\\', '/')
+                except Exception as e:
+                    # Never block a cash payment from being recorded just because
+                    # the auto-receipt failed to generate.
+                    current_app.logger.warning(f"Auto-receipt generation failed for bill payment on {bill.bill_number}: {e}")
+
         db.session.commit()
         if total_payment > 0:
             log_activity('Purchase', f'Recorded Payment on Bill #{bill.bill_number}',
@@ -964,11 +987,19 @@ def edit_bill_payment(id, pay_id):
     return render_template('purchase/edit_bill_payment.html', payment=payment, bill=bill)
 
 
+_NO_IMAGE_PLACEHOLDER_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="90" height="70" viewBox="0 0 90 70">'
+    '<rect width="90" height="70" fill="#f1f3f5"/>'
+    '<text x="45" y="39" font-family="sans-serif" font-size="10" fill="#adb5bd" '
+    'text-anchor="middle">No Image</text></svg>'
+)
+
+
 @bp.route('/bill_payment/<int:pay_id>/image')
 @login_required
 def bill_payment_image(pay_id):
     """Serve bill payment receipt image"""
-    from flask import current_app
+    from flask import current_app, Response
     payment = BillPayment.query.get_or_404(pay_id)
     if payment.image_path:
         # Stored path may be relative to static (uploads/...) or absolute (app/static/...)
@@ -977,9 +1008,16 @@ def bill_payment_image(pay_id):
         else:
             file_path = os.path.join(current_app.root_path, 'static', payment.image_path)
         if os.path.exists(file_path):
+            # Explicit inline PDF disposition: without this, some browsers/proxies
+            # fall back to a "Save As" download prompt instead of rendering the
+            # PDF inline in the thumbnail iframe / preview modal.
+            if file_path.lower().endswith('.pdf'):
+                return send_file(file_path, mimetype='application/pdf', as_attachment=False)
             return send_file(file_path)
-    flash('Image not found', 'error')
-    return redirect(url_for('purchase.bill_detail', id=payment.bill_id))
+    # File missing on this server — this route is used directly as an <img>/<iframe>
+    # src, so a flash+redirect to an HTML page breaks the preview; serve a small
+    # placeholder graphic instead.
+    return Response(_NO_IMAGE_PLACEHOLDER_SVG, mimetype='image/svg+xml')
 
 
 @bp.route('/bill/<int:id>/payment/<int:pay_id>/delete', methods=['POST'])

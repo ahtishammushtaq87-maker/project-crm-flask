@@ -67,8 +67,6 @@ def run_daily_automation():
 
 
 def _process_invoice(invoice, today, results):
-    due = invoice.due_date.date() if invoice.due_date and hasattr(invoice.due_date, 'date') else invoice.due_date
-
     existing_task = invoice.recovery_task
 
     if invoice.status == 'paid':
@@ -79,7 +77,9 @@ def _process_invoice(invoice, today, results):
             results['tasks_closed'] += 1
         return
 
-    if not due or today <= due:
+    # Overdue by the single due_date OR by an installment tranche that's past
+    # its own date and still short-funded (see Sale.effective_is_overdue).
+    if not invoice.effective_is_overdue:
         return  # not overdue yet — nothing to do
 
     if not existing_task:

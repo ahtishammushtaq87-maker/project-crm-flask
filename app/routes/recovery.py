@@ -88,7 +88,7 @@ def dashboard():
         (t.invoice.balance_due if t.invoice else 0) for t in all_open
     )
     total_overdue = sum(
-        (t.invoice.balance_due if t.invoice and t.invoice.is_overdue else 0) for t in all_open
+        (t.invoice.overdue_amount if t.invoice else 0) for t in all_open
     )
     partial_count = sum(1 for t in all_open if t.recovery_status == 'PARTIAL_RECOVERY')
     promise_today_count = sum(
@@ -769,6 +769,7 @@ def _group_tasks_by_customer(tasks):
             'total': sum(i.total for i in invs),
             'paid': sum(i.paid_amount for i in invs),
             'balance': sum(i.balance_due for i in invs),
+            'overdue_amount': sum(i.overdue_amount for i in invs),
             'worst_risk': max((t.risk_level for t in gtasks), key=lambda r: _RISK_RANK.get(r, 0), default='low'),
             'any_escalated': any(t.is_escalated for t in gtasks),
             'earliest_promise': min(promise_dates) if promise_dates else None,

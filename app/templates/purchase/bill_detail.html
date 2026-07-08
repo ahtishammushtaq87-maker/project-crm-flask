@@ -389,18 +389,13 @@
                     </div>
                     <div class="modal-body">
                         <div class="row g-3">
-                            <div class="col-md-6">
+                            <div class="col-12">
                                 <label class="form-label fw-semibold">Payment Method</label>
                                 <select name="payment_method" id="paymentMethod" class="form-select">
                                     <option value="cash">Cash Payment</option>
                                     <option value="advance">Use Advance</option>
                                     <option value="mixed">Advance + Cash</option>
                                 </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-semibold">Reference # (Optional)</label>
-                                <input type="text" name="reference_number" class="form-control"
-                                    placeholder="Cheque / Transfer / TRX ID">
                             </div>
 
                             <!-- Vendor Advances Info -->
@@ -461,7 +456,7 @@
                             </div>
 
                             <!-- Payment Image Upload -->
-                            <div class="col-12">
+                            <div class="col-12" id="payProofWrapper">
                                 <label class="form-label fw-semibold"><i
                                         class="fas fa-image me-1 text-muted"></i>Payment Proof / Receipt
                                     (Optional)</label>
@@ -472,6 +467,12 @@
                                 <div id="payImagePreview" class="mt-2" style="display:none;">
                                     <img id="payImgThumb" src="" alt="Preview" class="img-thumbnail"
                                         style="max-height:120px;">
+                                </div>
+                            </div>
+                            <div class="col-12" id="payCashNotice" style="display:none;">
+                                <div class="alert alert-success py-2 mb-0 small">
+                                    <i class="fas fa-receipt me-1"></i>No upload needed for cash — a receipt with the
+                                    vendor's details is generated automatically when you record this payment.
                                 </div>
                             </div>
 
@@ -490,6 +491,21 @@
                         </button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- PDF Receipt Preview Modal (shared) -->
+    <div class="modal fade" id="pdfPreviewModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content" style="height:85vh;">
+                <div class="modal-header py-2">
+                    <h6 class="modal-title mb-0"><i class="fas fa-file-pdf text-danger me-1"></i>Payment Receipt</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <iframe id="pdfPreviewFrame" src="" style="width:100%; height:100%; border:0;"></iframe>
+                </div>
             </div>
         </div>
     </div>
@@ -947,7 +963,6 @@
                                     <tr>
                                         <th>Date</th>
                                         <th>Method</th>
-                                        <th>Reference</th>
                                         <th class="text-end">Amount</th>
                                         <th>Receipt</th>
                                         <th>Notes</th>
@@ -965,7 +980,6 @@
                                         <td>
                                             <span class="badge bg-secondary">{{ pay.payment_method }}</span>
                                         </td>
-                                        <td class="text-muted small">{{ pay.reference_number or '—' }}</td>
                                         <td class="text-end fw-bold text-success">PKR {{ "{:,.2f}".format(pay.amount) }}
                                         </td>
                                         <td>
@@ -974,13 +988,16 @@
                                             pay.image_path
                                             else '' %}
                                             {% if pay_ext == 'pdf' %}
-                                            <a href="{{ url_for('purchase.bill_payment_image', pay_id=pay.id) }}"
-                                                target="_blank" class="btn btn-sm btn-outline-danger">
-                                                <i class="fas fa-file-pdf"></i> PDF
-                                            </a>
+                                            <div class="pdf-receipt-thumb" role="button" tabindex="0" title="Click to preview"
+                                                style="cursor:pointer; display:inline-block;"
+                                                onclick="showPdfPreview('{{ url_for('purchase.bill_payment_image', pay_id=pay.id) }}')">
+                                                <iframe src="{{ url_for('purchase.bill_payment_image', pay_id=pay.id) }}#toolbar=0&navpanes=0&view=FitH"
+                                                    class="img-thumbnail" style="width:60px; height:50px; pointer-events:none;"
+                                                    scrolling="no"></iframe>
+                                            </div>
                                             {% else %}
                                             <a href="{{ url_for('purchase.bill_payment_image', pay_id=pay.id) }}"
-                                                target="_blank">
+                                                target="_blank" rel="noopener">
                                                 <img src="{{ url_for('purchase.bill_payment_image', pay_id=pay.id) }}"
                                                     alt="Receipt" class="img-thumbnail"
                                                     style="max-height:50px; cursor:pointer;"
@@ -1020,7 +1037,7 @@
                                 </tbody>
                                 <tfoot class="table-light">
                                     <tr>
-                                        <th colspan="4" class="text-end">Total Paid</th>
+                                        <th colspan="3" class="text-end">Total Paid</th>
                                         <th class="text-end text-success">PKR {{ "{:,.2f}".format(bill.bill_payments |
                                             sum(attribute='amount')) }}</th>
                                         <th colspan="2"></th>
@@ -1288,6 +1305,18 @@
             });
         });
 
+        // Open a payment receipt PDF inline in a same-page modal instead of a new tab.
+        function showPdfPreview(url) {
+            const frame = document.getElementById('pdfPreviewFrame');
+            frame.src = url;
+            const modal = new bootstrap.Modal(document.getElementById('pdfPreviewModal'));
+            modal.show();
+        }
+        document.getElementById('pdfPreviewModal').addEventListener('hidden.bs.modal', function () {
+            // Stop the embedded PDF viewer once the modal closes
+            document.getElementById('pdfPreviewFrame').src = '';
+        });
+
         function previewPayImage(input) {
             const preview = document.getElementById('payImagePreview');
             const thumb = document.getElementById('payImgThumb');
@@ -1355,6 +1384,25 @@
             });
         }
 
+        // Cash payments skip the manual proof upload — a receipt is auto-generated
+        // server-side instead. Advance/Mixed methods still show the optional upload.
+        function updatePayProofVisibility() {
+            const pm = document.getElementById('paymentMethod');
+            const proofWrapper = document.getElementById('payProofWrapper');
+            const cashNotice = document.getElementById('payCashNotice');
+            const fileInput = document.getElementById('payImageInput');
+            if (!pm || !proofWrapper || !fileInput) return;
+
+            const isCash = pm.value === 'cash';
+            proofWrapper.style.display = isCash ? 'none' : '';
+            if (cashNotice) cashNotice.style.display = isCash ? '' : 'none';
+            if (isCash) {
+                fileInput.value = '';
+                const preview = document.getElementById('payImagePreview');
+                if (preview) preview.style.display = 'none';
+            }
+        }
+
         function setupPaymentMethodListener() {
             const pm = document.getElementById('paymentMethod');
             pm.addEventListener('change', function () {
@@ -1372,7 +1420,11 @@
                     document.getElementById('mixedSection').style.display = 'block';
                     updateMixedPaymentSummary();
                 }
+
+                updatePayProofVisibility();
             });
+
+            updatePayProofVisibility();
         }
 
         function selectAdvance(button) {

@@ -1091,5 +1091,220 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             bill_to_label='Statement',
         )
 
+
+def _build_payment_receipt_pdf(
+    payment_number, payment_date, payment_method, amount, notes,
+    party_role_label, party_name, party_phone, party_email, party_address,
+    doc_label, doc_number, doc_total, doc_paid_to_date, doc_balance_due,
+    amount_label, thank_you_note, company=None,
+):
+    """
+    Shared layout for both the Sales (customer) and Purchase (vendor) auto-
+    generated cash-payment receipts — kept as one function so the two receipt
+    types always look consistent. Returns a BytesIO buffer positioned at 0.
+    """
+    DARK_GREEN = colors.HexColor('#146c43')
+    GREEN = colors.HexColor('#198754')
+    LIGHT_GREEN = colors.HexColor('#eaf7ef')
+    BORDER = colors.HexColor('#dee2e6')
+    MUTED = colors.HexColor('#6c757d')
+    INK = colors.HexColor('#212529')
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        topMargin=36, bottomMargin=36, leftMargin=40, rightMargin=40,
+    )
+    header_company_style = ParagraphStyle('ReceiptHeaderCompany', fontName='Helvetica-Bold', fontSize=15,
+                                           textColor=colors.white, leading=18)
+    header_sub_style = ParagraphStyle('ReceiptHeaderSub', fontName='Helvetica', fontSize=9,
+                                       textColor=colors.HexColor('#d4f0e0'), leading=12)
+    header_title_style = ParagraphStyle('ReceiptHeaderTitle', fontName='Helvetica-Bold', fontSize=18,
+                                         textColor=colors.white, alignment=TA_RIGHT, leading=20)
+    header_num_style = ParagraphStyle('ReceiptHeaderNum', fontName='Helvetica', fontSize=9,
+                                       textColor=colors.HexColor('#d4f0e0'), alignment=TA_RIGHT, leading=12)
+    section_label_style = ParagraphStyle('ReceiptSectionLabel', fontName='Helvetica-Bold', fontSize=9,
+                                          textColor=DARK_GREEN, spaceAfter=4)
+    label_style = ParagraphStyle('ReceiptLabel', fontName='Helvetica', fontSize=8, textColor=MUTED, leading=11)
+    value_style = ParagraphStyle('ReceiptValue', fontName='Helvetica', fontSize=10.5, textColor=INK, leading=14)
+    value_bold_style = ParagraphStyle('ReceiptValueBold', parent=value_style, fontName='Helvetica-Bold')
+
+    elements = []
+
+    # ── Header banner ────────────────────────────────────────────────────
+    company_name = getattr(company, 'name', None) or 'Company'
+    company_addr = getattr(company, 'address', None) or ''
+    header_left = [Paragraph(company_name, header_company_style)]
+    if company_addr:
+        header_left.append(Paragraph(company_addr, header_sub_style))
+    header_right = [
+        Paragraph('PAYMENT RECEIPT', header_title_style),
+        Paragraph(f"#{payment_number}", header_num_style),
+    ]
+    header_table = Table([[header_left, header_right]], colWidths=[300, 200])
+    header_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), DARK_GREEN),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (0, 0), 16),
+        ('RIGHTPADDING', (1, 0), (1, 0), 16),
+        ('TOPPADDING', (0, 0), (-1, -1), 16),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 16),
+    ]))
+    elements.append(header_table)
+    elements.append(HRFlowable(width='100%', color=GREEN, thickness=3, spaceAfter=0))
+    elements.append(Spacer(1, 18))
+
+    # ── Party info / Receipt info, side by side ─────────────────────────
+    party_block = [
+        Paragraph(party_role_label, section_label_style),
+        Paragraph(party_name, value_bold_style),
+    ]
+    if party_phone:
+        party_block.append(Paragraph(f"Phone: {party_phone}", value_style))
+    if party_email:
+        party_block.append(Paragraph(f"Email: {party_email}", value_style))
+    if party_address:
+        party_block.append(Paragraph(party_address, value_style))
+
+    receipt_info = Table([
+        [Paragraph(doc_label, label_style), Paragraph(doc_number, value_bold_style)],
+        [Paragraph('Payment Date', label_style), Paragraph(payment_date.strftime('%d-%m-%Y'), value_style)],
+        [Paragraph('Payment Method', label_style), Paragraph(payment_method, value_style)],
+    ], colWidths=[90, 130])
+    receipt_info.setStyle(TableStyle([
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+    ]))
+
+    info_table = Table([[party_block, receipt_info]], colWidths=[280, 220])
+    info_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    elements.append(info_table)
+    elements.append(Spacer(1, 20))
+
+    # ── Amount highlight ─────────────────────────────────────────────────
+    amount_label_style = ParagraphStyle('ReceiptAmountLabel', fontName='Helvetica-Bold', fontSize=10,
+                                         textColor=DARK_GREEN, alignment=TA_LEFT)
+    amount_value_style = ParagraphStyle('ReceiptAmountValue', fontName='Helvetica-Bold', fontSize=22,
+                                         textColor=DARK_GREEN, alignment=TA_RIGHT)
+    amount_box = Table([[
+        Paragraph(amount_label, amount_label_style),
+        Paragraph(f"PKR {amount:,.2f}", amount_value_style),
+    ]], colWidths=[250, 250])
+    amount_box.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), LIGHT_GREEN),
+        ('BOX', (0, 0), (-1, -1), 1, GREEN),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (0, 0), 14),
+        ('RIGHTPADDING', (1, 0), (1, 0), 14),
+        ('TOPPADDING', (0, 0), (-1, -1), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+    ]))
+    elements.append(amount_box)
+    elements.append(Spacer(1, 18))
+
+    # ── Balance summary ──────────────────────────────────────────────────
+    summary_rows = [
+        [Paragraph(f"{doc_label.rstrip('#').strip()} Total", label_style), Paragraph('Paid to Date', label_style), Paragraph('Balance Due', label_style)],
+        [Paragraph(f"PKR {doc_total:,.2f}", value_style),
+         Paragraph(f"PKR {doc_paid_to_date:,.2f}", value_style),
+         Paragraph(f"PKR {doc_balance_due:,.2f}", value_bold_style if doc_balance_due > 0 else value_style)],
+    ]
+    summary_table = Table(summary_rows, colWidths=[160, 160, 160])
+    summary_table.setStyle(TableStyle([
+        ('GRID', (0, 0), (-1, -1), 0.5, BORDER),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f8f9fa')),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+    ]))
+    elements.append(summary_table)
+
+    if notes:
+        elements.append(Spacer(1, 16))
+        elements.append(Paragraph('NOTES', section_label_style))
+        notes_box = Table([[Paragraph(notes, value_style)]], colWidths=[480])
+        notes_box.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f8f9fa')),
+            ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ]))
+        elements.append(notes_box)
+
+    elements.append(Spacer(1, 28))
+    elements.append(HRFlowable(width='100%', color=BORDER, thickness=0.75))
+    elements.append(Spacer(1, 8))
+    footer_style = ParagraphStyle('ReceiptFooter', fontName='Helvetica', fontSize=8, textColor=MUTED, alignment=TA_CENTER)
+    elements.append(Paragraph(thank_you_note, footer_style))
+    elements.append(Paragraph(
+        f"Auto-generated cash payment receipt — no signature required. Generated on {datetime.now().strftime('%d-%m-%Y %H:%M')}.",
+        footer_style,
+    ))
+
+    doc.build(elements)
     buffer.seek(0)
     return buffer
+
+
+def generate_payment_receipt_pdf(payment, sale, company=None):
+    """
+    Self-contained receipt PDF, auto-generated for Cash payments that skip the
+    manual proof upload — stands in for the uploaded image/PDF so the Payment
+    History table's Receipt column always has something to show/link to.
+    Returns a BytesIO buffer positioned at 0.
+    """
+    customer = sale.customer
+    return _build_payment_receipt_pdf(
+        payment_number=payment.payment_number,
+        payment_date=payment.date,
+        payment_method=payment.method,
+        amount=payment.amount,
+        notes=payment.notes,
+        party_role_label='BILLED TO',
+        party_name=customer.name if customer else 'Walk-in Customer',
+        party_phone=customer.phone if customer else None,
+        party_email=customer.email if customer else None,
+        party_address=customer.address if customer else None,
+        doc_label='Invoice #',
+        doc_number=sale.invoice_number,
+        doc_total=sale.total,
+        doc_paid_to_date=sale.paid_amount,
+        doc_balance_due=sale.total - sale.paid_amount,
+        amount_label='AMOUNT RECEIVED',
+        thank_you_note='Thank you for your payment.',
+        company=company,
+    )
+
+
+def generate_bill_payment_receipt_pdf(payment, bill, company=None):
+    """
+    Same auto-generated receipt as generate_payment_receipt_pdf(), for the
+    Purchase module: a Cash payment recorded against a vendor bill that skips
+    the manual proof upload gets this instead, showing the vendor's full
+    details rather than a customer's.
+    """
+    vendor = bill.vendor
+    return _build_payment_receipt_pdf(
+        payment_number=f"BP-{payment.id}" if payment.id else 'BP-NEW',
+        payment_date=payment.date,
+        payment_method=payment.payment_method,
+        amount=payment.amount,
+        notes=payment.notes,
+        party_role_label='PAID TO',
+        party_name=vendor.name if vendor else 'Vendor',
+        party_phone=vendor.phone if vendor else None,
+        party_email=vendor.email if vendor else None,
+        party_address=vendor.address if vendor else None,
+        doc_label='Bill #',
+        doc_number=bill.bill_number,
+        doc_total=bill.total,
+        doc_paid_to_date=bill.paid_amount,
+        doc_balance_due=bill.total - bill.paid_amount,
+        amount_label='AMOUNT PAID',
+        thank_you_note='Thank you for your business.',
+        company=company,
+    )

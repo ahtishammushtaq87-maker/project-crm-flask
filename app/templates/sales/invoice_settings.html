@@ -9,6 +9,24 @@
     .select2-container--bootstrap-5 {
         width: 100% !important;
     }
+    /* Multi-select (Restricted Customer Groups) must grow with its chips
+       instead of using the fixed single-line height from base.html, or the
+       selected chips overflow upward and visually overlap the label above. */
+    .select2-container--bootstrap-5 .select2-selection--multiple {
+        height: auto !important;
+        min-height: calc(1.5em + 0.75rem + 2px);
+    }
+    .select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__rendered {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 6px;
+        margin: 0;
+    }
+    .select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__choice {
+        margin: 0;
+    }
 </style>
 {% endblock %}
 
@@ -250,8 +268,8 @@ $(document).ready(function() {
                         <h6>Discount Rules</h6>
                         <div class="mb-3">
                             <label for="overdue_restricted_groups" class="form-label">Restricted Customer Groups for Overdue Discount</label>
-                            {{ form.overdue_restricted_groups(class="form-select", size="5") }}
-                            <div class="form-text">Selected groups will NOT be able to receive discounts on overdue invoices unless overridden. Hold Ctrl to select multiple.</div>
+                            {{ form.overdue_restricted_groups(class="form-select searchable-select") }}
+                            <div class="form-text">Selected groups will NOT be able to receive discounts on overdue invoices unless overridden. Click an option to add it; click the &times; on a chip to remove it.</div>
                         </div>
 
                         <hr>

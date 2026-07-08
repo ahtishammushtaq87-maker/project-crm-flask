@@ -667,6 +667,9 @@ class Sale(db.Model):
     date = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     due_date = db.Column(db.DateTime)
     overdue_date = db.Column(db.DateTime, nullable=True)
+    # Optional per-tranche payment plan, e.g. [{"amount": 20000, "due_date": "2026-07-10"}, ...].
+    # Independent of due_date above — see get_installment_status() for per-tranche overdue tracking.
+    installment_schedule = db.Column(db.Text, nullable=True)
     currency_id = db.Column(db.Integer, db.ForeignKey('currencies.id'), nullable=True)
     exchange_rate = db.Column(db.Float, default=1)
     subtotal = db.Column(db.Float, default=0)
@@ -747,6 +750,107 @@ class Sale(db.Model):
                 return 'danger'
             return 'warning'
         return 'success'
+
+    @property
+    def installments(self):
+        """Parsed, sorted installment schedule: [{'amount': float, 'due_date': 'YYYY-MM-DD'}, ...].
+        JSON-safe (plain str/float), so it can be passed straight to |tojson in templates."""
+        if not self.installment_schedule:
+            return []
+        import json
+        try:
+            data = json.loads(self.installment_schedule)
+        except (ValueError, TypeError):
+            return []
+        parsed = []
+        for item in data:
+            try:
+                amount = float(item.get('amount', 0) or 0)
+                due_date = str(item.get('due_date', ''))
+                datetime.strptime(due_date, '%Y-%m-%d')  # validate format
+                if amount > 0 and due_date:
+                    parsed.append({'amount': amount, 'due_date': due_date})
+            except (KeyError, ValueError, TypeError, AttributeError):
+                continue
+        parsed.sort(key=lambda i: i['due_date'])
+        return parsed
+
+    def get_installment_status(self):
+        """
+        Per-tranche payment status, independent of is_overdue/due_date above.
+        Walks the schedule in due-date order, applying paid_amount against each
+        tranche in turn (earliest first). A tranche is 'overdue' only if its own
+        date has passed and it isn't yet fully covered by payments received so far.
+        """
+        schedule = self.installments
+        if not schedule:
+            return []
+        today = datetime.utcnow().date()
+        remaining = float(self.paid_amount or 0)
+        result = []
+        for inst in schedule:
+            amount = inst['amount']
+            due = datetime.strptime(inst['due_date'], '%Y-%m-%d').date()
+            if remaining >= amount:
+                status = 'paid'
+                shortfall = 0.0
+                remaining -= amount
+            else:
+                shortfall = amount - remaining
+                status = 'overdue' if due < today else 'upcoming'
+                remaining = 0.0
+            result.append({
+                'amount': amount,
+                'due_date': due,
+                'status': status,
+                'shortfall': shortfall,
+            })
+        return result
+
+    @property
+    def has_overdue_installment(self):
+        return any(i['status'] == 'overdue' for i in self.get_installment_status())
+
+    @property
+    def installment_overdue_days(self):
+        """Days overdue for the worst (longest-overdue) unpaid installment tranche, or 0."""
+        overdue_rows = [i for i in self.get_installment_status() if i['status'] == 'overdue']
+        if not overdue_rows:
+            return 0
+        today = datetime.utcnow().date()
+        return max((today - i['due_date']).days for i in overdue_rows)
+
+    @property
+    def effective_is_overdue(self):
+        """
+        Display-facing overdue flag used for the invoice list/detail status badge
+        AND the recovery automation trigger: overdue if EITHER the single
+        due_date has passed (is_overdue) OR at least one installment tranche is
+        overdue on its own date. Kept separate from is_overdue so
+        calculate_totals()'s overdue-discount-suspension rule (which should only
+        ever key off the invoice's own due_date) is unaffected by installment
+        schedules.
+        """
+        return self.is_overdue or self.has_overdue_installment
+
+    @property
+    def effective_days_overdue(self):
+        """Day count to display alongside effective_is_overdue — the worse of the
+        single due_date's overdue days and the worst overdue installment tranche."""
+        return max(self.days_overdue, self.installment_overdue_days)
+
+    @property
+    def overdue_amount(self):
+        """
+        The amount that is actually overdue right now — not the whole balance.
+        For an installment invoice, only the shortfall on tranches whose own
+        date has passed (future tranches aren't due yet, so they don't count).
+        For a plain invoice, the full balance once the single due_date passes
+        (unchanged behavior).
+        """
+        if self.installments:
+            return sum(i['shortfall'] for i in self.get_installment_status() if i['status'] == 'overdue')
+        return self.balance_due if self.is_overdue else 0.0
 
     def update_status(self):
         """Update payment status based on paid amount"""
@@ -3353,11 +3457,10 @@ class RecoveryTask(db.Model):
 
     @property
     def overdue_days(self):
-        from datetime import date
-        if self.invoice and self.invoice.due_date:
-            due = self.invoice.due_date.date() if hasattr(self.invoice.due_date, 'date') else self.invoice.due_date
-            return max(0, (date.today() - due).days)
-        return 0
+        """Delegates to Sale.effective_days_overdue, which is installment-aware
+        (falls back to the plain due_date calc when there's no schedule, so
+        this is unchanged for ordinary invoices)."""
+        return self.invoice.effective_days_overdue if self.invoice else 0
 
     @property
     def last_payment_date(self):
