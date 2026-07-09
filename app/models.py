@@ -870,6 +870,18 @@ class Sale(db.Model):
         rtask = self.recovery_task
         if not rtask or rtask.recovery_status in ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF'):
             return
+
+        # If the invoice was reassigned to a different salesman, the recovery
+        # task must follow it — otherwise reminders keep popping up for
+        # whoever used to own it instead of the salesman who is actually
+        # responsible for this invoice now.
+        if rtask.salesman_id != self.salesman_id:
+            from app.services.recovery_automation import _cancel_reminders, _ensure_reminder
+            _cancel_reminders(rtask)  # any open popup was addressed to the old salesman
+            rtask.salesman_id = self.salesman_id
+            if self.status != 'paid':
+                _ensure_reminder(rtask)  # raise a fresh one for the new salesman right away
+
         if self.status == 'paid':
             rtask.recovery_status = 'CLOSED_PAID'
             rtask.closed_at = datetime.utcnow()
@@ -3422,6 +3434,12 @@ class RecoveryTask(db.Model):
 
     is_escalated = db.Column(db.Boolean, default=False)
     escalated_at = db.Column(db.DateTime, nullable=True)
+
+    # Per-invoice notification mute: pauses popup reminders (and the dashboard
+    # countdown) for this task without affecting its recovery_status/tracking.
+    is_muted = db.Column(db.Boolean, default=False)
+    muted_at = db.Column(db.DateTime, nullable=True)
+    muted_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
     closed_reason = db.Column(db.Text, nullable=True)
     closed_at = db.Column(db.DateTime, nullable=True)

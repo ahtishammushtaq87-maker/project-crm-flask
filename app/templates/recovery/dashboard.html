@@ -202,6 +202,7 @@
                 <th>Promise Date</th>
                 <th>Risk</th>
                 <th>Reminder Timer</th>
+                <th class="text-center" title="Pause popup reminders &amp; the countdown timer for this invoice">Mute</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -243,12 +244,15 @@
                     <span class="badge risk-badge {{ task.risk_level }}">{{ task.risk_level | capitalize }}</span>
                     {% if task.is_escalated %}<i class="fas fa-exclamation-triangle text-danger ms-1" title="Escalated"></i>{% endif %}
                 </td>
-                <td>
+                <td class="reminder-timer-cell">
                     {# One popup reminder covers the whole customer group (by design — "one
                        notification, not one per invoice"), so show the group's shared
                        countdown here rather than this task's own (possibly consolidated-away)
-                       reminder. #}
-                    {% if grp.soonest_reminder %}
+                       reminder — unless this invoice itself is muted, in which case it never
+                       contributes to that popup and shows no timer. #}
+                    {% if task.is_muted %}
+                    <span class="badge bg-secondary"><i class="fas fa-bell-slash me-1"></i>Muted</span>
+                    {% elif grp.soonest_reminder %}
                     <span class="badge bg-warning text-dark reminder-countdown"
                           data-reminder-at="{{ grp.soonest_reminder.isoformat() }}">
                         <i class="fas fa-stopwatch me-1"></i><span class="countdown-text">…</span>
@@ -256,6 +260,12 @@
                     {% else %}
                     <span class="text-muted">—</span>
                     {% endif %}
+                </td>
+                <td class="text-center">
+                    <input type="checkbox" class="form-check-input recovery-mute-toggle" role="switch"
+                           data-task-id="{{ task.id }}"
+                           {% if task.is_muted %}checked{% endif %}
+                           title="Stop popup reminders &amp; the reminder timer for this invoice">
                 </td>
                 <td>
                     <a href="{{ url_for('recovery.task_detail', task_id=task.id) }}"
@@ -479,6 +489,41 @@ if (document.querySelector('.reminder-countdown')) {
     updateRecoveryReminderTimers();
     setInterval(updateRecoveryReminderTimers, 1000);
 }
+
+// Per-invoice mute checkbox — delegated because rows are injected on demand
+// from the customer group's <template> (see the DataTables child-row code
+// above), so a listener bound at page load wouldn't reach them directly.
+document.addEventListener('change', function (e) {
+    const checkbox = e.target.closest('.recovery-mute-toggle');
+    if (!checkbox) return;
+
+    const taskId = checkbox.getAttribute('data-task-id');
+    const cell = checkbox.closest('tr').querySelector('.reminder-timer-cell');
+    checkbox.disabled = true;
+
+    fetch(`/recovery/task/${taskId}/toggle-mute`, { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (!data.success) {
+                checkbox.checked = !checkbox.checked;
+                alert(data.message || 'Could not update notification setting.');
+                return;
+            }
+            checkbox.checked = data.is_muted;
+            if (cell) {
+                cell.innerHTML = data.is_muted
+                    ? '<span class="badge bg-secondary"><i class="fas fa-bell-slash me-1"></i>Muted</span>'
+                    : '<span class="text-muted">Reminder will re-appear shortly</span>';
+            }
+        })
+        .catch(function () {
+            checkbox.checked = !checkbox.checked;
+            alert('Network error — could not update notification setting.');
+        })
+        .finally(function () {
+            checkbox.disabled = false;
+        });
+});
 
 // "Set Promise" on a customer-group row: point the shared modal's form at
 // that customer and prefill the amount, without opening the row's collapse.

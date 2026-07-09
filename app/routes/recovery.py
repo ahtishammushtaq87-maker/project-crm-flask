@@ -6,6 +6,7 @@ from app import db
 from app.models import RecoveryTask, RecoveryLog, Sale, Salesman, Customer, CustomerGroup, Task, User
 from app.services.recovery_grouping import (
     open_tasks_for_customer, open_tasks_for_group, rearm_group_reminder,
+    cancel_group_reminders,
 )
 from app.utils import pk_now
 
@@ -374,6 +375,60 @@ def mark_promise_customer(customer_id):
 
     flash(f'Promise recorded for {len(tasks)} invoice(s). A reminder will pop up again at the promised time.', 'success')
     return fallback
+
+
+# ─── Mute / Unmute Notifications ───────────────────────────────────────────────
+
+@bp.route('/task/<int:task_id>/toggle-mute', methods=['POST'])
+@login_required
+def toggle_mute(task_id):
+    """Per-invoice checkbox: pause (or resume) popup reminders + the dashboard
+    countdown for one invoice's recovery task, without touching its
+    recovery_status. Does not affect sibling invoices in the same
+    customer+salesman group."""
+    if not (current_user.is_admin or current_user.can_edit_recovery):
+        return jsonify({'success': False, 'message': 'Permission denied.'}), 403
+
+    task = RecoveryTask.query.get_or_404(task_id)
+    task.is_muted = not task.is_muted
+    task.updated_at = datetime.utcnow()
+
+    if task.is_muted:
+        task.muted_at = datetime.utcnow()
+        task.muted_by = current_user.id
+
+        # The group's current popup (if any) may reference this invoice in its
+        # title/description/balance — cancel it and, if other non-muted
+        # invoices remain in the group, raise a fresh one that no longer
+        # mentions this one.
+        if task.invoice and task.invoice.customer_id:
+            group = open_tasks_for_group(task.invoice.customer_id, task.salesman_id)
+            cancel_group_reminders(group)
+            siblings = [t for t in group if t.id != task.id and not t.is_muted]
+            if siblings:
+                rearm_group_reminder(siblings, pk_now())
+
+        db.session.add(RecoveryLog(
+            task_id=task.id, response_type='general',
+            note=f'Notifications muted by {current_user.username}.',
+            logged_by=current_user.id,
+        ))
+    else:
+        task.muted_at = None
+        task.muted_by = None
+        db.session.add(RecoveryLog(
+            task_id=task.id, response_type='general',
+            note=f'Notifications unmuted by {current_user.username}.',
+            logged_by=current_user.id,
+        ))
+        # Let it rejoin the group's reminder (or get its own) right away
+        # instead of waiting for the next automation cycle.
+        from app.services.recovery_automation import _ensure_reminder
+        if task.recovery_status not in ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF'):
+            _ensure_reminder(task)
+
+    db.session.commit()
+    return jsonify({'success': True, 'is_muted': task.is_muted})
 
 
 # ─── Escalate ─────────────────────────────────────────────────────────────────

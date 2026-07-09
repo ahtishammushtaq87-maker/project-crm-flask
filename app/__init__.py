@@ -465,4 +465,7 @@ def create_app(config_class=Config):
         except Exception:
             return dict(total_pending_approvals=0, pending_approval_details=[])
 
+    from app.scheduler import start_recovery_scheduler
+    start_recovery_scheduler(app)
+
     return app
