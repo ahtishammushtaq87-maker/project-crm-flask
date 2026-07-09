@@ -1091,6 +1091,9 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             bill_to_label='Statement',
         )
 
+    buffer.seek(0)
+    return buffer
+
 
 def _build_payment_receipt_pdf(
     payment_number, payment_date, payment_method, amount, notes,
