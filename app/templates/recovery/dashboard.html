@@ -170,6 +170,7 @@
             ('promise_missed','Promise Missed'),
             ('no_payment',    'No Payment'),
             ('high_risk',     'High Risk'),
+            ('on_hold',       'On Hold'),
             ('closed',        'Closed'),
         ] %}
         {% for t_key, t_label in tabs %}
@@ -238,6 +239,9 @@
                     <span class="status-badge status-{{ task.recovery_status }}">
                         {{ task.recovery_status.replace('_', ' ').title() }}
                     </span>
+                    {% if task.is_on_hold %}
+                    <span class="badge bg-dark ms-1" title="Parked — no reminders/timer while on hold"><i class="fas fa-pause-circle me-1"></i>On Hold</span>
+                    {% endif %}
                 </td>
                 <td>{% if task.promise_date %}{{ task.promise_date.strftime('%d-%m-%Y') }}{% else %}—{% endif %}</td>
                 <td>
@@ -250,7 +254,9 @@
                        countdown here rather than this task's own (possibly consolidated-away)
                        reminder — unless this invoice itself is muted, in which case it never
                        contributes to that popup and shows no timer. #}
-                    {% if task.is_muted %}
+                    {% if task.is_on_hold %}
+                    <span class="badge bg-dark"><i class="fas fa-pause-circle me-1"></i>On Hold</span>
+                    {% elif task.is_muted %}
                     <span class="badge bg-secondary"><i class="fas fa-bell-slash me-1"></i>Muted</span>
                     {% elif grp.soonest_reminder %}
                     <span class="badge bg-warning text-dark reminder-countdown"

@@ -154,8 +154,8 @@ def _ensure_reminder(rtask, results=None):
     invoices for this salesman, not one per invoice). No-op if the salesman
     is not linked to a user, notifications are muted for this task, or a
     group reminder already exists."""
-    if rtask.is_muted:
-        return  # notifications paused for this invoice
+    if rtask.is_muted or rtask.is_on_hold:
+        return  # notifications paused for this invoice (muted or on hold)
 
     salesman = rtask.salesman
     if not salesman or not salesman.user_id:
@@ -169,7 +169,8 @@ def _ensure_reminder(rtask, results=None):
 
     from app.services.recovery_grouping import open_tasks_for_group, group_anchor_reminder, group_message
 
-    group_tasks = [t for t in open_tasks_for_group(invoice.customer_id, rtask.salesman_id) if not t.is_muted]
+    group_tasks = [t for t in open_tasks_for_group(invoice.customer_id, rtask.salesman_id)
+                   if not t.is_muted and not t.is_on_hold]
     if group_anchor_reminder(group_tasks):
         return  # this customer+salesman already has an open popup
 

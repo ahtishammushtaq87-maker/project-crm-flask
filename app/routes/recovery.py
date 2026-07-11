@@ -3,7 +3,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from datetime import date, datetime, timedelta
 from app import db
-from app.models import RecoveryTask, RecoveryLog, Sale, Salesman, Customer, CustomerGroup, Task, User
+from app.models import RecoveryTask, RecoveryLog, RecoveryComment, Sale, Salesman, Customer, CustomerGroup, Task, User
 from app.services.recovery_grouping import (
     open_tasks_for_customer, open_tasks_for_group, rearm_group_reminder,
     cancel_group_reminders,
@@ -70,6 +70,9 @@ def dashboard():
         q = q.filter(RecoveryTask.recovery_status.in_(['OVERDUE', 'FOLLOW_UP_REQUIRED']))
     elif tab == 'high_risk':
         q = q.filter(RecoveryTask.risk_level.in_(['high', 'critical']))
+    elif tab == 'on_hold':
+        q = q.filter(RecoveryTask.is_on_hold == True,
+                     RecoveryTask.recovery_status.notin_(['CLOSED_PAID', 'CLOSED_WRITTEN_OFF']))
     elif tab == 'closed':
         q = q.filter(RecoveryTask.recovery_status.in_(['CLOSED_PAID', 'CLOSED_WRITTEN_OFF']))
     else:
@@ -258,6 +261,57 @@ def add_log(task_id):
     return redirect(url_for('recovery.task_detail', task_id=task_id))
 
 
+# ─── Comments (plain discussion thread, no automation impact) ──────────────────
+
+@bp.route('/task/<int:task_id>/add-comment', methods=['POST'])
+@login_required
+def add_comment(task_id):
+    if not (current_user.is_admin or current_user.can_add_recovery):
+        flash('Permission denied.', 'danger')
+        return redirect(url_for('recovery.task_detail', task_id=task_id))
+
+    task = RecoveryTask.query.get_or_404(task_id)
+    text = request.form.get('comment', '').strip()
+
+    if not text:
+        flash('Comment cannot be empty.', 'warning')
+        return redirect(url_for('recovery.task_detail', task_id=task_id))
+
+    db.session.add(RecoveryComment(
+        task_id=task.id,
+        comment=text,
+        created_by=current_user.id,
+    ))
+    db.session.commit()
+
+    flash('Comment added.', 'success')
+    return redirect(url_for('recovery.task_detail', task_id=task_id))
+
+
+@bp.route('/comment/<int:comment_id>/edit', methods=['POST'])
+@login_required
+def edit_comment(comment_id):
+    """Edit an existing comment. Admin-only — regular staff can add comments
+    but only an admin may change one after it was posted."""
+    comment = RecoveryComment.query.get_or_404(comment_id)
+
+    if not current_user.is_admin:
+        flash('Only an admin can edit comments.', 'danger')
+        return redirect(url_for('recovery.task_detail', task_id=comment.task_id))
+
+    text = request.form.get('comment', '').strip()
+    if not text:
+        flash('Comment cannot be empty.', 'warning')
+        return redirect(url_for('recovery.task_detail', task_id=comment.task_id))
+
+    comment.comment = text
+    comment.edited_at = datetime.utcnow()
+    db.session.commit()
+
+    flash('Comment updated.', 'success')
+    return redirect(url_for('recovery.task_detail', task_id=comment.task_id))
+
+
 # ─── Mark Promise ──────────────────────────────────────────────────────────────
 
 @bp.route('/task/<int:task_id>/mark-promise', methods=['POST'])
@@ -429,6 +483,76 @@ def toggle_mute(task_id):
 
     db.session.commit()
     return jsonify({'success': True, 'is_muted': task.is_muted})
+
+
+# ─── Put On Hold / Resume ──────────────────────────────────────────────────────
+
+@bp.route('/task/<int:task_id>/toggle-hold', methods=['POST'])
+@login_required
+def toggle_hold(task_id):
+    """Mark this invoice's recovery task 'On Hold' (or take it off hold). While
+    on hold it behaves like a mute — no popup reminders are raised and the
+    countdown timer does not run — but it is also flagged with a visible
+    'On Hold' status and collected under the dashboard's On Hold tab, so staff
+    know it is intentionally parked rather than merely silenced.
+
+    Supports two callers: the Task Detail button (a plain form POST → redirects
+    back with a flash) and the dashboard row (posts ajax=1 → JSON response)."""
+    wants_json = request.form.get('ajax') == '1'
+
+    def _fail(msg, code=403):
+        if wants_json:
+            return jsonify({'success': False, 'message': msg}), code
+        flash(msg, 'danger')
+        return redirect(url_for('recovery.task_detail', task_id=task_id))
+
+    if not (current_user.is_admin or current_user.can_edit_recovery):
+        return _fail('Permission denied.')
+
+    task = RecoveryTask.query.get_or_404(task_id)
+    task.is_on_hold = not task.is_on_hold
+    task.updated_at = datetime.utcnow()
+
+    if task.is_on_hold:
+        task.on_hold_at = datetime.utcnow()
+        task.on_hold_by = current_user.id
+
+        # Drop the group's current popup (it may reference this invoice) and, if
+        # other still-active invoices remain in the group, raise a fresh one so
+        # they keep getting reminders without this held one.
+        if task.invoice and task.invoice.customer_id:
+            group = open_tasks_for_group(task.invoice.customer_id, task.salesman_id)
+            cancel_group_reminders(group)
+            siblings = [t for t in group
+                        if t.id != task.id and not t.is_muted and not t.is_on_hold]
+            if siblings:
+                rearm_group_reminder(siblings, pk_now())
+
+        db.session.add(RecoveryLog(
+            task_id=task.id, response_type='general',
+            note=f'Invoice put On Hold by {current_user.username}.',
+            logged_by=current_user.id,
+        ))
+    else:
+        task.on_hold_at = None
+        task.on_hold_by = None
+        db.session.add(RecoveryLog(
+            task_id=task.id, response_type='general',
+            note=f'Invoice taken off hold by {current_user.username}.',
+            logged_by=current_user.id,
+        ))
+        # Let it rejoin the group's reminder right away rather than waiting for
+        # the next automation cycle.
+        from app.services.recovery_automation import _ensure_reminder
+        if not task.is_muted and task.recovery_status not in ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF'):
+            _ensure_reminder(task)
+
+    db.session.commit()
+
+    if wants_json:
+        return jsonify({'success': True, 'is_on_hold': task.is_on_hold})
+    flash('Invoice put on hold.' if task.is_on_hold else 'Invoice taken off hold.', 'success')
+    return redirect(url_for('recovery.task_detail', task_id=task_id))
 
 
 # ─── Escalate ─────────────────────────────────────────────────────────────────

@@ -158,10 +158,15 @@
                         RECOVERY: {{ inv.invoice_number if inv else '—' }}
                         {% if inv and inv.customer %} — {{ inv.customer.name }}{% endif %}
                     </strong>
-                    {% if task.is_escalated %}
-                    <span class="badge bg-warning text-dark"><i
-                            class="fas fa-exclamation-triangle me-1"></i>Escalated</span>
-                    {% endif %}
+                    <span class="d-flex gap-1">
+                        {% if task.is_on_hold %}
+                        <span class="badge bg-dark"><i class="fas fa-pause-circle me-1"></i>On Hold</span>
+                        {% endif %}
+                        {% if task.is_escalated %}
+                        <span class="badge bg-warning text-dark"><i
+                                class="fas fa-exclamation-triangle me-1"></i>Escalated</span>
+                        {% endif %}
+                    </span>
                 </div>
                 <div class="card-body">
                     {# Invoice amounts #}
@@ -284,7 +289,9 @@
                             {# One popup reminder covers this customer's whole group of open invoices, so show
                                the group's shared countdown rather than just this task's own (possibly
                                consolidated-away) reminder. #}
-                            {% if group_next_reminder %}
+                            {% if task.is_on_hold %}
+                            <span class="badge bg-dark"><i class="fas fa-pause-circle me-1"></i>On Hold — timer paused</span>
+                            {% elif group_next_reminder %}
                             <span class="badge bg-warning text-dark reminder-countdown"
                                 data-reminder-at="{{ group_next_reminder.isoformat() }}">
                                 <i class="fas fa-stopwatch me-1"></i><span class="countdown-text">…</span>
@@ -340,12 +347,32 @@
                             <i class="fas fa-handshake me-1"></i>Mark Promise
                         </button>
                         {% if current_user.is_admin or current_user.can_edit_recovery %}
+                        <form method="POST" action="{{ url_for('recovery.toggle_hold', task_id=task.id) }}"
+                            class="d-inline">
+                            {% if task.is_on_hold %}
+                            <button type="submit" class="btn btn-sm btn-dark action-btn"
+                                title="Resume — reminders and the countdown timer start again">
+                                <i class="fas fa-play-circle me-1"></i>Take Off Hold
+                            </button>
+                            {% else %}
+                            <button type="submit" class="btn btn-sm btn-outline-dark action-btn"
+                                title="Park this invoice — no reminders or countdown timer while on hold"
+                                onclick="return confirm('Put this invoice On Hold? No reminders or timer will run until you take it off hold.');">
+                                <i class="fas fa-pause-circle me-1"></i>On Hold
+                            </button>
+                            {% endif %}
+                        </form>
                         <button class="btn btn-sm btn-outline-danger action-btn" data-bs-toggle="modal"
                             data-bs-target="#closeModal">
                             <i class="fas fa-times-circle me-1"></i>Close with Reason
                         </button>
                         {% endif %}
                         {% endif %}
+                        <button type="button" class="btn btn-sm btn-outline-primary action-btn"
+                            data-bs-toggle="modal" data-bs-target="#commentsModal">
+                            <i class="far fa-comments me-1"></i>Comments
+                            {% if task.comments %}<span class="badge bg-primary ms-1">{{ task.comments|length }}</span>{% endif %}
+                        </button>
                         {% if inv and inv.customer_id %}
                         <button type="button" class="btn btn-sm btn-outline-info action-btn ledger-trigger"
                             data-customer-id="{{ inv.customer_id }}"
@@ -528,6 +555,88 @@
 </div>
 
 {# ── Modals ──────────────────────────────────────────────────────────── #}
+
+{# Comments — plain discussion thread (add a comment + see previous ones) #}
+<div class="modal fade" id="commentsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="far fa-comments me-2 text-primary"></i>Comments
+                    {% if inv %}<span class="text-muted small ms-1">— {{ inv.invoice_number }}</span>{% endif %}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                {# Add a new comment #}
+                {% if current_user.is_admin or current_user.can_add_recovery %}
+                <form method="POST" action="{{ url_for('recovery.add_comment', task_id=task.id) }}" class="mb-3">
+                    <label class="form-label small fw-semibold">Add a comment</label>
+                    <textarea name="comment" class="form-control" rows="3" required
+                        placeholder="Write your comment…"></textarea>
+                    <div class="d-flex justify-content-end mt-2">
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            <i class="fas fa-paper-plane me-1"></i>Post Comment
+                        </button>
+                    </div>
+                </form>
+                <hr class="my-3">
+                {% endif %}
+
+                {# Previous comments #}
+                <div class="detail-label mb-2">Previous Comments
+                    <span class="badge bg-secondary ms-1">{{ task.comments|length }}</span>
+                </div>
+                {% if task.comments %}
+                <div class="d-flex flex-column gap-2">
+                    {% for c in task.comments %}
+                    <div class="border rounded p-2 bg-light">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center mb-1 gap-1">
+                            <span class="small fw-semibold text-dark">
+                                <i class="fas fa-user-circle me-1 text-secondary"></i>
+                                {{ c.created_by_user.username if c.created_by_user else 'Unknown' }}
+                            </span>
+                            <span class="d-flex align-items-center gap-2">
+                                <span class="text-muted" style="font-size:.72rem;">
+                                    {{ c.created_at.strftime('%d-%m-%Y %H:%M') if c.created_at else '' }}
+                                    {% if c.edited_at %}<span class="fst-italic" title="Edited on {{ c.edited_at.strftime('%d-%m-%Y %H:%M') }}">(edited)</span>{% endif %}
+                                </span>
+                                {% if current_user.is_admin %}
+                                <button type="button" class="btn btn-link btn-sm p-0 comment-edit-toggle"
+                                    data-comment-id="{{ c.id }}" title="Edit comment" style="font-size:.75rem;">
+                                    <i class="fas fa-pen"></i>
+                                </button>
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="small comment-view" data-comment-id="{{ c.id }}"
+                            style="white-space:pre-wrap; word-break:break-word;">{{ c.comment }}</div>
+                        {% if current_user.is_admin %}
+                        <form method="POST" action="{{ url_for('recovery.edit_comment', comment_id=c.id) }}"
+                            class="comment-edit-form d-none mt-1" data-comment-id="{{ c.id }}">
+                            <textarea name="comment" class="form-control form-control-sm" rows="3" required>{{ c.comment }}</textarea>
+                            <div class="d-flex justify-content-end gap-2 mt-2">
+                                <button type="button" class="btn btn-outline-secondary btn-sm comment-edit-cancel"
+                                    data-comment-id="{{ c.id }}">Cancel</button>
+                                <button type="submit" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-save me-1"></i>Save
+                                </button>
+                            </div>
+                        </form>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-muted fst-italic small">No comments yet. Be the first to add one.</div>
+                {% endif %}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 {# Add Follow-up #}
 <div class="modal fade" id="addLogModal" tabindex="-1">
@@ -911,6 +1020,28 @@
         updateReminderCountdowns();
         setInterval(updateReminderCountdowns, 1000);
     }
+
+    // Admin-only inline comment editing: toggle the view text <-> edit form.
+    function setCommentEditing(commentId, editing) {
+        const view = document.querySelector('.comment-view[data-comment-id="' + commentId + '"]');
+        const form = document.querySelector('.comment-edit-form[data-comment-id="' + commentId + '"]');
+        const toggle = document.querySelector('.comment-edit-toggle[data-comment-id="' + commentId + '"]');
+        if (!view || !form) return;
+        view.classList.toggle('d-none', editing);
+        form.classList.toggle('d-none', !editing);
+        if (toggle) toggle.classList.toggle('d-none', editing);
+        if (editing) {
+            const ta = form.querySelector('textarea');
+            if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+        }
+    }
+
+    document.addEventListener('click', function (e) {
+        const editBtn = e.target.closest('.comment-edit-toggle');
+        if (editBtn) { setCommentEditing(editBtn.getAttribute('data-comment-id'), true); return; }
+        const cancelBtn = e.target.closest('.comment-edit-cancel');
+        if (cancelBtn) { setCommentEditing(cancelBtn.getAttribute('data-comment-id'), false); return; }
+    });
     });
 </script>
 

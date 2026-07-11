@@ -3441,6 +3441,14 @@ class RecoveryTask(db.Model):
     muted_at = db.Column(db.DateTime, nullable=True)
     muted_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
+    # Per-invoice "On Hold": we are not actively working this invoice right now,
+    # so — like mute — it raises no popup reminders and its countdown timer does
+    # not run. Unlike mute it is surfaced as a visible status label and has its
+    # own "On Hold" dashboard tab so held invoices can be found in one place.
+    is_on_hold = db.Column(db.Boolean, default=False)
+    on_hold_at = db.Column(db.DateTime, nullable=True)
+    on_hold_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
     closed_reason = db.Column(db.Text, nullable=True)
     closed_at = db.Column(db.DateTime, nullable=True)
     closed_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
@@ -3545,3 +3553,30 @@ class RecoveryLog(db.Model):
 
     def __repr__(self):
         return f'<RecoveryLog task={self.task_id} type={self.response_type}>'
+
+
+class RecoveryComment(db.Model):
+    """Free-form comment/note on a recovery task. Kept separate from
+    RecoveryLog (which drives status changes, reminders and countdowns) so
+    staff have a plain running discussion thread that never affects automation."""
+    __tablename__ = 'recovery_comments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('recovery_tasks.id'), nullable=False, index=True)
+    comment = db.Column(db.Text, nullable=False)
+
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Set when an admin edits the comment (used to show an "(edited)" marker).
+    edited_at = db.Column(db.DateTime, nullable=True)
+
+    task = db.relationship(
+        'RecoveryTask',
+        backref=db.backref('comments', lazy=True, cascade='all, delete-orphan',
+                           order_by='RecoveryComment.created_at.desc()')
+    )
+    created_by_user = db.relationship('User', backref='recovery_comments')
+
+    def __repr__(self):
+        return f'<RecoveryComment task={self.task_id}>'
