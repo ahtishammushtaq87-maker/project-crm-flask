@@ -216,25 +216,25 @@
                     <a href="{{ url_for('sales.invoice_detail', id=inv.id) }}" class="text-decoration-none fw-semibold">
                         {{ inv.invoice_number }}
                     </a>
-                    {% else %}—{% endif %}
+                    {% else %}{% endif %}
                 </td>
-                <td>{% if inv and inv.date %}{{ inv.date.strftime('%d-%m-%Y') }}{% else %}—{% endif %}</td>
-                <td>{% if inv and inv.due_date %}{{ inv.due_date.strftime('%d-%m-%Y') }}{% else %}—{% endif %}</td>
+                <td>{% if inv and inv.date %}{{ inv.date.strftime('%d-%m-%Y') }}{% else %}{% endif %}</td>
+                <td>{% if inv and inv.due_date %}{{ inv.due_date.strftime('%d-%m-%Y') }}{% else %}{% endif %}</td>
                 <td>
                     {% if task.overdue_days > 0 %}
                     <span class="text-danger fw-semibold">{{ task.overdue_days }}d</span>
-                    {% else %}—{% endif %}
+                    {% else %}{% endif %}
                 </td>
-                <td>{% if task.salesman %}{{ task.salesman.name }}{% elif inv and inv.salesman %}{{ inv.salesman.name }}{% else %}—{% endif %}</td>
-                <td class="text-end">{% if inv %}{{ "{:,.0f}".format(inv.total) }}{% else %}—{% endif %}</td>
-                <td class="text-end">{% if inv %}{{ "{:,.0f}".format(inv.paid_amount) }}{% else %}—{% endif %}</td>
+                <td>{% if task.salesman %}{{ task.salesman.name }}{% elif inv and inv.salesman %}{{ inv.salesman.name }}{% else %}{% endif %}</td>
+                <td class="text-end">{% if inv %}{{ "{:,.0f}".format(inv.total) }}{% else %}{% endif %}</td>
+                <td class="text-end">{% if inv %}{{ "{:,.0f}".format(inv.paid_amount) }}{% else %}{% endif %}</td>
                 <td class="text-end fw-semibold {% if inv and inv.balance_due > 0 %}text-danger{% endif %}">
-                    {% if inv %}{{ "{:,.0f}".format(inv.balance_due) }}{% else %}—{% endif %}
+                    {% if inv %}{{ "{:,.0f}".format(inv.balance_due) }}{% else %}{% endif %}
                 </td>
                 <td class="text-end fw-semibold {% if inv and inv.overdue_amount > 0 %}text-danger{% endif %}">
-                    {% if inv and inv.overdue_amount > 0 %}{{ "{:,.0f}".format(inv.overdue_amount) }}{% else %}—{% endif %}
+                    {% if inv and inv.overdue_amount > 0 %}{{ "{:,.0f}".format(inv.overdue_amount) }}{% else %}{% endif %}
                 </td>
-                <td>{% if task.last_payment_date %}{{ task.last_payment_date.strftime('%d-%m-%Y') if task.last_payment_date else '—' }}{% else %}<span class="text-muted">No Payment</span>{% endif %}</td>
+                <td>{% if task.last_payment_date %}{{ task.last_payment_date.strftime('%d-%m-%Y') if task.last_payment_date else '' }}{% else %}<span class="text-muted">No Payment</span>{% endif %}</td>
                 <td>
                     <span class="status-badge status-{{ task.recovery_status }}">
                         {{ task.recovery_status.replace('_', ' ').title() }}
@@ -243,7 +243,7 @@
                     <span class="badge bg-dark ms-1" title="Parked — no reminders/timer while on hold"><i class="fas fa-pause-circle me-1"></i>On Hold</span>
                     {% endif %}
                 </td>
-                <td>{% if task.promise_date %}{{ task.promise_date.strftime('%d-%m-%Y') }}{% else %}—{% endif %}</td>
+                <td>{% if task.promise_date %}{{ task.promise_date.strftime('%d-%m-%Y') }}{% else %}{% endif %}</td>
                 <td>
                     <span class="badge risk-badge {{ task.risk_level }}">{{ task.risk_level | capitalize }}</span>
                     {% if task.is_escalated %}<i class="fas fa-exclamation-triangle text-danger ms-1" title="Escalated"></i>{% endif %}
@@ -264,7 +264,7 @@
                         <i class="fas fa-stopwatch me-1"></i><span class="countdown-text">…</span>
                     </span>
                     {% else %}
-                    <span class="text-muted">—</span>
+                    <span class="text-muted"></span>
                     {% endif %}
                 </td>
                 <td class="text-center">
@@ -316,13 +316,13 @@
                         {{ "{:,.0f}".format(grp.balance) }}
                     </td>
                     <td class="text-end fw-semibold {% if grp.overdue_amount > 0 %}text-danger{% endif %}">
-                        {% if grp.overdue_amount > 0 %}{{ "{:,.0f}".format(grp.overdue_amount) }}{% else %}—{% endif %}
+                        {% if grp.overdue_amount > 0 %}{{ "{:,.0f}".format(grp.overdue_amount) }}{% else %}{% endif %}
                     </td>
                     <td>
                         <span class="badge risk-badge {{ grp.worst_risk }}">{{ grp.worst_risk | capitalize }}</span>
                         {% if grp.any_escalated %}<i class="fas fa-exclamation-triangle text-danger ms-1" title="Escalated"></i>{% endif %}
                     </td>
-                    <td>{% if grp.earliest_promise %}{{ grp.earliest_promise.strftime('%d-%m-%Y') }}{% else %}—{% endif %}</td>
+                    <td>{% if grp.earliest_promise %}{{ grp.earliest_promise.strftime('%d-%m-%Y') }}{% else %}{% endif %}</td>
                     <td>
                         {% if grp.soonest_reminder %}
                         <span class="badge bg-warning text-dark reminder-countdown"
@@ -330,7 +330,7 @@
                             <i class="fas fa-stopwatch me-1"></i><span class="countdown-text">…</span>
                         </span>
                         {% else %}
-                        <span class="text-muted">—</span>
+                        <span class="text-muted"></span>
                         {% endif %}
                     </td>
                     <td>

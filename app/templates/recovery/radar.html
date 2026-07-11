@@ -30,7 +30,7 @@
         <a href="{{ url_for('recovery.task_detail', task_id=task.id) }}" class="fw-semibold text-decoration-none">
             {{ inv.invoice_number }}
         </a>
-        — {{ inv.customer.name if inv.customer else '—' }}
+        {% if inv.customer %}<span class="text-muted">{{ inv.customer.name }}</span>{% endif %}
         {% else %}Task #{{ task.id }}{% endif %}
     </div>
     <div class="d-flex align-items-center gap-1 flex-shrink-0">
