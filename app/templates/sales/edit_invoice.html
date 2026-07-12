@@ -137,17 +137,6 @@
                             </select>
                         </div>
                         <div class="mb-2">
-                            <label for="vendorSelect" class="form-label mb-0 small fw-semibold">Vendor (Optional)</label>
-                            <select name="vendor_id" class="form-control form-control-sm" id="vendorSelect">
-                                <option value="0">None</option>
-                                {% for vendor in vendors %}
-                                <option value="{{ vendor.id }}" {% if sale.vendor_id==vendor.id %}selected{% endif %}>
-                                    {{ vendor.name }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="mb-2">
                             <label for="salesmanSelect" class="form-label mb-0 small fw-semibold">Salesman <span class="text-danger">*</span></label>
                             <select name="salesman_id" class="form-control form-control-sm" id="salesmanSelect" required>
                                 <option value="">Select Salesman</option>
@@ -352,6 +341,66 @@
                                     {% endfor %}
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Customer Ledger Summary (auto-updates with the selected customer) -->
+                <div class="card mb-3 shadow-sm" id="customerLedgerCard" style="display:none;">
+                    <div class="card-header bg-primary bg-opacity-10 py-2 d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0 fw-bold text-primary">
+                            <i class="fas fa-file-invoice-dollar me-2"></i>Customer Ledger
+                            <span id="ledgerCustName" class="text-muted fw-normal small"></span>
+                        </h6>
+                        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2"
+                            onclick="showCustomerLedger(document.getElementById('customerSelect').value)">
+                            <i class="fas fa-external-link-alt me-1"></i>Full Ledger
+                        </button>
+                    </div>
+                    <div class="card-body py-2">
+                        <div id="ledgerSummaryLoading" class="text-muted small py-1" style="display:none;">
+                            <i class="fas fa-spinner fa-spin me-1"></i>Loading ledger…
+                        </div>
+                        <div id="ledgerSummaryError" class="text-danger small py-1" style="display:none;">
+                            <i class="fas fa-exclamation-circle me-1"></i>Could not load ledger for this customer.
+                        </div>
+                        <div id="ledgerSummaryContent" class="row g-2 text-center" style="display:none;">
+                            <div class="col-6 col-md-4 col-lg">
+                                <div class="border rounded py-1 px-1 h-100">
+                                    <div class="text-muted" style="font-size:0.68rem;">Total Sales</div>
+                                    <div class="fw-bold small" id="lgTotalSales">PKR0.00</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-4 col-lg">
+                                <div class="border rounded py-1 px-1 h-100">
+                                    <div class="text-muted" style="font-size:0.68rem;">Total Discounts</div>
+                                    <div class="fw-bold small text-danger" id="lgTotalDiscounts">PKR0.00</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-4 col-lg">
+                                <div class="border rounded py-1 px-1 h-100">
+                                    <div class="text-muted" style="font-size:0.68rem;">Advances Received</div>
+                                    <div class="fw-bold small text-info" id="lgAdvances">PKR0.00</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-4 col-lg">
+                                <div class="border rounded py-1 px-1 h-100">
+                                    <div class="text-muted" style="font-size:0.68rem;">Remaining Advance</div>
+                                    <div class="fw-bold small text-info" id="lgRemainingAdvance">PKR0.00</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-4 col-lg">
+                                <div class="border rounded py-1 px-1 h-100">
+                                    <div class="text-muted" style="font-size:0.68rem;">Total Paid</div>
+                                    <div class="fw-bold small text-success" id="lgTotalPaid">PKR0.00</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-4 col-lg">
+                                <div class="border rounded py-1 px-1 h-100 bg-primary bg-opacity-10">
+                                    <div class="text-muted" style="font-size:0.68rem;">Outstanding Balance</div>
+                                    <div class="fw-bold small text-primary" id="lgOutstanding">PKR0.00</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -695,10 +744,45 @@
         });
     }
 
+    // Fetches the customer's ledger totals (same source as the Ledger modal) and
+    // fills the summary card under the items table. Read-only — never posts.
+    function loadCustomerLedgerSummary(customerId) {
+        const card = document.getElementById('customerLedgerCard');
+        if (!card) return;
+        const loading = document.getElementById('ledgerSummaryLoading');
+        const errBox = document.getElementById('ledgerSummaryError');
+        const content = document.getElementById('ledgerSummaryContent');
+
+        if (!customerId || customerId === '0') { card.style.display = 'none'; return; }
+
+        card.style.display = '';
+        loading.style.display = ''; errBox.style.display = 'none'; content.style.display = 'none';
+
+        const fmt = v => 'PKR ' + (parseFloat(v || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        fetch(`/sales/customer/${customerId}/ledger-json`)
+            .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+            .then(data => {
+                const s = data.summary || {};
+                document.getElementById('ledgerCustName').textContent = data.customer_name ? '— ' + data.customer_name : '';
+                document.getElementById('lgTotalSales').textContent = fmt(s.total_sales);
+                document.getElementById('lgTotalDiscounts').textContent = fmt(s.total_discounts);
+                document.getElementById('lgAdvances').textContent = fmt(s.total_advances);
+                document.getElementById('lgRemainingAdvance').textContent = fmt(s.remaining_advance);
+                document.getElementById('lgTotalPaid').textContent = fmt(s.total_paid);
+                document.getElementById('lgOutstanding').textContent = fmt(s.total_outstanding);
+                loading.style.display = 'none'; content.style.display = '';
+            })
+            .catch(err => { console.error('Ledger summary error:', err); loading.style.display = 'none'; errBox.style.display = ''; });
+    }
+
     $(document).ready(function () {
         initSelect2('#customerSelect', '— Search or Select Customer —');
-        initSelect2('#vendorSelect', '— Search or Select Vendor —');
         initSelect2('#salesmanSelect', '— Search or Select Salesman —');
+
+        // Load ledger summary for the invoice's customer, and refresh on change
+        loadCustomerLedgerSummary(document.getElementById('customerSelect').value);
+        $('#customerSelect').on('change', function () { loadCustomerLedgerSummary(this.value); });
 
         // Attach events FIRST so cost is read from native select before Select2 wraps it
         document.querySelectorAll('.item-row').forEach(row => {
