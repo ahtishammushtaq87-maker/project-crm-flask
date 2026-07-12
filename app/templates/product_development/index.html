@@ -128,7 +128,7 @@
                         <td><strong>{{ project.pdv_code }}</strong></td>
                         <td>{{ project.product_name }}</td>
                         <td>{{ project.sku.name if project.sku else '-' }}</td>
-                        <td>{{ project.sku.sku if project.sku else '-' }}</td>
+                        <td>{{ sku_link(project.sku.sku, project.sku.id) if project.sku else '-' }}</td>
                         <td>
                             <span class="badge bg-info">{{ project.phase_name }}</span>
                         </td>

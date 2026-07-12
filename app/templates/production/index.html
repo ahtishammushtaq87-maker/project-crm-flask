@@ -262,7 +262,7 @@
                     <tbody>
                         {% for r in results %}
                         <tr>
-                            <td class="sku-col">{{ r.product.sku }}</td>
+                            <td class="sku-col">{{ sku_link(r.product.sku, r.product.id) }}</td>
                             <td class="product-col {% if r.product.margin_color %}text-{{ r.product.margin_color }} fw-bold{% endif %}">{{ r.product.name }}</td>
                             <td class="numeric-col">
                                 <input type="number" class="form-control form-control-sm inline-edit text-end"

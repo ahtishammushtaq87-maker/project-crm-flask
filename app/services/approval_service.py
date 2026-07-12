@@ -149,7 +149,11 @@ class ApprovalService:
             'approved_by_field': 'approved_by',
             'approved_at_field': 'approved_at',
             'default_is_approved': True,
-            'actions': ['approve', 'reject', 'cancel', 'draft'],
+            # This widget is ONLY the create-approval control. A bill's payment
+            # status of 'cancelled' (from the Cancel-Remaining feature) must NOT
+            # hijack the approval badge, and approving/rejecting must not touch it.
+            'decouple_status_cancelled': True,
+            'actions': ['approve', 'reject', 'draft'],
         },
         # ── New modules added for universal approval expansion ──────────────────
         'product': {
@@ -380,8 +384,8 @@ class ApprovalService:
             is_approved = getattr(entity, config.get('approve_field', 'is_approved'),
                                    config.get('default_is_approved', True))
             status_val = getattr(entity, 'status', '').lower() if hasattr(entity, 'status') else ''
-            
-            if status_val == 'cancelled':
+
+            if status_val == 'cancelled' and not config.get('decouple_status_cancelled'):
                 return 'cancelled'
             if is_rejected:
                 reason_field = config.get('reason_field')
@@ -518,8 +522,10 @@ class ApprovalService:
             setattr(entity, config['approved_by_field'], current_user.id)
             setattr(entity, config['approved_at_field'], datetime.utcnow())
 
-            # Reset cancelled status if applicable
-            if hasattr(entity, 'status') and getattr(entity, 'status') == 'cancelled':
+            # Reset cancelled status if applicable — but NOT for modules that keep
+            # their payment-cancel state independent of create-approval.
+            if (hasattr(entity, 'status') and getattr(entity, 'status') == 'cancelled'
+                    and not config.get('decouple_status_cancelled')):
                 setattr(entity, 'status', 'unpaid') # Default back to unpaid
         else:
             current_status = getattr(entity, config['status_field'], '')
@@ -553,8 +559,9 @@ class ApprovalService:
             if config.get('reason_field'):
                 setattr(entity, config['reason_field'], reason or '')
 
-            # Reset cancelled status if applicable
-            if hasattr(entity, 'status') and getattr(entity, 'status') == 'cancelled':
+            # Reset cancelled status if applicable — but NOT for decoupled modules.
+            if (hasattr(entity, 'status') and getattr(entity, 'status') == 'cancelled'
+                    and not config.get('decouple_status_cancelled')):
                 setattr(entity, 'status', 'unpaid')
         else:
             new_status = config['status_values'].get('rejected', 'pending')
@@ -588,7 +595,8 @@ class ApprovalService:
                 setattr(entity, config.get('reject_field', 'is_rejected'), False)
                 if config.get('reason_field'):
                     setattr(entity, config['reason_field'], None)
-                if hasattr(entity, 'status') and getattr(entity, 'status') == 'cancelled':
+                if (hasattr(entity, 'status') and getattr(entity, 'status') == 'cancelled'
+                        and not config.get('decouple_status_cancelled')):
                     setattr(entity, 'status', 'unpaid')
                 # Persist the draft flag: True only for 'draft', cleared for 'pending'.
                 if draft_field:

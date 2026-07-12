@@ -433,6 +433,10 @@ def create_app(config_class=Config):
     # Register custom filters
     from app.utils import format_qty
     app.jinja_env.filters['format_qty'] = format_qty
+
+    # Global helper: render a clickable item-SKU that opens the Item History popup
+    from app.utils import sku_link
+    app.jinja_env.globals['sku_link'] = sku_link
     import json
     app.jinja_env.filters['from_json'] = json.loads
 

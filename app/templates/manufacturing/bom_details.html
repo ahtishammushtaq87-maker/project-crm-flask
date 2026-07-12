@@ -99,7 +99,7 @@
                             <tbody>
                                 {% for item in bom.items %}
                                 <tr>
-                                    <td>{{ item.component.sku }}</td>
+                                    <td>{{ sku_link(item.component.sku, item.component.id) }}</td>
                                     <td>{{ item.component.name }}</td>
                                     <td class="text-end">{{ item.quantity }}</td>
                                     <td class="text-end">PKR {{ "%.2f"|format(item.unit_cost) }}</td>

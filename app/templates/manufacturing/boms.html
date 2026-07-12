@@ -51,7 +51,7 @@
                             <td>{{ bom.name }}</td>
                             <td>
                                 <strong class="{% if bom.product.margin_color %}text-{{ bom.product.margin_color }}{% endif %}">{{ bom.product.name }}</strong><br>
-                                <small class="text-muted">{{ bom.product.sku }}</small>
+                                <small class="text-muted">{{ sku_link(bom.product.sku, bom.product.id) }}</small>
                             </td>
                             <td>
                                 {% set ver = bom.version if bom.version else 'v1' %}

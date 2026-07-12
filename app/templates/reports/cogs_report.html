@@ -114,7 +114,7 @@
                             <input type="checkbox" class="form-check-input cogs-checkbox" value="{{ p.product_id }}">
                         </td>
                         <td>{{ p.product_name }}</td>
-                        <td>{{ p.sku }}</td>
+                        <td>{{ sku_link(p.sku) }}</td>
                         <td>{{ p.category }}</td>
                         <td>{{ p.quantity_sold }}</td>
                         <td>PKR{{ "%.2f"|format(p.cost_price) }}</td>

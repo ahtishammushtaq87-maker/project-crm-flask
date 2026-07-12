@@ -304,6 +304,19 @@ def get_entity_details(entity_type, entity_id):
 
     return jsonify(data)
 
+
+@bp.route('/entity-details/inventory/by-sku/<path:sku>')
+@login_required
+def get_entity_details_by_sku(sku):
+    """Resolve an item by its SKU string and return the same history payload
+    as get_entity_details(). Lets the Item History popup be opened from any
+    page that displays a SKU but not the numeric product id."""
+    product = Product.query.filter_by(sku=sku).first()
+    if not product:
+        return jsonify({'success': False, 'error': f'No item found with SKU "{sku}".'})
+    return get_entity_details('inventory', product.id)
+
+
 @bp.route('/product-bom-analysis/<int:product_id>')
 @login_required
 def get_product_bom_analysis(product_id):

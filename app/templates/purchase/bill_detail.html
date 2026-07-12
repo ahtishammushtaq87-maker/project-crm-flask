@@ -106,7 +106,7 @@
             {% endif %}
             
             {# Corrected visibility conditions #}
-            {% if (bill.status|lower) != 'cancelled' and (bill.status|lower) != 'paid' and current_user.has_permission('purchases', 'edit') %}
+            {% if (bill.status|lower) != 'cancelled' and (bill.status|lower) != 'paid' and not bill.pending_action and current_user.has_permission('purchases', 'edit') %}
             <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelBillModal">
                 <i class="fas fa-ban me-1"></i>Cancel Remaining
             </button>
@@ -133,12 +133,11 @@
             {% endif %}
 
             {% if bill.is_approved %}
-            {% if (bill.status|lower) == 'cancelled' and current_user.has_permission('purchases', 'edit') %}
-            <form action="{{ url_for('purchase.reverse_cancel_bill', id=bill.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to REVERSE this cancellation? The original balance will be restored.');">
-                <button type="submit" class="btn btn-outline-primary shadow-sm">
-                    <i class="fas fa-undo me-1"></i>Reverse Cancellation
-                </button>
-            </form>
+            {% if (bill.status|lower) == 'cancelled' and not bill.pending_action and current_user.has_permission('purchases', 'edit') %}
+            <button type="button" class="btn btn-outline-primary shadow-sm" data-bs-toggle="modal"
+                data-bs-target="#reverseCancelModal">
+                <i class="fas fa-undo me-1"></i>Reverse Cancellation
+            </button>
             {% endif %}
             
             {% if bill.paid_amount < bill.total %} 
@@ -214,7 +213,7 @@
                                     <tr>
                                         <td>
                                             <strong class="{% if item.product.margin_color %}text-{{ item.product.margin_color }}{% endif %}">{{ item.product.name }}</strong>
-                                            {% if item.product.sku %}<br><small class="text-muted">{{ item.product.sku }}</small>{% endif %}
+                                            {% if item.product.sku %}<br><small class="text-muted">{{ sku_link(item.product.sku, item.product.id) }}</small>{% endif %}
                                         </td>
                                         <td>
                                             <select name="warehouse_{{ item.id }}" class="form-select form-select-sm warehouse-select">
@@ -544,7 +543,7 @@
                                     <tr>
                                         <td>
                                             <strong class="{% if item.product.margin_color %}text-{{ item.product.margin_color }}{% endif %}">{{ item.product.name }}</strong>
-                                            {% if item.product.sku %}<br><small class="text-muted">{{ item.product.sku }}</small>{% endif %}
+                                            {% if item.product.sku %}<br><small class="text-muted">{{ sku_link(item.product.sku, item.product.id) }}</small>{% endif %}
                                         </td>
                                         <td class="text-center">{{ '{:,.2f}'.format(item.quantity) }}</td>
                                         <td class="text-center text-success">{{ '{:,.2f}'.format(received) }}</td>
@@ -561,17 +560,143 @@
                                 </tbody>
                             </table>
                         </div>
+
+                        {% if not current_user.is_admin %}
+                        <div class="small rounded p-2 mb-3" style="background:#cff4fc;border:1px solid #9eeaf9;">
+                            <i class="fas fa-user-shield me-1"></i> Your cancellation will be sent to an admin for
+                            approval. The bill is not cancelled until it is approved.
+                        </div>
+                        {% endif %}
+                        <div class="mb-1">
+                            <label class="form-label fw-semibold">Reason <span class="text-muted fw-normal">(optional)</span></label>
+                            <textarea name="cancel_reason" rows="2" class="form-control"
+                                placeholder="Reason for cancelling the remaining quantities..."></textarea>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        {% if current_user.is_admin %}
                         <button type="submit" class="btn btn-danger" onclick="return confirm('Confirm cancellation? This will mark the bill as settled.')">
                             <i class="fas fa-check me-1"></i>Settle Cancellation
+                        </button>
+                        {% else %}
+                        <button type="submit" class="btn btn-warning" onclick="return confirm('Submit this cancellation request for admin approval?')">
+                            <i class="fas fa-paper-plane me-1"></i>Submit for Approval
+                        </button>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════
+         REVERSE CANCELLATION MODAL (with reason)
+    ════════════════════════════════════════════════ -->
+    {% if (bill.status|lower) == 'cancelled' and not bill.pending_action and current_user.has_permission('purchases', 'edit') %}
+    <div class="modal fade" id="reverseCancelModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form action="{{ url_for('purchase.reverse_cancel_bill', id=bill.id) }}" method="POST">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title"><i class="fas fa-undo me-2"></i>Reverse Cancellation</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="small rounded p-2 mb-2" style="background:#fff3cd;border:1px solid #ffe69c;">
+                            <i class="fas fa-info-circle me-1"></i> This will restore the original balance of the bill.
+                        </div>
+                        {% if not current_user.is_admin %}
+                        <div class="small rounded p-2 mb-3" style="background:#cff4fc;border:1px solid #9eeaf9;">
+                            <i class="fas fa-user-shield me-1"></i> Your request will be sent to an admin for approval.
+                            The bill stays cancelled until it is approved.
+                        </div>
+                        {% endif %}
+                        <label class="form-label fw-semibold">Reason <span class="text-muted fw-normal">(optional)</span></label>
+                        <textarea name="reverse_reason" rows="3" class="form-control"
+                            placeholder="Reason for reversing the cancellation..."></textarea>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-undo me-1"></i>{% if current_user.is_admin %}Reverse Cancellation{% else %}Submit for Approval{% endif %}
                         </button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
+    {% endif %}
+
+    <!-- ═══════════════════════════════════════════════
+         REJECT PENDING REQUEST MODAL (admin only)
+    ════════════════════════════════════════════════ -->
+    {% if current_user.is_admin and bill.pending_action %}
+    <div class="modal fade" id="rejectActionModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form action="{{ url_for('purchase.reject_bill_action', id=bill.id) }}" method="POST">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title"><i class="fas fa-times-circle me-2"></i>Reject {{ bill.pending_action_label }} Request</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="small text-muted mb-2">The request will be discarded and nothing on the bill will change.</p>
+                        <label class="form-label fw-semibold">Reason <span class="text-muted fw-normal">(optional)</span></label>
+                        <textarea name="reject_reason" rows="3" class="form-control"
+                            placeholder="Why is this request being rejected?"></textarea>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="submit" class="btn btn-danger"><i class="fas fa-times me-1"></i>Reject Request</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ═══════════════════════════════════════════════
+         PENDING APPROVAL BANNER
+    ════════════════════════════════════════════════ -->
+    {% if bill.pending_action %}
+    <div class="pending-approval-banner border rounded shadow-sm mb-4 p-3"
+        style="background: {% if current_user.is_admin %}#fff3cd{% else %}#cff4fc{% endif %}; border-color: {% if current_user.is_admin %}#ffe69c{% else %}#9eeaf9{% endif %} !important; color: #333;">
+        <div class="d-flex flex-wrap align-items-start gap-3">
+            <div class="flex-grow-1" style="min-width: 220px;">
+                <h6 class="fw-bold mb-1">
+                    <i class="fas fa-hourglass-half me-2"></i>{{ bill.pending_action_label }} — Pending Admin Approval
+                </h6>
+                <div class="small mb-1">
+                    Requested by
+                    <strong>{{ bill.pending_action_requester.username if bill.pending_action_requester else 'Unknown user' }}</strong>
+                    {% if bill.pending_action_at %} on {{ bill.pending_action_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+                </div>
+                {% if bill.pending_action_reason %}
+                <div class="small"><strong>Reason:</strong> {{ bill.pending_action_reason }}</div>
+                {% else %}
+                <div class="small text-muted fst-italic">No reason provided.</div>
+                {% endif %}
+            </div>
+            {% if current_user.is_admin %}
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <form action="{{ url_for('purchase.approve_bill_action', id=bill.id) }}" method="POST" class="d-inline"
+                    onsubmit="return confirm('Approve and apply this {{ bill.pending_action_label }} request?');">
+                    <button type="submit" class="btn btn-success"><i class="fas fa-check me-1"></i>Approve</button>
+                </form>
+                <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal"
+                    data-bs-target="#rejectActionModal">
+                    <i class="fas fa-times me-1"></i>Reject
+                </button>
+            </div>
+            {% else %}
+            <span class="badge bg-secondary align-self-center py-2 px-3">
+                <i class="fas fa-lock me-1"></i>Awaiting admin approval
+            </span>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 
     <!-- ═══════════════════════════════════════════════
          MAIN ROW
@@ -586,7 +711,12 @@
                     </h6>
                 </div>
                 <div class="card-body">
-                    <p class="mb-1"><strong>Name:</strong> {{ bill.vendor.name }}</p>
+                    <p class="mb-1"><strong>Name:</strong>
+                        {% if bill.vendor and bill.vendor.id %}
+                        <a href="{{ url_for('purchase.vendor_profile', id=bill.vendor.id) }}"
+                            class="text-decoration-none fw-semibold" title="Open vendor profile">{{ bill.vendor.name }}</a>
+                        {% else %}{{ bill.vendor.name if bill.vendor else 'N/A' }}{% endif %}
+                    </p>
                     <p class="mb-1"><strong>Phone:</strong> {{ bill.vendor.phone or 'N/A' }}</p>
                     <p class="mb-1"><strong>Email:</strong> {{ bill.vendor.email or 'N/A' }}</p>
                     <p class="mb-0"><strong>Address:</strong> {{ bill.vendor.address or 'N/A' }}</p>
@@ -782,7 +912,7 @@
                                     <td>{{ loop.index }}</td>
                                     <td>
                                         <strong class="{% if item.product.margin_color %}text-{{ item.product.margin_color }}{% endif %}">{{ item.product.name }}</strong>
-                                        {% if item.product.sku %}<br><small class="text-muted">{{ item.product.sku }}</small>{% endif %}
+                                        {% if item.product.sku %}<br><small class="text-muted">{{ sku_link(item.product.sku, item.product.id) }}</small>{% endif %}
                                     </td>
                                     <td class="text-center">
                                         {% if item.warehouse %}
@@ -905,7 +1035,7 @@
                                                 <tr>
                                                     <td>
                                                         <strong class="{% if ri.product.margin_color %}text-{{ ri.product.margin_color }}{% endif %}">{{ ri.product.name }}</strong>
-                                                        <small class="text-muted ms-1">{{ ri.product.sku }}</small>
+                                                        <small class="text-muted ms-1">{{ sku_link(ri.product.sku, ri.product.id) }}</small>
                                                     </td>
                                                     <td class="text-center">
                                                         {% if ri.warehouse %}
@@ -1271,6 +1401,117 @@
                 {% endif %}
             </div>
         </div>
+
+        <!-- ═══════════════════════════════════════════════
+             OTHER BILLS FOR THIS VENDOR
+        ════════════════════════════════════════════════ -->
+        {% if other_bills %}
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card shadow mb-4 border-start border-primary border-3">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                        <h6 class="m-0 font-weight-bold text-primary">
+                            <i class="fas fa-file-invoice-dollar me-2"></i>Bills for {{ bill.vendor.name if bill.vendor else 'this Vendor' }}
+                        </h6>
+                        <span class="badge bg-primary">{{ other_bills|length }} Bill(s)</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive other-bills-scroll"
+                            style="overflow-x: auto; -webkit-overflow-scrolling: touch; display: block; width: 100%; scrollbar-width: thin;">
+                            <style>
+                                .other-bills-scroll table {
+                                    min-width: 900px !important;
+                                }
+                            </style>
+                            {# Column totals for the vendor bills table #}
+                            {% set ob_totals = namespace(grand=0, paid=0, balance=0) %}
+                            {% for inv in other_bills %}
+                            {% set ob_totals.grand = ob_totals.grand + (inv.total or 0) %}
+                            {% set ob_totals.paid = ob_totals.paid + (inv.paid_amount or 0) %}
+                            {% set ob_totals.balance = ob_totals.balance + ((inv.total or 0) - (inv.paid_amount or 0)) %}
+                            {% endfor %}
+                            <table class="table table-bordered table-premium mb-0 align-middle">
+                                <thead class="table-light">
+                                    <tr class="table-primary">
+                                        <th colspan="2" class="text-end fw-bold">Totals ({{ other_bills|length }} Bill(s))</th>
+                                        <th class="text-end fw-bold">PKR {{ "{:,.2f}".format(ob_totals.grand) }}</th>
+                                        <th class="text-end fw-bold text-success">PKR {{ "{:,.2f}".format(ob_totals.paid) }}</th>
+                                        <th class="text-end fw-bold text-danger">PKR {{ "{:,.2f}".format(ob_totals.balance) }}</th>
+                                        <th colspan="3"></th>
+                                    </tr>
+                                    <tr>
+                                        <th>Bill #</th>
+                                        <th>Date</th>
+                                        <th class="text-end">Grand Total</th>
+                                        <th class="text-end text-success">Paid Amount</th>
+                                        <th class="text-end text-danger">Balance Due</th>
+                                        <th class="text-center">Status</th>
+                                        <th class="text-center">Approval</th>
+                                        <th class="text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for inv in other_bills %}
+                                    <tr class="{% if inv.id == bill.id %}table-primary{% endif %}">
+                                        <td>
+                                            <a href="{{ url_for('purchase.bill_detail', id=inv.id) }}"
+                                                class="fw-bold text-decoration-none">{{ inv.bill_number }}</a>
+                                            {% if inv.id == bill.id %}
+                                            <span class="badge bg-primary ms-1">Current</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ inv.date.strftime(date_format) if inv.date else '—' }}</td>
+                                        <td class="text-end">PKR {{ "{:,.2f}".format(inv.total or 0) }}</td>
+                                        <td class="text-end text-success">PKR {{ "{:,.2f}".format(inv.paid_amount or 0) }}</td>
+                                        <td class="text-end text-danger">PKR {{ "{:,.2f}".format((inv.total or 0) - (inv.paid_amount or 0)) }}</td>
+                                        <td class="text-center">
+                                            {% if (inv.status|lower) == 'cancelled' %}
+                                            <span class="badge bg-secondary">Cancelled</span>
+                                            {% elif inv.is_overdue %}
+                                            <span class="badge bg-danger">Overdue</span>
+                                            {% elif (inv.status|lower) == 'paid' %}
+                                            <span class="badge bg-success">Paid</span>
+                                            {% elif (inv.status|lower) == 'partial' %}
+                                            <span class="badge bg-warning text-dark">Partial</span>
+                                            {% else %}
+                                            <span class="badge bg-danger">{{ inv.status|capitalize }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-center">
+                                            {% if inv.pending_action %}
+                                            <span class="badge bg-warning text-dark" title="{{ inv.pending_action_label }} awaiting admin approval"><i class="fas fa-hourglass-half me-1"></i>Pending Req.</span>
+                                            {% elif inv.is_rejected and inv.rejection_reason == 'Cancelled by Admin' %}
+                                            <span class="badge bg-secondary"><i class="fas fa-ban me-1"></i>Cancelled</span>
+                                            {% elif inv.is_rejected %}
+                                            <span class="badge bg-danger" title="{{ inv.rejection_reason or 'Rejected' }}"><i class="fas fa-times-circle me-1"></i>Rejected</span>
+                                            {% elif not inv.is_approved %}
+                                            <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Pending</span>
+                                            {% else %}
+                                            <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Approved</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-center">
+                                            {% if inv.id == bill.id %}
+                                            <button type="button" class="btn btn-sm btn-primary" disabled>
+                                                <i class="fas fa-eye"></i> Viewing
+                                            </button>
+                                            {% else %}
+                                            <a href="{{ url_for('purchase.bill_detail', id=inv.id) }}"
+                                                class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-eye"></i> View
+                                            </a>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <script>

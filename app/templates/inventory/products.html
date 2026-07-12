@@ -530,129 +530,8 @@
         });
     });
 
-    function fmt(n) {
-        return n.toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
-    }
-
-    function showPriceHistory(productId, productName) {
-        // Store current product info for refresh after delete
-        window._currentHistoryProduct = { id: productId, name: productName };
-
-        const modal = document.getElementById('priceHistoryModal');
-        const titleEl = modal.querySelector('.modal-title');
-        const bodyEl = modal.querySelector('.priceHistoryBody');
-
-        const bootstrapModal = bootstrap.Modal.getInstance(modal) || new bootstrap.Modal(modal);
-        bootstrapModal.show();
-
-        titleEl.textContent = `Price History - ${productName}`;
-        bodyEl.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
-
-        // Fetch price history
-        fetch(`/purchase/api/product/${productId}/cost-history`)
-            .then(r => r.json())
-            .then(data => {
-                let html = '';
-
-                // Current price
-                html += `<div class="alert alert-primary mb-3">
-                <strong>Current Cost Price: PKR ${fmt(data.current_cost_price)}</strong> | Total Quantity: ${fmt(data.total_quantity)} units
-            </div>`;
-
-                // History table
-                if (data.history.length === 0) {
-                    html += '<div class="alert alert-info">No price change history available.</div>';
-                } else {
-                    html += `<div class="table-responsive">
-                    <table class="table table-sm table-hover">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Date</th>
-                                <th>Old Price</th>
-                                <th>New Price</th>
-                                <th>Qty at Old Price</th>
-                                <th>Remaining</th>
-                                <th>Used</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>`;
-
-                    data.history.forEach(h => {
-                        const status = h.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Consumed</span>';
-                        const remaining = h.remaining_at_old_price;
-                        const remainingBadge = remaining > 0 ? `<span class="badge bg-warning">${fmt(remaining)} units</span>` : '<span class="badge bg-secondary">0</span>';
-
-                        html += `<tr>
-                        <td><small>${h.change_date}</small></td>
-                        <td>PKR ${h.old_price > 0 ? fmt(h.old_price) : '—'}</td>
-                        <td><strong>PKR ${fmt(h.new_price)}</strong></td>
-                        <td>${fmt(h.quantity_at_old_price)}</td>
-                        <td>${remainingBadge}</td>
-                        <td>${fmt(h.used_quantity)}</td>
-                        <td>${status}</td>
-                        <td>
-                            <button class="btn btn-sm btn-danger" onclick="deleteCostHistory(${h.id})" title="Delete this history entry">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </td>
-                    </tr>`;
-                    });
-
-                    html += '</tbody></table></div>';
-
-                    // Legend
-                    html += `<div class="alert alert-light mt-3 small">
-                    <strong>Legend:</strong><br>
-                    <i class="fas fa-tag text-warning me-2"></i> <strong>Qty at Old Price:</strong> Quantity that was in stock when price changed<br>
-                    <i class="fas fa-check text-success me-2"></i> <strong>Remaining:</strong> Amount still available at old price (not yet used)<br>
-                    <i class="fas fa-check-double text-info me-2"></i> <strong>Used:</strong> Amount already consumed/sold at old price
-                </div>`;
-                }
-
-                bodyEl.innerHTML = html;
-            })
-            .catch(err => {
-                bodyEl.innerHTML = '<div class="alert alert-danger">Error loading price history.</div>';
-                console.error('Error:', err);
-            });
-    }
-
-    function deleteCostHistory(historyId) {
-        if (!confirm('Are you sure you want to delete this price history entry? This action cannot be undone.')) {
-            return;
-        }
-
-        fetch(`/purchase/api/cost-history/${historyId}/delete`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    // Refresh the price history modal
-                    if (window._currentHistoryProduct) {
-                        showPriceHistory(window._currentHistoryProduct.id, window._currentHistoryProduct.name);
-                    }
-                    // Show success message
-                    const bodyEl = document.querySelector('.priceHistoryBody');
-                    if (bodyEl) {
-                        const alert = document.createElement('div');
-                        alert.className = 'alert alert-success alert-dismissible fade show mt-2';
-                        alert.innerHTML = `<i class="fas fa-check-circle me-2"></i>${data.message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
-                        bodyEl.insertBefore(alert, bodyEl.firstChild);
-                    }
-                } else {
-                    alert(data.message || 'Failed to delete history entry.');
-                }
-            })
-            .catch(err => {
-                console.error('Error:', err);
-                alert('Error deleting history entry. Please try again.');
-            });
-    }
+    // fmt(), showPriceHistory() and deleteCostHistory() are now defined globally
+    // in base.html so the Item History popup works on every page.
 
     // Initialize tooltips and bulk actions
     document.addEventListener('DOMContentLoaded', function () {
@@ -766,23 +645,7 @@
 
 </script>
 
-<!-- Modal: Price History -->
-<div class="modal fade" id="priceHistoryModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Price History</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body priceHistoryBody">
-                <!-- Content loaded by JavaScript -->
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- Price History modal is now defined globally in base.html -->
 
 <!-- Modal: Image Preview -->
 <div class="modal fade" id="imagePreviewModal" tabindex="-1" aria-hidden="true">

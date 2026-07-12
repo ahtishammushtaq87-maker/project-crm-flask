@@ -24,8 +24,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const entityType = trigger.dataset.entityType;
         const entityId = trigger.dataset.entityId;
+        const entitySku = trigger.dataset.entitySku;
 
-        if (!entityType || !entityId) return;
+        // Need either a numeric id or a SKU string to look the entity up
+        if (!entityType || (!entityId && !entitySku)) return;
 
         // If it doesn't have data-bs-toggle, we trigger it manually
         if (trigger.dataset.bsToggle !== 'modal') {
@@ -33,11 +35,15 @@ document.addEventListener('DOMContentLoaded', function () {
             showLoading();
             modal.show();
 
-            if (entityType === 'inventory') {
+            if (entityType === 'inventory' && entityId) {
                 _currentInventoryEntityId = entityId;
             }
 
-            fetch(`/api/entity-details/${entityType}/${entityId}`)
+            const fetchUrl = entityId
+                ? `/api/entity-details/${entityType}/${entityId}`
+                : `/api/entity-details/${entityType}/by-sku/${encodeURIComponent(entitySku)}`;
+
+            fetch(fetchUrl)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -130,6 +136,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function populateModal(data) {
         modalTitle.textContent = data.title;
+
+        // Remember the resolved inventory id so the history-limit buttons
+        // (Show 5/10/20/All) work even when the popup was opened by SKU.
+        if (data.entity_id) {
+            _currentInventoryEntityId = data.entity_id;
+        }
 
         let html = '';
 

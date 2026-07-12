@@ -1154,7 +1154,31 @@ class PurchaseBill(db.Model):
     rejection_reason = db.Column(db.Text, nullable=True)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
-    
+
+    # ── Action-approval workflow (Cancel Remaining / Reverse Cancellation) ──
+    # When a non-admin (staff/manager) requests one of these actions, it is held
+    # here until an admin approves. Nothing on the bill changes until approval.
+    pending_action = db.Column(db.String(20), nullable=True)          # 'cancel' | 'reverse' | None
+    pending_action_reason = db.Column(db.Text, nullable=True)          # optional reason from requester
+    pending_action_payload = db.Column(db.Text, nullable=True)         # JSON: {purchase_item_id: cancel_qty}
+    pending_action_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    pending_action_at = db.Column(db.DateTime, nullable=True)
+
+    @property
+    def pending_action_requester(self):
+        """The user who requested the pending cancel/reverse action (or None)."""
+        if not self.pending_action_by:
+            return None
+        return User.query.get(self.pending_action_by)
+
+    @property
+    def pending_action_label(self):
+        """Human label for the pending action type."""
+        return {
+            'cancel': 'Cancel Remaining',
+            'reverse': 'Reverse Cancellation',
+        }.get(self.pending_action)
+
     # Relationships
     items = db.relationship('PurchaseItem', backref='bill', lazy=True, cascade='all, delete-orphan')
     bill_payments = db.relationship('BillPayment', backref='bill', lazy=True, cascade='all, delete-orphan')

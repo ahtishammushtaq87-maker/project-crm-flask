@@ -161,7 +161,7 @@
                         <tr>
                             <td>{{ item.material_name }}</td>
                             <td><span class="badge bg-secondary">Material</span></td>
-                            <td>{{ item.material.sku if item.material else '-' }}</td>
+                            <td>{{ sku_link(item.material.sku, item.material.id) if item.material else '-' }}</td>
                             <td>{{ item.quantity_per_unit }}</td>
                             <td>PKR {{ "{:,.0f}".format(item.estimated_cost) }}</td>
                             <td>PKR {{ "{:,.0f}".format(item.total_cost) }}</td>
@@ -486,7 +486,7 @@
                                 </tr>
                                 <tr>
                                     <th>SKU</th>
-                                    <td>{{ project.sku.name if project.sku else '-' }} ({{ project.sku.sku if project.sku else '' }})</td>
+                                    <td>{{ project.sku.name if project.sku else '-' }} ({{ sku_link(project.sku.sku, project.sku.id) if project.sku else '' }})</td>
                                 </tr>
                                 <tr>
                                     <th>Cost</th>

@@ -177,7 +177,7 @@
                                 <div class="d-flex flex-wrap gap-1" style="max-width: 300px;">
                                     {% for item in rec.items %}
                                     <span class="badge bg-light text-dark border small" title="{{ item.product.name }}">
-                                        {{ item.product.sku }} ({{ item.quantity }})
+                                        {{ sku_link(item.product.sku, item.product.id) }} ({{ item.quantity }})
                                     </span>
                                     {% endfor %}
                                 </div>

@@ -894,14 +894,14 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
                 'Bank Name':      getattr(settings, 'bank_name', None),
                 'Account Holder': getattr(settings, 'account_holder_name', None),
                 'Account Number': getattr(settings, 'account_number', None),
-                'IFSC Code':      getattr(settings, 'ifsc_code', None),
+                'IBAN':           getattr(settings, 'ifsc_code', None),
                 'SWIFT Code':     getattr(settings, 'swift_code', None),
             }.items() if v}
         elif company:
             payment_info = {k: v for k, v in {
                 'Bank Name':      getattr(company, 'bank_name', None),
                 'Account Number': getattr(company, 'account_number', None),
-                'IFSC Code':      getattr(company, 'ifsc_code', None),
+                'IBAN':           getattr(company, 'ifsc_code', None),
             }.items() if v}
 
         cur_label = getattr(obj, 'currency', None) or (currency if currency != 'PKR' else 'PKR')

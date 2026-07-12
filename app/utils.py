@@ -155,6 +155,35 @@ def format_qty(value, unit=''):
     return f"{qty:,.3f}"
 
 
+def sku_link(sku, product_id=None):
+    """
+    Render an item's SKU as a clickable trigger that opens the global
+    Item History popup (the same popup used on the Inventory > Products page).
+
+    Usable in ANY template as {{ sku_link(product.sku, product.id) }}.
+    If the numeric product id is not available at the call-site, pass just the
+    SKU: {{ sku_link(some_sku) }} — the popup is then resolved by SKU string.
+
+    Returns safe HTML so it renders inline anywhere a SKU is currently shown.
+    """
+    from markupsafe import Markup, escape
+
+    if sku is None or str(sku).strip() == '':
+        return Markup('<span class="text-muted">-</span>')
+
+    esc_sku = escape(str(sku).strip())
+
+    if product_id not in (None, '', 0, '0'):
+        data_attr = f'data-entity-id="{escape(str(product_id))}"'
+    else:
+        data_attr = f'data-entity-sku="{esc_sku}"'
+
+    return Markup(
+        '<a href="javascript:void(0)" class="entity-history-trigger sku-history-link" '
+        'data-entity-type="inventory" ' + data_attr + '>' + str(esc_sku) + '</a>'
+    )
+
+
 def log_activity(module, action, details=None):
     """
     Log user activity to the database.

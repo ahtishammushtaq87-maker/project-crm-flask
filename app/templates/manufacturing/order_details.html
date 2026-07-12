@@ -100,8 +100,7 @@
                                 {% set stock_before = stock_now + consumed %}
 
                                 <div class="d-flex justify-content-between mb-1 border-bottom-dotted pb-1">
-                                    <span class="text-truncate mr-2" title="{{ item.component.name }}">{{
-                                        item.component.sku }}:</span>
+                                    <span class="text-truncate mr-2" title="{{ item.component.name }}">{{ sku_link(item.component.sku, item.component.id) }}:</span>
                                     <span class="fw-bold">
                                         <small class="text-muted">{{ stock_before|format_qty }}</small>
                                         <i class="fas fa-long-arrow-alt-right mx-1 text-danger"></i>
@@ -185,7 +184,7 @@
                                 <tr>
                                     <td>
                                         <strong>{{ item.component.name }}</strong><br>
-                                        <small class="text-muted">{{ item.component.sku }}</small>
+                                        <small class="text-muted">{{ sku_link(item.component.sku, item.component.id) }}</small>
                                     </td>
                                     <td class="text-end fw-bold">{{ item.quantity_required|format_qty }}</td>
                                     <td class="text-end">
@@ -303,7 +302,7 @@
                                     {% set rem_after = item.quantity_required - next_c %}
 
                                     <div class="mb-1 text-nowrap">
-                                        <span class="badge bg-light text-dark border">{{ item.component.sku }}</span>
+                                        <span class="badge bg-light text-dark border">{{ sku_link(item.component.sku, item.component.id) }}</span>
                                         <small>{{ rem_before|format_qty }}</small>
                                         <i class="fas fa-long-arrow-alt-right fa-xs mx-1 text-danger"></i>
                                         <small class="fw-bold">{{ rem_after|format_qty }}</small>

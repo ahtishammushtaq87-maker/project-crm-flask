@@ -2120,7 +2120,7 @@ def customer_export_pdf(id, is_public=False):
     bank_src = settings if settings else company
     bank_content = [[Paragraph("PAYMENT DETAILS", s_BoxTitle)]]
     has_bank = False
-    for attr, label in [('bank_name','Bank'), ('account_holder_name','A/C Holder'), ('account_number','A/C No'), ('ifsc_code','IFSC')]:
+    for attr, label in [('bank_name','Bank'), ('account_holder_name','A/C Holder'), ('account_number','A/C No'), ('ifsc_code','IBAN')]:
         val = getattr(bank_src, attr, None)
         if val:
             has_bank = True

@@ -152,7 +152,7 @@
                             <td class="no-export">
                                 <input type="checkbox" class="form-check-input product-checkbox" value="{{ p.id }}">
                             </td>
-                            <td>{{ p.sku }}</td>
+                            <td>{{ sku_link(p.sku, p.id) }}</td>
                             <td>{{ p.name }}</td>
                             <td>{{ p.category.name if p.category else '-' }}</td>
                             <td>{{ p.quantity | format_qty(p.unit) }}</td>

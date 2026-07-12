@@ -12,6 +12,7 @@ import os
 from app.routes.filters import apply_saved_filter_to_query
 import io
 import csv
+import json
 import openpyxl
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -245,8 +246,19 @@ def bill_detail(id):
             received_qty_map[bri.purchase_item_id] = received_qty_map.get(bri.purchase_item_id, 0) + bri.quantity_received
     
     warehouses = Warehouse.query.all()
+
+    # All bills for this vendor (including the current one, badged "Current" in the
+    # template). Mirrors the "Invoices for customer" table on the sales invoice page.
+    other_bills = []
+    if bill.vendor_id:
+        other_bills = PurchaseBill.query.filter(
+            PurchaseBill.vendor_id == bill.vendor_id,
+            or_(PurchaseBill.id == bill.id, PurchaseBill.is_approved == True)
+        ).order_by(PurchaseBill.date.desc()).all()
+
     return render_template('purchase/bill_detail.html', bill=bill, date_format=date_format,
-                           received_qty_map=received_qty_map, warehouses=warehouses)
+                           received_qty_map=received_qty_map, warehouses=warehouses,
+                           other_bills=other_bills)
 
 @bp.route('/bill/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -577,106 +589,254 @@ def update_tax(id):
     
     return redirect(request.referrer or url_for('purchase.bill_detail', id=id))
 
+# ── Cancel / Reverse execution helpers (shared by direct-admin and approval paths) ──
+
+def _apply_bill_cancellation(bill, qty_map):
+    """Apply an itemized cancellation to the bill and mark it settled.
+
+    qty_map: dict of {purchase_item_id (str or int): qty_to_cancel}. Mutates the
+    bill in place; the CALLER is responsible for committing. Returns the total
+    cancelled value. Quantities are re-validated against what is still cancellable.
+    """
+    total_cancelled_value = 0
+    for item in bill.items:
+        raw = qty_map.get(str(item.id), qty_map.get(item.id, 0))
+        try:
+            qty_to_cancel = float(raw or 0)
+        except (ValueError, TypeError):
+            qty_to_cancel = 0
+
+        # Cannot cancel more than (Total - already received)
+        received_qty = 0
+        for br in bill.bill_receives:
+            for bri in br.receive_items:
+                if bri.purchase_item_id == item.id:
+                    received_qty += bri.quantity_received
+
+        max_cancellable = max(0, item.quantity - received_qty)
+        if qty_to_cancel > max_cancellable:
+            qty_to_cancel = max_cancellable
+
+        if qty_to_cancel > 0:
+            item.cancelled_quantity = qty_to_cancel
+            item_value = (item.total / item.quantity) * qty_to_cancel
+            total_cancelled_value += item_value
+
+    bill.cancelled_amount = total_cancelled_value
+    bill.cancelled_at = datetime.utcnow()
+    bill.status = 'cancelled'
+
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+    bill.notes = (bill.notes or "") + (
+        f"\n[Cancelled on {now_str}] Itemized cancellation performed. "
+        f"Total waived: PKR {total_cancelled_value:,.2f}"
+    )
+    return total_cancelled_value
+
+
+def _apply_bill_reverse_cancellation(bill):
+    """Undo a bill cancellation and restore the balance. Mutates bill; caller commits."""
+    for item in bill.items:
+        item.cancelled_quantity = 0
+    bill.cancelled_amount = 0
+    bill.cancelled_at = None
+    # Reset status so update_status() doesn't return early on 'cancelled'
+    bill.status = 'unpaid'
+    bill.update_status()
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+    bill.notes = (bill.notes or "") + f"\n[Rerversed on {now_str}] Cancellation was reversed. Balance restored."
+
+
+def _clear_bill_pending_action(bill):
+    """Clear any held cancel/reverse request from the bill."""
+    bill.pending_action = None
+    bill.pending_action_reason = None
+    bill.pending_action_payload = None
+    bill.pending_action_by = None
+    bill.pending_action_at = None
+
+
 @bp.route('/bill/<int:id>/cancel', methods=['POST'])
 @login_required
 @permission_required('purchases', action='edit')
 def cancel_bill(id):
-    """Cancel specific quantities of items and settle the bill"""
+    """Cancel specific quantities of items and settle the bill.
+
+    Admins apply the cancellation immediately. Non-admins (staff/manager) submit
+    the request for admin approval — nothing on the bill changes until approved.
+    """
     bill = PurchaseBill.query.get_or_404(id)
-    
+
     if bill.status == 'cancelled':
         flash('Bill is already cancelled.', 'warning')
         return redirect(url_for('purchase.bill_detail', id=id))
-        
+
+    if bill.pending_action:
+        flash('A request for this bill is already awaiting admin approval.', 'warning')
+        return redirect(url_for('purchase.bill_detail', id=id))
+
+    # Collect requested cancel quantities from the form
+    qty_map = {}
+    for item in bill.items:
+        qty_map[str(item.id)] = request.form.get(f'cancel_qty_{item.id}', 0)
+    reason = (request.form.get('cancel_reason') or '').strip()
+
+    # Non-admins: hold the request for approval instead of applying it
+    if not current_user.is_admin:
+        try:
+            bill.pending_action = 'cancel'
+            bill.pending_action_reason = reason or None
+            bill.pending_action_payload = json.dumps(qty_map)
+            bill.pending_action_by = current_user.id
+            bill.pending_action_at = datetime.utcnow()
+            db.session.commit()
+            log_activity('Purchase', f'Requested Cancellation of Bill #{bill.bill_number}',
+                         f'Reason: {reason}' if reason else 'Awaiting admin approval')
+            flash('Your cancellation request has been submitted for admin approval.', 'info')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error submitting request: {str(e)}', 'danger')
+        return redirect(url_for('purchase.bill_detail', id=id))
+
+    # Admin: apply immediately
     try:
-        total_cancelled_value = 0
-        
-        # Process each item's cancelled quantity from form
-        for item in bill.items:
-            # Field name in form will be cancel_qty_{item.id}
-            field_name = f'cancel_qty_{item.id}'
-            qty_to_cancel = float(request.form.get(field_name, 0))
-            
-            # Validation: cannot cancel more than (Total - Received)
-            # Fetch already received qty for this item
-            received_qty = 0
-            for br in bill.bill_receives:
-                for bri in br.receive_items:
-                    if bri.purchase_item_id == item.id:
-                        received_qty += bri.quantity_received
-            
-            max_cancellable = max(0, item.quantity - received_qty)
-            if qty_to_cancel > max_cancellable:
-                qty_to_cancel = max_cancellable
-                
-            if qty_to_cancel > 0:
-                item.cancelled_quantity = qty_to_cancel
-                # Calculate value (proportional to item total)
-                # item.total includes its subtotal and item-level discount/tax if any
-                item_value = (item.total / item.quantity) * qty_to_cancel
-                total_cancelled_value += item_value
-        
-        # Update bill-level cancellation
-        # We use the sum of item values as the cancelled_amount
-        bill.cancelled_amount = total_cancelled_value
-        bill.cancelled_at = datetime.utcnow()
-        bill.status = 'cancelled'
-        
-        # Add to notes
-        now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
-        msg = f"\n[Cancelled on {now_str}] Itemized cancellation performed. Total waived: PKR {total_cancelled_value:,.2f}"
-        bill.notes = (bill.notes or "") + msg
-        
+        total_cancelled_value = _apply_bill_cancellation(bill, qty_map)
         db.session.commit()
-        
-        log_activity('Purchase', f'Cancelled Bill #{bill.bill_number}', 
-                    f'Cancelled Amount: PKR {total_cancelled_value:,.2f}')
-        
+        log_activity('Purchase', f'Cancelled Bill #{bill.bill_number}',
+                     f'Cancelled Amount: PKR {total_cancelled_value:,.2f}')
         flash(f'Bill #{bill.bill_number} has been cancelled with itemized quantities.', 'success')
     except Exception as e:
         db.session.rollback()
         flash(f'Error cancelling bill: {str(e)}', 'danger')
-        
+
     return redirect(url_for('purchase.bill_detail', id=id))
+
 
 @bp.route('/bill/<int:id>/reverse-cancel', methods=['POST'])
 @login_required
 @permission_required('purchases', action='edit')
 def reverse_cancel_bill(id):
-    """Undo the cancellation of a bill"""
+    """Undo the cancellation of a bill.
+
+    Admins reverse immediately. Non-admins submit the request for admin approval —
+    the bill stays cancelled until an admin approves the reversal.
+    """
     bill = PurchaseBill.query.get_or_404(id)
-    
+
     if bill.status != 'cancelled':
         flash('Bill is not cancelled.', 'warning')
         return redirect(url_for('purchase.bill_detail', id=id))
-        
+
+    if bill.pending_action:
+        flash('A request for this bill is already awaiting admin approval.', 'warning')
+        return redirect(url_for('purchase.bill_detail', id=id))
+
+    reason = (request.form.get('reverse_reason') or '').strip()
+
+    # Non-admins: hold the request for approval
+    if not current_user.is_admin:
+        try:
+            bill.pending_action = 'reverse'
+            bill.pending_action_reason = reason or None
+            bill.pending_action_payload = None
+            bill.pending_action_by = current_user.id
+            bill.pending_action_at = datetime.utcnow()
+            db.session.commit()
+            log_activity('Purchase', f'Requested Reversal of Cancellation for Bill #{bill.bill_number}',
+                         f'Reason: {reason}' if reason else 'Awaiting admin approval')
+            flash('Your reversal request has been submitted for admin approval.', 'info')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error submitting request: {str(e)}', 'danger')
+        return redirect(url_for('purchase.bill_detail', id=id))
+
+    # Admin: reverse immediately
     try:
-        # Clear item-level cancellations
-        for item in bill.items:
-            item.cancelled_quantity = 0
-            
-        # Clear bill-level cancellation data
-        bill.cancelled_amount = 0
-        bill.cancelled_at = None
-        
-        # Reset status to something other than 'cancelled' so update_status() doesn't return early
-        bill.status = 'unpaid'
-        bill.update_status()
-        
-        # Add to notes
-        now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
-        bill.notes = (bill.notes or "") + f"\n[Rerversed on {now_str}] Cancellation was reversed. Balance restored."
-        
+        _apply_bill_reverse_cancellation(bill)
         db.session.commit()
-        
-        log_activity('Purchase', f'Reversed Cancellation of Bill #{bill.bill_number}', 
-                    'Balance Restored')
-        
+        log_activity('Purchase', f'Reversed Cancellation of Bill #{bill.bill_number}',
+                     'Balance Restored')
         flash(f'Cancellation of Bill #{bill.bill_number} has been reversed.', 'success')
     except Exception as e:
         db.session.rollback()
         flash(f'Error reversing cancellation: {str(e)}', 'danger')
-        
+
+    return redirect(url_for('purchase.bill_detail', id=id))
+
+
+@bp.route('/bill/<int:id>/approve-action', methods=['POST'])
+@login_required
+def approve_bill_action(id):
+    """Admin approves a held cancel/reverse request and applies it."""
+    bill = PurchaseBill.query.get_or_404(id)
+
+    if not current_user.is_admin:
+        flash('Only an admin can approve this request.', 'danger')
+        return redirect(url_for('purchase.bill_detail', id=id))
+
+    action = bill.pending_action
+    if not action:
+        flash('There is no pending request for this bill.', 'warning')
+        return redirect(url_for('purchase.bill_detail', id=id))
+
+    label = bill.pending_action_label or action
+    try:
+        if action == 'cancel':
+            if bill.status == 'cancelled':
+                flash('Bill is already cancelled — clearing the pending request.', 'warning')
+            else:
+                qty_map = json.loads(bill.pending_action_payload or '{}')
+                _apply_bill_cancellation(bill, qty_map)
+        elif action == 'reverse':
+            if bill.status != 'cancelled':
+                flash('Bill is not cancelled — clearing the pending request.', 'warning')
+            else:
+                _apply_bill_reverse_cancellation(bill)
+
+        _clear_bill_pending_action(bill)
+        db.session.commit()
+        log_activity('Purchase', f'Approved {label} for Bill #{bill.bill_number}',
+                     'Request approved by admin')
+        flash(f'Request approved: {label} applied to Bill #{bill.bill_number}.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error approving request: {str(e)}', 'danger')
+
+    return redirect(url_for('purchase.bill_detail', id=id))
+
+
+@bp.route('/bill/<int:id>/reject-action', methods=['POST'])
+@login_required
+def reject_bill_action(id):
+    """Admin rejects a held cancel/reverse request. Nothing is applied to the bill."""
+    bill = PurchaseBill.query.get_or_404(id)
+
+    if not current_user.is_admin:
+        flash('Only an admin can reject this request.', 'danger')
+        return redirect(url_for('purchase.bill_detail', id=id))
+
+    if not bill.pending_action:
+        flash('There is no pending request for this bill.', 'warning')
+        return redirect(url_for('purchase.bill_detail', id=id))
+
+    label = bill.pending_action_label or bill.pending_action
+    reason = (request.form.get('reject_reason') or '').strip()
+    try:
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+        note = f"\n[Request Rejected on {now_str}] {label} request rejected by admin."
+        if reason:
+            note += f" Reason: {reason}"
+        bill.notes = (bill.notes or "") + note
+
+        _clear_bill_pending_action(bill)
+        db.session.commit()
+        log_activity('Purchase', f'Rejected {label} for Bill #{bill.bill_number}',
+                     f'Reason: {reason}' if reason else 'Request rejected by admin')
+        flash(f'{label} request has been rejected.', 'warning')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error rejecting request: {str(e)}', 'danger')
+
     return redirect(url_for('purchase.bill_detail', id=id))
 
 @bp.route('/bill/<int:id>/pdf')
