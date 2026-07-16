@@ -105,7 +105,9 @@ def _process_invoice(invoice, today, results):
             risk_level='medium',
         )
         db.session.add(task)
+        db.session.flush()  # assign task.id so it can be referenced below
         results['tasks_created'] += 1
+        existing_task = task
     else:
         if existing_task.recovery_status == 'PARTIAL_RECOVERY' and invoice.status == 'partial':
             pass  # keep as is
@@ -114,6 +116,26 @@ def _process_invoice(invoice, today, results):
             'CLOSED_PAID', 'CLOSED_WRITTEN_OFF'
         ):
             existing_task.recovery_status = 'OVERDUE'
+
+    # The Sales module's top-of-page overdue banner (see Sale.show_overdue_alert)
+    # shows for days_overdue in [3, 5) and auto-hides after that 2-day window.
+    # If admin never clicked "Done" to dismiss it, auto-escalate the recovery
+    # task once the window closes so the invoice doesn't silently drop off
+    # everyone's radar — same effect as the manual escalate action.
+    if (invoice.days_overdue >= 5 and not invoice.overdue_alert_dismissed
+            and not existing_task.is_escalated
+            and existing_task.recovery_status not in ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF')):
+        invoice.overdue_alert_dismissed = True
+        existing_task.is_escalated = True
+        existing_task.escalated_at = datetime.utcnow()
+        existing_task.risk_level = 'critical'
+        existing_task.priority = 4
+        existing_task.updated_at = datetime.utcnow()
+        db.session.add(RecoveryLog(
+            task_id=existing_task.id,
+            response_type='escalated',
+            note='Auto-escalated: overdue notification banner expired after 2 days without admin action.',
+        ))
 
 
 def _check_promise(task, today, results):

@@ -109,6 +109,7 @@ def dashboard():
     operating_filter = [
         Expense.is_bom_overhead == False,
         Expense.is_shifted == False,
+        Expense.is_inventory_shifted == False,
         Expense.date >= date_from,
         Expense.date <= date_to
     ]
@@ -992,7 +993,7 @@ def expenses():
     
     expenses = query.order_by(Expense.date.desc()).all()
     # Calculate confirmed expenses, excluding those shifted to PD projects
-    total_expense = sum(e.amount for e in expenses if e.status == 'confirmed' and not getattr(e, 'is_shifted', False))
+    total_expense = sum(e.amount for e in expenses if e.status == 'confirmed' and not getattr(e, 'is_shifted', False) and not getattr(e, 'is_inventory_shifted', False))
     total_pd_shifted_expense = sum(e.amount for e in expenses if e.status == 'confirmed' and getattr(e, 'is_shifted', False))
     
     # Get filter options
@@ -1004,6 +1005,10 @@ def expenses():
     # Get active/draft PD projects for the shift modal
     from app.models import PDProject
     active_pd_projects = PDProject.query.filter(PDProject.status.in_(['Draft', 'Active'])).all()
+
+    # Get active inventory items for the "shift to inventory cost" modal
+    from app.models import Product
+    inventory_items = Product.query.filter_by(is_active=True).order_by(Product.name).all()
     
     # Get PD expense categories for the shift modal
     pd_expense_categories = [
@@ -1028,6 +1033,7 @@ def expenses():
                          vendors=vendors,
                          manufacturing_orders=manufacturing_orders,
                          active_pd_projects=active_pd_projects,
+                         inventory_items=inventory_items,
                          pd_expense_categories=pd_expense_categories,
                          selected_vendor=vendor_id,
                          selected_category=category_id,
@@ -1037,6 +1043,119 @@ def expenses():
                          date_format=date_format,
                          active_module='expense',
                          filter_id=request.args.get('filter_id'))
+
+
+@bp.route('/expense/shift-to-inventory', methods=['POST'])
+@login_required
+def shift_expense_to_inventory():
+    """Shift an operating expense onto one or more inventory items' cost.
+
+    The full expense amount is added to the selected item's cost_price. When
+    multiple (bulk) items are selected, the amount is split equally among them
+    and each item's cost_price is increased by its share. Item quantities are
+    left unchanged.
+    """
+    if not getattr(current_user, 'is_admin', False):
+        return jsonify({'success': False, 'message': 'Admin access required.'}), 403
+
+    expense_id = request.form.get('expense_id', type=int)
+    # Accept both `product_ids` and `product_ids[]` from the multi-select
+    raw_ids = request.form.getlist('product_ids') or request.form.getlist('product_ids[]')
+
+    if not expense_id or not raw_ids:
+        return jsonify({'success': False, 'message': 'Please select at least one inventory item.'}), 400
+
+    from app.models import Product
+
+    expense = Expense.query.get_or_404(expense_id)
+
+    # Only plain operating expenses can be shifted to inventory cost.
+    if getattr(expense, 'is_inventory_shifted', False):
+        return jsonify({'success': False, 'message': 'This expense is already shifted to inventory.'}), 400
+    if getattr(expense, 'is_shifted', False):
+        return jsonify({'success': False, 'message': 'This expense is already shifted to a PD project.'}), 400
+    if getattr(expense, 'is_bom_overhead', False):
+        return jsonify({'success': False, 'message': 'Overhead expenses cannot be shifted to inventory.'}), 400
+    if getattr(expense, 'is_monthly_divided', False):
+        return jsonify({'success': False, 'message': 'Monthly divided expenses cannot be shifted to inventory.'}), 400
+
+    # Resolve unique, valid product ids
+    seen = set()
+    product_ids = []
+    for rid in raw_ids:
+        try:
+            pid = int(rid)
+        except (TypeError, ValueError):
+            continue
+        if pid and pid not in seen:
+            seen.add(pid)
+            product_ids.append(pid)
+
+    products = Product.query.filter(Product.id.in_(product_ids)).all()
+    if not products:
+        return jsonify({'success': False, 'message': 'No valid inventory items found.'}), 400
+
+    try:
+        amount_per_item = expense.amount / len(products)
+        applied_names = []
+        for product in products:
+            product.cost_price = (product.cost_price or 0) + amount_per_item
+            applied_names.append(product.name)
+
+        expense.is_inventory_shifted = True
+        expense.shifted_to_product_ids = ','.join(str(p.id) for p in products)
+
+        db.session.commit()
+
+        log_activity('Accounting',
+                     f'Shifted expense {expense.expense_number} to inventory cost',
+                     f'PKR {expense.amount} split across {len(products)} item(s): {", ".join(applied_names)}')
+
+        if len(products) == 1:
+            msg = f'Expense shifted to {applied_names[0]} cost.'
+        else:
+            msg = f'PKR {expense.amount} split across {len(products)} items (PKR {amount_per_item:.2f} each).'
+        return jsonify({'success': True, 'message': msg})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@bp.route('/expense/unshift-from-inventory', methods=['POST'])
+@login_required
+def unshift_expense_from_inventory():
+    """Reverse an inventory cost shift, subtracting the amount back off item cost."""
+    if not getattr(current_user, 'is_admin', False):
+        return jsonify({'success': False, 'message': 'Admin access required.'}), 403
+
+    from app.models import Product
+
+    expense_id = request.form.get('expense_id', type=int)
+    expense = Expense.query.get_or_404(expense_id)
+
+    if not getattr(expense, 'is_inventory_shifted', False):
+        return jsonify({'success': False, 'message': 'This expense is not shifted to inventory.'}), 400
+
+    try:
+        product_ids = [int(x) for x in (expense.shifted_to_product_ids or '').split(',') if x.strip().isdigit()]
+        products = Product.query.filter(Product.id.in_(product_ids)).all() if product_ids else []
+        if products:
+            amount_per_item = expense.amount / len(products)
+            for product in products:
+                product.cost_price = max(0, (product.cost_price or 0) - amount_per_item)
+
+        expense.is_inventory_shifted = False
+        expense.shifted_to_product_ids = None
+
+        db.session.commit()
+        log_activity('Accounting',
+                     f'Reversed inventory shift for expense {expense.expense_number}',
+                     f'PKR {expense.amount} removed from {len(products)} item(s)')
+        return jsonify({'success': True, 'message': 'Inventory shift reversed.'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 
 @bp.route('/expense/add', methods=['GET', 'POST'])
 @login_required

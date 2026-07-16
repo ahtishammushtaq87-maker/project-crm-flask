@@ -10,11 +10,16 @@
     {{ pending_approval_alert('manufacturing_order') }}
     <div class="d-sm-flex align-items-center justify-content-between mb-4">
         <h1 class="h3 mb-0 text-gray-800">Manufacturing Orders</h1>
-        {% if current_user.has_permission('manufacturing', 'add') %}
-        <a href="{{ url_for('manufacturing.add_order') }}" class="btn btn-sm btn-primary shadow-sm">
-            <i class="fas fa-plus fa-sm text-white-50"></i> Create Order
-        </a>
-        {% endif %}
+        <div class="d-flex flex-wrap gap-2">
+            <button type="button" id="componentsSummaryBtn" class="btn btn-sm btn-outline-primary shadow-sm">
+                <i class="fas fa-layer-group fa-sm"></i> Summary
+            </button>
+            {% if current_user.has_permission('manufacturing', 'add') %}
+            <a href="{{ url_for('manufacturing.add_order') }}" class="btn btn-sm btn-primary shadow-sm">
+                <i class="fas fa-plus fa-sm text-white-50"></i> Create Order
+            </a>
+            {% endif %}
+        </div>
     </div>
 
     <!-- DataTales Example -->
@@ -53,7 +58,10 @@
                             <td><strong>{{ ord.order_number }}</strong></td>
                             <td>
                                 <span class="{% if ord.bom.product.margin_color %}text-{{ ord.bom.product.margin_color }} fw-bold{% endif %}">{{ ord.bom.product.name }}</span><br>
-                                <small class="text-muted">BOM: {{ ord.bom.name }}</small>
+                                <a href="{{ url_for('manufacturing.bom_details', id=ord.bom.id) }}"
+                                    class="small text-decoration-none" title="View BOM details">
+                                    <i class="fas fa-file-invoice fa-xs"></i> BOM: {{ ord.bom.name }}
+                                </a>
                             </td>
                             <td>
                                 {% if ord.status == 'Completed' %}
@@ -225,8 +233,296 @@
             </div>
         </div>
 
+        <style>
+            #summaryTable .summary-sort {
+                cursor: pointer;
+                white-space: nowrap;
+                user-select: none;
+            }
+            #summaryTable .summary-sort:hover {
+                background-color: rgba(0, 0, 0, 0.05);
+            }
+        </style>
+
+        <!-- Components Usage Summary Modal -->
+        <div class="modal fade" id="componentsSummaryModal" tabindex="-1"
+            aria-labelledby="componentsSummaryModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title" id="componentsSummaryModalLabel">
+                            <i class="fas fa-layer-group me-2"></i>Components Used Across All Orders
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                            aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <!-- Date range filter -->
+                        <div class="row g-2 mb-3 align-items-end">
+                            <div class="col-6 col-md-3">
+                                <label class="form-label small mb-1">From (Start Date)</label>
+                                <input type="date" id="summaryFromDate" class="form-control form-control-sm">
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label small mb-1">To (Start Date)</label>
+                                <input type="date" id="summaryToDate" class="form-control form-control-sm">
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <button type="button" id="summaryApplyDates" class="btn btn-sm btn-primary">
+                                    <i class="fas fa-filter"></i> Apply
+                                </button>
+                                <button type="button" id="summaryClearDates" class="btn btn-sm btn-outline-secondary">
+                                    <i class="fas fa-times"></i> Clear
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Summary stat cards -->
+                        <div class="row g-2 mb-3" id="summaryStatCards"></div>
+
+                        <!-- Search -->
+                        <div class="input-group input-group-sm mb-3">
+                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <input type="text" id="summarySearch" class="form-control"
+                                placeholder="Search by component name, SKU or MO number...">
+                        </div>
+
+                        <!-- Desktop table -->
+                        <div class="table-responsive d-none d-md-block">
+                            <table class="table table-bordered table-hover align-middle small mb-0 no-datatable"
+                                id="summaryTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="summary-sort" data-sort="name" role="button">Component</th>
+                                        <th class="summary-sort text-end" data-sort="total_required" role="button">Qty Required</th>
+                                        <th class="summary-sort text-end" data-sort="total_used" role="button">Qty Used</th>
+                                        <th class="summary-sort text-end" data-sort="in_stock" role="button">In Stock</th>
+                                        <th class="summary-sort text-end" data-sort="to_buy" role="button">To Buy</th>
+                                        <th class="summary-sort text-end" data-sort="cost_price" role="button">Unit Cost</th>
+                                        <th class="summary-sort text-end" data-sort="buying_cost" role="button">Buying Cost</th>
+                                        <th class="summary-sort text-end" data-sort="required_cost" role="button">Required Cost</th>
+                                        <th>Used In Orders (Finished Good)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="summaryTableBody"></tbody>
+                            </table>
+                        </div>
+
+                        <!-- Mobile cards -->
+                        <div class="d-md-none" id="summaryCardList"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <script>
             document.addEventListener('DOMContentLoaded', function () {
+                // ── Components Usage Summary ──────────────────────────────
+                (function () {
+                    const btn = document.getElementById('componentsSummaryBtn');
+                    if (!btn) return;
+                    const modalEl = document.getElementById('componentsSummaryModal');
+                    const summaryModal = new bootstrap.Modal(modalEl);
+                    const statCards = document.getElementById('summaryStatCards');
+                    const tableBody = document.getElementById('summaryTableBody');
+                    const cardList = document.getElementById('summaryCardList');
+                    const searchInput = document.getElementById('summarySearch');
+                    const fromDate = document.getElementById('summaryFromDate');
+                    const toDate = document.getElementById('summaryToDate');
+                    const applyBtn = document.getElementById('summaryApplyDates');
+                    const clearBtn = document.getElementById('summaryClearDates');
+                    const baseUrl = '{{ url_for("manufacturing.orders_components_summary") }}';
+                    const COLSPAN = 9;
+                    const NUMERIC_KEYS = ['total_required', 'total_used', 'in_stock', 'to_buy',
+                        'cost_price', 'buying_cost', 'required_cost'];
+                    let cache = [];
+                    let sortState = { key: 'required_cost', dir: 'desc' };
+
+                    const fmt = (n) => (parseFloat(n) || 0).toLocaleString(undefined, {
+                        minimumFractionDigits: 2, maximumFractionDigits: 2
+                    });
+
+                    function statusBadge(status) {
+                        if (status === 'Completed') return 'bg-success';
+                        if (status === 'In Progress') return 'bg-warning text-dark';
+                        return 'bg-secondary';
+                    }
+
+                    function orderBadges(orders) {
+                        return orders.map(o => `
+                            <span class="badge ${statusBadge(o.status)} me-1 mb-1" title="Required: ${fmt(o.qty_required)} / Used: ${fmt(o.qty_used)}">
+                                ${o.order_number} · ${o.finished_good}
+                            </span>`).join('');
+                    }
+
+                    function render(components) {
+                        tableBody.innerHTML = '';
+                        cardList.innerHTML = '';
+
+                        if (!components.length) {
+                            tableBody.innerHTML = `<tr><td colspan="${COLSPAN}" class="text-center text-muted py-3">No components found.</td></tr>`;
+                            cardList.innerHTML = '<div class="text-center text-muted py-3">No components found.</div>';
+                            return;
+                        }
+
+                        components.forEach(c => {
+                            const toBuy = parseFloat(c.to_buy) || 0;
+                            const buyClass = toBuy > 0 ? 'text-danger fw-bold' : 'text-success';
+
+                            // Desktop row
+                            tableBody.innerHTML += `
+                                <tr>
+                                    <td>
+                                        <div class="fw-bold">${c.name}</div>
+                                        <div class="text-muted smaller">${c.sku}</div>
+                                    </td>
+                                    <td class="text-end">${fmt(c.total_required)} <span class="text-muted smaller">${c.unit}</span></td>
+                                    <td class="text-end">${fmt(c.total_used)}</td>
+                                    <td class="text-end">${fmt(c.in_stock)}</td>
+                                    <td class="text-end ${buyClass}">${fmt(toBuy)}</td>
+                                    <td class="text-end">PKR ${fmt(c.cost_price)}</td>
+                                    <td class="text-end ${buyClass}">PKR ${fmt(c.buying_cost)}</td>
+                                    <td class="text-end fw-bold text-primary">PKR ${fmt(c.required_cost)}</td>
+                                    <td>${orderBadges(c.orders)}</td>
+                                </tr>`;
+
+                            // Mobile card
+                            cardList.innerHTML += `
+                                <div class="card mb-2 shadow-sm">
+                                    <div class="card-body p-2">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <div>
+                                                <div class="fw-bold">${c.name}</div>
+                                                <div class="text-muted smaller">${c.sku}</div>
+                                            </div>
+                                            <span class="badge bg-primary">PKR ${fmt(c.required_cost)}</span>
+                                        </div>
+                                        <div class="row g-1 mt-1 small">
+                                            <div class="col-4"><span class="text-muted d-block smaller">Required</span>${fmt(c.total_required)} ${c.unit}</div>
+                                            <div class="col-4"><span class="text-muted d-block smaller">Used</span>${fmt(c.total_used)}</div>
+                                            <div class="col-4"><span class="text-muted d-block smaller">In Stock</span>${fmt(c.in_stock)}</div>
+                                            <div class="col-4"><span class="text-muted d-block smaller">To Buy</span><span class="${buyClass}">${fmt(toBuy)}</span></div>
+                                            <div class="col-4"><span class="text-muted d-block smaller">Unit Cost</span>PKR ${fmt(c.cost_price)}</div>
+                                            <div class="col-4"><span class="text-muted d-block smaller">Buying Cost</span><span class="${buyClass}">PKR ${fmt(c.buying_cost)}</span></div>
+                                        </div>
+                                        <div class="mt-2">${orderBadges(c.orders)}</div>
+                                    </div>
+                                </div>`;
+                        });
+                    }
+
+                    function sortRows(rows) {
+                        const { key, dir } = sortState;
+                        const numeric = NUMERIC_KEYS.includes(key);
+                        const factor = dir === 'asc' ? 1 : -1;
+                        return rows.slice().sort((a, b) => {
+                            if (numeric) {
+                                return ((parseFloat(a[key]) || 0) - (parseFloat(b[key]) || 0)) * factor;
+                            }
+                            return String(a[key] || '').localeCompare(String(b[key] || '')) * factor;
+                        });
+                    }
+
+                    function updateSortIndicators() {
+                        modalEl.querySelectorAll('.summary-sort').forEach(th => {
+                            const base = th.textContent.replace(/[▲▼]\s*$/, '').trim();
+                            if (th.dataset.sort === sortState.key) {
+                                th.textContent = base + (sortState.dir === 'asc' ? ' ▲' : ' ▼');
+                            } else {
+                                th.textContent = base;
+                            }
+                        });
+                    }
+
+                    function applyFilter() {
+                        const q = (searchInput.value || '').toLowerCase().trim();
+                        let rows = cache;
+                        if (q) {
+                            rows = cache.filter(c =>
+                                (c.name || '').toLowerCase().includes(q) ||
+                                (c.sku || '').toLowerCase().includes(q) ||
+                                (c.orders || []).some(o => (o.order_number || '').toLowerCase().includes(q))
+                            );
+                        }
+                        updateSortIndicators();
+                        render(sortRows(rows));
+                    }
+
+                    function statCard(color, label, value) {
+                        return `
+                            <div class="col-6 col-lg-2">
+                                <div class="card border-left-${color} shadow-sm h-100 py-1">
+                                    <div class="card-body p-2">
+                                        <div class="text-xs text-uppercase text-${color} fw-bold">${label}</div>
+                                        <div class="h6 mb-0 fw-bold">${value}</div>
+                                    </div>
+                                </div>
+                            </div>`;
+                    }
+
+                    function loadSummary() {
+                        statCards.innerHTML = '';
+                        tableBody.innerHTML = `<tr><td colspan="${COLSPAN}" class="text-center py-3">Loading...</td></tr>`;
+                        cardList.innerHTML = '<div class="text-center py-3">Loading...</div>';
+
+                        const params = new URLSearchParams();
+                        if (fromDate.value) params.set('from_date', fromDate.value);
+                        if (toDate.value) params.set('to_date', toDate.value);
+                        const url = params.toString() ? `${baseUrl}?${params}` : baseUrl;
+
+                        fetch(url)
+                            .then(r => r.json())
+                            .then(data => {
+                                cache = data.components || [];
+                                const t = data.totals || {};
+                                statCards.innerHTML =
+                                    statCard('primary', 'Components', t.components_count || 0) +
+                                    statCard('info', 'Total Required', fmt(t.total_qty_required)) +
+                                    statCard('secondary', 'Qty Used', fmt(t.total_qty_used)) +
+                                    statCard('danger', 'Qty To Buy', fmt(t.total_to_buy)) +
+                                    statCard('warning', 'Buying Cost', 'PKR ' + fmt(t.total_buying_cost)) +
+                                    statCard('success', 'Required Cost', 'PKR ' + fmt(t.total_required_cost));
+                                applyFilter();
+                            })
+                            .catch(() => {
+                                tableBody.innerHTML = `<tr><td colspan="${COLSPAN}" class="text-center text-danger py-3">Failed to load summary.</td></tr>`;
+                                cardList.innerHTML = '<div class="text-center text-danger py-3">Failed to load summary.</div>';
+                            });
+                    }
+
+                    searchInput.addEventListener('input', applyFilter);
+
+                    modalEl.querySelectorAll('.summary-sort').forEach(th => {
+                        th.addEventListener('click', function () {
+                            const key = this.dataset.sort;
+                            if (sortState.key === key) {
+                                sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+                            } else {
+                                sortState.key = key;
+                                // Numeric columns start high→low, text columns A→Z
+                                sortState.dir = NUMERIC_KEYS.includes(key) ? 'desc' : 'asc';
+                            }
+                            applyFilter();
+                        });
+                    });
+
+                    applyBtn.addEventListener('click', loadSummary);
+                    clearBtn.addEventListener('click', function () {
+                        fromDate.value = '';
+                        toDate.value = '';
+                        loadSummary();
+                    });
+
+                    btn.addEventListener('click', function () {
+                        searchInput.value = '';
+                        summaryModal.show();
+                        loadSummary();
+                    });
+                })();
+
                 // Partial Complete Button Click
                 const partialBtns = document.querySelectorAll('.partial-complete-btn');
                 const partialModal = new bootstrap.Modal(document.getElementById('partialCompleteModal'));

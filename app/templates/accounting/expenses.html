@@ -147,9 +147,11 @@
     </div>
 
     <!-- Summary Boxes -->
-    {% set totals = namespace(op=0, divided=0, mo_overhead=0, shifted=0) %}
+    {% set totals = namespace(op=0, divided=0, mo_overhead=0, shifted=0, inv_shifted=0) %}
     {% for exp in expenses if exp.status == 'confirmed' %}
-    {% if exp.is_shifted %}
+    {% if exp.is_inventory_shifted %}
+    {% set totals.inv_shifted = totals.inv_shifted + exp.amount %}
+    {% elif exp.is_shifted %}
     {% set totals.shifted = totals.shifted + exp.amount %}
     {% elif exp.is_bom_overhead %}
     {% set totals.mo_overhead = totals.mo_overhead + exp.amount %}
@@ -213,6 +215,20 @@
                     </div>
                     <div class="stats-icon">
                         <i class="fas fa-project-diagram fa-lg"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mt-3">
+            <div class="card-stats shadow-sm" style="background: linear-gradient(135deg, #360033 0%, #0b8793 100%);">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-white-50">Inventory Shifted</h6>
+                        <h3 class="mb-0">{{ '%.2f'|format(totals.inv_shifted) }}</h3>
+                        <small class="text-white-50">Shifted to item cost</small>
+                    </div>
+                    <div class="stats-icon">
+                        <i class="fas fa-boxes fa-lg"></i>
                     </div>
                 </div>
             </div>
@@ -372,11 +388,12 @@
                             </td>
                             <td>
                                 <div class="d-flex flex-column gap-1 align-items-start">
+                                    {% set is_op_expense = not exp.is_shifted and not exp.is_inventory_shifted and not exp.is_bom_overhead and not exp.is_monthly_divided %}
                                     <div class="d-flex align-items-center">
                                         {{ approval_widget(module='expense', entity=exp) }}
-                                        {% if current_user.is_admin and not exp.is_shifted %}
-                                        <button type="button" class="btn btn-sm btn-outline-primary ms-1" 
-                                                data-bs-toggle="modal" 
+                                        {% if current_user.is_admin and not exp.is_shifted and not exp.is_inventory_shifted %}
+                                        <button type="button" class="btn btn-sm btn-outline-primary ms-1"
+                                                data-bs-toggle="modal"
                                                 data-bs-target="#shiftExpenseModal"
                                                 data-expense-id="{{ exp.id }}"
                                                 data-expense-amount="{{ exp.amount }}"
@@ -385,23 +402,47 @@
                                             <i class="fas fa-share-square"></i>
                                         </button>
                                         {% endif %}
+                                        {% if current_user.is_admin and is_op_expense %}
+                                        <button type="button" class="btn btn-sm btn-outline-info ms-1"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#shiftToInventoryModal"
+                                                data-expense-id="{{ exp.id }}"
+                                                data-expense-amount="{{ exp.amount }}"
+                                                data-expense-desc="{{ exp.description or '' }}"
+                                                title="Shift to Inventory Item Cost">
+                                            <i class="fas fa-boxes"></i>
+                                        </button>
+                                        {% endif %}
                                     </div>
                                     {% if exp.is_shifted %}
                                     <span class="badge bg-info text-dark" style="font-size:0.7rem;">
                                         <i class="fas fa-project-diagram me-1"></i> Shifted to PD
                                     </span>
                                     {% endif %}
+                                    {% if exp.is_inventory_shifted %}
+                                    <span class="badge text-white" style="font-size:0.7rem; background-color:#0b8793;">
+                                        <i class="fas fa-boxes me-1"></i> Shifted to Inventory
+                                    </span>
+                                    {% if current_user.is_admin %}
+                                    <button type="button" class="btn btn-sm btn-link text-danger p-0 mt-1 unshift-inv-btn"
+                                            style="font-size:0.7rem;"
+                                            data-expense-id="{{ exp.id }}"
+                                            title="Reverse inventory shift">
+                                        <i class="fas fa-undo me-1"></i> Undo shift
+                                    </button>
+                                    {% endif %}
+                                    {% endif %}
                                 </div>
                             </td>
                             <td class="no-export">
                                 <div class="btn-group" role="group">
-                                    {% if current_user.has_permission('accounting', 'edit') and not exp.is_shifted %}
+                                    {% if current_user.has_permission('accounting', 'edit') and not exp.is_shifted and not exp.is_inventory_shifted %}
                                     <a href="{{ url_for('accounting.edit_expense', id=exp.id) }}"
                                         class="btn btn-sm btn-warning" title="Edit">
                                         <i class="fas fa-edit"></i>
                                     </a>
                                     {% endif %}
-                                    {% if current_user.has_permission('accounting', 'delete') and not exp.is_shifted %}
+                                    {% if current_user.has_permission('accounting', 'delete') and not exp.is_shifted and not exp.is_inventory_shifted %}
                                     <form method="POST" action="{{ url_for('accounting.delete_expense', id=exp.id) }}"
                                         style="display:inline;" onsubmit="return confirm('Delete this expense?');">
                                         <button type="submit" class="btn btn-sm btn-danger"
@@ -510,6 +551,84 @@
     </div>
 </div>
 
+<style>
+/* Let the bulk (multi) select grow and show selected items as visible tags.
+   The global .select2-selection height is fixed to one line, which clips the
+   chosen items inside the box, so override it just for this modal. */
+#shiftToInventoryModal .select2-container--bootstrap-5 .select2-selection--multiple {
+    height: auto !important;
+    min-height: calc(1.5em + 0.75rem + 2px);
+    padding: 2px 4px;
+}
+#shiftToInventoryModal .select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__rendered {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 0;
+}
+#shiftToInventoryModal .select2-selection__choice {
+    background-color: #0b8793 !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 4px !important;
+    padding: 2px 8px !important;
+    margin: 2px !important;
+}
+#shiftToInventoryModal .select2-selection__choice__remove {
+    color: #fff !important;
+    margin-right: 4px;
+    border: none !important;
+}
+</style>
+
+<!-- Shift to Inventory Cost Modal -->
+<div class="modal fade" id="shiftToInventoryModal" tabindex="-1" aria-labelledby="shiftToInventoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="shiftToInventoryForm">
+                <div class="modal-header text-white" style="background-color:#0b8793;">
+                    <h5 class="modal-title" id="shiftToInventoryModalLabel">
+                        <i class="fas fa-boxes me-2"></i> Shift Expense to Inventory Cost
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="expense_id" id="inv_shift_expense_id">
+
+                    <div class="alert alert-info">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-info-circle me-3 fs-3"></i>
+                            <div>
+                                <strong>Amount: PKR <span id="inv_shift_amount_display"></span></strong><br>
+                                <small id="inv_shift_desc_display"></small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="product_ids" class="form-label">Select Inventory Item(s) <span class="text-danger">*</span></label>
+                        <select name="product_ids" id="product_ids" class="form-select" multiple required>
+                            {% for item in inventory_items %}
+                            <option value="{{ item.id }}">{{ item.sku }} - {{ item.name }} (cost: PKR {{ '%.2f'|format(item.cost_price or 0) }})</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Select one item to add the full amount to its cost, or several items (bulk) to split the amount equally among them.</small>
+                    </div>
+                    <div class="alert alert-secondary py-2 mb-0" id="inv_split_preview" style="display:none;">
+                        <small><i class="fas fa-calculator me-1"></i> <span id="inv_split_text"></span></small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn text-white" style="background-color:#0b8793;" id="confirmInvShiftBtn">
+                        <i class="fas fa-check me-1"></i> Confirm Shift
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize Bulk Actions
@@ -586,6 +705,112 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     }
+
+    // ── Shift to Inventory Cost ────────────────────────────────────────────
+    let invShiftAmount = 0;
+    const invShiftModal = document.getElementById('shiftToInventoryModal');
+    const $invSelect = $('#product_ids');
+
+    function updateInvSplitPreview() {
+        const count = ($invSelect.val() || []).length;
+        const preview = document.getElementById('inv_split_preview');
+        const text = document.getElementById('inv_split_text');
+        if (count > 1 && invShiftAmount > 0) {
+            const per = (invShiftAmount / count);
+            text.textContent = 'PKR ' + invShiftAmount.toLocaleString() + ' will be split across ' + count +
+                ' items = PKR ' + per.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' added to each item cost.';
+            preview.style.display = '';
+        } else if (count === 1 && invShiftAmount > 0) {
+            text.textContent = 'PKR ' + invShiftAmount.toLocaleString() + ' will be added to the selected item cost.';
+            preview.style.display = '';
+        } else {
+            preview.style.display = 'none';
+        }
+    }
+
+    if (invShiftModal) {
+        $invSelect.select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: 'Search inventory items...',
+            closeOnSelect: false,
+            dropdownParent: $('#shiftToInventoryModal')
+        });
+        $invSelect.on('change', updateInvSplitPreview);
+
+        invShiftModal.addEventListener('show.bs.modal', function(event) {
+            const button = event.relatedTarget;
+            invShiftAmount = parseFloat(button.getAttribute('data-expense-amount')) || 0;
+            document.getElementById('inv_shift_expense_id').value = button.getAttribute('data-expense-id');
+            document.getElementById('inv_shift_amount_display').textContent = invShiftAmount.toLocaleString();
+            document.getElementById('inv_shift_desc_display').textContent = button.getAttribute('data-expense-desc') || 'No description';
+            $invSelect.val(null).trigger('change');
+        });
+    }
+
+    const invShiftForm = document.getElementById('shiftToInventoryForm');
+    if (invShiftForm) {
+        invShiftForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            if (!($invSelect.val() || []).length) {
+                alert('Please select at least one inventory item.');
+                return;
+            }
+            const btn = document.getElementById('confirmInvShiftBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Shifting...';
+
+            fetch("{{ url_for('accounting.shift_expense_to_inventory') }}", {
+                method: 'POST',
+                body: new FormData(this)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert(data.message || 'Error shifting expense');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-check me-1"></i> Confirm Shift';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred during shifting.');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check me-1"></i> Confirm Shift';
+            });
+        });
+    }
+
+    // Undo an inventory shift
+    document.querySelectorAll('.unshift-inv-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            if (!confirm('Reverse this inventory shift? The amount will be removed from the item cost(s).')) return;
+            const expenseId = this.getAttribute('data-expense-id');
+            this.disabled = true;
+            const fd = new FormData();
+            fd.append('expense_id', expenseId);
+            fetch("{{ url_for('accounting.unshift_expense_from_inventory') }}", {
+                method: 'POST',
+                body: fd
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert(data.message || 'Error reversing shift');
+                    this.disabled = false;
+                }
+            })
+            .catch(err => {
+                console.error('Error:', err);
+                alert('An error occurred.');
+                this.disabled = false;
+            });
+        });
+    });
 });
 </script>
 

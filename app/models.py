@@ -704,6 +704,9 @@ class Sale(db.Model):
     approved_at = db.Column(db.DateTime, nullable=True)
     discount_violation = db.Column(db.Text, nullable=True)
     stock_updated = db.Column(db.Boolean, default=False)
+    # Top-of-page overdue notification banner: once an admin dismisses it for
+    # this invoice, it never reappears (regardless of days_overdue).
+    overdue_alert_dismissed = db.Column(db.Boolean, default=False)
     
     # Relationships
     items = db.relationship('SaleItem', backref='sale', lazy=True, cascade='all, delete-orphan')
@@ -734,6 +737,18 @@ class Sale(db.Model):
             delta = datetime.utcnow().date() - check_date
             return delta.days
         return 0
+
+    @property
+    def show_overdue_alert(self):
+        """
+        Whether this invoice should currently appear in the top-of-page
+        overdue notification banner: starts once the invoice is 3 days
+        overdue, and auto-disappears after being shown for 2 days (i.e. by
+        day 5) unless an admin dismisses it sooner via overdue_alert_dismissed.
+        """
+        if self.overdue_alert_dismissed or not self.is_overdue:
+            return False
+        return 3 <= self.days_overdue < 5
 
     @property
     def invoice_health_status(self):
@@ -1498,6 +1513,10 @@ class Expense(db.Model):
     is_shifted = db.Column(db.Boolean, default=False)
     shifted_to_pd_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=True)
     pd_expense_id = db.Column(db.Integer, db.ForeignKey('product_development_expenses.id'), nullable=True)
+
+    # Inventory cost shifting fields (shift an op expense onto inventory item cost)
+    is_inventory_shifted = db.Column(db.Boolean, default=False)
+    shifted_to_product_ids = db.Column(db.Text, nullable=True)  # comma-separated product ids the expense was applied to
     
     # Relationships
     vendor = db.relationship('Vendor', backref='expenses', lazy=True)

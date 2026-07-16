@@ -4,7 +4,8 @@ from calendar import monthrange
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from app.models import Sale, PurchaseBill
+from app import db
+from app.models import Sale, PurchaseBill, CustomerAdvance, VendorAdvance
 
 PAKISTAN_TZ = ZoneInfo("Asia/Karachi")
 
@@ -63,8 +64,288 @@ def safe_update_paid_amount(model_instance, delta_amount):
     
     # Update status
     model_instance.update_status()
-    
+
     return True
+
+
+def apply_sale_payment_with_credit(sale, amount, user_id):
+    """
+    Apply an incoming payment amount to a Sale, capping paid_amount at the
+    invoice total. Any amount beyond the invoice's balance due is converted
+    into an approved CustomerAdvance for the customer, mirroring the existing
+    overpayment-to-advance handling used for sale-return excess (see
+    app/routes/returns.py). This makes the credit show up automatically as
+    "Remaining Advance"/"Customer Remaining" on the customer profile, ledger,
+    ledger PDF, and can later be applied to a future invoice.
+
+    Args:
+        sale: Sale instance being paid
+        amount: Total amount received from the customer for this payment
+        user_id: id of the user recording the payment (for CustomerAdvance.created_by)
+
+    Returns:
+        float: the excess amount (0 if none) converted to advance credit
+    """
+    balance_due = max(0.0, sale.total - sale.paid_amount)
+    applied = min(amount, balance_due)
+    excess = round(amount - applied, 2)
+
+    sale.paid_amount += applied
+    sale.update_status()
+
+    if excess > 0.009 and sale.customer_id:
+        advance = CustomerAdvance(
+            customer_id=sale.customer_id,
+            amount=excess,
+            date=datetime.utcnow().date(),
+            description=f"Auto-credit: overpayment on Invoice #{sale.invoice_number}",
+            is_approved=True,
+            created_by=user_id
+        )
+        db.session.add(advance)
+
+    return excess
+
+
+def auto_apply_customer_advance(sale):
+    """
+    Automatically consume any available advance balance on the sale's
+    customer to reduce this invoice's balance due — no manual "Apply
+    Advance" click required. Mirrors the FIFO advance-consumption logic in
+    app/routes/sales.py:apply_advance_to_overdue, but is not restricted to
+    overdue invoices, since it's meant to run right before a payment is
+    recorded so existing credit is used first.
+
+    Args:
+        sale: Sale instance a payment is about to be recorded against
+
+    Returns:
+        float: the amount of advance applied (0 if none applied)
+    """
+    if not sale.customer_id:
+        return 0.0
+
+    customer = sale.customer
+    available_advance = customer.remaining_advance_balance
+    if available_advance <= 0:
+        return 0.0
+
+    balance_due = max(0.0, sale.total - sale.paid_amount)
+    if balance_due <= 0:
+        return 0.0
+
+    apply_amount = min(available_advance, balance_due)
+
+    sale.advance_applied = (sale.advance_applied or 0) + apply_amount
+    sale.paid_amount = (sale.paid_amount or 0) + apply_amount
+    sale.update_status()
+
+    # Deduct from customer advance records, oldest first
+    remaining_to_apply = apply_amount
+    for adv in sorted(customer.advances, key=lambda a: a.date):
+        if remaining_to_apply <= 0:
+            break
+        available_in_adv = adv.amount - (adv.applied_amount or 0)
+        if available_in_adv <= 0:
+            continue
+        use = min(available_in_adv, remaining_to_apply)
+        adv.applied_amount = (adv.applied_amount or 0) + use
+        remaining_to_apply -= use
+
+    return apply_amount
+
+
+def reverse_sale_advance_applied(sale):
+    """
+    Give back any customer advance credit applied to this sale — reversing
+    sale.advance_applied/paid_amount and restoring the amount to the
+    customer's CustomerAdvance.applied_amount records — regardless of
+    whether it was applied manually, via apply_advance_to_overdue, or
+    auto-applied on invoice creation/payment (auto_apply_customer_advance).
+
+    Must be called BEFORE a Sale is deleted (see delete_invoice/
+    bulk_delete_invoices in app/routes/sales.py), otherwise the applied
+    amount stays permanently "used up" on the customer's advance records
+    even though the invoice that used it no longer exists — understating
+    their real remaining_advance_balance everywhere (customer profile,
+    ledger, invoice PDF, and future auto-apply on new invoices) forever.
+
+    Also used directly by the "Reverse Advance" button on the invoice detail
+    page (app/routes/sales.py:reverse_advance_applied), for an invoice that
+    isn't being deleted.
+
+    Safe to call on a sale with no advance applied or no linked customer
+    (no-op, returns 0). Does NOT call sale.update_status() or commit — the
+    caller decides whether that's needed (skip it when the sale is about to
+    be deleted).
+
+    Returns:
+        float: the amount reversed (0 if none)
+    """
+    reverse_amount = float(sale.advance_applied or 0)
+    if reverse_amount <= 0 or not sale.customer_id:
+        return 0.0
+
+    customer = sale.customer
+    remaining_to_reverse = reverse_amount
+    for adv in sorted(customer.advances, key=lambda a: a.date):
+        if remaining_to_reverse <= 0:
+            break
+        applied = adv.applied_amount or 0
+        if applied <= 0:
+            continue
+        give_back = min(applied, remaining_to_reverse)
+        adv.applied_amount = applied - give_back
+        if adv.is_adjusted and adv.adjusted_invoice_id == sale.id:
+            adv.is_adjusted = False
+            adv.adjusted_invoice_id = None
+        remaining_to_reverse -= give_back
+
+    sale.advance_applied = 0
+    sale.paid_amount = max(0.0, (sale.paid_amount or 0) - reverse_amount)
+
+    return reverse_amount
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# VENDOR (PURCHASE) ADVANCE HELPERS — mirror the customer/sale helpers above.
+# We overpay a vendor → the excess becomes OUR prepaid credit with that vendor
+# (a VendorAdvance), which then auto-applies to future bills for the vendor.
+# ─────────────────────────────────────────────────────────────────────────
+
+def apply_bill_payment_with_credit(bill, amount, user_id):
+    """
+    Apply an incoming payment to a PurchaseBill, capping paid_amount at the
+    bill total. Any amount beyond the bill's balance is converted into an
+    approved VendorAdvance for the vendor, mirroring
+    apply_sale_payment_with_credit for customers. The credit then shows up as
+    the vendor's remaining advance and can auto-apply to future bills.
+
+    Args:
+        bill: PurchaseBill instance being paid
+        amount: Total amount paid to the vendor for this payment
+        user_id: id of the user recording the payment (VendorAdvance.created_by)
+
+    Returns:
+        float: the excess amount (0 if none) converted to advance credit
+    """
+    # What's still owed on the bill = total minus what's paid and what was cancelled
+    balance = max(0.0, bill.total - bill.paid_amount - (bill.cancelled_amount or 0))
+    applied = min(amount, balance)
+    excess = round(amount - applied, 2)
+
+    bill.paid_amount += applied
+    bill.update_status()
+
+    if excess > 0.009 and bill.vendor_id:
+        advance = VendorAdvance(
+            vendor_id=bill.vendor_id,
+            amount=excess,
+            date=datetime.utcnow().date(),
+            description=f"Auto-credit: overpayment on Bill #{bill.bill_number}",
+            is_approved=True,
+            approved_by=user_id,
+            approved_at=datetime.utcnow(),
+            created_by=user_id
+        )
+        db.session.add(advance)
+
+    return excess
+
+
+def auto_apply_vendor_advance(bill):
+    """
+    Automatically consume any available advance balance the business holds with
+    this bill's vendor to reduce the bill's balance due — no manual "Use
+    Advance" click required. Mirrors auto_apply_customer_advance; meant to run
+    right after a bill is created so existing vendor credit is used first.
+
+    Args:
+        bill: PurchaseBill instance a payment/creation is being processed for
+
+    Returns:
+        float: the amount of advance applied (0 if none applied)
+    """
+    if not bill.vendor_id:
+        return 0.0
+
+    vendor = bill.vendor
+    available_advance = vendor.remaining_advance_balance
+    if available_advance <= 0:
+        return 0.0
+
+    balance = max(0.0, bill.total - bill.paid_amount - (bill.cancelled_amount or 0))
+    if balance <= 0:
+        return 0.0
+
+    apply_amount = min(available_advance, balance)
+
+    bill.advance_applied = (bill.advance_applied or 0) + apply_amount
+    bill.paid_amount = (bill.paid_amount or 0) + apply_amount
+    bill.update_status()
+
+    # Deduct from vendor advance records, oldest first
+    remaining_to_apply = apply_amount
+    for adv in sorted(vendor.advances, key=lambda a: a.date):
+        if remaining_to_apply <= 0:
+            break
+        available_in_adv = adv.amount - (adv.applied_amount or 0)
+        if available_in_adv <= 0:
+            continue
+        use = min(available_in_adv, remaining_to_apply)
+        adv.applied_amount = (adv.applied_amount or 0) + use
+        if adv.applied_amount >= adv.amount:
+            adv.is_adjusted = True
+            adv.adjusted_bill_id = bill.id
+        else:
+            adv.adjusted_bill_id = bill.id
+        remaining_to_apply -= use
+
+    return apply_amount
+
+
+def reverse_bill_advance_applied(bill):
+    """
+    Give back any vendor advance credit applied to this bill — reversing
+    bill.advance_applied/paid_amount and restoring the amount to the vendor's
+    VendorAdvance.applied_amount records (oldest first). Mirrors
+    reverse_sale_advance_applied for customers.
+
+    MUST be called BEFORE a PurchaseBill is deleted, otherwise the applied
+    amount stays permanently "used up" on the vendor's advance records even
+    though the bill that consumed it no longer exists — understating the
+    vendor's real remaining_advance_balance everywhere (vendor profile, bill
+    detail, and future auto-apply on new bills) forever.
+
+    Safe to call on a bill with no advance applied or no linked vendor (no-op,
+    returns 0). Does NOT commit — the caller decides.
+
+    Returns:
+        float: the amount reversed (0 if none)
+    """
+    reverse_amount = float(bill.advance_applied or 0)
+    if reverse_amount <= 0 or not bill.vendor_id:
+        return 0.0
+
+    vendor = bill.vendor
+    remaining_to_reverse = reverse_amount
+    for adv in sorted(vendor.advances, key=lambda a: a.date):
+        if remaining_to_reverse <= 0:
+            break
+        applied = adv.applied_amount or 0
+        if applied <= 0:
+            continue
+        give_back = min(applied, remaining_to_reverse)
+        adv.applied_amount = applied - give_back
+        if adv.is_adjusted and adv.adjusted_bill_id == bill.id:
+            adv.is_adjusted = False
+            adv.adjusted_bill_id = None
+        remaining_to_reverse -= give_back
+
+    bill.advance_applied = 0
+    bill.paid_amount = max(0.0, (bill.paid_amount or 0) - reverse_amount)
+
+    return reverse_amount
 
 
 def cleanup_linked_transactions(payment_instance):

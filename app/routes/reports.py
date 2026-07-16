@@ -381,7 +381,7 @@ def expense_report():
     category_id = request.args.get('category_id')
     vendor_id = request.args.get('vendor_id')
     
-    query = Expense.query.filter(Expense.is_shifted == False)
+    query = Expense.query.filter(Expense.is_shifted == False, Expense.is_inventory_shifted == False)
     
     if start_date:
         query = query.filter(Expense.date >= datetime.strptime(start_date, '%Y-%m-%d'))
@@ -761,10 +761,11 @@ def profit_loss_report():
     # 4. Operating Expenses (Deducted from Profit)
     # Categorized Expenses - EXCLUDING BOM overheads as they are informational/inventory related
     operating_expenses = Expense.query.filter(
-        Expense.date >= start_date, 
+        Expense.date >= start_date,
         Expense.date <= end_date,
         Expense.is_bom_overhead == False,
         Expense.is_shifted == False,
+        Expense.is_inventory_shifted == False,
         Expense.status == 'confirmed'
     ).all()
     
@@ -1339,9 +1340,11 @@ def download_report(format, report_type):
         # Expenses
         # Operating
         total_exp = db.session.query(func.sum(Expense.amount)).filter(
-            Expense.date >= start_date, 
-            Expense.date <= end_date, 
+            Expense.date >= start_date,
+            Expense.date <= end_date,
             Expense.is_bom_overhead == False,
+            Expense.is_shifted == False,
+            Expense.is_inventory_shifted == False,
             Expense.status == 'confirmed'
         ).scalar() or 0
         salary_paid = db.session.query(func.sum(SalaryPayment.net_salary)).filter(SalaryPayment.status == 'paid', SalaryPayment.payment_date >= start_date.date(), SalaryPayment.payment_date <= end_date.date()).scalar() or 0

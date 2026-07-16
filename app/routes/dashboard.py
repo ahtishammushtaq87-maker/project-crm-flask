@@ -93,6 +93,7 @@ def index():
                 Expense.is_bom_overhead == False,
                 Expense.is_monthly_divided == False,
                 Expense.is_shifted == False,
+                Expense.is_inventory_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
                 Expense.status == 'confirmed'
@@ -103,6 +104,7 @@ def index():
                 Expense.is_bom_overhead == True,
                 Expense.is_monthly_divided == False,
                 Expense.is_shifted == False,
+                Expense.is_inventory_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
                 Expense.status == 'confirmed'
@@ -112,6 +114,7 @@ def index():
             operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
                 Expense.is_bom_overhead == False,
                 Expense.is_shifted == False,
+                Expense.is_inventory_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
                 Expense.status == 'confirmed'
@@ -121,6 +124,7 @@ def index():
             manufacturing_overhead = db.session.query(func.sum(Expense.amount)).filter(
                 Expense.is_bom_overhead == True,
                 Expense.is_shifted == False,
+                Expense.is_inventory_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
                 Expense.status == 'confirmed'
@@ -132,6 +136,7 @@ def index():
             operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
                 Expense.is_monthly_divided == False,
                 Expense.is_shifted == False,
+                Expense.is_inventory_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
                 Expense.status == 'confirmed'
@@ -140,6 +145,7 @@ def index():
             # Fallback: include all expenses
             operating_expenses = db.session.query(func.sum(Expense.amount)).filter(
                 Expense.is_shifted == False,
+                Expense.is_inventory_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
                 Expense.status == 'confirmed'
@@ -152,6 +158,7 @@ def index():
         monthly_expenses = Expense.query.filter(
             Expense.is_monthly_divided == True,
             Expense.is_shifted == False,
+            Expense.is_inventory_shifted == False,
             Expense.status == 'confirmed'
         ).all()
         for exp in monthly_expenses:

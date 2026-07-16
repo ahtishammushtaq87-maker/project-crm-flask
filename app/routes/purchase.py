@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
-from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory, PurchaseReturn, PurchaseReturnItem, PurchaseSettings, PurchaseReturnSettings, BillPayment, BillReceive, BillReceiveItem, ProductWarehouseStock, Warehouse
+from app.models import PurchaseBill, PurchaseItem, Product, Vendor, Company, Currency, VendorAdvance, PurchaseOrder, PurchaseOrderItem, CostPriceHistory, PurchaseReturn, PurchaseReturnItem, PurchaseSettings, PurchaseReturnSettings, BillPayment, BillReceive, BillReceiveItem, ProductWarehouseStock, Warehouse, PaymentMethod
 from app.forms import PurchaseForm, VendorForm, PurchaseReturnSettingsForm
 from datetime import datetime, timedelta, date
 from app.pdf_utils import generate_professional_pdf
@@ -177,7 +177,10 @@ def create_bill():
         bill.calculate_totals()
 
         # Update paid amount from "Advance Paid" field in template
-        advance = float(request.form.get('advance', 0))
+        try:
+            advance = float(request.form.get('advance') or 0)
+        except (ValueError, TypeError):
+            advance = 0
         if advance > 0:
             vendor = Vendor.query.get(vendor_id)
             pending_advances = VendorAdvance.query.filter_by(
@@ -192,6 +195,8 @@ def create_bill():
                 if can_apply > 0:
                     adv.applied_amount += can_apply
                     bill.paid_amount += can_apply
+                    # Track advance applied so it can be reversed if the bill is deleted
+                    bill.advance_applied = (bill.advance_applied or 0) + can_apply
                     if adv.applied_amount >= adv.amount:
                         adv.is_adjusted = True
                         adv.adjusted_bill_id = bill.id
@@ -224,11 +229,29 @@ def create_bill():
                     flash('Invalid file type for bill image. Allowed: png, jpg, jpeg, gif, pdf, webp', 'warning')
 
         db.session.commit()
-        
-        log_activity('Purchase', f'Created Bill #{bill.bill_number}', 
+
+        # Auto-apply the vendor's existing advance credit to this new bill, but
+        # only when the user didn't manually specify an advance amount above
+        # (respect an explicit manual choice). Mirrors the customer-advance
+        # auto-apply on sales invoice creation.
+        advance_auto_applied = 0
+        if advance <= 0:
+            try:
+                from app.utils import auto_apply_vendor_advance
+                advance_auto_applied = auto_apply_vendor_advance(bill)
+                if advance_auto_applied > 0:
+                    db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.warning(f"Vendor advance auto-apply failed for bill {bill.bill_number}: {e}")
+
+        log_activity('Purchase', f'Created Bill #{bill.bill_number}',
                     f'Vendor: {bill.vendor.name}, Total: {bill.total}')
-        
-        flash('Purchase bill created successfully!', 'success')
+
+        if advance_auto_applied > 0:
+            flash(f'Purchase bill created successfully! PKR {advance_auto_applied:,.2f} of the vendor\'s existing advance was auto-applied to this bill.', 'success')
+        else:
+            flash('Purchase bill created successfully!', 'success')
         return redirect(url_for('purchase.bill_detail', id=bill.id))
     
     return render_template('purchase/create_bill.html', form=form, products=products, vendors=vendors, currencies=currencies, warehouses=warehouses)
@@ -256,9 +279,12 @@ def bill_detail(id):
             or_(PurchaseBill.id == bill.id, PurchaseBill.is_approved == True)
         ).order_by(PurchaseBill.date.desc()).all()
 
+    # Custom payment methods (same source as the sales invoice pay popup)
+    payment_methods = PaymentMethod.query.filter_by(is_active=True).order_by(PaymentMethod.name).all()
+
     return render_template('purchase/bill_detail.html', bill=bill, date_format=date_format,
                            received_qty_map=received_qty_map, warehouses=warehouses,
-                           other_bills=other_bills)
+                           other_bills=other_bills, payment_methods=payment_methods)
 
 @bp.route('/bill/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -951,7 +977,13 @@ def pay_bill(id):
     vendor = bill.vendor
     is_admin = (current_user.role == 'admin')
     total_payment = 0
-    method_label = payment_method.capitalize()
+    overpayment_credit = 0  # excess over the bill balance, credited to vendor advance
+    # Keep the 3 built-in methods capitalised (Cash/Advance/Mixed); preserve the
+    # exact label for custom/other methods (e.g. "Bank Transfer", "Cheque").
+    if payment_method in ('cash', 'advance', 'mixed'):
+        method_label = payment_method.capitalize()
+    else:
+        method_label = payment_method
     last_advance_id = None
 
     try:
@@ -960,7 +992,9 @@ def pay_bill(id):
             if amount > 0:
                 total_payment = amount
                 if is_admin:
-                    bill.paid_amount += amount
+                    # Cap at the bill balance; any excess becomes vendor advance credit
+                    from app.utils import apply_bill_payment_with_credit
+                    overpayment_credit += apply_bill_payment_with_credit(bill, amount, current_user.id)
 
         elif payment_method == 'advance':
             advance_id = request.form.get('selected_advance_id')
@@ -1004,13 +1038,25 @@ def pay_bill(id):
                             else:
                                 advance.adjusted_bill_id = bill.id
 
-            # After advances, determine remaining total due (including shipping)
-            remaining_total = bill.total - bill.paid_amount
+            # After advances, determine remaining total due (net of cancellations)
+            remaining_total = bill.total - bill.paid_amount - (bill.cancelled_amount or 0)
             if cash_amount > 0 and remaining_total > 0:
                 cash_to_apply = min(cash_amount, remaining_total)
                 total_payment += cash_to_apply
                 if is_admin:
                     bill.paid_amount += cash_to_apply
+
+        else:
+            # Direct non-cash methods (Bank Transfer, Cheque, Online, or any custom
+            # payment method) — recorded like cash from the same Amount field, but
+            # WITHOUT the cash-only auto-generated receipt PDF (handled further below).
+            amount = float(request.form.get('amount', 0))
+            if amount > 0:
+                total_payment = amount
+                if is_admin:
+                    # Cap at the bill balance; any excess becomes vendor advance credit
+                    from app.utils import apply_bill_payment_with_credit
+                    overpayment_credit += apply_bill_payment_with_credit(bill, amount, current_user.id)
 
         if is_admin:
             bill.update_status()
@@ -1074,7 +1120,10 @@ def pay_bill(id):
                         f'Amount: PKR {total_payment:,.2f}, Method: {method_label}')
 
         if total_payment > 0:
-            flash(f'Payment of PKR {total_payment:,.2f} recorded successfully! ({method_label})', 'success')
+            msg = f'Payment of PKR {total_payment:,.2f} recorded successfully! ({method_label})'
+            if overpayment_credit > 0:
+                msg += f' PKR {overpayment_credit:,.2f} exceeded the balance due and has been credited to the vendor as a remaining advance.'
+            flash(msg, 'success')
         else:
             flash('No payment was processed.', 'warning')
 
@@ -1523,13 +1572,22 @@ def delete_bill(id):
         except Exception as e:
             print(f"Warning: Could not delete bill image: {e}")
 
+    # Give back any vendor advance credit that was applied to this bill (auto-apply
+    # on creation or the manual "Advance Paid" field), so the vendor's remaining
+    # advance balance is restored instead of staying permanently consumed.
+    from app.utils import reverse_bill_advance_applied
+    advance_reversed = reverse_bill_advance_applied(bill)
+
     bill_number = bill.bill_number
     vendor_name = bill.vendor.name
     db.session.delete(bill)
     db.session.commit()
     log_activity('Purchase', f'Deleted Bill #{bill_number}',
-                f'Vendor: {vendor_name}')
-    flash('Purchase bill deleted successfully. Inventory and warehouse stocks have been reversed.', 'success')
+                f'Vendor: {vendor_name}, Advance restored: {advance_reversed:,.2f}')
+    if advance_reversed > 0:
+        flash(f'Purchase bill deleted. Inventory reversed and PKR {advance_reversed:,.2f} of vendor advance was restored.', 'success')
+    else:
+        flash('Purchase bill deleted successfully. Inventory and warehouse stocks have been reversed.', 'success')
     return redirect(url_for('purchase.bills'))
 
 @bp.route('/bills/bulk-delete', methods=['POST'])
@@ -1579,7 +1637,11 @@ def bulk_delete_bills():
                                     wh_stock.quantity -= item.quantity
                                     if wh_stock.quantity < 0:
                                         wh_stock.quantity = 0
-            
+
+            # Restore any vendor advance applied to this bill before deleting it
+            from app.utils import reverse_bill_advance_applied
+            reverse_bill_advance_applied(bill)
+
             db.session.delete(bill)
             deleted_count += 1
         except Exception as e:

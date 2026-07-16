@@ -883,9 +883,37 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             ("Shipping / Freight", f"{currency}{sc:,.2f}"),
             ("Tax",                f"{currency}{obj.tax:,.2f}"),
             ("Total Due",          f"{currency}{obj.total:,.2f}"),
-            ("Amount Paid",        f"{currency}{obj.paid_amount:,.2f}"),
-            ("Balance",            f"{currency}{obj.balance_due:,.2f}"),
         ]
+
+        # obj.paid_amount is a mix of actual cash payments AND any customer
+        # advance credit applied to this invoice. Break the advance portion
+        # out into its own line instead of folding it into "Amount Paid".
+        advance_applied_amt = float(getattr(obj, 'advance_applied', 0) or 0)
+        if advance_applied_amt > 0.009:
+            totals.append(("Advance Applied", f"{currency}{advance_applied_amt:,.2f}"))
+
+        # Cash-only portion of paid_amount (excludes advance credit applied above)
+        cash_applied = max(0.0, obj.paid_amount - advance_applied_amt)
+
+        # Gross cash amount actually received from the customer against this invoice
+        # (approved Payment rows) — can exceed cash_applied when the customer
+        # overpaid, since the excess is tracked separately as new customer
+        # advance credit rather than applied to this invoice.
+        gross_paid = sum(p.amount for p in obj.payments if p.is_approved) if hasattr(obj, 'payments') else cash_applied
+
+        if gross_paid > cash_applied + 0.009:
+            totals.append(("Paid Amount",  f"{currency}{gross_paid:,.2f}"))
+            totals.append(("Invoice Paid", f"{currency}{cash_applied:,.2f}"))
+        else:
+            totals.append(("Amount Paid",  f"{currency}{cash_applied:,.2f}"))
+
+        totals.append(("Balance", f"{currency}{obj.balance_due:,.2f}"))
+
+        # Show any unapplied advance credit (e.g. from a past overpayment) so the
+        # customer sees the remaining balance in their favor on the invoice itself.
+        customer_remaining = float(obj.customer.remaining_advance_balance or 0) if obj.customer else 0
+        if customer_remaining > 0.009:
+            totals.append(("Customer Remaining Advance", f"{currency}{customer_remaining:,.2f}"))
 
         payment_info = None
         if settings:
@@ -978,13 +1006,34 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
         if obj.cancelled_amount > 0:
             totals += [("Cancelled Amount", f"-{currency}{obj.cancelled_amount:,.2f}")]
             
-        totals += [("Total Due",f"{currency}{obj.total - obj.shipping_charge:,.2f}")]
-        if hasattr(obj, 'advance_applied') and obj.advance_applied and obj.advance_applied > 0:
-            totals += [("Advance Applied", f"-{currency}{obj.advance_applied:,.2f}"),
-                       ("Balance Due",     f"{currency}{obj.balance_due:,.2f}")]
+        totals += [("Total Due", f"{currency}{obj.total - obj.shipping_charge:,.2f}")]
+
+        # Vendor advance credit applied to THIS bill (reduces what we pay now)
+        advance_applied_amt = float(getattr(obj, 'advance_applied', 0) or 0)
+        if advance_applied_amt > 0.009:
+            totals.append(("Advance Applied", f"-{currency}{advance_applied_amt:,.2f}"))
+
+        # Cash-only portion of paid_amount (excludes advance credit applied above)
+        cash_applied = max(0.0, obj.paid_amount - advance_applied_amt)
+
+        # Gross amount actually paid to the vendor against this bill (approved
+        # BillPayments) — can exceed cash_applied when we overpaid, since the
+        # excess is credited as new vendor advance rather than applied here.
+        gross_paid = sum(p.amount for p in obj.bill_payments if p.is_approved) if hasattr(obj, 'bill_payments') else cash_applied
+
+        if gross_paid > cash_applied + 0.009:
+            totals.append(("Paid Amount", f"{currency}{gross_paid:,.2f}"))
+            totals.append(("Bill Paid",   f"{currency}{cash_applied:,.2f}"))
         else:
-            totals += [("Amount Paid", f"{currency}{obj.paid_amount:,.2f}"),
-                       ("Balance Due", f"{currency}{obj.balance_due:,.2f}")]
+            totals.append(("Amount Paid", f"{currency}{cash_applied:,.2f}"))
+
+        totals.append(("Balance Due", f"{currency}{obj.balance_due:,.2f}"))
+
+        # Show any remaining vendor advance credit (e.g. from this overpayment) so
+        # the credit in our favour is visible on the bill itself.
+        vendor_remaining = float(obj.vendor.remaining_advance_balance or 0) if getattr(obj, 'vendor', None) else 0
+        if vendor_remaining > 0.009:
+            totals.append(("Vendor Remaining Advance", f"{currency}{vendor_remaining:,.2f}"))
 
         # Build clean notes — strip internal audit lines ([Cancelled…] / [Reversed…])
         import re as _re

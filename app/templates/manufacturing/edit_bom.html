@@ -231,6 +231,10 @@
                             </table>
                         </div>
                     </div>
+                    <div class="card-footer bg-light d-flex justify-content-between align-items-center">
+                        <span class="fw-bold text-primary"><i class="fas fa-calculator me-1"></i> Total Material Cost</span>
+                        <span class="fw-bold text-primary fs-5" id="totalMaterialCost">PKR 0.00</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -276,9 +280,10 @@
             </td>
         `;
             componentsBody.appendChild(newRow);
-            initSelect2($(newRow).find('.component-select'), 'Search or select product');
+            initComponentSelect2($(newRow).find('.component-select'));
             initSelect2($(newRow).find('.component-warehouse-select'), '— Select Warehouse —');
             updateRemoveButtons();
+            refreshComponentState();
         });
 
         componentsBody.addEventListener('click', function (e) {
@@ -287,6 +292,7 @@
                 if (rows.length > 1) {
                     e.target.closest('tr').remove();
                     updateRemoveButtons();
+                    refreshComponentState();
                 }
             }
         });
@@ -303,6 +309,60 @@
 
         // Initialize initial correct states for trash buttons
         updateRemoveButtons();
+
+        // ── Live material cost total + duplicate-component prevention ──────────
+        const totalCostEl = document.getElementById('totalMaterialCost');
+
+        function updateTotalCost() {
+            let total = 0;
+            componentsBody.querySelectorAll('.component-row').forEach(function (row) {
+                const sel = row.querySelector('.component-select');
+                const qtyInput = row.querySelector('input[name="quantity[]"]');
+                if (sel && sel.value) {
+                    const opt = sel.options[sel.selectedIndex];
+                    const cost = parseFloat(opt && opt.getAttribute('data-cost')) || 0;
+                    const qty = parseFloat(qtyInput && qtyInput.value) || 0;
+                    total += cost * qty;
+                }
+            });
+            if (totalCostEl) {
+                totalCostEl.textContent = 'PKR ' + total.toLocaleString(undefined, {
+                    minimumFractionDigits: 2, maximumFractionDigits: 2
+                });
+            }
+        }
+
+        function refreshDuplicateOptions() {
+            const selects = componentsBody.querySelectorAll('.component-select');
+            const chosen = [];
+            selects.forEach(function (s) { if (s.value) chosen.push(s.value); });
+            // Disable each already-chosen product in the OTHER rows (keep own value enabled)
+            selects.forEach(function (sel) {
+                Array.from(sel.options).forEach(function (opt) {
+                    if (!opt.value) return;
+                    opt.disabled = (opt.value !== sel.value) && chosen.includes(opt.value);
+                });
+            });
+        }
+
+        function refreshComponentState() {
+            refreshDuplicateOptions();
+            updateTotalCost();
+        }
+
+        componentsBody.addEventListener('change', function (e) {
+            if (e.target.classList && e.target.classList.contains('component-select')) {
+                refreshComponentState();
+            }
+        });
+        componentsBody.addEventListener('input', function (e) {
+            if (e.target.name === 'quantity[]') {
+                updateTotalCost();
+            }
+        });
+
+        // Initial state (disable duplicates already present, compute starting total)
+        refreshComponentState();
 
         // Overhead Auto-Sync Logic
         const productSelect = document.getElementById('product_id_select');
@@ -373,12 +433,34 @@
         });
     }
 
+    // Component select with "already selected" hint on disabled (duplicate) options
+    function initComponentSelect2(selector) {
+        $(selector).select2({
+            theme: 'bootstrap-5',
+            placeholder: '— Search or Select Component —',
+            allowClear: true,
+            width: '100%',
+            dropdownParent: $(document.body),
+            templateResult: function (option) {
+                if (!option.id) return option.text;
+                const el = option.element;
+                if (el && el.disabled) {
+                    const $span = $('<span class="text-muted"></span>');
+                    $span.append($('<i class="fas fa-check-circle text-success me-1"></i>'));
+                    $span.append(document.createTextNode(option.text + ' (already selected)'));
+                    return $span;
+                }
+                return option.text;
+            }
+        });
+    }
+
     $(document).ready(function () {
         // Finished Product select
         initSelect2('#product_id_select', '— Search or Select Finished Product —');
 
         // Component selects - initialize all with select2
-        initSelect2('.component-select', '— Search or Select Component —');
+        initComponentSelect2('.component-select');
         initSelect2('.component-warehouse-select', '— Select Warehouse —');
     });
 </script>

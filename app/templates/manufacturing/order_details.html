@@ -27,12 +27,12 @@
 
     <!-- Feedback Alerts -->
     {% if order.status == 'Completed' %}
-    <div class="alert alert-success border-left-success" role="alert">
+    <div class="alert alert-success border-left-success static-alert" role="alert">
         <i class="fas fa-check-circle me-2"></i> This order was completed on {{ order.end_date.strftime('%d %b %Y') if
         order.end_date else '-' }}. Stock has been updated and COGS processed.
     </div>
     {% else %}
-    <div class="alert alert-warning border-left-warning" role="alert">
+    <div class="alert alert-warning border-left-warning static-alert" role="alert">
         <i class="fas fa-tools me-2"></i> This order is <strong>In Progress</strong>. Click "Mark as Completed" to
         finish production and update inventory.
     </div>
@@ -384,7 +384,7 @@
                         <label class="form-label d-block text-primary fw-bold">Overhead Allocation Mode</label>
                         <div class="form-check mb-2">
                             <input class="form-check-input" type="radio" name="overhead_mode" id="modeTotal_detail"
-                                value="total" checked>
+                                value="total">
                             <label class="form-check-input-label" for="modeTotal_detail">
                                 Apply Total Linked Overhead (PKR {{ "%.2f"|format(order.actual_overhead_cost or 0) }}) -
                                 Reset Bucket
@@ -392,7 +392,7 @@
                         </div>
                         <div class="form-check mb-2">
                             <input class="form-check-input" type="radio" name="overhead_mode" id="modeTotalKeep_detail"
-                                value="total_keep">
+                                value="total_keep" checked>
                             <label class="form-check-input-label" for="modeTotalKeep_detail">
                                 Apply Total Linked Overhead (PKR {{ "%.2f"|format(order.actual_overhead_cost or 0) }}) -
                                 Keep for Remaining

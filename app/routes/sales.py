@@ -516,14 +516,27 @@ def create_invoice():
         # IMPORTANT: Trigger the official total calculation from the model
         # This ensures the stored 'total' matches the model logic 100%
         sale.calculate_totals()
+
+        # Auto-apply any remaining customer advance credit to this new invoice
+        # right away (on top of whatever amount was manually entered in the
+        # "Advance Applied" field above), so the customer's existing credit is
+        # used immediately instead of sitting idle until a payment is made.
+        advance_auto_applied = 0
+        if sale.customer_id and not violation_found:
+            from app.utils import auto_apply_customer_advance
+            advance_auto_applied = auto_apply_customer_advance(sale)
+
         sale.update_status()
 
         db.session.commit()
-        
-        log_activity('Sales', f'Created Invoice #{sale.invoice_number}', 
+
+        log_activity('Sales', f'Created Invoice #{sale.invoice_number}',
                     f'Customer: {sale.customer.name if sale.customer else "Walk-in Customer"}, Total: {sale.total}')
-        
-        flash('Invoice created successfully!', 'success')
+
+        if advance_auto_applied > 0:
+            flash(f'Invoice created successfully! PKR {advance_auto_applied:,.2f} of the customer\'s existing advance was auto-applied to this invoice.', 'success')
+        else:
+            flash('Invoice created successfully!', 'success')
         return redirect(url_for('sales.invoice_detail', id=sale.id))
     
     salesmen = Salesman.query.filter_by(is_active=True).all()
@@ -783,12 +796,18 @@ def delete_invoice(id):
     invoice_num = sale.invoice_number
     cust_name = sale.customer.name if sale.customer else "Walk-in Customer"
     total = sale.total
-    
+
+    # Give back any customer advance credit applied to this invoice before
+    # deleting it — otherwise it stays permanently "used up" on the
+    # customer's advance records even though this invoice no longer exists.
+    from app.utils import reverse_sale_advance_applied
+    reverse_sale_advance_applied(sale)
+
     db.session.delete(sale)
     db.session.commit()
-    
+
     log_activity('Sales', f'Deleted Invoice #{invoice_num}', f'Customer: {cust_name}, Total: {total}')
-    
+
     flash('Invoice deleted successfully.', 'success')
     return redirect(url_for('sales.invoices'))
 
@@ -824,7 +843,12 @@ def bulk_delete_invoices():
                             wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=product.warehouse_id).first()
                             if wh_stock:
                                 wh_stock.quantity += item.quantity
-            
+
+            # Give back any customer advance credit applied to this invoice
+            # before deleting it (see delete_invoice for why this matters).
+            from app.utils import reverse_sale_advance_applied
+            reverse_sale_advance_applied(sale)
+
             db.session.delete(sale)
             deleted_count += 1
         except Exception as e:
@@ -853,9 +877,14 @@ def pay_invoice(id):
 
         # Only update paid_amount immediately for admin-approved payments
         # Staff payments remain pending until admin approves them
+        overpayment_credit = 0
+        advance_applied_now = 0
         if payer_is_admin:
-            sale.paid_amount += amount
-            sale.update_status()
+            from app.utils import auto_apply_customer_advance, apply_sale_payment_with_credit
+            # Use up any existing customer advance credit first, then apply
+            # the newly entered payment amount on top of that.
+            advance_applied_now = auto_apply_customer_advance(sale)
+            overpayment_credit = apply_sale_payment_with_credit(sale, amount, current_user.id)
 
         payment_date_str = request.form.get('payment_date', '')
         payment_date = datetime.strptime(payment_date_str, '%Y-%m-%d') if payment_date_str else datetime.utcnow()
@@ -926,7 +955,12 @@ def pay_invoice(id):
         log_activity('Sales', f'Recorded Payment on Invoice #{sale.invoice_number}',
                     f'Amount: PKR {amount:,.2f}, Method: {payment_method}, Approved: {payer_is_admin}')
         if payer_is_admin:
-            flash(f'Payment of PKR {amount:,.2f} recorded and approved successfully!', 'success')
+            msg = f'Payment of PKR {amount:,.2f} recorded and approved successfully!'
+            if advance_applied_now > 0:
+                msg += f' PKR {advance_applied_now:,.2f} of the customer\'s existing advance was auto-applied to this invoice.'
+            if overpayment_credit > 0:
+                msg += f' PKR {overpayment_credit:,.2f} exceeded the balance due and has been credited to the customer as a remaining advance.'
+            flash(msg, 'success')
         else:
             flash(f'Payment of PKR {amount:,.2f} submitted — pending admin approval.', 'info')
 
@@ -1061,14 +1095,23 @@ def approve_payment(id, pay_id):
     payment.approved_by = current_user.id
     payment.approved_at = datetime.utcnow()
 
-    # Now add the payment amount to the sale's paid_amount
-    sale.paid_amount += payment.amount
-    sale.update_status()
+    # Now add the payment amount to the sale's paid_amount. Use up any
+    # existing customer advance credit first, then apply the payment amount
+    # on top of that; anything still beyond the balance due is credited to
+    # the customer as a new advance.
+    from app.utils import auto_apply_customer_advance, apply_sale_payment_with_credit
+    advance_applied_now = auto_apply_customer_advance(sale)
+    overpayment_credit = apply_sale_payment_with_credit(sale, payment.amount, current_user.id)
 
     db.session.commit()
     log_activity('Sales', f'Approved Payment #{payment.payment_number} on Invoice #{sale.invoice_number}',
                  f'Amount: PKR {payment.amount:,.2f} approved by {current_user.username}')
-    flash(f'Payment of PKR {payment.amount:,.2f} approved and applied to invoice!', 'success')
+    msg = f'Payment of PKR {payment.amount:,.2f} approved and applied to invoice!'
+    if advance_applied_now > 0:
+        msg += f' PKR {advance_applied_now:,.2f} of the customer\'s existing advance was auto-applied to this invoice.'
+    if overpayment_credit > 0:
+        msg += f' PKR {overpayment_credit:,.2f} exceeded the balance due and has been credited to the customer as a remaining advance.'
+    flash(msg, 'success')
     return redirect(url_for('sales.invoice_detail', id=id))
 
 
@@ -1368,6 +1411,70 @@ def apply_advance_to_overdue(id):
                 f'Amount: PKR {apply_amount:,.2f}, Customer: {customer.name}')
     flash(f'Advance of PKR {apply_amount:,.2f} applied to overdue invoice successfully!', 'success')
     return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+
+@bp.route('/invoice/<int:id>/reverse-advance', methods=['POST'])
+@login_required
+@permission_required('sales', action='edit')
+def reverse_advance_applied(id):
+    """Reverse/undo the customer advance credit applied to this invoice,
+    returning that amount back to the customer's available advance balance."""
+    sale = Sale.query.get_or_404(id)
+
+    if float(sale.advance_applied or 0) <= 0:
+        flash('No advance has been applied to this invoice.', 'warning')
+        return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+    if not sale.customer_id:
+        flash('No customer linked to this invoice.', 'danger')
+        return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+    from app.utils import reverse_sale_advance_applied
+    reverse_amount = reverse_sale_advance_applied(sale)
+    sale.update_status()
+
+    db.session.commit()
+    log_activity('Sales', f'Reversed Advance Applied on Invoice #{sale.invoice_number}',
+                f'Amount: PKR {reverse_amount:,.2f}')
+    flash(f'Advance of PKR {reverse_amount:,.2f} has been reversed and returned to the customer\'s remaining advance balance.', 'success')
+    return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+
+@bp.route('/invoice/<int:id>/dismiss-overdue-alert', methods=['POST'])
+@login_required
+def dismiss_overdue_alert(id):
+    """Admin-only: permanently dismiss the top-of-page overdue notification
+    for this invoice and send it to Sales Recovery (escalated there, where it
+    surfaces as its own top-of-page notification — see
+    inject_recovery_escalation_alerts in app/__init__.py). No redirect/popup:
+    stays on whichever Sales page the admin clicked "Done" from. The banner
+    itself is visible to every user, but only an admin can dismiss it."""
+    if current_user.role != 'admin':
+        flash('Only admin can dismiss overdue notifications.', 'danger')
+        return redirect(request.referrer or url_for('sales.invoices'))
+
+    sale = Sale.query.get_or_404(id)
+    sale.overdue_alert_dismissed = True
+
+    task = sale.recovery_task
+    if task and not task.is_escalated and task.recovery_status not in ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF'):
+        from app.models import RecoveryLog
+        task.is_escalated = True
+        task.escalated_at = datetime.utcnow()
+        task.risk_level = 'critical'
+        task.priority = 4
+        task.updated_at = datetime.utcnow()
+        db.session.add(RecoveryLog(
+            task_id=task.id,
+            response_type='escalated',
+            note=f'Sent to Recovery: admin marked the overdue notification for Invoice #{sale.invoice_number} as done.',
+            logged_by=current_user.id,
+        ))
+
+    db.session.commit()
+    log_activity('Sales', f'Dismissed Overdue Alert for Invoice #{sale.invoice_number}', '')
+    flash(f'Invoice #{sale.invoice_number} sent to Sales Recovery.', 'success')
+    return redirect(request.referrer or url_for('sales.invoices'))
 
 
 @bp.route('/customers')

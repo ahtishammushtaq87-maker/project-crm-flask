@@ -350,6 +350,103 @@ def orders():
     orders = query.order_by(ManufacturingOrder.created_at.desc()).all()
     return render_template('manufacturing/orders.html', orders=orders, active_module='manufacturing_order')
 
+@bp.route('/orders/components-summary')
+@login_required
+def orders_components_summary():
+    """Aggregate every component used across manufacturing orders.
+
+    For each component it reports: total quantity required and used (consumed),
+    current in-stock quantity, the quantity that still needs to be bought to
+    complete every order, the buying cost and cost already incurred, and which
+    manufacturing orders it is linked to (with each order's finished-good name).
+
+    Optional query params `from_date` / `to_date` (YYYY-MM-DD) filter orders by
+    their start date.
+    """
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+
+    query = ManufacturingOrder.query
+    if from_date:
+        try:
+            fd = datetime.strptime(from_date, '%Y-%m-%d').date()
+            query = query.filter(ManufacturingOrder.start_date != None,
+                                 ManufacturingOrder.start_date >= fd)
+        except ValueError:
+            pass
+    if to_date:
+        try:
+            td = datetime.strptime(to_date, '%Y-%m-%d').date()
+            query = query.filter(ManufacturingOrder.start_date != None,
+                                 ManufacturingOrder.start_date <= td)
+        except ValueError:
+            pass
+
+    orders = query.all()
+
+    # component_id -> aggregated record
+    summary = {}
+
+    for order in orders:
+        finished_good = order.bom.product.name if order.bom and order.bom.product else 'N/A'
+        for item in order.items:
+            comp = item.component
+            if not comp:
+                continue
+
+            rec = summary.get(comp.id)
+            if rec is None:
+                rec = {
+                    'component_id': comp.id,
+                    'name': comp.name,
+                    'sku': comp.sku,
+                    'unit': comp.unit or 'pcs',
+                    'cost_price': comp.cost_price or 0,
+                    'in_stock': comp.quantity or 0,
+                    'total_required': 0.0,
+                    'total_used': 0.0,
+                    'cost_incurred': 0.0,
+                    'orders': [],
+                }
+                summary[comp.id] = rec
+
+            used = item.quantity_consumed or 0
+            required = item.quantity_required or 0
+
+            rec['total_required'] += required
+            rec['total_used'] += used
+            rec['cost_incurred'] += used * (comp.cost_price or 0)
+            rec['orders'].append({
+                'order_number': order.order_number,
+                'finished_good': finished_good,
+                'status': order.status,
+                'qty_required': required,
+                'qty_used': used,
+            })
+
+    # Derived procurement figures per component
+    for rec in summary.values():
+        # Quantity still to be bought so every order can complete
+        rec['to_buy'] = max(0.0, rec['total_required'] - rec['in_stock'])
+        rec['buying_cost'] = rec['to_buy'] * rec['cost_price']
+        # Full material value of everything required (already-owned + to-buy)
+        rec['required_cost'] = rec['total_required'] * rec['cost_price']
+
+    components = sorted(summary.values(), key=lambda r: r['required_cost'], reverse=True)
+
+    totals = {
+        'components_count': len(components),
+        'total_qty_required': sum(r['total_required'] for r in components),
+        'total_qty_used': sum(r['total_used'] for r in components),
+        'total_to_buy': sum(r['to_buy'] for r in components),
+        'total_buying_cost': sum(r['buying_cost'] for r in components),
+        'total_required_cost': sum(r['required_cost'] for r in components),
+        'total_cost_incurred': sum(r['cost_incurred'] for r in components),
+        'orders_count': len(orders),
+    }
+
+    return jsonify({'components': components, 'totals': totals})
+
 @bp.route('/order/add', methods=['GET', 'POST'])
 @login_required
 @permission_required('manufacturing', action='add')

@@ -470,6 +470,49 @@ def create_app(config_class=Config):
         except Exception:
             return dict(total_pending_approvals=0, pending_approval_details=[])
 
+    @app.context_processor
+    def inject_overdue_alerts():
+        """Top-of-page overdue-invoice notification banner, shown only on Sales
+        module pages (see app/templates/base.html). Visible to every user;
+        only an admin can dismiss (Sale.overdue_alert_dismissed)."""
+        from flask_login import current_user
+        if not current_user.is_authenticated or request.blueprint != 'sales':
+            return dict(overdue_alert_invoices=[])
+        try:
+            from app.models import Sale
+            candidates = Sale.query.filter(
+                Sale.is_approved == True,
+                Sale.is_rejected == False,
+                Sale.is_draft == False,
+                Sale.status != 'paid',
+                Sale.due_date.isnot(None),
+                Sale.overdue_alert_dismissed == False
+            ).all()
+            overdue_alert_invoices = [s for s in candidates if s.show_overdue_alert]
+            overdue_alert_invoices.sort(key=lambda s: s.days_overdue, reverse=True)
+            return dict(overdue_alert_invoices=overdue_alert_invoices)
+        except Exception:
+            return dict(overdue_alert_invoices=[])
+
+    @app.context_processor
+    def inject_recovery_escalation_alerts():
+        """Top-of-page notification banner on Recovery module pages, listing
+        escalated/critical recovery tasks that are still open — including
+        ones sent here from the Sales overdue banner (via admin "Done" or
+        the automatic 2-day escalation in recovery_automation.py)."""
+        from flask_login import current_user
+        if not current_user.is_authenticated or request.blueprint != 'recovery':
+            return dict(recovery_escalation_alerts=[])
+        try:
+            from app.models import RecoveryTask
+            tasks = RecoveryTask.query.filter(
+                RecoveryTask.is_escalated == True,
+                RecoveryTask.recovery_status.notin_(['CLOSED_PAID', 'CLOSED_WRITTEN_OFF'])
+            ).order_by(RecoveryTask.escalated_at.desc()).all()
+            return dict(recovery_escalation_alerts=tasks)
+        except Exception:
+            return dict(recovery_escalation_alerts=[])
+
     from app.scheduler import start_recovery_scheduler
     start_recovery_scheduler(app)
 

@@ -1354,6 +1354,47 @@
                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close" style="font-size:0.7rem;"></button>
                     </div>
                     {% endif %}
+
+                    <!-- Overdue Invoice Notifications (Sales module only) -->
+                    {% if overdue_alert_invoices %}
+                    <div class="overdue-alert-stack mb-3">
+                        {% for inv in overdue_alert_invoices %}
+                        <div class="alert alert-danger premium-alert py-2 px-3 d-flex align-items-center flex-wrap gap-2 mb-2" role="alert" style="font-size:0.85rem;">
+                            <i class="fas fa-triangle-exclamation me-1"></i>
+                            <strong>Overdue Invoice:</strong>
+                            <span>{{ inv.invoice_number }}</span>
+                            {% if inv.customer %}
+                            <span class="text-muted">— {{ inv.customer.name }}</span>
+                            {% endif %}
+                            <span class="badge bg-danger">{{ inv.days_overdue }} day{{ 's' if inv.days_overdue != 1 else '' }} overdue</span>
+                            <a href="{{ url_for('sales.invoice_detail', id=inv.id) }}" class="btn btn-sm btn-outline-danger py-0 px-2 ms-auto">View</a>
+                            {% if current_user.is_authenticated and current_user.role == 'admin' %}
+                            <form action="{{ url_for('sales.dismiss_overdue_alert', id=inv.id) }}" method="POST" class="d-inline mb-0">
+                                <button type="submit" class="btn btn-sm btn-danger py-0 px-2">Done</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    <!-- Recovery Escalation Notifications (Recovery module only) -->
+                    {% if recovery_escalation_alerts %}
+                    <div class="overdue-alert-stack mb-3">
+                        {% for task in recovery_escalation_alerts %}
+                        <div class="alert alert-danger premium-alert py-2 px-3 d-flex align-items-center flex-wrap gap-2 mb-2" role="alert" style="font-size:0.85rem;">
+                            <i class="fas fa-bolt me-1"></i>
+                            <strong>Escalated:</strong>
+                            <span>{{ task.invoice.invoice_number }}</span>
+                            {% if task.invoice.customer %}
+                            <span class="text-muted">— {{ task.invoice.customer.name }}</span>
+                            {% endif %}
+                            <span class="badge bg-danger">Critical</span>
+                            <a href="{{ url_for('recovery.task_detail', task_id=task.id) }}" class="btn btn-sm btn-outline-danger py-0 px-2 ms-auto">View</a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                 </div>
 
                 <!-- Page Content Internal Padding Container -->
@@ -1551,8 +1592,10 @@
                 },
 
                 processFlashMessages: function () {
-                    const flashAlerts = document.querySelectorAll('.alert:not(.premium-alert)');
-                    const premiumAlerts = document.querySelectorAll('.premium-alert');
+                    // `.static-alert` = persistent status banners that must NOT be
+                    // converted into a toast popup or removed from the DOM.
+                    const flashAlerts = document.querySelectorAll('.alert:not(.premium-alert):not(.static-alert)');
+                    const premiumAlerts = document.querySelectorAll('.premium-alert:not(.static-alert)');
 
                     // Process standard alerts (and potentially remove them if they aren't meant for the top)
                     flashAlerts.forEach(alert => {
