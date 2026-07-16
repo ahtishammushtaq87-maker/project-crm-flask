@@ -606,6 +606,13 @@
                                     data-comment-id="{{ c.id }}" title="Edit comment" style="font-size:.75rem;">
                                     <i class="fas fa-pen"></i>
                                 </button>
+                                <form method="POST" action="{{ url_for('recovery.delete_comment', comment_id=c.id) }}"
+                                    class="d-inline" onsubmit="return confirm('Delete this comment?');">
+                                    <button type="submit" class="btn btn-link btn-sm p-0 text-danger"
+                                        title="Delete comment" style="font-size:.75rem;">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
                                 {% endif %}
                             </span>
                         </div>

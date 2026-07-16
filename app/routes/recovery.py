@@ -312,6 +312,24 @@ def edit_comment(comment_id):
     return redirect(url_for('recovery.task_detail', task_id=comment.task_id))
 
 
+@bp.route('/comment/<int:comment_id>/delete', methods=['POST'])
+@login_required
+def delete_comment(comment_id):
+    """Delete a comment. Admin-only — same policy as editing."""
+    comment = RecoveryComment.query.get_or_404(comment_id)
+
+    if not current_user.is_admin:
+        flash('Only an admin can delete comments.', 'danger')
+        return redirect(url_for('recovery.task_detail', task_id=comment.task_id))
+
+    task_id = comment.task_id
+    db.session.delete(comment)
+    db.session.commit()
+
+    flash('Comment deleted.', 'success')
+    return redirect(url_for('recovery.task_detail', task_id=task_id))
+
+
 # ─── Mark Promise ──────────────────────────────────────────────────────────────
 
 @bp.route('/task/<int:task_id>/mark-promise', methods=['POST'])
