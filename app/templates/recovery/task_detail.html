@@ -149,9 +149,130 @@
 
     {% set inv = task.invoice %}
 
+    {# ── Customer box — company + all customer names with numbers (shown on top) ── #}
+    {% if inv and inv.customer %}
+    {% set cust = inv.customer %}
+    {# Build one flat list of {name, number} contacts for the call / WhatsApp pickers #}
+    {% set contacts = [] %}
+    {% if cust.phone %}{% set _ = contacts.append({'name': cust.company_name or cust.name, 'number': cust.phone}) %}{% endif %}
+    {% for sub in cust.sub_customers_list %}
+        {% if sub.phone %}{% set _ = contacts.append({'name': sub.name, 'number': sub.phone}) %}{% endif %}
+    {% endfor %}
+    <div class="card shadow-sm mb-4 border-primary">
+        <div class="card-header d-flex justify-content-between align-items-center py-2 bg-primary text-white flex-wrap gap-2">
+            <strong><i class="fas fa-address-book me-1"></i>Customer Details</strong>
+            <span class="d-flex align-items-center gap-2">
+                {% if cust.sub_customers_list %}
+                <span class="badge bg-light text-primary">{{ cust.sub_customers_list|length }} more contact{{ 's' if cust.sub_customers_list|length != 1 else '' }}</span>
+                {% endif %}
+                {% if contacts %}
+                {# ── Phone call: icon calls the first number; caret opens number picker ── #}
+                <div class="btn-group btn-group-sm" role="group">
+                    <a href="tel:{{ contacts[0].number }}" class="btn btn-success contact-action"
+                        data-method="call" data-name="{{ contacts[0].name }}" data-number="{{ contacts[0].number }}"
+                        title="Call {{ contacts[0].name }}">
+                        <i class="fas fa-phone-alt"></i>
+                    </a>
+                    <button type="button" class="btn btn-success dropdown-toggle dropdown-toggle-split"
+                        data-bs-toggle="dropdown" aria-expanded="false" title="Choose number to call">
+                        <span class="visually-hidden">Choose number</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><h6 class="dropdown-header"><i class="fas fa-phone-alt me-1"></i>Call</h6></li>
+                        {% for c in contacts %}
+                        <li>
+                            <a class="dropdown-item contact-action" href="tel:{{ c.number }}"
+                                data-method="call" data-name="{{ c.name }}" data-number="{{ c.number }}">
+                                <i class="fas fa-user-circle text-muted me-2"></i>{{ c.name }}
+                                <span class="text-muted small">({{ c.number }})</span>
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {# ── WhatsApp: icon opens WhatsApp for the first number; caret opens picker ── #}
+                <div class="btn-group btn-group-sm" role="group">
+                    <a href="#" class="btn contact-action" style="background:#25D366;color:#fff;"
+                        data-method="whatsapp" data-name="{{ contacts[0].name }}" data-number="{{ contacts[0].number }}"
+                        title="WhatsApp {{ contacts[0].name }}">
+                        <i class="fab fa-whatsapp"></i>
+                    </a>
+                    <button type="button" class="btn dropdown-toggle dropdown-toggle-split"
+                        style="background:#25D366;color:#fff;"
+                        data-bs-toggle="dropdown" aria-expanded="false" title="Choose number for WhatsApp">
+                        <span class="visually-hidden">Choose number</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><h6 class="dropdown-header"><i class="fab fa-whatsapp me-1"></i>WhatsApp</h6></li>
+                        {% for c in contacts %}
+                        <li>
+                            <a class="dropdown-item contact-action" href="#"
+                                data-method="whatsapp" data-name="{{ c.name }}" data-number="{{ c.number }}">
+                                <i class="fas fa-user-circle text-muted me-2"></i>{{ c.name }}
+                                <span class="text-muted small">({{ c.number }})</span>
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+            </span>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                {# ── Company / main customer ── #}
+                <div class="col-md-4">
+                    <div class="detail-label">Company Name</div>
+                    <div class="detail-value">{{ cust.company_name or cust.name }}</div>
+                    {% if cust.phone %}
+                    <div class="mt-1">
+                        <a href="tel:{{ cust.phone }}" class="text-decoration-none">
+                            <i class="fas fa-phone-alt me-1 text-success"></i>{{ cust.phone }}
+                        </a>
+                    </div>
+                    {% endif %}
+                    {% if cust.email %}
+                    <div class="small text-muted mt-1">
+                        <i class="fas fa-envelope me-1"></i>{{ cust.email }}
+                    </div>
+                    {% endif %}
+                    {% if cust.contact_person %}
+                    <div class="small text-muted mt-1">
+                        <i class="fas fa-user-tie me-1"></i>{{ cust.contact_person }}
+                    </div>
+                    {% endif %}
+                </div>
+
+                {# ── Additional customer names with numbers (multiple contacts per customer) ── #}
+                {% if cust.sub_customers_list %}
+                <div class="col-md-8">
+                    <div class="detail-label mb-2">Customer Names &amp; Numbers</div>
+                    <div class="row g-2">
+                        {% for sub in cust.sub_customers_list %}
+                        <div class="col-md-6">
+                            <div class="border rounded p-2 h-100 d-flex justify-content-between align-items-center small">
+                                <span class="fw-semibold">
+                                    <i class="fas fa-user-circle text-muted me-1"></i>{{ sub.name }}
+                                </span>
+                                {% if sub.phone %}
+                                <a href="tel:{{ sub.phone }}" class="text-decoration-none text-nowrap">
+                                    <i class="fas fa-phone-alt me-1 text-success"></i>{{ sub.phone }}
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="row">
         {# ── Left: Recovery Card ─── #}
-        <div class="col-lg-5 mb-4">
+        <div class="col-lg-5 mb-4" id="recoveryLeftCol">
             <div class="card shadow-sm">
                 <div class="card-header d-flex justify-content-between align-items-center bg-dark text-white py-2">
                     <strong><i class="fas fa-file-invoice-dollar me-1"></i>
@@ -320,6 +441,14 @@
                                 {{ task.broken_promise_count }}
                             </div>
                         </div>
+                        {% if task.broken_promise_date %}
+                        <div class="col-6">
+                            <div class="detail-label">Promise Broken Date</div>
+                            <div class="text-danger fw-bold">
+                                <i class="fas fa-heart-broken me-1"></i>{{ task.broken_promise_date.strftime('%d-%m-%Y') }}
+                            </div>
+                        </div>
+                        {% endif %}
                         {% if task.next_follow_up_date %}
                         <div class="col-6">
                             <div class="detail-label">Next Follow-up</div>
@@ -329,6 +458,31 @@
                         </div>
                         {% endif %}
                     </div>
+
+                    {# ── Broken Promise details — every promise the customer failed to honour ── #}
+                    {% if task.broken_promises %}
+                    <div class="alert alert-danger py-2 px-3 mb-2">
+                        <div class="detail-label text-danger mb-1">
+                            <i class="fas fa-heart-broken me-1"></i>Broken Promises
+                            <span class="badge bg-danger ms-1">{{ task.broken_promises|length }}</span>
+                        </div>
+                        {% for bp in task.broken_promises %}
+                        <div class="small d-flex justify-content-between align-items-center {% if not loop.last %}border-bottom border-danger-subtle pb-1 mb-1{% endif %}">
+                            <span>
+                                <i class="fas fa-calendar-times me-1"></i>
+                                Promised by
+                                <strong>{{ bp.date.strftime('%d-%m-%Y') if bp.date else '—' }}</strong>
+                                {% if bp.amount %}<span class="text-muted">· PKR {{ "{:,.0f}".format(bp.amount) }}</span>{% endif %}
+                            </span>
+                            {% if bp.when %}
+                            <span class="text-muted" style="font-size:.72rem;">
+                                broken on {{ bp.when.strftime('%d-%m-%Y') }}
+                            </span>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
 
                     {% if task.last_log %}
                     <hr class="my-2">
@@ -368,6 +522,12 @@
                         </button>
                         {% endif %}
                         {% endif %}
+                        {% if is_open and (current_user.is_admin or current_user.can_add_recovery) %}
+                        <button type="button" class="btn btn-sm btn-primary action-btn" data-bs-toggle="modal"
+                            data-bs-target="#addLogModal">
+                            <i class="fas fa-comment-medical me-1"></i>Add Message
+                        </button>
+                        {% endif %}
                         <button type="button" class="btn btn-sm btn-outline-primary action-btn"
                             data-bs-toggle="modal" data-bs-target="#commentsModal">
                             <i class="far fa-comments me-1"></i>Comments
@@ -390,6 +550,11 @@
                             <i class="fas fa-file-alt me-1"></i>View Invoice
                         </a>
                         {% endif %}
+                        <a href="{{ url_for('recovery.task_pdf', task_id=task.id) }}"
+                            class="btn btn-sm btn-danger action-btn"
+                            title="Download the full recovery details and activity log as a PDF">
+                            <i class="fas fa-file-pdf me-1"></i>Download PDF
+                        </a>
                     </div>
                 </div>
             </div>
@@ -503,12 +668,34 @@
         </div>
 
         {# ── Right: Log History ─── #}
-        <div class="col-lg-7">
-            <h5 class="mb-3"><i class="fas fa-history me-1 text-secondary"></i> Conversation Log</h5>
+        <div class="col-lg-7 d-flex flex-column">
+            <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+                <h5 class="mb-0"><i class="fas fa-history me-1 text-secondary"></i> Conversation Log</h5>
+                {% if task.logs %}
+                {# From/To date filter — filters the rendered log entries client-side #}
+                <div class="d-flex align-items-end gap-2">
+                    <div>
+                        <label class="detail-label d-block" for="logFilterFrom">From</label>
+                        <input type="date" id="logFilterFrom" class="form-control form-control-sm">
+                    </div>
+                    <div>
+                        <label class="detail-label d-block" for="logFilterTo">To</label>
+                        <input type="date" id="logFilterTo" class="form-control form-control-sm">
+                    </div>
+                    <button type="button" id="logFilterClear" class="btn btn-sm btn-outline-secondary"
+                        title="Clear date filter">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                {% endif %}
+            </div>
             {% if task.logs %}
+            <div id="conversationLog" style="max-height: 70vh; overflow-y: auto;" class="pe-1">
+            <div id="logFilterEmpty" class="text-muted fst-italic small d-none">No log entries in this date range.</div>
             {% for log in task.logs %}
             {% set rtask = log.reminder_task if log.reminder_batch_id else None %}
-            <div class="card mb-2 log-entry log-{{ log.response_type }} ps-3">
+            <div class="card mb-2 log-entry log-{{ log.response_type }} ps-3"
+                data-log-date="{{ log.created_at.strftime('%Y-%m-%d') if log.created_at else '' }}">
                 <div class="card-body py-2 px-3">
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
@@ -547,6 +734,7 @@
                 </div>
             </div>
             {% endfor %}
+            </div>
             {% else %}
             <div class="text-muted fst-italic small">No conversation logs yet.</div>
             {% endif %}
@@ -664,14 +852,10 @@
                             <option value="escalated">Escalated</option>
                         </select>
                     </div>
-                    <div class="mb-3">
+                    <div class="mb-2">
                         <label class="form-label">Note <span class="text-danger">*</span></label>
                         <textarea name="note" class="form-control" rows="3" required
                             placeholder="What happened during this follow-up?"></textarea>
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label">Next Follow-up Date</label>
-                        <input type="date" name="next_follow_up_date" class="form-control">
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -1027,6 +1211,110 @@
         updateReminderCountdowns();
         setInterval(updateReminderCountdowns, 1000);
     }
+
+    // Call / WhatsApp contact actions: log the attempt to the Conversation Log,
+    // then open the phone dialer (tel:) or WhatsApp (wa.me).
+    (function () {
+        const logUrl = "{{ url_for('recovery.log_contact', task_id=task.id) }}";
+
+        // WhatsApp needs an international number with no +, spaces or dashes.
+        // This CRM is Pakistan-based, so a local number starting with 0 maps to 92.
+        function waNumber(raw) {
+            let n = (raw || '').replace(/[^\d]/g, '');
+            if (n.startsWith('00')) n = n.slice(2);
+            if (n.startsWith('0')) n = '92' + n.slice(1);
+            return n;
+        }
+
+        document.querySelectorAll('.contact-action').forEach(function (el) {
+            el.addEventListener('click', function (e) {
+                e.preventDefault();
+                const method = this.dataset.method;
+                const name = this.dataset.name || '';
+                const number = this.dataset.number || '';
+
+                // Fire-and-forget log (keepalive so it survives the navigation).
+                try {
+                    fetch(logUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams({ method: method, name: name, number: number }),
+                        keepalive: true
+                    }).catch(function () { });
+                } catch (err) { /* ignore logging failures */ }
+
+                if (method === 'whatsapp') {
+                    window.open('https://wa.me/' + waNumber(number), '_blank');
+                } else {
+                    window.location.href = 'tel:' + number.replace(/\s/g, '');
+                }
+            });
+        });
+    })();
+
+    // Conversation Log — match its height to the left recovery box, but cap it
+    // so a long history scrolls inside the box instead of stretching the row.
+    (function () {
+        const leftCol = document.getElementById('recoveryLeftCol');
+        const logBox = document.getElementById('conversationLog');
+        if (!leftCol || !logBox) return;
+
+        function sizeLogBox() {
+            // Below the lg breakpoint the columns stack — fall back to a viewport cap.
+            if (window.innerWidth < 992) {
+                logBox.style.maxHeight = '70vh';
+                return;
+            }
+            const top = logBox.getBoundingClientRect().top;
+            const leftBottom = leftCol.getBoundingClientRect().bottom;
+            const available = Math.round(leftBottom - top);
+            // Keep a sensible floor so the box never becomes tiny.
+            logBox.style.maxHeight = Math.max(available, Math.round(window.innerHeight * 0.5)) + 'px';
+        }
+
+        sizeLogBox();
+        window.addEventListener('resize', sizeLogBox);
+        window.addEventListener('load', sizeLogBox);  // re-measure once images/fonts settle
+    })();
+
+    // Conversation Log — From/To date filter over the rendered entries.
+    (function () {
+        const fromEl = document.getElementById('logFilterFrom');
+        const toEl = document.getElementById('logFilterTo');
+        const clearEl = document.getElementById('logFilterClear');
+        const emptyEl = document.getElementById('logFilterEmpty');
+        const container = document.getElementById('conversationLog');
+        if (!fromEl || !toEl || !container) return;
+
+        const entries = Array.from(container.querySelectorAll('.log-entry'));
+
+        function applyFilter() {
+            const from = fromEl.value;   // 'YYYY-MM-DD' or ''
+            const to = toEl.value;
+            let visible = 0;
+            entries.forEach(function (el) {
+                const d = el.getAttribute('data-log-date');  // 'YYYY-MM-DD'
+                let show = true;
+                if (d) {
+                    if (from && d < from) show = false;
+                    if (to && d > to) show = false;
+                } else if (from || to) {
+                    show = false;  // undated entries hide once a range is set
+                }
+                el.classList.toggle('d-none', !show);
+                if (show) visible++;
+            });
+            if (emptyEl) emptyEl.classList.toggle('d-none', visible !== 0);
+        }
+
+        fromEl.addEventListener('change', applyFilter);
+        toEl.addEventListener('change', applyFilter);
+        if (clearEl) clearEl.addEventListener('click', function () {
+            fromEl.value = '';
+            toEl.value = '';
+            applyFilter();
+        });
+    })();
 
     // Admin-only inline comment editing: toggle the view text <-> edit form.
     function setCommentEditing(commentId, editing) {

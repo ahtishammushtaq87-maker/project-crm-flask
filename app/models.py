@@ -3469,6 +3469,10 @@ class RecoveryTask(db.Model):
     promise_date = db.Column(db.Date, nullable=True)
     promised_amount = db.Column(db.Float, nullable=True)
     broken_promise_count = db.Column(db.Integer, default=0)
+    # The most recent promise date the customer failed to honour (balance still
+    # outstanding after the promised day passed). Set by the automation's
+    # _check_promise; surfaced in the recovery detail box.
+    last_broken_promise_date = db.Column(db.Date, nullable=True)
     next_follow_up_date = db.Column(db.Date, nullable=True)
 
     # low | medium | high | critical
@@ -3513,6 +3517,56 @@ class RecoveryTask(db.Model):
     @property
     def last_log(self):
         return self.logs[0] if self.logs else None
+
+    @property
+    def broken_promises(self):
+        """Details of every broken promise for this task, newest first.
+
+        Reconstructed from the conversation log (the automation records a
+        'no_response' entry each time a promise date passes with the balance
+        still due). Each item is a dict: {'date', 'amount', 'when', 'note'}."""
+        import re
+        items = []
+        for log in self.logs:  # logs are ordered newest-first
+            if log.response_type != 'no_response':
+                continue
+            note = log.note or ''
+            if 'romise' not in note:  # matches "Promise broken" / "Broken promise"
+                continue
+            # Prefer the structured date on the log; else parse it from the note.
+            bdate = log.promise_date
+            if not bdate:
+                m = re.search(r'(\d{2}-\d{2}-\d{4})', note) or re.search(r'(\d{4}-\d{2}-\d{2})', note)
+                if m:
+                    from datetime import datetime
+                    fmt = '%d-%m-%Y' if '-' in m.group(1)[2:3] else '%Y-%m-%d'
+                    try:
+                        bdate = datetime.strptime(m.group(1), fmt).date()
+                    except ValueError:
+                        bdate = None
+            items.append({
+                'date': bdate,
+                'amount': log.promised_amount,
+                'when': log.created_at,
+                'note': note,
+            })
+        return items
+
+    @property
+    def broken_promise_date(self):
+        """Date of the most recent broken promise. Uses the stored field, then
+        the reconstructed log history, then the still-recorded promise_date
+        once it has passed."""
+        from datetime import date
+        if self.last_broken_promise_date:
+            return self.last_broken_promise_date
+        for bp in self.broken_promises:
+            if bp['date']:
+                return bp['date']
+        if (self.broken_promise_count and self.promise_date
+                and self.promise_date < date.today()):
+            return self.promise_date
+        return None
 
     @property
     def next_reminder_at(self):

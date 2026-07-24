@@ -261,6 +261,358 @@ def add_log(task_id):
     return redirect(url_for('recovery.task_detail', task_id=task_id))
 
 
+# ─── Log a call / WhatsApp contact attempt (AJAX) ──────────────────────────────
+
+@bp.route('/task/<int:task_id>/log-contact', methods=['POST'])
+@login_required
+def log_contact(task_id):
+    """Record that the user initiated a phone call or WhatsApp contact from the
+    detail page, so the attempt shows up in the Conversation Log. Called via
+    fetch() just before the browser opens the tel:/WhatsApp link."""
+    guard = _require_recovery_view()
+    if guard:
+        return jsonify({'ok': False, 'error': 'forbidden'}), 403
+
+    task = RecoveryTask.query.get_or_404(task_id)
+    method = request.form.get('method', '')
+    name = (request.form.get('name', '') or '').strip()
+    number = (request.form.get('number', '') or '').strip()
+
+    if method not in ('call', 'whatsapp') or not number:
+        return jsonify({'ok': False, 'error': 'bad_request'}), 400
+
+    verb = 'Called' if method == 'call' else 'WhatsApp message/call to'
+    who = f'{name} ({number})' if name else number
+    note = f'{verb} {who}.'
+
+    log = RecoveryLog(
+        task_id=task.id,
+        response_type='general',
+        note=note,
+        logged_by=current_user.id,
+    )
+    db.session.add(log)
+    task.updated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'ok': True, 'note': note})
+
+
+# ─── Download the recovery detail page (with activity log) as a PDF ────────────
+
+@bp.route('/task/<int:task_id>/pdf')
+@login_required
+def task_pdf(task_id):
+    """A clean, printable PDF of the whole recovery detail: customer contacts,
+    invoice + recovery status, broken-promise history and the full activity log."""
+    guard = _require_recovery_view()
+    if guard:
+        return guard
+
+    import io, os
+    from flask import send_file, current_app
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image
+    )
+    from app.models import Company
+
+    task = RecoveryTask.query.get_or_404(task_id)
+    inv = task.invoice
+    cust = inv.customer if inv else None
+    company = Company.query.first()
+
+    def d(dt, fmt='%d-%m-%Y'):
+        return dt.strftime(fmt) if dt else '—'
+
+    def money(v):
+        try:
+            return f'PKR {float(v):,.0f}'
+        except (TypeError, ValueError):
+            return '—'
+
+    # ── Styles ─────────────────────────────────────────────────────────────
+    PRIMARY = colors.HexColor('#0d6efd')
+    DARK = colors.HexColor('#212529')
+    MUTED = colors.HexColor('#6c757d')
+    DANGER = colors.HexColor('#dc3545')
+    LIGHT = colors.HexColor('#f1f3f5')
+    BORDER = colors.HexColor('#dee2e6')
+
+    styles = getSampleStyleSheet()
+    st_title = ParagraphStyle('t', parent=styles['Normal'], fontSize=16, leading=19,
+                              textColor=DARK, fontName='Helvetica-Bold')
+    st_sub = ParagraphStyle('s', parent=styles['Normal'], fontSize=9, leading=12, textColor=MUTED)
+    st_sec = ParagraphStyle('sec', parent=styles['Normal'], fontSize=10.5, leading=13,
+                            textColor=PRIMARY, fontName='Helvetica-Bold', spaceBefore=8, spaceAfter=4)
+    st_lbl = ParagraphStyle('l', parent=styles['Normal'], fontSize=7.5, leading=9, textColor=MUTED)
+    st_val = ParagraphStyle('v', parent=styles['Normal'], fontSize=9, leading=12,
+                            textColor=DARK, fontName='Helvetica-Bold')
+    st_cell = ParagraphStyle('c', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=DARK)
+    st_cell_muted = ParagraphStyle('cm', parent=styles['Normal'], fontSize=8, leading=11, textColor=MUTED)
+    st_danger = ParagraphStyle('dg', parent=styles['Normal'], fontSize=9, leading=12,
+                               textColor=DANGER, fontName='Helvetica-Bold')
+
+    CONTENT_W = A4[0] - 72  # 36pt margins each side
+
+    def kv_grid(pairs, cols=3, val_style=st_val):
+        """Render label/value pairs in a bordered grid of `cols` columns."""
+        cells = []
+        for label, value, vstyle in pairs:
+            cells.append([Paragraph(label.upper(), st_lbl),
+                          Paragraph(str(value), vstyle or val_style)])
+        rows, row = [], []
+        for c in cells:
+            inner = Table([[c[0]], [c[1]]], colWidths=[CONTENT_W / cols - 6])
+            inner.setStyle(TableStyle([
+                ('LEFTPADDING', (0, 0), (-1, -1), 2), ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+                ('TOPPADDING', (0, 0), (-1, -1), 1), ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+            ]))
+            row.append(inner)
+            if len(row) == cols:
+                rows.append(row); row = []
+        if row:
+            while len(row) < cols:
+                row.append('')
+            rows.append(row)
+        t = Table(rows, colWidths=[CONTENT_W / cols] * cols)
+        t.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+            ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        return t
+
+    elements = []
+
+    # ── Company logo (resolve to an on-disk path, tolerate relative paths) ──
+    def _resolve_logo(path):
+        if not path:
+            return None
+        candidates = [path]
+        try:
+            candidates.append(os.path.join(current_app.root_path, path))
+            candidates.append(os.path.join(current_app.root_path, 'static', path))
+            candidates.append(os.path.join(current_app.root_path, '..', path))
+        except Exception:
+            pass
+        for p in candidates:
+            try:
+                if p and os.path.exists(p):
+                    return p
+            except Exception:
+                continue
+        return None
+
+    logo_flowable = None
+    if company and getattr(company, 'logo_path', None):
+        logo_path = _resolve_logo(company.logo_path)
+        if logo_path:
+            try:
+                img = Image(logo_path)
+                aspect = (img.imageHeight / float(img.imageWidth)) if img.imageWidth else 1
+                img.drawWidth = 1.0 * inch
+                img.drawHeight = min(1.0 * inch, 1.0 * inch * aspect)
+                logo_flowable = img
+            except Exception:
+                logo_flowable = None
+
+    # ── Header ─────────────────────────────────────────────────────────────
+    title_txt = f"Recovery Report — Invoice {inv.invoice_number if inv else task.id}"
+    company_block = [Paragraph(company.name if company else 'Sales Recovery', st_title),
+                     Paragraph(title_txt, st_sub)]
+    if logo_flowable:
+        # Logo to the left of the company name / report title.
+        left_tbl = Table([[logo_flowable, company_block]], colWidths=[1.15 * inch, CONTENT_W * 0.65 - 1.15 * inch])
+        left_tbl.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (0, 0), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 0), ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        header_left = [left_tbl]
+    else:
+        header_left = company_block
+    header_right = [Paragraph(f"Generated: {pk_now().strftime('%d-%m-%Y %H:%M')}", st_sub)]
+    htbl = Table([[header_left, header_right]], colWidths=[CONTENT_W * 0.65, CONTENT_W * 0.35])
+    htbl.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    elements.append(htbl)
+    elements.append(HRFlowable(width='100%', thickness=1, color=PRIMARY, spaceBefore=6, spaceAfter=2))
+
+    # ── Customer details ───────────────────────────────────────────────────
+    if cust:
+        elements.append(Paragraph('Customer Details', st_sec))
+        elements.append(kv_grid([
+            ('Company Name', cust.company_name or cust.name, st_val),
+            ('Primary Phone', cust.phone or '—', st_val),
+            ('Email', cust.email or '—', st_cell),
+        ], cols=3))
+
+        # All names & numbers
+        contacts = []
+        if cust.phone:
+            contacts.append((cust.company_name or cust.name, cust.phone))
+        for sub in cust.sub_customers_list:
+            if sub.get('name') or sub.get('phone'):
+                contacts.append((sub.get('name', '—'), sub.get('phone', '—')))
+        if contacts:
+            elements.append(Spacer(1, 4))
+            rows = [[Paragraph('Customer Name', st_lbl), Paragraph('Phone Number', st_lbl)]]
+            for name, phone in contacts:
+                rows.append([Paragraph(str(name or '—'), st_cell),
+                             Paragraph(str(phone or '—'), st_cell)])
+            ct = Table(rows, colWidths=[CONTENT_W * 0.6, CONTENT_W * 0.4])
+            ct.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), LIGHT),
+                ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
+                ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER),
+                ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            elements.append(ct)
+
+    # ── Invoice & recovery status ──────────────────────────────────────────
+    elements.append(Paragraph('Invoice & Recovery Status', st_sec))
+    status_txt = task.recovery_status.replace('_', ' ').title()
+    elements.append(kv_grid([
+        ('Total Invoice', money(inv.total) if inv else '—', st_val),
+        ('Paid', money(inv.paid_amount) if inv else '—', st_val),
+        ('Balance', money(inv.balance_due) if inv else '—', st_danger),
+        ('Invoice Date', d(inv.date) if inv else '—', st_cell),
+        ('Due Date', d(inv.due_date) if inv else '—', st_cell),
+        ('Overdue Days', f'{task.overdue_days} days', st_danger if task.overdue_days > 0 else st_val),
+        ('Recovery Status', status_txt, st_val),
+        ('Risk Level', (task.risk_level or '—').title(), st_val),
+        ('Salesman', (task.salesman.name if task.salesman else (inv.salesman.name if inv and inv.salesman else '—')), st_cell),
+    ], cols=3))
+
+    # ── Promise / broken-promise summary ───────────────────────────────────
+    elements.append(Paragraph('Payment Promise', st_sec))
+    elements.append(kv_grid([
+        ('Promise Date', d(task.promise_date), st_val),
+        ('Promised Amount', money(task.promised_amount) if task.promised_amount else '—', st_val),
+        ('Broken Promises', str(task.broken_promise_count or 0),
+         st_danger if task.broken_promise_count else st_val),
+    ], cols=3))
+
+    broken = task.broken_promises
+    if broken:
+        elements.append(Spacer(1, 4))
+        rows = [[Paragraph('Promised By', st_lbl), Paragraph('Amount', st_lbl),
+                 Paragraph('Broken On', st_lbl)]]
+        for bp in broken:
+            rows.append([
+                Paragraph(d(bp['date']), st_cell),
+                Paragraph(money(bp['amount']) if bp['amount'] else '—', st_cell),
+                Paragraph(d(bp['when']), st_cell_muted),
+            ])
+        bt = Table(rows, colWidths=[CONTENT_W * 0.35, CONTENT_W * 0.35, CONTENT_W * 0.30])
+        bt.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f8d7da')),
+            ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER),
+            ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(bt)
+
+    # ── Other open invoices for the same customer ──────────────────────────
+    sibling_tasks = []
+    if inv and inv.customer_id:
+        sibling_tasks = [t for t in open_tasks_for_customer(inv.customer_id) if t.id != task.id]
+    if sibling_tasks:
+        elements.append(Paragraph(f'Other Open Invoices ({len(sibling_tasks)})', st_sec))
+        rows = [[Paragraph('Invoice #', st_lbl), Paragraph('Balance', st_lbl),
+                 Paragraph('Recovery Status', st_lbl), Paragraph('Promise Date', st_lbl),
+                 Paragraph('Risk', st_lbl)]]
+        for st_ in sibling_tasks:
+            sinv = st_.invoice
+            rows.append([
+                Paragraph(sinv.invoice_number if sinv else '—', st_cell),
+                Paragraph(money(sinv.balance_due) if sinv else '—', st_danger),
+                Paragraph((st_.recovery_status or '').replace('_', ' ').title(), st_cell),
+                Paragraph(d(st_.promise_date), st_cell),
+                Paragraph((st_.risk_level or '—').title(), st_cell),
+            ])
+        ot = Table(rows, repeatRows=1,
+                   colWidths=[CONTENT_W * 0.18, CONTENT_W * 0.18, CONTENT_W * 0.30,
+                              CONTENT_W * 0.18, CONTENT_W * 0.16])
+        ot.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), LIGHT),
+            ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fbfbfb')]),
+        ]))
+        elements.append(ot)
+
+    # ── Activity / Conversation log ────────────────────────────────────────
+    elements.append(Paragraph('Activity Log', st_sec))
+    if task.logs:
+        rows = [[Paragraph('Date & Time', st_lbl), Paragraph('Type', st_lbl),
+                 Paragraph('By', st_lbl), Paragraph('Note', st_lbl)]]
+        for log in task.logs:  # newest first
+            note = log.note or ''
+            if log.promised_amount or log.promise_date:
+                extra = []
+                if log.promised_amount:
+                    extra.append(money(log.promised_amount))
+                if log.promise_date:
+                    extra.append('by ' + d(log.promise_date))
+                note += f"  ({' '.join(extra)})"
+            rows.append([
+                Paragraph(d(log.created_at, '%d-%m-%Y %H:%M'), st_cell_muted),
+                Paragraph((log.response_type or 'general').replace('_', ' ').title(), st_cell),
+                Paragraph(log.logged_by_user.username if log.logged_by_user else '—', st_cell_muted),
+                Paragraph(note, st_cell),
+            ])
+        lt = Table(rows, repeatRows=1,
+                   colWidths=[CONTENT_W * 0.18, CONTENT_W * 0.16, CONTENT_W * 0.14, CONTENT_W * 0.52])
+        lt.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), LIGHT),
+            ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fbfbfb')]),
+        ]))
+        elements.append(lt)
+    else:
+        elements.append(Paragraph('No activity logged yet.', st_cell_muted))
+
+    # ── Build ──────────────────────────────────────────────────────────────
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=36, bottomMargin=36,
+                            leftMargin=36, rightMargin=36,
+                            title=f'Recovery {inv.invoice_number if inv else task.id}')
+
+    def _footer(canvas, doc_):
+        canvas.saveState()
+        canvas.setFont('Helvetica', 7)
+        canvas.setFillColor(MUTED)
+        canvas.drawString(36, 20, company.name if company else 'Sales Recovery')
+        canvas.drawRightString(A4[0] - 36, 20, f'Page {doc_.page}')
+        canvas.restoreState()
+
+    doc.build(elements, onFirstPage=_footer, onLaterPages=_footer)
+    buf.seek(0)
+    fname = f"Recovery_{(inv.invoice_number if inv else task.id)}.pdf".replace(' ', '_')
+    return send_file(buf, mimetype='application/pdf', as_attachment=True, download_name=fname)
+
+
 # ─── Comments (plain discussion thread, no automation impact) ──────────────────
 
 @bp.route('/task/<int:task_id>/add-comment', methods=['POST'])

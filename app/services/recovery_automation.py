@@ -146,13 +146,22 @@ def _check_promise(task, today, results):
     if task.promise_date < today:
         invoice = task.invoice
         if invoice and invoice.balance_due > 0:
+            broken_date = task.promise_date
             task.recovery_status = 'FOLLOW_UP_REQUIRED'
             task.broken_promise_count = (task.broken_promise_count or 0) + 1
+            task.last_broken_promise_date = broken_date
             task.priority = min(4, (task.priority or 1) + 1)
             log = RecoveryLog(
                 task_id=task.id,
                 response_type='no_response',
-                note=f'Promise date {task.promise_date} passed with balance still outstanding. Broken promise #{task.broken_promise_count}.',
+                promise_date=broken_date,
+                promised_amount=task.promised_amount,
+                note=(
+                    f'Promise broken: customer promised to pay '
+                    + (f'PKR {task.promised_amount:,.0f} ' if task.promised_amount else '')
+                    + f'by {broken_date.strftime("%d-%m-%Y")} but the balance is still '
+                    f'outstanding. Broken promise #{task.broken_promise_count}.'
+                ),
             )
             db.session.add(log)
             results['promises_missed'] += 1
