@@ -42,7 +42,8 @@ def create_app(config_class=Config):
             PurchaseReturn, PurchaseReturnItem, Unit, ActivityLog,
             ToolReceiving, ToolReceivingItem, ToolDelivering, ToolDeliveringItem, ToolSettings,
             ProductWarehouseStock, Media,
-            RecoveryTask, RecoveryLog, RecoveryComment, Salesman
+            RecoveryTask, RecoveryLog, RecoveryComment, Salesman,
+            JournalAccount, JournalEntry, JournalLine
         )
         from app.filter_models import SavedFilter
         
@@ -126,6 +127,9 @@ def create_app(config_class=Config):
             'recovery_logs': RecoveryLog,
             'recovery_comments': RecoveryComment,
             'salesmen': Salesman,
+            'journal_accounts': JournalAccount,
+            'journal_entries': JournalEntry,
+            'journal_lines': JournalLine,
         }
         
         try:
@@ -253,6 +257,7 @@ def create_app(config_class=Config):
     from app.routes.tools import bp as tools_bp
     from app.routes.media import bp as media_bp
     from app.routes.recovery import bp as recovery_bp
+    from app.routes.journal import bp as journal_bp
 
     app.register_blueprint(dashboard_bp, url_prefix='/')
     app.register_blueprint(accounting_bp, url_prefix='/accounting')
@@ -278,6 +283,7 @@ def create_app(config_class=Config):
     app.register_blueprint(tools_bp, url_prefix='/tools')
     app.register_blueprint(media_bp, url_prefix='/media')
     app.register_blueprint(recovery_bp, url_prefix='/recovery')
+    app.register_blueprint(journal_bp, url_prefix='/journal')
     
     @app.context_processor
     def inject_company():

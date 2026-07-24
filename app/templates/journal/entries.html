@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+{% block title %}Journal Entries{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+        <h4 class="mb-0"><i class="fas fa-list me-2 text-primary"></i>Journal Entries</h4>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('journal.export_excel') }}{% if request.query_string %}?{{ request.query_string.decode() }}{% endif %}"
+               class="btn btn-outline-success btn-sm" title="Download account-wise Excel">
+                <i class="fas fa-file-excel me-1"></i> Excel (by account)
+            </a>
+            <a href="{{ url_for('journal.export_pdf') }}{% if request.query_string %}?{{ request.query_string.decode() }}{% endif %}"
+               class="btn btn-outline-danger btn-sm" title="Download account-wise PDF">
+                <i class="fas fa-file-pdf me-1"></i> PDF (by account)
+            </a>
+            <a href="{{ url_for('journal.accounts') }}" class="btn btn-outline-primary btn-sm">
+                <i class="fas fa-book me-1"></i> Accounts
+            </a>
+            <a href="{{ url_for('journal.create_entry') }}" class="btn btn-primary btn-sm">
+                <i class="fas fa-plus me-1"></i> New Entry
+            </a>
+        </div>
+    </div>
+
+    {# ── On-page filters ── #}
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-3">
+            <form method="GET" action="{{ url_for('journal.entries') }}" class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold mb-1">Account</label>
+                    <select name="account_id" id="filterAccount" class="form-select form-select-sm">
+                        <option value="">All accounts</option>
+                        {% for a in accounts %}
+                        <option value="{{ a.id }}" {% if f_account_id == a.id %}selected{% endif %}>
+                            {{ a.name }}{% if a.account_type %} ({{ a.account_type }}){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold mb-1">From Date</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ f_date_from }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold mb-1">To Date</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ f_date_to }}">
+                </div>
+                <div class="col-md-2 d-flex gap-1">
+                    <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                        <i class="fas fa-filter me-1"></i>Filter
+                    </button>
+                    <a href="{{ url_for('journal.entries') }}" class="btn btn-sm btn-outline-secondary" title="Clear filters">
+                        <i class="fas fa-times"></i>
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle datatable-export" data-export-title="Journal Entries">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>Date</th>
+                            <th>Reference</th>
+                            <th>Narration</th>
+                            <th>Accounts</th>
+                            <th class="text-end">Account Remaining</th>
+                            <th class="text-end">Debit</th>
+                            <th class="text-end">Credit</th>
+                            <th class="text-end no-export">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for e in entries %}
+                        {# Distinct accounts used in this entry (an entry can touch several) #}
+                        {% set seen = [] %}
+                        <tr>
+                            <td data-order="{{ e.id }}"><a href="{{ url_for('journal.entry_detail', entry_id=e.id) }}" class="text-decoration-none">#{{ e.id }}</a></td>
+                            <td data-order="{{ e.date.isoformat() }}">{{ e.date.strftime('%d-%m-%Y') }}</td>
+                            <td>{{ e.reference or '—' }}</td>
+                            <td>{{ (e.description or '—')[:50] }}</td>
+                            <td>
+                                {% for l in e.lines %}
+                                {% if l.account and l.account_id not in seen %}
+                                {% set _ = seen.append(l.account_id) %}
+                                <a href="{{ url_for('journal.account_ledger', account_id=l.account_id) }}"
+                                   class="badge bg-light text-dark border text-decoration-none me-1 mb-1 d-inline-block">
+                                    {{ l.account.name }}
+                                </a>
+                                {% endif %}
+                                {% endfor %}
+                                {% if not seen %}<span class="text-muted">—</span>{% endif %}
+                            </td>
+                            <td class="text-end">
+                                {% set shown = [] %}
+                                {% for l in e.lines %}
+                                {% if l.account and l.account_id not in shown %}
+                                {% set _ = shown.append(l.account_id) %}
+                                <div class="small">
+                                    <span class="text-muted">{{ l.account.name }}:</span>
+                                    <span class="fw-semibold {{ 'text-success' if l.account.balance >= 0 else 'text-danger' }}">
+                                        {{ "{:,.0f}".format(l.account.balance) }}
+                                    </span>
+                                </div>
+                                {% endif %}
+                                {% endfor %}
+                                {% if not shown %}<span class="text-muted">—</span>{% endif %}
+                            </td>
+                            <td class="text-end text-success" data-order="{{ e.total_debit }}">{{ "{:,.0f}".format(e.total_debit) }}</td>
+                            <td class="text-end text-danger" data-order="{{ e.total_credit }}">{{ "{:,.0f}".format(e.total_credit) }}</td>
+                            <td class="text-end text-nowrap">
+                                <a href="{{ url_for('journal.entry_detail', entry_id=e.id) }}"
+                                   class="btn btn-sm btn-outline-info" title="View"><i class="fas fa-eye"></i></a>
+                                {# Send to Expense — only for entries that have a credit (money-out / expense) #}
+                                {% if e.total_credit > 0 %}
+                                {% if e.expense_id %}
+                                <span class="badge bg-success" title="Already sent to Expense">
+                                    <i class="fas fa-check me-1"></i>In Expense
+                                </span>
+                                {% else %}
+                                <button type="button" class="btn btn-sm btn-success" title="Send to Expense"
+                                        data-bs-toggle="modal" data-bs-target="#sendToExpenseModal"
+                                        data-entry-id="{{ e.id }}" data-entry-ref="#{{ e.id }}{% if e.reference %} ({{ e.reference }}){% endif %}"
+                                        data-amount="{{ e.total_credit }}">
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
+                                {% endif %}
+                                {% endif %}
+                                <form method="POST" action="{{ url_for('journal.delete_entry', entry_id=e.id) }}"
+                                      class="d-inline" onsubmit="return confirm('Delete this journal entry?');">
+                                    <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="fas fa-trash"></i></button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="10" class="text-center text-muted py-4">
+                                No journal entries yet. Click <strong>New Entry</strong> to add one.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Send to Expense Modal -->
+<div class="modal fade" id="sendToExpenseModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-paper-plane me-2"></i>Send to Expense</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info d-flex align-items-center py-2 mb-3">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <div>Entry <strong id="modalEntryRef"></strong> &mdash; Amount: <strong id="modalEntryAmount"></strong></div>
+                </div>
+                <div class="mb-3">
+                    <label for="expenseCategorySelect" class="form-label fw-semibold">
+                        <i class="fas fa-tags me-1 text-success"></i>Select Expense Category <span class="text-danger">*</span>
+                    </label>
+                    <select id="expenseCategorySelect" class="form-select">
+                        <option value="">— Choose Category —</option>
+                        {% for cat in expense_categories %}
+                        <option value="{{ cat.id }}">{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div id="sendExpenseResult" class="d-none mt-3"></div>
+            </div>
+            <div class="modal-footer bg-light">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i> Cancel
+                </button>
+                <button type="button" class="btn btn-success" id="confirmSendToExpenseBtn" onclick="confirmSendJournalToExpense()">
+                    <i class="fas fa-check me-1"></i> Confirm & Send
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var currentJournalEntryId = null;
+
+document.addEventListener('DOMContentLoaded', function () {
+    // Searchable account dropdown; auto-submit the filter when it changes.
+    if (window.jQuery && $.fn.select2) {
+        $('#filterAccount').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: 'All accounts',
+            allowClear: true
+        }).on('change', function () {
+            this.form.submit();
+        });
+    } else {
+        var el = document.getElementById('filterAccount');
+        if (el) el.addEventListener('change', function () { this.form.submit(); });
+    }
+
+    // Send to Expense modal — populate on open.
+    var modal = document.getElementById('sendToExpenseModal');
+    if (modal) {
+        modal.addEventListener('show.bs.modal', function (event) {
+            var button = event.relatedTarget;
+            currentJournalEntryId = button.getAttribute('data-entry-id');
+            document.getElementById('modalEntryRef').textContent = button.getAttribute('data-entry-ref') || ('#' + currentJournalEntryId);
+            var amount = parseFloat(button.getAttribute('data-amount')) || 0;
+            document.getElementById('modalEntryAmount').textContent = 'PKR ' + amount.toLocaleString('en-US', { minimumFractionDigits: 0 });
+
+            document.getElementById('expenseCategorySelect').value = '';
+            var resultEl = document.getElementById('sendExpenseResult');
+            resultEl.className = 'd-none'; resultEl.innerHTML = '';
+            var btn = document.getElementById('confirmSendToExpenseBtn');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check me-1"></i> Confirm & Send';
+            if (window.jQuery && $('#expenseCategorySelect').hasClass('select2-hidden-accessible')) {
+                $('#expenseCategorySelect').val(null).trigger('change');
+            }
+        });
+        modal.addEventListener('shown.bs.modal', function () {
+            if (window.jQuery && $.fn.select2) {
+                var $sel = $('#expenseCategorySelect');
+                if (!$sel.hasClass('select2-hidden-accessible')) {
+                    $sel.select2({
+                        theme: 'bootstrap-5', width: '100%',
+                        dropdownParent: $('#sendToExpenseModal'),
+                        placeholder: '— Choose Category —', allowClear: true
+                    });
+                }
+            }
+        });
+    }
+});
+
+function getCsrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta) return meta.getAttribute('content');
+    var inp = document.querySelector('input[name="csrf_token"]');
+    return inp ? inp.value : '';
+}
+
+function confirmSendJournalToExpense() {
+    var categoryId = document.getElementById('expenseCategorySelect').value;
+    if (window.jQuery && $.fn.select2) {
+        categoryId = $('#expenseCategorySelect').val() || categoryId;
+    }
+    var resultEl = document.getElementById('sendExpenseResult');
+    var btn = document.getElementById('confirmSendToExpenseBtn');
+
+    if (!categoryId) {
+        resultEl.className = 'alert alert-warning mt-3';
+        resultEl.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i> Please select a category first.';
+        resultEl.classList.remove('d-none');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Sending...';
+
+    var formData = new FormData();
+    formData.append('category_id', categoryId);
+    var csrf = getCsrfToken();
+    if (csrf) formData.append('csrf_token', csrf);
+
+    fetch('/journal/entries/' + currentJournalEntryId + '/send-to-expense', {
+        method: 'POST', body: formData
+    })
+        .then(function (r) { if (!r.ok && r.status !== 400 && r.status !== 403) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function (data) {
+            if (data.success) {
+                resultEl.className = 'alert alert-success mt-3';
+                resultEl.innerHTML = '<i class="fas fa-check-circle me-1"></i> ' + data.message;
+                resultEl.classList.remove('d-none');
+                btn.innerHTML = 'Done!';
+                setTimeout(function () { location.reload(); }, 1400);
+            } else {
+                resultEl.className = 'alert alert-danger mt-3';
+                resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i> ' + data.message;
+                resultEl.classList.remove('d-none');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check me-1"></i> Confirm & Send';
+            }
+        })
+        .catch(function (err) {
+            resultEl.className = 'alert alert-danger mt-3';
+            resultEl.innerHTML = '<i class="fas fa-times-circle me-1"></i> Error: ' + err.message;
+            resultEl.classList.remove('d-none');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check me-1"></i> Confirm & Send';
+        });
+}
+</script>
+{% endblock %}

@@ -3717,3 +3717,91 @@ class RecoveryComment(db.Model):
 
     def __repr__(self):
         return f'<RecoveryComment task={self.task_id}>'
+
+
+# ─── Journal Entry module (standalone double-entry style bookkeeping) ──────────
+
+class JournalAccount(db.Model):
+    """A named account (e.g. Cash, Bank, Owner, an expense head) used by the
+    Journal Entry module. Kept completely separate from the rest of the app's
+    accounting so nothing else is affected."""
+    __tablename__ = 'journal_accounts'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False, unique=True, index=True)
+    account_type = db.Column(db.String(50), nullable=True)   # optional label: Cash / Bank / Expense / Income …
+    opening_balance = db.Column(db.Float, default=0)
+    notes = db.Column(db.Text, nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    @property
+    def total_debit(self):
+        return sum((l.amount or 0) for l in self.lines if l.entry_type == 'debit')
+
+    @property
+    def total_credit(self):
+        return sum((l.amount or 0) for l in self.lines if l.entry_type == 'credit')
+
+    @property
+    def balance(self):
+        """Running balance: opening + debits (money in) − credits (money out)."""
+        return (self.opening_balance or 0) + self.total_debit - self.total_credit
+
+    def __repr__(self):
+        return f'<JournalAccount {self.name}>'
+
+
+class JournalEntry(db.Model):
+    """One journal entry (a single form submission) that groups one or more
+    lines. Each line posts a debit or credit against an account."""
+    __tablename__ = 'journal_entries'
+
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False, index=True, default=datetime.utcnow)
+    reference = db.Column(db.String(120), nullable=True)   # optional voucher / ref no
+    description = db.Column(db.Text, nullable=True)         # overall narration
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    # Set once the entry's expense (credit / money-out) has been pushed to the
+    # Expense module, so it can't be sent twice.
+    expense_id = db.Column(db.Integer, db.ForeignKey('expenses.id'), nullable=True)
+
+    lines = db.relationship(
+        'JournalLine', backref='entry', lazy=True,
+        cascade='all, delete-orphan', order_by='JournalLine.id'
+    )
+    created_by_user = db.relationship('User', backref='journal_entries')
+
+    @property
+    def total_debit(self):
+        return sum((l.amount or 0) for l in self.lines if l.entry_type == 'debit')
+
+    @property
+    def total_credit(self):
+        return sum((l.amount or 0) for l in self.lines if l.entry_type == 'credit')
+
+    @property
+    def is_balanced(self):
+        return abs(self.total_debit - self.total_credit) < 0.01
+
+    def __repr__(self):
+        return f'<JournalEntry {self.id} {self.date}>'
+
+
+class JournalLine(db.Model):
+    """A single debit or credit line within a journal entry."""
+    __tablename__ = 'journal_lines'
+
+    id = db.Column(db.Integer, primary_key=True)
+    entry_id = db.Column(db.Integer, db.ForeignKey('journal_entries.id'), nullable=False, index=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('journal_accounts.id'), nullable=False, index=True)
+    description = db.Column(db.Text, nullable=True)         # expense / line details
+    entry_type = db.Column(db.String(10), nullable=False, default='debit')  # 'debit' | 'credit'
+    amount = db.Column(db.Float, nullable=False, default=0)
+
+    account = db.relationship('JournalAccount', backref=db.backref('lines', lazy=True))
+
+    def __repr__(self):
+        return f'<JournalLine {self.entry_type} {self.amount} acct={self.account_id}>'

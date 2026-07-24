@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Add Money — {{ account.name }}{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 560px;">
+    <div class="card shadow-sm">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0"><i class="fas fa-money-bill-wave me-2"></i>Add / Remove Money</h5>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-light border d-flex justify-content-between align-items-center">
+                <span><strong>{{ account.name }}</strong></span>
+                <span>Current Balance:
+                    <strong class="{{ 'text-success' if account.balance >= 0 else 'text-danger' }}">
+                        PKR {{ "{:,.0f}".format(account.balance) }}
+                    </strong>
+                </span>
+            </div>
+            <form method="POST">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Date</label>
+                        <input type="date" name="date" class="form-control"
+                               value="{{ today.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Direction</label>
+                        <select name="entry_type" class="form-select">
+                            <option value="debit">Add Money (Debit / In)</option>
+                            <option value="credit">Remove Money (Credit / Out)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Amount <span class="text-danger">*</span></label>
+                        <input type="number" step="0.01" min="0" name="amount" class="form-control" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Reference <span class="text-muted small">(optional)</span></label>
+                        <input type="text" name="reference" class="form-control" placeholder="Voucher / Ref no">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Details</label>
+                        <textarea name="description" class="form-control" rows="2"
+                                  placeholder="What is this money for?"></textarea>
+                    </div>
+                </div>
+                <div class="d-flex gap-2 mt-3">
+                    <button type="submit" class="btn btn-success"><i class="fas fa-save me-1"></i>Save</button>
+                    <a href="{{ url_for('journal.accounts') }}" class="btn btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

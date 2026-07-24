@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Journal Entry #{{ entry.id }}{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 900px;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0"><i class="fas fa-receipt me-2 text-primary"></i>Journal Entry #{{ entry.id }}</h4>
+        <a href="{{ url_for('journal.entries') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left me-1"></i> Back
+        </a>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="small text-muted text-uppercase">Date</div>
+                    <div class="fw-semibold">{{ entry.date.strftime('%d-%m-%Y') }}</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="small text-muted text-uppercase">Reference</div>
+                    <div class="fw-semibold">{{ entry.reference or '—' }}</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="small text-muted text-uppercase">Created By</div>
+                    <div class="fw-semibold">{{ entry.created_by_user.username if entry.created_by_user else '—' }}</div>
+                </div>
+                {% if entry.description %}
+                <div class="col-12">
+                    <div class="small text-muted text-uppercase">Narration</div>
+                    <div>{{ entry.description }}</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Account</th>
+                        <th>Details</th>
+                        <th class="text-end">Debit</th>
+                        <th class="text-end">Credit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for l in entry.lines %}
+                    <tr>
+                        <td>
+                            <a href="{{ url_for('journal.account_ledger', account_id=l.account_id) }}"
+                               class="text-decoration-none">{{ l.account.name if l.account else '—' }}</a>
+                        </td>
+                        <td>{{ l.description or '—' }}</td>
+                        <td class="text-end text-success">{{ "{:,.0f}".format(l.amount) if l.entry_type == 'debit' else '' }}</td>
+                        <td class="text-end text-danger">{{ "{:,.0f}".format(l.amount) if l.entry_type == 'credit' else '' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light">
+                    <tr>
+                        <th colspan="2" class="text-end">Totals</th>
+                        <th class="text-end text-success">{{ "{:,.0f}".format(entry.total_debit) }}</th>
+                        <th class="text-end text-danger">{{ "{:,.0f}".format(entry.total_credit) }}</th>
+                    </tr>
+                    {% if not entry.is_balanced %}
+                    <tr>
+                        <td colspan="4" class="text-end small text-warning">
+                            <i class="fas fa-exclamation-triangle me-1"></i>Debit and credit totals differ by
+                            {{ "{:,.0f}".format((entry.total_debit - entry.total_credit)|abs) }}.
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -13,13 +13,36 @@ from app.models import RecoveryTask, Sale, Task
 
 OPEN_STATUSES = ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF')
 
+# In the Sales module an invoice has no dedicated "cancelled" status; a cancel
+# is recorded as is_rejected=True with this exact rejection reason (see
+# app/routes/sales.py). A draft is is_draft=True. Recovery should ignore both.
+CANCELLED_REASON = 'Cancelled by Admin'
+
+
+def active_invoice_criterion():
+    """SQLAlchemy condition (on the Sale/invoice) selecting invoices that are
+    neither a draft nor cancelled in the Sales module. Use with an explicit
+    Sale join, or wrapped in RecoveryTask.invoice.has(...)."""
+    return db.and_(
+        Sale.is_draft == False,
+        db.not_(db.and_(Sale.is_rejected == True,
+                        Sale.rejection_reason == CANCELLED_REASON))
+    )
+
+
+def exclude_draft_cancelled(query):
+    """Filter a RecoveryTask query so tasks whose invoice is a draft or was
+    cancelled in Sales are hidden. Does not require an existing Sale join."""
+    return query.filter(RecoveryTask.invoice.has(active_invoice_criterion()))
+
 
 def open_tasks_for_customer(customer_id):
     """All open (non-closed) RecoveryTasks for this customer, across all
-    salesmen."""
+    salesmen. Excludes invoices that are drafts or cancelled in Sales."""
     return RecoveryTask.query.join(Sale, RecoveryTask.invoice_id == Sale.id).filter(
         Sale.customer_id == customer_id,
-        RecoveryTask.recovery_status.notin_(OPEN_STATUSES)
+        RecoveryTask.recovery_status.notin_(OPEN_STATUSES),
+        active_invoice_criterion()
     ).all()
 
 

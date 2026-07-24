@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Journal Accounts{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+        <h4 class="mb-0"><i class="fas fa-book me-2 text-primary"></i>Journal Accounts</h4>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('journal.entries') }}" class="btn btn-outline-primary btn-sm">
+                <i class="fas fa-list me-1"></i> Journal Entries
+            </a>
+            <a href="{{ url_for('journal.create_account') }}" class="btn btn-primary btn-sm">
+                <i class="fas fa-plus me-1"></i> New Account
+            </a>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Account</th>
+                            <th>Type</th>
+                            <th class="text-end">Opening</th>
+                            <th class="text-end">Money In (Debit)</th>
+                            <th class="text-end">Money Out (Credit)</th>
+                            <th class="text-end">Balance</th>
+                            <th>Status</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for a in accounts %}
+                        <tr>
+                            <td>
+                                <a href="{{ url_for('journal.account_ledger', account_id=a.id) }}"
+                                   class="fw-semibold text-decoration-none">{{ a.name }}</a>
+                                {% if a.notes %}<div class="small text-muted">{{ a.notes }}</div>{% endif %}
+                            </td>
+                            <td>{% if a.account_type %}<span class="badge bg-secondary">{{ a.account_type }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                            <td class="text-end">{{ "{:,.0f}".format(a.opening_balance or 0) }}</td>
+                            <td class="text-end text-success">{{ "{:,.0f}".format(a.total_debit) }}</td>
+                            <td class="text-end text-danger">{{ "{:,.0f}".format(a.total_credit) }}</td>
+                            <td class="text-end fw-bold {{ 'text-success' if a.balance >= 0 else 'text-danger' }}">
+                                {{ "{:,.0f}".format(a.balance) }}
+                            </td>
+                            <td>
+                                <span class="badge bg-{{ 'success' if a.is_active else 'secondary' }}">
+                                    {{ 'Active' if a.is_active else 'Inactive' }}
+                                </span>
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <a href="{{ url_for('journal.add_money', account_id=a.id) }}"
+                                   class="btn btn-sm btn-success" title="Add / Remove Money">
+                                    <i class="fas fa-money-bill-wave"></i>
+                                </a>
+                                <a href="{{ url_for('journal.account_ledger', account_id=a.id) }}"
+                                   class="btn btn-sm btn-outline-info" title="View Ledger">
+                                    <i class="fas fa-file-invoice-dollar"></i>
+                                </a>
+                                <a href="{{ url_for('journal.edit_account', account_id=a.id) }}"
+                                   class="btn btn-sm btn-outline-primary" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <form method="POST" action="{{ url_for('journal.delete_account', account_id=a.id) }}"
+                                      class="d-inline" onsubmit="return confirm('Delete this account?');">
+                                    <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="fas fa-trash"></i></button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-4">
+                                No accounts yet. Click <strong>New Account</strong> to create one.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if accounts %}
+                    <tfoot class="table-light">
+                        <tr>
+                            <th colspan="5" class="text-end">Total Balance</th>
+                            <th class="text-end {{ 'text-success' if total_balance >= 0 else 'text-danger' }}">
+                                {{ "{:,.0f}".format(total_balance) }}
+                            </th>
+                            <th colspan="2"></th>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

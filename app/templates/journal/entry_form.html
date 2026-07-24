@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}New Journal Entry{% endblock %}
+
+{% block content %}
+<div class="container-fluid" style="max-width: 1000px;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0"><i class="fas fa-pen-to-square me-2 text-primary"></i>New Journal Entry</h4>
+        <a href="{{ url_for('journal.entries') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left me-1"></i> Back
+        </a>
+    </div>
+
+    {% if not accounts %}
+    <div class="alert alert-warning">
+        You need at least one account first.
+        <a href="{{ url_for('journal.create_account') }}" class="alert-link">Create an account</a>.
+    </div>
+    {% endif %}
+
+    <form method="POST">
+        <div class="card shadow-sm mb-3">
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Date <span class="text-danger">*</span></label>
+                        <input type="date" name="date" class="form-control" required
+                               value="{{ today.strftime('%Y-%m-%d') }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Reference <span class="text-muted small">(optional)</span></label>
+                        <input type="text" name="reference" class="form-control" placeholder="Voucher / Ref no">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Narration <span class="text-muted small">(optional)</span></label>
+                        <input type="text" name="description" class="form-control" placeholder="Overall note">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <strong>Lines</strong>
+                <button type="button" class="btn btn-sm btn-primary" id="addRowBtn">
+                    <i class="fas fa-plus me-1"></i> Add Row
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="table mb-0 align-middle" id="linesTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 26%;">Account</th>
+                            <th style="width: 34%;">Expense / Details</th>
+                            <th style="width: 16%;">Type</th>
+                            <th style="width: 18%;">Amount</th>
+                            <th style="width: 6%;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="linesBody">
+                        <!-- rows injected by JS -->
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr>
+                            <td colspan="3" class="text-end fw-semibold">Totals</td>
+                            <td class="small">
+                                <div>Debit: <span id="totalDebit" class="fw-bold text-success">0</span></div>
+                                <div>Credit: <span id="totalCredit" class="fw-bold text-danger">0</span></div>
+                            </td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2 mt-3">
+            <button type="submit" class="btn btn-primary" {% if not accounts %}disabled{% endif %}>
+                <i class="fas fa-save me-1"></i> Save Entry
+            </button>
+            <a href="{{ url_for('journal.entries') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<template id="rowTemplate">
+    <tr class="line-row">
+        <td>
+            <select name="line_account_id[]" class="form-select form-select-sm">
+                <option value="">— Select account —</option>
+                {% for a in accounts %}
+                <option value="{{ a.id }}">{{ a.name }}{% if a.account_type %} ({{ a.account_type }}){% endif %}</option>
+                {% endfor %}
+            </select>
+        </td>
+        <td><input type="text" name="line_description[]" class="form-control form-control-sm" placeholder="Details / expense"></td>
+        <td>
+            <select name="line_type[]" class="form-select form-select-sm line-type">
+                <option value="debit">Debit (In)</option>
+                <option value="credit">Credit (Out)</option>
+            </select>
+        </td>
+        <td><input type="number" step="0.01" min="0" name="line_amount[]" class="form-control form-control-sm line-amount" placeholder="0"></td>
+        <td class="text-center">
+            <button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Remove row">
+                <i class="fas fa-times"></i>
+            </button>
+        </td>
+    </tr>
+</template>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const body = document.getElementById('linesBody');
+    const tpl = document.getElementById('rowTemplate');
+    const addBtn = document.getElementById('addRowBtn');
+
+    function recalc() {
+        let debit = 0, credit = 0;
+        body.querySelectorAll('.line-row').forEach(function (row) {
+            const amt = parseFloat(row.querySelector('.line-amount').value) || 0;
+            const type = row.querySelector('.line-type').value;
+            if (type === 'credit') credit += amt; else debit += amt;
+        });
+        document.getElementById('totalDebit').textContent = debit.toLocaleString();
+        document.getElementById('totalCredit').textContent = credit.toLocaleString();
+    }
+
+    function addRow() {
+        const node = tpl.content.cloneNode(true);
+        body.appendChild(node);
+        recalc();
+    }
+
+    addBtn.addEventListener('click', addRow);
+
+    body.addEventListener('click', function (e) {
+        const btn = e.target.closest('.remove-row');
+        if (btn) {
+            const rows = body.querySelectorAll('.line-row');
+            if (rows.length > 1) {
+                btn.closest('.line-row').remove();
+            } else {
+                // keep at least one empty row
+                btn.closest('.line-row').querySelectorAll('input').forEach(i => i.value = '');
+            }
+            recalc();
+        }
+    });
+
+    body.addEventListener('input', recalc);
+    body.addEventListener('change', recalc);
+
+    // Start with a few rows so it's ready to use.
+    addRow(); addRow();
+});
+</script>
+{% endblock %}

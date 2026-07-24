@@ -993,6 +993,11 @@
                     <i class="fas fa-money-bill-wave me-2"></i> Expenses
                 </a>
                 {% endif %}
+                {% if current_user.is_admin or current_user.can_view_accounting %}
+                <a class="nav-link" href="{{ url_for('journal.entries') }}">
+                    <i class="fas fa-book me-2"></i> Journal Entry
+                </a>
+                {% endif %}
                 {% if current_user.is_admin or current_user.can_view_salary %}
                 <a class="nav-link" href="{{ url_for('salary.staff_list') }}">
                     <i class="fas fa-user-tie me-2"></i> Salary Module
@@ -1206,6 +1211,11 @@
                         {% if current_user.is_admin or current_user.can_view_expenses %}
                         <a class="nav-link" href="{{ url_for('accounting.expenses') }}">
                             <i class="fas fa-money-bill-wave me-2"></i> Expenses
+                        </a>
+                        {% endif %}
+                        {% if current_user.is_admin or current_user.can_view_accounting %}
+                        <a class="nav-link" href="{{ url_for('journal.entries') }}">
+                            <i class="fas fa-book me-2"></i> Journal Entry
                         </a>
                         {% endif %}
                         {% if current_user.is_admin or current_user.can_view_salary %}

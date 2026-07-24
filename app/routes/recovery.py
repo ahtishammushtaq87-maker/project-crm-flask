@@ -6,7 +6,7 @@ from app import db
 from app.models import RecoveryTask, RecoveryLog, RecoveryComment, Sale, Salesman, Customer, CustomerGroup, Task, User
 from app.services.recovery_grouping import (
     open_tasks_for_customer, open_tasks_for_group, rearm_group_reminder,
-    cancel_group_reminders,
+    cancel_group_reminders, exclude_draft_cancelled, active_invoice_criterion,
 )
 from app.utils import pk_now
 
@@ -40,7 +40,8 @@ def dashboard():
 
     # Shared base query with the dropdown filters. Used for BOTH the table and
     # the KPI cards, so the cards reflect the same filter selection.
-    base = RecoveryTask.query
+    # Hide invoices that are drafts or cancelled in the Sales module.
+    base = exclude_draft_cancelled(RecoveryTask.query)
     if customer_filter or invoice_filter:
         base = base.join(Sale, RecoveryTask.invoice_id == Sale.id)
     if salesman_filter:
@@ -106,6 +107,7 @@ def dashboard():
     customers = Customer.query.filter_by(is_active=True).order_by(Customer.name).all() \
         if hasattr(Customer, 'is_active') else Customer.query.order_by(Customer.name).all()
     invoices = Sale.query.join(RecoveryTask, RecoveryTask.invoice_id == Sale.id) \
+        .filter(active_invoice_criterion()) \
         .order_by(Sale.invoice_number.desc()).all()
 
     return render_template(
@@ -142,7 +144,7 @@ def radar():
 
     today = date.today()
 
-    q = RecoveryTask.query.filter(
+    q = exclude_draft_cancelled(RecoveryTask.query).filter(
         RecoveryTask.recovery_status.notin_(['CLOSED_PAID', 'CLOSED_WRITTEN_OFF'])
     )
 
