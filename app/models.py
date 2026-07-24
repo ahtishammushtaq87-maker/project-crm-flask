@@ -2198,6 +2198,13 @@ class Attendance(db.Model):
     deduct_hours = db.Column(db.Float, default=0)
     deduct_minutes = db.Column(db.Integer, default=0)
     deduct_reason = db.Column(db.Text)
+    # Overtime worked on top of the regular shift. Kept SEPARATE from
+    # hours_worked/earned_amount so existing salary, reports, accounting and
+    # dashboard totals are unaffected; overtime pay is exposed on its own via
+    # the overtime_earned property below.
+    overtime_hours = db.Column(db.Float, default=0)
+    overtime_minutes = db.Column(db.Integer, default=0)
+    overtime_reason = db.Column(db.Text)
     is_holiday = db.Column(db.Boolean, default=False)
     is_absent = db.Column(db.Boolean, default=False)  # Auto-set if no clock-in by end of shift day
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -2271,20 +2278,26 @@ class Attendance(db.Model):
             self.hourly_rate = 0
     
     def calculate_earned_amount(self):
-        """Calculate total earned amount for the day"""
-        if getattr(self, 'is_holiday', False) or getattr(self, 'is_absent', False):
-            # For holiday/absent, earned amount is zero
-            self.earned_amount = 0
-            return
+        """Calculate total earned amount for the day = regular pay + overtime pay.
 
+        Overtime is paid at the same hourly rate and added on top of the
+        regular earnings. When there is no overtime (the default) this behaves
+        exactly as before, so existing records are unchanged."""
+        # Always have an up-to-date hourly rate (also needed for overtime pay,
+        # e.g. overtime worked on a holiday).
         self.calculate_hourly_rate()
-        
-        if self.hourly_rate > 0 and (self.hours_worked > 0 or self.minutes_worked > 0):
-            # Calculate: hours × hourly_rate + (minutes / 60) × hourly_rate
-            total_hours_decimal = self.hours_worked + (self.minutes_worked / 60.0)
-            self.earned_amount = total_hours_decimal * self.hourly_rate
-        else:
-            self.earned_amount = 0
+
+        # Regular earnings — zero on holiday/absent.
+        base = 0
+        if not (getattr(self, 'is_holiday', False) or getattr(self, 'is_absent', False)):
+            if self.hourly_rate > 0 and (self.hours_worked > 0 or self.minutes_worked > 0):
+                total_hours_decimal = self.hours_worked + (self.minutes_worked / 60.0)
+                base = total_hours_decimal * self.hourly_rate
+
+        # Overtime earnings — extra hours beyond the regular shift.
+        overtime_pay = self.overtime_total_hours * (self.hourly_rate or 0)
+
+        self.earned_amount = base + overtime_pay
     
     def get_current_duration(self):
         """Return live duration for active shifts or saved duration for completed shifts"""
@@ -2344,6 +2357,33 @@ class Attendance(db.Model):
         if self.hours_worked > 0 or self.minutes_worked > 0:
             return f"{int(self.hours_worked)}h {int(self.minutes_worked)}m"
         return "0h 0m"
+
+    @property
+    def overtime_total_hours(self):
+        """Overtime expressed as a single decimal-hours figure."""
+        oh = getattr(self, 'overtime_hours', 0) or 0
+        om = getattr(self, 'overtime_minutes', 0) or 0
+        return oh + (om / 60.0)
+
+    def get_overtime_summary(self):
+        """Formatted overtime (e.g., '2h 30m'), or '—' when there is none."""
+        oh = int(getattr(self, 'overtime_hours', 0) or 0)
+        om = int(getattr(self, 'overtime_minutes', 0) or 0)
+        if oh == 0 and om == 0:
+            return "—"
+        return f"{oh}h {om}m"
+
+    @property
+    def overtime_earned(self):
+        """Overtime pay at the record's regular hourly rate. Computed on demand
+        and NOT added to earned_amount, so other modules stay unchanged."""
+        if self.overtime_total_hours <= 0:
+            return 0.0
+        rate = self.hourly_rate
+        if not rate:
+            self.calculate_hourly_rate()
+            rate = self.hourly_rate or 0
+        return self.overtime_total_hours * rate
     
     def __repr__(self):
         return f'<Attendance {self.staff_id} - {self.date}: {self.get_time_summary()}>'

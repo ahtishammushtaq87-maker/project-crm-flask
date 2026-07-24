@@ -51,6 +51,12 @@ def index():
     total_earned = 0
     
     for record in attendance_records:
+        # Refresh earnings in-memory (no commit) so records saved before overtime
+        # existed — or with a stale stored value — display the overtime-inclusive
+        # amount. No-op for records without overtime.
+        if record.clock_out and record.overtime_total_hours > 0:
+            record.calculate_earned_amount()
+
         if record.clock_in and not record.clock_out:
             # Active shift (Live estimate)
             diff = datetime.now() - record.clock_in
@@ -71,10 +77,14 @@ def index():
             if not record.hourly_rate:
                 record.calculate_hourly_rate()
             total_earned += (cur_total_mins / 60.0) * record.hourly_rate
+            # Live shift: earned_amount isn't used above, so add overtime pay here.
+            total_earned += record.overtime_earned
+            total_minutes += int(round(record.overtime_total_hours * 60))
         else:
-            # Completed shift
+            # Completed shift — earned_amount already includes overtime pay.
             total_hours += record.hours_worked
             total_minutes += record.minutes_worked
+            total_minutes += int(round(record.overtime_total_hours * 60))
             total_earned += record.earned_amount
     
     # Convert minutes to hours
@@ -443,6 +453,10 @@ def edit_attendance(attendance_id):
             attendance.deduct_hours = float(request.form.get('deduct_hours') or 0)
             attendance.deduct_minutes = int(request.form.get('deduct_minutes') or 0)
             attendance.deduct_reason = request.form.get('deduct_reason')
+            # Overtime (stored separately; does not alter hours_worked/earned_amount)
+            attendance.overtime_hours = float(request.form.get('overtime_hours') or 0)
+            attendance.overtime_minutes = int(request.form.get('overtime_minutes') or 0)
+            attendance.overtime_reason = request.form.get('overtime_reason')
             attendance.notes = notes
             
             # Recalculate based on new state

@@ -87,7 +87,31 @@
                         </div>
                     </div>
                 </div>
-                
+
+                <!-- Overtime -->
+                <div class="card mb-4 border-0 shadow-sm">
+                    <div class="card-header bg-light border-0">
+                        <h6 class="mb-0 text-success"><i class="fas fa-plus-circle me-1"></i> Overtime</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-text mb-2">Extra hours worked beyond the regular shift. Added on top — it does not change the regular worked hours.</div>
+                        <div class="row g-2 align-items-center mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold">Overtime (Hours)</label>
+                                <input type="number" name="overtime_hours" id="overtimeHours" class="form-control" value="{{ attendance.overtime_hours or 0 }}" min="0" step="1">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold">Overtime (Minutes)</label>
+                                <input type="number" name="overtime_minutes" id="overtimeMinutes" class="form-control" value="{{ attendance.overtime_minutes or 0 }}" min="0" max="59" step="1">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="form-label small fw-bold">Overtime Reason</label>
+                            <textarea name="overtime_reason" class="form-control form-control-sm" rows="2" placeholder="e.g., Urgent order, extended shift, etc.">{{ attendance.overtime_reason or '' }}</textarea>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Display Information -->
                 <div class="alert alert-info">
                     <strong>Staff Information:</strong>
@@ -98,12 +122,16 @@
                     </ul>
                 </div>
                 
-                {% if attendance.hours_worked > 0 or attendance.minutes_worked > 0 %}
+                {% if attendance.hours_worked > 0 or attendance.minutes_worked > 0 or attendance.overtime_total_hours > 0 %}
                 <div class="alert alert-success">
                     <strong>Current Record:</strong>
                     <ul class="mb-0 mt-2">
                         <li>Duration: {{ attendance.hours_worked }}h {{ attendance.minutes_worked }}m</li>
                         <li>Earned Amount: PKR {{ "%.2f"|format(attendance.earned_amount) }}</li>
+                        {% if attendance.overtime_total_hours > 0 %}
+                        <li>Overtime: {{ attendance.get_overtime_summary() }}
+                            <span class="text-muted">(≈ PKR {{ "%.2f"|format(attendance.overtime_earned) }})</span></li>
+                        {% endif %}
                     </ul>
                 </div>
                 {% endif %}
