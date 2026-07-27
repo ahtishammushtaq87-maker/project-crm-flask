@@ -334,7 +334,14 @@
                         {% endif %}
                     </td>
                     <td>
+                        <div class="d-flex gap-1">
                         {% if grp.customer %}
+                        <a href="{{ url_for('recovery.group_detail', customer_id=grp.customer.id) }}"
+                           class="btn btn-xs btn-outline-primary btn-sm py-0 px-1"
+                           onclick="event.stopPropagation();"
+                           title="View combined group details (total invoice, paid &amp; balance together)">
+                            <i class="fas fa-eye"></i>
+                        </a>
                         <button type="button" class="btn btn-xs btn-outline-success btn-sm py-0 px-1 set-customer-promise-btn"
                                 data-customer-id="{{ grp.customer.id }}"
                                 data-customer-name="{{ grp.customer.name }}"
@@ -343,6 +350,7 @@
                             <i class="fas fa-handshake"></i>
                         </button>
                         {% endif %}
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}

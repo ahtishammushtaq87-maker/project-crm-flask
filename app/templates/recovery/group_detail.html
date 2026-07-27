@@ -1,0 +1,758 @@
+{% extends "base.html" %}
+{% block title %}Recovery Group: {{ customer.name if customer else 'Customer' }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .detail-label { font-size: .78rem; color: #6c757d; text-transform: uppercase; letter-spacing: .05em; }
+    .detail-value { font-size: 1rem; font-weight: 600; }
+
+    .risk-badge.critical { background: #dc3545; color: #fff; }
+    .risk-badge.high     { background: #fd7e14; color: #fff; }
+    .risk-badge.medium   { background: #ffc107; color: #212529; }
+    .risk-badge.low      { background: #198754; color: #fff; }
+
+    .status-badge { padding: 4px 10px; border-radius: 5px; font-size: .8rem; font-weight: 600; }
+    .status-OVERDUE            { background: #fff3cd; color: #664d03; }
+    .status-PARTIAL_RECOVERY   { background: #cff4fc; color: #055160; }
+    .status-PROMISED_PAYMENT   { background: #d1e7dd; color: #0a3622; }
+    .status-FOLLOW_UP_REQUIRED { background: #f8d7da; color: #58151c; }
+    .status-CLOSED_PAID        { background: #d1e7dd; color: #0a3622; }
+    .status-CLOSED_WRITTEN_OFF { background: #e2e3e5; color: #41464b; }
+
+    .log-entry { border-left: 3px solid #dee2e6; }
+    .log-promised { border-color: #198754; }
+    .log-no_response { border-color: #dc3545; }
+    .log-escalated { border-color: #fd7e14; }
+    .log-partial_payment { border-color: #0dcaf0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    {# ── Breadcrumb ─── #}
+    <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('recovery.dashboard') }}">Sales Recovery</a></li>
+            <li class="breadcrumb-item active">{{ customer.name if customer else 'Customer' }} (Group)</li>
+        </ol>
+    </nav>
+
+    {% set cust = customer %}
+    {# Build one flat list of {name, number} contacts for the call / WhatsApp pickers #}
+    {% set contacts = [] %}
+    {% if cust and cust.phone %}{% set _ = contacts.append({'name': cust.company_name or cust.name, 'number': cust.phone}) %}{% endif %}
+    {% if cust %}{% for sub in cust.sub_customers_list %}
+        {% if sub.phone %}{% set _ = contacts.append({'name': sub.name, 'number': sub.phone}) %}{% endif %}
+    {% endfor %}{% endif %}
+
+    {# ── Customer box — company + all customer names with numbers (shown on top) ── #}
+    {% if cust %}
+    <div class="card shadow-sm mb-4 border-primary">
+        <div class="card-header d-flex justify-content-between align-items-center py-2 bg-primary text-white flex-wrap gap-2">
+            <strong><i class="fas fa-address-book me-1"></i>Customer Details</strong>
+            <span class="d-flex align-items-center gap-2">
+                {% if cust.sub_customers_list %}
+                <span class="badge bg-light text-primary">{{ cust.sub_customers_list|length }} more contact{{ 's' if cust.sub_customers_list|length != 1 else '' }}</span>
+                {% endif %}
+                {% if contacts %}
+                {# ── Phone call: icon calls the first number; caret opens number picker ── #}
+                <div class="btn-group btn-group-sm" role="group">
+                    <a href="tel:{{ contacts[0].number }}" class="btn btn-success contact-action"
+                        data-method="call" data-name="{{ contacts[0].name }}" data-number="{{ contacts[0].number }}"
+                        title="Call {{ contacts[0].name }}">
+                        <i class="fas fa-phone-alt"></i>
+                    </a>
+                    <button type="button" class="btn btn-success dropdown-toggle dropdown-toggle-split"
+                        data-bs-toggle="dropdown" aria-expanded="false" title="Choose number to call">
+                        <span class="visually-hidden">Choose number</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><h6 class="dropdown-header"><i class="fas fa-phone-alt me-1"></i>Call</h6></li>
+                        {% for c in contacts %}
+                        <li>
+                            <a class="dropdown-item contact-action" href="tel:{{ c.number }}"
+                                data-method="call" data-name="{{ c.name }}" data-number="{{ c.number }}">
+                                <i class="fas fa-user-circle text-muted me-2"></i>{{ c.name }}
+                                <span class="text-muted small">({{ c.number }})</span>
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {# ── WhatsApp: icon opens WhatsApp for the first number; caret opens picker ── #}
+                <div class="btn-group btn-group-sm" role="group">
+                    <a href="#" class="btn contact-action" style="background:#25D366;color:#fff;"
+                        data-method="whatsapp" data-name="{{ contacts[0].name }}" data-number="{{ contacts[0].number }}"
+                        title="WhatsApp {{ contacts[0].name }}">
+                        <i class="fab fa-whatsapp"></i>
+                    </a>
+                    <button type="button" class="btn dropdown-toggle dropdown-toggle-split"
+                        style="background:#25D366;color:#fff;"
+                        data-bs-toggle="dropdown" aria-expanded="false" title="Choose number for WhatsApp">
+                        <span class="visually-hidden">Choose number</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><h6 class="dropdown-header"><i class="fab fa-whatsapp me-1"></i>WhatsApp</h6></li>
+                        {% for c in contacts %}
+                        <li>
+                            <a class="dropdown-item contact-action" href="#"
+                                data-method="whatsapp" data-name="{{ c.name }}" data-number="{{ c.number }}">
+                                <i class="fas fa-user-circle text-muted me-2"></i>{{ c.name }}
+                                <span class="text-muted small">({{ c.number }})</span>
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+            </span>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                {# ── Company / main customer ── #}
+                <div class="col-md-4">
+                    <div class="detail-label">Company Name</div>
+                    <div class="detail-value">{{ cust.company_name or cust.name }}</div>
+                    {% if cust.phone %}
+                    <div class="mt-1">
+                        <a href="tel:{{ cust.phone }}" class="text-decoration-none">
+                            <i class="fas fa-phone-alt me-1 text-success"></i>{{ cust.phone }}
+                        </a>
+                    </div>
+                    {% endif %}
+                    {% if cust.email %}
+                    <div class="small text-muted mt-1"><i class="fas fa-envelope me-1"></i>{{ cust.email }}</div>
+                    {% endif %}
+                    {% if cust.contact_person %}
+                    <div class="small text-muted mt-1"><i class="fas fa-user-tie me-1"></i>{{ cust.contact_person }}</div>
+                    {% endif %}
+                </div>
+
+                {# ── Additional customer names with numbers (multiple contacts per customer) ── #}
+                {% if cust.sub_customers_list %}
+                <div class="col-md-8">
+                    <div class="detail-label mb-2">Customer Names &amp; Numbers</div>
+                    <div class="row g-2">
+                        {% for sub in cust.sub_customers_list %}
+                        <div class="col-md-6">
+                            <div class="border rounded p-2 h-100 d-flex justify-content-between align-items-center small">
+                                <span class="fw-semibold"><i class="fas fa-user-circle text-muted me-1"></i>{{ sub.name }}</span>
+                                {% if sub.phone %}
+                                <a href="tel:{{ sub.phone }}" class="text-decoration-none text-nowrap">
+                                    <i class="fas fa-phone-alt me-1 text-success"></i>{{ sub.phone }}
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="row">
+        {# ── Left: Recovery Group Card ─── #}
+        <div class="col-lg-5 mb-4" id="recoveryLeftCol">
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center bg-dark text-white py-2">
+                    <strong><i class="fas fa-layer-group me-1"></i>
+                        RECOVERY GROUP{% if cust %} — {{ cust.name }}{% endif %}
+                    </strong>
+                    <span class="d-flex gap-1">
+                        {% if any_on_hold %}
+                        <span class="badge bg-secondary"><i class="fas fa-pause-circle me-1"></i>On Hold</span>
+                        {% endif %}
+                        {% if any_escalated %}
+                        <span class="badge bg-warning text-dark"><i class="fas fa-exclamation-triangle me-1"></i>Escalated</span>
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="card-body">
+                    {# Combined amounts across the whole group #}
+                    <div class="row g-2 mb-3 text-center">
+                        <div class="col-4">
+                            <div class="detail-label">Total Invoice</div>
+                            <div class="detail-value text-dark">{{ "{:,.0f}".format(totals.total) }}</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="detail-label">Paid</div>
+                            <div class="detail-value text-success">{{ "{:,.0f}".format(totals.paid) }}</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="detail-label">Balance</div>
+                            <div class="detail-value text-danger">{{ "{:,.0f}".format(totals.balance) }}</div>
+                        </div>
+                    </div>
+
+                    <hr class="my-2">
+
+                    <div class="row g-2 small mb-2">
+                        <div class="col-6">
+                            <div class="detail-label">Invoices in Group</div>
+                            <div class="detail-value">{{ totals.invoice_count }}</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="detail-label">Overdue Amount</div>
+                            <div class="{% if totals.overdue_amount > 0 %}text-danger fw-bold{% endif %}">
+                                {{ "{:,.0f}".format(totals.overdue_amount) }}
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="detail-label">Worst Risk</div>
+                            <span class="badge risk-badge {{ worst_risk }}">{{ worst_risk | capitalize }}</span>
+                        </div>
+                        <div class="col-6">
+                            <div class="detail-label">Next Reminder</div>
+                            {% if any_on_hold and not group_next_reminder %}
+                            <span class="badge bg-dark"><i class="fas fa-pause-circle me-1"></i>On Hold — timer paused</span>
+                            {% elif group_next_reminder %}
+                            <span class="badge bg-warning text-dark reminder-countdown"
+                                data-reminder-at="{{ group_next_reminder.isoformat() }}">
+                                <i class="fas fa-stopwatch me-1"></i><span class="countdown-text">…</span>
+                            </span>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </div>
+                        {% if earliest_promise %}
+                        <div class="col-6">
+                            <div class="detail-label">Earliest Promise Date</div>
+                            <div class="{% if earliest_promise < today %}text-danger fw-bold{% endif %}">
+                                {{ earliest_promise.strftime('%d-%m-%Y') }}
+                            </div>
+                        </div>
+                        {% endif %}
+                        <div class="col-6">
+                            <div class="detail-label">Broken Promises</div>
+                            <div class="{% if broken_count %}text-danger fw-bold{% endif %}">{{ broken_count }}</div>
+                        </div>
+                        {% if earliest_follow_up %}
+                        <div class="col-6">
+                            <div class="detail-label">Next Follow-up</div>
+                            <div class="{% if earliest_follow_up <= today %}text-danger fw-bold{% endif %}">
+                                {{ earliest_follow_up.strftime('%d-%m-%Y') }}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    {# ── Broken Promise details — combined across the whole group ── #}
+                    {% if combined_broken %}
+                    <div class="alert alert-danger py-2 px-3 mb-2 static-alert">
+                        <div class="detail-label text-danger mb-1">
+                            <i class="fas fa-heart-broken me-1"></i>Broken Promises
+                            <span class="badge bg-danger ms-1">{{ combined_broken|length }}</span>
+                        </div>
+                        {% for bp in combined_broken %}
+                        <div class="small d-flex justify-content-between align-items-center {% if not loop.last %}border-bottom border-danger-subtle pb-1 mb-1{% endif %}">
+                            <span>
+                                <i class="fas fa-calendar-times me-1"></i>
+                                {% if bp.invoice %}<span class="badge bg-light text-dark border me-1">{{ bp.invoice }}</span>{% endif %}
+                                Promised by
+                                <strong>{{ bp.date.strftime('%d-%m-%Y') if bp.date else '—' }}</strong>
+                                {% if bp.amount %}<span class="text-muted">· PKR {{ "{:,.0f}".format(bp.amount) }}</span>{% endif %}
+                            </span>
+                            {% if bp.when %}
+                            <span class="text-muted" style="font-size:.72rem;">broken on {{ bp.when.strftime('%d-%m-%Y') }}</span>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    {% if last_note %}
+                    <hr class="my-2">
+                    <div class="detail-label mb-1">Last Note</div>
+                    <div class="small text-muted fst-italic">{{ last_note }}</div>
+                    {% endif %}
+                </div>
+
+                {# ── Action Buttons — same toolbar as the per-invoice page, group-wide ── #}
+                <div class="card-footer bg-light p-2">
+                    <div class="d-flex flex-wrap gap-1">
+                        {% if is_open %}
+                        {% if cust and (current_user.is_admin or current_user.can_add_recovery) %}
+                        <button type="button" class="btn btn-sm btn-success action-btn set-customer-promise-btn"
+                                data-customer-id="{{ cust.id }}">
+                            <i class="fas fa-handshake me-1"></i>Mark Promise
+                        </button>
+                        {% endif %}
+                        {% if cust and (current_user.is_admin or current_user.can_edit_recovery) %}
+                        <form method="POST" action="{{ url_for('recovery.group_toggle_hold', customer_id=cust.id) }}" class="d-inline">
+                            {% if all_on_hold %}
+                            <button type="submit" class="btn btn-sm btn-dark action-btn"
+                                title="Resume reminders and timers for all invoices">
+                                <i class="fas fa-play-circle me-1"></i>Take Off Hold
+                            </button>
+                            {% else %}
+                            <button type="submit" class="btn btn-sm btn-outline-dark action-btn"
+                                onclick="return confirm('Put all {{ totals.invoice_count }} invoices On Hold? No reminders or timers will run until you take them off hold.');">
+                                <i class="fas fa-pause-circle me-1"></i>On Hold
+                            </button>
+                            {% endif %}
+                        </form>
+                        <button type="button" class="btn btn-sm btn-outline-danger action-btn"
+                            data-bs-toggle="modal" data-bs-target="#groupCloseModal">
+                            <i class="fas fa-times-circle me-1"></i>Close with Reason
+                        </button>
+                        {% endif %}
+                        {% if cust and (current_user.is_admin or current_user.can_add_recovery) %}
+                        <button type="button" class="btn btn-sm btn-primary action-btn"
+                            data-bs-toggle="modal" data-bs-target="#groupAddLogModal">
+                            <i class="fas fa-comment-medical me-1"></i>Add Message
+                        </button>
+                        {% endif %}
+                        {% endif %}
+                        <button type="button" class="btn btn-sm btn-outline-primary action-btn"
+                            data-bs-toggle="modal" data-bs-target="#groupCommentsModal">
+                            <i class="far fa-comments me-1"></i>Comments
+                            {% if combined_comments %}<span class="badge bg-primary ms-1">{{ combined_comments|length }}</span>{% endif %}
+                        </button>
+                        {% if cust %}
+                        <button type="button" class="btn btn-sm btn-outline-info action-btn"
+                            onclick="showCustomerLedger({{ cust.id }})">
+                            <i class="fas fa-file-invoice-dollar me-1"></i>View Ledger
+                        </button>
+                        {% endif %}
+                        {% if tasks %}
+                        {# View Bill — multiple invoices, so offer a picker #}
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" class="btn btn-sm btn-outline-dark action-btn dropdown-toggle"
+                                data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-file-invoice me-1"></i>View Bill
+                            </button>
+                            <ul class="dropdown-menu">
+                                {% for st in tasks %}{% if st.invoice %}
+                                <li><a class="dropdown-item" target="_blank"
+                                    href="{{ url_for('sales.invoice_pdf_view', id=st.invoice.id) }}">{{ st.invoice.invoice_number }}</a></li>
+                                {% endif %}{% endfor %}
+                            </ul>
+                        </div>
+                        {# View Invoice — link to each invoice's detail #}
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" class="btn btn-sm btn-outline-dark action-btn dropdown-toggle"
+                                data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-file-alt me-1"></i>View Invoice
+                            </button>
+                            <ul class="dropdown-menu">
+                                {% for st in tasks %}{% if st.invoice %}
+                                <li><a class="dropdown-item"
+                                    href="{{ url_for('sales.invoice_detail', id=st.invoice.id) }}">{{ st.invoice.invoice_number }}</a></li>
+                                {% endif %}{% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        {% if cust %}
+                        <a href="{{ url_for('recovery.group_pdf', customer_id=cust.id) }}"
+                            class="btn btn-sm btn-danger action-btn"
+                            title="Download the combined group recovery details as a PDF">
+                            <i class="fas fa-file-pdf me-1"></i>Download PDF
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            {# ── Invoices in this group ─────────────────── #}
+            <div class="card shadow-sm mt-3">
+                <div class="card-header d-flex justify-content-between align-items-center py-2 bg-white flex-wrap gap-2">
+                    <strong class="small">
+                        <i class="fas fa-file-invoice me-1 text-primary"></i>
+                        Invoices in this Group
+                        <span class="badge bg-secondary ms-1">{{ tasks|length }}</span>
+                    </strong>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 no-datatable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Invoice #</th>
+                                <th class="text-end">Total</th>
+                                <th class="text-end">Paid</th>
+                                <th class="text-end">Balance</th>
+                                <th>Recovery Status</th>
+                                <th>Risk</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for st in tasks %}
+                            {% set sinv = st.invoice %}
+                            <tr>
+                                <td>
+                                    {% if sinv %}
+                                    <a href="{{ url_for('sales.invoice_detail', id=sinv.id) }}" class="text-decoration-none fw-semibold">{{ sinv.invoice_number }}</a>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">{{ "{:,.0f}".format(sinv.total) if sinv else '' }}</td>
+                                <td class="text-end">{{ "{:,.0f}".format(sinv.paid_amount) if sinv else '' }}</td>
+                                <td class="text-end fw-semibold {% if sinv and sinv.balance_due > 0 %}text-danger{% endif %}">
+                                    {{ "{:,.0f}".format(sinv.balance_due) if sinv else '' }}
+                                </td>
+                                <td><span class="status-badge status-{{ st.recovery_status }}">{{ st.recovery_status.replace('_', ' ').title() }}</span></td>
+                                <td><span class="badge risk-badge {{ st.risk_level }}">{{ st.risk_level | capitalize }}</span></td>
+                                <td>
+                                    <a href="{{ url_for('recovery.task_detail', task_id=st.id) }}"
+                                       class="btn btn-xs btn-outline-primary btn-sm py-0 px-1" title="View Detail">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        {% if tasks %}
+                        <tfoot class="table-light fw-semibold">
+                            <tr>
+                                <td>Total</td>
+                                <td class="text-end">{{ "{:,.0f}".format(totals.total) }}</td>
+                                <td class="text-end">{{ "{:,.0f}".format(totals.paid) }}</td>
+                                <td class="text-end text-danger">{{ "{:,.0f}".format(totals.balance) }}</td>
+                                <td colspan="3"></td>
+                            </tr>
+                        </tfoot>
+                        {% endif %}
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        {# ── Right: Combined Conversation Log ─── #}
+        <div class="col-lg-7 d-flex flex-column">
+            <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+                <h5 class="mb-0"><i class="fas fa-history me-1 text-secondary"></i> Conversation Log</h5>
+                {% if combined_logs %}
+                <div class="d-flex align-items-end gap-2">
+                    <div>
+                        <label class="detail-label d-block" for="logFilterFrom">From</label>
+                        <input type="date" id="logFilterFrom" class="form-control form-control-sm">
+                    </div>
+                    <div>
+                        <label class="detail-label d-block" for="logFilterTo">To</label>
+                        <input type="date" id="logFilterTo" class="form-control form-control-sm">
+                    </div>
+                    <button type="button" id="logFilterClear" class="btn btn-sm btn-outline-secondary" title="Clear date filter">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+            {% if combined_logs %}
+            <div id="conversationLog" style="max-height: 70vh; overflow-y: auto;" class="pe-1">
+            <div id="logFilterEmpty" class="text-muted fst-italic small d-none">No log entries in this date range.</div>
+            {% for log in combined_logs %}
+            {% set rtask = log.reminder_task if log.reminder_batch_id else None %}
+            <div class="card mb-2 log-entry log-{{ log.response_type }} ps-3"
+                data-log-date="{{ log.created_at.strftime('%Y-%m-%d') if log.created_at else '' }}">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <span class="badge bg-secondary me-1" style="font-size:.72rem;">
+                                {{ log.response_type.replace('_', ' ').title() }}
+                            </span>
+                            {% if log.task and log.task.invoice %}
+                            <span class="badge bg-light text-dark border" style="font-size:.72rem;">{{ log.task.invoice.invoice_number }}</span>
+                            {% endif %}
+                            <span class="small text-muted">
+                                {{ log.created_at.strftime('%d-%m-%Y %H:%M') if log.created_at else '' }}
+                                {% if log.logged_by_user %} by {{ log.logged_by_user.username }}{% endif %}
+                            </span>
+                            {% if rtask %}
+                            {% if rtask.status == 'Completed' %}
+                            <span class="badge bg-success ms-1"><i class="fas fa-check-circle me-1"></i>Reminder Completed</span>
+                            {% elif rtask.reminder_at %}
+                            <span class="badge bg-warning text-dark ms-1 reminder-countdown"
+                                data-reminder-at="{{ rtask.reminder_at.isoformat() }}">
+                                <i class="fas fa-stopwatch me-1"></i><span class="countdown-text">…</span>
+                            </span>
+                            {% endif %}
+                            {% endif %}
+                        </div>
+                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                            {% if log.next_follow_up_date %}
+                            <span class="small text-primary"><i class="fas fa-calendar me-1"></i>Follow-up: {{ log.next_follow_up_date.strftime('%d-%m-%Y') }}</span>
+                            {% endif %}
+                            {% if current_user.is_admin %}
+                            <form method="POST" action="{{ url_for('recovery.delete_log', log_id=log.id) }}"
+                                class="d-inline" onsubmit="return confirm('Delete this conversation log message?');">
+                                <button type="submit" class="btn btn-link btn-sm p-0 text-danger"
+                                    title="Delete this log message" style="font-size:.8rem;">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="mt-1 small">{{ log.note }}</div>
+                    {% if log.promised_amount or log.promise_date %}
+                    <div class="mt-1 small text-success">
+                        <i class="fas fa-handshake me-1"></i>
+                        {% if log.promised_amount %}PKR {{ "{:,.0f}".format(log.promised_amount) }}{% endif %}
+                        {% if log.promise_date %} by {{ log.promise_date.strftime('%d-%m-%Y') }}{% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-muted fst-italic small">No conversation logs yet for this group.</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{# ── Set-one-promise-for-all modal (shared behaviour with the dashboard) ── #}
+{% if cust %}
+<div class="modal fade" id="customerPromiseModal" tabindex="-1" aria-hidden="true"
+     data-mark-promise-customer-url-template="{{ url_for('recovery.mark_promise_customer', customer_id=999999) }}">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" id="customerPromiseForm"
+              onsubmit="document.getElementById('customerPromiseDateTime').value = document.getElementById('customerPromiseDate').value ? (document.getElementById('customerPromiseDate').value + 'T' + (document.getElementById('customerPromiseTime').value || '09:00')) : '';">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white py-2">
+                    <h5 class="modal-title"><i class="fas fa-handshake me-2"></i>Set Promise for {{ cust.name }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="promise_date" id="customerPromiseDateTime">
+                    <div class="mb-2">
+                        <label class="form-label small">Promise Date</label>
+                        <input type="date" id="customerPromiseDate" class="form-control" required>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Promise Time</label>
+                        <input type="time" id="customerPromiseTime" class="form-control" value="09:00">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Promised Amount (optional)</label>
+                        <input type="number" step="0.01" name="promised_amount" class="form-control"
+                               value="{{ totals.balance|round(0)|int }}">
+                    </div>
+                    <div class="small text-muted">Applies one promise date to all {{ totals.invoice_count }} open invoices of this customer.</div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">Record Promise</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# ── Close-all-with-reason modal ── #}
+<div class="modal fade" id="groupCloseModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" action="{{ url_for('recovery.group_close', customer_id=cust.id) }}">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white py-2">
+                    <h5 class="modal-title"><i class="fas fa-times-circle me-2"></i>Close All Invoices</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label small">Close Type</label>
+                        <select name="close_type" class="form-select">
+                            <option value="CLOSED_PAID">Closed — Paid</option>
+                            <option value="CLOSED_WRITTEN_OFF" selected>Closed — Written Off</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Reason</label>
+                        <textarea name="reason" class="form-control" rows="3" required placeholder="Why are these being closed?"></textarea>
+                    </div>
+                    <div class="small text-muted">Closes all {{ totals.invoice_count }} open invoices of this customer.</div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Close All</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# ── Add-message-to-all modal ── #}
+<div class="modal fade" id="groupAddLogModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" action="{{ url_for('recovery.group_add_log', customer_id=cust.id) }}">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white py-2">
+                    <h5 class="modal-title"><i class="fas fa-comment-medical me-2"></i>Add Message to Group</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label small">Response Type</label>
+                        <select name="response_type" class="form-select">
+                            <option value="general">General</option>
+                            <option value="promised_payment">Promised Payment</option>
+                            <option value="partial_payment">Partial Payment</option>
+                            <option value="no_response">No Response</option>
+                            <option value="escalated">Escalated</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Message</label>
+                        <textarea name="note" class="form-control" rows="3" required placeholder="Write a message…"></textarea>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Next Follow-up (optional)</label>
+                        <input type="date" name="next_follow_up_date" class="form-control">
+                    </div>
+                    <div class="small text-muted">Logged against all {{ totals.invoice_count }} open invoices.</div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Message</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# ── Group comments modal (combined thread) ── #}
+<div class="modal fade" id="groupCommentsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h5 class="modal-title"><i class="far fa-comments me-2 text-primary"></i>Comments</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                {% if current_user.is_admin or current_user.can_add_recovery %}
+                <form method="POST" action="{{ url_for('recovery.group_add_comment', customer_id=cust.id) }}" class="mb-3">
+                    <label class="form-label small fw-semibold">Add a comment</label>
+                    <textarea name="comment" class="form-control" rows="3" required placeholder="Write your comment…"></textarea>
+                    <div class="text-end mt-2">
+                        <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-paper-plane me-1"></i>Post Comment</button>
+                    </div>
+                </form>
+                <hr>
+                {% endif %}
+                <div class="detail-label mb-2">Previous Comments <span class="badge bg-secondary ms-1">{{ combined_comments|length }}</span></div>
+                {% if combined_comments %}
+                {% for c in combined_comments %}
+                <div class="border rounded p-2 mb-2">
+                    <div class="d-flex justify-content-between align-items-center small text-muted mb-1">
+                        <span>
+                            <i class="fas fa-user-circle me-1"></i>{{ c.created_by_user.username if c.created_by_user else 'Unknown' }}
+                            {% if c.task and c.task.invoice %}<span class="badge bg-light text-dark border ms-1">{{ c.task.invoice.invoice_number }}</span>{% endif %}
+                        </span>
+                        <span>{{ c.created_at.strftime('%d-%m-%Y %H:%M') if c.created_at else '' }}{% if c.edited_at %} (edited){% endif %}</span>
+                    </div>
+                    <div class="small" style="white-space:pre-wrap; word-break:break-word;">{{ c.comment }}</div>
+                </div>
+                {% endfor %}
+                {% else %}
+                <div class="text-muted fst-italic small">No comments yet. Be the first to add one.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Live-running countdown for scheduled reminders.
+        function updateReminderCountdowns() {
+            document.querySelectorAll('.reminder-countdown').forEach(function (el) {
+                const target = new Date(el.getAttribute('data-reminder-at'));
+                const textEl = el.querySelector('.countdown-text');
+                if (!textEl || isNaN(target.getTime())) return;
+                const diffMs = target - new Date();
+                const totalSec = Math.floor(Math.abs(diffMs) / 1000);
+                const d = Math.floor(totalSec / 86400);
+                const h = Math.floor((totalSec % 86400) / 3600);
+                const m = Math.floor((totalSec % 3600) / 60);
+                const s = totalSec % 60;
+                const formatted = d > 0 ? `${d}d ${h}h ${m}m ${s}s` : `${h}h ${m}m ${s}s`;
+                if (diffMs > 0) {
+                    textEl.textContent = `Reminder in ${formatted}`;
+                    el.classList.remove('bg-danger', 'text-white');
+                    el.classList.add('bg-warning', 'text-dark');
+                } else {
+                    textEl.textContent = `Overdue by ${formatted}`;
+                    el.classList.remove('bg-warning', 'text-dark');
+                    el.classList.add('bg-danger', 'text-white');
+                }
+            });
+        }
+        if (document.querySelector('.reminder-countdown')) {
+            updateReminderCountdowns();
+            setInterval(updateReminderCountdowns, 1000);
+        }
+
+        // Call / WhatsApp: open the dialer (tel:) or WhatsApp (wa.me).
+        (function () {
+            function waNumber(raw) {
+                let n = (raw || '').replace(/[^\d]/g, '');
+                if (n.startsWith('00')) n = n.slice(2);
+                if (n.startsWith('0')) n = '92' + n.slice(1);
+                return n;
+            }
+            document.querySelectorAll('.contact-action').forEach(function (el) {
+                el.addEventListener('click', function (e) {
+                    const method = this.dataset.method;
+                    const number = this.dataset.number || '';
+                    if (method === 'whatsapp') {
+                        e.preventDefault();
+                        window.open('https://wa.me/' + waNumber(number), '_blank');
+                    }
+                    // 'call' uses the native tel: href, no JS needed.
+                });
+            });
+        })();
+
+        // Conversation Log — From/To date filter over the rendered entries.
+        (function () {
+            const fromEl = document.getElementById('logFilterFrom');
+            const toEl = document.getElementById('logFilterTo');
+            const clearEl = document.getElementById('logFilterClear');
+            const emptyEl = document.getElementById('logFilterEmpty');
+            const container = document.getElementById('conversationLog');
+            if (!fromEl || !toEl || !container) return;
+            const entries = Array.from(container.querySelectorAll('.log-entry'));
+            function applyFilter() {
+                const from = fromEl.value, to = toEl.value;
+                let visible = 0;
+                entries.forEach(function (el) {
+                    const d = el.getAttribute('data-log-date');
+                    let show = true;
+                    if (d) {
+                        if (from && d < from) show = false;
+                        if (to && d > to) show = false;
+                    } else if (from || to) { show = false; }
+                    el.classList.toggle('d-none', !show);
+                    if (show) visible++;
+                });
+                if (emptyEl) emptyEl.classList.toggle('d-none', visible !== 0);
+            }
+            fromEl.addEventListener('change', applyFilter);
+            toEl.addEventListener('change', applyFilter);
+            if (clearEl) clearEl.addEventListener('click', function () {
+                fromEl.value = ''; toEl.value = ''; applyFilter();
+            });
+        })();
+
+        // Set-promise-for-all: point the modal form at the customer endpoint.
+        (function () {
+            const btn = document.querySelector('.set-customer-promise-btn');
+            const modalEl = document.getElementById('customerPromiseModal');
+            const form = document.getElementById('customerPromiseForm');
+            if (!btn || !modalEl || !form) return;
+            const tpl = modalEl.getAttribute('data-mark-promise-customer-url-template');
+            form.action = tpl.replace('999999', btn.getAttribute('data-customer-id'));
+            btn.addEventListener('click', function () {
+                new bootstrap.Modal(modalEl).show();
+            });
+        })();
+    });
+</script>
+{% endblock %}

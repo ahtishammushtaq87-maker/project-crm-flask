@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -c \"import ast; ast.parse\\(open\\('app/routes/manufacturing.py'\\).read\\(\\)\\); print\\('OK'\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/routes/manufacturing.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import app as a; print\\([n for n in dir\\(a\\) if 'create' in n.lower\\(\\) or n=='db']\\)\")",
+      "Bash(python -c ' *)"
     ]
   }
 }

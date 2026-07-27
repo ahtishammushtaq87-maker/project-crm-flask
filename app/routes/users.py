@@ -660,8 +660,32 @@ def poll_tasks():
         Task.status.in_(['Pending', 'In Progress'])
     ).all()
     
+    CLOSED_RECOVERY = ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF')
     tasks_data = []
+    seen_recovery_groups = set()
+    dirty = False
     for task in due_tasks:
+        # Recovery reminders need two guards:
+        #  1) Suppress muted / on-hold / closed invoices — muting or holding must
+        #     stop the popup, not just the dashboard timer.
+        #  2) Collapse duplicates — one customer+salesman group must show a single
+        #     popup (it already lists every invoice in that group). Stale/repeat
+        #     reminder rows for the same group are retired so they stop flooding
+        #     the alarm (this is what caused the "52 reminders" pileup).
+        if task.recovery_task_id:
+            rt = task.recovery_task
+            if rt and (rt.is_muted or rt.is_on_hold or rt.recovery_status in CLOSED_RECOVERY):
+                continue
+            inv = rt.invoice if rt else None
+            gkey = (('grp', inv.customer_id, rt.salesman_id)
+                    if rt and inv and inv.customer_id is not None
+                    else ('rt', task.recovery_task_id))
+            if gkey in seen_recovery_groups:
+                task.is_notification_shown = True   # retire the duplicate
+                dirty = True
+                continue
+            seen_recovery_groups.add(gkey)
+
         # Trigger Email Notification if not already sent
         if not task.is_email_sent:
             success, msg = send_task_email(task)
@@ -690,9 +714,13 @@ def poll_tasks():
             if inv and inv.customer_id:
                 from app.services.recovery_grouping import open_tasks_for_group
                 group_tasks = open_tasks_for_group(inv.customer_id, rtask.salesman_id)
+                # Only list invoices that are still actively being chased — a
+                # muted / on-hold / closed invoice must not appear in the popup.
                 invoices = [
                     {'invoice_number': t.invoice.invoice_number, 'balance': t.invoice.balance_due}
-                    for t in group_tasks if t.invoice
+                    for t in group_tasks
+                    if t.invoice and not t.is_muted and not t.is_on_hold
+                    and t.recovery_status not in CLOSED_RECOVERY
                 ]
             if not invoices and inv:
                 invoices = [{'invoice_number': inv.invoice_number, 'balance': inv.balance_due}]
@@ -706,6 +734,8 @@ def poll_tasks():
             })
         tasks_data.append(entry)
 
+    if dirty:
+        db.session.commit()
     return jsonify(tasks_data)
 
 @bp.route('/tasks/settings', methods=['GET', 'POST'])

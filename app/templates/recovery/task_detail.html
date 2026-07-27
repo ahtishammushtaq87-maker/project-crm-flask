@@ -461,7 +461,7 @@
 
                     {# ── Broken Promise details — every promise the customer failed to honour ── #}
                     {% if task.broken_promises %}
-                    <div class="alert alert-danger py-2 px-3 mb-2">
+                    <div class="alert alert-danger py-2 px-3 mb-2 static-alert">
                         <div class="detail-label text-danger mb-1">
                             <i class="fas fa-heart-broken me-1"></i>Broken Promises
                             <span class="badge bg-danger ms-1">{{ task.broken_promises|length }}</span>
@@ -560,7 +560,7 @@
             </div>
 
             {% if task.closed_reason %}
-            <div class="alert alert-secondary mt-2 small">
+            <div class="alert alert-secondary mt-2 small static-alert">
                 <strong>Closed Reason:</strong> {{ task.closed_reason }}
                 {% if task.closed_at %} on {{ task.closed_at.strftime('%d-%m-%Y %H:%M') }}{% endif %}
             </div>
@@ -718,10 +718,21 @@
                             {% endif %}
                             {% endif %}
                         </div>
-                        {% if log.next_follow_up_date %}
-                        <span class="small text-primary"><i class="fas fa-calendar me-1"></i>Follow-up: {{
-                            log.next_follow_up_date.strftime('%d-%m-%Y') }}</span>
-                        {% endif %}
+                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                            {% if log.next_follow_up_date %}
+                            <span class="small text-primary"><i class="fas fa-calendar me-1"></i>Follow-up: {{
+                                log.next_follow_up_date.strftime('%d-%m-%Y') }}</span>
+                            {% endif %}
+                            {% if current_user.is_admin %}
+                            <form method="POST" action="{{ url_for('recovery.delete_log', log_id=log.id) }}"
+                                class="d-inline" onsubmit="return confirm('Delete this conversation log message?');">
+                                <button type="submit" class="btn btn-link btn-sm p-0 text-danger"
+                                    title="Delete this log message" style="font-size:.8rem;">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
                     </div>
                     <div class="mt-1 small">{{ log.note }}</div>
                     {% if log.promised_amount or log.promise_date %}

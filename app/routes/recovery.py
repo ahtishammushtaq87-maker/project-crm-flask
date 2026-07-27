@@ -7,6 +7,7 @@ from app.models import RecoveryTask, RecoveryLog, RecoveryComment, Sale, Salesma
 from app.services.recovery_grouping import (
     open_tasks_for_customer, open_tasks_for_group, rearm_group_reminder,
     cancel_group_reminders, exclude_draft_cancelled, active_invoice_criterion,
+    CANCELLED_REASON,
 )
 from app.utils import pk_now
 
@@ -80,14 +81,18 @@ def dashboard():
         q = q.filter(RecoveryTask.recovery_status.notin_(['CLOSED_PAID', 'CLOSED_WRITTEN_OFF']))
 
     tasks = q.order_by(RecoveryTask.risk_level.desc(), RecoveryTask.updated_at.desc()).all()
+    # Guard against duplicate RecoveryTask rows for the same invoice (a data
+    # glitch that otherwise shows an invoice twice and double-counts the group
+    # totals). Keep the most urgent/recent one — the list is already sorted.
+    tasks = _dedupe_by_invoice(tasks)
 
     customer_groups = _group_tasks_by_customer(tasks)
 
     # KPIs — computed from the SAME filtered base (minus the tab), restricted to
     # open recovery tasks, so the top cards follow the applied filters.
-    all_open = base.filter(
+    all_open = _dedupe_by_invoice(base.filter(
         RecoveryTask.recovery_status.notin_(['CLOSED_PAID', 'CLOSED_WRITTEN_OFF'])
-    ).all()
+    ).all())
 
     total_outstanding = sum(
         (t.invoice.balance_due if t.invoice else 0) for t in all_open
@@ -221,6 +226,445 @@ def task_detail(task_id):
     )
 
 
+# ─── Customer Group Detail (combined totals for all of a customer's invoices) ──
+
+@bp.route('/group/<int:customer_id>')
+@login_required
+def group_detail(customer_id):
+    """A recovery detail page for a whole customer group. Unlike the per-invoice
+    task detail, the summary here shows the COMBINED totals (total invoice, total
+    paid, total balance, total overdue) across every open recovery invoice of the
+    customer, plus each invoice and one merged conversation log."""
+    guard = _require_recovery_view()
+    if guard:
+        return guard
+
+    customer = Customer.query.get_or_404(customer_id)
+    today = date.today()
+
+    # The group = this customer's open recovery invoices (drafts/cancelled/
+    # fully-paid already excluded), deduped so a duplicate task never counts twice.
+    tasks = _dedupe_by_invoice(open_tasks_for_customer(customer_id))
+    tasks.sort(key=lambda t: (_RISK_RANK.get(t.risk_level, 0),
+                              t.updated_at or datetime.min), reverse=True)
+
+    invs = [t.invoice for t in tasks if t.invoice]
+    totals = {
+        'total':          sum(i.total for i in invs),
+        'paid':           sum(i.paid_amount for i in invs),
+        'balance':        sum(i.balance_due for i in invs),
+        'overdue_amount': sum(i.overdue_amount for i in invs),
+        'invoice_count':  len(tasks),
+    }
+    worst_risk = max((t.risk_level for t in tasks),
+                     key=lambda r: _RISK_RANK.get(r, 0), default='low')
+    any_escalated = any(t.is_escalated for t in tasks)
+    any_on_hold = any(t.is_on_hold for t in tasks)
+    promise_dates = [t.promise_date for t in tasks if t.promise_date]
+    earliest_promise = min(promise_dates) if promise_dates else None
+    reminder_times = [t.next_reminder_at for t in tasks if t.next_reminder_at]
+    group_next_reminder = min(reminder_times) if reminder_times else None
+    follow_dates = [t.next_follow_up_date for t in tasks if t.next_follow_up_date]
+    earliest_follow_up = min(follow_dates) if follow_dates else None
+
+    # Combined broken-promise history across every invoice in the group.
+    broken_count = sum((t.broken_promise_count or 0) for t in tasks)
+    combined_broken = []
+    for t in tasks:
+        for bp in (t.broken_promises or []):
+            row = dict(bp)
+            row['invoice'] = t.invoice.invoice_number if t.invoice else None
+            combined_broken.append(row)
+    combined_broken.sort(key=lambda b: b.get('date') or date.min, reverse=True)
+
+    # One merged conversation log across all the group's invoices, newest first.
+    combined_logs = sorted(
+        (log for t in tasks for log in t.logs),
+        key=lambda l: l.created_at or datetime.min, reverse=True
+    )
+    last_note = combined_logs[0].note if combined_logs else None
+
+    # Combined comment thread across the group, newest first.
+    combined_comments = sorted(
+        (c for t in tasks for c in t.comments),
+        key=lambda c: c.created_at or datetime.min, reverse=True
+    )
+
+    open_tasks = [t for t in tasks
+                  if t.recovery_status not in ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF')]
+    all_on_hold = bool(open_tasks) and all(t.is_on_hold for t in open_tasks)
+    is_open = bool(open_tasks)
+
+    return render_template(
+        'recovery/group_detail.html',
+        customer=customer, today=today, tasks=tasks, totals=totals,
+        worst_risk=worst_risk, any_escalated=any_escalated, any_on_hold=any_on_hold,
+        all_on_hold=all_on_hold, is_open=is_open,
+        earliest_promise=earliest_promise, group_next_reminder=group_next_reminder,
+        earliest_follow_up=earliest_follow_up, broken_count=broken_count,
+        combined_broken=combined_broken, combined_logs=combined_logs, last_note=last_note,
+        combined_comments=combined_comments,
+    )
+
+
+# ─── Customer Group Actions (apply one action to all of a customer's invoices) ──
+
+def _open_group_tasks(customer_id):
+    """All open recovery tasks for a customer, deduped by invoice."""
+    tasks = _dedupe_by_invoice(open_tasks_for_customer(customer_id))
+    return [t for t in tasks
+            if t.recovery_status not in ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF')]
+
+
+@bp.route('/group/<int:customer_id>/toggle-hold', methods=['POST'])
+@login_required
+def group_toggle_hold(customer_id):
+    """Put every open invoice in the group On Hold, or take them all off hold."""
+    if not (current_user.is_admin or current_user.can_edit_recovery):
+        flash('Permission denied.', 'danger')
+        return redirect(url_for('recovery.group_detail', customer_id=customer_id))
+
+    from app.services.recovery_automation import _ensure_reminder
+    all_tasks = _dedupe_by_invoice(open_tasks_for_customer(customer_id))
+    open_tasks = [t for t in all_tasks
+                  if t.recovery_status not in ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF')]
+    if not open_tasks:
+        flash('No open invoices to hold.', 'warning')
+        return redirect(url_for('recovery.group_detail', customer_id=customer_id))
+
+    turn_on = not all(t.is_on_hold for t in open_tasks)
+    now = datetime.utcnow()
+    for t in open_tasks:
+        t.is_on_hold = turn_on
+        t.updated_at = now
+        if turn_on:
+            t.on_hold_at, t.on_hold_by = now, current_user.id
+        else:
+            t.on_hold_at, t.on_hold_by = None, None
+        db.session.add(RecoveryLog(
+            task_id=t.id, response_type='general',
+            note=f'Invoice {"put On Hold" if turn_on else "taken off hold"} '
+                 f'(group action) by {current_user.username}.',
+            logged_by=current_user.id,
+        ))
+
+    if turn_on:
+        cancel_group_reminders(all_tasks)   # stop all popups/timers for the group
+    else:
+        for t in open_tasks:
+            if not t.is_muted:
+                _ensure_reminder(t)
+
+    db.session.commit()
+    flash(f'{"Put all invoices On Hold" if turn_on else "Took all invoices off hold"} '
+          f'({len(open_tasks)}).', 'success')
+    return redirect(url_for('recovery.group_detail', customer_id=customer_id))
+
+
+@bp.route('/group/<int:customer_id>/close', methods=['POST'])
+@login_required
+def group_close(customer_id):
+    """Close every open invoice in the group with one reason."""
+    if not (current_user.is_admin or current_user.can_edit_recovery):
+        flash('Permission denied.', 'danger')
+        return redirect(url_for('recovery.group_detail', customer_id=customer_id))
+
+    reason = request.form.get('reason', '').strip()
+    close_type = request.form.get('close_type', 'CLOSED_WRITTEN_OFF')
+    if not reason:
+        flash('Closing reason is required.', 'warning')
+        return redirect(url_for('recovery.group_detail', customer_id=customer_id))
+
+    all_tasks = _dedupe_by_invoice(open_tasks_for_customer(customer_id))
+    open_tasks = [t for t in all_tasks
+                  if t.recovery_status not in ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF')]
+    now = datetime.utcnow()
+    for t in open_tasks:
+        t.recovery_status = close_type
+        t.closed_reason = reason
+        t.closed_at = now
+        t.closed_by = current_user.id
+        t.updated_at = now
+        db.session.add(RecoveryLog(
+            task_id=t.id, response_type='general',
+            note=f'Task closed ({close_type}) (group action): {reason}',
+            logged_by=current_user.id,
+        ))
+    cancel_group_reminders(all_tasks)
+    db.session.commit()
+    flash(f'Closed {len(open_tasks)} invoice(s).', 'success')
+    return redirect(url_for('recovery.dashboard'))
+
+
+@bp.route('/group/<int:customer_id>/add-log', methods=['POST'])
+@login_required
+def group_add_log(customer_id):
+    """Add one follow-up message to every open invoice in the group."""
+    if not (current_user.is_admin or current_user.can_add_recovery):
+        flash('Permission denied.', 'danger')
+        return redirect(url_for('recovery.group_detail', customer_id=customer_id))
+
+    note = request.form.get('note', '').strip()
+    response_type = request.form.get('response_type', 'general')
+    next_follow_up = _parse_date(request.form.get('next_follow_up_date', ''))
+    if not note:
+        flash('Note cannot be empty.', 'warning')
+        return redirect(url_for('recovery.group_detail', customer_id=customer_id))
+
+    open_tasks = _open_group_tasks(customer_id)
+    now = datetime.utcnow()
+    for t in open_tasks:
+        db.session.add(RecoveryLog(
+            task_id=t.id, response_type=response_type, note=note,
+            next_follow_up_date=next_follow_up, logged_by=current_user.id,
+        ))
+        if next_follow_up:
+            t.next_follow_up_date = next_follow_up
+        if response_type == 'no_response':
+            t.recovery_status = 'FOLLOW_UP_REQUIRED'
+        t.updated_at = now
+
+    db.session.commit()
+    flash(f'Message added to {len(open_tasks)} invoice(s).', 'success')
+    return redirect(url_for('recovery.group_detail', customer_id=customer_id))
+
+
+@bp.route('/group/<int:customer_id>/add-comment', methods=['POST'])
+@login_required
+def group_add_comment(customer_id):
+    """Add a comment to the group (recorded against its most-urgent invoice)."""
+    if not (current_user.is_admin or current_user.can_add_recovery):
+        flash('Permission denied.', 'danger')
+        return redirect(url_for('recovery.group_detail', customer_id=customer_id))
+
+    text = request.form.get('comment', '').strip()
+    if not text:
+        flash('Comment cannot be empty.', 'warning')
+        return redirect(url_for('recovery.group_detail', customer_id=customer_id))
+
+    tasks = _dedupe_by_invoice(open_tasks_for_customer(customer_id))
+    tasks.sort(key=lambda t: (_RISK_RANK.get(t.risk_level, 0),
+                              t.updated_at or datetime.min), reverse=True)
+    if not tasks:
+        flash('No open invoices for this customer.', 'warning')
+        return redirect(url_for('recovery.group_detail', customer_id=customer_id))
+
+    db.session.add(RecoveryComment(
+        task_id=tasks[0].id, comment=text, created_by=current_user.id,
+    ))
+    db.session.commit()
+    flash('Comment added.', 'success')
+    return redirect(url_for('recovery.group_detail', customer_id=customer_id))
+
+
+@bp.route('/group/<int:customer_id>/pdf')
+@login_required
+def group_pdf(customer_id):
+    """Combined recovery PDF for a whole customer group — same invoice-styled
+    chrome as the per-invoice PDF, but with the group's combined totals, all its
+    invoices and one merged activity log."""
+    guard = _require_recovery_view()
+    if guard:
+        return guard
+
+    import io
+    from flask import send_file
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, HRFlowable
+    from app.models import Company, InvoiceSettings
+    from app.pdf_utils import (
+        ProfessionalPDFGenerator, PRIMARY_COLOR, TEXT_COLOR, MUTED_TEXT,
+        BORDER_GREY, HEADER_STRIPE, WHITE,
+    )
+
+    customer = Customer.query.get_or_404(customer_id)
+    company = Company.query.first()
+    invoice_settings = InvoiceSettings.query.first()
+
+    tasks = _dedupe_by_invoice(open_tasks_for_customer(customer_id))
+    tasks.sort(key=lambda t: (_RISK_RANK.get(t.risk_level, 0),
+                              t.updated_at or datetime.min), reverse=True)
+    invs = [t.invoice for t in tasks if t.invoice]
+    total = sum(i.total for i in invs)
+    paid = sum(i.paid_amount for i in invs)
+    balance = sum(i.balance_due for i in invs)
+    overdue_amount = sum(i.overdue_amount for i in invs)
+
+    def d(dt, fmt='%d-%m-%Y'):
+        return dt.strftime(fmt) if dt else '—'
+
+    def money(v):
+        try:
+            return f'PKR {float(v):,.0f}'
+        except (TypeError, ValueError):
+            return '—'
+
+    DARK, MUTED, BORDER = TEXT_COLOR, MUTED_TEXT, BORDER_GREY
+    styles = getSampleStyleSheet()
+    st_sec = ParagraphStyle('sec', parent=styles['Normal'], fontSize=8.5, leading=12,
+                            textColor=PRIMARY_COLOR, fontName='Helvetica-Bold', spaceBefore=8, spaceAfter=4)
+    st_lbl = ParagraphStyle('l', parent=styles['Normal'], fontSize=7.5, leading=9, textColor=MUTED)
+    st_val = ParagraphStyle('v', parent=styles['Normal'], fontSize=9, leading=12,
+                            textColor=DARK, fontName='Helvetica-Bold')
+    st_cell = ParagraphStyle('c', parent=styles['Normal'], fontSize=8.5, leading=11, textColor=DARK)
+    st_cell_muted = ParagraphStyle('cm', parent=styles['Normal'], fontSize=8, leading=11, textColor=MUTED)
+    st_danger = ParagraphStyle('dg', parent=styles['Normal'], fontSize=9, leading=12,
+                               textColor=PRIMARY_COLOR, fontName='Helvetica-Bold')
+    st_th = ParagraphStyle('th', parent=styles['Normal'], fontSize=7.5, leading=10,
+                           textColor=WHITE, fontName='Helvetica-Bold')
+    CONTENT_W = A4[0] - 72
+
+    buf = io.BytesIO()
+    gen = ProfessionalPDFGenerator(buf, company, invoice_settings)
+    gen.footer_message = 'Sales Recovery — Group Summary'
+    elements = []
+
+    elements.append(gen._build_header(
+        'Recovery', doc_number=(customer.name or 'Group'),
+        date=None, due_date=None, currency='PKR',
+        status=f'{len(tasks)} open invoices',
+    ))
+    elements.append(Spacer(1, 8))
+    elements.append(HRFlowable(width='100%', thickness=0.6, color=BORDER, spaceAfter=8))
+
+    # Combined totals
+    elements.append(Paragraph('Combined Totals', st_sec))
+    trow = [[Paragraph('Total Invoice', st_lbl), Paragraph('Paid', st_lbl),
+             Paragraph('Balance', st_lbl), Paragraph('Overdue', st_lbl), Paragraph('Invoices', st_lbl)],
+            [Paragraph(money(total), st_val), Paragraph(money(paid), st_val),
+             Paragraph(money(balance), st_danger), Paragraph(money(overdue_amount), st_danger),
+             Paragraph(str(len(tasks)), st_val)]]
+    tt = Table(trow, colWidths=[CONTENT_W * 0.22, CONTENT_W * 0.2, CONTENT_W * 0.2,
+                                CONTENT_W * 0.2, CONTENT_W * 0.18])
+    tt.setStyle(TableStyle([
+        ('BOX', (0, 0), (-1, -1), 0.5, BORDER), ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER),
+        ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    elements.append(tt)
+
+    # Customer details
+    elements.append(Paragraph('Customer Details', st_sec))
+    elements.append(Table([
+        [Paragraph('Company', st_lbl), Paragraph(customer.company_name or customer.name or '—', st_val)],
+        [Paragraph('Phone', st_lbl), Paragraph(customer.phone or '—', st_cell)],
+        [Paragraph('Email', st_lbl), Paragraph(customer.email or '—', st_cell)],
+    ], colWidths=[CONTENT_W * 0.2, CONTENT_W * 0.8], style=TableStyle([
+        ('BOX', (0, 0), (-1, -1), 0.5, BORDER), ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER),
+        ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ])))
+
+    # Invoices in group
+    elements.append(Paragraph('Invoices in Group', st_sec))
+    rows = [[Paragraph('Invoice #', st_th), Paragraph('Total', st_th), Paragraph('Paid', st_th),
+             Paragraph('Balance', st_th), Paragraph('Status', st_th), Paragraph('Risk', st_th)]]
+    for t in tasks:
+        i = t.invoice
+        rows.append([
+            Paragraph(i.invoice_number if i else '—', st_cell),
+            Paragraph(money(i.total) if i else '—', st_cell),
+            Paragraph(money(i.paid_amount) if i else '—', st_cell),
+            Paragraph(money(i.balance_due) if i else '—', st_danger),
+            Paragraph((t.recovery_status or '').replace('_', ' ').title(), st_cell),
+            Paragraph((t.risk_level or '—').title(), st_cell),
+        ])
+    rows.append([Paragraph('Total', st_th), Paragraph(money(total), st_th), Paragraph(money(paid), st_th),
+                 Paragraph(money(balance), st_th), Paragraph('', st_th), Paragraph('', st_th)])
+    it = Table(rows, repeatRows=1, colWidths=[CONTENT_W * 0.2, CONTENT_W * 0.18, CONTENT_W * 0.18,
+                                              CONTENT_W * 0.18, CONTENT_W * 0.16, CONTENT_W * 0.1])
+    it.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), HEADER_STRIPE),
+        ('BACKGROUND', (0, -1), (-1, -1), HEADER_STRIPE),
+        ('BOX', (0, 0), (-1, -1), 0.5, BORDER), ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#fbfbfb')]),
+    ]))
+    elements.append(it)
+
+    # Combined activity log
+    elements.append(Paragraph('Activity Log', st_sec))
+    logs = sorted((log for t in tasks for log in t.logs),
+                  key=lambda l: l.created_at or datetime.min, reverse=True)
+    if logs:
+        rows = [[Paragraph('Date & Time', st_th), Paragraph('Invoice', st_th), Paragraph('Type', st_th),
+                 Paragraph('By', st_th), Paragraph('Note', st_th)]]
+        for log in logs:
+            note = log.note or ''
+            if log.promised_amount or log.promise_date:
+                extra = []
+                if log.promised_amount:
+                    extra.append(money(log.promised_amount))
+                if log.promise_date:
+                    extra.append('by ' + d(log.promise_date))
+                note += f"  ({' '.join(extra)})"
+            rows.append([
+                Paragraph(d(log.created_at, '%d-%m-%Y %H:%M'), st_cell_muted),
+                Paragraph(log.task.invoice.invoice_number if log.task and log.task.invoice else '—', st_cell_muted),
+                Paragraph((log.response_type or 'general').replace('_', ' ').title(), st_cell),
+                Paragraph(log.logged_by_user.username if log.logged_by_user else '—', st_cell_muted),
+                Paragraph(note, st_cell),
+            ])
+        lt = Table(rows, repeatRows=1, colWidths=[CONTENT_W * 0.16, CONTENT_W * 0.14, CONTENT_W * 0.14,
+                                                  CONTENT_W * 0.12, CONTENT_W * 0.44])
+        lt.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HEADER_STRIPE),
+            ('BOX', (0, 0), (-1, -1), 0.5, BORDER), ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fbfbfb')]),
+        ]))
+        elements.append(lt)
+    else:
+        elements.append(Paragraph('No activity logged yet.', st_cell_muted))
+
+    # Bank details box (same as the invoice)
+    if invoice_settings:
+        payment_info = {k: v for k, v in {
+            'Payment Terms':  getattr(invoice_settings, 'payment_terms', None),
+            'Bank Name':      getattr(invoice_settings, 'bank_name', None),
+            'Account Holder': getattr(invoice_settings, 'account_holder_name', None),
+            'Account Number': getattr(invoice_settings, 'account_number', None),
+            'IBAN':           getattr(invoice_settings, 'ifsc_code', None),
+            'SWIFT Code':     getattr(invoice_settings, 'swift_code', None),
+        }.items() if v}
+    elif company:
+        payment_info = {k: v for k, v in {
+            'Bank Name':      getattr(company, 'bank_name', None),
+            'Account Number': getattr(company, 'account_number', None),
+            'IBAN':           getattr(company, 'ifsc_code', None),
+        }.items() if v}
+    else:
+        payment_info = {}
+    if payment_info:
+        elements.append(Spacer(1, 12))
+        bank_rows = [Paragraph('BANK DETAILS', gen.styles['NotesTitle'])]
+        for k, v in payment_info.items():
+            bank_rows.append(Paragraph(f'<b>{k}:</b> {v}', gen.styles['NotesText']))
+        bank_tbl = Table([[item] for item in bank_rows], colWidths=[3.7 * inch])
+        bank_tbl.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('TOPPADDING', (0, 0), (-1, -1), 3), ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('BOX', (0, 0), (-1, -1), 0.5, BORDER), ('BACKGROUND', (0, 0), (-1, -1), WHITE),
+        ]))
+        bank_tbl.hAlign = 'LEFT'
+        elements.append(bank_tbl)
+
+    gen.doc.title = f'Recovery Group {customer.name or customer_id}'
+    gen.doc.build(elements, onFirstPage=gen._draw_page_decorations,
+                  onLaterPages=gen._draw_page_decorations)
+    buf.seek(0)
+    fname = f"Recovery_Group_{(customer.name or customer_id)}.pdf".replace(' ', '_')
+    return send_file(buf, mimetype='application/pdf', as_attachment=True, download_name=fname)
+
+
 # ─── Add Follow-up Log ─────────────────────────────────────────────────────────
 
 @bp.route('/task/<int:task_id>/add-log', methods=['POST'])
@@ -310,22 +754,29 @@ def task_pdf(task_id):
     if guard:
         return guard
 
-    import io, os
-    from flask import send_file, current_app
+    import io
+    from flask import send_file
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import inch
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_LEFT
     from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image
+        Paragraph, Spacer, Table, TableStyle, HRFlowable
     )
-    from app.models import Company
+    from app.models import Company, InvoiceSettings
+    # Reuse the exact Sales-invoice PDF engine so the recovery report shares the
+    # same chrome: logo + company-address header, BANK DETAILS box and the
+    # authorized-signature footer.
+    from app.pdf_utils import (
+        ProfessionalPDFGenerator, PRIMARY_COLOR, TEXT_COLOR, MUTED_TEXT,
+        BORDER_GREY, HEADER_STRIPE, WHITE,
+    )
 
     task = RecoveryTask.query.get_or_404(task_id)
     inv = task.invoice
     cust = inv.customer if inv else None
     company = Company.query.first()
+    invoice_settings = InvoiceSettings.query.first()
 
     def d(dt, fmt='%d-%m-%Y'):
         return dt.strftime(fmt) if dt else '—'
@@ -336,19 +787,16 @@ def task_pdf(task_id):
         except (TypeError, ValueError):
             return '—'
 
-    # ── Styles ─────────────────────────────────────────────────────────────
-    PRIMARY = colors.HexColor('#0d6efd')
-    DARK = colors.HexColor('#212529')
-    MUTED = colors.HexColor('#6c757d')
-    DANGER = colors.HexColor('#dc3545')
-    LIGHT = colors.HexColor('#f1f3f5')
-    BORDER = colors.HexColor('#dee2e6')
+    # ── Styles — matched to the Sales invoice palette ──────────────────────
+    PRIMARY = PRIMARY_COLOR
+    DARK = TEXT_COLOR
+    MUTED = MUTED_TEXT
+    DANGER = PRIMARY_COLOR
+    LIGHT = colors.HexColor('#f2f2f2')
+    BORDER = BORDER_GREY
 
     styles = getSampleStyleSheet()
-    st_title = ParagraphStyle('t', parent=styles['Normal'], fontSize=16, leading=19,
-                              textColor=DARK, fontName='Helvetica-Bold')
-    st_sub = ParagraphStyle('s', parent=styles['Normal'], fontSize=9, leading=12, textColor=MUTED)
-    st_sec = ParagraphStyle('sec', parent=styles['Normal'], fontSize=10.5, leading=13,
+    st_sec = ParagraphStyle('sec', parent=styles['Normal'], fontSize=8.5, leading=12,
                             textColor=PRIMARY, fontName='Helvetica-Bold', spaceBefore=8, spaceAfter=4)
     st_lbl = ParagraphStyle('l', parent=styles['Normal'], fontSize=7.5, leading=9, textColor=MUTED)
     st_val = ParagraphStyle('v', parent=styles['Normal'], fontSize=9, leading=12,
@@ -357,6 +805,8 @@ def task_pdf(task_id):
     st_cell_muted = ParagraphStyle('cm', parent=styles['Normal'], fontSize=8, leading=11, textColor=MUTED)
     st_danger = ParagraphStyle('dg', parent=styles['Normal'], fontSize=9, leading=12,
                                textColor=DANGER, fontName='Helvetica-Bold')
+    st_th = ParagraphStyle('th', parent=styles['Normal'], fontSize=7.5, leading=10,
+                           textColor=WHITE, fontName='Helvetica-Bold')
 
     CONTENT_W = A4[0] - 72  # 36pt margins each side
 
@@ -391,64 +841,26 @@ def task_pdf(task_id):
         ]))
         return t
 
+    # ── Build the invoice-styled document generator ────────────────────────
+    buf = io.BytesIO()
+    gen = ProfessionalPDFGenerator(buf, company, invoice_settings)
+    gen.footer_message = 'Sales Recovery — Payment Follow-up'
+
     elements = []
 
-    # ── Company logo (resolve to an on-disk path, tolerate relative paths) ──
-    def _resolve_logo(path):
-        if not path:
-            return None
-        candidates = [path]
-        try:
-            candidates.append(os.path.join(current_app.root_path, path))
-            candidates.append(os.path.join(current_app.root_path, 'static', path))
-            candidates.append(os.path.join(current_app.root_path, '..', path))
-        except Exception:
-            pass
-        for p in candidates:
-            try:
-                if p and os.path.exists(p):
-                    return p
-            except Exception:
-                continue
-        return None
-
-    logo_flowable = None
-    if company and getattr(company, 'logo_path', None):
-        logo_path = _resolve_logo(company.logo_path)
-        if logo_path:
-            try:
-                img = Image(logo_path)
-                aspect = (img.imageHeight / float(img.imageWidth)) if img.imageWidth else 1
-                img.drawWidth = 1.0 * inch
-                img.drawHeight = min(1.0 * inch, 1.0 * inch * aspect)
-                logo_flowable = img
-            except Exception:
-                logo_flowable = None
-
-    # ── Header ─────────────────────────────────────────────────────────────
-    title_txt = f"Recovery Report — Invoice {inv.invoice_number if inv else task.id}"
-    company_block = [Paragraph(company.name if company else 'Sales Recovery', st_title),
-                     Paragraph(title_txt, st_sub)]
-    if logo_flowable:
-        # Logo to the left of the company name / report title.
-        left_tbl = Table([[logo_flowable, company_block]], colWidths=[1.15 * inch, CONTENT_W * 0.65 - 1.15 * inch])
-        left_tbl.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (0, 0), 8),
-            ('TOPPADDING', (0, 0), (-1, -1), 0), ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-        ]))
-        header_left = [left_tbl]
-    else:
-        header_left = company_block
-    header_right = [Paragraph(f"Generated: {pk_now().strftime('%d-%m-%Y %H:%M')}", st_sub)]
-    htbl = Table([[header_left, header_right]], colWidths=[CONTENT_W * 0.65, CONTENT_W * 0.35])
-    htbl.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-    ]))
-    elements.append(htbl)
-    elements.append(HRFlowable(width='100%', thickness=1, color=PRIMARY, spaceBefore=6, spaceAfter=2))
+    # ── Header — identical to the Sales invoice (logo + company address block,
+    #    with the invoice number / dates on the right and a recovery-status badge).
+    status_txt = task.recovery_status.replace('_', ' ').title()
+    elements.append(gen._build_header(
+        'Recovery',   # single word — keeps the 26pt title on one line (no wrap/overlap)
+        doc_number=(inv.invoice_number if inv else task.id),
+        date=(inv.date if inv else None),
+        due_date=(inv.due_date if inv else None),
+        currency='PKR',
+        status=status_txt,
+    ))
+    elements.append(Spacer(1, 8))
+    elements.append(HRFlowable(width='100%', thickness=0.6, color=BORDER, spaceAfter=8))
 
     # ── Customer details ───────────────────────────────────────────────────
     if cust:
@@ -468,13 +880,13 @@ def task_pdf(task_id):
                 contacts.append((sub.get('name', '—'), sub.get('phone', '—')))
         if contacts:
             elements.append(Spacer(1, 4))
-            rows = [[Paragraph('Customer Name', st_lbl), Paragraph('Phone Number', st_lbl)]]
+            rows = [[Paragraph('Customer Name', st_th), Paragraph('Phone Number', st_th)]]
             for name, phone in contacts:
                 rows.append([Paragraph(str(name or '—'), st_cell),
                              Paragraph(str(phone or '—'), st_cell)])
             ct = Table(rows, colWidths=[CONTENT_W * 0.6, CONTENT_W * 0.4])
             ct.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), LIGHT),
+                ('BACKGROUND', (0, 0), (-1, 0), HEADER_STRIPE),
                 ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
                 ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER),
                 ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
@@ -510,17 +922,17 @@ def task_pdf(task_id):
     broken = task.broken_promises
     if broken:
         elements.append(Spacer(1, 4))
-        rows = [[Paragraph('Promised By', st_lbl), Paragraph('Amount', st_lbl),
-                 Paragraph('Broken On', st_lbl)]]
+        rows = [[Paragraph('Promised By', st_th), Paragraph('Amount', st_th),
+                 Paragraph('Broken On', st_th)]]
         for bp in broken:
             rows.append([
                 Paragraph(d(bp['date']), st_cell),
-                Paragraph(money(bp['amount']) if bp['amount'] else '—', st_cell),
+                Paragraph(money(bp['amount']) if bp['amount'] else '—', st_danger),
                 Paragraph(d(bp['when']), st_cell_muted),
             ])
         bt = Table(rows, colWidths=[CONTENT_W * 0.35, CONTENT_W * 0.35, CONTENT_W * 0.30])
         bt.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f8d7da')),
+            ('BACKGROUND', (0, 0), (-1, 0), HEADER_STRIPE),
             ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
             ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER),
             ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
@@ -534,9 +946,9 @@ def task_pdf(task_id):
         sibling_tasks = [t for t in open_tasks_for_customer(inv.customer_id) if t.id != task.id]
     if sibling_tasks:
         elements.append(Paragraph(f'Other Open Invoices ({len(sibling_tasks)})', st_sec))
-        rows = [[Paragraph('Invoice #', st_lbl), Paragraph('Balance', st_lbl),
-                 Paragraph('Recovery Status', st_lbl), Paragraph('Promise Date', st_lbl),
-                 Paragraph('Risk', st_lbl)]]
+        rows = [[Paragraph('Invoice #', st_th), Paragraph('Balance', st_th),
+                 Paragraph('Recovery Status', st_th), Paragraph('Promise Date', st_th),
+                 Paragraph('Risk', st_th)]]
         for st_ in sibling_tasks:
             sinv = st_.invoice
             rows.append([
@@ -550,7 +962,7 @@ def task_pdf(task_id):
                    colWidths=[CONTENT_W * 0.18, CONTENT_W * 0.18, CONTENT_W * 0.30,
                               CONTENT_W * 0.18, CONTENT_W * 0.16])
         ot.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), LIGHT),
+            ('BACKGROUND', (0, 0), (-1, 0), HEADER_STRIPE),
             ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
             ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -563,8 +975,8 @@ def task_pdf(task_id):
     # ── Activity / Conversation log ────────────────────────────────────────
     elements.append(Paragraph('Activity Log', st_sec))
     if task.logs:
-        rows = [[Paragraph('Date & Time', st_lbl), Paragraph('Type', st_lbl),
-                 Paragraph('By', st_lbl), Paragraph('Note', st_lbl)]]
+        rows = [[Paragraph('Date & Time', st_th), Paragraph('Type', st_th),
+                 Paragraph('By', st_th), Paragraph('Note', st_th)]]
         for log in task.logs:  # newest first
             note = log.note or ''
             if log.promised_amount or log.promise_date:
@@ -583,7 +995,7 @@ def task_pdf(task_id):
         lt = Table(rows, repeatRows=1,
                    colWidths=[CONTENT_W * 0.18, CONTENT_W * 0.16, CONTENT_W * 0.14, CONTENT_W * 0.52])
         lt.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), LIGHT),
+            ('BACKGROUND', (0, 0), (-1, 0), HEADER_STRIPE),
             ('BOX', (0, 0), (-1, -1), 0.5, BORDER),
             ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
@@ -595,21 +1007,50 @@ def task_pdf(task_id):
     else:
         elements.append(Paragraph('No activity logged yet.', st_cell_muted))
 
-    # ── Build ──────────────────────────────────────────────────────────────
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=36, bottomMargin=36,
-                            leftMargin=36, rightMargin=36,
-                            title=f'Recovery {inv.invoice_number if inv else task.id}')
+    # ── Bank / payment details box — same fields & styling as the invoice ──
+    if invoice_settings:
+        payment_info = {k: v for k, v in {
+            'Payment Terms':  getattr(invoice_settings, 'payment_terms', None),
+            'Bank Name':      getattr(invoice_settings, 'bank_name', None),
+            'Account Holder': getattr(invoice_settings, 'account_holder_name', None),
+            'Account Number': getattr(invoice_settings, 'account_number', None),
+            'IBAN':           getattr(invoice_settings, 'ifsc_code', None),
+            'SWIFT Code':     getattr(invoice_settings, 'swift_code', None),
+        }.items() if v}
+    elif company:
+        payment_info = {k: v for k, v in {
+            'Bank Name':      getattr(company, 'bank_name', None),
+            'Account Number': getattr(company, 'account_number', None),
+            'IBAN':           getattr(company, 'ifsc_code', None),
+        }.items() if v}
+    else:
+        payment_info = {}
 
-    def _footer(canvas, doc_):
-        canvas.saveState()
-        canvas.setFont('Helvetica', 7)
-        canvas.setFillColor(MUTED)
-        canvas.drawString(36, 20, company.name if company else 'Sales Recovery')
-        canvas.drawRightString(A4[0] - 36, 20, f'Page {doc_.page}')
-        canvas.restoreState()
+    if payment_info:
+        elements.append(Spacer(1, 12))
+        bank_rows = [Paragraph('BANK DETAILS', gen.styles['NotesTitle'])]
+        for k, v in payment_info.items():
+            bank_rows.append(Paragraph(f'<b>{k}:</b> {v}', gen.styles['NotesText']))
+        bank_tbl = Table([[item] for item in bank_rows], colWidths=[3.7 * inch])
+        bank_tbl.setStyle(TableStyle([
+            ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN',         (0, 0), (-1, -1), 'LEFT'),
+            ('TOPPADDING',    (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 6),
+            ('BOX',           (0, 0), (-1, -1), 0.5, BORDER),
+            ('BACKGROUND',    (0, 0), (-1, -1), WHITE),
+        ]))
+        bank_tbl.hAlign = 'LEFT'   # align with the tables above, not centered
+        elements.append(bank_tbl)
 
-    doc.build(elements, onFirstPage=_footer, onLaterPages=_footer)
+    # ── Build — reuse the invoice page decorations (grey page, white card,
+    #    top stripe) and the authorized-signature footer. ───────────────────
+    gen.doc.title = f'Recovery {inv.invoice_number if inv else task.id}'
+    gen.doc.build(elements,
+                  onFirstPage=gen._draw_page_decorations,
+                  onLaterPages=gen._draw_page_decorations)
     buf.seek(0)
     fname = f"Recovery_{(inv.invoice_number if inv else task.id)}.pdf".replace(' ', '_')
     return send_file(buf, mimetype='application/pdf', as_attachment=True, download_name=fname)
@@ -681,6 +1122,24 @@ def delete_comment(comment_id):
     db.session.commit()
 
     flash('Comment deleted.', 'success')
+    return redirect(url_for('recovery.task_detail', task_id=task_id))
+
+
+@bp.route('/log/<int:log_id>/delete', methods=['POST'])
+@login_required
+def delete_log(log_id):
+    """Delete a Conversation Log entry. Admin-only — same policy as comments."""
+    log = RecoveryLog.query.get_or_404(log_id)
+
+    if not current_user.is_admin:
+        flash('Only an admin can delete conversation log messages.', 'danger')
+        return redirect(url_for('recovery.task_detail', task_id=log.task_id))
+
+    task_id = log.task_id
+    db.session.delete(log)
+    db.session.commit()
+
+    flash('Conversation log message deleted.', 'success')
     return redirect(url_for('recovery.task_detail', task_id=task_id))
 
 
@@ -789,17 +1248,22 @@ def mark_promise_customer(customer_id):
             logged_by=current_user.id,
         ))
 
-    # Re-arm exactly one popup reminder per salesman this customer's open
-    # invoices are assigned to.
+    # Clear every existing popup for this customer's invoices first, so leftover
+    # per-invoice reminders can't all fire at once at promise time. Then re-arm
+    # exactly ONE consolidated reminder per salesman the invoices belong to.
+    # Muted / on-hold invoices are excluded from the reminder group entirely.
+    cancel_group_reminders(tasks)
     by_salesman = {}
     for t in tasks:
+        if t.is_muted or t.is_on_hold:
+            continue
         by_salesman.setdefault(t.salesman_id, []).append(t)
     for salesman_tasks in by_salesman.values():
         rearm_group_reminder(salesman_tasks, promise_dt)
 
     db.session.commit()
 
-    flash(f'Promise recorded for {len(tasks)} invoice(s). A reminder will pop up again at the promised time.', 'success')
+    flash(f'Promise recorded for {len(tasks)} invoice(s). One consolidated reminder will pop up at the promised time.', 'success')
     return fallback
 
 
@@ -1085,6 +1549,32 @@ def _parse_client_time():
     return pk_now()
 
 
+def _still_in_recovery(t):
+    """True only if the popup reminder's linked recovery task is still a live
+    item in the Recovery module. An invoice leaves the module when it is
+    drafted, cancelled, or fully paid in Sales, or when its recovery task is
+    closed. Broadcasts ("could not call…", "task complete…") must never fire
+    for invoices that are no longer in Recovery — that was the source of the
+    stale/duplicate escalation notices."""
+    rtask = t.recovery_task
+    if not rtask:
+        return False
+    if rtask.recovery_status in ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF'):
+        return False
+    inv = rtask.invoice
+    if not inv:
+        return False
+    # Draft or cancelled in Sales.
+    if inv.is_draft:
+        return False
+    if inv.is_rejected and inv.rejection_reason == CANCELLED_REASON:
+        return False
+    # Fully paid in Sales — nothing left to recover.
+    if inv.status == 'paid' or (inv.balance_due or 0) <= 0:
+        return False
+    return True
+
+
 @bp.route('/broadcasts/poll')
 @login_required
 def poll_broadcasts():
@@ -1093,6 +1583,7 @@ def poll_broadcasts():
 
     now = _parse_client_time()
     messages = []
+    changed = False
 
     # Escalation: reminder was raised 8+ hours ago and is still not complete.
     # Anchored on created_at (a stable point) rather than reminder_at, because
@@ -1104,6 +1595,13 @@ def poll_broadcasts():
         Task.is_escalation_broadcast_shown == False
     ).all()
     for t in overdue_candidates:
+        # Invoice left the Recovery module (draft/cancelled/fully paid/closed):
+        # retire the pending broadcast so it never surfaces and stops being
+        # re-evaluated on every poll.
+        if not _still_in_recovery(t):
+            t.is_escalation_broadcast_shown = True
+            changed = True
+            continue
         anchor = t.created_at or t.reminder_at
         if anchor and datetime.utcnow() >= anchor + timedelta(hours=8):
             inv = t.recovery_task.invoice if t.recovery_task else None
@@ -1121,6 +1619,10 @@ def poll_broadcasts():
         Task.is_completion_broadcast_shown == False
     ).all()
     for t in completed_candidates:
+        if not _still_in_recovery(t):
+            t.is_completion_broadcast_shown = True
+            changed = True
+            continue
         inv = t.recovery_task.invoice if t.recovery_task else None
         customer_name = inv.customer.name if inv and inv.customer else 'the customer'
         messages.append({
@@ -1128,6 +1630,9 @@ def poll_broadcasts():
             'kind': 'completion',
             'text': f'Task complete: {t.assigned_to.username} called this {customer_name}.'
         })
+
+    if changed:
+        db.session.commit()
 
     return jsonify(messages)
 
@@ -1287,6 +1792,22 @@ def run_automation():
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 _RISK_RANK = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1}
+
+
+def _dedupe_by_invoice(tasks):
+    """Collapse duplicate RecoveryTask rows that point at the same invoice so
+    each invoice appears (and is counted) exactly once. Preserves input order,
+    keeping the first occurrence — callers pass an already-prioritised list.
+    Tasks with no invoice are always kept (keyed by their own id)."""
+    seen = set()
+    out = []
+    for t in tasks:
+        key = ('inv', t.invoice_id) if t.invoice_id else ('task', t.id)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(t)
+    return out
 
 
 def _group_tasks_by_customer(tasks):

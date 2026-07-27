@@ -2092,13 +2092,64 @@
             }
 
             // Recovery Reminder Broadcast Polling (admin-only site-wide notices:
-            // "could not call" escalations after 8h, and "task complete" successes)
+            // "could not call" escalations after 8h, and "task complete" successes).
+            // Rendered as a NON-BLOCKING top bar — admins can keep working with it
+            // open, dismiss single items, or close the whole bar. Only invoices that
+            // are still live in the Recovery module are ever returned by the server.
             function initRecoveryBroadcastPolling() {
-                const modalEl = document.getElementById('recoveryBroadcastModal');
-                if (!modalEl) return; // not an admin — nothing to poll
+                const barEl = document.getElementById('recoveryBroadcastBar');
+                if (!barEl) return; // not an admin — nothing to poll
 
-                const modal = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+                const listEl = document.getElementById('recoveryBroadcastList');
+                const countEl = document.getElementById('recoveryBroadcastCount');
+                // Ids the admin has dismissed locally this session — don't re-show
+                // them on the next poll before the server flag round-trips.
+                const dismissed = new Set();
                 let currentMessages = [];
+
+                function render() {
+                    const visible = currentMessages.filter(m => !dismissed.has(m.id));
+                    if (visible.length === 0) {
+                        barEl.style.display = 'none';
+                        return;
+                    }
+                    countEl.textContent = visible.length;
+                    listEl.innerHTML = visible.map(m => `
+                        <div class="recovery-broadcast-item ${m.kind === 'completion' ? 'completion' : ''}" data-id="${m.id}" data-kind="${m.kind}">
+                            <span>
+                                <i class="fas ${m.kind === 'escalation' ? 'fa-triangle-exclamation text-danger' : 'fa-circle-check text-success'} me-2"></i>
+                                ${m.text}
+                            </span>
+                            <button type="button" class="rb-dismiss" title="Dismiss"><i class="fas fa-times"></i></button>
+                        </div>
+                    `).join('');
+                    barEl.style.display = 'block';
+                }
+
+                function dismiss(id, kind) {
+                    dismissed.add(id);
+                    fetch(`/recovery/broadcasts/dismiss/${id}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: `kind=${encodeURIComponent(kind)}`
+                    }).catch(e => console.error('Dismiss failed for broadcast ' + id, e));
+                }
+
+                listEl.addEventListener('click', function (e) {
+                    const btn = e.target.closest('.rb-dismiss');
+                    if (!btn) return;
+                    const item = btn.closest('.recovery-broadcast-item');
+                    if (!item) return;
+                    dismiss(parseInt(item.dataset.id, 10), item.dataset.kind);
+                    render();
+                });
+
+                document.getElementById('dismissAllRecoveryBroadcast').onclick = function () {
+                    currentMessages.forEach(m => {
+                        if (!dismissed.has(m.id)) dismiss(m.id, m.kind);
+                    });
+                    barEl.style.display = 'none';
+                };
 
                 function pollBroadcasts() {
                     const now = new Date();
@@ -2108,39 +2159,11 @@
                     fetch(`{{ url_for("recovery.poll_broadcasts") }}?client_time=${localISOTime}`)
                         .then(response => response.json())
                         .then(messages => {
-                            if (!messages || messages.length === 0) return;
-                            currentMessages = messages;
-
-                            const listEl = document.getElementById('recoveryBroadcastList');
-                            listEl.innerHTML = messages.map(m => `
-                                <div class="p-2 mb-2 border-start border-4 ${m.kind === 'escalation' ? 'border-danger' : 'border-success'} bg-light rounded">
-                                    <i class="fas ${m.kind === 'escalation' ? 'fa-triangle-exclamation text-danger' : 'fa-circle-check text-success'} me-2"></i>
-                                    ${m.text}
-                                </div>
-                            `).join('');
-
-                            if (!modalEl.classList.contains('show')) {
-                                modal.show();
-                            }
+                            currentMessages = messages || [];
+                            render();
                         })
                         .catch(err => console.error('Recovery broadcast poll failed:', err));
                 }
-
-                document.getElementById('confirmRecoveryBroadcast').onclick = async function () {
-                    for (const m of currentMessages) {
-                        try {
-                            await fetch(`/recovery/broadcasts/dismiss/${m.id}`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                                body: `kind=${encodeURIComponent(m.kind)}`
-                            });
-                        } catch (e) {
-                            console.error('Dismiss failed for broadcast ' + m.id, e);
-                        }
-                    }
-                    currentMessages = [];
-                    modal.hide();
-                };
 
                 pollBroadcasts();
                 setInterval(pollBroadcasts, 30000);
@@ -2758,23 +2781,89 @@
         </div>
 
         {% if current_user.is_authenticated and current_user.is_admin %}
-        <!-- Recovery Reminder Broadcast Modal (admin-only) -->
-        <div class="modal fade" id="recoveryBroadcastModal" data-bs-backdrop="static" data-bs-keyboard="false"
-            tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content shadow-lg">
-                    <div class="modal-header bg-primary text-white">
-                        <h5 class="modal-title"><i class="fas fa-phone-volume me-2"></i>Recovery Follow-up Update</h5>
-                    </div>
-                    <div class="modal-body py-3">
-                        <div id="recoveryBroadcastList" style="max-height: 350px; overflow-y: auto;"></div>
-                    </div>
-                    <div class="modal-footer justify-content-center border-0 pb-3">
-                        <button type="button" class="btn btn-primary px-5 fw-bold" id="confirmRecoveryBroadcast">Close</button>
-                    </div>
+        <!-- Recovery Reminder Broadcast Bar (admin-only, non-blocking top notification) -->
+        <div id="recoveryBroadcastBar" class="recovery-broadcast-bar" style="display:none;">
+            <div class="recovery-broadcast-inner">
+                <div class="recovery-broadcast-head">
+                    <span class="recovery-broadcast-title">
+                        <i class="fas fa-phone-volume me-2"></i>Recovery Follow-up Update
+                        <span id="recoveryBroadcastCount" class="badge bg-light text-primary ms-2">0</span>
+                    </span>
+                    <button type="button" class="recovery-broadcast-close" id="dismissAllRecoveryBroadcast"
+                        title="Dismiss all">
+                        <i class="fas fa-times"></i>
+                    </button>
                 </div>
+                <div id="recoveryBroadcastList" class="recovery-broadcast-list"></div>
             </div>
         </div>
+        <style>
+            .recovery-broadcast-bar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                z-index: 1080;              /* above navbar, below Bootstrap modals (1055 dialog / 1050 backdrop) */
+                background: #0d6efd;
+                color: #fff;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
+                animation: recoveryBroadcastDrop .25s ease-out;
+            }
+            @keyframes recoveryBroadcastDrop {
+                from { transform: translateY(-100%); }
+                to   { transform: translateY(0); }
+            }
+            .recovery-broadcast-inner {
+                max-width: 1100px;
+                margin: 0 auto;
+                padding: 8px 16px;
+            }
+            .recovery-broadcast-head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+            }
+            .recovery-broadcast-title { font-weight: 600; }
+            .recovery-broadcast-close {
+                background: transparent;
+                border: none;
+                color: #fff;
+                font-size: 1.1rem;
+                line-height: 1;
+                cursor: pointer;
+                padding: 4px 8px;
+                border-radius: 4px;
+            }
+            .recovery-broadcast-close:hover { background: rgba(255, 255, 255, .2); }
+            .recovery-broadcast-list {
+                max-height: 40vh;
+                overflow-y: auto;
+                margin-top: 6px;
+            }
+            .recovery-broadcast-item {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                background: rgba(255, 255, 255, .95);
+                color: #212529;
+                border-radius: 6px;
+                padding: 8px 12px;
+                margin-bottom: 6px;
+                border-left: 4px solid #dc3545;
+            }
+            .recovery-broadcast-item.completion { border-left-color: #198754; }
+            .recovery-broadcast-item .rb-dismiss {
+                background: transparent;
+                border: none;
+                color: #6c757d;
+                cursor: pointer;
+                padding: 2px 6px;
+                flex: 0 0 auto;
+            }
+            .recovery-broadcast-item .rb-dismiss:hover { color: #212529; }
+        </style>
         {% endif %}
 
         <script src="{{ url_for('static', filename='js/entity_handler.js') }}"></script>
