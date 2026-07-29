@@ -1190,15 +1190,24 @@ def edit_payment(id, pay_id):
         # IMPORTANT: Update payment amount BEFORE calculating delta effect on sale
         payment.amount = new_amount
 
-        # Safe paid_amount update: adjust sale's paid_amount by the difference
+        # Reconcile the sale by the payment's change. Increasing beyond the
+        # balance overflows the excess into a customer advance; decreasing pulls
+        # back any overpayment advance first, then paid_amount — mirroring a fresh
+        # payment. Only an APPROVED payment affects the settled amount (a pending
+        # one hasn't been added to paid_amount yet).
+        overflow = 0
         delta = new_amount - old_amount
-        from app.utils import safe_update_paid_amount
-        safe_update_paid_amount(sale, delta)
+        if payment.is_approved:
+            from app.utils import adjust_sale_payment
+            overflow = adjust_sale_payment(sale, delta, current_user.id)
 
         db.session.commit()
         log_activity('Sales', f'Updated Payment #{payment.payment_number} on Invoice #{sale.invoice_number}',
                     f'Old Amount: PKR {old_amount:,.2f}, New Amount: PKR {new_amount:,.2f}')
-        flash(f'Payment updated: PKR{new_amount:,.2f} ({payment.method})', 'success')
+        msg = f'Payment updated: PKR{new_amount:,.2f} ({payment.method})'
+        if overflow > 0:
+            msg += f'. PKR {overflow:,.2f} exceeded the balance due and was credited to the customer as a remaining advance.'
+        flash(msg, 'success')
         return redirect(url_for('sales.invoice_detail', id=sale.id))
 
     # GET: render edit form
@@ -1213,11 +1222,14 @@ def delete_payment(id, pay_id):
     sale = Sale.query.get_or_404(id)
     payment = Payment.query.filter_by(id=pay_id, invoice_id=sale.id).first_or_404()
     
-    # Reverse from sale
-    delta = -payment.amount
-    from app.utils import safe_update_paid_amount
-    safe_update_paid_amount(sale, delta)
-    
+    # Reverse from sale. If this payment overpaid the invoice, part of it had
+    # become a customer advance — withdraw that first, then reduce paid_amount,
+    # so deleting the payment fully reverses it (advance included) instead of
+    # just uncapping paid_amount. Only an approved payment was ever settled.
+    if payment.is_approved:
+        from app.utils import adjust_sale_payment
+        adjust_sale_payment(sale, -payment.amount, current_user.id)
+
     # Delete linked accounting transactions
     from app.utils import cleanup_linked_transactions
     cleanup_linked_transactions(payment)
@@ -1411,6 +1423,42 @@ def apply_advance_to_overdue(id):
                 f'Amount: PKR {apply_amount:,.2f}, Customer: {customer.name}')
     flash(f'Advance of PKR {apply_amount:,.2f} applied to overdue invoice successfully!', 'success')
     return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+
+@bp.route('/invoice/<int:id>/use-advance', methods=['POST'])
+@login_required
+@permission_required('sales', action='edit')
+def use_advance(id):
+    """Apply available customer advance credit to THIS invoice — any invoice with
+    an outstanding balance, not only overdue ones. Powers the per-invoice
+    'Use Advance' button on the customer profile: it reduces the invoice's balance
+    (FIFO across the customer's advance records) and updates the customer's
+    remaining advance balance shown on the same profile."""
+    sale = Sale.query.get_or_404(id)
+    back = redirect(request.referrer or url_for('sales.invoice_detail', id=sale.id))
+
+    if not sale.customer_id:
+        flash('No customer linked to this invoice.', 'warning')
+        return back
+    if (float(sale.total or 0) - float(sale.paid_amount or 0)) <= 0.009:
+        flash('Invoice is already fully paid.', 'info')
+        return back
+    if sale.customer.remaining_advance_balance <= 0:
+        flash('No advance balance available for this customer.', 'warning')
+        return back
+
+    from app.utils import auto_apply_customer_advance
+    applied = auto_apply_customer_advance(sale)
+    db.session.commit()
+
+    if applied > 0:
+        log_activity('Sales', f'Applied Advance to Invoice #{sale.invoice_number}',
+                     f'Amount: PKR {applied:,.2f}, Customer: {sale.customer.name}')
+        flash(f'Advance of PKR {applied:,.2f} applied to Invoice #{sale.invoice_number}. '
+              f'Customer remaining advance updated.', 'success')
+    else:
+        flash('No advance could be applied.', 'info')
+    return back
 
 
 @bp.route('/invoice/<int:id>/reverse-advance', methods=['POST'])
@@ -2619,6 +2667,28 @@ def invoice_pdf_share(id):
     except Exception as e:
         return {'error': str(e)}, 500
 
+
+@bp.route('/invoice/<int:id>/quotation-pdf')
+@login_required
+def quotation_pdf(id):
+    """Quotation PDF — same design as the sales invoice, titled 'Quotation'.
+    Opens inline in a new tab (and can be downloaded from there), exactly like
+    the invoice PDF."""
+    sale = Sale.query.get_or_404(id)
+    company = Company.query.first()
+    invoice_settings = InvoiceSettings.query.first()
+
+    try:
+        buffer = generate_professional_pdf('quotation', sale, company, invoice_settings)
+        response = make_response(buffer)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'inline; filename="quotation_{sale.invoice_number or "unknown"}.pdf"'
+        return response
+    except Exception as e:
+        print(f"Quotation PDF generation error: {str(e)}")
+        flash(f'Error generating Quotation PDF: {str(e)}', 'error')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
 @bp.route('/company', methods=['GET', 'POST'])
 @login_required
 def company_settings():
@@ -3254,6 +3324,32 @@ def public_invoice(token):
         response = make_response(buffer)
         response.headers['Content-Type'] = 'application/pdf'
         response.headers['Content-Disposition'] = f'inline; filename="invoice_{sale.invoice_number or "unknown"}.pdf"'
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+    except Exception as e:
+        return f"Error generating PDF: {str(e)}", 500
+
+@bp.route('/public/quotation/<token>')
+def public_quotation(token):
+    """Public (customer-facing, token-based) Quotation PDF — the link shared to a
+    customer over WhatsApp. Same token as the invoice; renders the quotation design."""
+    from datetime import datetime
+    from app.models import Company, InvoiceSettings
+    sale = Sale.query.filter_by(access_token=token).first_or_404()
+
+    if sale.token_expiry and sale.token_expiry < datetime.utcnow():
+        return "Link expired", 403
+
+    company = Company.query.first()
+    invoice_settings = InvoiceSettings.query.first()
+
+    try:
+        buffer = generate_professional_pdf('quotation', sale, company, invoice_settings)
+        response = make_response(buffer)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'inline; filename="quotation_{sale.invoice_number or "unknown"}.pdf"'
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'

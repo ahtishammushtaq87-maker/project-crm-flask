@@ -883,7 +883,34 @@ class Sale(db.Model):
         fully-paid invoice drops off the recovery dashboard immediately,
         regardless of which payment route triggered the status change."""
         rtask = self.recovery_task
-        if not rtask or rtask.recovery_status in ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF'):
+        if not rtask:
+            return
+
+        # A written-off task is an intentional admin decision — never auto-touch it.
+        if rtask.recovery_status == 'CLOSED_WRITTEN_OFF':
+            return
+
+        # A task auto-closed as paid must REOPEN if the invoice becomes unpaid
+        # again — e.g. a payment is reversed/deleted or an applied advance is
+        # undone in the Sales module. Otherwise the invoice silently stays closed
+        # and never returns to the recovery dashboard.
+        if rtask.recovery_status == 'CLOSED_PAID':
+            if self.status == 'paid':
+                return  # still fully paid — leave it closed
+            rtask.recovery_status = 'PARTIAL_RECOVERY' if self.status == 'partial' else 'OVERDUE'
+            rtask.closed_at = None
+            rtask.closed_reason = None
+            rtask.closed_by = None
+            rtask.salesman_id = self.salesman_id
+            rtask.updated_at = datetime.utcnow()
+            db.session.add(RecoveryLog(
+                task_id=rtask.id,
+                response_type='general',
+                note='Reopened: invoice payment was reversed in Sales — balance is outstanding again.',
+            ))
+            # Bring back a live popup reminder for the responsible salesman.
+            from app.services.recovery_automation import _ensure_reminder
+            _ensure_reminder(rtask)
             return
 
         # If the invoice was reassigned to a different salesman, the recovery

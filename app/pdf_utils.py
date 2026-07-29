@@ -21,6 +21,10 @@ def load_template_config(doc_type):
     try:
         if doc_type == 'invoice':
             from app.pdf_templates import invoice_template as template
+        elif doc_type == 'quotation':
+            # A quotation reuses the invoice's exact design/config; only the
+            # title and a couple of header labels differ (set at build time).
+            from app.pdf_templates import invoice_template as template
         elif doc_type == 'purchase':
             from app.pdf_templates import purchase_bill_template as template
         elif doc_type == 'purchase_order':
@@ -181,7 +185,7 @@ class ProfessionalPDFGenerator:
         return None
 
     # ── HEADER ─────────────────────────────────────────────────────────────
-    def _build_header(self, title, doc_number, date, due_date, currency=None, status=None):
+    def _build_header(self, title, doc_number, date, due_date, currency=None, status=None, meta_labels=None):
         left = []
         logo = self._get_logo()
         if logo:
@@ -202,9 +206,11 @@ class ProfessionalPDFGenerator:
         META_LABEL_W = 1.1 * inch
         META_VAL_W   = RIGHT_W - META_LABEL_W
 
-        meta_rows = [["Invoice No:", f"{doc_number}"],
-                     ["Invoice Date:", date.strftime('%m/%d/%Y') if date else "N/A"],
-                     ["Due Date:", due_date.strftime('%m/%d/%Y') if due_date else "N/A"]]
+        # Default to invoice labels; a quotation passes its own (Quotation No / Date / Valid Until).
+        _lbl = meta_labels or {'number': 'Invoice No:', 'date': 'Invoice Date:', 'due': 'Due Date:'}
+        meta_rows = [[_lbl['number'], f"{doc_number}"],
+                     [_lbl['date'], date.strftime('%m/%d/%Y') if date else "N/A"],
+                     [_lbl['due'], due_date.strftime('%m/%d/%Y') if due_date else "N/A"]]
         if currency:
             meta_rows.append(["Currency:", currency])
 
@@ -691,7 +697,8 @@ class ProfessionalPDFGenerator:
                            status=None, ship_to=None, reference_data=None, currency=None,
                            ship_to_label=None, bill_to_label=None,
                            customer_name=None, amount_due=None, due_date_str=None,
-                           is_purchase=False, is_invoice=False):
+                           is_purchase=False, is_invoice=False,
+                           meta_labels=None, items_header='INVOICE ITEMS'):
         self.is_purchase = is_purchase
         elements = []
         
@@ -707,13 +714,13 @@ class ProfessionalPDFGenerator:
         else:
             self._bill_to_label = None
 
-        elements.append(self._build_header(title, doc_number, date, due_date, currency, status))
+        elements.append(self._build_header(title, doc_number, date, due_date, currency, status, meta_labels=meta_labels))
         elements.append(Spacer(1, 8))
         elements.append(HRFlowable(width="100%", thickness=0.6, color=BORDER_GREY, spaceAfter=8))
         show_locations = is_invoice or is_purchase
         elements.append(self._build_info_boxes(client_data, ship_to, reference_data, is_invoice=show_locations))
         elements.append(Spacer(1, 10))
-        elements.append(Paragraph("INVOICE ITEMS", self.styles['SectionHeader']))
+        elements.append(Paragraph(items_header, self.styles['SectionHeader']))
 
         show_item_code = any('item_code' in item for item in items)
         show_sku = any('sku' in item for item in items)
@@ -826,9 +833,17 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
     generator = ProfessionalPDFGenerator(buffer, company, settings, template_config)
     currency = generator.currency_symbol if template_config else DEFAULT_CURRENCY
 
-    # ── INVOICE ──────────────────────────────────────────────────────────
-    if doc_type == 'invoice':
-        title      = getattr(template_config, 'TITLE', 'Invoice') if template_config else "Invoice"
+    # ── INVOICE / QUOTATION (same design; quotation only retitles) ────────
+    if doc_type in ('invoice', 'quotation'):
+        is_quote = (doc_type == 'quotation')
+        if is_quote:
+            title = 'Quotation'
+            quote_meta_labels = {'number': 'Quotation No:', 'date': 'Quotation Date:', 'due': 'Valid Until:'}
+            quote_items_header = 'QUOTATION ITEMS'
+        else:
+            title = getattr(template_config, 'TITLE', 'Invoice') if template_config else "Invoice"
+            quote_meta_labels = None
+            quote_items_header = 'INVOICE ITEMS'
         doc_number = obj.invoice_number
         client_data = {
             'name':       obj.customer.name        if obj.customer else "Walk-in Customer",
@@ -947,7 +962,9 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             customer_name=obj.customer.name if obj.customer else None,
             amount_due=obj.balance_due if hasattr(obj, 'balance_due') else None,
             due_date_str=obj.due_date.strftime('%d-%m-%Y') if hasattr(obj, 'due_date') and obj.due_date else None,
-            is_invoice=True
+            is_invoice=True,
+            meta_labels=quote_meta_labels,
+            items_header=quote_items_header,
         )
 
     # ── PURCHASE BILL ─────────────────────────────────────────────────────

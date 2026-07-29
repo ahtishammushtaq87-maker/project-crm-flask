@@ -127,6 +127,9 @@
                     {% if cust.contact_person %}
                     <div class="small text-muted mt-1"><i class="fas fa-user-tie me-1"></i>{{ cust.contact_person }}</div>
                     {% endif %}
+                    {% if cust.address or cust.city %}
+                    <div class="small text-muted mt-1"><i class="fas fa-map-marker-alt me-1"></i>{{ cust.address }}{% if cust.city %}{% if cust.address %}, {% endif %}{{ cust.city }}{% endif %}</div>
+                    {% endif %}
                 </div>
 
                 {# ── Additional customer names with numbers (multiple contacts per customer) ── #}

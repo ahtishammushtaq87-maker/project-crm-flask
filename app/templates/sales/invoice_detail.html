@@ -138,9 +138,21 @@
             </span>
         </div>
         <div class="btn-group flex-wrap gap-1">
-            <a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" class="btn btn-info" target="_blank" rel="noopener">
-                <i class="fas fa-file-pdf me-1"></i>PDF
-            </a>
+            <div class="btn-group">
+                <a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" class="btn btn-info" target="_blank" rel="noopener">
+                    <i class="fas fa-file-pdf me-1"></i>PDF
+                </a>
+                <button type="button" class="btn btn-info dropdown-toggle dropdown-toggle-split"
+                    data-bs-toggle="dropdown" aria-expanded="false">
+                    <span class="visually-hidden">Choose PDF</span>
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" target="_blank" rel="noopener">
+                        <i class="fas fa-file-invoice me-2 text-info"></i>Invoice PDF</a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('sales.quotation_pdf', id=sale.id) }}" target="_blank" rel="noopener">
+                        <i class="fas fa-file-signature me-2 text-secondary"></i>Quotation PDF</a></li>
+                </ul>
+            </div>
             {% if sale.customer_id %}
             <button type="button" class="btn btn-outline-info ledger-trigger" data-customer-id="{{ sale.customer_id }}"
                 onclick="showCustomerLedger({{ sale.customer_id }})">
@@ -156,11 +168,23 @@
             {% set phone = sale.customer.phone|replace('+', '')|replace(' ', '')|replace('-', '')|replace('(',
             '')|replace(')', '') %}
             {% if phone|length >= 10 %}
-            <button type="button" class="btn btn-success share-pdf-btn"
-                data-pdf-url="{{ url_for('sales.public_invoice', token=sale.valid_access_token) }}"
-                data-phone="{{ phone }}" data-invoice="{{ sale.invoice_number }}" onclick="shareInvoicePDF(this)">
-                <i class="fab fa-whatsapp me-1"></i>Share PDF
-            </button>
+            <div class="btn-group">
+                <button type="button" class="btn btn-success dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fab fa-whatsapp me-1"></i>Share PDF
+                </button>
+                <ul class="dropdown-menu">
+                    <li><button type="button" class="dropdown-item share-pdf-btn"
+                        data-pdf-url="{{ url_for('sales.public_invoice', token=sale.valid_access_token) }}"
+                        data-phone="{{ phone }}" data-invoice="{{ sale.invoice_number }}" data-label="Invoice"
+                        onclick="shareInvoicePDF(this)">
+                        <i class="fas fa-file-invoice me-2 text-info"></i>Share Invoice</button></li>
+                    <li><button type="button" class="dropdown-item share-pdf-btn"
+                        data-pdf-url="{{ url_for('sales.public_quotation', token=sale.valid_access_token) }}"
+                        data-phone="{{ phone }}" data-invoice="{{ sale.invoice_number }}" data-label="Quotation"
+                        onclick="shareInvoicePDF(this)">
+                        <i class="fas fa-file-signature me-2 text-secondary"></i>Share Quotation</button></li>
+                </ul>
+            </div>
             {% endif %}
             {% endif %}
             {% if sale.is_approved %}
@@ -1045,6 +1069,7 @@
                                         {% endif %}
                                     </td>
                                     <td class="text-center">
+                                        <div class="d-flex justify-content-center gap-1">
                                         {% if inv.id == sale.id %}
                                         <button type="button" class="btn btn-sm btn-primary" disabled>
                                             <i class="fas fa-eye"></i> Viewing
@@ -1054,6 +1079,20 @@
                                             <i class="fas fa-eye"></i> View
                                         </a>
                                         {% endif %}
+                                        {# Apply the customer's remaining advance straight to this invoice,
+                                           without leaving the page — only for approved, still-unpaid rows. #}
+                                        {% if sale.customer and sale.customer.remaining_advance_balance > 0
+                                              and (inv.total - inv.paid_amount) > 0
+                                              and inv.is_approved and not inv.is_draft and not inv.is_rejected %}
+                                        <form method="POST" action="{{ url_for('sales.use_advance', id=inv.id) }}" class="d-inline"
+                                              onsubmit="return confirm('Apply available advance to invoice {{ inv.invoice_number }}?');">
+                                            <button type="submit" class="btn btn-sm btn-outline-success text-nowrap"
+                                                    title="Apply customer advance credit to this invoice">
+                                                <i class="fas fa-hand-holding-usd me-1"></i>Use Advance
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                        </div>
                                     </td>
                                 </tr>
                                 {% endfor %}
@@ -1253,13 +1292,14 @@
         const pdfUrl = btn.getAttribute('data-pdf-url');
         const phone = btn.getAttribute('data-phone');
         const invoiceNumber = btn.getAttribute('data-invoice');
+        const docLabel = btn.getAttribute('data-label') || 'Invoice';
 
         // Generate the absolute URL based on the current domain
         // This will always use whatever URL the CRM is running on (localhost or a live domain)
         const fullPdfUrl = window.location.origin + pdfUrl;
 
         // Craft a friendly WhatsApp message containing the link
-        const message = `Hi! Here is your Invoice ${invoiceNumber}. You can view and securely download your PDF directly here:\n\n${fullPdfUrl}\n\nThank you for your business!`;
+        const message = `Hi! Here is your ${docLabel} ${invoiceNumber}. You can view and securely download your PDF directly here:\n\n${fullPdfUrl}\n\nThank you for your business!`;
         const waText = encodeURIComponent(message);
         const whatsappUrl = `https://wa.me/${phone}?text=${waText}`;
 

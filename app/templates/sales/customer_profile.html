@@ -280,9 +280,20 @@
                             {% endif %}
                         </td>
                         <td>
-                            <a href="{{ url_for('sales.invoice_detail', id=sale.id) }}" class="btn btn-sm btn-outline-primary">
+                            <div class="d-flex gap-1">
+                            <a href="{{ url_for('sales.invoice_detail', id=sale.id) }}" class="btn btn-sm btn-outline-primary" title="View invoice">
                                 <i class="fas fa-eye"></i>
                             </a>
+                            {% if customer.remaining_advance_balance > 0 and (sale.total - sale.paid_amount) > 0 %}
+                            <form method="POST" action="{{ url_for('sales.use_advance', id=sale.id) }}" class="d-inline"
+                                  onsubmit="return confirm('Apply available advance to invoice {{ sale.invoice_number }}?');">
+                                <button type="submit" class="btn btn-sm btn-outline-success text-nowrap"
+                                        title="Apply customer advance credit to this invoice">
+                                    <i class="fas fa-hand-holding-usd me-1"></i>Use Advance
+                                </button>
+                            </form>
+                            {% endif %}
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}

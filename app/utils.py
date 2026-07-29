@@ -207,6 +207,75 @@ def reverse_sale_advance_applied(sale):
     return reverse_amount
 
 
+def _sale_overpay_marker(sale):
+    """Description used to tag CustomerAdvances that were auto-created from
+    overpaying a specific sale invoice. It is the link used to find and withdraw
+    that same credit again if the payment is later edited down or deleted.
+    Must stay identical to the description set in apply_sale_payment_with_credit."""
+    return f"Auto-credit: overpayment on Invoice #{sale.invoice_number}"
+
+
+def _withdraw_sale_amount(sale, amount):
+    """Withdraw `amount` of settled money from a sale, taking it out of this
+    invoice's UNAPPLIED overpayment advance first (credit that never actually
+    paid the invoice), then out of paid_amount. Never claws back overpayment
+    credit that has already been applied to another invoice. Calls update_status."""
+    remaining = round(float(amount or 0), 2)
+    if remaining <= 0.009:
+        sale.update_status()
+        return
+
+    if sale.customer_id:
+        marker = _sale_overpay_marker(sale)
+        # Query directly (not sale.customer.advances) so a credit created earlier
+        # in this same session/request is seen too — the relationship cache may
+        # not include it yet.
+        credits = CustomerAdvance.query.filter_by(
+            customer_id=sale.customer_id, description=marker
+        ).filter(CustomerAdvance.is_rejected == False).all()
+        # Newest credit first — undo the most recent overpayment first.
+        for a in sorted(credits, key=lambda x: (x.date or datetime.min.date()), reverse=True):
+            if remaining <= 0.009:
+                break
+            unapplied = round(float(a.amount or 0) - float(a.applied_amount or 0), 2)
+            if unapplied <= 0.009:
+                continue
+            cut = min(unapplied, remaining)
+            a.amount = round(float(a.amount or 0) - cut, 2)
+            remaining = round(remaining - cut, 2)
+            # Fully-consumed, never-applied credit row → drop it entirely.
+            if a.amount <= 0.009 and float(a.applied_amount or 0) <= 0.009:
+                db.session.delete(a)
+
+    if remaining > 0.009:
+        sale.paid_amount = max(0.0, round(float(sale.paid_amount or 0) - remaining, 2))
+
+    sale.update_status()
+
+
+def adjust_sale_payment(sale, delta, user_id):
+    """Reconcile a sale after one of its payments is edited or deleted by `delta`.
+
+    Positive delta (payment increased) settles the remaining balance and overflows
+    the excess into a customer advance — exactly like recording a fresh payment.
+    Negative delta (payment decreased/removed) withdraws, pulling from this
+    invoice's unapplied overpayment advance first, then from paid_amount.
+
+    This fixes the two gaps the plain paid_amount adjustment had: editing a payment
+    up now routes the excess to advance (instead of just capping at the invoice
+    total), and deleting an overpaying payment now fully reverses the advance it
+    created. Returns the overpayment credited (0 unless delta was positive).
+    """
+    delta = round(float(delta or 0), 2)
+    if delta > 0.009:
+        return apply_sale_payment_with_credit(sale, delta, user_id)
+    if delta < -0.009:
+        _withdraw_sale_amount(sale, -delta)
+    else:
+        sale.update_status()
+    return 0.0
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # VENDOR (PURCHASE) ADVANCE HELPERS — mirror the customer/sale helpers above.
 # We overpay a vendor → the excess becomes OUR prepaid credit with that vendor

@@ -109,11 +109,25 @@ def _process_invoice(invoice, today, results):
         results['tasks_created'] += 1
         existing_task = task
     else:
-        if existing_task.recovery_status == 'PARTIAL_RECOVERY' and invoice.status == 'partial':
+        if existing_task.recovery_status == 'CLOSED_PAID':
+            # Safety net: the invoice was paid & closed but is overdue again with an
+            # outstanding balance (payment reversed/deleted in Sales via a path that
+            # skipped Sale.update_status). Reopen it so it returns to recovery.
+            # CLOSED_WRITTEN_OFF is left untouched — that is a deliberate admin call.
+            existing_task.recovery_status = 'PARTIAL_RECOVERY' if invoice.status == 'partial' else 'OVERDUE'
+            existing_task.closed_at = None
+            existing_task.closed_reason = None
+            existing_task.closed_by = None
+            db.session.add(RecoveryLog(
+                task_id=existing_task.id,
+                response_type='general',
+                note='Reopened: invoice has an outstanding balance again (payment reversed).',
+            ))
+        elif existing_task.recovery_status == 'PARTIAL_RECOVERY' and invoice.status == 'partial':
             pass  # keep as is
         elif existing_task.recovery_status not in (
             'PROMISED_PAYMENT', 'PARTIAL_RECOVERY', 'FOLLOW_UP_REQUIRED',
-            'CLOSED_PAID', 'CLOSED_WRITTEN_OFF'
+            'CLOSED_WRITTEN_OFF'
         ):
             existing_task.recovery_status = 'OVERDUE'
 
