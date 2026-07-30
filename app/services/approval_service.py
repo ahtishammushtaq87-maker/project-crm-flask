@@ -686,7 +686,7 @@ class ApprovalService:
 
     @classmethod
     def _post_status_change_sale(cls, sale, new_status):
-        """Handle side effects when a sale status is changed (e.g., reverting stock)."""
+        """Handle side effects when a sale status is changed (e.g., reverting stock, syncing recovery)."""
         from app import db
         from app.models import Product, ProductWarehouseStock
 
@@ -710,7 +710,10 @@ class ApprovalService:
                             wh_stock.quantity += item.quantity
             
             sale.stock_updated = False
-            db.session.commit()
+
+        # Ensure linked RecoveryTask and alarm reminders are cancelled or updated immediately
+        sale._sync_recovery_task()
+        db.session.commit()
 
     # ── Post-approve hooks ──────────────────────────────────────────────────────
 

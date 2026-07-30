@@ -49,7 +49,7 @@ def run_daily_automation():
     stuck_tasks = RecoveryTask.query.join(
         Sale, RecoveryTask.invoice_id == Sale.id
     ).filter(
-        Sale.status == 'paid',
+        (Sale.status.in_(['paid', 'cancelled'])) | (Sale.is_draft == True) | (Sale.is_rejected == True),
         RecoveryTask.recovery_status.notin_(['CLOSED_PAID', 'CLOSED_WRITTEN_OFF']),
     ).all()
     for task in stuck_tasks:

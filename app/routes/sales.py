@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from app.utils import permission_required, log_activity
 from app import db
-from app.models import Sale, SaleItem, Product, ProductWarehouseStock, Warehouse, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman, CustomerGroup, Payment, PaymentMethod, SalesmanGroup, User
+from app.models import Sale, SaleItem, Product, ProductWarehouseStock, Warehouse, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman, CustomerGroup, Payment, PaymentMethod, SalesmanGroup, User, Task
 from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm, SalesmanForm, CustomerGroupForm
 from datetime import datetime, date
 from sqlalchemy import func, or_, and_
@@ -803,6 +803,15 @@ def delete_invoice(id):
     from app.utils import reverse_sale_advance_applied
     reverse_sale_advance_applied(sale)
 
+    # Cancel & clean up any linked task reminders prior to deleting sale
+    linked_tasks = Task.query.filter(
+        or_(Task.linked_invoice_id == sale.id, Task.recovery_task_id == (sale.recovery_task.id if sale.recovery_task else None)),
+        Task.status.in_(['Pending', 'In Progress'])
+    ).all()
+    for t in linked_tasks:
+        t.status = 'Cancelled'
+        t.is_notification_shown = True
+
     db.session.delete(sale)
     db.session.commit()
 
@@ -1068,6 +1077,7 @@ def reject_invoice(id):
     sale.is_rejected = True
     sale.is_approved = False
     sale.rejection_reason = reason
+    sale.update_status()
     db.session.commit()
 
     log_activity('Sales', f'Rejected Invoice #{sale.invoice_number}',

@@ -880,23 +880,34 @@ class Sale(db.Model):
 
     def _sync_recovery_task(self):
         """Keep the linked RecoveryTask (Sales Recovery module) in sync so a
-        fully-paid invoice drops off the recovery dashboard immediately,
-        regardless of which payment route triggered the status change."""
+        paid, cancelled, draft, or rejected invoice drops off the recovery dashboard immediately,
+        regardless of which payment/status route triggered the change."""
         rtask = self.recovery_task
+        is_inactive = (self.status in ('paid', 'cancelled')) or self.is_draft or self.is_rejected
+
+        # Standalone linked tasks without a RecoveryTask object should also be cancelled if invoice is inactive
         if not rtask:
+            if is_inactive:
+                linked_tasks = Task.query.filter(
+                    Task.linked_invoice_id == self.id,
+                    Task.status.in_(['Pending', 'In Progress'])
+                ).all()
+                for t in linked_tasks:
+                    t.status = 'Cancelled'
+                    t.is_notification_shown = True
             return
 
         # A written-off task is an intentional admin decision — never auto-touch it.
         if rtask.recovery_status == 'CLOSED_WRITTEN_OFF':
             return
 
-        # A task auto-closed as paid must REOPEN if the invoice becomes unpaid
+        # A task auto-closed as paid/inactive must REOPEN if the invoice becomes active & unpaid
         # again — e.g. a payment is reversed/deleted or an applied advance is
         # undone in the Sales module. Otherwise the invoice silently stays closed
         # and never returns to the recovery dashboard.
         if rtask.recovery_status == 'CLOSED_PAID':
-            if self.status == 'paid':
-                return  # still fully paid — leave it closed
+            if is_inactive:
+                return  # still inactive — leave it closed
             rtask.recovery_status = 'PARTIAL_RECOVERY' if self.status == 'partial' else 'OVERDUE'
             rtask.closed_at = None
             rtask.closed_reason = None
@@ -906,7 +917,7 @@ class Sale(db.Model):
             db.session.add(RecoveryLog(
                 task_id=rtask.id,
                 response_type='general',
-                note='Reopened: invoice payment was reversed in Sales — balance is outstanding again.',
+                note='Reopened: invoice status changed back to active unpaid/partial.',
             ))
             # Bring back a live popup reminder for the responsible salesman.
             from app.services.recovery_automation import _ensure_reminder
@@ -921,10 +932,10 @@ class Sale(db.Model):
             from app.services.recovery_automation import _cancel_reminders, _ensure_reminder
             _cancel_reminders(rtask)  # any open popup was addressed to the old salesman
             rtask.salesman_id = self.salesman_id
-            if self.status != 'paid':
+            if not is_inactive:
                 _ensure_reminder(rtask)  # raise a fresh one for the new salesman right away
 
-        if self.status == 'paid':
+        if is_inactive:
             rtask.recovery_status = 'CLOSED_PAID'
             rtask.closed_at = datetime.utcnow()
             for t in rtask.reminder_tasks:
@@ -933,6 +944,13 @@ class Sale(db.Model):
                     t.is_notification_shown = True
                     t.is_escalation_broadcast_shown = True
                     t.is_completion_broadcast_shown = True
+            linked_tasks = Task.query.filter(
+                Task.linked_invoice_id == self.id,
+                Task.status.in_(['Pending', 'In Progress'])
+            ).all()
+            for t in linked_tasks:
+                t.status = 'Cancelled'
+                t.is_notification_shown = True
         elif self.status == 'partial':
             if rtask.recovery_status not in ('PROMISED_PAYMENT', 'FOLLOW_UP_REQUIRED'):
                 rtask.recovery_status = 'PARTIAL_RECOVERY'

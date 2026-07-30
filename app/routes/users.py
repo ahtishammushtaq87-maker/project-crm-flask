@@ -674,9 +674,18 @@ def poll_tasks():
         #     the alarm (this is what caused the "52 reminders" pileup).
         if task.recovery_task_id:
             rt = task.recovery_task
-            if rt and (rt.is_muted or rt.is_on_hold or rt.recovery_status in CLOSED_RECOVERY):
+            if not rt or rt.is_muted or rt.is_on_hold or rt.recovery_status in CLOSED_RECOVERY:
+                task.is_notification_shown = True
+                if not rt or rt.recovery_status in CLOSED_RECOVERY:
+                    task.status = 'Cancelled'
+                dirty = True
                 continue
             inv = rt.invoice if rt else None
+            if not inv or inv.status in ('paid', 'cancelled') or inv.is_draft or inv.is_rejected:
+                task.is_notification_shown = True
+                task.status = 'Cancelled'
+                dirty = True
+                continue
             gkey = (('grp', inv.customer_id, rt.salesman_id)
                     if rt and inv and inv.customer_id is not None
                     else ('rt', task.recovery_task_id))
@@ -685,6 +694,14 @@ def poll_tasks():
                 dirty = True
                 continue
             seen_recovery_groups.add(gkey)
+
+        if task.linked_invoice_id:
+            linv = task.linked_invoice
+            if not linv or linv.status in ('paid', 'cancelled') or linv.is_draft or linv.is_rejected:
+                task.is_notification_shown = True
+                task.status = 'Cancelled'
+                dirty = True
+                continue
 
         # Trigger Email Notification if not already sent
         if not task.is_email_sent:
