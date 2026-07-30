@@ -9,9 +9,11 @@
             <a href="{{ url_for('journal.entries') }}" class="btn btn-outline-primary btn-sm">
                 <i class="fas fa-list me-1"></i> Journal Entries
             </a>
+            {% if current_user.role == 'admin' %}
             <a href="{{ url_for('journal.create_account') }}" class="btn btn-primary btn-sm">
                 <i class="fas fa-plus me-1"></i> New Account
             </a>
+            {% endif %}
         </div>
     </div>
 
@@ -52,13 +54,14 @@
                                 </span>
                             </td>
                             <td class="text-end text-nowrap">
-                                <a href="{{ url_for('journal.add_money', account_id=a.id) }}"
-                                   class="btn btn-sm btn-success" title="Add / Remove Money">
-                                    <i class="fas fa-money-bill-wave"></i>
-                                </a>
                                 <a href="{{ url_for('journal.account_ledger', account_id=a.id) }}"
                                    class="btn btn-sm btn-outline-info" title="View Ledger">
                                     <i class="fas fa-file-invoice-dollar"></i>
+                                </a>
+                                {% if current_user.role == 'admin' %}
+                                <a href="{{ url_for('journal.add_money', account_id=a.id) }}"
+                                   class="btn btn-sm btn-success" title="Add / Remove Money">
+                                    <i class="fas fa-money-bill-wave"></i>
                                 </a>
                                 <a href="{{ url_for('journal.edit_account', account_id=a.id) }}"
                                    class="btn btn-sm btn-outline-primary" title="Edit">
@@ -68,6 +71,7 @@
                                       class="d-inline" onsubmit="return confirm('Delete this account?');">
                                     <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="fas fa-trash"></i></button>
                                 </form>
+                                {% endif %}
                             </td>
                         </tr>
                         {% else %}

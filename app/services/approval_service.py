@@ -325,6 +325,19 @@ class ApprovalService:
             'default_is_approved': False,
             'actions': ['approve', 'reject', 'cancel', 'draft'],
         },
+        'journal_entry': {
+            'model': 'JournalEntry',
+            'label': 'Journal Entry',
+            'label_field': 'id',
+            'use_boolean_flags': True,
+            'approve_field': 'is_approved',
+            'reject_field': 'is_rejected',
+            'reason_field': 'rejection_reason',
+            'approved_by_field': 'approved_by',
+            'approved_at_field': 'approved_at',
+            'default_is_approved': False,
+            'actions': ['approve', 'reject', 'cancel', 'draft'],
+        },
     }
 
     @classmethod
@@ -654,6 +667,7 @@ class ApprovalService:
                 'salesman': 'Staff', 'warehouse': 'Inventory',
                 'product_category': 'Inventory', 'payment_method': 'Settings',
                 'customer_group': 'Customers', 'expense_category': 'Expenses',
+                'journal_entry': 'Journal',
             }.get(module, 'Approval')
 
             action_str = f"{action_verb} {label} #{record_label}"

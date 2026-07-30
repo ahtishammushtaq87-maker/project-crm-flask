@@ -36,6 +36,14 @@ def _guard():
     return None
 
 
+def _admin_guard():
+    """Ensures the current user is an admin. Use for create/edit/delete routes."""
+    if current_user.role != 'admin' and not getattr(current_user, 'is_admin', False):
+        flash('Only admins can perform this action.', 'danger')
+        return redirect(url_for('journal.entries'))
+    return None
+
+
 def _parse_date(s):
     if not s:
         return date.today()
@@ -70,6 +78,9 @@ def accounts():
     guard = _guard()
     if guard:
         return guard
+    admin_guard = _admin_guard()
+    if admin_guard:
+        return admin_guard
     accounts = JournalAccount.query.order_by(JournalAccount.name).all()
     total_balance = sum(a.balance for a in accounts)
     return render_template('journal/accounts.html', accounts=accounts,
@@ -82,6 +93,9 @@ def create_account():
     guard = _guard()
     if guard:
         return guard
+    admin_guard = _admin_guard()
+    if admin_guard:
+        return admin_guard
 
     if request.method == 'POST':
         name = (request.form.get('name') or '').strip()
@@ -113,6 +127,9 @@ def edit_account(account_id):
     guard = _guard()
     if guard:
         return guard
+    admin_guard = _admin_guard()
+    if admin_guard:
+        return admin_guard
     acct = JournalAccount.query.get_or_404(account_id)
 
     if request.method == 'POST':
@@ -146,6 +163,9 @@ def delete_account(account_id):
     guard = _guard()
     if guard:
         return guard
+    admin_guard = _admin_guard()
+    if admin_guard:
+        return admin_guard
     acct = JournalAccount.query.get_or_404(account_id)
     if acct.lines:
         flash('Cannot delete an account that has journal lines. Deactivate it instead.', 'warning')
@@ -201,11 +221,16 @@ def add_money(account_id):
         if entry_type not in ('debit', 'credit'):
             entry_type = 'debit'
 
+        is_admin = (getattr(current_user, 'role', '') == 'admin') or getattr(current_user, 'is_admin', False)
         entry = JournalEntry(
             date=_parse_date(request.form.get('date')),
             reference=(request.form.get('reference') or '').strip() or None,
             description=(request.form.get('description') or '').strip() or None,
             created_by=current_user.id,
+            is_approved=is_admin,
+            is_rejected=False,
+            approved_by=current_user.id if is_admin else None,
+            approved_at=datetime.utcnow() if is_admin else None,
         )
         entry.lines.append(JournalLine(
             account_id=acct.id,
@@ -216,7 +241,10 @@ def add_money(account_id):
         db.session.add(entry)
         db.session.commit()
         verb = 'added to' if entry_type == 'debit' else 'taken out of'
-        flash(f'PKR {amount:,.0f} {verb} "{acct.name}".', 'success')
+        if is_admin:
+            flash(f'PKR {amount:,.0f} {verb} "{acct.name}".', 'success')
+        else:
+            flash(f'Entry of PKR {amount:,.0f} {verb} "{acct.name}" submitted for Admin approval.', 'info')
         return redirect(url_for('journal.account_ledger', account_id=acct.id))
 
     return render_template('journal/add_money.html', account=acct,
@@ -226,15 +254,18 @@ def add_money(account_id):
 # ─── Journal Entries ───────────────────────────────────────────────────────────
 
 def _filtered_entries(args, newest_first=True):
-    """Apply the account/date filters (shared by the list page and the exports)
-    and return (entries, account_id, date_from, date_to)."""
-    account_id = args.get('account_id', type=int)
-    date_from = _date_or_none(args.get('date_from'))
-    date_to = _date_or_none(args.get('date_to'))
+    """Apply the account/date/category filters (shared by the list page and the
+    exports) and return (entries, account_id, date_from, date_to, category_id)."""
+    account_id  = args.get('account_id',  type=int)
+    category_id = args.get('category_id', type=int)
+    date_from   = _date_or_none(args.get('date_from'))
+    date_to     = _date_or_none(args.get('date_to'))
 
     query = JournalEntry.query
     if account_id:
         query = query.filter(JournalEntry.lines.any(JournalLine.account_id == account_id))
+    if category_id:
+        query = query.filter(JournalEntry.lines.any(JournalLine.category_id == category_id))
     if date_from:
         query = query.filter(JournalEntry.date >= date_from)
     if date_to:
@@ -244,7 +275,7 @@ def _filtered_entries(args, newest_first=True):
         query = query.order_by(JournalEntry.date.desc(), JournalEntry.id.desc())
     else:
         query = query.order_by(JournalEntry.date.asc(), JournalEntry.id.asc())
-    return query.all(), account_id, date_from, date_to
+    return query.all(), account_id, date_from, date_to, category_id
 
 
 def _grouped_by_account(entries, account_id=None):
@@ -273,19 +304,30 @@ def entries():
     if guard:
         return guard
 
-    all_entries, account_id, date_from, date_to = _filtered_entries(request.args)
+    all_entries, account_id, date_from, date_to, category_id = _filtered_entries(request.args)
 
     accounts = JournalAccount.query.order_by(JournalAccount.name).all()
     from app.models import ExpenseCategory
     expense_categories = (ExpenseCategory.query
                           .filter_by(is_active=True)
                           .order_by(ExpenseCategory.name).all())
+
+    # ── Summary stats for the top cards ────────────────────────────────────────
+    grand_debit  = sum(e.total_debit  for e in all_entries)
+    grand_credit = sum(e.total_credit for e in all_entries)
+    # Total remaining bank balance = sum of all active account balances
+    bank_balance = sum(a.balance for a in accounts if a.is_active)
+
     return render_template('journal/entries.html', entries=all_entries,
                            accounts=accounts,
                            expense_categories=expense_categories,
                            f_account_id=account_id,
+                           f_category_id=category_id,
                            f_date_from=request.args.get('date_from', ''),
-                           f_date_to=request.args.get('date_to', ''))
+                           f_date_to=request.args.get('date_to', ''),
+                           grand_debit=grand_debit,
+                           grand_credit=grand_credit,
+                           bank_balance=bank_balance)
 
 
 # ─── Account-wise exports (Excel / PDF), grouped by account ────────────────────
@@ -563,19 +605,26 @@ def create_entry():
         return guard
 
     accounts = JournalAccount.query.filter_by(is_active=True).order_by(JournalAccount.name).all()
+    from app.models import ExpenseCategory
+    expense_categories = ExpenseCategory.query.filter_by(is_active=True).order_by(ExpenseCategory.name).all()
 
     if request.method == 'POST':
-        # Multiple rows are submitted as parallel arrays.
         account_ids = request.form.getlist('line_account_id[]')
+        category_ids = request.form.getlist('line_category_id[]')
         descriptions = request.form.getlist('line_description[]')
         types = request.form.getlist('line_type[]')
         amounts = request.form.getlist('line_amount[]')
 
+        is_admin = (getattr(current_user, 'role', '') == 'admin') or getattr(current_user, 'is_admin', False)
         entry = JournalEntry(
             date=_parse_date(request.form.get('date')),
             reference=(request.form.get('reference') or '').strip() or None,
             description=(request.form.get('description') or '').strip() or None,
             created_by=current_user.id,
+            is_approved=is_admin,
+            is_rejected=False,
+            approved_by=current_user.id if is_admin else None,
+            approved_at=datetime.utcnow() if is_admin else None,
         )
 
         added = 0
@@ -583,12 +632,16 @@ def create_entry():
             acct_id = account_ids[i]
             amount = _to_float(amounts[i]) if i < len(amounts) else 0
             if not acct_id or amount <= 0:
-                continue  # skip blank / zero rows
+                continue
             etype = types[i] if i < len(types) else 'debit'
             if etype not in ('debit', 'credit'):
                 etype = 'debit'
+            cat_id = category_ids[i] if i < len(category_ids) else None
+            cat_id_int = int(cat_id) if (cat_id and str(cat_id).isdigit()) else None
+
             entry.lines.append(JournalLine(
                 account_id=int(acct_id),
+                category_id=cat_id_int,
                 description=(descriptions[i].strip() if i < len(descriptions) and descriptions[i] else None),
                 entry_type=etype,
                 amount=amount,
@@ -598,15 +651,85 @@ def create_entry():
         if added == 0:
             flash('Add at least one line with an account and amount.', 'warning')
             return render_template('journal/entry_form.html', accounts=accounts,
+                                   expense_categories=expense_categories,
                                    entry=None, today=date.today())
 
         db.session.add(entry)
         db.session.commit()
-        flash(f'Journal entry saved with {added} line(s).', 'success')
+        if is_admin:
+            flash(f'Journal entry saved with {added} line(s).', 'success')
+        else:
+            flash(f'Journal entry with {added} line(s) submitted for Admin approval.', 'info')
         return redirect(url_for('journal.entry_detail', entry_id=entry.id))
 
     return render_template('journal/entry_form.html', accounts=accounts,
+                           expense_categories=expense_categories,
                            entry=None, today=date.today())
+
+
+@bp.route('/entries/<int:entry_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_entry(entry_id):
+    guard = _guard()
+    if guard:
+        return guard
+    if not (current_user.is_admin or getattr(current_user, 'can_edit_accounting', False)):
+        flash('You do not have permission to edit journal entries.', 'danger')
+        return redirect(url_for('journal.entries'))
+
+    entry = JournalEntry.query.get_or_404(entry_id)
+    accounts = JournalAccount.query.filter_by(is_active=True).order_by(JournalAccount.name).all()
+    from app.models import ExpenseCategory
+    expense_categories = ExpenseCategory.query.filter_by(is_active=True).order_by(ExpenseCategory.name).all()
+
+    if request.method == 'POST':
+        account_ids = request.form.getlist('line_account_id[]')
+        category_ids = request.form.getlist('line_category_id[]')
+        descriptions = request.form.getlist('line_description[]')
+        types = request.form.getlist('line_type[]')
+        amounts = request.form.getlist('line_amount[]')
+
+        entry.date = _parse_date(request.form.get('date'))
+        entry.reference = (request.form.get('reference') or '').strip() or None
+        entry.description = (request.form.get('description') or '').strip() or None
+
+        # Rebuild lines
+        JournalLine.query.filter_by(entry_id=entry.id).delete()
+
+        added = 0
+        for i in range(len(account_ids)):
+            acct_id = account_ids[i]
+            amount = _to_float(amounts[i]) if i < len(amounts) else 0
+            if not acct_id or amount <= 0:
+                continue
+            etype = types[i] if i < len(types) else 'debit'
+            if etype not in ('debit', 'credit'):
+                etype = 'debit'
+            cat_id = category_ids[i] if i < len(category_ids) else None
+            cat_id_int = int(cat_id) if (cat_id and str(cat_id).isdigit()) else None
+
+            entry.lines.append(JournalLine(
+                account_id=int(acct_id),
+                category_id=cat_id_int,
+                description=(descriptions[i].strip() if i < len(descriptions) and descriptions[i] else None),
+                entry_type=etype,
+                amount=amount,
+            ))
+            added += 1
+
+        if added == 0:
+            flash('Add at least one line with an account and amount.', 'warning')
+            return render_template('journal/entry_form.html', accounts=accounts,
+                                   expense_categories=expense_categories,
+                                   entry=entry, today=entry.date or date.today())
+
+        db.session.commit()
+        flash('Journal entry updated successfully.', 'success')
+        return redirect(url_for('journal.entry_detail', entry_id=entry.id))
+
+    return render_template('journal/entry_form.html', accounts=accounts,
+                           expense_categories=expense_categories,
+                           entry=entry, today=entry.date or date.today())
 
 
 @bp.route('/entries/<int:entry_id>')
@@ -628,6 +751,9 @@ def send_entry_to_expense(entry_id):
         return jsonify({'success': False, 'message': 'Permission denied.'}), 403
 
     entry = JournalEntry.query.get_or_404(entry_id)
+
+    if not getattr(entry, 'is_approved', True):
+        return jsonify({'success': False, 'message': 'Only approved entries can be sent to expense.'}), 400
 
     if entry.expense_id:
         return jsonify({'success': False, 'message': 'This entry has already been sent to expense.'})
@@ -700,6 +826,9 @@ def delete_entry(entry_id):
     guard = _guard()
     if guard:
         return guard
+    if not (current_user.is_admin or getattr(current_user, 'can_delete_accounting', False)):
+        flash('You do not have permission to delete journal entries.', 'danger')
+        return redirect(url_for('journal.entries'))
     entry = JournalEntry.query.get_or_404(entry_id)
     db.session.delete(entry)
     db.session.commit()

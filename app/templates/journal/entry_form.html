@@ -1,10 +1,13 @@
 {% extends "base.html" %}
-{% block title %}New Journal Entry{% endblock %}
+{% block title %}{% if entry %}Edit Journal Entry #{{ entry.id }}{% else %}New Journal Entry{% endif %}{% endblock %}
 
 {% block content %}
-<div class="container-fluid" style="max-width: 1000px;">
+<div class="container-fluid" style="max-width: 1100px;">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="mb-0"><i class="fas fa-pen-to-square me-2 text-primary"></i>New Journal Entry</h4>
+        <h4 class="mb-0">
+            <i class="fas fa-pen-to-square me-2 text-primary"></i>
+            {% if entry %}Edit Journal Entry #{{ entry.id }}{% else %}New Journal Entry{% endif %}
+        </h4>
         <a href="{{ url_for('journal.entries') }}" class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-arrow-left me-1"></i> Back
         </a>
@@ -24,15 +27,17 @@
                     <div class="col-md-4">
                         <label class="form-label">Date <span class="text-danger">*</span></label>
                         <input type="date" name="date" class="form-control" required
-                               value="{{ today.strftime('%Y-%m-%d') }}">
+                               value="{{ (entry.date if entry else today).strftime('%Y-%m-%d') }}">
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">Reference <span class="text-muted small">(optional)</span></label>
-                        <input type="text" name="reference" class="form-control" placeholder="Voucher / Ref no">
+                        <input type="text" name="reference" class="form-control" placeholder="Voucher / Ref no"
+                               value="{{ entry.reference if entry and entry.reference else '' }}">
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">Narration <span class="text-muted small">(optional)</span></label>
-                        <input type="text" name="description" class="form-control" placeholder="Overall note">
+                        <input type="text" name="description" class="form-control" placeholder="Overall note"
+                               value="{{ entry.description if entry and entry.description else '' }}">
                     </div>
                 </div>
             </div>
@@ -49,19 +54,54 @@
                 <table class="table mb-0 align-middle" id="linesTable">
                     <thead class="table-light">
                         <tr>
-                            <th style="width: 26%;">Account</th>
-                            <th style="width: 34%;">Expense / Details</th>
-                            <th style="width: 16%;">Type</th>
-                            <th style="width: 18%;">Amount</th>
-                            <th style="width: 6%;"></th>
+                            <th style="width: 22%;">Account</th>
+                            <th style="width: 24%;">Expense Category</th>
+                            <th style="width: 26%;">Expense / Details</th>
+                            <th style="width: 12%;">Type</th>
+                            <th style="width: 12%;">Amount</th>
+                            <th style="width: 4%;"></th>
                         </tr>
                     </thead>
                     <tbody id="linesBody">
-                        <!-- rows injected by JS -->
+                        {% if entry and entry.lines %}
+                            {% for l in entry.lines %}
+                            <tr class="line-row">
+                                <td>
+                                    <select name="line_account_id[]" class="form-select form-select-sm select2-account">
+                                        <option value="">— Select account —</option>
+                                        {% for a in accounts %}
+                                        <option value="{{ a.id }}" {% if l.account_id == a.id %}selected{% endif %}>{{ a.name }}{% if a.account_type %} ({{ a.account_type }}){% endif %}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <select name="line_category_id[]" class="form-select form-select-sm select2-category">
+                                        <option value="">— Select Category —</option>
+                                        {% for cat in expense_categories %}
+                                        <option value="{{ cat.id }}" {% if l.category_id == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td><input type="text" name="line_description[]" class="form-control form-control-sm" value="{{ l.description or '' }}" placeholder="Details / expense"></td>
+                                <td>
+                                    <select name="line_type[]" class="form-select form-select-sm line-type">
+                                        <option value="debit" {% if l.entry_type == 'debit' %}selected{% endif %}>Debit (In)</option>
+                                        <option value="credit" {% if l.entry_type == 'credit' %}selected{% endif %}>Credit (Out)</option>
+                                    </select>
+                                </td>
+                                <td><input type="number" step="0.01" min="0" name="line_amount[]" class="form-control form-control-sm line-amount" value="{{ l.amount or '' }}" placeholder="0"></td>
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Remove row">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% endif %}
                     </tbody>
                     <tfoot class="table-light">
                         <tr>
-                            <td colspan="3" class="text-end fw-semibold">Totals</td>
+                            <td colspan="4" class="text-end fw-semibold">Totals</td>
                             <td class="small">
                                 <div>Debit: <span id="totalDebit" class="fw-bold text-success">0</span></div>
                                 <div>Credit: <span id="totalCredit" class="fw-bold text-danger">0</span></div>
@@ -85,10 +125,18 @@
 <template id="rowTemplate">
     <tr class="line-row">
         <td>
-            <select name="line_account_id[]" class="form-select form-select-sm">
+            <select name="line_account_id[]" class="form-select form-select-sm select2-account">
                 <option value="">— Select account —</option>
                 {% for a in accounts %}
                 <option value="{{ a.id }}">{{ a.name }}{% if a.account_type %} ({{ a.account_type }}){% endif %}</option>
+                {% endfor %}
+            </select>
+        </td>
+        <td>
+            <select name="line_category_id[]" class="form-select form-select-sm select2-category">
+                <option value="">— Select Category —</option>
+                {% for cat in expense_categories %}
+                <option value="{{ cat.id }}">{{ cat.name }}</option>
                 {% endfor %}
             </select>
         </td>
@@ -116,6 +164,23 @@ document.addEventListener('DOMContentLoaded', function () {
     const tpl = document.getElementById('rowTemplate');
     const addBtn = document.getElementById('addRowBtn');
 
+    function initSelect2OnRow(row) {
+        if (typeof $ !== 'undefined' && $.fn.select2) {
+            $(row).find('.select2-category').select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                placeholder: '— Select Category —',
+                allowClear: true
+            });
+            $(row).find('.select2-account').select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                placeholder: '— Select Account —',
+                allowClear: true
+            });
+        }
+    }
+
     function recalc() {
         let debit = 0, credit = 0;
         body.querySelectorAll('.line-row').forEach(function (row) {
@@ -129,7 +194,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function addRow() {
         const node = tpl.content.cloneNode(true);
-        body.appendChild(node);
+        const newRow = node.firstElementChild;
+        body.appendChild(newRow);
+        initSelect2OnRow(newRow);
         recalc();
     }
 
@@ -142,8 +209,11 @@ document.addEventListener('DOMContentLoaded', function () {
             if (rows.length > 1) {
                 btn.closest('.line-row').remove();
             } else {
-                // keep at least one empty row
-                btn.closest('.line-row').querySelectorAll('input').forEach(i => i.value = '');
+                const row = btn.closest('.line-row');
+                row.querySelectorAll('input').forEach(i => i.value = '');
+                if (typeof $ !== 'undefined' && $.fn.select2) {
+                    $(row).find('select').val(null).trigger('change');
+                }
             }
             recalc();
         }
@@ -152,8 +222,13 @@ document.addEventListener('DOMContentLoaded', function () {
     body.addEventListener('input', recalc);
     body.addEventListener('change', recalc);
 
-    // Start with a few rows so it's ready to use.
-    addRow(); addRow();
+    const existingRows = body.querySelectorAll('.line-row');
+    if (existingRows.length > 0) {
+        existingRows.forEach(r => initSelect2OnRow(r));
+        recalc();
+    } else {
+        addRow(); addRow();
+    }
 });
 </script>
 {% endblock %}

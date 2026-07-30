@@ -3765,11 +3765,11 @@ class JournalAccount(db.Model):
 
     @property
     def total_debit(self):
-        return sum((l.amount or 0) for l in self.lines if l.entry_type == 'debit')
+        return sum((l.amount or 0) for l in self.lines if l.entry_type == 'debit' and getattr(l.entry, 'is_approved', True))
 
     @property
     def total_credit(self):
-        return sum((l.amount or 0) for l in self.lines if l.entry_type == 'credit')
+        return sum((l.amount or 0) for l in self.lines if l.entry_type == 'credit' and getattr(l.entry, 'is_approved', True))
 
     @property
     def balance(self):
@@ -3795,11 +3795,19 @@ class JournalEntry(db.Model):
     # Expense module, so it can't be sent twice.
     expense_id = db.Column(db.Integer, db.ForeignKey('expenses.id'), nullable=True)
 
+    # Approval workflow
+    is_approved = db.Column(db.Boolean, default=False, index=True)
+    is_rejected = db.Column(db.Boolean, default=False, index=True)
+    rejection_reason = db.Column(db.Text, nullable=True)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
+
     lines = db.relationship(
         'JournalLine', backref='entry', lazy=True,
         cascade='all, delete-orphan', order_by='JournalLine.id'
     )
-    created_by_user = db.relationship('User', backref='journal_entries')
+    created_by_user = db.relationship('User', foreign_keys=[created_by], backref='journal_entries')
+    approver = db.relationship('User', foreign_keys=[approved_by], backref='journal_entry_approvals', lazy=True)
 
     @property
     def total_debit(self):
@@ -3824,11 +3832,13 @@ class JournalLine(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     entry_id = db.Column(db.Integer, db.ForeignKey('journal_entries.id'), nullable=False, index=True)
     account_id = db.Column(db.Integer, db.ForeignKey('journal_accounts.id'), nullable=False, index=True)
+    category_id = db.Column(db.Integer, db.ForeignKey('expense_categories.id'), nullable=True, index=True)
     description = db.Column(db.Text, nullable=True)         # expense / line details
     entry_type = db.Column(db.String(10), nullable=False, default='debit')  # 'debit' | 'credit'
     amount = db.Column(db.Float, nullable=False, default=0)
 
     account = db.relationship('JournalAccount', backref=db.backref('lines', lazy=True))
+    category = db.relationship('ExpenseCategory', backref=db.backref('journal_lines', lazy=True))
 
     def __repr__(self):
         return f'<JournalLine {self.entry_type} {self.amount} acct={self.account_id}>'

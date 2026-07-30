@@ -351,7 +351,7 @@
                                         <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fas fa-money-bill-wave me-2"></i>Accounting & HR</h6>
                                         <div class="form-check mb-2">
     {{ form.can_view_accounting(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'accounting')") }}
-    <label class="form-check-label fw-semibold">{{ form.can_view_accounting.label.text }}</label>
+    <label class="form-check-label fw-semibold"><i class="fas fa-book me-1 text-primary"></i> Journal Entry Access</label>
     <div class="ms-4 mt-1 border-start ps-3 sub-permissions-accounting" id="sub_accounting">
         <div class="form-check form-check-inline">
             {{ form.can_add_accounting(class="form-check-input sub-cb-accounting") }} <label class="form-check-label small text-muted">Add</label>
