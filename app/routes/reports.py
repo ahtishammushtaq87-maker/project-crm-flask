@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, and_, or_
 import pandas as pd
 from io import BytesIO
-from app.report_utils import generate_excel, generate_csv, generate_pdf
+from app.report_utils import generate_excel, generate_csv, generate_pdf, generate_profit_loss_pdf
 from app.routes.filters import apply_saved_filter_to_query
 
 bp = Blueprint('reports', __name__)
@@ -721,43 +721,33 @@ def salary_report():
                          active_module='salary_report',
                          filter_id=request.args.get('filter_id'))
 
-@bp.route('/profit-loss')
-@login_required
-def profit_loss_report():
-    """Comprehensive Profit and Loss Report"""
-    start_date_str = request.args.get('start_date')
-    end_date_str = request.args.get('end_date')
-    
-    if start_date_str:
-        start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-    else:
-        # Default to first day of current month
-        now = datetime.now()
-        start_date = datetime(now.year, now.month, 1)
-        start_date_str = start_date.strftime('%Y-%m-%d')
-        
-    if end_date_str:
-        end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
-    else:
-        # Default to today
-        end_date = datetime.now()
-        end_date_str = end_date.strftime('%Y-%m-%d')
-    
-    # 1. RevenueSection
+def compute_profit_loss(start_date, end_date):
+    """Single source of truth for the Profit & Loss numbers.
+
+    Used by both the on-screen report (profit_loss_report) and the
+    PDF/Excel/CSV export (download_report) so the two can never drift apart —
+    previously the export recomputed everything with its own simpler/older
+    logic (no monthly-expense proration, salary-table payroll instead of the
+    attendance-based figure the screen uses), which is why downloads didn't
+    match what was shown on screen.
+    """
+    from calendar import monthrange
+
+    # 1. Revenue
     sales = Sale.query.filter(Sale.date >= start_date, Sale.date <= end_date).all()
     returns = SaleReturn.query.filter(SaleReturn.date >= start_date, SaleReturn.date <= end_date).all()
-    
+
     total_revenue = sum(s.total for s in sales)
     total_returns = sum(r.total for r in returns)
     net_revenue = total_revenue - total_returns
-    
-    # 2. COGS Section: Sum(SaleItem.qty * Product.cost_price)
+
+    # 2. COGS: Sum(SaleItem.qty * Product.cost_price)
     sale_items = SaleItem.query.join(Sale).filter(Sale.date >= start_date, Sale.date <= end_date).all()
     total_cogs = sum((item.product.cost_price or 0) * item.quantity for item in sale_items)
-    
+
     # 3. Gross Profit
     gross_profit = net_revenue - total_cogs
-    
+
     # 4. Operating Expenses (Deducted from Profit)
     # Categorized Expenses - EXCLUDING BOM overheads as they are informational/inventory related
     operating_expenses = Expense.query.filter(
@@ -768,7 +758,7 @@ def profit_loss_report():
         Expense.is_inventory_shifted == False,
         Expense.status == 'confirmed'
     ).all()
-    
+
     expense_summary = {}
     divided_expense_summary = {}
     for e in operating_expenses:
@@ -790,14 +780,10 @@ def profit_loss_report():
                 divided_expense_summary[cat_name] = divided_expense_summary.get(cat_name, 0) + e.amount
         else:
             expense_summary[cat_name] = expense_summary.get(cat_name, 0) + e.amount
-    
+
     total_divided_expenses = sum(divided_expense_summary.values())
-    
+
     # Calculate Daily Payroll (same as Dashboard) - Active staff daily salary × days in period
-    from calendar import monthrange
-    from datetime import timedelta
-    
-    # Get attendance records for the period
     attendance_records_by_date = {}
     attendance_records = Attendance.query.filter(
         Attendance.date >= start_date.date(),
@@ -807,18 +793,17 @@ def profit_loss_report():
         if record.date not in attendance_records_by_date:
             attendance_records_by_date[record.date] = []
         attendance_records_by_date[record.date].append(record)
-    
+
     attendance_payroll = sum(record.earned_amount for record in attendance_records)
-    
+
     # Active staff daily salary for days without attendance
     active_staff = Staff.query.filter_by(is_active=True).all()
     period_start = start_date.date()
     period_end = end_date.date()
     daily_payroll_for_period = attendance_payroll
-    
+
     for staff in active_staff:
         if period_start.month == period_end.month and period_start.year == period_end.year:
-            days_in_period = (period_end - period_start).days + 1
             _, days_in_month = monthrange(period_start.year, period_start.month)
             daily_rate = staff.monthly_salary / float(days_in_month)
             days_without_attendance = 0
@@ -850,58 +835,102 @@ def profit_loss_report():
                     ).date()
                 else:
                     break
-    
+
     total_payroll = daily_payroll_for_period
-    
+
     # Calculate Total Operating Expenses
     total_operating_expenses = sum(expense_summary.values()) + total_divided_expenses + total_payroll
     net_profit = gross_profit - total_operating_expenses
-    
+
     # 5. Inventory & Manufacturing Activity (Displayed but NOT deducted from Net Profit)
-    # Direct Purchases
     purchases = PurchaseBill.query.filter(PurchaseBill.date >= start_date, PurchaseBill.date <= end_date).all()
     total_purchases = sum(p.total for p in purchases)
-    
-    # BOM/Manufacturing Costs (Total actual cost of completed orders)
+
     manufacturing_orders = ManufacturingOrder.query.filter(
         ManufacturingOrder.status == 'Completed',
         ManufacturingOrder.end_date >= start_date.date(),
         ManufacturingOrder.end_date <= end_date.date()
     ).all()
     total_bom_costs = sum(o.total_cost for o in manufacturing_orders)
-    
-    # Include BOM overhead expenses that were excluded from operating list
+
     bom_overhead_expenses = Expense.query.filter(
-        Expense.date >= start_date, 
+        Expense.date >= start_date,
         Expense.date <= end_date,
         Expense.is_bom_overhead == True,
         Expense.status == 'confirmed'
     ).all()
     total_bom_overhead = sum(e.amount for e in bom_overhead_expenses)
-    
+
     total_informational_outflow = total_purchases + total_bom_costs + total_bom_overhead
-    
+
+    return {
+        'sales': sales,
+        'returns': returns,
+        'total_revenue': total_revenue,
+        'total_returns': total_returns,
+        'net_revenue': net_revenue,
+        'total_cogs': total_cogs,
+        'gross_profit': gross_profit,
+        'expense_summary': expense_summary,
+        'divided_expense_summary': divided_expense_summary,
+        'total_divided_expenses': total_divided_expenses,
+        'total_payroll': total_payroll,
+        'total_operating_expenses': total_operating_expenses,
+        'net_profit': net_profit,
+        'purchases': purchases,
+        'total_purchases': total_purchases,
+        'manufacturing_orders': manufacturing_orders,
+        'total_bom_costs': total_bom_costs,
+        'total_bom_overhead': total_bom_overhead,
+        'total_informational_outflow': total_informational_outflow,
+    }
+
+
+@bp.route('/profit-loss')
+@login_required
+def profit_loss_report():
+    """Comprehensive Profit and Loss Report"""
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+
+    if start_date_str:
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+    else:
+        # Default to first day of current month
+        now = datetime.now()
+        start_date = datetime(now.year, now.month, 1)
+        start_date_str = start_date.strftime('%Y-%m-%d')
+
+    if end_date_str:
+        end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+    else:
+        # Default to today
+        end_date = datetime.now()
+        end_date_str = end_date.strftime('%Y-%m-%d')
+
+    pl = compute_profit_loss(start_date, end_date)
+
     return render_template('reports/profit_loss.html',
                           start_date=start_date_str,
                           end_date=end_date_str,
-                          sales=sales,
-                          returns=returns,
-                          total_revenue=total_revenue,
-                          total_returns=total_returns,
-                          net_revenue=net_revenue,
-                          total_cogs=total_cogs,
-                          gross_profit=gross_profit,
-                          expense_categories=expense_summary,
-                          divided_expense_categories=divided_expense_summary,
-                          total_divided_expenses=total_divided_expenses,
-                          total_payroll=total_payroll,
-                          purchases=purchases,
-                          total_purchases=total_purchases,
-                          manufacturing_orders=manufacturing_orders,
-                          total_bom_costs=total_bom_costs + total_bom_overhead,
-                          total_expenses=total_operating_expenses,
-                          total_informational=total_informational_outflow,
-                          net_profit=net_profit,
+                          sales=pl['sales'],
+                          returns=pl['returns'],
+                          total_revenue=pl['total_revenue'],
+                          total_returns=pl['total_returns'],
+                          net_revenue=pl['net_revenue'],
+                          total_cogs=pl['total_cogs'],
+                          gross_profit=pl['gross_profit'],
+                          expense_categories=pl['expense_summary'],
+                          divided_expense_categories=pl['divided_expense_summary'],
+                          total_divided_expenses=pl['total_divided_expenses'],
+                          total_payroll=pl['total_payroll'],
+                          purchases=pl['purchases'],
+                          total_purchases=pl['total_purchases'],
+                          manufacturing_orders=pl['manufacturing_orders'],
+                          total_bom_costs=pl['total_bom_costs'] + pl['total_bom_overhead'],
+                          total_expenses=pl['total_operating_expenses'],
+                          total_informational=pl['total_informational_outflow'],
+                          net_profit=pl['net_profit'],
                           active_module='profit_loss_report',
                           filter_id=request.args.get('filter_id'))
 
@@ -1324,69 +1353,52 @@ def download_report(format, report_type):
         } for p in payments]
 
     elif report_type == 'profit_loss':
-        start_date = datetime.strptime(start_date, '%Y-%m-%d') if start_date else datetime.now().replace(day=1)
-        end_date = datetime.strptime(end_date, '%Y-%m-%d') if end_date else datetime.now()
-        
-        # Aggregate data (summarized for Excel/PDF)
-        # Revenue
-        total_rev = db.session.query(func.sum(Sale.total)).filter(Sale.date >= start_date, Sale.date <= end_date).scalar() or 0
-        total_ret = db.session.query(func.sum(SaleReturn.total)).filter(SaleReturn.date >= start_date, SaleReturn.date <= end_date).scalar() or 0
-        net_rev = total_rev - total_ret
-        
-        # COGS
-        items = SaleItem.query.join(Sale).filter(Sale.date >= start_date, Sale.date <= end_date).all()
-        total_cogs = sum((i.product.cost_price or 0) * i.quantity for i in items)
-        
-        # Expenses
-        # Operating
-        total_exp = db.session.query(func.sum(Expense.amount)).filter(
-            Expense.date >= start_date,
-            Expense.date <= end_date,
-            Expense.is_bom_overhead == False,
-            Expense.is_shifted == False,
-            Expense.is_inventory_shifted == False,
-            Expense.status == 'confirmed'
-        ).scalar() or 0
-        salary_paid = db.session.query(func.sum(SalaryPayment.net_salary)).filter(SalaryPayment.status == 'paid', SalaryPayment.payment_date >= start_date.date(), SalaryPayment.payment_date <= end_date.date()).scalar() or 0
-        salary_adv = db.session.query(func.sum(SalaryAdvance.amount)).filter(SalaryAdvance.date >= start_date.date(), SalaryAdvance.date <= end_date.date()).scalar() or 0
-        
-        # Informational / Inventory
-        total_purchases = db.session.query(func.sum(PurchaseBill.total)).filter(PurchaseBill.date >= start_date, PurchaseBill.date <= end_date).scalar() or 0
-        total_bom = db.session.query(func.sum(ManufacturingOrder.total_cost)).filter(ManufacturingOrder.status == 'Completed', ManufacturingOrder.end_date >= start_date.date(), ManufacturingOrder.end_date <= end_date.date()).scalar() or 0
-        bom_overhead = db.session.query(func.sum(Expense.amount)).filter(
-            Expense.date >= start_date, 
-            Expense.date <= end_date, 
-            Expense.is_bom_overhead == True,
-            Expense.status == 'confirmed'
-        ).scalar() or 0
-        
-        total_operating_exp = total_exp + salary_paid + salary_adv
-        gross_profit = net_rev - total_cogs
-        net_profit = gross_profit - total_operating_exp
-        
+        now = datetime.now()
+        start_date = datetime.strptime(start_date, '%Y-%m-%d') if start_date else datetime(now.year, now.month, 1)
+        end_date = datetime.strptime(end_date, '%Y-%m-%d') if end_date else now
+
+        # Exact same computation as the on-screen report — see compute_profit_loss()
+        # docstring for why this used to drift out of sync with the screen.
+        pl = compute_profit_loss(start_date, end_date)
+
+        def money(n):
+            return f"{n:,.2f}"
+
         title = f"Profit & Loss Statement ({start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')})"
         headers = ['Account Description', 'Amount (PKR)', 'Subtotal (PKR)']
         data = [
-            {'Account Description': 'REVENUE', 'Amount (PKR)': '', 'Subtotal (PKR)': f"{total_rev:.2f}"},
-            {'Account Description': '  Total Sales', 'Amount (PKR)': f"{total_rev:.2f}", 'Subtotal (PKR)': ''},
-            {'Account Description': '  Less: Sales Returns', 'Amount (PKR)': f"({total_ret:.2f})", 'Subtotal (PKR)': ''},
-            {'Account Description': 'TOTAL NET REVENUE', 'Amount (PKR)': '', 'Subtotal (PKR)': f"{net_rev:.2f}"},
+            {'Account Description': 'REVENUE', 'Amount (PKR)': '', 'Subtotal (PKR)': ''},
+            {'Account Description': '  Total Sales', 'Amount (PKR)': money(pl['total_revenue']), 'Subtotal (PKR)': ''},
+            {'Account Description': '  Less: Sales Returns', 'Amount (PKR)': f"({money(pl['total_returns'])})", 'Subtotal (PKR)': ''},
+            {'Account Description': 'TOTAL NET REVENUE', 'Amount (PKR)': '', 'Subtotal (PKR)': money(pl['net_revenue'])},
             {'Account Description': '', 'Amount (PKR)': '', 'Subtotal (PKR)': ''},
-            {'Account Description': 'COST OF GOODS SOLD', 'Amount (PKR)': '', 'Subtotal (PKR)': f"({total_cogs:.2f})"},
-            {'Account Description': 'GROSS PROFIT', 'Amount (PKR)': '', 'Subtotal (PKR)': f"{gross_profit:.2f}"},
+            {'Account Description': 'COST OF GOODS SOLD', 'Amount (PKR)': '', 'Subtotal (PKR)': f"({money(pl['total_cogs'])})"},
+            {'Account Description': 'GROSS PROFIT', 'Amount (PKR)': '', 'Subtotal (PKR)': money(pl['gross_profit'])},
             {'Account Description': '', 'Amount (PKR)': '', 'Subtotal (PKR)': ''},
             {'Account Description': 'OPERATING EXPENSES (Deducted from Profit)', 'Amount (PKR)': '', 'Subtotal (PKR)': ''},
-            {'Account Description': '  General Business Expenses', 'Amount (PKR)': f"{total_exp:.2f}", 'Subtotal (PKR)': ''},
-            {'Account Description': '  Payroll (Salaries & Advances)', 'Amount (PKR)': f"{salary_paid + salary_adv:.2f}", 'Subtotal (PKR)': ''},
-            {'Account Description': 'TOTAL OPERATING EXPENSES', 'Amount (PKR)': '', 'Subtotal (PKR)': f"({total_operating_exp:.2f})"},
+        ]
+
+        if pl['expense_summary']:
+            data.append({'Account Description': '  Simple/Daily Expenses', 'Amount (PKR)': '', 'Subtotal (PKR)': ''})
+            for cat, amt in pl['expense_summary'].items():
+                data.append({'Account Description': f'    {cat}', 'Amount (PKR)': money(amt), 'Subtotal (PKR)': ''})
+
+        if pl['divided_expense_summary']:
+            data.append({'Account Description': '  Salary/Divided Expenses (Prorated)', 'Amount (PKR)': '', 'Subtotal (PKR)': ''})
+            for cat, amt in pl['divided_expense_summary'].items():
+                data.append({'Account Description': f'    {cat}', 'Amount (PKR)': money(amt), 'Subtotal (PKR)': ''})
+
+        data.extend([
+            {'Account Description': '  Staff Payroll (Salaries & Advances)', 'Amount (PKR)': money(pl['total_payroll']), 'Subtotal (PKR)': ''},
+            {'Account Description': 'TOTAL OPERATING EXPENSES', 'Amount (PKR)': '', 'Subtotal (PKR)': f"({money(pl['total_operating_expenses'])})"},
             {'Account Description': '', 'Amount (PKR)': '', 'Subtotal (PKR)': ''},
-            {'Account Description': 'NET PROFIT', 'Amount (PKR)': '', 'Subtotal (PKR)': f"{net_profit:.2f}"},
+            {'Account Description': 'NET PROFIT', 'Amount (PKR)': '', 'Subtotal (PKR)': money(pl['net_profit'])},
             {'Account Description': '', 'Amount (PKR)': '', 'Subtotal (PKR)': ''},
             {'Account Description': 'INVENTORY & MANUFACTURING ACTIVITY (Informational)', 'Amount (PKR)': '', 'Subtotal (PKR)': ''},
-            {'Account Description': '  Inventory Purchases', 'Amount (PKR)': f"{total_purchases:.2f}", 'Subtotal (PKR)': ''},
-            {'Account Description': '  Manufacturing Costs', 'Amount (PKR)': f"{total_bom + bom_overhead:.2f}", 'Subtotal (PKR)': ''},
-            {'Account Description': 'TOTAL SECONDARY OUTFLOW', 'Amount (PKR)': '', 'Subtotal (PKR)': f"{total_purchases + total_bom + bom_overhead:.2f}"}
-        ]
+            {'Account Description': '  Direct Inventory Purchases (Asset Investment)', 'Amount (PKR)': money(pl['total_purchases']), 'Subtotal (PKR)': ''},
+            {'Account Description': '  Manufacturing (BOM) Costs (In-process/Stock)', 'Amount (PKR)': money(pl['total_bom_costs'] + pl['total_bom_overhead']), 'Subtotal (PKR)': ''},
+            {'Account Description': 'TOTAL SECONDARY OUTFLOW', 'Amount (PKR)': '', 'Subtotal (PKR)': money(pl['total_informational_outflow'])},
+        ])
 
     if not data:
         flash('No data available for the selected filters.', 'warning')
@@ -1396,7 +1408,12 @@ def download_report(format, report_type):
     company_info = get_company_info()
     
     if format == 'pdf':
-        output = generate_pdf(data, title, headers, company_info)
+        if report_type == 'profit_loss':
+            output = generate_profit_loss_pdf(
+                pl, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), company_info
+            )
+        else:
+            output = generate_pdf(data, title, headers, company_info)
         filename = f"{report_type}_report.pdf"
         mimetype = 'application/pdf'
     elif format == 'excel':

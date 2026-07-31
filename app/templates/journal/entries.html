@@ -24,6 +24,9 @@
             </a>
             {% endif %}
             {% if current_user.is_admin or current_user.can_add_accounting or current_user.can_view_accounting %}
+            <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addMoneyModal">
+                <i class="fas fa-money-bill-wave me-1"></i> Add Money
+            </button>
             <a href="{{ url_for('journal.create_entry') }}" class="btn btn-primary btn-sm">
                 <i class="fas fa-plus me-1"></i> New Entry
             </a>
@@ -170,6 +173,7 @@
                             <th class="text-end">Account Remaining</th>
                             <th class="text-end">Debit</th>
                             <th class="text-end">Credit</th>
+                            <th class="text-center no-export">Bill</th>
                             <th class="no-export">Approval</th>
                             <th class="text-end no-export">Actions</th>
                         </tr>
@@ -224,6 +228,20 @@
                             </td>
                             <td class="text-end text-success" data-order="{{ e.total_debit }}">{{ "{:,.0f}".format(e.total_debit) }}</td>
                             <td class="text-end text-danger" data-order="{{ e.total_credit }}">{{ "{:,.0f}".format(e.total_credit) }}</td>
+                            <td class="text-center no-export">
+                                {% set bill_lines = e.lines | selectattr('bill_image_path') | list %}
+                                {% if bill_lines %}
+                                <a href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#billImgModal-{{ e.id }}" title="View bill image(s)">
+                                    <img src="{{ url_for('static', filename=bill_lines[0].bill_image_path.replace('app/static/', '')) }}"
+                                         class="img-thumbnail" style="width:36px;height:36px;object-fit:cover;" alt="Bill">
+                                </a>
+                                {% if bill_lines|length > 1 %}
+                                <span class="badge bg-secondary ms-1">+{{ bill_lines|length - 1 }}</span>
+                                {% endif %}
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
                             <td class="no-export">
                                 {{ approval_widget('journal_entry', e) }}
                             </td>
@@ -263,13 +281,148 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="11" class="text-center text-muted py-4">
+                            <td colspan="12" class="text-center text-muted py-4">
                                 No journal entries yet. Click <strong>New Entry</strong> to add one.
                             </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ── Bill image popup modals (one per entry that has at least one line image) ── #}
+{% for e in entries %}
+{% set bill_lines = e.lines | selectattr('bill_image_path') | list %}
+{% if bill_lines %}
+<div class="modal fade" id="billImgModal-{{ e.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Bill Image{{ 's' if bill_lines|length > 1 else '' }} — Entry #{{ e.id }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <div class="row g-3 justify-content-center">
+                    {% for l in bill_lines %}
+                    <div class="col-md-{{ 12 // ([bill_lines|length, 3]|min) }}">
+                        {% if l.description %}<div class="small text-muted mb-1">{{ l.description }}</div>{% endif %}
+                        <a href="{{ url_for('static', filename=l.bill_image_path.replace('app/static/', '')) }}" target="_blank">
+                            <img src="{{ url_for('static', filename=l.bill_image_path.replace('app/static/', '')) }}"
+                                 class="img-fluid rounded border" alt="Bill image">
+                        </a>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+
+<!-- Add Money Modal (quick add/remove money without leaving this page) -->
+<div class="modal fade" id="addMoneyModal" tabindex="-1" aria-labelledby="addMoneyModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <form id="addMoneyForm">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title" id="addMoneyModalLabel"><i class="fas fa-money-bill-wave me-2"></i>Add / Remove Money</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="addMoneyResult" class="d-none mb-3"></div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Account <span class="text-danger">*</span></label>
+                            <select name="account_id" id="addMoneyAccount" class="form-select" required>
+                                <option value="">— Select account —</option>
+                                {% for a in accounts %}
+                                <option value="{{ a.id }}">{{ a.name }}{% if a.account_type %} ({{ a.account_type }}){% endif %}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Direction</label>
+                            <select name="entry_type" class="form-select">
+                                <option value="debit">Add Money (Debit / In)</option>
+                                <option value="credit">Remove Money (Credit / Out)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Amount <span class="text-danger">*</span></label>
+                            <input type="number" step="0.01" min="0" name="amount" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Date</label>
+                            <input type="date" name="date" id="addMoneyDate" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Reference <span class="text-muted small">(optional)</span></label>
+                            <input type="text" name="reference" class="form-control" placeholder="Voucher / Ref no">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Details</label>
+                            <textarea name="description" class="form-control" rows="2" placeholder="What is this money for?"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <label for="addMoneyBillInput" class="form-label">Bill Image</label>
+                            <div class="input-group">
+                                <button type="button" class="btn btn-outline-info d-flex align-items-center" id="addMoneyWebcamBtn">
+                                    <i class="fas fa-camera me-1"></i>Camera Capture
+                                </button>
+                                <input type="file" name="bill_image" id="addMoneyBillInput" class="form-control" accept="image/*">
+                            </div>
+                            <div class="form-text">Directly capture from camera (Webcam) or upload a file - Optional</div>
+                            <div id="addMoneyBillPreview" class="mt-2"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success" id="addMoneySubmitBtn">
+                        <i class="fas fa-save me-1"></i> Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Camera Capture Modal for the Add Money form -->
+<div class="modal fade" id="addMoneyCameraModal" tabindex="-1" aria-labelledby="addMoneyCameraModalLabel" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addMoneyCameraModalLabel">Capture Bill Image from Camera</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="addMoneyStopCameraBtn1"></button>
+            </div>
+            <div class="modal-body text-center">
+                <div id="addMoneyCameraStreamContainer">
+                    <video id="addMoneyWebcamVideo" autoplay playsinline class="w-100 rounded border bg-dark" style="max-height: 400px; transform: scaleX(-1);"></video>
+                    <canvas id="addMoneyCaptureCanvas" style="display:none;"></canvas>
+                    <div class="mt-3">
+                        <button type="button" class="btn btn-primary btn-lg" id="addMoneySnapBtn">
+                            <i class="fas fa-camera"></i> Take Photo
+                        </button>
+                    </div>
+                </div>
+                <div id="addMoneyCameraResultContainer" style="display:none;">
+                    <img id="addMoneyCapturePreview" class="img-fluid rounded border mb-3">
+                    <div class="d-flex justify-content-center gap-2">
+                        <button type="button" class="btn btn-warning" id="addMoneyRetakeBtn">
+                            <i class="fas fa-redo"></i> Retake
+                        </button>
+                        <button type="button" class="btn btn-success" id="addMoneyConfirmPhotoBtn">
+                            <i class="fas fa-check"></i> Use Photo
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="addMoneyStopCameraBtn2">Cancel</button>
             </div>
         </div>
     </div>
@@ -445,6 +598,199 @@ document.addEventListener('DOMContentLoaded', function () {
         // When Select2 clears a value the hidden <input value=""> is the one
         // submitted, so the form naturally sends an empty string — no extra work needed.
     }
+});
+
+// ── Add Money modal (quick add/remove money without leaving this page) ──────
+document.addEventListener('DOMContentLoaded', function () {
+    const addMoneyModalEl = document.getElementById('addMoneyModal');
+    const addMoneyForm = document.getElementById('addMoneyForm');
+    const addMoneyDate = document.getElementById('addMoneyDate');
+    const addMoneyResult = document.getElementById('addMoneyResult');
+    const addMoneySubmitBtn = document.getElementById('addMoneySubmitBtn');
+    let addMoneyAccountSelect2Ready = false;
+
+    if (addMoneyModalEl) {
+        addMoneyModalEl.addEventListener('show.bs.modal', function () {
+            if (!addMoneyDate.value) {
+                addMoneyDate.value = new Date().toISOString().split('T')[0];
+            }
+        });
+        addMoneyModalEl.addEventListener('shown.bs.modal', function () {
+            if (window.jQuery && $.fn.select2 && !addMoneyAccountSelect2Ready) {
+                $('#addMoneyAccount').select2({
+                    theme: 'bootstrap-5', width: '100%',
+                    dropdownParent: $('#addMoneyModal'),
+                    placeholder: '— Select account —', allowClear: true
+                });
+                addMoneyAccountSelect2Ready = true;
+            }
+        });
+        addMoneyModalEl.addEventListener('hidden.bs.modal', function () {
+            addMoneyForm.reset();
+            if (window.jQuery && addMoneyAccountSelect2Ready) {
+                $('#addMoneyAccount').val(null).trigger('change');
+            }
+            addMoneyResult.className = 'd-none';
+            addMoneyResult.innerHTML = '';
+            document.getElementById('addMoneyBillPreview').innerHTML = '';
+        });
+    }
+
+    if (addMoneyForm) {
+        addMoneyForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const formData = new FormData(addMoneyForm);
+            const csrf = getCsrfToken();
+            if (csrf) formData.append('csrf_token', csrf);
+
+            addMoneySubmitBtn.disabled = true;
+            addMoneySubmitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+
+            fetch('{{ url_for("journal.add_money_quick") }}', { method: 'POST', body: formData })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    addMoneyResult.classList.remove('d-none');
+                    if (data.success) {
+                        addMoneyResult.className = 'alert alert-success';
+                        addMoneyResult.innerHTML = '<i class="fas fa-check-circle me-1"></i> ' + data.message;
+                        setTimeout(function () { location.reload(); }, 1200);
+                    } else {
+                        addMoneyResult.className = 'alert alert-warning';
+                        addMoneyResult.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i> ' + data.message;
+                        addMoneySubmitBtn.disabled = false;
+                        addMoneySubmitBtn.innerHTML = '<i class="fas fa-save me-1"></i> Save';
+                    }
+                })
+                .catch(function (err) {
+                    addMoneyResult.classList.remove('d-none');
+                    addMoneyResult.className = 'alert alert-danger';
+                    addMoneyResult.innerHTML = '<i class="fas fa-times-circle me-1"></i> Error: ' + err.message;
+                    addMoneySubmitBtn.disabled = false;
+                    addMoneySubmitBtn.innerHTML = '<i class="fas fa-save me-1"></i> Save';
+                });
+        });
+    }
+
+    // Camera capture (webcam) for the Bill Image field in this modal.
+    const webcamBtn = document.getElementById('addMoneyWebcamBtn');
+    const mainBillInput = document.getElementById('addMoneyBillInput');
+    const webcamVideo = document.getElementById('addMoneyWebcamVideo');
+    const captureCanvas = document.getElementById('addMoneyCaptureCanvas');
+    const capturePreview = document.getElementById('addMoneyCapturePreview');
+    const cameraStreamContainer = document.getElementById('addMoneyCameraStreamContainer');
+    const cameraResultContainer = document.getElementById('addMoneyCameraResultContainer');
+    let videoStream = null;
+    let cameraModal = null;
+
+    async function startWebcam() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert("Your browser or connection (non-HTTPS) does not support camera access.");
+            return;
+        }
+        try {
+            videoStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+            });
+            webcamVideo.srcObject = videoStream;
+            cameraStreamContainer.style.display = 'block';
+            cameraResultContainer.style.display = 'none';
+        } catch (err) {
+            alert("Could not access camera: " + err.message);
+            if (cameraModal) cameraModal.hide();
+        }
+    }
+
+    function stopWebcam() {
+        if (videoStream) {
+            videoStream.getTracks().forEach(track => track.stop());
+            videoStream = null;
+        }
+    }
+
+    function getCameraModal() {
+        if (!cameraModal) {
+            const modalEl = document.getElementById('addMoneyCameraModal');
+            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                cameraModal = new bootstrap.Modal(modalEl);
+            } else if (window.bootstrap && window.bootstrap.Modal) {
+                cameraModal = new window.bootstrap.Modal(modalEl);
+            } else {
+                cameraModal = {
+                    show: function () { $(modalEl).modal('show'); },
+                    hide: function () { $(modalEl).modal('hide'); }
+                };
+            }
+        }
+        return cameraModal;
+    }
+
+    function updateDirectPreview(file) {
+        const preview = document.getElementById('addMoneyBillPreview');
+        if (!preview) return;
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                preview.innerHTML = `
+                    <img src="${e.target.result}" class="img-thumbnail shadow-sm" style="max-width:180px; max-height:180px;">
+                    <p class="text-muted small mt-1"><i class="fas fa-file-image me-1"></i>${file.name}</p>
+                `;
+            };
+            reader.readAsDataURL(file);
+        } else {
+            preview.innerHTML = '';
+        }
+    }
+
+    if (webcamBtn) {
+        webcamBtn.addEventListener('click', function () {
+            getCameraModal().show();
+            startWebcam();
+        });
+    }
+
+    const stopBtn1 = document.getElementById('addMoneyStopCameraBtn1');
+    const stopBtn2 = document.getElementById('addMoneyStopCameraBtn2');
+    if (stopBtn1) stopBtn1.addEventListener('click', stopWebcam);
+    if (stopBtn2) stopBtn2.addEventListener('click', stopWebcam);
+
+    const snapBtn = document.getElementById('addMoneySnapBtn');
+    if (snapBtn) snapBtn.addEventListener('click', function () {
+        const context = captureCanvas.getContext('2d');
+        captureCanvas.width = webcamVideo.videoWidth;
+        captureCanvas.height = webcamVideo.videoHeight;
+        context.translate(captureCanvas.width, 0);
+        context.scale(-1, 1);
+        context.drawImage(webcamVideo, 0, 0, captureCanvas.width, captureCanvas.height);
+        capturePreview.src = captureCanvas.toDataURL('image/jpeg');
+        cameraStreamContainer.style.display = 'none';
+        cameraResultContainer.style.display = 'block';
+    });
+
+    const retakeBtn = document.getElementById('addMoneyRetakeBtn');
+    if (retakeBtn) retakeBtn.addEventListener('click', function () {
+        cameraStreamContainer.style.display = 'block';
+        cameraResultContainer.style.display = 'none';
+    });
+
+    if (mainBillInput) {
+        mainBillInput.addEventListener('change', function (e) {
+            updateDirectPreview(e.target.files[0]);
+        });
+    }
+
+    const confirmPhotoBtn = document.getElementById('addMoneyConfirmPhotoBtn');
+    if (confirmPhotoBtn) confirmPhotoBtn.addEventListener('click', function () {
+        captureCanvas.toBlob((blob) => {
+            const fileName = `captured_bill_${Date.now()}.jpg`;
+            const file = new File([blob], fileName, { type: 'image/jpeg' });
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            mainBillInput.files = dataTransfer.files;
+            updateDirectPreview(file);
+            stopWebcam();
+            getCameraModal().hide();
+        }, 'image/jpeg', 0.9);
+    });
 });
 </script>
 {% endblock %}

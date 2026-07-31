@@ -3854,6 +3854,7 @@ class JournalLine(db.Model):
     description = db.Column(db.Text, nullable=True)         # expense / line details
     entry_type = db.Column(db.String(10), nullable=False, default='debit')  # 'debit' | 'credit'
     amount = db.Column(db.Float, nullable=False, default=0)
+    bill_image_path = db.Column(db.String(255), nullable=True)  # Path to per-line bill/receipt image
 
     account = db.relationship('JournalAccount', backref=db.backref('lines', lazy=True))
     category = db.relationship('ExpenseCategory', backref=db.backref('journal_lines', lazy=True))

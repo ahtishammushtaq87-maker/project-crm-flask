@@ -47,12 +47,14 @@
                         <th class="text-end">Debit (In)</th>
                         <th class="text-end">Credit (Out)</th>
                         <th class="text-end">Balance</th>
+                        <th class="text-center">Bill</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr class="table-light">
                         <td colspan="5" class="fw-semibold">Opening Balance</td>
                         <td class="text-end fw-semibold">{{ "{:,.0f}".format(account.opening_balance or 0) }}</td>
+                        <td></td>
                     </tr>
                     {% for r in rows %}
                     {% set l = r.line %}
@@ -65,13 +67,46 @@
                         <td class="text-end fw-semibold {{ 'text-success' if r.running >= 0 else 'text-danger' }}">
                             {{ "{:,.0f}".format(r.running) }}
                         </td>
+                        <td class="text-center">
+                            {% if l.bill_image_path %}
+                            <a href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#billImgModal-{{ l.id }}" title="View bill image">
+                                <img src="{{ url_for('static', filename=l.bill_image_path.replace('app/static/', '')) }}"
+                                     class="img-thumbnail" style="width:36px;height:36px;object-fit:cover;" alt="Bill">
+                            </a>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="6" class="text-center text-muted py-4">No transactions yet.</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted py-4">No transactions yet.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
     </div>
 </div>
+
+{# ── Bill image popup modals (one per ledger line that has an image) ── #}
+{% for r in rows %}
+{% set l = r.line %}
+{% if l.bill_image_path %}
+<div class="modal fade" id="billImgModal-{{ l.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Bill Image — Entry #{{ l.entry_id }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <a href="{{ url_for('static', filename=l.bill_image_path.replace('app/static/', '')) }}" target="_blank">
+                    <img src="{{ url_for('static', filename=l.bill_image_path.replace('app/static/', '')) }}"
+                         class="img-fluid rounded border" alt="Bill image">
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endfor %}
 {% endblock %}

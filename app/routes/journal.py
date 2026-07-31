@@ -23,6 +23,26 @@ from app.models import JournalAccount, JournalEntry, JournalLine
 bp = Blueprint('journal', __name__)
 
 
+def _save_line_bill_image(file_storage):
+    """Save an uploaded per-line bill image under app/static/uploads/bills/
+    and return the project-root-relative path to store on JournalLine."""
+    if not file_storage or not file_storage.filename:
+        return None
+    import os
+    import time
+    import uuid
+    from werkzeug.utils import secure_filename
+
+    original_filename = secure_filename(file_storage.filename)
+    unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+    filename = f"{unique_prefix}_{original_filename}"
+
+    full_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    file_storage.save(full_path)
+    return f"app/static/uploads/bills/{filename}"
+
+
 # ─── Permission helpers ────────────────────────────────────────────────────────
 
 def _can_view():
@@ -203,6 +223,34 @@ def account_ledger(account_id):
 
 # ─── Quick "Add Money" to an account ───────────────────────────────────────────
 
+def _create_add_money_entry(acct, amount, entry_type, date_str, reference, description, bill_file):
+    """Shared by both the full add-money page and the quick modal on the
+    entries list — creates a pending-approval JournalEntry + single line
+    (auto-approved when an admin submits it), same as any other entry."""
+    bill_path = _save_line_bill_image(bill_file)
+    is_admin = (getattr(current_user, 'role', '') == 'admin') or getattr(current_user, 'is_admin', False)
+    entry = JournalEntry(
+        date=_parse_date(date_str),
+        reference=(reference or '').strip() or None,
+        description=(description or '').strip() or None,
+        created_by=current_user.id,
+        is_approved=is_admin,
+        is_rejected=False,
+        approved_by=current_user.id if is_admin else None,
+        approved_at=datetime.utcnow() if is_admin else None,
+    )
+    entry.lines.append(JournalLine(
+        account_id=acct.id,
+        description=(description or '').strip() or None,
+        entry_type=entry_type,
+        amount=amount,
+        bill_image_path=bill_path,
+    ))
+    db.session.add(entry)
+    db.session.commit()
+    return entry, is_admin
+
+
 @bp.route('/accounts/<int:account_id>/add-money', methods=['GET', 'POST'])
 @login_required
 def add_money(account_id):
@@ -221,25 +269,11 @@ def add_money(account_id):
         if entry_type not in ('debit', 'credit'):
             entry_type = 'debit'
 
-        is_admin = (getattr(current_user, 'role', '') == 'admin') or getattr(current_user, 'is_admin', False)
-        entry = JournalEntry(
-            date=_parse_date(request.form.get('date')),
-            reference=(request.form.get('reference') or '').strip() or None,
-            description=(request.form.get('description') or '').strip() or None,
-            created_by=current_user.id,
-            is_approved=is_admin,
-            is_rejected=False,
-            approved_by=current_user.id if is_admin else None,
-            approved_at=datetime.utcnow() if is_admin else None,
+        entry, is_admin = _create_add_money_entry(
+            acct, amount, entry_type, request.form.get('date'),
+            request.form.get('reference'), request.form.get('description'),
+            request.files.get('bill_image'),
         )
-        entry.lines.append(JournalLine(
-            account_id=acct.id,
-            description=(request.form.get('description') or '').strip() or None,
-            entry_type=entry_type,
-            amount=amount,
-        ))
-        db.session.add(entry)
-        db.session.commit()
         verb = 'added to' if entry_type == 'debit' else 'taken out of'
         if is_admin:
             flash(f'PKR {amount:,.0f} {verb} "{acct.name}".', 'success')
@@ -249,6 +283,42 @@ def add_money(account_id):
 
     return render_template('journal/add_money.html', account=acct,
                            today=date.today())
+
+
+@bp.route('/accounts/add-money-quick', methods=['POST'])
+@login_required
+def add_money_quick():
+    """AJAX endpoint for the "Add Money" modal on the Journal Entries list
+    page — same logic as add_money() but takes the account from the posted
+    form (a dropdown in the modal) and replies with JSON instead of a
+    redirect, so the staff member never leaves /journal/entries."""
+    if not _can_view():
+        return jsonify({'success': False, 'message': 'You do not have permission to access the Journal module.'}), 403
+
+    acct = JournalAccount.query.get(request.form.get('account_id', type=int))
+    if not acct:
+        return jsonify({'success': False, 'message': 'Please select a valid account.'})
+
+    amount = _to_float(request.form.get('amount'))
+    if amount <= 0:
+        return jsonify({'success': False, 'message': 'Enter an amount greater than zero.'})
+
+    entry_type = request.form.get('entry_type', 'debit')
+    if entry_type not in ('debit', 'credit'):
+        entry_type = 'debit'
+
+    entry, is_admin = _create_add_money_entry(
+        acct, amount, entry_type, request.form.get('date'),
+        request.form.get('reference'), request.form.get('description'),
+        request.files.get('bill_image'),
+    )
+    verb = 'added to' if entry_type == 'debit' else 'taken out of'
+    if is_admin:
+        message = f'PKR {amount:,.0f} {verb} "{acct.name}".'
+    else:
+        message = f'Entry of PKR {amount:,.0f} {verb} "{acct.name}" submitted for Admin approval.'
+
+    return jsonify({'success': True, 'message': message, 'entry_id': entry.id})
 
 
 # ─── Journal Entries ───────────────────────────────────────────────────────────
@@ -354,7 +424,7 @@ def export_excel():
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-    entries, account_id, date_from, date_to = _filtered_entries(request.args, newest_first=False)
+    entries, account_id, date_from, date_to, category_id = _filtered_entries(request.args, newest_first=False)
     groups = _grouped_by_account(entries, account_id)
 
     wb = Workbook()
@@ -492,7 +562,7 @@ def export_pdf():
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle)
 
-    entries, account_id, date_from, date_to = _filtered_entries(request.args, newest_first=False)
+    entries, account_id, date_from, date_to, category_id = _filtered_entries(request.args, newest_first=False)
     groups = _grouped_by_account(entries, account_id)
 
     styles = getSampleStyleSheet()
@@ -614,6 +684,7 @@ def create_entry():
         descriptions = request.form.getlist('line_description[]')
         types = request.form.getlist('line_type[]')
         amounts = request.form.getlist('line_amount[]')
+        bill_images = request.files.getlist('line_bill_image[]')
 
         is_admin = (getattr(current_user, 'role', '') == 'admin') or getattr(current_user, 'is_admin', False)
         entry = JournalEntry(
@@ -638,6 +709,8 @@ def create_entry():
                 etype = 'debit'
             cat_id = category_ids[i] if i < len(category_ids) else None
             cat_id_int = int(cat_id) if (cat_id and str(cat_id).isdigit()) else None
+            bill_file = bill_images[i] if i < len(bill_images) else None
+            bill_path = _save_line_bill_image(bill_file)
 
             entry.lines.append(JournalLine(
                 account_id=int(acct_id),
@@ -645,6 +718,7 @@ def create_entry():
                 description=(descriptions[i].strip() if i < len(descriptions) and descriptions[i] else None),
                 entry_type=etype,
                 amount=amount,
+                bill_image_path=bill_path,
             ))
             added += 1
 
@@ -688,6 +762,8 @@ def edit_entry(entry_id):
         descriptions = request.form.getlist('line_description[]')
         types = request.form.getlist('line_type[]')
         amounts = request.form.getlist('line_amount[]')
+        bill_images = request.files.getlist('line_bill_image[]')
+        bill_images_existing = request.form.getlist('line_bill_image_existing[]')
 
         entry.date = _parse_date(request.form.get('date'))
         entry.reference = (request.form.get('reference') or '').strip() or None
@@ -707,6 +783,11 @@ def edit_entry(entry_id):
                 etype = 'debit'
             cat_id = category_ids[i] if i < len(category_ids) else None
             cat_id_int = int(cat_id) if (cat_id and str(cat_id).isdigit()) else None
+            bill_file = bill_images[i] if i < len(bill_images) else None
+            bill_path = _save_line_bill_image(bill_file)
+            if not bill_path:
+                # No new upload for this row — keep whatever image it already had.
+                bill_path = bill_images_existing[i].strip() if i < len(bill_images_existing) and bill_images_existing[i] else None
 
             entry.lines.append(JournalLine(
                 account_id=int(acct_id),
@@ -714,6 +795,7 @@ def edit_entry(entry_id):
                 description=(descriptions[i].strip() if i < len(descriptions) and descriptions[i] else None),
                 entry_type=etype,
                 amount=amount,
+                bill_image_path=bill_path,
             ))
             added += 1
 
@@ -799,6 +881,14 @@ def send_entry_to_expense(entry_id):
         expense.reference = entry.reference or f'JE-{entry.id}'
         expense.status = 'confirmed'
         expense.created_by = current_user.id
+
+        # Carry over a bill image from the journal entry's lines so the user
+        # doesn't have to upload it again on the Expense side.
+        bill_image_path = next(
+            (l.bill_image_path for l in entry.lines if l.entry_type == 'credit' and l.bill_image_path),
+            None
+        ) or next((l.bill_image_path for l in entry.lines if l.bill_image_path), None)
+        expense.bill_image_path = bill_image_path
 
         db.session.add(expense)
         db.session.flush()

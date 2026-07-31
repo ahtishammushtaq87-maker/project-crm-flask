@@ -20,7 +20,7 @@
     </div>
     {% endif %}
 
-    <form method="POST">
+    <form method="POST" enctype="multipart/form-data">
         <div class="card shadow-sm mb-3">
             <div class="card-body">
                 <div class="row g-3">
@@ -54,11 +54,12 @@
                 <table class="table mb-0 align-middle" id="linesTable">
                     <thead class="table-light">
                         <tr>
-                            <th style="width: 22%;">Account</th>
-                            <th style="width: 24%;">Expense Category</th>
-                            <th style="width: 26%;">Expense / Details</th>
-                            <th style="width: 12%;">Type</th>
-                            <th style="width: 12%;">Amount</th>
+                            <th style="width: 18%;">Account</th>
+                            <th style="width: 18%;">Expense Category</th>
+                            <th style="width: 20%;">Expense / Details</th>
+                            <th style="width: 9%;">Type</th>
+                            <th style="width: 9%;">Amount</th>
+                            <th style="width: 22%;">Bill Image</th>
                             <th style="width: 4%;"></th>
                         </tr>
                     </thead>
@@ -90,6 +91,22 @@
                                     </select>
                                 </td>
                                 <td><input type="number" step="0.01" min="0" name="line_amount[]" class="form-control form-control-sm line-amount" value="{{ l.amount or '' }}" placeholder="0"></td>
+                                <td class="bill-image-cell">
+                                    <div class="d-flex align-items-center gap-1 flex-wrap">
+                                        <button type="button" class="btn btn-sm btn-outline-info line-cam-btn" title="Capture from camera">
+                                            <i class="fas fa-camera"></i>
+                                        </button>
+                                        <input type="file" name="line_bill_image[]" class="form-control form-control-sm line-bill-input" accept="image/*">
+                                    </div>
+                                    <input type="hidden" name="line_bill_image_existing[]" class="line-bill-existing" value="{{ l.bill_image_path or '' }}">
+                                    <div class="line-bill-preview mt-1">
+                                        {% if l.bill_image_path %}
+                                        <a href="{{ url_for('static', filename=l.bill_image_path.replace('app/static/', '')) }}" target="_blank">
+                                            <img src="{{ url_for('static', filename=l.bill_image_path.replace('app/static/', '')) }}" class="img-thumbnail line-bill-thumb" alt="Bill image">
+                                        </a>
+                                        {% endif %}
+                                    </div>
+                                </td>
                                 <td class="text-center">
                                     <button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Remove row">
                                         <i class="fas fa-times"></i>
@@ -106,6 +123,7 @@
                                 <div>Debit: <span id="totalDebit" class="fw-bold text-success">0</span></div>
                                 <div>Credit: <span id="totalCredit" class="fw-bold text-danger">0</span></div>
                             </td>
+                            <td></td>
                             <td></td>
                         </tr>
                     </tfoot>
@@ -148,6 +166,16 @@
             </select>
         </td>
         <td><input type="number" step="0.01" min="0" name="line_amount[]" class="form-control form-control-sm line-amount" placeholder="0"></td>
+        <td class="bill-image-cell">
+            <div class="d-flex align-items-center gap-1 flex-wrap">
+                <button type="button" class="btn btn-sm btn-outline-info line-cam-btn" title="Capture from camera">
+                    <i class="fas fa-camera"></i>
+                </button>
+                <input type="file" name="line_bill_image[]" class="form-control form-control-sm line-bill-input" accept="image/*">
+            </div>
+            <input type="hidden" name="line_bill_image_existing[]" class="line-bill-existing" value="">
+            <div class="line-bill-preview mt-1"></div>
+        </td>
         <td class="text-center">
             <button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Remove row">
                 <i class="fas fa-times"></i>
@@ -155,6 +183,51 @@
         </td>
     </tr>
 </template>
+
+<!-- Shared Camera Capture Modal for line Bill Images -->
+<div class="modal fade" id="cameraModal" tabindex="-1" aria-labelledby="cameraModalLabel" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="cameraModalLabel">Capture Bill Image from Camera</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="stopCameraBtn1"></button>
+            </div>
+            <div class="modal-body text-center">
+                <div id="cameraStreamContainer">
+                    <video id="webcamVideo" autoplay playsinline class="w-100 rounded border bg-dark" style="max-height: 400px; transform: scaleX(-1);"></video>
+                    <canvas id="captureCanvas" style="display:none;"></canvas>
+                    <div class="mt-3">
+                        <button type="button" class="btn btn-primary btn-lg" id="snapBtn">
+                            <i class="fas fa-camera"></i> Take Photo
+                        </button>
+                    </div>
+                </div>
+                <div id="cameraResultContainer" style="display:none;">
+                    <img id="capturePreview" class="img-fluid rounded border mb-3">
+                    <div class="d-flex justify-content-center gap-2">
+                        <button type="button" class="btn btn-warning" id="retakeBtn">
+                            <i class="fas fa-redo"></i> Retake
+                        </button>
+                        <button type="button" class="btn btn-success" id="confirmPhotoBtn">
+                            <i class="fas fa-check"></i> Use Photo
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="stopCameraBtn2">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.bill-image-cell .line-bill-input { min-width: 110px; max-width: 160px; }
+.line-bill-thumb { max-width: 44px; max-height: 44px; object-fit: cover; cursor: zoom-in; }
+@media (max-width: 767.98px) {
+    .bill-image-cell .line-bill-input { max-width: 130px; }
+}
+</style>
 {% endblock %}
 
 {% block extra_js %}
@@ -210,7 +283,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 btn.closest('.line-row').remove();
             } else {
                 const row = btn.closest('.line-row');
-                row.querySelectorAll('input').forEach(i => i.value = '');
+                row.querySelectorAll('input[type="text"], input[type="number"]').forEach(i => i.value = '');
+                row.querySelectorAll('input[type="file"]').forEach(i => i.value = '');
+                const existingField = row.querySelector('.line-bill-existing');
+                if (existingField) existingField.value = '';
+                const preview = row.querySelector('.line-bill-preview');
+                if (preview) preview.innerHTML = '';
                 if (typeof $ !== 'undefined' && $.fn.select2) {
                     $(row).find('select').val(null).trigger('change');
                 }
@@ -229,6 +307,129 @@ document.addEventListener('DOMContentLoaded', function () {
     } else {
         addRow(); addRow();
     }
+
+    // ── Per-row Bill Image capture (camera + choose file) ──────────────────
+    const webcamVideo = document.getElementById('webcamVideo');
+    const captureCanvas = document.getElementById('captureCanvas');
+    const capturePreview = document.getElementById('capturePreview');
+    const cameraStreamContainer = document.getElementById('cameraStreamContainer');
+    const cameraResultContainer = document.getElementById('cameraResultContainer');
+    let videoStream = null;
+    let cameraModal = null;
+    let activeRow = null;
+
+    async function startWebcam() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert("Your browser or connection (non-HTTPS) does not support camera access.");
+            return;
+        }
+        try {
+            videoStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+            });
+            webcamVideo.srcObject = videoStream;
+            cameraStreamContainer.style.display = 'block';
+            cameraResultContainer.style.display = 'none';
+        } catch (err) {
+            alert("Could not access camera: " + err.message);
+            if (cameraModal) cameraModal.hide();
+        }
+    }
+
+    function stopWebcam() {
+        if (videoStream) {
+            videoStream.getTracks().forEach(track => track.stop());
+            videoStream = null;
+        }
+    }
+
+    function getCameraModal() {
+        if (!cameraModal) {
+            const modalEl = document.getElementById('cameraModal');
+            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                cameraModal = new bootstrap.Modal(modalEl);
+            } else if (window.bootstrap && window.bootstrap.Modal) {
+                cameraModal = new window.bootstrap.Modal(modalEl);
+            } else {
+                cameraModal = {
+                    show: function () { $(modalEl).modal('show'); },
+                    hide: function () { $(modalEl).modal('hide'); }
+                };
+            }
+        }
+        return cameraModal;
+    }
+
+    function updateRowPreview(row, file) {
+        const preview = row.querySelector('.line-bill-preview');
+        if (!preview) return;
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                preview.innerHTML = `<img src="${e.target.result}" class="img-thumbnail line-bill-thumb" alt="Bill image"><div class="text-muted" style="font-size:0.7rem;">${file.name}</div>`;
+            };
+            reader.readAsDataURL(file);
+        } else {
+            preview.innerHTML = '';
+        }
+    }
+
+    body.addEventListener('click', function (e) {
+        const camBtn = e.target.closest('.line-cam-btn');
+        if (camBtn) {
+            activeRow = camBtn.closest('.line-row');
+            getCameraModal().show();
+            startWebcam();
+        }
+    });
+
+    body.addEventListener('change', function (e) {
+        if (e.target.classList && e.target.classList.contains('line-bill-input')) {
+            const row = e.target.closest('.line-row');
+            updateRowPreview(row, e.target.files[0]);
+        }
+    });
+
+    const stopBtn1 = document.getElementById('stopCameraBtn1');
+    const stopBtn2 = document.getElementById('stopCameraBtn2');
+    if (stopBtn1) stopBtn1.addEventListener('click', stopWebcam);
+    if (stopBtn2) stopBtn2.addEventListener('click', stopWebcam);
+
+    const snapBtn = document.getElementById('snapBtn');
+    if (snapBtn) snapBtn.addEventListener('click', function () {
+        const context = captureCanvas.getContext('2d');
+        captureCanvas.width = webcamVideo.videoWidth;
+        captureCanvas.height = webcamVideo.videoHeight;
+        context.translate(captureCanvas.width, 0);
+        context.scale(-1, 1);
+        context.drawImage(webcamVideo, 0, 0, captureCanvas.width, captureCanvas.height);
+        capturePreview.src = captureCanvas.toDataURL('image/jpeg');
+        cameraStreamContainer.style.display = 'none';
+        cameraResultContainer.style.display = 'block';
+    });
+
+    const retakeBtn = document.getElementById('retakeBtn');
+    if (retakeBtn) retakeBtn.addEventListener('click', function () {
+        cameraStreamContainer.style.display = 'block';
+        cameraResultContainer.style.display = 'none';
+    });
+
+    const confirmPhotoBtn = document.getElementById('confirmPhotoBtn');
+    if (confirmPhotoBtn) confirmPhotoBtn.addEventListener('click', function () {
+        captureCanvas.toBlob((blob) => {
+            const fileName = `captured_bill_${Date.now()}.jpg`;
+            const file = new File([blob], fileName, { type: 'image/jpeg' });
+            if (activeRow) {
+                const input = activeRow.querySelector('.line-bill-input');
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                input.files = dataTransfer.files;
+                updateRowPreview(activeRow, file);
+            }
+            stopWebcam();
+            getCameraModal().hide();
+        }, 'image/jpeg', 0.9);
+    });
 });
 </script>
 {% endblock %}

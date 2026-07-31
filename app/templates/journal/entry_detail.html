@@ -54,6 +54,7 @@
                         <th>Details</th>
                         <th class="text-end">Debit</th>
                         <th class="text-end">Credit</th>
+                        <th class="text-center">Bill</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -73,6 +74,16 @@
                         <td>{{ l.description or '—' }}</td>
                         <td class="text-end text-success">{{ "{:,.0f}".format(l.amount) if l.entry_type == 'debit' else '' }}</td>
                         <td class="text-end text-danger">{{ "{:,.0f}".format(l.amount) if l.entry_type == 'credit' else '' }}</td>
+                        <td class="text-center">
+                            {% if l.bill_image_path %}
+                            <a href="{{ url_for('static', filename=l.bill_image_path.replace('app/static/', '')) }}" target="_blank" title="View bill image">
+                                <img src="{{ url_for('static', filename=l.bill_image_path.replace('app/static/', '')) }}"
+                                     class="img-thumbnail" style="max-width:40px; max-height:40px; object-fit:cover;" alt="Bill">
+                            </a>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -81,10 +92,11 @@
                         <th colspan="3" class="text-end">Totals</th>
                         <th class="text-end text-success">{{ "{:,.0f}".format(entry.total_debit) }}</th>
                         <th class="text-end text-danger">{{ "{:,.0f}".format(entry.total_credit) }}</th>
+                        <th></th>
                     </tr>
                     {% if not entry.is_balanced %}
                     <tr>
-                        <td colspan="5" class="text-end small text-warning">
+                        <td colspan="6" class="text-end small text-warning">
                             <i class="fas fa-exclamation-triangle me-1"></i>Debit and credit totals differ by
                             {{ "{:,.0f}".format((entry.total_debit - entry.total_credit)|abs) }}.
                         </td>
