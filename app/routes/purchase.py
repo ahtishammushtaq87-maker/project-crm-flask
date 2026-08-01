@@ -64,9 +64,11 @@ def bills():
             pass
 
     if search:
+        search_filter = f'%{search}%'
         query = query.join(Vendor).filter(
-            (PurchaseBill.bill_number.ilike(f'%{search}%')) |
-            (Vendor.name.ilike(f'%{search}%'))
+            (PurchaseBill.bill_number.ilike(search_filter)) |
+            (Vendor.name.ilike(search_filter)) |
+            (PurchaseBill.notes.ilike(search_filter))
         )
 
     query = apply_saved_filter_to_query(query, 'purchase', request.args)

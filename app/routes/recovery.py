@@ -1533,7 +1533,7 @@ def send_reminder(task_id):
     return redirect(url_for('recovery.task_detail', task_id=task_id))
 
 
-# ─── Recovery Reminder Broadcasts (admin-only, site-wide) ─────────────────────
+# ─── Recovery Reminder Broadcasts (admins: site-wide; salesmen: own only) ─────
 
 def _parse_client_time():
     """Match the same browser-local time convention used by users.poll_tasks,
@@ -1578,8 +1578,18 @@ def _still_in_recovery(t):
 @bp.route('/broadcasts/poll')
 @login_required
 def poll_broadcasts():
-    if not current_user.is_admin:
-        return jsonify([])
+    # Admins see every salesman's broadcasts (oversight). A non-admin only
+    # sees broadcasts for the salesman(s) their own login is linked to in the
+    # Salesman module — never anyone else's.
+    if current_user.is_admin:
+        my_salesman_ids = None
+    else:
+        my_salesman_ids = {s.id for s in current_user.linked_salesmen}
+        if not my_salesman_ids:
+            return jsonify([])
+
+    def _visible(t):
+        return my_salesman_ids is None or (t.recovery_task and t.recovery_task.salesman_id in my_salesman_ids)
 
     now = _parse_client_time()
     messages = []
@@ -1602,6 +1612,8 @@ def poll_broadcasts():
             t.is_escalation_broadcast_shown = True
             changed = True
             continue
+        if not _visible(t):
+            continue
         anchor = t.created_at or t.reminder_at
         if anchor and datetime.utcnow() >= anchor + timedelta(hours=8):
             inv = t.recovery_task.invoice if t.recovery_task else None
@@ -1623,6 +1635,8 @@ def poll_broadcasts():
             t.is_completion_broadcast_shown = True
             changed = True
             continue
+        if not _visible(t):
+            continue
         inv = t.recovery_task.invoice if t.recovery_task else None
         customer_name = inv.customer.name if inv and inv.customer else 'the customer'
         messages.append({
@@ -1640,11 +1654,14 @@ def poll_broadcasts():
 @bp.route('/broadcasts/dismiss/<int:task_id>', methods=['POST'])
 @login_required
 def dismiss_broadcast(task_id):
+    task = Task.query.get_or_404(task_id)
+
     if not current_user.is_admin:
-        return jsonify({'success': False, 'message': 'Permission denied'}), 403
+        my_salesman_ids = {s.id for s in current_user.linked_salesmen}
+        if not task.recovery_task or task.recovery_task.salesman_id not in my_salesman_ids:
+            return jsonify({'success': False, 'message': 'Permission denied'}), 403
 
     kind = request.form.get('kind')
-    task = Task.query.get_or_404(task_id)
 
     if kind == 'escalation':
         task.is_escalation_broadcast_shown = True

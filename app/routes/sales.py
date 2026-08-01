@@ -3160,6 +3160,7 @@ def edit_salesman(id):
         form.user_id.data = salesman.user_id or 0
 
     if form.validate_on_submit():
+        old_user_id = salesman.user_id
         salesman.name = form.name.data
         salesman.email = form.email.data
         salesman.phone = form.phone.data
@@ -3168,6 +3169,20 @@ def edit_salesman(id):
         salesman.group_id = form.group_id.data if form.group_id.data != 0 else None
         salesman.user_id = form.user_id.data if form.user_id.data and form.user_id.data != 0 else None
         salesman.is_active = form.is_active.data
+
+        if salesman.user_id != old_user_id:
+            # The login user this salesman's Recovery reminders pop up for just
+            # changed — cancel reminders still addressed to the old user and
+            # raise fresh ones for the new one, so open popups don't keep
+            # firing for whoever used to be linked here.
+            from app.services.recovery_automation import _cancel_reminders, _ensure_reminder
+            CLOSED_RECOVERY = ('CLOSED_PAID', 'CLOSED_WRITTEN_OFF')
+            for rtask in salesman.recovery_tasks:
+                if rtask.recovery_status in CLOSED_RECOVERY:
+                    continue
+                _cancel_reminders(rtask)
+                _ensure_reminder(rtask)
+
         db.session.commit()
         log_activity('Sales', f'Updated Salesman: {salesman.name}', f'ID: {salesman.id}')
         flash('Salesman updated successfully!', 'success')

@@ -23,6 +23,25 @@
                 placeholder: placeholder
             });
         });
+
+        // Live search: auto-submit the filter form shortly after typing stops,
+        // so the search box filters as you type instead of needing the Filter button.
+        var searchInput = document.getElementById('billsSearchInput');
+        if (searchInput) {
+            // Put the cursor at the end instead of the browser's default of
+            // the start, so typing continues naturally after each auto-submit.
+            var val = searchInput.value;
+            searchInput.value = '';
+            searchInput.value = val;
+
+            var searchTimeout;
+            searchInput.addEventListener('input', function () {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(function () {
+                    searchInput.form.submit();
+                }, 500);
+            });
+        }
     });
 </script>
 {% endblock %}
@@ -200,6 +219,15 @@
     <div class="card shadow mb-4">
         <div class="card-body">
             <form method="GET" action="{{ url_for('purchase.bills') }}" class="row g-3 px-2 align-items-end">
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">General Search</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0"><i class="fas fa-search text-muted"></i></span>
+                        <input type="text" name="search" id="billsSearchInput" class="form-control border-start-0"
+                            placeholder="Bill #, vendor, notes..." value="{{ search if search is defined else '' }}"
+                            autofocus autocomplete="off">
+                    </div>
+                </div>
                 <div class="col-12 col-md-3">
                     <label class="form-label small fw-bold text-muted mb-1">Vendor</label>
                     <select name="vendor_id" class="form-select searchable-select"

@@ -1913,7 +1913,7 @@
                     initTaskPolling();
                 }
 
-                // Initialize Recovery Reminder Broadcast Polling (admin only)
+                // Initialize Recovery Reminder Broadcast Polling (admins + linked salesmen)
                 if (typeof initRecoveryBroadcastPolling === 'function') {
                     initRecoveryBroadcastPolling();
                 }
@@ -2139,14 +2139,15 @@
                 setInterval(pollTasks, 30000);
             }
 
-            // Recovery Reminder Broadcast Polling (admin-only site-wide notices:
-            // "could not call" escalations after 8h, and "task complete" successes).
-            // Rendered as a NON-BLOCKING top bar — admins can keep working with it
-            // open, dismiss single items, or close the whole bar. Only invoices that
-            // are still live in the Recovery module are ever returned by the server.
+            // Recovery Reminder Broadcast Polling ("could not call" escalations
+            // after 8h, and "task complete" successes). Admins see every
+            // salesman's broadcasts; a salesman-linked login only sees their own.
+            // Rendered as a NON-BLOCKING top bar — dismiss single items, or close
+            // the whole bar. Only invoices that are still live in the Recovery
+            // module are ever returned by the server.
             function initRecoveryBroadcastPolling() {
                 const barEl = document.getElementById('recoveryBroadcastBar');
-                if (!barEl) return; // not an admin — nothing to poll
+                if (!barEl) return; // not an admin or linked salesman — nothing to poll
 
                 const listEl = document.getElementById('recoveryBroadcastList');
                 const countEl = document.getElementById('recoveryBroadcastCount');
@@ -2828,8 +2829,8 @@
             </div>
         </div>
 
-        {% if current_user.is_authenticated and current_user.is_admin %}
-        <!-- Recovery Reminder Broadcast Bar (admin-only, non-blocking top notification) -->
+        {% if current_user.is_authenticated and (current_user.is_admin or current_user.linked_salesmen) %}
+        <!-- Recovery Reminder Broadcast Bar (admins: all salesmen; salesman logins: own only) -->
         <div id="recoveryBroadcastBar" class="recovery-broadcast-bar" style="display:none;">
             <div class="recovery-broadcast-inner">
                 <div class="recovery-broadcast-head">
