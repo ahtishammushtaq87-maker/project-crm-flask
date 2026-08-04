@@ -945,7 +945,11 @@ def get_attendance_salary(staff_id, month, year):
     end_date = date(year, month, last_day)
     
     earnings = staff.get_attendance_earnings(start_date, end_date)
+    overtime_hours = staff.get_overtime_hours(start_date, end_date)
+    overtime_pay = staff.get_overtime_amount(start_date, end_date)
     return jsonify({
         'attendance_salary': earnings,
-        'base_salary': staff.monthly_salary
+        'base_salary': staff.monthly_salary,
+        'overtime_hours': overtime_hours,
+        'overtime_pay': overtime_pay
     })

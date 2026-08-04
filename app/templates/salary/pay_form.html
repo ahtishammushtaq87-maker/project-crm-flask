@@ -72,6 +72,7 @@
                                     <label
                                         class="form-label fw-bold small text-muted text-uppercase text-success">Bonus</label>
                                     {{ form.bonus(class="form-control text-success", id="bonus") }}
+                                    <div class="form-text" id="bonus_help" style="display:none;"></div>
                                 </div>
                                 <div class="col-md-6" id="attendance_salary_container" style="display:none;">
                                     <label
@@ -79,6 +80,7 @@
                                         Salv. (earned)</label>
                                     <input type="text" class="form-control text-primary fw-bold" id="attendance_salary"
                                         readonly value="0.00">
+                                    <div class="form-text" id="overtime_help" style="display:none;"></div>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label fw-bold small text-muted text-uppercase text-danger">Other
@@ -175,14 +177,31 @@
                 $.get(`/salary/api/get_attendance_salary/${staffId}/${month}/${year}`, function (data) {
                     $('#attendance_salary_container').fadeIn();
                     const att_sal = data.attendance_salary || 0;
+                    const ot_hours = data.overtime_hours || 0;
+                    const ot_pay = data.overtime_pay || 0;
                     $('#attendance_salary').val(att_sal.toFixed(2));
 
                     const base = parseFloat($('#base_salary').val()) || 0;
                     if (att_sal < base) {
+                        // Worked less than the full month (absences, etc.) — deduct the shortfall.
                         const diff = base - att_sal;
                         $('#other_deductions').val(diff.toFixed(2));
+                        $('#bonus').val('0.00');
+                        $('#bonus_help').text('No extra attendance earnings this month.').show();
                     } else {
+                        // Earned at least the full base salary from attendance (e.g. overtime) —
+                        // credit the surplus as Bonus so it actually reaches Net Salary, instead
+                        // of being silently discarded. Still editable if you want to add to it.
+                        const surplus = att_sal - base;
                         $('#other_deductions').val(0);
+                        $('#bonus').val(surplus.toFixed(2));
+                        $('#bonus_help').text('Auto-filled: PKR ' + surplus.toFixed(2) + ' earned above base salary this month (from attendance/overtime). Adjust if adding a separate discretionary bonus.').show();
+                    }
+
+                    if (ot_hours > 0) {
+                        $('#overtime_help').text('Includes ' + ot_hours.toFixed(1) + 'h overtime = PKR ' + ot_pay.toFixed(2) + ' (at regular hourly rate).').show();
+                    } else {
+                        $('#overtime_help').hide();
                     }
 
                     // Auto-fill Advance Logic
