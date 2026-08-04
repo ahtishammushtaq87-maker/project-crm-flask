@@ -254,6 +254,8 @@
                     <th>Att. Salary</th>
                     <th>Absents</th>
                     <th>Total Hours</th>
+                    <th>Overtime Hours</th>
+                    <th>Overtime</th>
                     <th>J.A. Initial</th>
                     <th>J.A. Remain</th>
                     <th>J.A. Paid</th>
@@ -298,6 +300,27 @@
                         }}</td>
                     <td class="text-info fw-bold text-center">{{ "%.1f" % staff.get_total_hours(start_date_obj,
                         end_date_obj) }}h</td>
+                    {% set ot_records = staff.get_overtime_records(start_date_obj, end_date_obj) %}
+                    {% set ot_tooltip %}{% for r in ot_records %}{{ r.date.strftime('%d %b %Y') }}: {{ '%.1f' % ((r.overtime_hours or 0) + ((r.overtime_minutes or 0) / 60.0)) }}h = PKR {{ '%.2f' % (((r.overtime_hours or 0) + ((r.overtime_minutes or 0) / 60.0)) * (r.hourly_rate or 0)) }}
+{% endfor %}{% endset %}
+                    <td class="text-center">
+                        {% if ot_records %}
+                        <span class="fw-bold text-info" style="cursor: default;" title="{{ ot_tooltip }}">
+                            {{ "%.1f" % staff.get_overtime_hours(start_date_obj, end_date_obj) }}h
+                        </span>
+                        {% else %}
+                        <span class="text-muted small">&mdash;</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if ot_records %}
+                        <span class="fw-bold text-warning" style="cursor: default;" title="{{ ot_tooltip }}">
+                            PKR {{ "%.2f" % staff.get_overtime_amount(start_date_obj, end_date_obj) }}
+                        </span>
+                    {% else %}
+                        <span class="text-muted small">&mdash;</span>
+                    {% endif %}
+                    </td>
                     <td>{{ "%.2f" % (staff.joining_advance or 0) }}</td>
                     <td class="text-info">{{ "%.2f" % (staff.remaining_joining_advance or 0) }}</td>
                     <td class="text-success">{{ "%.2f" % staff.get_joining_adv_paid(start_date_obj, end_date_obj) }}

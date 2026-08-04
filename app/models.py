@@ -2100,6 +2100,37 @@ class Staff(db.Model):
         total_m = sum(r.minutes_worked for r in records if r.minutes_worked)
         return total_h + (total_m / 60.0)
 
+    def get_overtime_records(self, start_date=None, end_date=None):
+        """Attendance records with logged overtime within a date range, oldest first.
+        Used to show a per-date overtime breakdown alongside the total amount."""
+        records = self.attendance_records
+        if start_date:
+            records = [r for r in records if r.date >= start_date]
+        if end_date:
+            records = [r for r in records if r.date <= end_date]
+        return sorted(
+            (r for r in records if (r.overtime_hours or 0) > 0 or (r.overtime_minutes or 0) > 0),
+            key=lambda r: r.date
+        )
+
+    def get_overtime_hours(self, start_date=None, end_date=None):
+        """Total overtime hours (decimal) within a date range, straight from
+        the attendance records' own overtime_hours/overtime_minutes fields."""
+        total = 0.0
+        for r in self.get_overtime_records(start_date, end_date):
+            total += (r.overtime_hours or 0) + ((r.overtime_minutes or 0) / 60.0)
+        return total
+
+    def get_overtime_amount(self, start_date=None, end_date=None):
+        """Total overtime pay within a date range, at each day's own recorded
+        hourly rate (reads the stored rate directly rather than recalculating
+        it, so this stays a pure read with no side effects on Staff/Attendance)."""
+        total = 0.0
+        for r in self.get_overtime_records(start_date, end_date):
+            hours = (r.overtime_hours or 0) + ((r.overtime_minutes or 0) / 60.0)
+            total += hours * (r.hourly_rate or 0)
+        return total
+
     @property
     def current_month_hours(self):
         """Calculate total hours worked in the current calendar month"""
