@@ -1,0 +1,235 @@
+{#
+  Shared sidebar navigation.
+  Included by BOTH the desktop sidebar and the mobile off-canvas sidebar in base.html
+  so the two can never drift apart.
+
+  Caller must set `nav_ns` (a short unique namespace, e.g. 'd' or 'm') before including,
+  because Bootstrap collapse targets must be unique per rendered instance.
+
+  Permission gates are intentionally identical to the previous menu — this file
+  re-groups the links, it does not grant anyone new access.
+#}
+{% set u = current_user %}
+{% set adm = u.is_admin %}
+
+{% set show_sales = adm or u.can_view_sales or u.can_view_returns or u.can_view_recovery or u.can_view_customers or u.can_view_customer_groups or u.can_view_salesmen %}
+{% set show_purchase = adm or u.can_view_purchases or u.can_view_vendors %}
+{% set show_inventory = adm or u.can_view_inventory or u.can_view_warehouse or u.can_view_categories %}
+{% set show_mfg = adm or u.can_view_manufacturing or u.can_view_production %}
+{% set show_finance = adm or u.can_view_receiving or u.can_view_delivering or u.can_view_expenses or u.can_view_accounting or u.can_view_settings %}
+{% set show_hr = adm or u.can_view_salary or u.can_view_attendance %}
+{% set show_reports = adm or u.can_view_reports %}
+{% set show_settings = adm or u.can_view_settings or u.can_view_users or u.can_view_tasks or u.can_view_media or u.can_view_activity_logs %}
+
+<nav class="nav flex-column sidebar-nav">
+
+    {% if adm or u.can_view_dashboard %}
+    <a class="nav-link" href="{{ url_for('dashboard.index') }}">
+        <i class="fas fa-tachometer-alt nav-ico"></i> <span>Dashboard</span>
+    </a>
+    {% endif %}
+
+    {# ── Sales ─────────────────────────────────────────────── #}
+    {% if show_sales %}
+    <a class="nav-link nav-group-toggle collapsed" data-bs-toggle="collapse" href="#{{ nav_ns }}NavSales" role="button"
+        aria-expanded="false" aria-controls="{{ nav_ns }}NavSales">
+        <i class="fas fa-shopping-cart nav-ico"></i> <span>Sales</span>
+        <i class="fas fa-chevron-down nav-caret"></i>
+    </a>
+    <div class="collapse" id="{{ nav_ns }}NavSales">
+        {% if adm or u.can_view_sales %}
+        <a class="nav-link" href="{{ url_for('sales.invoices') }}">Sales Invoices</a>
+        {% endif %}
+        {% if adm or u.can_view_returns %}
+        <a class="nav-link" href="{{ url_for('returns.return_list') }}">Sales Returns</a>
+        {% endif %}
+        {% if adm or u.can_view_recovery %}
+        <a class="nav-link" href="{{ url_for('recovery.dashboard') }}">Sales Recovery</a>
+        {% endif %}
+        {% if adm or u.can_view_customers %}
+        <a class="nav-link" href="{{ url_for('sales.customers') }}">Customers</a>
+        {% endif %}
+        {% if adm or u.can_view_customer_groups %}
+        <a class="nav-link" href="{{ url_for('sales.customer_groups_list') }}">Customer Groups</a>
+        {% endif %}
+        {% if adm or u.can_view_salesmen %}
+        <a class="nav-link" href="{{ url_for('sales.salesmen_list') }}">Salesmen</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Purchase ──────────────────────────────────────────── #}
+    {% if show_purchase %}
+    <a class="nav-link nav-group-toggle collapsed" data-bs-toggle="collapse" href="#{{ nav_ns }}NavPurchase"
+        role="button" aria-expanded="false" aria-controls="{{ nav_ns }}NavPurchase">
+        <i class="fas fa-truck nav-ico"></i> <span>Purchase</span>
+        <i class="fas fa-chevron-down nav-caret"></i>
+    </a>
+    <div class="collapse" id="{{ nav_ns }}NavPurchase">
+        {% if adm or u.can_view_purchases %}
+        <a class="nav-link" href="{{ url_for('purchase.bills') }}">Purchase Bills</a>
+        <a class="nav-link" href="{{ url_for('purchase.purchase_return_list') }}">Purchase Returns</a>
+        {% endif %}
+        {% if adm or u.can_view_vendors %}
+        <a class="nav-link" href="{{ url_for('purchase.vendors') }}">Vendors</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Inventory ─────────────────────────────────────────── #}
+    {% if show_inventory %}
+    <a class="nav-link nav-group-toggle collapsed" data-bs-toggle="collapse" href="#{{ nav_ns }}NavInventory"
+        role="button" aria-expanded="false" aria-controls="{{ nav_ns }}NavInventory">
+        <i class="fas fa-boxes nav-ico"></i> <span>Inventory</span>
+        <i class="fas fa-chevron-down nav-caret"></i>
+    </a>
+    <div class="collapse" id="{{ nav_ns }}NavInventory">
+        {% if adm or u.can_view_inventory %}
+        <a class="nav-link" href="{{ url_for('inventory.products') }}">Items</a>
+        {% endif %}
+        {% if adm or u.can_view_warehouse %}
+        <a class="nav-link" href="{{ url_for('warehouse.warehouses') }}">Warehouses</a>
+        {% endif %}
+        {% if adm or u.can_view_categories %}
+        <a class="nav-link" href="{{ url_for('categories.categories') }}">Product Categories</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Manufacturing ─────────────────────────────────────── #}
+    {% if show_mfg %}
+    <a class="nav-link nav-group-toggle collapsed" data-bs-toggle="collapse" href="#{{ nav_ns }}NavMfg" role="button"
+        aria-expanded="false" aria-controls="{{ nav_ns }}NavMfg">
+        <i class="fas fa-industry nav-ico"></i> <span>Manufacturing</span>
+        <i class="fas fa-chevron-down nav-caret"></i>
+    </a>
+    <div class="collapse" id="{{ nav_ns }}NavMfg">
+        {% if adm or u.can_view_manufacturing %}
+        <a class="nav-link" href="{{ url_for('manufacturing.orders') }}">Manufacturing Orders</a>
+        <a class="nav-link" href="{{ url_for('manufacturing.boms') }}">BOM</a>
+        {% endif %}
+        {% if adm or u.can_view_production %}
+        <a class="nav-link" href="{{ url_for('production.index') }}">Target Tracker</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Product Development ───────────────────────────────── #}
+    {% if adm or u.can_view_product_dev %}
+    <a class="nav-link" href="{{ url_for('product_development.index') }}">
+        <i class="fas fa-flask nav-ico"></i> <span>Product Development</span>
+    </a>
+    {% endif %}
+
+    {# ── Finance ───────────────────────────────────────────── #}
+    {% if show_finance %}
+    <a class="nav-link nav-group-toggle collapsed" data-bs-toggle="collapse" href="#{{ nav_ns }}NavFinance"
+        role="button" aria-expanded="false" aria-controls="{{ nav_ns }}NavFinance">
+        <i class="fas fa-coins nav-ico"></i> <span>Finance</span>
+        <i class="fas fa-chevron-down nav-caret"></i>
+    </a>
+    <div class="collapse" id="{{ nav_ns }}NavFinance">
+        {% if adm or u.can_view_receiving or u.can_view_delivering %}
+        <a class="nav-link nav-group-toggle collapsed" data-bs-toggle="collapse" href="#{{ nav_ns }}NavVouchers"
+            role="button" aria-expanded="false" aria-controls="{{ nav_ns }}NavVouchers">
+            <span>Vouchers</span>
+            <i class="fas fa-chevron-down nav-caret"></i>
+        </a>
+        <div class="collapse" id="{{ nav_ns }}NavVouchers">
+            {% if adm or u.can_view_receiving %}
+            <a class="nav-link" href="{{ url_for('tools.receiving_list') }}">Receiving Vouchers</a>
+            {% endif %}
+            {% if adm or u.can_view_delivering %}
+            <a class="nav-link" href="{{ url_for('tools.delivering_list') }}">Delivery Vouchers</a>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% if adm or u.can_view_expenses %}
+        <a class="nav-link" href="{{ url_for('accounting.expenses') }}">Expenses</a>
+        {% endif %}
+        {% if adm or u.can_view_settings %}
+        <a class="nav-link" href="{{ url_for('accounting.expense_categories') }}">Expense Categories</a>
+        <a class="nav-link" href="{{ url_for('accounting.payment_methods') }}">Payment Methods</a>
+        {% endif %}
+        {% if adm or u.can_view_accounting %}
+        <a class="nav-link" href="{{ url_for('journal.entries') }}">Journal Entry</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── HR / Payroll ──────────────────────────────────────── #}
+    {% if show_hr %}
+    <a class="nav-link nav-group-toggle collapsed" data-bs-toggle="collapse" href="#{{ nav_ns }}NavHr" role="button"
+        aria-expanded="false" aria-controls="{{ nav_ns }}NavHr">
+        <i class="fas fa-user-tie nav-ico"></i> <span>HR / Payroll</span>
+        <i class="fas fa-chevron-down nav-caret"></i>
+    </a>
+    <div class="collapse" id="{{ nav_ns }}NavHr">
+        {% if adm or u.can_view_salary %}
+        <a class="nav-link" href="{{ url_for('salary.staff_list') }}">Salary Module</a>
+        {% endif %}
+        {% if adm or u.can_view_attendance %}
+        <a class="nav-link" href="{{ url_for('attendance.index') }}">Attendance &amp; Time Tracking</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Reports ───────────────────────────────────────────── #}
+    {% if show_reports %}
+    <a class="nav-link nav-group-toggle collapsed" data-bs-toggle="collapse" href="#{{ nav_ns }}NavReports"
+        role="button" aria-expanded="false" aria-controls="{{ nav_ns }}NavReports">
+        <i class="fas fa-chart-bar nav-ico"></i> <span>Reports</span>
+        <i class="fas fa-chevron-down nav-caret"></i>
+    </a>
+    <div class="collapse" id="{{ nav_ns }}NavReports">
+        {% if adm or u.can_view_profit_loss %}
+        <a class="nav-link fw-bold text-warning" href="{{ url_for('reports.profit_loss_report') }}">Profit &amp; Loss</a>
+        {% endif %}
+        <a class="nav-link" href="{{ url_for('reports.sales_report') }}">Sales Report</a>
+        <a class="nav-link" href="{{ url_for('reports.purchase_report') }}">Purchase Report</a>
+        <a class="nav-link" href="{{ url_for('reports.inventory_report') }}">Inventory Report</a>
+        <a class="nav-link" href="{{ url_for('reports.inventory_details_report') }}">Warehouses Details</a>
+        <a class="nav-link" href="{{ url_for('reports.manufacturing_report') }}">Manufacturing Report</a>
+        <a class="nav-link" href="{{ url_for('reports.bom_report') }}">BOM Report</a>
+        <a class="nav-link" href="{{ url_for('reports.cogs_report') }}">COGS Report</a>
+        <a class="nav-link" href="{{ url_for('reports.vendor_report') }}">Vendor Report</a>
+        <a class="nav-link" href="{{ url_for('reports.customer_report') }}">Customer Report</a>
+        <a class="nav-link" href="{{ url_for('reports.expense_report') }}">Expense Report</a>
+        <a class="nav-link" href="{{ url_for('reports.salary_report') }}">Salary Report</a>
+        <a class="nav-link" href="{{ url_for('reports.return_report') }}">Return Report</a>
+        <a class="nav-link" href="{{ url_for('reports_attendance.attendance_report') }}">Attendance Report</a>
+    </div>
+    {% endif %}
+
+    {# ── Settings ──────────────────────────────────────────── #}
+    {% if show_settings %}
+    <a class="nav-link nav-group-toggle collapsed" data-bs-toggle="collapse" href="#{{ nav_ns }}NavSettings"
+        role="button" aria-expanded="false" aria-controls="{{ nav_ns }}NavSettings">
+        <i class="fas fa-cog nav-ico"></i> <span>Settings</span>
+        <i class="fas fa-chevron-down nav-caret"></i>
+    </a>
+    <div class="collapse" id="{{ nav_ns }}NavSettings">
+        {% if adm or u.can_view_settings %}
+        <a class="nav-link" href="{{ url_for('sales.company_settings') }}">Company</a>
+        <a class="nav-link" href="{{ url_for('sales.invoice_settings') }}">Invoice Settings</a>
+        {% endif %}
+        {% if adm or u.can_view_users %}
+        <a class="nav-link" href="{{ url_for('users.list_users') }}">User Management</a>
+        {% endif %}
+        {% if adm or u.can_view_tasks %}
+        <a class="nav-link" href="{{ url_for('users.list_tasks') }}">Tasks</a>
+        {% endif %}
+        {% if adm or u.can_view_media %}
+        <a class="nav-link" href="{{ url_for('media.index') }}">Media</a>
+        {% endif %}
+        {% if adm or u.can_view_activity_logs %}
+        <a class="nav-link" href="{{ url_for('activity_log.index') }}">Activity Log</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <hr class="bg-white sidebar-divider">
+    <a class="nav-link" href="{{ url_for('auth.logout') }}">
+        <i class="fas fa-sign-out-alt nav-ico"></i> <span>Logout</span>
+    </a>
+</nav>
