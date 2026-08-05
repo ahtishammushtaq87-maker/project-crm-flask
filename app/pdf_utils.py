@@ -309,12 +309,21 @@ class ProfessionalPDFGenerator:
         elif name:
             b1_rows.append(f"<b>Name:</b> {name}")
 
+        if client_data.get('contact_person'):
+            b1_rows.append(f"<b>Contact Person:</b> {client_data['contact_person']}")
+
         label_map = {'address': 'Address', 'email': 'Email', 'phone': 'Phone', 'gst_number': 'GST No'}
         for key in ('address', 'email', 'phone', 'gst_number'):
             val = client_data.get(key, '')
             if val:
                 label = label_map.get(key, key)
                 b1_rows.append(f"<b>{label}:</b> {val}")
+
+        if client_data.get('customer_reference'):
+            b1_rows.append(f"<b>Customer Reference:</b> {client_data['customer_reference']}")
+        if client_data.get('salesperson'):
+            b1_rows.append(f"<b>Salesperson:</b> {client_data['salesperson']}")
+
         box1 = make_box(self._bill_to_label or self._get_label('bill_to', 'BILL TO'), b1_rows, width=box1_w)
 
         # Box 2 – Ship To / Ship From
@@ -337,11 +346,14 @@ class ProfessionalPDFGenerator:
         # Box 4 – Locations
         box4 = None
         if is_invoice:
+            # Head office = the company's own address on file (Company Settings);
+            # Karachi is a second, fixed physical location.
+            head_office_addr = (getattr(self.company, 'address', None) if self.company else None) or 'N/A'
             addr_rows = [
-                "<b>Address 1:</b> No. 139 Tiyu West Road, Unit 15-A, Tianhe District, Guangzhou, Guangdong, 510620",
-                "<b>Address 2:</b> LS-25, Super Auto Parts Market, Main Super Highway, Sohrab Goth, Karachi."
+                f"<b>Head Office:</b> {head_office_addr}",
+                "<b>Karachi:</b> LS-25, Super Auto Parts Market, Main Super Highway, Sohrab Goth, Karachi."
             ]
-            box4 = make_box("Our Locations", addr_rows, width=box4_w)
+            box4 = make_box("OUR LOCATIONS", addr_rows, width=box4_w)
 
         if b3_rows:
             box3 = make_box(self._get_label('reference', 'REFERENCE'), b3_rows, width=2.0*inch)
@@ -377,7 +389,8 @@ class ProfessionalPDFGenerator:
         return outer
 
     # ── ITEMS TABLE ────────────────────────────────────────────────────────
-    def _build_items_table(self, items, show_item_code=True, show_sku=False):
+    def _build_items_table(self, items, show_item_code=True, show_sku=False, show_discount=False,
+                            discount_header='Unit Discount', show_unit_col=False):
         headers = ['#', 'Description']
         if show_sku:
             headers += ['SKU']
@@ -389,10 +402,30 @@ class ProfessionalPDFGenerator:
             headers += ['Qty', 'Unit Price', 'Cancelled', 'Amount']
         else:
             headers += ['Qty', 'Unit Price', 'Amount']
+        if show_unit_col:
+            # A separate Unit column (pcs/kg/etc), right after Qty — distinct from
+            # the purchase-bill behavior of folding the unit into the Qty text.
+            qty_idx = headers.index('Qty')
+            headers.insert(qty_idx + 1, 'Unit')
+        if show_discount:
+            # Discount amount, inserted right before the final Amount column.
+            headers.insert(-1, discount_header)
 
         header_row = [Paragraph(f"<b>{h}</b>", self.styles['TblHeader']) for h in headers]
 
-        if show_sku and show_item_code:
+        if show_unit_col:
+            # Dedicated layout for the quotation-style table (# | Description | [SKU] |
+            # Qty | Unit | Unit Price | [Discount] | Amount) — computed directly rather
+            # than via the generic insert-based branches below, so Amount/Unit Price
+            # keep enough room and don't wrap onto a second line.
+            col_w = [0.35*inch, (2.2 if show_sku else 2.9)*inch]
+            if show_sku:
+                col_w.append(0.7*inch)
+            col_w += [0.5*inch, 0.5*inch, 0.95*inch]
+            if show_discount:
+                col_w.append(0.85*inch)
+            col_w.append(0.95*inch)
+        elif show_sku and show_item_code:
             col_w = [0.385*inch, 2.3*inch, 0.7*inch, 0.7*inch, 0.6*inch, 0.6*inch, 0.7*inch]
             if show_cancelled: col_w.insert(6, 0.8*inch)
         elif show_sku:
@@ -404,6 +437,10 @@ class ProfessionalPDFGenerator:
         else:
             col_w = [0.385*inch, 3.85*inch, 0.715*inch, 1.1*inch, 1.1*inch]
             if show_cancelled: col_w.insert(4, 0.8*inch)
+
+        if show_discount and not show_unit_col:
+            # Matches the header's insert(-1, ...) position: right before Amount's width.
+            col_w.insert(-1, 0.8*inch)
 
         # Scale column widths so the items table matches the info boxes and notes (TABLE_WIDTH)
         # This ensures the table aligns with Statement/Locations boxes and the Notes section
@@ -425,7 +462,17 @@ class ProfessionalPDFGenerator:
             qty = item.get('quantity', 0)
             unit = item.get('unit', '')
             qty_str = f"{qty:,.2f}" if isinstance(qty, (int, float)) else str(qty)
-            
+
+            if show_unit_col:
+                row.append(Paragraph(qty_str, self.styles['TblCell']))
+                row.append(Paragraph(unit or '-', self.styles['TblCell']))
+                row.append(Paragraph(item.get('rate', '-'), self.styles['TblCell']))
+                if show_discount:
+                    row.append(Paragraph(item.get('unit_discount', '-'), self.styles['TblCell']))
+                row.append(Paragraph(item.get('amount', '-'), self.styles['TblCell']))
+                table_data.append(row)
+                continue
+
             # Show unit in quantity column if it's a purchase bill
             if getattr(self, 'is_purchase', False):
                 # For pieces/pcs, show as integer without decimal points
@@ -442,6 +489,9 @@ class ProfessionalPDFGenerator:
                 cq_str = f"{cq:,.2f}" if cq > 0 else "-"
                 row.append(Paragraph(cq_str, self.styles['TblCell']))
 
+            if show_discount:
+                row.append(Paragraph(item.get('unit_discount', '-'), self.styles['TblCell']))
+
             row.append(Paragraph(item.get('amount', '-'),      self.styles['TblCell']))
             table_data.append(row)
 
@@ -452,7 +502,8 @@ class ProfessionalPDFGenerator:
                 empty.append(Paragraph('-', self.styles['TblCell']))
             if show_item_code:
                 empty.append(Paragraph('-', self.styles['TblCell']))
-            empty += [Paragraph('-', self.styles['TblCell'])] * 3
+            empty_trailing = 3 + (1 if show_unit_col else 0) + (1 if show_discount else 0)
+            empty += [Paragraph('-', self.styles['TblCell'])] * empty_trailing
             table_data.append(empty)
 
         tbl = Table(table_data, colWidths=col_w)
@@ -586,6 +637,90 @@ class ProfessionalPDFGenerator:
 
         return elements
 
+    # ── QUOTATION-ONLY SECTIONS ─────────────────────────────────────────────
+    def _build_commercial_terms(self, rows):
+        """4-column grid: Label | Value | Label | Value, one pair per row.
+        `rows` is a list of (label1, value1, label2, value2) tuples."""
+        data = [[Paragraph("COMMERCIAL TERMS", self.styles['NotesTitle']), '', '', '']]
+        for l1, v1, l2, v2 in rows:
+            data.append([
+                Paragraph(f"<b>{l1}</b>", self.styles['BoxValue']),
+                Paragraph(v1, self.styles['BoxValue']),
+                Paragraph(f"<b>{l2}</b>", self.styles['BoxValue']),
+                Paragraph(v2, self.styles['BoxValue']),
+            ])
+        col_w = [1.1*inch, 2.65*inch, 1.1*inch, 2.65*inch]
+        tbl = Table(data, colWidths=col_w)
+        tbl.setStyle(TableStyle([
+            ('SPAN',          (0,0), (-1,0)),
+            ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
+            ('TOPPADDING',    (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('LEFTPADDING',   (0,0), (-1,-1), 8),
+            ('RIGHTPADDING',  (0,0), (-1,-1), 6),
+            ('BOX',           (0,0), (-1,-1), 0.5, BORDER_GREY),
+            ('INNERGRID',     (0,1), (-1,-1), 0.3, LIGHT_GREY),
+            ('BACKGROUND',    (0,0), (-1,-1), WHITE),
+        ]))
+        return tbl
+
+    def _build_important_notice(self, text_en, text_ur=None):
+        """Bilingual (English + optional Urdu) warning box, shaded like a caution note."""
+        content = [Paragraph(f"<b>IMPORTANT:</b> {text_en}", self.styles['NotesText'])]
+        if text_ur:
+            try:
+                reshaped = arabic_reshaper.reshape(text_ur)
+                bidi_text = get_display(reshaped)
+            except Exception:
+                bidi_text = text_ur
+            urdu_style = ParagraphStyle(
+                'ImportantUrdu', parent=self.styles['NotesText'],
+                fontName=self.urdu_font, alignment=TA_RIGHT, textColor=PRIMARY_COLOR, leading=13,
+            )
+            content.append(Spacer(1, 4))
+            content.append(Paragraph(bidi_text, urdu_style))
+
+        tbl = Table([[c] for c in content], colWidths=[TABLE_WIDTH])
+        tbl.setStyle(TableStyle([
+            ('VALIGN',        (0,0), (-1,-1), 'TOP'),
+            ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
+            ('TOPPADDING',    (0,0), (-1,-1), 3),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+            ('LEFTPADDING',   (0,0), (-1,-1), 8),
+            ('RIGHTPADDING',  (0,0), (-1,-1), 8),
+            ('BOX',           (0,0), (-1,-1), 0.5, colors.HexColor("#e0c080")),
+            ('BACKGROUND',    (0,0), (-1,-1), colors.HexColor("#fdf6e3")),
+        ]))
+        return tbl
+
+    def _build_acceptance_table(self):
+        """CUSTOMER ACCEPTANCE sign-off grid: 2 rows x (label | blank line) x2."""
+        blank = Paragraph('_' * 28, self.styles['BoxValue'])
+        rows = [
+            [Paragraph("<b>Authorized Person</b>", self.styles['BoxValue']), blank,
+             Paragraph("<b>Approval Method</b>", self.styles['BoxValue']),
+             Paragraph("SIGN / WHATSAPP / EMAIL / PO", self.styles['BoxValue'])],
+            [Paragraph("<b>Signature / Stamp</b>", self.styles['BoxValue']), Paragraph('_' * 28, self.styles['BoxValue']),
+             Paragraph("<b>Acceptance Date</b>", self.styles['BoxValue']), Paragraph('_' * 28, self.styles['BoxValue'])],
+        ]
+        col_w = [1.3*inch, 2.45*inch, 1.3*inch, 2.45*inch]
+        data = [[Paragraph("CUSTOMER ACCEPTANCE", self.styles['NotesTitle']), '', '', '']] + rows
+        tbl = Table(data, colWidths=col_w)
+        tbl.setStyle(TableStyle([
+            ('SPAN',          (0,0), (-1,0)),
+            ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
+            ('TOPPADDING',    (0,0), (-1,-1), 6),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('LEFTPADDING',   (0,0), (-1,-1), 8),
+            ('RIGHTPADDING',  (0,0), (-1,-1), 6),
+            ('BOX',           (0,0), (-1,-1), 0.5, BORDER_GREY),
+            ('INNERGRID',     (0,1), (-1,-1), 0.3, LIGHT_GREY),
+            ('BACKGROUND',    (0,0), (-1,-1), WHITE),
+        ]))
+        return tbl
+
     # ── FOOTER — drawn directly on canvas, always at page bottom ──────────
     def _draw_footer(self, c, doc):
         w, h = A4
@@ -698,8 +833,13 @@ class ProfessionalPDFGenerator:
                            ship_to_label=None, bill_to_label=None,
                            customer_name=None, amount_due=None, due_date_str=None,
                            is_purchase=False, is_invoice=False,
-                           meta_labels=None, items_header='INVOICE ITEMS'):
+                           meta_labels=None, items_header='INVOICE ITEMS',
+                           show_unit_col=False, discount_header='Unit Discount',
+                           commercial_terms=None, important_notice=None,
+                           show_acceptance=False, footer_message_override=None):
         self.is_purchase = is_purchase
+        if footer_message_override:
+            self.footer_message = footer_message_override
         elements = []
         
         # Set custom ship_to label if provided (e.g., "SHIP FROM" for purchase docs)
@@ -724,7 +864,9 @@ class ProfessionalPDFGenerator:
 
         show_item_code = any('item_code' in item for item in items)
         show_sku = any('sku' in item for item in items)
-        elements.append(self._build_items_table(items, show_item_code, show_sku))
+        show_discount = any('unit_discount' in item for item in items)
+        elements.append(self._build_items_table(items, show_item_code, show_sku, show_discount,
+                                                  discount_header=discount_header, show_unit_col=show_unit_col))
         elements.append(Spacer(1, 10))
 
         # Prepare extra thank you message for invoices only
@@ -788,6 +930,16 @@ class ProfessionalPDFGenerator:
 
         elements.extend(self._build_bottom_section(totals, payment_info, terms, notes, extra_thank=extra_thank, is_purchase=is_purchase))
 
+        if commercial_terms:
+            elements.append(Spacer(1, 10))
+            elements.append(self._build_commercial_terms(commercial_terms))
+        if important_notice:
+            elements.append(Spacer(1, 10))
+            elements.append(self._build_important_notice(important_notice.get('en', ''), important_notice.get('ur')))
+        if show_acceptance:
+            elements.append(Spacer(1, 10))
+            elements.append(self._build_acceptance_table())
+
         # If you want the thank-you message **above the header** instead, move it here:
         # elements.insert(0, extra_thank)
         # elements.insert(0, Spacer(1, 12))
@@ -845,6 +997,10 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             quote_meta_labels = None
             quote_items_header = 'INVOICE ITEMS'
         doc_number = obj.invoice_number
+        if is_quote and doc_number and doc_number.upper().startswith('INV-'):
+            # Display-only: a quotation shouldn't visibly borrow the invoice
+            # numbering prefix. Doesn't touch the stored invoice_number.
+            doc_number = 'QTN-' + doc_number[4:]
         client_data = {
             'name':       obj.customer.name        if obj.customer else "Walk-in Customer",
             'address':    obj.customer.address      if obj.customer else "",
@@ -854,6 +1010,11 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
         }
         if obj.customer and getattr(obj.customer, 'company_name', None):
             client_data['company'] = obj.customer.company_name
+        if is_quote:
+            if obj.customer and getattr(obj.customer, 'contact_person', None):
+                client_data['contact_person'] = obj.customer.contact_person
+            if getattr(obj, 'salesman', None):
+                client_data['salesperson'] = obj.salesman.name
 
         ship_to = None
 
@@ -863,6 +1024,17 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
         if hasattr(obj, 'project')     and obj.project:     reference_data['Project']     = obj.project.name if obj.project else ""
         if obj.customer and hasattr(obj.customer, 'customer_id'):
             reference_data['Customer ID'] = str(obj.customer.customer_id)
+
+        # Calculate effective discount based on overdue status and override flag
+        is_restricted = getattr(obj, 'is_discount_restricted', False)
+        effective_discount = getattr(obj, 'effective_discount_amount', 0)
+
+        # Per-item discount total (same source used on the invoice detail page): prefer the
+        # real per-item discount entered on the invoice, falling back to a proportional split
+        # of the header discount only for older invoices created before per-item discounts
+        # existed. Suspended entirely while the overdue restriction is in effect.
+        items_discount_sum = sum(float(it.discount or 0) for it in obj.items)
+        show_item_discount = (not is_restricted) and (effective_discount > 0 or items_discount_sum > 0)
 
         items = []
         for item in obj.items:
@@ -875,60 +1047,80 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             if item.product and hasattr(item.product, 'sku') and item.product.sku:
                 entry['sku'] = item.product.sku
             if hasattr(item, 'item_code')        and item.item_code:        entry['item_code']        = item.item_code
-            if hasattr(item, 'unit')             and item.unit:             entry['unit']             = item.unit
             if hasattr(item, 'sub_description')  and item.sub_description:  entry['sub_description']  = item.sub_description
+            if is_quote:
+                entry['unit'] = (item.product.unit if item.product and item.product.unit else 'pcs')
+            elif hasattr(item, 'unit') and item.unit:
+                entry['unit'] = item.unit
+            if show_item_discount:
+                if items_discount_sum > 0:
+                    item_discount_total = float(item.remaining_discount or 0)
+                else:
+                    item_discount_total = (item.total / obj.subtotal * effective_discount) if obj.subtotal > 0 else 0
+                # Quotation shows the line's total discount (matches the "Amount" column
+                # being a line total too); the invoice PDF shows a genuine per-unit figure.
+                shown_discount = item_discount_total if is_quote else ((item_discount_total / item.quantity) if item.quantity else 0)
+                entry['unit_discount'] = f"{currency}{shown_discount:,.2f}"
             items.append(entry)
 
-        # Calculate effective discount based on overdue status and override flag
-        is_restricted = getattr(obj, 'is_discount_restricted', False)
-        effective_discount = getattr(obj, 'effective_discount_amount', 0)
-
         sc = obj.shipping_charge if (hasattr(obj, 'shipping_charge') and obj.shipping_charge) else 0
-        
-        # Determine discount display value
-        discount_label = "<b>One Time Payment Discount</b>"
-        discount_display = f"{currency}{effective_discount:,.2f}"
-        if is_restricted and getattr(obj, 'base_discount_amount', 0) > 0:
-            discount_label = "<b>Discount</b>"
-            discount_display = "Reversal"
 
-        totals = [
-            ("Subtotal",           f"{currency}{obj.subtotal:,.2f}"),
-            (discount_label,       discount_display),
-            ("Shipping / Freight", f"{currency}{sc:,.2f}"),
-            ("Tax",                f"{currency}{obj.tax:,.2f}"),
-            ("Total Due",          f"{currency}{obj.total:,.2f}"),
-        ]
-
-        # obj.paid_amount is a mix of actual cash payments AND any customer
-        # advance credit applied to this invoice. Break the advance portion
-        # out into its own line instead of folding it into "Amount Paid".
-        advance_applied_amt = float(getattr(obj, 'advance_applied', 0) or 0)
-        if advance_applied_amt > 0.009:
-            totals.append(("Advance Applied", f"{currency}{advance_applied_amt:,.2f}"))
-
-        # Cash-only portion of paid_amount (excludes advance credit applied above)
-        cash_applied = max(0.0, obj.paid_amount - advance_applied_amt)
-
-        # Gross cash amount actually received from the customer against this invoice
-        # (approved Payment rows) — can exceed cash_applied when the customer
-        # overpaid, since the excess is tracked separately as new customer
-        # advance credit rather than applied to this invoice.
-        gross_paid = sum(p.amount for p in obj.payments if p.is_approved) if hasattr(obj, 'payments') else cash_applied
-
-        if gross_paid > cash_applied + 0.009:
-            totals.append(("Paid Amount",  f"{currency}{gross_paid:,.2f}"))
-            totals.append(("Invoice Paid", f"{currency}{cash_applied:,.2f}"))
+        if is_quote:
+            # A quotation isn't a paid document yet — show what's quoted, not
+            # payment/advance history.
+            totals = [
+                ("Subtotal",             f"{currency}{obj.subtotal:,.2f}"),
+                ("Quotation Discount",   f"{currency}{effective_discount:,.2f}"),
+                ("Shipping / Freight",   f"{currency}{sc:,.2f}"),
+                ("Tax",                  f"{currency}{obj.tax:,.2f}"),
+                ("Other Charges",        f"{currency}0.00"),
+                ("Total Quoted Amount",  f"{currency}{obj.total:,.2f}"),
+            ]
         else:
-            totals.append(("Amount Paid",  f"{currency}{cash_applied:,.2f}"))
+            # Determine discount display value
+            discount_label = "<b>One Time Payment Discount</b>"
+            discount_display = f"{currency}{effective_discount:,.2f}"
+            if is_restricted and getattr(obj, 'base_discount_amount', 0) > 0:
+                discount_label = "<b>Discount</b>"
+                discount_display = "Reversal"
 
-        totals.append(("Balance", f"{currency}{obj.balance_due:,.2f}"))
+            totals = [
+                ("Subtotal",           f"{currency}{obj.subtotal:,.2f}"),
+                (discount_label,       discount_display),
+                ("Shipping / Freight", f"{currency}{sc:,.2f}"),
+                ("Tax",                f"{currency}{obj.tax:,.2f}"),
+                ("Total Due",          f"{currency}{obj.total:,.2f}"),
+            ]
 
-        # Show any unapplied advance credit (e.g. from a past overpayment) so the
-        # customer sees the remaining balance in their favor on the invoice itself.
-        customer_remaining = float(obj.customer.remaining_advance_balance or 0) if obj.customer else 0
-        if customer_remaining > 0.009:
-            totals.append(("Customer Remaining Advance", f"{currency}{customer_remaining:,.2f}"))
+            # obj.paid_amount is a mix of actual cash payments AND any customer
+            # advance credit applied to this invoice. Break the advance portion
+            # out into its own line instead of folding it into "Amount Paid".
+            advance_applied_amt = float(getattr(obj, 'advance_applied', 0) or 0)
+            if advance_applied_amt > 0.009:
+                totals.append(("Advance Applied", f"{currency}{advance_applied_amt:,.2f}"))
+
+            # Cash-only portion of paid_amount (excludes advance credit applied above)
+            cash_applied = max(0.0, obj.paid_amount - advance_applied_amt)
+
+            # Gross cash amount actually received from the customer against this invoice
+            # (approved Payment rows) — can exceed cash_applied when the customer
+            # overpaid, since the excess is tracked separately as new customer
+            # advance credit rather than applied to this invoice.
+            gross_paid = sum(p.amount for p in obj.payments if p.is_approved) if hasattr(obj, 'payments') else cash_applied
+
+            if gross_paid > cash_applied + 0.009:
+                totals.append(("Paid Amount",  f"{currency}{gross_paid:,.2f}"))
+                totals.append(("Invoice Paid", f"{currency}{cash_applied:,.2f}"))
+            else:
+                totals.append(("Amount Paid",  f"{currency}{cash_applied:,.2f}"))
+
+            totals.append(("Balance", f"{currency}{obj.balance_due:,.2f}"))
+
+            # Show any unapplied advance credit (e.g. from a past overpayment) so the
+            # customer sees the remaining balance in their favor on the invoice itself.
+            customer_remaining = float(obj.customer.remaining_advance_balance or 0) if obj.customer else 0
+            if customer_remaining > 0.009:
+                totals.append(("Customer Remaining Advance", f"{currency}{customer_remaining:,.2f}"))
 
         payment_info = None
         if settings:
@@ -949,22 +1141,53 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
 
         cur_label = getattr(obj, 'currency', None) or (currency if currency != 'PKR' else 'PKR')
 
+        quote_extra = {}
+        if is_quote:
+            if getattr(obj, 'is_draft', False):
+                quote_status = 'DRAFT'
+            elif not getattr(obj, 'is_approved', True):
+                quote_status = 'PENDING APPROVAL'
+            else:
+                quote_status = 'CONFIRMED'
+
+            commercial_terms = [
+                ('Validity',     '7 Calendar Days',            'Payment Terms', '100% Advance / Credit Terms'),
+                ('Delivery',     '3-5 Working Days',           'Freight',       'Included / Excluded'),
+                ('Availability', 'Subject to Stock Confirmation', 'Warranty',   f"As per {company.name if company else 'Company'} Warranty Policy"),
+            ]
+            important_notice = {
+                'en': ('Before approval, verify the product description, OE number, engine, chassis, quantity and '
+                       'required cover / impeller configuration. This quotation is not an invoice and does not confirm payment.'),
+                'ur': ('منظوری سے پہلے، پروڈکٹ کی تفصیل، او ای نمبر، انجن، چیسس، مقدار اور مطلوبہ کور یا امپیلر کنفیگریشن کی تصدیق کریں۔ '
+                       'یہ کوٹیشن انوائس نہیں ہے اور ادائیگی کی تصدیق نہیں کرتی۔'),
+            }
+            quote_extra = dict(
+                show_unit_col=True,
+                discount_header='Discount',
+                commercial_terms=commercial_terms,
+                important_notice=important_notice,
+                show_acceptance=True,
+                footer_message_override=f"Thank you for considering {company.name}." if company else None,
+            )
+
         generator.generate_document(
             title=title, doc_number=doc_number,
             date=obj.date, due_date=obj.due_date,
             client_data=client_data, items=items, totals=totals,
             payment_info=payment_info,
-            terms=obj.terms or (settings.default_terms if settings else None),
-            notes=obj.notes or (settings.default_notes if settings else None),
-            status=getattr(obj, 'status', None),
+            terms=None if is_quote else (obj.terms or (settings.default_terms if settings else None)),
+            notes=None if is_quote else (obj.notes or (settings.default_notes if settings else None)),
+            status=quote_status if is_quote else getattr(obj, 'status', None),
             ship_to=ship_to, reference_data=reference_data, currency=cur_label,
             ship_to_label=None,
+            bill_to_label='QUOTATION TO' if is_quote else None,
             customer_name=obj.customer.name if obj.customer else None,
             amount_due=obj.balance_due if hasattr(obj, 'balance_due') else None,
             due_date_str=obj.due_date.strftime('%d-%m-%Y') if hasattr(obj, 'due_date') and obj.due_date else None,
             is_invoice=True,
             meta_labels=quote_meta_labels,
             items_header=quote_items_header,
+            **quote_extra,
         )
 
     # ── PURCHASE BILL ─────────────────────────────────────────────────────

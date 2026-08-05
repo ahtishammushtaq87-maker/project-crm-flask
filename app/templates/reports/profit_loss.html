@@ -210,16 +210,27 @@
 
     <!-- Right Column Metrics -->
     <div class="col-lg-4">
-        <div class="card shadow-sm border-0 mb-4 bg-primary text-white">
+        {% set has_revenue = net_revenue > 0 %}
+        {% set margin_pct = ((net_profit / net_revenue) * 100) if has_revenue else None %}
+        <div
+            class="card shadow-sm border-0 mb-4 text-white {% if not has_revenue and net_profit < 0 %}bg-danger{% elif has_revenue and margin_pct < 0 %}bg-danger{% elif has_revenue and margin_pct == 0 %}bg-secondary{% else %}bg-primary{% endif %}">
             <div class="card-body text-center py-4">
                 <h6 class="text-uppercase mb-2">Net Profit Margin</h6>
-                <h2 class="display-5 fw-bold mb-0">
-                    {% if net_revenue > 0 %}
-                    {{ "{:,.1f}%".format((net_profit / net_revenue) * 100) }}
-                    {% else %}
-                    0.0%
-                    {% endif %}
-                </h2>
+                {% if has_revenue %}
+                <h2 class="display-5 fw-bold mb-0">{{ "{:,.1f}%".format(margin_pct) }}</h2>
+                <div class="small opacity-75 mt-1">
+                    {% if margin_pct < 0 %}Net loss on {{ "{:,.0f}".format(net_revenue) }} revenue
+                    {% else %}Net profit on {{ "{:,.0f}".format(net_revenue) }} revenue{% endif %}
+                </div>
+                {% elif net_profit < 0 %}
+                <h2 class="h3 fw-bold mb-0 text-white text-uppercase">No Revenue</h2>
+                <div class="small opacity-75 mt-2">
+                    Margin not measurable &mdash; Net Loss PKR {{ "{:,.2f}".format(net_profit|abs) }}
+                </div>
+                {% else %}
+                <h2 class="h3 fw-bold mb-0 text-white text-uppercase">No Activity</h2>
+                <div class="small opacity-75 mt-2">No sales or expenses in this period</div>
+                {% endif %}
             </div>
         </div>
 
