@@ -43,7 +43,7 @@ def create_app(config_class=Config):
             ToolReceiving, ToolReceivingItem, ToolDelivering, ToolDeliveringItem, ToolSettings,
             ProductWarehouseStock, Media,
             RecoveryTask, RecoveryLog, RecoveryComment, Salesman,
-            JournalAccount, JournalEntry, JournalLine
+            JournalAccount, JournalEntry, JournalLine, FixedExpense
         )
         from app.filter_models import SavedFilter
         
@@ -130,6 +130,7 @@ def create_app(config_class=Config):
             'journal_accounts': JournalAccount,
             'journal_entries': JournalEntry,
             'journal_lines': JournalLine,
+            'fixed_expenses': FixedExpense,
         }
         
         try:

@@ -964,6 +964,10 @@ def expenses():
             return type_func(val) if type_func else val
         return None
 
+    # Write any fixed-expense cycle that has started into the book before the
+    # list is built, so a new cycle shows up without any manual step.
+    ensure_fixed_expense_rows()
+
     # Get filter parameters with persistence
     vendor_id = get_filter('vendor_id', int)
     category_id = get_filter('category_id', int)
@@ -1088,6 +1092,7 @@ def expenses():
                          selected_start_date=start_date,
                          selected_end_date=end_date,
                          date_format=date_format,
+                         today_date=datetime.utcnow().date(),
                          active_module='expense',
                          current_status=exp_status,
                          unapproved_count=unapproved_count,
@@ -2341,3 +2346,495 @@ def reset_bom_overhead(bom_id):
         print(f"Error resetting BOM overhead: {e}")
     
     return redirect(url_for('accounting.expenses'))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Fixed (recurring, day-based) Expenses
+#
+# A self-contained module: it owns the fixed_expenses table and touches nothing
+# else until someone presses Post, which is the only place a real Expense row is
+# created — using the same numbering helper and status rules as Add Expense.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _fixed_expense_json(fx):
+    """Serialise a template for the popup.
+
+    For an auto-posting template the progress is read from the cycles actually
+    written to the book — the same source the Expense list draws from — so the
+    two screens always agree. The manual accrual counters only drive templates
+    that are posted by hand.
+    """
+    today = datetime.utcnow().date()
+    if fx.auto_post and fx.start_date and int(fx.cycles_posted or 0) > 0:
+        n = int(fx.cycles_posted or 0)
+        cyc_start, _ = fx.cycle_window(n)
+        gone = (today - cyc_start).days + 1
+        day_in_cycle = 0 if gone < 0 else (fx.cycle_days if gone > fx.cycle_days else gone)
+        cycles_completed = (n - 1) + (1 if day_in_cycle >= fx.cycle_days else 0)
+    else:
+        day_in_cycle = fx.day_in_cycle
+        cycles_completed = fx.cycles_completed
+
+    progress_pct = int(day_in_cycle * 100 / fx.cycle_days) if fx.cycle_days else 0
+    # Days and money actually incurred so far (cycle 0-day rows count for nothing)
+    elapsed_days = cycles_completed * fx.cycle_days + (
+        0 if day_in_cycle >= fx.cycle_days else day_in_cycle)
+    incurred = round(fx.per_day_amount * elapsed_days, 2)
+
+    return {
+        'id': fx.id,
+        'name': fx.name,
+        'description': fx.description or '',
+        'category_id': fx.category_id,
+        'category_name': fx.category.name if fx.category else '',
+        'vendor_id': fx.vendor_id,
+        'vendor_name': fx.vendor.name if fx.vendor else '',
+        'mode': fx.mode or 'divide',
+        'amount': round(float(fx.amount or 0), 2),
+        'days': fx.cycle_days,
+        'start_date': fx.start_date.strftime('%Y-%m-%d') if fx.start_date else '',
+        'is_active': bool(fx.is_active),
+        'auto_post': bool(fx.auto_post),
+        'cycles_posted': int(fx.cycles_posted or 0),
+        'days_posted': int(fx.days_posted or 0),
+        'per_day_amount': round(fx.per_day_amount, 2),
+        'cycle_total': round(fx.cycle_total, 2),
+        'day_in_cycle': day_in_cycle,
+        'cycles_completed': cycles_completed,
+        'cycle_progress_pct': progress_pct,
+        'elapsed_days': elapsed_days,
+        'incurred_amount': incurred,
+        'days_accrued': int(fx.days_accrued or 0),
+        'accrued_amount': round(float(fx.accrued_amount or 0), 2),
+        'posted_amount': round(float(fx.posted_amount or 0), 2),
+        'last_accrued_date': fx.last_accrued_date.strftime('%Y-%m-%d') if fx.last_accrued_date else '',
+    }
+
+
+def ensure_fixed_expense_rows():
+    """Write each started cycle into the Expense book as ONE day-divided row.
+
+    Shaped exactly like a divided expense added by hand from Add Expense
+    (is_monthly_divided + daily_amount + the cycle window), so the list shows a
+    single row with its per-day figure and progress bar, and the reports
+    pro-rate it per day over the period being viewed.
+
+    Idempotent: `cycles_posted` records how many cycles are already in the book,
+    so refreshing a page can never write the same cycle twice. Never raises — a
+    failure here must not break the page that called it.
+    """
+    from app.models import FixedExpense
+    try:
+        today = datetime.utcnow().date()
+        templates = (FixedExpense.query
+                     .filter(FixedExpense.is_active == True,
+                             FixedExpense.auto_post == True)
+                     .all())
+        if not templates:
+            return 0
+
+        settings = ExpenseSettings.query.first()
+        if not settings:
+            settings = ExpenseSettings(expense_prefix='EXP-', expense_suffix='', next_number=1)
+            db.session.add(settings)
+            db.session.flush()
+        next_num = settings.next_number
+
+        created = 0
+        for fx in templates:
+            if not fx.start_date or not fx.category_id:
+                continue                    # incomplete template — skip quietly
+            started = fx.cycles_started(today)
+            # As soon as the running cycle finishes, open the next one straight
+            # away so the repetition is visible: it appears at Day 0 of N and
+            # fills in a day at a time. Without this the row only turned up when
+            # its first day arrived, and the list looked like it had stopped.
+            if started > 0 and fx.cycle_window(started)[1] <= today:
+                started += 1
+            done = int(fx.cycles_posted or 0)
+            if fx.cycle_total <= 0:
+                continue
+
+            # Cap the catch-up so a very old start date cannot flood the book
+            # in one request; the rest is picked up on the next page load.
+            while done < started and created < 60:
+                done += 1
+                cyc_start, cyc_end = fx.cycle_window(done)
+                expense_number, next_num = get_unique_expense_number(settings, next_num)
+                exp = Expense(
+                    expense_number=expense_number,
+                    date=datetime.combine(cyc_start, datetime.min.time()),
+                    amount=fx.cycle_total,
+                    description='%s - Fixed Expense (cycle %d of %d days)'
+                                % (fx.name, done, fx.cycle_days),
+                    category_id=fx.category_id,
+                    vendor_id=fx.vendor_id,
+                    status='confirmed',
+                    created_by=fx.created_by,
+                    is_approved=True,
+                    approved_by=fx.created_by,
+                    approved_at=datetime.utcnow(),
+                    is_rejected=False,
+                    is_monthly_divided=True,
+                    monthly_start_date=cyc_start,
+                    monthly_end_date=cyc_end,
+                    daily_amount=fx.per_day_amount,
+                    fixed_expense_id=fx.id,
+                )
+                db.session.add(exp)
+                fx.cycles_posted = done
+                fx.days_posted = done * fx.cycle_days
+                fx.posted_amount = float(fx.posted_amount or 0) + fx.cycle_total
+                # The cycle is in the book now; clear the manual accrual so the
+                # same money can never be posted a second time by hand.
+                fx.accrued_amount = 0
+                created += 1
+
+        if created:
+            settings.next_number = next_num
+            db.session.commit()
+            try:
+                log_activity('Accounting', 'Fixed Expenses posted automatically',
+                             'Created %d cycle expense(s).' % created)
+            except Exception:
+                pass        # no request context (e.g. a script) — not worth failing over
+        return created
+    except Exception as e:
+        db.session.rollback()
+        try:
+            from flask import current_app
+            current_app.logger.error('Fixed expense auto-post failed: %s' % e)
+        except Exception:
+            pass
+        return 0
+
+
+def _sync_all_fixed_expenses():
+    """Bring every active template up to today. Commits only if something moved."""
+    from app.models import FixedExpense
+    changed = 0
+    for fx in FixedExpense.query.all():
+        changed += fx.sync_accrual()
+    if changed:
+        db.session.commit()
+    return changed
+
+
+def _stop_fixed_expense(fx, stop_date=None):
+    """Stopping must stop the money, not just future cycles.
+
+    The cycle that is still open on `stop_date` is trimmed to the days actually
+    used: its window ends on the stop date and its amount drops to
+    per-day x days used, so the list, the report and the dashboard all stop
+    growing. A cycle that had not started yet is removed outright.
+    Caller commits.
+    """
+    from app.models import FixedExpense  # noqa: F401
+    stop_date = stop_date or datetime.utcnow().date()
+    open_rows = (Expense.query
+                 .filter(Expense.fixed_expense_id == fx.id,
+                         Expense.monthly_end_date != None,
+                         Expense.monthly_end_date > stop_date)
+                 .all())
+    trimmed = 0
+    for row in open_rows:
+        if not row.monthly_start_date:
+            continue
+        if row.monthly_start_date > stop_date:
+            db.session.delete(row)          # cycle never began
+            fx.posted_amount = max(0.0, float(fx.posted_amount or 0) - float(row.amount or 0))
+            fx.cycles_posted = max(0, int(fx.cycles_posted or 0) - 1)
+            trimmed += 1
+            continue
+        used_days = (stop_date - row.monthly_start_date).days + 1
+        per_day = float(row.daily_amount or 0)
+        new_amount = round(per_day * used_days, 2)
+        fx.posted_amount = max(0.0, float(fx.posted_amount or 0)
+                               - float(row.amount or 0) + new_amount)
+        row.amount = new_amount
+        row.monthly_end_date = stop_date
+        row.description = '%s [stopped on %s]' % (row.description, stop_date.strftime('%d-%m-%Y'))
+        trimmed += 1
+    fx.paused_on = stop_date
+    return trimmed
+
+
+def _restore_open_cycle(fx):
+    """Undo a same-day stop: put the trimmed cycle back to its full window.
+
+    Only used when a template is switched off and on again without a day
+    passing, so the trim never really happened.
+    """
+    n = int(fx.cycles_posted or 0)
+    if n <= 0:
+        return False
+    row = (Expense.query
+           .filter_by(fixed_expense_id=fx.id)
+           .order_by(Expense.id.desc())
+           .first())
+    if not row or not row.monthly_start_date:
+        return False
+    cyc_start, cyc_end = fx.cycle_window(n)
+    if row.monthly_start_date != cyc_start or row.monthly_end_date == cyc_end:
+        return False                      # not the trimmed row, or nothing to undo
+    fx.posted_amount = (max(0.0, float(fx.posted_amount or 0) - float(row.amount or 0))
+                        + fx.cycle_total)
+    row.monthly_end_date = cyc_end
+    row.amount = fx.cycle_total
+    row.description = row.description.split(' [stopped on ')[0]
+    return True
+
+
+def _resume_fixed_expense(fx, resume_date=None):
+    """Switch a template back on without losing or inventing days.
+
+    Same day as the stop — nothing actually elapsed, so the template is put back
+    exactly as it was and the cycle that was trimmed or dropped is restored.
+
+    Later — the days it spent switched off are not charged: the counters stay,
+    and the start date is re-anchored so the NEXT cycle begins on the resume
+    date instead of a fresh cycle 1 overlapping days already booked.
+    """
+    resume_date = resume_date or datetime.utcnow().date()
+
+    if fx.paused_on and fx.paused_on == resume_date:
+        _restore_open_cycle(fx)
+        fx.paused_on = None
+        return
+
+    done = int(fx.cycles_posted or 0)
+    fx.start_date = resume_date - timedelta(days=done * fx.cycle_days)
+    fx.days_posted = done * fx.cycle_days
+    fx.days_accrued = 0
+    fx.accrued_amount = 0
+    fx.last_accrued_date = None
+    fx.paused_on = None
+
+
+def _read_fixed_expense_form(fx, form):
+    """Apply submitted values onto a FixedExpense. Returns an error string or None."""
+    name = (form.get('name') or '').strip()
+    if not name:
+        return 'Name is required.'
+
+    mode = (form.get('mode') or 'divide').strip().lower()
+    if mode not in ('divide', 'multiply'):
+        mode = 'divide'
+
+    try:
+        amount = float(form.get('amount') or 0)
+    except (TypeError, ValueError):
+        return 'Amount must be a number.'
+    if amount <= 0:
+        return 'Amount must be greater than zero.'
+
+    try:
+        days = int(form.get('days') or 0)
+    except (TypeError, ValueError):
+        return 'Days must be a whole number.'
+    if days < 1:
+        return 'Days must be at least 1.'
+
+    start_raw = (form.get('start_date') or '').strip()
+    if start_raw:
+        try:
+            start_date = datetime.strptime(start_raw, '%Y-%m-%d').date()
+        except ValueError:
+            return 'Start date is invalid.'
+    else:
+        start_date = datetime.utcnow().date()
+
+    category_id = form.get('category_id') or None
+
+    fx.name = name
+    fx.description = (form.get('description') or '').strip() or None
+    fx.category_id = int(category_id) if category_id else None
+    # Vendor is not part of the popup form; only touch it when a value is
+    # actually submitted, so editing never silently clears an existing one.
+    if 'vendor_id' in form:
+        vendor_id = form.get('vendor_id') or None
+        fx.vendor_id = int(vendor_id) if vendor_id else None
+    fx.mode = mode
+    fx.amount = amount
+    fx.days = days
+    fx.start_date = start_date
+    fx.is_active = str(form.get('is_active', '1')).lower() in ('1', 'true', 'on', 'yes')
+    if 'auto_post' in form:
+        fx.auto_post = str(form.get('auto_post')).lower() in ('1', 'true', 'on', 'yes')
+    return None
+
+
+@bp.route('/fixed-expenses', methods=['GET'])
+@login_required
+@permission_required('accounting', action='view')
+def fixed_expenses_list():
+    """Accrue up to today, then return every template as JSON for the popup."""
+    from app.models import FixedExpense
+    _sync_all_fixed_expenses()
+    items = FixedExpense.query.order_by(FixedExpense.is_active.desc(),
+                                        FixedExpense.name).all()
+    return jsonify({
+        'success': True,
+        'items': [_fixed_expense_json(f) for f in items],
+        'today': datetime.utcnow().date().strftime('%Y-%m-%d'),
+    })
+
+
+@bp.route('/fixed-expenses/create', methods=['POST'])
+@login_required
+@permission_required('accounting', action='add')
+def create_fixed_expense():
+    from app.models import FixedExpense
+    fx = FixedExpense(created_by=current_user.id)
+    err = _read_fixed_expense_form(fx, request.form)
+    if err:
+        return jsonify({'success': False, 'message': err}), 400
+
+    db.session.add(fx)
+    db.session.commit()
+    fx.sync_accrual()
+    db.session.commit()
+
+    log_activity('Accounting', 'Created Fixed Expense: ' + fx.name,
+                 '%s - %s over %s day(s)' % (fx.mode, fx.amount, fx.days))
+    return jsonify({'success': True,
+                    'message': 'Fixed expense "%s" created.' % fx.name,
+                    'item': _fixed_expense_json(fx)})
+
+
+@bp.route('/fixed-expenses/<int:fx_id>/update', methods=['POST'])
+@login_required
+@permission_required('accounting', action='edit')
+def update_fixed_expense(fx_id):
+    from app.models import FixedExpense
+    fx = FixedExpense.query.get_or_404(fx_id)
+    was_active = fx.is_active
+
+    err = _read_fixed_expense_form(fx, request.form)
+    if err:
+        return jsonify({'success': False, 'message': err}), 400
+
+    # A stop trims the open cycle; a resume starts a fresh cycle from today
+    # rather than back-charging the time the template spent switched off.
+    today = datetime.utcnow().date()
+    if fx.is_active and not was_active:
+        _resume_fixed_expense(fx, today)
+    elif was_active and not fx.is_active:
+        _stop_fixed_expense(fx, today)
+
+    db.session.commit()
+    fx.sync_accrual()
+    db.session.commit()
+    if fx.is_active:
+        ensure_fixed_expense_rows()
+
+    log_activity('Accounting', 'Updated Fixed Expense: ' + fx.name,
+                 '%s - %s over %s day(s)' % (fx.mode, fx.amount, fx.days))
+    return jsonify({'success': True,
+                    'message': '"%s" updated.' % fx.name,
+                    'item': _fixed_expense_json(fx)})
+
+
+@bp.route('/fixed-expenses/<int:fx_id>/toggle', methods=['POST'])
+@login_required
+@permission_required('accounting', action='edit')
+def toggle_fixed_expense(fx_id):
+    from app.models import FixedExpense
+    fx = FixedExpense.query.get_or_404(fx_id)
+
+    today = datetime.utcnow().date()
+    if fx.is_active:
+        fx.sync_accrual()          # bank the days earned before pausing
+        fx.is_active = False
+        _stop_fixed_expense(fx, today)
+        state = 'inactive'
+    else:
+        fx.is_active = True
+        _resume_fixed_expense(fx, today)
+        state = 'active'
+
+    db.session.commit()
+    if fx.is_active:
+        ensure_fixed_expense_rows()
+    log_activity('Accounting', 'Fixed Expense set %s: %s' % (state, fx.name))
+    return jsonify({'success': True,
+                    'message': '"%s" is now %s.' % (fx.name, state),
+                    'item': _fixed_expense_json(fx)})
+
+
+@bp.route('/fixed-expenses/<int:fx_id>/post', methods=['POST'])
+@login_required
+@permission_required('accounting', action='add')
+def post_fixed_expense(fx_id):
+    """Turn the accrued balance into one real Expense record."""
+    from app.models import FixedExpense
+    fx = FixedExpense.query.get_or_404(fx_id)
+    if fx.auto_post:
+        return jsonify({'success': False,
+                        'message': 'This fixed expense is added to Expenses automatically — '
+                                   'no manual posting needed.'}), 400
+    fx.sync_accrual()
+
+    pending = round(float(fx.accrued_amount or 0), 2)
+    if pending <= 0:
+        db.session.commit()
+        return jsonify({'success': False,
+                        'message': 'Nothing has accrued yet for this fixed expense.'}), 400
+
+    if not fx.category_id:
+        return jsonify({'success': False,
+                        'message': 'Set a category on this fixed expense before posting.'}), 400
+
+    settings = ExpenseSettings.query.first()
+    if not settings:
+        settings = ExpenseSettings(expense_prefix='EXP-', expense_suffix='', next_number=1)
+        db.session.add(settings)
+        db.session.flush()
+
+    expense_number, next_num = get_unique_expense_number(settings, settings.next_number)
+    settings.next_number = next_num
+
+    is_admin = getattr(current_user, 'is_admin', False)
+    days_note = '%s day(s) @ %s/day' % (fx.days_accrued, round(fx.per_day_amount, 2))
+    expense = Expense(
+        expense_number=expense_number,
+        date=datetime.utcnow(),
+        amount=pending,
+        description='%s - fixed expense (%s)' % (fx.name, days_note),
+        category_id=fx.category_id,
+        vendor_id=fx.vendor_id,
+        status='confirmed' if is_admin else 'pending',
+        created_by=current_user.id,
+        is_approved=is_admin,
+        approved_by=current_user.id if is_admin else None,
+        approved_at=datetime.utcnow() if is_admin else None,
+        is_rejected=False,
+    )
+    db.session.add(expense)
+
+    fx.posted_amount = float(fx.posted_amount or 0) + pending
+    fx.accrued_amount = 0
+    db.session.commit()
+
+    log_activity('Accounting', 'Posted Fixed Expense: ' + fx.name,
+                 '%s - PKR %s (%s)' % (expense_number, pending, days_note))
+    return jsonify({'success': True,
+                    'message': 'Posted PKR {:,.2f} as {}.'.format(pending, expense_number),
+                    'item': _fixed_expense_json(fx)})
+
+
+@bp.route('/fixed-expenses/<int:fx_id>/delete', methods=['POST'])
+@login_required
+@permission_required('accounting', action='delete')
+def delete_fixed_expense(fx_id):
+    """Remove a template. Expenses already posted from it are left untouched."""
+    from app.models import FixedExpense
+    fx = FixedExpense.query.get_or_404(fx_id)
+    name = fx.name
+    # Detach the expenses it produced — they stay in the book on their own.
+    Expense.query.filter_by(fixed_expense_id=fx.id).update({'fixed_expense_id': None})
+    db.session.delete(fx)
+    db.session.commit()
+    log_activity('Accounting', 'Deleted Fixed Expense: ' + name)
+    return jsonify({'success': True,
+                    'message': '"%s" removed. Expenses already posted from it are unchanged.' % name})

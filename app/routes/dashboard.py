@@ -25,6 +25,14 @@ def index():
         # Redirect to a module they are likely to have access to, or just purchase list
         return redirect(url_for('purchase.purchase_orders'))
 
+    # Make sure any fixed-expense cycle that has started is in the book before
+    # the totals are computed. Self-guarding — never raises.
+    try:
+        from app.routes.accounting import ensure_fixed_expense_rows
+        ensure_fixed_expense_rows()
+    except Exception:
+        pass
+
     # Get date filters from request
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')

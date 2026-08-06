@@ -733,6 +733,14 @@ def compute_profit_loss(start_date, end_date):
     """
     from calendar import monthrange
 
+    # Make sure any fixed-expense cycle that has started is in the book before
+    # the numbers are computed. Self-guarding — never raises.
+    try:
+        from app.routes.accounting import ensure_fixed_expense_rows
+        ensure_fixed_expense_rows()
+    except Exception:
+        pass
+
     # 1. Revenue
     sales = Sale.query.filter(Sale.date >= start_date, Sale.date <= end_date).all()
     returns = SaleReturn.query.filter(SaleReturn.date >= start_date, SaleReturn.date <= end_date).all()
@@ -750,9 +758,22 @@ def compute_profit_loss(start_date, end_date):
 
     # 4. Operating Expenses (Deducted from Profit)
     # Categorized Expenses - EXCLUDING BOM overheads as they are informational/inventory related
+    #
+    # Ordinary expenses are picked by their own date. A day-divided expense is
+    # picked by whether its day-window OVERLAPS the period — the same rule the
+    # dashboard uses. Filtering it by date alone dropped a divided expense from
+    # every period that did not happen to contain its start date, so the two
+    # screens disagreed; the proration below then decides how much of it counts.
+    date_window = and_(Expense.date >= start_date, Expense.date <= end_date)
+    divided_overlap = and_(
+        Expense.is_monthly_divided == True,
+        Expense.monthly_start_date != None,
+        Expense.monthly_end_date != None,
+        Expense.monthly_start_date <= end_date.date(),
+        Expense.monthly_end_date >= start_date.date(),
+    )
     operating_expenses = Expense.query.filter(
-        Expense.date >= start_date,
-        Expense.date <= end_date,
+        or_(date_window, divided_overlap),
         Expense.is_bom_overhead == False,
         Expense.is_shifted == False,
         Expense.is_inventory_shifted == False,
