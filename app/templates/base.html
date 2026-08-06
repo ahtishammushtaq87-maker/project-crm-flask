@@ -3266,11 +3266,30 @@
                             const isShowing = menu.classList.contains('show');
                             document.querySelectorAll('.approval-menu.show').forEach(m => m.classList.remove('show'));
                             if (!isShowing) {
-                                // Position menu using fixed coords so it escapes table overflow
+                                // Position using fixed coords so the menu escapes table overflow.
+                                // Show first, then measure: the menu opens upward when there is
+                                // not enough room below, otherwise its last item (e.g. "Set to
+                                // Pending") falls off the bottom of the screen — and because the
+                                // menu is position:fixed, scrolling cannot bring it back.
                                 const rect = badge.getBoundingClientRect();
-                                menu.style.top = (rect.bottom + 4) + 'px';
-                                menu.style.left = Math.max(8, rect.right - 170) + 'px';
                                 menu.classList.add('show');
+
+                                const gap = 4, edge = 8;
+                                const mh = menu.offsetHeight, mw = menu.offsetWidth;
+                                const vh = window.innerHeight, vw = window.innerWidth;
+
+                                let top = rect.bottom + gap;
+                                if (top + mh > vh - edge) {
+                                    const above = rect.top - mh - gap;
+                                    top = above >= edge ? above
+                                        : Math.max(edge, vh - mh - edge);
+                                }
+
+                                let left = rect.right - mw;
+                                left = Math.min(Math.max(edge, left), Math.max(edge, vw - mw - edge));
+
+                                menu.style.top = top + 'px';
+                                menu.style.left = left + 'px';
                             }
                             e.preventDefault();
                             e.stopPropagation();
@@ -3393,6 +3412,7 @@
                                 <li><a class="dropdown-item text-danger fw-bold bulk-app-action" href="javascript:void(0)" data-action="reject"><i class="fas fa-times me-2"></i>Reject Selected</a></li>
                                 <li><a class="dropdown-item text-warning fw-bold bulk-app-action" href="javascript:void(0)" data-action="cancel"><i class="fas fa-ban me-2"></i>Cancel Selected</a></li>
                                 <li><a class="dropdown-item text-muted fw-bold bulk-app-action" href="javascript:void(0)" data-action="draft"><i class="fas fa-file-alt me-2"></i>Set as Draft</a></li>
+                                <li><a class="dropdown-item text-primary fw-bold bulk-app-action" href="javascript:void(0)" data-action="pending"><i class="fas fa-clock me-2"></i>Set as Pending</a></li>
                             </ul>
                         `;
                         container.insertBefore(btnGroup, container.firstChild);
@@ -3434,6 +3454,7 @@
 
                             if (action === 'cancel' && !confirm('Are you sure you want to cancel these ' + selectedIds.length + ' records?')) return;
                             if (action === 'draft' && !confirm('Set these ' + selectedIds.length + ' records as Draft?')) return;
+                            if (action === 'pending' && !confirm('Set these ' + selectedIds.length + ' records back to Pending?')) return;
                             if (action === 'approve' && !confirm('Approve these ' + selectedIds.length + ' records?')) return;
 
                             submitBulkAction(action);

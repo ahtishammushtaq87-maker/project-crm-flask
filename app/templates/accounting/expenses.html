@@ -2,6 +2,21 @@
 {% block title %}Expenses{% endblock %}
 {% from 'components/approval_widget.html' import approval_widget with context %}
 
+{% block extra_css %}
+<style>
+    /* KPI tiles — same design as the Sales Recovery dashboard */
+    .kpi-card { border-left: 4px solid; border-radius: 6px; }
+    .kpi-card.danger    { border-color: #dc3545; }
+    .kpi-card.warning   { border-color: #fd7e14; }
+    .kpi-card.info      { border-color: #0dcaf0; }
+    .kpi-card.success   { border-color: #198754; }
+    .kpi-card.primary   { border-color: #0d6efd; }
+    .kpi-card.secondary { border-color: #6c757d; }
+    .kpi-value { font-size: 1.4rem; font-weight: 700; }
+    .kpi-label { font-size: 0.78rem; color: #6c757d; text-transform: uppercase; letter-spacing: .05em; }
+</style>
+{% endblock %}
+
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
@@ -162,75 +177,35 @@
     {% endif %}
     {% endfor %}
 
-    <div class="row mb-4">
-        <div class="col-md-3">
-            <div class="card-stats shadow-sm" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="text-white-50">Total Op Expense</h6>
-                        <h3 class="mb-0">{{ '%.2f'|format(totals.op) }}</h3>
-                        <small class="text-white-50">Operational expenses</small>
-                    </div>
-                    <div class="stats-icon">
-                        <i class="fas fa-wallet fa-lg"></i>
-                    </div>
-                </div>
+    <div class="row row-cols-2 row-cols-md-3 row-cols-xl-5 g-2 mb-4">
+        <div class="col">
+            <div class="card kpi-card primary p-2 h-100">
+                <div class="kpi-value text-primary">{{ "{:,.0f}".format(totals.op) }}</div>
+                <div class="kpi-label">Total Op Expense</div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card-stats shadow-sm" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="text-white-50">Total Divided</h6>
-                        <h3 class="mb-0">{{ '%.2f'|format(totals.divided) }}</h3>
-                        <small class="text-white-50">Monthly distributed</small>
-                    </div>
-                    <div class="stats-icon">
-                        <i class="fas fa-calendar-alt fa-lg"></i>
-                    </div>
-                </div>
+        <div class="col">
+            <div class="card kpi-card success p-2 h-100">
+                <div class="kpi-value text-success">{{ "{:,.0f}".format(totals.divided) }}</div>
+                <div class="kpi-label">Total Divided</div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card-stats shadow-sm" style="background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%);">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="text-white-50">Total Overhead</h6>
-                        <h3 class="mb-0">{{ '%.2f'|format(totals.mo_overhead) }}</h3>
-                        <small class="text-white-50">MO overheads</small>
-                    </div>
-                    <div class="stats-icon">
-                        <i class="fas fa-industry fa-lg"></i>
-                    </div>
-                </div>
+        <div class="col">
+            <div class="card kpi-card warning p-2 h-100">
+                <div class="kpi-value text-warning">{{ "{:,.0f}".format(totals.mo_overhead) }}</div>
+                <div class="kpi-label">Total Overhead</div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card-stats shadow-sm" style="background: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%);">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="text-white-50">PD Shifted</h6>
-                        <h3 class="mb-0">{{ '%.2f'|format(totals.shifted) }}</h3>
-                        <small class="text-white-50">Production project costs</small>
-                    </div>
-                    <div class="stats-icon">
-                        <i class="fas fa-project-diagram fa-lg"></i>
-                    </div>
-                </div>
+        <div class="col">
+            <div class="card kpi-card danger p-2 h-100">
+                <div class="kpi-value text-danger">{{ "{:,.0f}".format(totals.shifted) }}</div>
+                <div class="kpi-label">PD Shifted</div>
             </div>
         </div>
-        <div class="col-md-3 mt-3">
-            <div class="card-stats shadow-sm" style="background: linear-gradient(135deg, #360033 0%, #0b8793 100%);">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="text-white-50">Inventory Shifted</h6>
-                        <h3 class="mb-0">{{ '%.2f'|format(totals.inv_shifted) }}</h3>
-                        <small class="text-white-50">Shifted to item cost</small>
-                    </div>
-                    <div class="stats-icon">
-                        <i class="fas fa-boxes fa-lg"></i>
-                    </div>
-                </div>
+        <div class="col">
+            <div class="card kpi-card info p-2 h-100">
+                <div class="kpi-value text-info">{{ "{:,.0f}".format(totals.inv_shifted) }}</div>
+                <div class="kpi-label">Inventory Shifted</div>
             </div>
         </div>
     </div>
@@ -283,7 +258,69 @@
                     <a href="{{ url_for('accounting.expenses', reset=1) }}" class="btn btn-secondary"><i
                             class="fas fa-times"></i> Clear</a>
                 </div>
+
+                {# Keep the active status tab when the filters are re-submitted #}
+                <input type="hidden" name="status" value="{{ current_status }}">
             </form>
+
+            {# ── Approval status tabs (same pattern as Sales / Journal) ──
+               Links carry the current filters through, so switching tabs narrows
+               the view instead of resetting it. #}
+            {% set tab_args = {'vendor_id': selected_vendor, 'category_id': selected_category,
+                               'mo_id': selected_mo_id, 'start_date': selected_start_date,
+                               'end_date': selected_end_date} %}
+            <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto">
+                <li class="nav-item">
+                    <a class="nav-link text-nowrap {% if current_status == 'all' %}active{% endif %}"
+                       href="{{ url_for('accounting.expenses', status='all', **tab_args) }}">
+                        <i class="fas fa-list me-1"></i> All
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link text-success fw-bold text-nowrap {% if current_status == 'approved' %}active{% endif %}"
+                       href="{{ url_for('accounting.expenses', status='approved', **tab_args) }}">
+                        <i class="fas fa-check-circle me-1"></i> Approved
+                    </a>
+                </li>
+                {% if current_user.is_admin %}
+                <li class="nav-item">
+                    <a class="nav-link text-warning fw-bold text-nowrap {% if current_status == 'unapproved' %}active{% endif %}"
+                       href="{{ url_for('accounting.expenses', status='unapproved', **tab_args) }}">
+                        <i class="fas fa-clock me-1"></i> Unapproved
+                        {% if unapproved_count > 0 %}
+                        <span class="badge bg-warning text-dark ms-1">{{ unapproved_count }}</span>
+                        {% endif %}
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link text-danger fw-bold text-nowrap {% if current_status == 'rejected_items' %}active{% endif %}"
+                       href="{{ url_for('accounting.expenses', status='rejected_items', **tab_args) }}">
+                        <i class="fas fa-times-circle me-1"></i> Rejected Items
+                        {% if rejected_item_count > 0 %}
+                        <span class="badge bg-danger ms-1">{{ rejected_item_count }}</span>
+                        {% endif %}
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link text-info fw-bold text-nowrap {% if current_status == 'draft' %}active{% endif %}"
+                       href="{{ url_for('accounting.expenses', status='draft', **tab_args) }}">
+                        <i class="fas fa-file me-1"></i> Draft
+                        {% if draft_count > 0 %}
+                        <span class="badge bg-info ms-1">{{ draft_count }}</span>
+                        {% endif %}
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link text-secondary fw-bold text-nowrap {% if current_status == 'cancelled' %}active{% endif %}"
+                       href="{{ url_for('accounting.expenses', status='cancelled', **tab_args) }}">
+                        <i class="fas fa-ban me-1"></i> Cancelled
+                        {% if cancelled_count > 0 %}
+                        <span class="badge bg-secondary ms-1">{{ cancelled_count }}</span>
+                        {% endif %}
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
 
             <div class="table-responsive expenses-table-responsive">
                 <table class="table table-striped datatable-export" data-export-title="Expenses">

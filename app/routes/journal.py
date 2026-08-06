@@ -323,13 +323,60 @@ def add_money_quick():
 
 # ─── Journal Entries ───────────────────────────────────────────────────────────
 
+# Status predicates, matching how ApprovalService.get_status() reads an entry:
+# rejected wins over approved, approved wins over draft. A "cancelled" entry is
+# a rejection carrying the reason ApprovalService writes for a cancel action.
+CANCEL_REASON = 'Cancelled by Admin'
+
+
+def _status_filters():
+    """Return the reusable SQLAlchemy predicates for each status tab."""
+    is_cancelled = ((JournalEntry.is_rejected == True) &
+                    (JournalEntry.rejection_reason == CANCEL_REASON))
+    is_rejected_only = ((JournalEntry.is_rejected == True) &
+                        ((JournalEntry.rejection_reason == None) |
+                         (JournalEntry.rejection_reason != CANCEL_REASON)))
+    # NULL-safe: a row with a NULL flag must still land in exactly one tab,
+    # never disappear from all of them.
+    not_drafted = ((JournalEntry.is_draft == False) | (JournalEntry.is_draft == None))
+    not_rejected = ((JournalEntry.is_rejected == False) | (JournalEntry.is_rejected == None))
+    not_approved = ((JournalEntry.is_approved == False) | (JournalEntry.is_approved == None))
+    is_draft_only = ((JournalEntry.is_draft == True) & not_rejected & not_approved)
+    is_unapproved = (not_approved & not_rejected & not_drafted)
+    is_approved = (JournalEntry.is_approved == True)
+    return is_cancelled, is_rejected_only, is_draft_only, is_unapproved, is_approved
+
+
+def _apply_status(query, status):
+    """Narrow a JournalEntry query to one status tab."""
+    is_cancelled, is_rejected_only, is_draft_only, is_unapproved, is_approved = _status_filters()
+
+    if status == 'unapproved':
+        return query.filter(is_unapproved)
+    if status == 'rejected_items':
+        return query.filter(is_rejected_only)
+    if status == 'draft':
+        return query.filter(is_draft_only)
+    if status == 'cancelled':
+        return query.filter(is_cancelled)
+    if status == 'approved':
+        return query.filter(is_approved, ~is_cancelled)
+    # 'all' — the working view: cancelled and drafts live in their own tabs.
+    return query.filter(~is_cancelled,
+                        (JournalEntry.is_draft == False) | (JournalEntry.is_draft == None))
+
+
 def _filtered_entries(args, newest_first=True):
-    """Apply the account/date/category filters (shared by the list page and the
-    exports) and return (entries, account_id, date_from, date_to, category_id)."""
+    """Apply the account/date/category/status filters (shared by the list page
+    and the exports) and return (entries, account_id, date_from, date_to,
+    category_id, status)."""
     account_id  = args.get('account_id',  type=int)
     category_id = args.get('category_id', type=int)
     date_from   = _date_or_none(args.get('date_from'))
     date_to     = _date_or_none(args.get('date_to'))
+    status      = (args.get('status') or 'all').strip().lower()
+    if status not in ('all', 'approved', 'unapproved', 'rejected_items', 'draft', 'cancelled'):
+        status = 'all'
 
     query = JournalEntry.query
     if account_id:
@@ -340,12 +387,13 @@ def _filtered_entries(args, newest_first=True):
         query = query.filter(JournalEntry.date >= date_from)
     if date_to:
         query = query.filter(JournalEntry.date <= date_to)
+    query = _apply_status(query, status)
 
     if newest_first:
         query = query.order_by(JournalEntry.date.desc(), JournalEntry.id.desc())
     else:
         query = query.order_by(JournalEntry.date.asc(), JournalEntry.id.asc())
-    return query.all(), account_id, date_from, date_to, category_id
+    return query.all(), account_id, date_from, date_to, category_id, status
 
 
 def _grouped_by_account(entries, account_id=None):
@@ -374,7 +422,7 @@ def entries():
     if guard:
         return guard
 
-    all_entries, account_id, date_from, date_to, category_id = _filtered_entries(request.args)
+    all_entries, account_id, date_from, date_to, category_id, status = _filtered_entries(request.args)
 
     accounts = JournalAccount.query.order_by(JournalAccount.name).all()
     from app.models import ExpenseCategory
@@ -388,6 +436,19 @@ def entries():
     # Total remaining bank balance = sum of all active account balances
     bank_balance = sum(a.balance for a in accounts if a.is_active)
 
+    # ── Status tab counts (whole book, not the current tab) ────────────────────
+    is_cancelled, is_rejected_only, is_draft_only, is_unapproved, _ = _status_filters()
+    unapproved_count = JournalEntry.query.filter(is_unapproved).count()
+    rejected_item_count = JournalEntry.query.filter(is_rejected_only).count()
+    draft_count = JournalEntry.query.filter(is_draft_only).count()
+    cancelled_count = JournalEntry.query.filter(is_cancelled).count()
+
+    # Bulk actions are admin-only. Non-admins keep their per-row delete button
+    # (gated by can_delete_accounting) — only the multi-select tools are hidden,
+    # so the checkbox column does not render for them at all.
+    can_bulk_delete = bool(current_user.is_admin)
+    can_bulk_approve = bool(current_user.is_admin)
+
     return render_template('journal/entries.html', entries=all_entries,
                            accounts=accounts,
                            expense_categories=expense_categories,
@@ -397,7 +458,15 @@ def entries():
                            f_date_to=request.args.get('date_to', ''),
                            grand_debit=grand_debit,
                            grand_credit=grand_credit,
-                           bank_balance=bank_balance)
+                           bank_balance=bank_balance,
+                           can_bulk_delete=can_bulk_delete,
+                           can_bulk_approve=can_bulk_approve,
+                           can_bulk=can_bulk_delete or can_bulk_approve,
+                           current_status=status,
+                           unapproved_count=unapproved_count,
+                           rejected_item_count=rejected_item_count,
+                           draft_count=draft_count,
+                           cancelled_count=cancelled_count)
 
 
 # ─── Account-wise exports (Excel / PDF), grouped by account ────────────────────
@@ -424,7 +493,7 @@ def export_excel():
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-    entries, account_id, date_from, date_to, category_id = _filtered_entries(request.args, newest_first=False)
+    entries, account_id, date_from, date_to, category_id, _status = _filtered_entries(request.args, newest_first=False)
     groups = _grouped_by_account(entries, account_id)
 
     wb = Workbook()
@@ -562,7 +631,7 @@ def export_pdf():
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle)
 
-    entries, account_id, date_from, date_to, category_id = _filtered_entries(request.args, newest_first=False)
+    entries, account_id, date_from, date_to, category_id, _status = _filtered_entries(request.args, newest_first=False)
     groups = _grouped_by_account(entries, account_id)
 
     styles = getSampleStyleSheet()
@@ -924,3 +993,75 @@ def delete_entry(entry_id):
     db.session.commit()
     flash('Journal entry deleted.', 'success')
     return redirect(url_for('journal.entries'))
+
+
+@bp.route('/entries/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete_entries():
+    """Delete several journal entries in one request (JSON: {"ids": [...]}).
+
+    Admin-only, matching the bulk approve endpoint — deleting many rows at once
+    is a bigger action than the per-row delete, which stays open to users with
+    can_delete_accounting. Entries already pushed to the Expense module are
+    skipped rather than deleted, so bulk selection can never silently orphan an
+    expense record — those must be removed from Expenses first. Account balances
+    are computed from the lines, so nothing needs unwinding: JournalLine rows go
+    with the entry via the delete-orphan cascade.
+    """
+    if not current_user.is_admin:
+        return jsonify({'success': False,
+                        'message': 'Only admins can bulk delete journal entries.'}), 403
+
+    data = request.get_json(silent=True) or {}
+    ids = data.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No journal entries selected.'}), 400
+
+    try:
+        ids = [int(i) for i in ids]
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'Invalid entry id in selection.'}), 400
+
+    deleted_count = 0
+    skipped_expense = []
+    errors = []
+
+    try:
+        for entry in JournalEntry.query.filter(JournalEntry.id.in_(ids)).all():
+            if entry.expense_id:
+                skipped_expense.append(entry.id)
+                continue
+            db.session.delete(entry)
+            deleted_count += 1
+
+        if deleted_count:
+            db.session.commit()
+        else:
+            db.session.rollback()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False,
+                        'message': f'Nothing was deleted — the operation failed: {e}'}), 500
+
+    if deleted_count:
+        try:
+            from app.utils import log_activity
+            log_activity('Journal', 'Bulk Deleted Journal Entries',
+                         f'Deleted {deleted_count} entries.')
+        except Exception:
+            pass
+
+    parts = [f'Deleted {deleted_count} journal '
+             f'{"entry" if deleted_count == 1 else "entries"}.']
+    if skipped_expense:
+        parts.append(f'Skipped {len(skipped_expense)} already sent to Expense '
+                     f'(#{", #".join(str(i) for i in skipped_expense)}) — '
+                     f'remove them from the Expense module first.')
+
+    return jsonify({
+        'success': deleted_count > 0,
+        'message': ' '.join(parts),
+        'deleted_count': deleted_count,
+        'skipped': skipped_expense,
+        'errors': errors,
+    })

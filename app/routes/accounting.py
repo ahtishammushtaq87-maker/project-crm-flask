@@ -990,7 +990,54 @@ def expenses():
         query = query.filter(Expense.date < end_datetime)
     
     query = apply_saved_filter_to_query(query, 'expense', request.args)
-    
+
+    # ── Approval status tabs ──────────────────────────────────────────────────
+    # Derived from the same flags ApprovalService.get_status() reads, in the same
+    # precedence order (rejected > approved > draft). A "cancelled" expense is a
+    # rejection carrying the reason the cancel action writes.
+    CANCEL_REASON = 'Cancelled by Admin'
+    # NULL-safe: a row with a NULL status/flag must still land in exactly one tab,
+    # never disappear from all of them.
+    not_cancelled_status = ((Expense.status == None) | (Expense.status != 'cancelled'))
+    is_cancelled = (((Expense.is_rejected == True) & (Expense.rejection_reason == CANCEL_REASON))
+                    | (Expense.status == 'cancelled'))
+    is_rejected_only = ((Expense.is_rejected == True)
+                        & ((Expense.rejection_reason == None)
+                           | (Expense.rejection_reason != CANCEL_REASON))
+                        & not_cancelled_status)
+    is_draft_only = ((Expense.is_draft == True)
+                     & ((Expense.is_rejected == False) | (Expense.is_rejected == None))
+                     & ((Expense.is_approved == False) | (Expense.is_approved == None)))
+    is_unapproved = (((Expense.is_approved == False) | (Expense.is_approved == None))
+                     & ((Expense.is_rejected == False) | (Expense.is_rejected == None))
+                     & ((Expense.is_draft == False) | (Expense.is_draft == None))
+                     & not_cancelled_status)
+
+    exp_status = (request.args.get('status') or 'all').strip().lower()
+    if exp_status not in ('all', 'approved', 'unapproved', 'rejected_items', 'draft', 'cancelled'):
+        exp_status = 'all'
+
+    if exp_status == 'unapproved':
+        query = query.filter(is_unapproved)
+    elif exp_status == 'rejected_items':
+        query = query.filter(is_rejected_only)
+    elif exp_status == 'draft':
+        query = query.filter(is_draft_only)
+    elif exp_status == 'cancelled':
+        query = query.filter(is_cancelled)
+    elif exp_status == 'approved':
+        query = query.filter(Expense.is_approved == True, ~is_cancelled)
+    else:
+        # 'all' — the working view: cancelled and drafts live in their own tabs.
+        query = query.filter(~is_cancelled,
+                             (Expense.is_draft == False) | (Expense.is_draft == None))
+
+    # Counts span the whole book, not the current tab.
+    unapproved_count = Expense.query.filter(is_unapproved).count()
+    rejected_item_count = Expense.query.filter(is_rejected_only).count()
+    draft_count = Expense.query.filter(is_draft_only).count()
+    cancelled_count = Expense.query.filter(is_cancelled).count()
+
     expenses = query.order_by(Expense.date.desc()).all()
     # Calculate confirmed expenses, excluding those shifted to PD projects
     total_expense = sum(e.amount for e in expenses if e.status == 'confirmed' and not getattr(e, 'is_shifted', False) and not getattr(e, 'is_inventory_shifted', False))
@@ -1042,6 +1089,11 @@ def expenses():
                          selected_end_date=end_date,
                          date_format=date_format,
                          active_module='expense',
+                         current_status=exp_status,
+                         unapproved_count=unapproved_count,
+                         rejected_item_count=rejected_item_count,
+                         draft_count=draft_count,
+                         cancelled_count=cancelled_count,
                          filter_id=request.args.get('filter_id'))
 
 

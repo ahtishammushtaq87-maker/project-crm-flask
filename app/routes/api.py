@@ -490,7 +490,10 @@ def universal_bulk_approval():
         return jsonify({'success': False, 'message': f"Unsupported module: {module}"}), 400
 
     config = ApprovalService.get_config(module)
-    if action not in config.get('actions', []):
+    # 'pending' is always allowed (same as the single-item endpoint above): it is
+    # the way back from approved / rejected / draft, not a per-module workflow step.
+    valid_actions = list(config.get('actions', [])) + ['pending']
+    if action not in valid_actions:
         return jsonify({'success': False, 'message': f"Action '{action}' not valid for {module}."}), 400
 
     if action == 'reject' and not reason:
@@ -505,7 +508,7 @@ def universal_bulk_approval():
                 ApprovalService.approve(module, item_id)
             elif action == 'reject':
                 ApprovalService.reject(module, item_id, reason)
-            elif action in ('cancel', 'draft'):
+            elif action in ('cancel', 'draft', 'pending'):
                 ApprovalService.set_status(module, item_id, action)
             success_count += 1
         except Exception as e:

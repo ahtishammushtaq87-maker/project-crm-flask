@@ -1547,6 +1547,10 @@ class Expense(db.Model):
     rejection_reason = db.Column(db.Text, nullable=True)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
+    # Held back by an admin — distinct from pending, which awaits review.
+    # Without this the "Set as Draft" action has nowhere to record itself and
+    # silently reads back as Pending.
+    is_draft = db.Column(db.Boolean, default=False, index=True)
     
     # Monthly distribution fields
     is_monthly_divided = db.Column(db.Boolean, default=False)  # Whether expense is divided across month
@@ -3850,6 +3854,9 @@ class JournalEntry(db.Model):
     rejection_reason = db.Column(db.Text, nullable=True)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
+    # Held back by an admin — distinct from pending, which is awaiting review.
+    # Drafts never count towards an account balance (that needs is_approved).
+    is_draft = db.Column(db.Boolean, default=False, index=True)
 
     lines = db.relationship(
         'JournalLine', backref='entry', lazy=True,
