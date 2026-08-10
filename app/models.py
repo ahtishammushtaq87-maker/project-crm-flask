@@ -1108,19 +1108,36 @@ class SaleItem(db.Model):
     warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
     quantity = db.Column(db.Float, nullable=False)
     unit_price = db.Column(db.Float, nullable=False)
+    # Discount per unit, as typed on the invoice form. `discount` stays the
+    # whole-line figure (unit_discount x quantity) so every existing consumer —
+    # totals, returns, reports, P&L — keeps working untouched.
+    unit_discount = db.Column(db.Float, default=0)
     discount = db.Column(db.Float, default=0)
     delivery_fee = db.Column(db.Float, default=0)
     total = db.Column(db.Float, nullable=False)
-    
+
     @property
     def net_total(self):
         """Calculate net total after discount"""
         return self.total - self.discount
-    
+
     @property
     def item_subtotal(self):
         """Subtotal before delivery fee"""
         return self.quantity * self.unit_price
+
+    @property
+    def effective_unit_discount(self):
+        """Per-unit discount for display.
+
+        Rows created before per-unit discounts existed only carry a line total,
+        so derive the per-unit figure from it rather than showing zero.
+        """
+        if self.unit_discount:
+            return self.unit_discount
+        if self.discount and self.quantity:
+            return self.discount / self.quantity
+        return 0
     
     @property
     def return_quantity(self):

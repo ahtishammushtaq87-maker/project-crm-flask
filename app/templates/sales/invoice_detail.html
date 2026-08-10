@@ -248,35 +248,109 @@
                             &nbsp;|&nbsp; Balance Due: <strong>PKR {{ "{:,.2f}".format(sale.total - sale.paid_amount)
                                 }}</strong></p>
                         <div class="mb-3">
-                            <label class="form-label fw-semibold">Discount Amount (PKR)</label>
-                            <input type="number" step="0.01" name="discount_amount" class="form-control"
-                                placeholder="0.00">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">Apply to Item(s) <span class="text-muted fw-normal">(optional)</span></label>
-                            <select name="item_ids[]" id="discountItemSelect" class="form-select" multiple>
-                                {% for item in sale.items %}
-                                <option value="{{ item.id }}">
-                                    {{ item.product.name if item.product else 'Unknown Item' }}
-                                    (Qty: {{ '%g'|format(item.quantity) }}{% if item.discount %}, current discount: PKR {{ "{:,.2f}".format(item.discount) }}{% endif %})
-                                </option>
-                                {% endfor %}
-                            </select>
-                            <div class="small text-muted mt-1">Leave blank to apply as a general invoice discount. Select one or more items to add this discount to their Discount column (split evenly across a bulk selection).</div>
-                        </div>
-                        {% if sale.is_overdue %}
-                        <div class="mb-3">
-                            <div class="form-check form-switch border p-2 rounded bg-light">
-                                <input class="form-check-input ms-0" type="checkbox" name="ignore_overdue_discount"
-                                    id="ignoreOverdue" {% if sale.ignore_overdue_discount %}checked{% endif %}>
-                                <label class="form-check-label fw-bold text-danger ms-2" for="ignoreOverdue">
-                                    Override Overdue Restriction
+                            <label class="form-label fw-semibold">Discount Type</label>
+                            <div class="btn-group w-100" role="group">
+                                <input type="radio" class="btn-check" name="discount_mode" id="dmLump"
+                                       value="lump_sum" checked>
+                                <label class="btn btn-outline-warning" for="dmLump">
+                                    <i class="fas fa-file-invoice-dollar me-1"></i> Lump Sum
                                 </label>
-                                <div class="small text-muted ms-2 mt-1">Check this to allow discount on this overdue
-                                    invoice.</div>
+                                <input type="radio" class="btn-check" name="discount_mode" id="dmPerItem"
+                                       value="per_item">
+                                <label class="btn btn-outline-warning" for="dmPerItem">
+                                    <i class="fas fa-cubes me-1"></i> Per Item
+                                </label>
+                            </div>
+                            <div class="small text-muted mt-1" id="dmHelp">
+                                One amount for the whole invoice, divided across the items in
+                                proportion to their value.
                             </div>
                         </div>
-                        {% endif %}
+
+                        {# ── Lump sum: just the one amount ── #}
+                        <div class="mb-3" id="lumpSection">
+                            <label class="form-label fw-semibold" for="discountAmountInput">Discount Amount (PKR)</label>
+                            <input type="number" step="0.01" min="0" name="discount_amount" id="discountAmountInput"
+                                class="form-control" placeholder="0.00">
+                            <div class="small text-muted mt-1">
+                                Spread over every item on the invoice, by value.
+                            </div>
+                        </div>
+
+                        {# ── Per item: every line gets its own per-unit box ── #}
+                        <div class="mb-3 d-none" id="perItemSection">
+                            <label class="form-label fw-semibold">Discount Per Unit</label>
+                            <div class="table-responsive border rounded">
+                                <table class="table table-sm align-middle mb-0" id="perItemDiscountTable">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Item</th>
+                                            <th class="text-center" style="width:70px;">Qty</th>
+                                            <th class="text-end" style="width:120px;">Per Unit</th>
+                                            <th class="text-end" style="width:110px;">Line Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for item in sale.items %}
+                                        <tr>
+                                            <td>
+                                                <div class="fw-semibold small">
+                                                    {{ item.product.name if item.product else 'Unknown Item' }}
+                                                </div>
+                                                {% if item.discount %}
+                                                <div class="text-muted" style="font-size:.7rem;">
+                                                    already discounted PKR {{ "{:,.2f}".format(item.discount) }}
+                                                </div>
+                                                {% endif %}
+                                            </td>
+                                            <td class="text-center small">{{ '%g'|format(item.quantity) }}</td>
+                                            <td>
+                                                <input type="number" step="0.01" min="0"
+                                                       class="form-control form-control-sm text-end per-item-discount"
+                                                       name="unit_discount_{{ item.id }}"
+                                                       data-qty="{{ item.quantity }}" placeholder="0.00">
+                                            </td>
+                                            <td class="text-end small fw-semibold per-item-line">-</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                    <tfoot class="table-light">
+                                        <tr>
+                                            <th colspan="3" class="text-end">Total discount added</th>
+                                            <th class="text-end text-danger" id="perItemGrandTotal">PKR 0.00</th>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                            <div class="small text-muted mt-1">
+                                Type an amount against the items you want to discount. Each one is charged on
+                                every unit of that item, so it scales with the quantity. Leave the rest blank.
+                            </div>
+                        </div>
+
+                        {# Always shown. The route writes this flag on every submit, so hiding
+                           it on a not-yet-overdue invoice silently cleared an override that
+                           had been set earlier. Keeping it visible also lets the override be
+                           granted in advance, before the invoice goes overdue. #}
+                        <div class="mb-3">
+                            <div class="form-check form-switch border p-2 rounded {% if sale.is_overdue %}bg-light border-danger{% else %}bg-light{% endif %}">
+                                <input class="form-check-input ms-0" type="checkbox" name="ignore_overdue_discount"
+                                    id="ignoreOverdue" {% if sale.ignore_overdue_discount %}checked{% endif %}>
+                                <label class="form-check-label fw-bold ms-2 {% if sale.is_overdue %}text-danger{% else %}text-secondary{% endif %}"
+                                    for="ignoreOverdue">
+                                    Override Overdue Restriction
+                                </label>
+                                <div class="small text-muted ms-2 mt-1">
+                                    {% if sale.is_overdue %}
+                                    This invoice is <strong class="text-danger">overdue</strong> — tick this to allow
+                                    the discount, otherwise it stays suspended.
+                                    {% else %}
+                                    Not overdue right now. Tick this to keep the discount valid if it
+                                    later becomes overdue.
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -286,6 +360,81 @@
             </div>
         </div>
     </div>
+
+<script>
+    (function () {
+        var lump = document.getElementById('dmLump');
+        var perItem = document.getElementById('dmPerItem');
+        if (!lump || !perItem) return;
+
+        var help = document.getElementById('dmHelp');
+        var lumpSection = document.getElementById('lumpSection');
+        var perItemSection = document.getElementById('perItemSection');
+        var amount = document.getElementById('discountAmountInput');
+        var grand = document.getElementById('perItemGrandTotal');
+        var rows = Array.prototype.slice.call(
+            document.querySelectorAll('#perItemDiscountTable tbody tr'));
+
+        function money(n) {
+            return 'PKR ' + (Number(n) || 0).toLocaleString(undefined,
+                { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function recalcPerItem() {
+            var total = 0;
+            rows.forEach(function (r) {
+                var input = r.querySelector('.per-item-discount');
+                var cell = r.querySelector('.per-item-line');
+                var unit = parseFloat(input.value) || 0;
+                var qty = parseFloat(input.dataset.qty) || 0;
+                var line = unit * qty;
+                total += line;
+                cell.textContent = line > 0 ? money(line) : '-';
+                cell.classList.toggle('text-danger', line > 0);
+            });
+            grand.textContent = money(total);
+            return total;
+        }
+
+        function applyMode() {
+            var isPerItem = perItem.checked;
+            lumpSection.classList.toggle('d-none', isPerItem);
+            perItemSection.classList.toggle('d-none', !isPerItem);
+            help.textContent = isPerItem
+                ? 'A per-unit amount on each item you choose below, so it scales with that item\'s quantity.'
+                : 'One amount for the whole invoice, divided across the items in proportion to their value.';
+            // Only the active mode's fields are submitted, so the other cannot
+            // leak a stale value into the request.
+            amount.disabled = isPerItem;
+            rows.forEach(function (r) {
+                r.querySelector('.per-item-discount').disabled = !isPerItem;
+            });
+            if (isPerItem) recalcPerItem();
+        }
+
+        lump.addEventListener('change', applyMode);
+        perItem.addEventListener('change', applyMode);
+        rows.forEach(function (r) {
+            r.querySelector('.per-item-discount').addEventListener('input', recalcPerItem);
+        });
+
+        // Do not submit an empty discount in either mode
+        var form = lump.form;
+        form.addEventListener('submit', function (e) {
+            if (perItem.checked) {
+                if (recalcPerItem() <= 0) {
+                    e.preventDefault();
+                    alert('Enter a per-unit discount against at least one item.');
+                }
+            } else if ((parseFloat(amount.value) || 0) <= 0) {
+                e.preventDefault();
+                alert('Enter a discount amount.');
+            }
+        });
+
+        applyMode();
+    })();
+</script>
 
     <!-- Apply Advance Modal -->
     <div class="modal fade" id="applyAdvanceModal" tabindex="-1">
@@ -624,7 +773,7 @@
                         {% set items_discount_sum = sale.items | sum(attribute='discount') %}
                         {% set show_discount_col = effective_discount > 0 or items_discount_sum > 0 %}
                         {% set base_cols = 9 %}
-                        {% set total_cols = base_cols + (1 if show_delivery_col else 0) + (1 if show_discount_col else
+                        {% set total_cols = base_cols + (1 if show_delivery_col else 0) + (2 if show_discount_col else
                         0) %}
                         {% set label_colspan = total_cols - 1 %}
                         {% set sum_item_subtotal = sale.subtotal - sum_item_delivery %}
@@ -643,6 +792,7 @@
                                     <th class="text-end text-info"><i class="fas fa-truck me-1"></i>Delivery</th>
                                     {% endif %}
                                     {% if show_discount_col %}
+                                    <th class="text-end text-success">Unit Discount</th>
                                     <th class="text-end text-success">Total Discount</th>
                                     {% endif %}
                                     <th class="text-end text-success">Profit</th>
@@ -697,6 +847,17 @@
                                     {% endif %}
                                     {% if show_discount_col %}
                                     {% set item_discount_pct = (item_discount / item_subtotal * 100) if item_subtotal > 0 else 0 %}
+                                    {# Per-unit figure is derived from the discount actually applied to this line,
+                                       so it stays truthful after returns or an overdue restriction. #}
+                                    {% set unit_discount_shown = (item_discount / item.quantity) if item.quantity else 0 %}
+                                    <td class="text-end text-success">
+                                        {% if unit_discount_shown > 0 %}
+                                        -Rs {{ "{:,.2f}".format(unit_discount_shown) }}
+                                        <small class="text-muted d-block" style="font-size:.68rem;">per unit</small>
+                                        {% else %}
+                                        <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
                                     <td class="text-end text-success">
                                         -Rs {{ "{:,.2f}".format(item_discount) }}
                                         {% if item_discount > 0 %}
@@ -1454,17 +1615,8 @@
             });
         });
 
-        // Searchable multi-select for targeting the direct discount to specific item(s)
-        const discountItemSelect = document.getElementById('discountItemSelect');
-        if (discountItemSelect && window.jQuery && $.fn.select2) {
-            $(discountItemSelect).select2({
-                theme: 'bootstrap-5',
-                placeholder: 'Apply as general invoice discount (no item selected)',
-                allowClear: true,
-                width: '100%',
-                dropdownParent: $('#discountModal')
-            });
-        }
+        // (The discount popup no longer uses a multi-select: Per Item mode lists
+        // every item with its own per-unit box instead.)
     });
 </script>
 {% endblock %}

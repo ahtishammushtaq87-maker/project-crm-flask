@@ -178,8 +178,22 @@
                     </div>
                     <div class="card-body py-2">
                         <div class="row g-2 mb-2">
+                            <div class="mb-2">
+                                <label class="form-label mb-1 small fw-semibold">Discount Type</label>
+                                <div class="btn-group w-100" role="group">
+                                    <input type="radio" class="btn-check" name="discount_mode" id="dmPerItem"
+                                           value="per_item" checked>
+                                    <label class="btn btn-outline-secondary btn-sm" for="dmPerItem">Per Item</label>
+                                    <input type="radio" class="btn-check" name="discount_mode" id="dmLump"
+                                           value="lump_sum" >
+                                    <label class="btn btn-outline-secondary btn-sm" for="dmLump">Lump Sum</label>
+                                </div>
+                                <div class="form-text small" id="discountModeHelp">
+                                    Per Item: type a per-unit discount on each row.
+                                </div>
+                            </div>
                             <div class="col-6">
-                                <label for="discountInput" class="form-label mb-0 small fw-semibold">Discount <span class="text-muted fw-normal">(auto)</span></label>
+                                <label for="discountInput" class="form-label mb-0 small fw-semibold">Invoice Discount <span class="text-muted fw-normal" id="discountAutoTag">(auto)</span></label>
                                 <input type="number" name="discount" id="discountInput" class="form-control form-control-sm bg-light" step="0.01"
                                     value="{{ '%.2f'|format(sale.discount) }}" readonly title="Auto-calculated as the sum of each item's Discount field">
                             </div>
@@ -276,7 +290,7 @@
                                         <th>Qty</th>
                                         <th>Cost</th>
                                         <th>Price</th>
-                                        <th>Discount</th>
+                                        <th>Discount<br><small class="fw-normal text-muted" style="font-size:.65rem;">per unit</small></th>
                                         <th>Del.</th>
                                         <th>Total</th>
                                         <th>Profit</th>
@@ -318,9 +332,11 @@
                                                 value="{{ '%.2f'|format(item.unit_price) }}" {% if not current_user.is_admin %}readonly{% endif %}>
                                         </td>
                                         <td>
-                                            <input type="number" name="discount[]" class="form-control form-control-sm item-discount text-center" step="0.01"
-                                                value="{{ '%.2f'|format(item.discount) }}" min="0">
-                                            <small class="discount-percent text-danger d-block text-center" style="font-size:.68rem;"></small>
+                                            <input type="number" name="unit_discount[]" class="form-control form-control-sm item-discount text-center" step="0.01"
+                                                value="{{ '%.2f'|format(item.effective_unit_discount) }}" min="0"
+                                                title="Discount for ONE unit — multiplied by the quantity">
+                                            <small class="discount-line text-danger d-block text-center" style="font-size:.68rem;"></small>
+                                            <small class="discount-percent text-muted d-block text-center" style="font-size:.62rem;"></small>
                                         </td>
                                         <td>
                                             <input type="number" name="delivery[]" class="form-control form-control-sm delivery text-center" step="0.01"
@@ -493,6 +509,14 @@
         newRow.querySelector('.item-total').textContent = 'PKR0.00';
         newRow.querySelector('.item-profit').textContent = '-';
         newRow.querySelector('.discount-percent').textContent = '';
+        const dl = newRow.querySelector('.discount-line');
+        if (dl) dl.textContent = '';
+        if (window.isLumpSumMode && window.isLumpSumMode()) {
+            const di = newRow.querySelector('.item-discount');
+            di.readOnly = true;
+            di.classList.add('bg-light');
+            if (window.distributeLumpSum) window.distributeLumpSum();
+        }
         newRow.querySelector('.product-select').selectedIndex = 0;
         document.getElementById('itemsBody').appendChild(newRow);
         initSelect2($(newRow).find('.product-select'), 'Search or select product');
@@ -537,19 +561,34 @@
     }
 
     function calculateItemTotal(row) {
+        // In Lump Sum mode the per-unit figures are derived, not typed, so a
+        // quantity or price change re-splits the invoice discount first.
+        if (window.isLumpSumMode && window.isLumpSumMode() && !window.__splitting) {
+            window.__splitting = true;
+            if (window.distributeLumpSum) window.distributeLumpSum();
+            window.__splitting = false;
+        }
         const qty = parseFloat(row.querySelector('.quantity').value) || 0;
         const price = parseFloat(row.querySelector('.price').value) || 0;
         const delivery = parseFloat(row.querySelector('.delivery').value) || 0;
-        const discount = parseFloat(row.querySelector('.item-discount').value) || 0;
+        // The field holds the discount for ONE unit, so the line discount grows
+        // with the quantity.
+        const unitDiscount = parseFloat(row.querySelector('.item-discount').value) || 0;
+        const discount = unitDiscount * qty;
         const costVal = parseFloat(row.querySelector('.cost-display').value) || 0;
         const total = qty * price + delivery - discount;
         row.querySelector('.item-total').textContent = `PKR${total.toFixed(2)}`;
 
+        const discountLineEl = row.querySelector('.discount-line');
+        if (discountLineEl) {
+            discountLineEl.textContent = discount > 0
+                ? `x${qty} = PKR${discount.toFixed(2)}` : '';
+        }
         const discountPctEl = row.querySelector('.discount-percent');
         if (discountPctEl) {
             const itemSubtotal = qty * price;
             const discountPct = (discount > 0 && itemSubtotal > 0) ? (discount / itemSubtotal) * 100 : 0;
-            discountPctEl.textContent = discount > 0 ? `(${discountPct.toFixed(0)}%)` : '';
+            discountPctEl.textContent = discount > 0 ? `(${discountPct.toFixed(0)}% off)` : '';
         }
 
         const profitEl = row.querySelector('.item-profit');
@@ -582,11 +621,14 @@
             const cost = parseFloat(row.querySelector('.cost-display').value) || 0;
             subtotal += qty * price + delivery;
             totalCost += cost * qty;
-            itemDiscountSum += parseFloat(row.querySelector('.item-discount').value) || 0;
+            itemDiscountSum += (parseFloat(row.querySelector('.item-discount').value) || 0) * qty;
         });
 
-        // Header discount is always the sum of the per-item discounts (read-only field)
-        document.querySelector('input[name="discount"]').value = itemDiscountSum.toFixed(2);
+        // Header discount mirrors the per-item sum, except in Lump Sum mode where
+        // the header IS the input the user types into.
+        if (!(window.isLumpSumMode && window.isLumpSumMode())) {
+            document.querySelector('input[name="discount"]').value = itemDiscountSum.toFixed(2);
+        }
 
         const taxRate = parseFloat(document.querySelector('input[name="tax_rate"]').value) || 0;
         const tax = subtotal * (taxRate / 100);
@@ -812,4 +854,109 @@
         renderInstallments();
     });
 </script>
+
+<script>
+    /* ── Discount mode ────────────────────────────────────────────────────
+       Per Item : each row carries its own per-unit discount (default).
+       Lump Sum : one figure for the whole invoice, split across the rows in
+                  proportion to their value and written back into the same
+                  per-unit fields — so what the server receives, and every
+                  total/report downstream, is identical in both modes. */
+    (function () {
+        var perItemRadio = document.getElementById('dmPerItem');
+        var lumpRadio = document.getElementById('dmLump');
+        if (!perItemRadio || !lumpRadio) return;
+        var help = document.getElementById('discountModeHelp');
+        var header = document.getElementById('discountInput');
+
+        window.isLumpSumMode = function () { return lumpRadio.checked; };
+
+        function rows() {
+            return Array.prototype.slice.call(document.querySelectorAll('.item-row'));
+        }
+
+        // Split the lump sum across the rows by value, remainder on the last
+        // row so the parts add up to the figure typed, to the paisa.
+        window.distributeLumpSum = function () {
+            if (!lumpRadio.checked) return;
+            var lump = parseFloat(header.value) || 0;
+            var rs = rows();
+            var weights = rs.map(function (r) {
+                var q = parseFloat(r.querySelector('.quantity').value) || 0;
+                var p = parseFloat(r.querySelector('.price').value) || 0;
+                return q * p;
+            });
+            var totalWeight = weights.reduce(function (a, b) { return a + b; }, 0);
+            var allocated = 0;
+            rs.forEach(function (r, i) {
+                var qty = parseFloat(r.querySelector('.quantity').value) || 0;
+                var share;
+                if (i < rs.length - 1) {
+                    share = totalWeight > 0 ? (lump * weights[i] / totalWeight)
+                                            : (rs.length ? lump / rs.length : 0);
+                    share = Math.round(share * 100) / 100;
+                } else {
+                    share = Math.round((lump - allocated) * 100) / 100;
+                }
+                allocated += share;
+                var input = r.querySelector('.item-discount');
+                input.value = qty > 0 ? (share / qty) : 0;
+            });
+        };
+
+        function applyMode() {
+            var lumpOn = lumpRadio.checked;
+            help.textContent = lumpOn
+                ? 'Lump Sum: type one discount for the whole invoice below; it is divided across the items by value.'
+                : 'Per Item: type a per-unit discount on each row.';
+
+            // Only Per Item locks the field — there the figure is the sum of the
+            // item rows. In Lump Sum the user types the invoice discount here.
+            header.readOnly = !lumpOn;
+            header.classList.toggle('bg-light', !lumpOn);
+            header.classList.toggle('border-warning', lumpOn);
+            header.classList.toggle('fw-bold', lumpOn);
+            header.title = lumpOn
+                ? 'Type the discount for the whole invoice - it is divided across the items by value'
+                : "Auto-calculated as the sum of each item's per-unit discount";
+            var tag = document.getElementById('discountAutoTag');
+            if (tag) {
+                tag.textContent = lumpOn ? '(enter amount)' : '(auto)';
+                tag.classList.toggle('text-warning', lumpOn);
+                tag.classList.toggle('fw-semibold', lumpOn);
+                tag.classList.toggle('text-muted', !lumpOn);
+            }
+            rows().forEach(function (r) {
+                var input = r.querySelector('.item-discount');
+                input.readOnly = lumpOn;
+                input.classList.toggle('bg-light', lumpOn);
+            });
+
+            if (lumpOn) {
+                window.distributeLumpSum();
+            }
+            if (typeof calculateTotals === 'function') {
+                rows().forEach(function (r) {
+                    if (typeof calculateItemTotal === 'function') calculateItemTotal(r);
+                });
+                calculateTotals();
+            }
+        }
+
+        perItemRadio.addEventListener('change', applyMode);
+        lumpRadio.addEventListener('change', applyMode);
+        header.addEventListener('input', function () {
+            if (lumpRadio.checked) {
+                window.distributeLumpSum();
+                rows().forEach(function (r) {
+                    if (typeof calculateItemTotal === 'function') calculateItemTotal(r);
+                });
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', applyMode);
+        applyMode();
+    })();
+</script>
+
 {% endblock %}

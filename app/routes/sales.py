@@ -345,6 +345,10 @@ def create_invoice():
         prices = request.form.getlist('price[]')
         deliveries = request.form.getlist('delivery[]')
         item_discounts = request.form.getlist('discount[]')
+        # Discount is entered per unit; the whole-line figure is derived from it
+        # so it scales with quantity. `discount[]` stays supported as a plain
+        # line amount for anything still posting the old field.
+        item_unit_discounts = request.form.getlist('unit_discount[]')
         warehouses = request.form.getlist('warehouse_id[]')
 
         subtotal = 0
@@ -357,7 +361,14 @@ def create_invoice():
                 quantity = float(quantities[i])
                 price = float(prices[i])
                 delivery_fee = float(deliveries[i]) if i < len(deliveries) else 0
-                item_discount = float(item_discounts[i]) if i < len(item_discounts) and item_discounts[i] else 0
+                unit_discount = 0
+                if i < len(item_unit_discounts) and item_unit_discounts[i]:
+                    unit_discount = float(item_unit_discounts[i])
+                if unit_discount:
+                    item_discount = unit_discount * quantity
+                else:
+                    item_discount = float(item_discounts[i]) if i < len(item_discounts) and item_discounts[i] else 0
+                    unit_discount = (item_discount / quantity) if quantity else 0
                 item_subtotal = quantity * price
                 total = item_subtotal + delivery_fee
                 subtotal += total
@@ -375,6 +386,7 @@ def create_invoice():
                     'quantity': quantity,
                     'unit_price': price,
                     'delivery_fee': delivery_fee,
+                    'unit_discount': unit_discount,
                     'discount': item_discount,
                     'total': total
                 })
@@ -483,6 +495,7 @@ def create_invoice():
                 quantity=item['quantity'],
                 unit_price=item['unit_price'],
                 delivery_fee=item.get('delivery_fee', 0),
+                unit_discount=item.get('unit_discount', 0),
                 discount=item.get('discount', 0),
                 total=item['total']
             )
@@ -631,6 +644,10 @@ def edit_invoice(id):
         prices = request.form.getlist('price[]')
         deliveries = request.form.getlist('delivery[]')
         item_discounts = request.form.getlist('discount[]')
+        # Discount is entered per unit; the whole-line figure is derived from it
+        # so it scales with quantity. `discount[]` stays supported as a plain
+        # line amount for anything still posting the old field.
+        item_unit_discounts = request.form.getlist('unit_discount[]')
         warehouses = request.form.getlist('warehouse_id[]')
 
         subtotal = 0
@@ -642,7 +659,14 @@ def edit_invoice(id):
                 quantity = float(quantities[i])
                 price = float(prices[i])
                 delivery_fee = float(deliveries[i]) if i < len(deliveries) else 0
-                item_discount = float(item_discounts[i]) if i < len(item_discounts) and item_discounts[i] else 0
+                unit_discount = 0
+                if i < len(item_unit_discounts) and item_unit_discounts[i]:
+                    unit_discount = float(item_unit_discounts[i])
+                if unit_discount:
+                    item_discount = unit_discount * quantity
+                else:
+                    item_discount = float(item_discounts[i]) if i < len(item_discounts) and item_discounts[i] else 0
+                    unit_discount = (item_discount / quantity) if quantity else 0
                 item_subtotal = quantity * price
                 total = item_subtotal + delivery_fee
                 subtotal += total
@@ -659,6 +683,7 @@ def edit_invoice(id):
                     'quantity': quantity,
                     'unit_price': price,
                     'delivery_fee': delivery_fee,
+                    'unit_discount': unit_discount,
                     'discount': item_discount,
                     'total': total
                 })
@@ -716,6 +741,7 @@ def edit_invoice(id):
                 quantity=item['quantity'],
                 unit_price=item['unit_price'],
                 delivery_fee=item.get('delivery_fee', 0),
+                unit_discount=item.get('unit_discount', 0),
                 discount=item.get('discount', 0),
                 total=item['total']
             )
@@ -742,6 +768,14 @@ def edit_invoice(id):
                             db.session.add(wh_stock)
                         wh_stock.quantity -= item['quantity']
             sale.stock_updated = True
+
+        # The replacement items were added with a raw sale_id, so the in-memory
+        # sale.items collection still holds the OLD rows. calculate_totals()
+        # reads that collection, so without this the invoice keeps the previous
+        # subtotal whenever nothing else happens to flush the session (e.g. an
+        # unapproved invoice, where the inventory loop above is skipped).
+        db.session.flush()
+        db.session.expire(sale, ['items'])
 
         sale.calculate_totals()
         # Preserve paid amount; update status accordingly
@@ -1322,7 +1356,14 @@ def apply_discount(id):
     # Track if any significant change happened
     changes_made = False
 
-    if discount_amount > 0:
+    mode_raw = (request.form.get('discount_mode') or 'lump_sum').strip().lower()
+    # Per-item mode carries its amounts in the per-row boxes, not in discount_amount
+    has_per_item_values = any(
+        (request.form.get(f'unit_discount_{item.id}') or '').strip() not in ('', '0', '0.0', '0.00')
+        for item in sale.items
+    ) if mode_raw == 'per_item' else False
+
+    if discount_amount > 0 or has_per_item_values:
         # Check if overdue rule applies to this customer's group
         rule_applies = False
         settings = InvoiceSettings.query.first()
@@ -1336,27 +1377,89 @@ def apply_discount(id):
             flash('Cannot add discount to an overdue invoice without "Override Restriction" selected.', 'warning')
             return redirect(request.referrer or url_for('sales.invoice_detail', id=sale.id))
 
-        sale.discount += discount_amount
+        # Two ways to give the discount:
+        #   per_item  - the amount is per UNIT, charged on each selected item
+        #               (so it scales with that item's quantity)
+        #   lump_sum  - one figure for the whole invoice, split across the items
+        #               in proportion to their value
+        # Either way the per-item columns end up carrying the discount, so the
+        # totals, returns and reports keep reading exactly what they read today.
+        mode = (request.form.get('discount_mode') or 'lump_sum').strip().lower()
+        if mode not in ('per_item', 'lump_sum'):
+            mode = 'lump_sum'
 
-        if target_items:
-            # Prorate the discount evenly across the selected items (bulk-safe:
-            # any rounding remainder goes to the last item so shares sum exactly
-            # to discount_amount), and reflect it on each item's Discount column.
-            share = round(discount_amount / len(target_items), 2)
-            allocated = 0
-            for idx, item in enumerate(target_items):
-                portion = share if idx < len(target_items) - 1 else round(discount_amount - allocated, 2)
-                item.discount = (item.discount or 0) + portion
-                allocated += portion
-            item_names = ', '.join(item.product.name if item.product else f'Item #{item.id}' for item in target_items)
-            flash(f'Discount of PKR {discount_amount:,.2f} applied successfully and prorated across: {item_names}.', 'success')
-            log_activity('Sales', f'Applied Discount to Invoice #{sale.invoice_number}',
-                        f'Amount: {discount_amount}, Items: {item_names}, Customer: {sale.customer.name if sale.customer else "Walk-in"}')
+        def _bump(item, line_amount):
+            """Add `line_amount` to an item, keeping unit_discount in step."""
+            item.discount = (item.discount or 0) + line_amount
+            qty = item.quantity or 0
+            item.unit_discount = (item.discount / qty) if qty else 0
+
+        if mode == 'per_item':
+            # Each item carries its own per-unit box (unit_discount_<item id>);
+            # blank or zero boxes are simply skipped.
+            applied_total = 0
+            touched = []
+            for item in sale.items:
+                raw = (request.form.get(f'unit_discount_{item.id}') or '').strip()
+                if not raw:
+                    continue
+                try:
+                    per_unit = float(raw)
+                except ValueError:
+                    continue
+                if per_unit <= 0:
+                    continue
+                line_amount = round(per_unit * (item.quantity or 0), 2)
+                if line_amount <= 0:
+                    continue
+                _bump(item, line_amount)
+                applied_total += line_amount
+                touched.append((item, per_unit, line_amount))
+
+            if not touched:
+                flash('Enter a per-unit discount against at least one item.', 'warning')
+                return redirect(request.referrer or url_for('sales.invoice_detail', id=sale.id))
+
+            sale.discount += applied_total
+            detail = ', '.join(
+                f'{(it.product.name if it.product else "Item #%d" % it.id)} @ {pu:,.2f}/unit = {amt:,.2f}'
+                for it, pu, amt in touched)
+            flash(f'Per-unit discount applied to {len(touched)} item(s) — PKR {applied_total:,.2f} in total.',
+                  'success')
+            log_activity('Sales', f'Applied Per-Unit Discount to Invoice #{sale.invoice_number}',
+                        f'Total: {applied_total}, {detail}, '
+                        f'Customer: {sale.customer.name if sale.customer else "Walk-in"}')
+            changes_made = True
         else:
-            flash(f'Discount of PKR {discount_amount:,.2f} applied successfully!', 'success')
-            log_activity('Sales', f'Applied Discount to Invoice #{sale.invoice_number}',
-                        f'Amount: {discount_amount}, Customer: {sale.customer.name if sale.customer else "Walk-in"}')
-        changes_made = True
+            sale.discount += discount_amount
+            # Lump sum: spread over the chosen items, or the whole invoice when
+            # nothing is selected. Shares are weighted by each item's value and
+            # the rounding remainder lands on the last one, so they add up exactly.
+            spread_over = target_items or list(sale.items)
+            weights = [((it.quantity or 0) * (it.unit_price or 0)) for it in spread_over]
+            weight_total = sum(weights)
+            if spread_over and discount_amount > 0:
+                allocated = 0
+                for idx, item in enumerate(spread_over):
+                    if idx < len(spread_over) - 1:
+                        portion = (round(discount_amount * weights[idx] / weight_total, 2)
+                                   if weight_total > 0
+                                   else round(discount_amount / len(spread_over), 2))
+                    else:
+                        portion = round(discount_amount - allocated, 2)
+                    _bump(item, portion)
+                    allocated += portion
+
+            if target_items:
+                item_names = ', '.join(item.product.name if item.product else f'Item #{item.id}' for item in target_items)
+                flash(f'Discount of PKR {discount_amount:,.2f} applied and split across: {item_names}.', 'success')
+                log_activity('Sales', f'Applied Discount to Invoice #{sale.invoice_number}',
+                            f'Amount: {discount_amount}, Items: {item_names}, Customer: {sale.customer.name if sale.customer else "Walk-in"}')
+            else:
+                flash(f'Discount of PKR {discount_amount:,.2f} applied and divided across all items.', 'success')
+                log_activity('Sales', f'Applied Discount to Invoice #{sale.invoice_number}',
+                            f'Amount: {discount_amount} (divided across all items), Customer: {sale.customer.name if sale.customer else "Walk-in"}')
+            changes_made = True
     
     if ignore_overdue != had_override:
         if ignore_overdue:
