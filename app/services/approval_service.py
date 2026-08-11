@@ -407,6 +407,12 @@ class ApprovalService:
                 if reason_field and getattr(entity, reason_field, '') == 'Cancelled by Admin':
                     return 'cancelled'
                 return 'rejected'
+            # A staff-recorded payment/advance is applied to the invoice right
+            # away (is_approved=True) but still awaits an admin decision, which
+            # it signals through `needs_approval`. Surface that as 'pending' so
+            # the badge and the admin's Approve/Reject actions still appear.
+            if getattr(entity, 'needs_approval', False):
+                return 'pending'
             if is_approved:
                 return 'approved'
             # Explicit draft marker via a dedicated boolean flag (e.g. Sale.is_draft)
@@ -529,9 +535,19 @@ class ApprovalService:
 
         entity = cls.get_entity(module, item_id)
 
+        # A staff payment/advance flagged `needs_approval` was ALREADY applied to
+        # the invoice when it was recorded. Remember that before the flags are
+        # flipped so the post-approve hook does not add the money a second time.
+        entity._was_already_applied = bool(
+            getattr(entity, 'needs_approval', False)
+            and getattr(entity, config.get('approve_field', 'is_approved'), False)
+        )
+
         if config.get('use_boolean_flags'):
             setattr(entity, config['approve_field'], True)
             setattr(entity, config.get('reject_field', 'is_rejected'), False)
+            if hasattr(entity, 'needs_approval'):
+                entity.needs_approval = False
             if config.get('draft_field'):
                 setattr(entity, config['draft_field'], False)
             setattr(entity, config['approved_by_field'], current_user.id)
@@ -566,9 +582,19 @@ class ApprovalService:
 
         entity = cls.get_entity(module, item_id)
 
+        # Same reasoning as approve(): a `needs_approval` record is already
+        # applied, so rejecting it has to take the money back out. Capture that
+        # before the flags are cleared — the hook below reads it.
+        entity._was_already_applied = bool(
+            getattr(entity, 'needs_approval', False)
+            and getattr(entity, config.get('approve_field', 'is_approved'), False)
+        )
+
         if config.get('use_boolean_flags'):
             setattr(entity, config.get('reject_field', 'is_rejected'), True)
             setattr(entity, config.get('approve_field', 'is_approved'), False)
+            if hasattr(entity, 'needs_approval'):
+                entity.needs_approval = False
             if config.get('draft_field'):
                 setattr(entity, config['draft_field'], False)
             if config.get('reason_field'):
@@ -860,7 +886,14 @@ class ApprovalService:
 
     @classmethod
     def _post_approve_payment(cls, payment):
-        """Mirrors sales.py approve_payment logic."""
+        """Mirrors sales.py approve_payment logic.
+
+        Skips payments that were already applied to the invoice when recorded
+        (staff payments flagged needs_approval) — approving those only
+        acknowledges them, so adding the amount again would double-pay.
+        """
+        if getattr(payment, '_was_already_applied', False):
+            return
         from app.models import Sale
         if payment.invoice_id:
             sale = Sale.query.get(payment.invoice_id)
@@ -872,6 +905,28 @@ class ApprovalService:
     def _post_approve_advance(cls, advance):
         """No extra logic for CustomerAdvance approval — just flips flag."""
         pass
+
+    @classmethod
+    def _post_status_change_payment(cls, payment, universal_status):
+        """Reverse an already-applied payment when it is rejected/cancelled.
+
+        Staff payments are applied to the invoice at record time, so refusing
+        one must pull the money back out — otherwise the invoice stays paid by
+        a payment the admin refused. Legacy pending payments were never applied
+        (_was_already_applied is False), so nothing happens for them.
+        """
+        if universal_status not in ('reject', 'cancel'):
+            return
+        if not getattr(payment, '_was_already_applied', False):
+            return
+        from app.models import Sale
+        if not payment.invoice_id:
+            return
+        sale = Sale.query.get(payment.invoice_id)
+        if not sale:
+            return
+        from app.utils import adjust_sale_payment
+        adjust_sale_payment(sale, -float(payment.amount or 0), current_user.id)
 
     @classmethod
     def _post_approve_purchase_bill(cls, bill):

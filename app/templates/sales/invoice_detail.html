@@ -2,7 +2,10 @@
 {% from 'components/approval_widget.html' import approval_widget with context %}
 {% block title %}Invoice {{ sale.invoice_number }}{% endblock %}
 {% block content %}
-{% set effective_discount = 0 if (sale.is_discount_restricted or not sale.is_approved) else sale.discount %}
+{# The discount applies as soon as it is entered, including while the invoice is
+   still Pending admin approval (see Sale.calculate_totals). Only the overdue
+   restriction can suspend it. #}
+{% set effective_discount = 0 if sale.is_discount_restricted else sale.discount %}
 <style>
     /* ── Fix: keep selected Select2 tags inside the input box (discount item picker) ── */
     .select2-container--bootstrap-5 .select2-selection--multiple {
@@ -537,7 +540,7 @@
                                 </div>
                             </div>
                             <div class="col-12" id="payCashNotice" style="display:none;">
-                                <div class="alert alert-success py-2 mb-0 small">
+                                <div class="alert alert-success static-alert py-2 mb-0 small">
                                     <i class="fas fa-receipt me-1"></i>No upload needed for cash — a receipt with the
                                     customer's details is generated automatically when you record this payment.
                                 </div>
@@ -913,18 +916,17 @@
                                     <th colspan="{{ label_colspan }}" class="text-end text-success">
                                         Discount
                                         {% if not sale.is_approved %}
+                                        {# The discount is already applied to the total while the invoice is
+                                           pending — this badge only flags that the invoice still awaits review. #}
                                         <span class="badge bg-warning text-dark ms-1"
                                             style="font-size: 0.6rem; vertical-align: middle;">PENDING APPROVAL</span>
                                         {% endif %}
                                     </th>
                                     <th class="text-end text-success">
-                                        {% if sale.is_approved %}
                                         -Rs {{ "{:,.2f}".format(effective_discount) }}
-                                        {% else %}
-                                        <span class="text-muted" style="text-decoration: line-through;">-Rs {{
-                                            "{:,.2f}".format(sale.discount) }}</span>
-                                        <div class="small fw-normal text-danger" style="font-size: 0.7rem;">Not Applied
-                                            (Awaiting Admin)</div>
+                                        {% if not sale.is_approved %}
+                                        <div class="small fw-normal text-muted" style="font-size: 0.7rem;">Applied —
+                                            invoice awaiting admin approval</div>
                                         {% endif %}
                                     </th>
                                 </tr>

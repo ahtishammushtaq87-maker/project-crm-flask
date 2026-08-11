@@ -991,11 +991,15 @@ class Sale(db.Model):
             else:
                 discount_amount = self.discount
                 
-        # Only apply discount if the invoice is approved
-        applied_discount = 0
-        if self.is_approved:
-            applied_discount = discount_amount
-            
+        # The discount applies as soon as it is entered — a staff-created
+        # invoice sitting in Pending still shows and charges the discounted
+        # total. Approval is a review step, not a gate on the discount (the
+        # invoice itself still waits for admin approval before counting as an
+        # approved sale). The overdue suspension above is a separate rule and
+        # still stands.
+        applied_discount = discount_amount
+
+
         # Calculate total = subtotal + tax + delivery - applied_discount - returns_total
         # Note: self.subtotal and self.tax already had returns deducted, 
         # but we use returns_total to ensure return-specific discounts are also handled.
@@ -1463,9 +1467,18 @@ class Payment(db.Model):
     notes = db.Column(db.Text)
     image_path = db.Column(db.String(255))  # Path to uploaded payment receipt/bill image
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
-    # Approval workflow: staff-recorded payments require admin approval before updating paid_amount
+    # `is_approved` is the MONEY flag: True means this amount is already included
+    # in Sale.paid_amount. Every add/reverse path (approve/reject/edit/delete)
+    # keys off it, so it must never be True without the money being applied.
     is_approved = db.Column(db.Boolean, default=False, index=True)  # True for admin-created, False for staff-created
     is_rejected = db.Column(db.Boolean, default=False, index=True)
+    # `needs_approval` is the REVIEW flag, independent of the money flag above.
+    # A staff-recorded payment is applied to the invoice straight away
+    # (is_approved=True) but still raises an admin approval request
+    # (needs_approval=True) — admin approving only clears this flag, and
+    # rejecting reverses the money. Legacy rows keep needs_approval=False and
+    # continue through the original "approve to apply" path.
+    needs_approval = db.Column(db.Boolean, default=False, index=True)
     rejection_reason = db.Column(db.Text, nullable=True)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
@@ -2688,6 +2701,10 @@ class CustomerAdvance(db.Model):
     # Approval workflow: staff-recorded advances require admin approval before being available for use
     is_approved = db.Column(db.Boolean, default=True, index=True)  # True for admin-created, False for staff-created
     is_rejected = db.Column(db.Boolean, default=False, index=True)
+    # Review flag mirroring Payment.needs_approval: a staff-recorded advance is
+    # usable immediately (is_approved=True) but still raises an admin approval
+    # request. See Payment.needs_approval for the full rationale.
+    needs_approval = db.Column(db.Boolean, default=False, index=True)
     rejection_reason = db.Column(db.Text, nullable=True)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)

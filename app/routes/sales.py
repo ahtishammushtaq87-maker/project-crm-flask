@@ -111,6 +111,31 @@ def sellable_products(existing_product_ids=None):
     return products
 
 
+def ledger_sales_query(customer_id):
+    """
+    The invoices a customer ledger is allowed to count.
+
+    A ledger must reflect real money owed, so DRAFT, REJECTED and CANCELLED
+    invoices are excluded outright — they neither add to nor subtract from the
+    balance, and their payments/discounts/returns drop out with them (every
+    ledger builds its rows by looping over this set).
+
+    In this schema a cancellation is stored as is_rejected=True with
+    rejection_reason 'Cancelled by Admin' (the Sale status enum has no
+    'cancelled' value — see ApprovalService), so filtering out is_rejected
+    covers both rejected and cancelled in one condition.
+
+    Used by customer_ledger_json and customer_ledger_excel. The ledger PDF
+    (customer_export_pdf) already filters on is_approved=True, which excludes
+    these same invoices because cancel/reject/draft all clear is_approved.
+    """
+    return Sale.query.filter(
+        Sale.customer_id == customer_id,
+        Sale.is_draft == False,
+        Sale.is_rejected == False
+    ).order_by(Sale.date.asc())
+
+
 @bp.route('/invoices')
 @login_required
 def invoices():
@@ -157,8 +182,16 @@ def invoices():
             Sale.is_draft == False,
             (
                 is_pending |
-                (Sale.payments.any((Payment.is_approved == False) & (Payment.is_rejected == False))) |
-                (Sale.adjusted_advances.any((CustomerAdvance.is_approved == False) & (CustomerAdvance.is_rejected == False)))
+                # Legacy pending (not yet applied) OR applied-but-awaiting-review
+                # staff payments/advances — both need the admin's attention.
+                (Sale.payments.any(
+                    ((Payment.is_approved == False) | (Payment.needs_approval == True)) &
+                    (Payment.is_rejected == False)
+                )) |
+                (Sale.adjusted_advances.any(
+                    ((CustomerAdvance.is_approved == False) | (CustomerAdvance.needs_approval == True)) &
+                    (CustomerAdvance.is_rejected == False)
+                ))
             )
         )
     elif status == 'rejected_items':
@@ -237,15 +270,19 @@ def invoices():
     unapproved_invoice_total = sum(s.total for s in unapproved_invoices_all)
     unapproved_invoice_count = len(unapproved_invoices_all)
 
+    # Awaiting admin attention = legacy pending (never applied) OR staff records
+    # already applied to the invoice but still flagged for review.
     unapproved_payments_all = Payment.query.filter(
-        Payment.is_approved == False, Payment.is_rejected == False,
+        ((Payment.is_approved == False) | (Payment.needs_approval == True)),
+        Payment.is_rejected == False,
         ~Payment.invoice.has(inv_draft_or_cancelled)
     ).all()
     unapproved_payment_total = sum(p.amount for p in unapproved_payments_all)
     unapproved_payment_count = len(unapproved_payments_all)
 
     unapproved_advances_all = CustomerAdvance.query.filter(
-        CustomerAdvance.is_approved == False, CustomerAdvance.is_rejected == False,
+        ((CustomerAdvance.is_approved == False) | (CustomerAdvance.needs_approval == True)),
+        CustomerAdvance.is_rejected == False,
         ~CustomerAdvance.adjusted_invoice.has(inv_draft_or_cancelled)
     ).all()
     unapproved_advance_total = sum(a.amount for a in unapproved_advances_all)
@@ -435,7 +472,12 @@ def create_invoice():
             currency_id=request.form.get('currency_id', None),
             exchange_rate=float(request.form.get('exchange_rate', 1)),
             salesman_id=salesman_id if salesman_id and salesman_id != '0' else None,
-            paid_amount=advance_applied if not violation_found else 0, # Don't apply yet if violation
+            # A discount that breaks an override rule no longer holds the money
+            # back: the discount is already in `discount`/`total`, and the
+            # customer's advance is applied straight away just like any other
+            # invoice. The violation only raises an admin approval request
+            # (discount_violation below) — it does not block the invoice.
+            paid_amount=advance_applied,
             created_by=current_user.id,
             is_approved=creator_is_admin and not violation_found,
             approved_by=current_user.id if (creator_is_admin and not violation_found) else None,
@@ -444,7 +486,8 @@ def create_invoice():
         )
 
         if violation_found:
-            flash(f"Notice: This invoice requires admin approval due to discount conditions: {'; '.join(discount_violations)}", 'warning')
+            flash(f"Notice: The discount has been applied to this invoice. An approval request has been "
+                  f"sent to the admin due to discount conditions: {'; '.join(discount_violations)}", 'warning')
 
         due_date_str = request.form.get('due_date')
         if due_date_str:
@@ -915,19 +958,18 @@ def pay_invoice(id):
     amount = float(request.form.get('amount', 0))
     
     if amount > 0:
-        # Determine if this user's payment is auto-approved (admin) or needs approval (staff)
+        # Determine whether this payment still needs an admin review afterwards.
         payer_is_admin = (current_user.role == 'admin')
 
-        # Only update paid_amount immediately for admin-approved payments
-        # Staff payments remain pending until admin approves them
-        overpayment_credit = 0
-        advance_applied_now = 0
-        if payer_is_admin:
-            from app.utils import auto_apply_customer_advance, apply_sale_payment_with_credit
-            # Use up any existing customer advance credit first, then apply
-            # the newly entered payment amount on top of that.
-            advance_applied_now = auto_apply_customer_advance(sale)
-            overpayment_credit = apply_sale_payment_with_credit(sale, amount, current_user.id)
+        # The payment is applied to the invoice straight away for EVERYONE — a
+        # staff payment is no longer held back waiting for approval. Admin still
+        # gets an approval request (needs_approval below); approving just
+        # acknowledges it, rejecting reverses the money.
+        from app.utils import auto_apply_customer_advance, apply_sale_payment_with_credit
+        # Use up any existing customer advance credit first, then apply
+        # the newly entered payment amount on top of that.
+        advance_applied_now = auto_apply_customer_advance(sale)
+        overpayment_credit = apply_sale_payment_with_credit(sale, amount, current_user.id)
 
         payment_date_str = request.form.get('payment_date', '')
         payment_date = datetime.strptime(payment_date_str, '%Y-%m-%d') if payment_date_str else datetime.utcnow()
@@ -966,7 +1008,11 @@ def pay_invoice(id):
             notes=payment_notes,
             image_path=image_path,
             created_by=current_user.id,
-            is_approved=payer_is_admin,
+            # Money is applied for everyone (see above), so is_approved is always
+            # True — it is the flag every reverse path keys off. A staff payment
+            # is additionally flagged for admin review.
+            is_approved=True,
+            needs_approval=not payer_is_admin,
             approved_by=current_user.id if payer_is_admin else None,
             approved_at=datetime.utcnow() if payer_is_admin else None
         )
@@ -996,18 +1042,243 @@ def pay_invoice(id):
 
         db.session.commit()
         log_activity('Sales', f'Recorded Payment on Invoice #{sale.invoice_number}',
-                    f'Amount: PKR {amount:,.2f}, Method: {payment_method}, Approved: {payer_is_admin}')
+                    f'Amount: PKR {amount:,.2f}, Method: {payment_method}, '
+                    f'Applied immediately. Pending admin approval: {not payer_is_admin}')
+        msg = f'Payment of PKR {amount:,.2f} recorded and applied to invoice {sale.invoice_number}.'
+        if advance_applied_now > 0:
+            msg += f' PKR {advance_applied_now:,.2f} of the customer\'s existing advance was auto-applied to this invoice.'
+        if overpayment_credit > 0:
+            msg += f' PKR {overpayment_credit:,.2f} exceeded the balance due and has been credited to the customer as a remaining advance.'
         if payer_is_admin:
-            msg = f'Payment of PKR {amount:,.2f} recorded and approved successfully!'
-            if advance_applied_now > 0:
-                msg += f' PKR {advance_applied_now:,.2f} of the customer\'s existing advance was auto-applied to this invoice.'
-            if overpayment_credit > 0:
-                msg += f' PKR {overpayment_credit:,.2f} exceeded the balance due and has been credited to the customer as a remaining advance.'
             flash(msg, 'success')
         else:
-            flash(f'Payment of PKR {amount:,.2f} submitted — pending admin approval.', 'info')
+            flash(msg + ' An approval request has been sent to the admin — the invoice is already updated.', 'info')
 
     return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+
+@bp.route('/customers/list-json')
+@login_required
+def customers_list_json():
+    """Lightweight active-customer list for the Universal Pay customer picker.
+    Optional ?q= filters by name/phone so the picker stays fast even with a
+    large customer base."""
+    q = request.args.get('q', '').strip()
+    query = Customer.query.filter_by(is_active=True)
+    if q:
+        like = f"%{q}%"
+        query = query.filter((Customer.name.ilike(like)) | (Customer.phone.ilike(like)))
+    customers = query.order_by(Customer.name).limit(200).all()
+    return jsonify({
+        'customers': [{'id': c.id, 'name': c.name, 'phone': c.phone or ''} for c in customers]
+    })
+
+
+@bp.route('/customer/<int:id>/pay-summary-json')
+@login_required
+def customer_pay_summary_json(id):
+    """Balance-due / advance snapshot used to populate the Universal Pay modal
+    before the amount is entered, mirroring the info shown on the single-invoice
+    Record Payment modal (invoice_detail.html)."""
+    customer = Customer.query.get_or_404(id)
+
+    CANCELLED_REASON = 'Cancelled by Admin'
+    not_cancelled = (
+        (Sale.is_rejected == False) |
+        (Sale.rejection_reason.is_(None)) |
+        (Sale.rejection_reason != CANCELLED_REASON)
+    )
+    unpaid_sales = Sale.query.filter(
+        Sale.customer_id == customer.id,
+        Sale.status != 'paid',
+        Sale.is_draft == False,
+        not_cancelled
+    ).order_by(Sale.date.asc(), Sale.id.asc()).all()
+    unpaid_sales = [s for s in unpaid_sales if s.balance_due > 0.009]
+
+    return jsonify({
+        'customer_id': customer.id,
+        'customer_name': customer.name,
+        'outstanding_balance': float(sum(s.balance_due for s in unpaid_sales)),
+        'remaining_advance_balance': float(customer.remaining_advance_balance or 0),
+        'unpaid_invoice_count': len(unpaid_sales),
+        'oldest_invoice_number': unpaid_sales[0].invoice_number if unpaid_sales else None
+    })
+
+
+@bp.route('/customer/<int:id>/universal-pay', methods=['POST'])
+@login_required
+@permission_required('sales', action='add')
+def universal_pay(id):
+    """
+    Universal Pay — one payment entry for a customer, auto-distributed across
+    their unpaid invoices oldest-first (FIFO), with any leftover credited as a
+    customer advance (which auto-applies to the next invoice, same as a normal
+    overpayment — see apply_sale_payment_with_credit).
+
+    The amount entered is applied strictly oldest-invoice-first, and the
+    Payment record for each portion is attached to the very invoice that
+    portion settled — so the payment always shows in the Payment History of
+    the invoice it actually paid.
+
+    NOTE: this deliberately does NOT auto-consume the customer's existing
+    advance balance. Doing so would silently clear the oldest invoice with
+    advance credit, leaving its balance at zero, which pushed the cash Payment
+    record onto the NEXT invoice — making it look like the payment was
+    recorded against the wrong invoice. Existing advance credit is still
+    applied by the normal paths (invoice creation and the single-invoice
+    Record Payment flow); Universal Pay only distributes the money entered here.
+
+    Reuses the same building blocks as the single-invoice "Record Payment"
+    flow (pay_invoice above) — the same Payment/CustomerAdvance approval
+    gating and the same cash auto-receipt generation — so every invoice
+    touched here shows up normally in its own Payment History with a working
+    receipt, and staff payments still land in the normal pending-approval
+    queue per invoice.
+    """
+    customer = Customer.query.get_or_404(id)
+    amount = round(float(request.form.get('amount', 0) or 0), 2)
+
+    if amount <= 0:
+        flash('Payment amount must be greater than zero.', 'danger')
+        return redirect(request.referrer or url_for('sales.invoices'))
+
+    payer_is_admin = (current_user.role == 'admin')
+
+    payment_date_str = request.form.get('payment_date', '')
+    payment_date = datetime.strptime(payment_date_str, '%Y-%m-%d') if payment_date_str else datetime.utcnow()
+    payment_method = request.form.get('payment_method', 'Cash')
+    payment_notes = request.form.get('pay_notes', '').strip()
+
+    import time, uuid
+
+    image_path = None
+    payment_file = request.files.get('payment_image')
+    if payment_file and payment_file.filename:
+        original_filename = secure_filename(payment_file.filename)
+        unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+        filename = f"{unique_prefix}_{original_filename}"
+        upload_dir = os.path.join('app', 'static', 'uploads', 'sale_payments')
+        os.makedirs(upload_dir, exist_ok=True)
+        payment_file.save(os.path.join(upload_dir, filename))
+        image_path = f"app/static/uploads/sale_payments/{filename}"
+
+    CANCELLED_REASON = 'Cancelled by Admin'
+    not_cancelled = (
+        (Sale.is_rejected == False) |
+        (Sale.rejection_reason.is_(None)) |
+        (Sale.rejection_reason != CANCELLED_REASON)
+    )
+    unpaid_sales = Sale.query.filter(
+        Sale.customer_id == customer.id,
+        Sale.status != 'paid',
+        Sale.is_draft == False,
+        not_cancelled
+    ).order_by(Sale.date.asc(), Sale.id.asc()).all()
+
+    last_payment = Payment.query.order_by(Payment.id.desc()).first()
+    next_payment_num = (last_payment.id + 1) if last_payment else 1
+
+    remaining = amount
+    invoices_paid = []  # list of (sale, portion, payment)
+
+    for sale in unpaid_sales:
+        if remaining <= 0.009:
+            break
+
+        balance_due = round(max(0.0, sale.total - sale.paid_amount), 2)
+        if balance_due <= 0.009:
+            continue
+
+        portion = min(remaining, balance_due)
+
+        payment = Payment(
+            payment_number=f"PAY-{next_payment_num}",
+            date=payment_date,
+            amount=portion,
+            method=payment_method,
+            invoice_id=sale.id,
+            notes=(f"{payment_notes} " if payment_notes else '') + f"[Universal Pay for {customer.name}]",
+            image_path=image_path,
+            created_by=current_user.id,
+            # Applied immediately regardless of role — staff payments are no
+            # longer held back. is_approved stays the money flag; needs_approval
+            # raises the admin review request. See Payment model.
+            is_approved=True,
+            needs_approval=not payer_is_admin,
+            approved_by=current_user.id if payer_is_admin else None,
+            approved_at=datetime.utcnow() if payer_is_admin else None
+        )
+        db.session.add(payment)
+        next_payment_num += 1
+
+        sale.paid_amount += portion
+        sale.update_status()
+
+        invoices_paid.append((sale, portion, payment))
+        remaining = round(remaining - portion, 2)
+
+    # Anything left over (no unpaid invoices, or still money after settling all
+    # of them) becomes a customer advance — auto-applied to the next invoice
+    # created/paid, exactly like a manual overpayment on a single invoice.
+    advance_created = 0.0
+    if remaining > 0.009:
+        advance = CustomerAdvance(
+            customer_id=customer.id,
+            amount=remaining,
+            date=payment_date.date(),
+            description=f"Universal Pay: excess after settling unpaid invoices",
+            created_by=current_user.id,
+            # Usable immediately (consistent with the payments above); admin
+            # review is raised through needs_approval instead of withholding it.
+            is_approved=True,
+            needs_approval=not payer_is_admin,
+            approved_by=current_user.id if payer_is_admin else None,
+            approved_at=datetime.utcnow() if payer_is_admin else None
+        )
+        db.session.add(advance)
+        advance_created = remaining
+
+    # Cash payments skip manual proof upload — auto-generate a receipt per
+    # invoice touched, same as the single-invoice flow.
+    if not image_path and payment_method == 'Cash' and invoices_paid:
+        from app.pdf_utils import generate_payment_receipt_pdf
+        company = Company.query.first()
+        for sale, portion, payment in invoices_paid:
+            try:
+                pdf_buffer = generate_payment_receipt_pdf(payment, sale, company)
+                unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                filename = f"{unique_prefix}_receipt_{payment.payment_number}.pdf"
+                upload_dir = os.path.join('app', 'static', 'uploads', 'sale_payments')
+                os.makedirs(upload_dir, exist_ok=True)
+                file_path = os.path.join(upload_dir, filename)
+                with open(file_path, 'wb') as f:
+                    f.write(pdf_buffer.getvalue())
+                payment.image_path = f"app/static/uploads/sale_payments/{filename}"
+            except Exception as e:
+                current_app.logger.warning(f"Auto-receipt generation failed for universal payment on invoice {sale.invoice_number}: {e}")
+
+    db.session.commit()
+
+    log_activity('Sales', f'Universal Payment for {customer.name}',
+                f'Amount: PKR {amount:,.2f}, Method: {payment_method}, '
+                f'Applied to {len(invoices_paid)} invoice(s), Advance: PKR {advance_created:,.2f}, '
+                f'Applied immediately. Pending admin approval: {not payer_is_admin}')
+
+    msg = f'Payment of PKR {amount:,.2f} recorded for {customer.name}.'
+    if invoices_paid:
+        details = ', '.join(f"{s.invoice_number} (PKR {p:,.2f})" for s, p, _ in invoices_paid)
+        msg += f' Applied to: {details}.'
+    if advance_created > 0:
+        msg += f' PKR {advance_created:,.2f} credited to the customer as a remaining advance.'
+    if payer_is_admin:
+        flash(msg, 'success')
+    else:
+        flash(msg + ' An approval request has been sent to the admin — the invoices are already updated.', 'info')
+
+    if invoices_paid and len(invoices_paid) == 1:
+        return redirect(url_for('sales.invoice_detail', id=invoices_paid[0][0].id))
+    return redirect(request.referrer or url_for('sales.invoices'))
 
 
 # ── APPROVAL ROUTES (Admin only) ─────────────────────────────────────────────
@@ -1056,11 +1327,21 @@ def approve_invoice(id):
             # Update paid amount on sale now that advance is applied
             sale.paid_amount += (sale.advance_applied - remaining_to_apply)
 
-    # Also auto-approve any pending payments on this invoice when the invoice itself is approved
-    pending_payments = Payment.query.filter_by(invoice_id=sale.id, is_approved=False).all()
+    # Also auto-approve any pending payments on this invoice when the invoice
+    # itself is approved. Only legacy pending payments (is_approved=False) still
+    # need their amount added — payments flagged needs_approval were already
+    # applied when recorded, so they are only acknowledged here.
+    pending_payments = Payment.query.filter_by(invoice_id=sale.id, is_approved=False, is_rejected=False).all()
     for pmt in pending_payments:
         sale.paid_amount += pmt.amount
         pmt.is_approved = True
+        pmt.needs_approval = False
+        pmt.approved_by = current_user.id
+        pmt.approved_at = datetime.utcnow()
+
+    awaiting_review = Payment.query.filter_by(invoice_id=sale.id, is_approved=True, needs_approval=True).all()
+    for pmt in awaiting_review:
+        pmt.needs_approval = False
         pmt.approved_by = current_user.id
         pmt.approved_at = datetime.utcnow()
     sale.calculate_totals()
@@ -1123,7 +1404,16 @@ def reject_invoice(id):
 @bp.route('/invoice/<int:id>/payment/<int:pay_id>/approve', methods=['POST'])
 @login_required
 def approve_payment(id, pay_id):
-    """Admin approves a single pending payment — adds its amount to sale.paid_amount."""
+    """Admin approves a pending payment.
+
+    Two cases:
+      * needs_approval — a staff payment that was ALREADY applied to the
+        invoice when it was recorded. Approving only acknowledges it; the
+        money must NOT be added again or the invoice would be double-paid.
+      * legacy pending (is_approved=False) — recorded before the
+        apply-immediately change and never added to paid_amount, so approving
+        applies it now, exactly as before.
+    """
     if current_user.role != 'admin':
         flash('Only admin can approve payments.', 'danger')
         return redirect(url_for('sales.invoice_detail', id=id))
@@ -1131,11 +1421,23 @@ def approve_payment(id, pay_id):
     sale = Sale.query.get_or_404(id)
     payment = Payment.query.filter_by(id=pay_id, invoice_id=sale.id).first_or_404()
 
+    # Already-applied staff payment: just clear the review flag.
+    if payment.is_approved and payment.needs_approval:
+        payment.needs_approval = False
+        payment.approved_by = current_user.id
+        payment.approved_at = datetime.utcnow()
+        db.session.commit()
+        log_activity('Sales', f'Approved Payment #{payment.payment_number} on Invoice #{sale.invoice_number}',
+                     f'Amount: PKR {payment.amount:,.2f} acknowledged by {current_user.username} (already applied)')
+        flash(f'Payment of PKR {payment.amount:,.2f} approved. It was already applied to the invoice.', 'success')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
     if payment.is_approved:
         flash('Payment is already approved.', 'info')
         return redirect(url_for('sales.invoice_detail', id=id))
 
     payment.is_approved = True
+    payment.needs_approval = False
     payment.approved_by = current_user.id
     payment.approved_at = datetime.utcnow()
 
@@ -1162,7 +1464,13 @@ def approve_payment(id, pay_id):
 @bp.route('/invoice/<int:id>/payment/<int:pay_id>/reject', methods=['POST'])
 @login_required
 def reject_payment(id, pay_id):
-    """Admin rejects a pending payment."""
+    """Admin rejects a pending payment.
+
+    A staff payment awaiting review (needs_approval) has ALREADY been applied
+    to the invoice, so rejecting it must take the money back out — otherwise
+    the invoice would stay paid by a payment the admin refused. A legacy
+    pending payment was never applied, so nothing to reverse.
+    """
     if current_user.role != 'admin':
         flash('Only admin can reject payments.', 'danger')
         return redirect(url_for('sales.invoice_detail', id=id))
@@ -1170,19 +1478,32 @@ def reject_payment(id, pay_id):
     sale = Sale.query.get_or_404(id)
     payment = Payment.query.filter_by(id=pay_id, invoice_id=sale.id).first_or_404()
 
-    if payment.is_approved:
+    if payment.is_approved and not payment.needs_approval:
         flash('Cannot reject an already approved payment.', 'warning')
         return redirect(url_for('sales.invoice_detail', id=id))
 
     reason = request.form.get('reason', '').strip()
+
+    # Reverse the money if this payment had already been applied.
+    reversed_amount = 0.0
+    if payment.is_approved:
+        from app.utils import adjust_sale_payment
+        adjust_sale_payment(sale, -payment.amount, current_user.id)
+        reversed_amount = float(payment.amount or 0)
+
     payment.is_rejected = True
     payment.is_approved = False
+    payment.needs_approval = False
     payment.rejection_reason = reason
     db.session.commit()
 
     log_activity('Sales', f'Rejected Payment on Invoice #{sale.invoice_number}',
-                 f'Amount: PKR {payment.amount:,.2f} rejected by {current_user.username}. Reason: {reason}')
-    flash(f'Payment of PKR {payment.amount:,.2f} rejected.', 'warning')
+                 f'Amount: PKR {payment.amount:,.2f} rejected by {current_user.username}. '
+                 f'Reversed from invoice: PKR {reversed_amount:,.2f}. Reason: {reason}')
+    msg = f'Payment of PKR {payment.amount:,.2f} rejected.'
+    if reversed_amount > 0:
+        msg += f' PKR {reversed_amount:,.2f} has been reversed from invoice {sale.invoice_number}.'
+    flash(msg, 'warning')
     return redirect(url_for('sales.invoice_detail', id=id))
 
 
@@ -2997,19 +3318,23 @@ def customer_receive_advance(id):
         date=advance_date,
         description=description or 'Advance for purchase',
         created_by=current_user.id,
-        is_approved=creator_is_admin,
+        # Usable straight away; a staff-recorded advance still raises an admin
+        # review request via needs_approval instead of being withheld.
+        is_approved=True,
+        needs_approval=not creator_is_admin,
         approved_by=current_user.id if creator_is_admin else None,
         approved_at=datetime.utcnow() if creator_is_admin else None
     )
     db.session.add(advance)
     db.session.commit()
     log_activity('Customers', f'Received Advance from {customer.name}',
-                f'Amount: PKR {amount:,.2f}, Approved: {creator_is_admin}')
+                f'Amount: PKR {amount:,.2f}, Applied immediately. Pending admin approval: {not creator_is_admin}')
 
     if creator_is_admin:
         flash(f'Advance of PKR {amount:,.2f} recorded and approved successfully.', 'success')
     else:
-        flash(f'Advance of PKR {amount:,.2f} recorded — pending admin approval.', 'info')
+        flash(f'Advance of PKR {amount:,.2f} recorded and available to use. '
+              f'An approval request has been sent to the admin.', 'info')
     
     return redirect(url_for('sales.customer_profile', id=id))
 
@@ -3023,11 +3348,12 @@ def approve_advance(id, adv_id):
         return redirect(url_for('sales.customer_profile', id=id))
 
     advance = CustomerAdvance.query.get_or_404(adv_id)
-    if advance.is_approved:
+    if advance.is_approved and not advance.needs_approval:
         flash('Advance is already approved.', 'info')
         return redirect(url_for('sales.customer_profile', id=id))
 
     advance.is_approved = True
+    advance.needs_approval = False
     advance.approved_by = current_user.id
     advance.approved_at = datetime.utcnow()
     db.session.commit()
@@ -3048,13 +3374,22 @@ def reject_advance(id, adv_id):
         return redirect(url_for('sales.customer_profile', id=id))
 
     advance = CustomerAdvance.query.get_or_404(adv_id)
-    if advance.is_approved:
+    if advance.is_approved and not advance.needs_approval:
         flash('Cannot reject an already approved advance.', 'warning')
+        return redirect(url_for('sales.customer_profile', id=id))
+
+    # A staff advance awaiting review is usable immediately, so it may already
+    # have been consumed by an invoice. Withdrawing it then would silently
+    # unbalance that invoice — make the admin unapply it first.
+    if (advance.applied_amount or 0) > 0:
+        flash(f'Cannot reject this advance — PKR {advance.applied_amount:,.2f} of it has already been '
+              f'applied to an invoice. Unapply it first, then reject.', 'danger')
         return redirect(url_for('sales.customer_profile', id=id))
 
     reason = request.form.get('reason', '').strip()
     advance.is_rejected = True
     advance.is_approved = False
+    advance.needs_approval = False
     advance.rejection_reason = reason
     db.session.commit()
 
@@ -3505,15 +3840,16 @@ def customer_ledger_json(id):
     # Opening balance
     opening_balance = float(customer.opening_balance or 0)
     
-    # Get all components
-    sales = Sale.query.filter_by(customer_id=id).order_by(Sale.date.asc()).all()
+    # Get all components. Draft/rejected/cancelled invoices are excluded — they
+    # must not add to or subtract from the ledger balance (see ledger_sales_query).
+    sales = ledger_sales_query(id).all()
     advances = CustomerAdvance.query.filter_by(customer_id=id).order_by(CustomerAdvance.date.asc()).all()
     returns = SaleReturn.query.filter_by(customer_id=id).order_by(SaleReturn.date.asc()).all()
-    
-    # In this system, payments are linked to sales. 
+
+    # In this system, payments are linked to sales.
     sale_ids = [s.id for s in sales]
     payments = Payment.query.filter(Payment.invoice_id.in_(sale_ids)).order_by(Payment.date.asc()).all() if sale_ids else []
-    
+
     ledger_entries = []
     running_balance = opening_balance
     
@@ -3722,13 +4058,15 @@ def customer_ledger_excel(id):
     # Opening balance
     opening_balance = float(customer.opening_balance or 0)
     
-    sales = Sale.query.filter_by(customer_id=id).order_by(Sale.date.asc()).all()
+    # Same exclusion as the on-screen ledger: no draft/rejected/cancelled
+    # invoices (see ledger_sales_query), so Excel matches what the user sees.
+    sales = ledger_sales_query(id).all()
     advances = CustomerAdvance.query.filter_by(customer_id=id).order_by(CustomerAdvance.date.asc()).all()
     returns = SaleReturn.query.filter_by(customer_id=id).order_by(SaleReturn.date.asc()).all()
-    
+
     sale_ids = [s.id for s in sales]
     payments = Payment.query.filter(Payment.invoice_id.in_(sale_ids)).order_by(Payment.date.asc()).all() if sale_ids else []
-    
+
     events = []
     for s in sales:
         events.append({

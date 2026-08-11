@@ -2507,6 +2507,10 @@
                                 onclick="shareLedgerPDF()">
                                 <i class="fab fa-whatsapp me-1 text-success"></i> Share
                             </button>
+                            <button id="ledgerUniversalPayBtn" type="button" class="btn btn-sm btn-success shadow-sm"
+                                onclick="openUniversalPayFromLedger()">
+                                <i class="fas fa-money-bill-wave me-1"></i> Universal Pay
+                            </button>
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
                                 aria-label="Close"></button>
                         </div>
@@ -2614,6 +2618,144 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Universal Pay — Step 1: Select Customer -->
+        <div class="modal fade" id="universalPaySelectModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content shadow-lg border-0">
+                    <div class="modal-header bg-success text-white py-3">
+                        <h5 class="modal-title"><i class="fas fa-money-bill-wave me-2"></i>Universal Pay — Select
+                            Customer</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                            aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <label class="form-label fw-semibold">Customer</label>
+                        <div class="position-relative">
+                            <input type="text" id="universalPayCustomerSearch" class="form-control"
+                                placeholder="Search customer by name or phone..." autocomplete="off">
+                            <input type="hidden" id="universalPayCustomerId">
+                            <div id="universalPayCustomerResults" class="list-group shadow-sm"
+                                style="display:none; position:absolute; width:100%; max-height:240px; overflow-y:auto; z-index:1060;">
+                            </div>
+                        </div>
+                        <small class="text-muted d-block mt-2">Pick the customer you received a payment from — the
+                            amount you enter next will be applied to their unpaid invoices automatically, oldest
+                            first.</small>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-success fw-bold" id="universalPaySelectContinueBtn"
+                            onclick="continueUniversalPay()">
+                            Continue <i class="fas fa-arrow-right ms-1"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Universal Pay — Step 2: Payment details -->
+        <div class="modal fade" id="universalPayModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content shadow-lg border-0">
+                    <form id="universalPayForm" method="POST" enctype="multipart/form-data">
+                        <div class="modal-header bg-success text-white py-3">
+                            <h5 class="modal-title"><i class="fas fa-money-bill-wave me-2"></i>Universal Pay — <span
+                                    id="universalPayCustomerName"></span></h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                                aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div id="universalPaySummary" class="alert alert-light static-alert border small mb-3">
+                                <div class="d-flex justify-content-between">
+                                    <span>Unpaid Invoices:</span>
+                                    <strong id="universalPayUnpaidCount">-</strong>
+                                </div>
+                                <div class="d-flex justify-content-between">
+                                    <span>Total Outstanding Balance:</span>
+                                    <strong class="text-danger" id="universalPayOutstanding">PKR 0.00</strong>
+                                </div>
+                                <div class="d-flex justify-content-between" id="universalPayAdvanceRow"
+                                    style="display:none;">
+                                    <span>Existing Advance Available:</span>
+                                    <strong class="text-info" id="universalPayAdvance">PKR 0.00</strong>
+                                </div>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-12">
+                                    <label class="form-label fw-semibold">Payment Method</label>
+                                    <select name="payment_method" id="universalPayMethod" class="form-select">
+                                        <option value="Cash">Cash Payment</option>
+                                        <option value="Bank Transfer">Bank Transfer</option>
+                                        <option value="Cheque">Cheque</option>
+                                        <option value="Online">Online</option>
+                                    </select>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label fw-semibold">Amount (PKR)</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">PKR</span>
+                                        <input type="number" step="0.01" min="0.01" name="amount"
+                                            id="universalPayAmount" class="form-control" placeholder="0.00" required>
+                                    </div>
+                                    <small class="text-muted">Applied automatically to the customer's oldest unpaid
+                                        invoice first, then the next, and so on. Anything left over after all unpaid
+                                        invoices are settled is credited to the customer as a remaining advance — it
+                                        auto-applies to their next invoice.</small>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label fw-semibold">Payment Date</label>
+                                    <input type="date" name="payment_date" class="form-control"
+                                        id="universalPayDate">
+                                </div>
+                                <div class="col-12" id="universalPayProofWrapper">
+                                    <label class="form-label fw-semibold" for="universalPayImageInput">
+                                        <i class="fas fa-image me-1 text-danger"></i>Payment Proof / Receipt
+                                        <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="file" name="payment_image" class="form-control"
+                                        accept="image/*,.pdf" id="universalPayImageInput"
+                                        onchange="previewUniversalPayImage(this)" required>
+                                    <div id="universalPayProofError" class="text-danger small mt-1"
+                                        style="display:none;">
+                                        <i class="fas fa-exclamation-circle me-1"></i>Payment proof is required.
+                                        Please upload a receipt, cheque scan, or bank screenshot.
+                                    </div>
+                                    <small class="text-muted">Upload cheque scan, bank receipt screenshot, or any
+                                        payment document (required)</small>
+                                    <div id="universalPayImagePreview" class="mt-2" style="display:none;">
+                                        <img id="universalPayImgThumb" src="" alt="Preview" class="img-thumbnail"
+                                            style="max-height:120px;">
+                                    </div>
+                                </div>
+                                <div class="col-12" id="universalPayCashNotice" style="display:none;">
+                                    <div class="alert alert-success static-alert py-2 mb-0 small">
+                                        <i class="fas fa-receipt me-1"></i>No upload needed for cash — a receipt with
+                                        the customer's details is generated automatically for each invoice this
+                                        payment settles.
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label fw-semibold">Payment Notes (Optional)</label>
+                                    <textarea name="pay_notes" rows="2" class="form-control"
+                                        placeholder="Any notes about this payment..."></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-outline-secondary" id="universalPayBackBtn"
+                                onclick="backToUniversalPaySelect()">
+                                <i class="fas fa-arrow-left me-1"></i>Back
+                            </button>
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-success fw-bold" id="universalPaySubmitBtn">
+                                <i class="fas fa-check me-1"></i>Record Payment
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
@@ -2964,6 +3106,236 @@
                 const whatsappUrl = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(message)}`;
                 window.open(whatsappUrl, '_blank');
             }
+
+            // ── Universal Pay ────────────────────────────────────────────────
+            function universalPayTodayStr() {
+                const d = new Date();
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            }
+
+            function openUniversalPaySelect() {
+                const searchInput = document.getElementById('universalPayCustomerSearch');
+                const results = document.getElementById('universalPayCustomerResults');
+                document.getElementById('universalPayCustomerId').value = '';
+                if (searchInput) searchInput.value = '';
+                if (results) { results.style.display = 'none'; results.innerHTML = ''; }
+
+                const modalEl = document.getElementById('universalPaySelectModal');
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                modalEl.addEventListener('shown.bs.modal', function onShown() {
+                    if (searchInput) searchInput.focus();
+                    modalEl.removeEventListener('shown.bs.modal', onShown);
+                });
+            }
+
+            let universalPaySearchTimer = null;
+            document.addEventListener('DOMContentLoaded', function () {
+                const searchInput = document.getElementById('universalPayCustomerSearch');
+                const results = document.getElementById('universalPayCustomerResults');
+                if (!searchInput || !results) return;
+
+                searchInput.addEventListener('input', function () {
+                    document.getElementById('universalPayCustomerId').value = '';
+                    const q = searchInput.value.trim();
+                    clearTimeout(universalPaySearchTimer);
+                    universalPaySearchTimer = setTimeout(function () {
+                        fetch(`/sales/customers/list-json?q=${encodeURIComponent(q)}`)
+                            .then(r => r.json())
+                            .then(data => {
+                                results.innerHTML = '';
+                                if (!data.customers || data.customers.length === 0) {
+                                    results.innerHTML = '<div class="list-group-item text-muted small">No customers found</div>';
+                                    results.style.display = 'block';
+                                    return;
+                                }
+                                data.customers.forEach(c => {
+                                    const item = document.createElement('button');
+                                    item.type = 'button';
+                                    item.className = 'list-group-item list-group-item-action py-2';
+                                    item.innerHTML = `<span class="fw-semibold">${c.name}</span>` + (c.phone ? ` <span class="text-muted small">— ${c.phone}</span>` : '');
+                                    item.onclick = function () {
+                                        document.getElementById('universalPayCustomerId').value = c.id;
+                                        searchInput.value = c.name;
+                                        results.style.display = 'none';
+                                    };
+                                    results.appendChild(item);
+                                });
+                                results.style.display = 'block';
+                            })
+                            .catch(() => { results.style.display = 'none'; });
+                    }, 250);
+                });
+
+                document.addEventListener('click', function (e) {
+                    if (!results.contains(e.target) && e.target !== searchInput) {
+                        results.style.display = 'none';
+                    }
+                });
+            });
+
+            // Bootstrap loses track of the backdrop/body state if a second modal is
+            // shown before the first one's hide transition fully finishes — always
+            // wait for 'hidden.bs.modal' before opening the next one.
+            function switchUniversalPayModal(fromModalEl, openNext) {
+                const instance = bootstrap.Modal.getInstance(fromModalEl);
+                if (!instance) {
+                    openNext();
+                    return;
+                }
+                fromModalEl.addEventListener('hidden.bs.modal', function onHidden() {
+                    fromModalEl.removeEventListener('hidden.bs.modal', onHidden);
+                    openNext();
+                });
+                instance.hide();
+            }
+
+            function continueUniversalPay() {
+                const customerId = document.getElementById('universalPayCustomerId').value;
+                if (!customerId) {
+                    alert('Please select a customer from the search results first.');
+                    return;
+                }
+                switchUniversalPayModal(document.getElementById('universalPaySelectModal'), function () {
+                    openUniversalPayModal(customerId, true);
+                });
+            }
+
+            function openUniversalPayFromLedger() {
+                const ledgerModalEl = document.getElementById('customerLedgerModal');
+                const customerId = ledgerModalEl.dataset.customerId;
+                if (!customerId) {
+                    alert('Please open a customer ledger first.');
+                    return;
+                }
+                switchUniversalPayModal(ledgerModalEl, function () {
+                    openUniversalPayModal(customerId, false);
+                });
+            }
+
+            function backToUniversalPaySelect() {
+                switchUniversalPayModal(document.getElementById('universalPayModal'), openUniversalPaySelect);
+            }
+
+            // Null-safe setters: the global flash-message handler strips stray
+            // .alert nodes from the DOM, so never let one missing element throw
+            // and abort opening the modal (see the .static-alert note above).
+            function upSetText(id, value) {
+                const el = document.getElementById(id);
+                if (el) el.textContent = value;
+            }
+
+            function upSetDisplay(id, value) {
+                const el = document.getElementById(id);
+                if (el) el.style.display = value;
+            }
+
+            function openUniversalPayModal(customerId, cameFromSelect) {
+                // Show first, populate after — so the popup always appears even if
+                // one of the summary fields is unexpectedly absent.
+                const modalEl = document.getElementById('universalPayModal');
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+
+                const form = document.getElementById('universalPayForm');
+                if (form) {
+                    form.reset();
+                    form.action = `/sales/customer/${customerId}/universal-pay`;
+                }
+                const dateEl = document.getElementById('universalPayDate');
+                if (dateEl) dateEl.value = universalPayTodayStr();
+
+                upSetText('universalPayCustomerName', '...');
+                upSetText('universalPayUnpaidCount', '-');
+                upSetText('universalPayOutstanding', 'PKR 0.00');
+                upSetDisplay('universalPayAdvanceRow', 'none');
+                upSetDisplay('universalPayBackBtn', cameFromSelect ? '' : 'none');
+                upSetDisplay('universalPayImagePreview', 'none');
+
+                updateUniversalPayProofVisibility();
+
+                fetch(`/sales/customer/${customerId}/pay-summary-json`)
+                    .then(r => r.json())
+                    .then(data => {
+                        upSetText('universalPayCustomerName', data.customer_name);
+                        upSetText('universalPayUnpaidCount', data.unpaid_invoice_count);
+                        upSetText('universalPayOutstanding',
+                            `PKR ${data.outstanding_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+                        if (data.remaining_advance_balance > 0) {
+                            upSetDisplay('universalPayAdvanceRow', '');
+                            upSetText('universalPayAdvance',
+                                `PKR ${data.remaining_advance_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+                        }
+                    })
+                    .catch(() => {
+                        upSetText('universalPayCustomerName', 'Customer');
+                    });
+            }
+
+            function previewUniversalPayImage(input) {
+                const preview = document.getElementById('universalPayImagePreview');
+                const img = document.getElementById('universalPayImgThumb');
+                const errorDiv = document.getElementById('universalPayProofError');
+                if (input.files && input.files[0]) {
+                    if (errorDiv) errorDiv.style.display = 'none';
+                    input.classList.remove('is-invalid');
+                    const reader = new FileReader();
+                    reader.onload = function (e) {
+                        img.src = e.target.result;
+                        preview.style.display = 'block';
+                    };
+                    reader.readAsDataURL(input.files[0]);
+                } else {
+                    preview.style.display = 'none';
+                }
+            }
+
+            function updateUniversalPayProofVisibility() {
+                const methodSelect = document.getElementById('universalPayMethod');
+                const proofWrapper = document.getElementById('universalPayProofWrapper');
+                const cashNotice = document.getElementById('universalPayCashNotice');
+                const fileInput = document.getElementById('universalPayImageInput');
+                if (!methodSelect || !proofWrapper || !fileInput) return;
+
+                const isCash = methodSelect.value === 'Cash';
+                proofWrapper.style.display = isCash ? 'none' : '';
+                if (cashNotice) cashNotice.style.display = isCash ? '' : 'none';
+                fileInput.required = !isCash;
+                if (isCash) {
+                    fileInput.value = '';
+                    fileInput.classList.remove('is-invalid');
+                    const errorDiv = document.getElementById('universalPayProofError');
+                    if (errorDiv) errorDiv.style.display = 'none';
+                    const preview = document.getElementById('universalPayImagePreview');
+                    if (preview) preview.style.display = 'none';
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', function () {
+                const methodSelect = document.getElementById('universalPayMethod');
+                if (methodSelect) methodSelect.addEventListener('change', updateUniversalPayProofVisibility);
+
+                const payForm = document.getElementById('universalPayForm');
+                if (payForm) {
+                    payForm.addEventListener('submit', function (e) {
+                        const methodSelect = document.getElementById('universalPayMethod');
+                        if (methodSelect && methodSelect.value === 'Cash') return;
+
+                        const fileInput = document.getElementById('universalPayImageInput');
+                        const errorDiv = document.getElementById('universalPayProofError');
+                        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (errorDiv) errorDiv.style.display = 'block';
+                            if (fileInput) {
+                                fileInput.classList.add('is-invalid');
+                                fileInput.focus();
+                            }
+                            return false;
+                        }
+                        if (errorDiv) errorDiv.style.display = 'none';
+                        if (fileInput) fileInput.classList.remove('is-invalid');
+                    });
+                }
+            });
 
             function showCustomerLedger(customerId) {
                 let targetId = customerId;
