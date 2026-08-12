@@ -42,6 +42,17 @@ SELECT 'customer_advances.needs_approval' AS column_name,
 FROM   pragma_table_info('customer_advances')
 WHERE  name = 'needs_approval';
 
+-- PART 0B — lump-sum discount columns on payments
+SELECT 'payments.lump_discount_amount'    AS column_name,
+       COUNT(*)                           AS already_exists
+FROM   pragma_table_info('payments')
+WHERE  name = 'lump_discount_amount';
+
+SELECT 'payments.lump_discount_proof'     AS column_name,
+       COUNT(*)                           AS already_exists
+FROM   pragma_table_info('payments')
+WHERE  name = 'lump_discount_proof';
+
 
 -- =====================================================================
 -- PART 1 — add the columns.  RUN ONLY FOR THE TABLES PART 0 REPORTED 0.
@@ -49,6 +60,11 @@ WHERE  name = 'needs_approval';
 -- =====================================================================
 ALTER TABLE payments          ADD COLUMN needs_approval BOOLEAN DEFAULT 0;
 ALTER TABLE customer_advances ADD COLUMN needs_approval BOOLEAN DEFAULT 0;
+
+-- Lump-sum discount recorded against a payment (the "Lum Sum" option on the
+-- payment popups). Same rule as above: run only if PART 0B reports 0.
+ALTER TABLE payments ADD COLUMN lump_discount_amount FLOAT DEFAULT 0;
+ALTER TABLE payments ADD COLUMN lump_discount_proof VARCHAR(255);
 
 
 -- =====================================================================
@@ -68,6 +84,9 @@ UPDATE customer_advances SET needs_approval = 0 WHERE needs_approval IS NULL;
 -- 'False' as its default, so normalise anything non-numeric to 0.
 UPDATE payments          SET needs_approval = 0 WHERE needs_approval NOT IN (0, 1);
 UPDATE customer_advances SET needs_approval = 0 WHERE needs_approval NOT IN (0, 1);
+
+-- Lump-sum discount amount must never be NULL (it is summed/compared).
+UPDATE payments SET lump_discount_amount = 0 WHERE lump_discount_amount IS NULL;
 
 CREATE INDEX IF NOT EXISTS ix_payments_needs_approval
     ON payments (needs_approval);

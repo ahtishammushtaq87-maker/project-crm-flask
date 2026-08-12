@@ -539,6 +539,52 @@
                                         style="max-height:120px;">
                                 </div>
                             </div>
+                            {# ── Lump Sum discount granted with this payment ── #}
+                            <div class="col-12">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="lump_sum" value="on"
+                                        id="lumpSumCheck">
+                                    <label class="form-check-label fw-semibold" for="lumpSumCheck">
+                                        <i class="fas fa-tag me-1 text-warning"></i>Lum Sum
+                                        <span class="text-muted fw-normal small">— also give a lump sum discount on
+                                            this invoice</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-12" id="lumpSumWrapper" style="display:none;">
+                                <div class="border rounded p-3 bg-light">
+                                    <label class="form-label fw-semibold" for="lumpSumAmount">Lum Sum Discount
+                                        (PKR)</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">PKR</span>
+                                        <input type="number" step="0.01" min="0" name="lump_sum_amount"
+                                            id="lumpSumAmount" class="form-control" placeholder="0.00">
+                                    </div>
+                                    <small class="text-muted">One amount for the whole invoice, divided across its
+                                        items by value — the same as the Apply Discount option.</small>
+
+                                    {# Cash hides the payment-proof upload, so the lump sum needs its own. #}
+                                    <div id="lumpProofWrapper" class="mt-3" style="display:none;">
+                                        <label class="form-label fw-semibold" for="lumpProofInput">
+                                            <i class="fas fa-image me-1 text-danger"></i>Lum Sum Proof
+                                            <span class="text-danger">*</span>
+                                        </label>
+                                        <input type="file" name="lump_sum_proof" class="form-control"
+                                            accept="image/*,.pdf" id="lumpProofInput">
+                                        <div id="lumpProofError" class="text-danger small mt-1" style="display:none;">
+                                            <i class="fas fa-exclamation-circle me-1"></i>Please attach proof for the
+                                            lump sum discount.
+                                        </div>
+                                        <small class="text-muted">Upload the approval or document for this
+                                            discount.</small>
+                                    </div>
+                                    <div id="lumpProofNotice" class="mt-2 small text-muted" style="display:none;">
+                                        <i class="fas fa-info-circle me-1"></i>The payment proof you attach above
+                                        also serves as the proof for this lump sum discount.
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="col-12" id="payCashNotice" style="display:none;">
                                 <div class="alert alert-success static-alert py-2 mb-0 small">
                                     <i class="fas fa-receipt me-1"></i>No upload needed for cash — a receipt with the
@@ -1016,7 +1062,21 @@
                                         <span class="text-muted small">&mdash;</span>
                                         {% endif %}
                                     </td>
-                                    <td class="text-muted small">{{ payment.notes or '&mdash;' }}</td>
+                                    <td class="text-muted small">
+                                        {{ payment.notes or '&mdash;' }}
+                                        {% if payment.lump_discount_amount and payment.lump_discount_amount > 0 %}
+                                        <div class="mt-1">
+                                            <span class="badge bg-warning text-dark" title="Lump sum discount given with this payment">
+                                                <i class="fas fa-tag me-1"></i>Lum Sum -Rs {{
+                                                "{:,.2f}".format(payment.lump_discount_amount) }}
+                                            </span>
+                                            {% if payment.lump_discount_proof %}
+                                            <a href="{{ url_for('sales.payment_lump_proof', payment_id=payment.id) }}"
+                                                target="_blank" rel="noopener" class="small ms-1">proof</a>
+                                            {% endif %}
+                                        </div>
+                                        {% endif %}
+                                    </td>
                                     <td class="text-center">
                                         {{ approval_widget(module='payment', entity=payment) }}
                                     </td>
@@ -1531,6 +1591,63 @@
 
         methodSelect.addEventListener('change', updatePayProofVisibility);
         updatePayProofVisibility();
+    })();
+
+    // Lum Sum discount: the amount box appears when the box is ticked. Cash also
+    // needs its own proof upload (the payment-proof field is hidden for Cash);
+    // every other method already shows that field, so the lump sum reuses it.
+    function updateLumpSumVisibility() {
+        var check = document.getElementById('lumpSumCheck');
+        var wrapper = document.getElementById('lumpSumWrapper');
+        var proofWrap = document.getElementById('lumpProofWrapper');
+        var proofNote = document.getElementById('lumpProofNotice');
+        var method = document.getElementById('paymentMethod');
+        var fileInput = document.getElementById('lumpProofInput');
+        if (!check || !wrapper || !method) return;
+
+        var on = check.checked;
+        var isCash = method.value === 'Cash';
+        wrapper.style.display = on ? '' : 'none';
+        if (proofWrap) proofWrap.style.display = (on && isCash) ? '' : 'none';
+        if (proofNote) proofNote.style.display = (on && !isCash) ? '' : 'none';
+        if (fileInput && !(on && isCash)) {
+            fileInput.value = '';
+            var err = document.getElementById('lumpProofError');
+            if (err) err.style.display = 'none';
+            fileInput.classList.remove('is-invalid');
+        }
+    }
+
+    (function () {
+        var check = document.getElementById('lumpSumCheck');
+        var method = document.getElementById('paymentMethod');
+        if (check) check.addEventListener('change', updateLumpSumVisibility);
+        if (method) method.addEventListener('change', updateLumpSumVisibility);
+        updateLumpSumVisibility();
+
+        var payModal = document.getElementById('payModal');
+        var payForm = payModal ? payModal.querySelector('form') : null;
+        if (!payForm) return;
+        payForm.addEventListener('submit', function (e) {
+            if (!check || !check.checked) return;
+            var amt = parseFloat(document.getElementById('lumpSumAmount').value || '0');
+            if (!(amt > 0)) {
+                e.preventDefault(); e.stopPropagation();
+                alert('Enter a lump sum discount amount, or untick "Lum Sum".');
+                return false;
+            }
+            // Proof is only mandatory for Cash — other methods carry the payment proof.
+            if (method && method.value === 'Cash') {
+                var fi = document.getElementById('lumpProofInput');
+                if (!fi || !fi.files || fi.files.length === 0) {
+                    e.preventDefault(); e.stopPropagation();
+                    var err = document.getElementById('lumpProofError');
+                    if (err) err.style.display = 'block';
+                    if (fi) { fi.classList.add('is-invalid'); fi.focus(); }
+                    return false;
+                }
+            }
+        });
     })();
 
     // Enforce payment proof required on submit (skipped for Cash — see above)

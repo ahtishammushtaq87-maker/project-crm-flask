@@ -917,16 +917,23 @@ class ApprovalService:
         """
         if universal_status not in ('reject', 'cancel'):
             return
-        if not getattr(payment, '_was_already_applied', False):
-            return
         from app.models import Sale
         if not payment.invoice_id:
             return
         sale = Sale.query.get(payment.invoice_id)
         if not sale:
             return
-        from app.utils import adjust_sale_payment
-        adjust_sale_payment(sale, -float(payment.amount or 0), current_user.id)
+
+        if getattr(payment, '_was_already_applied', False):
+            from app.utils import adjust_sale_payment
+            adjust_sale_payment(sale, -float(payment.amount or 0), current_user.id)
+
+        # A refused payment also takes back any lump-sum discount it granted,
+        # regardless of whether its cash had been applied yet.
+        if float(getattr(payment, 'lump_discount_amount', 0) or 0) > 0:
+            from app.utils import reverse_lump_sum_discount
+            reverse_lump_sum_discount(sale, payment.lump_discount_amount)
+            payment.lump_discount_amount = 0
 
     @classmethod
     def _post_approve_purchase_bill(cls, bill):

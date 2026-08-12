@@ -1466,6 +1466,13 @@ class Payment(db.Model):
     reference_number = db.Column(db.String(100))
     notes = db.Column(db.Text)
     image_path = db.Column(db.String(255))  # Path to uploaded payment receipt/bill image
+    # Lump-sum discount granted at the moment this payment was recorded (the
+    # "Lump Sum" option on the payment popups). The discount itself lives on the
+    # invoice/items exactly like a discount given from the Apply Discount modal —
+    # these two columns only record what was granted with this payment and the
+    # proof supplied for it, so it stays auditable from the Payment History.
+    lump_discount_amount = db.Column(db.Float, default=0)
+    lump_discount_proof = db.Column(db.String(255))
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     # `is_approved` is the MONEY flag: True means this amount is already included
     # in Sale.paid_amount. Every add/reverse path (approve/reject/edit/delete)

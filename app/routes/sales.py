@@ -950,6 +950,25 @@ def bulk_delete_invoices():
         return jsonify({'success': False, 'message': message, 'errors': errors}), 500
     return jsonify({'success': True, 'message': message})
 
+def _save_lump_proof(file_storage):
+    """Persist an uploaded lump-sum discount proof and return its stored path.
+
+    Kept next to the payment receipts so the existing payment_image route can
+    serve it. Returns None when nothing was uploaded — the proof is only
+    mandatory for Cash (enforced client-side), because every other method
+    already carries the payment-proof upload.
+    """
+    if not file_storage or not file_storage.filename:
+        return None
+    import time, uuid
+    original = secure_filename(file_storage.filename)
+    filename = f"{int(time.time())}_{uuid.uuid4().hex[:8]}_lump_{original}"
+    upload_dir = os.path.join('app', 'static', 'uploads', 'sale_payments')
+    os.makedirs(upload_dir, exist_ok=True)
+    file_storage.save(os.path.join(upload_dir, filename))
+    return f"app/static/uploads/sale_payments/{filename}"
+
+
 @bp.route('/invoice/<int:id>/pay', methods=['POST'])
 @login_required
 @permission_required('sales', action='add')
@@ -957,6 +976,30 @@ def pay_invoice(id):
     sale = Sale.query.get_or_404(id)
     amount = float(request.form.get('amount', 0))
     
+    # ── Optional lump-sum discount granted alongside this payment ──────────
+    # Applied BEFORE the payment is allocated so the balance the payment eats
+    # into is the discounted one.
+    lump_amount = 0.0
+    lump_proof_path = None
+    if request.form.get('lump_sum') in ('on', '1', 'true', 'yes'):
+        raw = (request.form.get('lump_sum_amount') or '').strip()
+        try:
+            lump_amount = round(float(raw), 2) if raw else 0.0
+        except ValueError:
+            lump_amount = 0.0
+
+    if lump_amount > 0:
+        from app.utils import apply_lump_sum_discount
+        lump_proof_path = _save_lump_proof(request.files.get('lump_sum_proof'))
+        applied = apply_lump_sum_discount(sale, lump_amount)
+        if applied <= 0:
+            flash('Lump sum discount was not applied — this overdue invoice needs '
+                  '"Override Restriction" enabled first.', 'warning')
+            lump_amount = 0.0
+        else:
+            log_activity('Sales', f'Lump Sum Discount on Invoice #{sale.invoice_number}',
+                         f'Amount: PKR {applied:,.2f} granted with a payment by {current_user.username}')
+
     if amount > 0:
         # Determine whether this payment still needs an admin review afterwards.
         payer_is_admin = (current_user.role == 'admin')
@@ -1014,7 +1057,9 @@ def pay_invoice(id):
             is_approved=True,
             needs_approval=not payer_is_admin,
             approved_by=current_user.id if payer_is_admin else None,
-            approved_at=datetime.utcnow() if payer_is_admin else None
+            approved_at=datetime.utcnow() if payer_is_admin else None,
+            lump_discount_amount=lump_amount,
+            lump_discount_proof=lump_proof_path
         )
 
         # Cash payments don't require the manual upload — auto-generate a
@@ -1045,6 +1090,8 @@ def pay_invoice(id):
                     f'Amount: PKR {amount:,.2f}, Method: {payment_method}, '
                     f'Applied immediately. Pending admin approval: {not payer_is_admin}')
         msg = f'Payment of PKR {amount:,.2f} recorded and applied to invoice {sale.invoice_number}.'
+        if lump_amount > 0:
+            msg += f' Lump sum discount of PKR {lump_amount:,.2f} was applied to the invoice.'
         if advance_applied_now > 0:
             msg += f' PKR {advance_applied_now:,.2f} of the customer\'s existing advance was auto-applied to this invoice.'
         if overpayment_credit > 0:
@@ -1053,6 +1100,10 @@ def pay_invoice(id):
             flash(msg, 'success')
         else:
             flash(msg + ' An approval request has been sent to the admin — the invoice is already updated.', 'info')
+    elif lump_amount > 0:
+        # Discount given on its own, with no payment amount entered.
+        db.session.commit()
+        flash(f'Lump sum discount of PKR {lump_amount:,.2f} applied to invoice {sale.invoice_number}.', 'success')
 
     return redirect(url_for('sales.invoice_detail', id=sale.id))
 
@@ -1139,7 +1190,16 @@ def universal_pay(id):
     customer = Customer.query.get_or_404(id)
     amount = round(float(request.form.get('amount', 0) or 0), 2)
 
-    if amount <= 0:
+    # Optional lump-sum discount granted with this payment.
+    lump_amount = 0.0
+    if request.form.get('lump_sum') in ('on', '1', 'true', 'yes'):
+        raw = (request.form.get('lump_sum_amount') or '').strip()
+        try:
+            lump_amount = round(float(raw), 2) if raw else 0.0
+        except ValueError:
+            lump_amount = 0.0
+
+    if amount <= 0 and lump_amount <= 0:
         flash('Payment amount must be greater than zero.', 'danger')
         return redirect(request.referrer or url_for('sales.invoices'))
 
@@ -1176,6 +1236,33 @@ def universal_pay(id):
         not_cancelled
     ).order_by(Sale.date.asc(), Sale.id.asc()).all()
 
+    # ── Lump-sum discount, applied BEFORE the money is distributed ─────────
+    # It goes to the customer's OLDEST unpaid invoice, matching the same
+    # oldest-first principle the payment itself follows, so the discount and
+    # the cash land on the same invoice.
+    lump_proof_path = None
+    lump_target = None
+    if lump_amount > 0:
+        from app.utils import apply_lump_sum_discount
+        lump_proof_path = _save_lump_proof(request.files.get('lump_sum_proof'))
+        for candidate in unpaid_sales:
+            if candidate.balance_due > 0.009:
+                lump_target = candidate
+                break
+        applied = apply_lump_sum_discount(lump_target, lump_amount) if lump_target else 0
+        if applied <= 0:
+            if lump_target is None:
+                flash('Lump sum discount was not applied — this customer has no unpaid invoice to apply it to.',
+                      'warning')
+            else:
+                flash('Lump sum discount was not applied — the oldest unpaid invoice is overdue and needs '
+                      '"Override Restriction" enabled first.', 'warning')
+            lump_amount = 0.0
+            lump_target = None
+        else:
+            log_activity('Sales', f'Lump Sum Discount on Invoice #{lump_target.invoice_number}',
+                         f'Amount: PKR {applied:,.2f} granted via Universal Pay by {current_user.username}')
+
     last_payment = Payment.query.order_by(Payment.id.desc()).first()
     next_payment_num = (last_payment.id + 1) if last_payment else 1
 
@@ -1207,7 +1294,11 @@ def universal_pay(id):
             is_approved=True,
             needs_approval=not payer_is_admin,
             approved_by=current_user.id if payer_is_admin else None,
-            approved_at=datetime.utcnow() if payer_is_admin else None
+            approved_at=datetime.utcnow() if payer_is_admin else None,
+            # Record the lump-sum discount against the payment for the invoice
+            # that actually received it, so it shows in that Payment History.
+            lump_discount_amount=(lump_amount if (lump_target and sale.id == lump_target.id) else 0),
+            lump_discount_proof=(lump_proof_path if (lump_target and sale.id == lump_target.id) else None)
         )
         db.session.add(payment)
         next_payment_num += 1
@@ -1266,6 +1357,8 @@ def universal_pay(id):
                 f'Applied immediately. Pending admin approval: {not payer_is_admin}')
 
     msg = f'Payment of PKR {amount:,.2f} recorded for {customer.name}.'
+    if lump_amount > 0 and lump_target is not None:
+        msg += f' Lump sum discount of PKR {lump_amount:,.2f} applied to invoice {lump_target.invoice_number}.'
     if invoices_paid:
         details = ', '.join(f"{s.invoice_number} (PKR {p:,.2f})" for s, p, _ in invoices_paid)
         msg += f' Applied to: {details}.'
@@ -1491,6 +1584,14 @@ def reject_payment(id, pay_id):
         adjust_sale_payment(sale, -payment.amount, current_user.id)
         reversed_amount = float(payment.amount or 0)
 
+    # A rejected payment takes its lump-sum discount down with it — the
+    # discount was only granted as part of this payment.
+    lump_reversed = 0.0
+    if (payment.lump_discount_amount or 0) > 0:
+        from app.utils import reverse_lump_sum_discount
+        lump_reversed = reverse_lump_sum_discount(sale, payment.lump_discount_amount)
+        payment.lump_discount_amount = 0
+
     payment.is_rejected = True
     payment.is_approved = False
     payment.needs_approval = False
@@ -1499,10 +1600,13 @@ def reject_payment(id, pay_id):
 
     log_activity('Sales', f'Rejected Payment on Invoice #{sale.invoice_number}',
                  f'Amount: PKR {payment.amount:,.2f} rejected by {current_user.username}. '
-                 f'Reversed from invoice: PKR {reversed_amount:,.2f}. Reason: {reason}')
+                 f'Reversed from invoice: PKR {reversed_amount:,.2f}. '
+                 f'Lump sum discount reversed: PKR {lump_reversed:,.2f}. Reason: {reason}')
     msg = f'Payment of PKR {payment.amount:,.2f} rejected.'
     if reversed_amount > 0:
         msg += f' PKR {reversed_amount:,.2f} has been reversed from invoice {sale.invoice_number}.'
+    if lump_reversed > 0:
+        msg += f' The lump sum discount of PKR {lump_reversed:,.2f} given with it was also reversed.'
     flash(msg, 'warning')
     return redirect(url_for('sales.invoice_detail', id=id))
 
@@ -1595,6 +1699,13 @@ def delete_payment(id, pay_id):
         from app.utils import adjust_sale_payment
         adjust_sale_payment(sale, -payment.amount, current_user.id)
 
+    # Take back any lump-sum discount granted through this payment — otherwise
+    # the invoice keeps a discount that no longer has a payment behind it.
+    lump_reversed = 0.0
+    if (payment.lump_discount_amount or 0) > 0:
+        from app.utils import reverse_lump_sum_discount
+        lump_reversed = reverse_lump_sum_discount(sale, payment.lump_discount_amount)
+
     # Delete linked accounting transactions
     from app.utils import cleanup_linked_transactions
     cleanup_linked_transactions(payment)
@@ -1613,8 +1724,12 @@ def delete_payment(id, pay_id):
     db.session.delete(payment)
     db.session.commit()
     log_activity('Sales', f'Deleted Payment #{pay_num} on Invoice #{sale.invoice_number}',
-                f'Amount: PKR {pay_amount:,.2f}')
-    flash(f'Payment deleted. Balance updated.', 'success')
+                f'Amount: PKR {pay_amount:,.2f}, Lump sum discount reversed: PKR {lump_reversed:,.2f}')
+    msg = 'Payment deleted. Balance updated.'
+    if lump_reversed > 0:
+        msg += (f' The lump sum discount of PKR {lump_reversed:,.2f} given with it '
+                f'was also reversed off invoice {sale.invoice_number}.')
+    flash(msg, 'success')
     return redirect(url_for('sales.invoice_detail', id=sale.id))
 
 
@@ -1651,6 +1766,28 @@ def payment_image(payment_id):
     # flash+redirect to an HTML page breaks image rendering; serve a small
     # placeholder graphic instead.
     return Response(_NO_IMAGE_PLACEHOLDER_SVG, mimetype='image/svg+xml')
+
+
+@bp.route('/payment/<int:payment_id>/lump-proof')
+@login_required
+def payment_lump_proof(payment_id):
+    """Serve the proof uploaded for a lump-sum discount given with a payment.
+    Mirrors payment_image above, including the inline-PDF handling and the
+    placeholder fallback when the file is missing on this server."""
+    from flask import current_app, Response
+    payment = Payment.query.get_or_404(payment_id)
+    if payment.lump_discount_proof:
+        if os.path.isabs(payment.lump_discount_proof):
+            file_path = payment.lump_discount_proof
+        else:
+            project_root = os.path.dirname(current_app.root_path)
+            file_path = os.path.join(project_root, payment.lump_discount_proof)
+        if os.path.exists(file_path):
+            if file_path.lower().endswith('.pdf'):
+                return send_file(file_path, mimetype='application/pdf', as_attachment=False)
+            return send_file(file_path)
+    return Response(_NO_IMAGE_PLACEHOLDER_SVG, mimetype='image/svg+xml')
+
 
 @bp.route('/invoice/<int:id>/discount', methods=['POST'])
 @login_required

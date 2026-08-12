@@ -107,6 +107,123 @@ def apply_sale_payment_with_credit(sale, amount, user_id):
     return excess
 
 
+def apply_lump_sum_discount(sale, amount):
+    """
+    Give `amount` as a lump-sum discount on `sale`, spreading it across the
+    invoice's items in proportion to their value.
+
+    This is the same mechanism the "Apply Direct Discount" modal uses in
+    lump_sum mode (app/routes/sales.py:apply_discount) — the discount ends up
+    on the per-item columns, so totals, returns, reports and the PDF keep
+    reading exactly what they read today. It is shared by the payment popups
+    (invoice detail "Record Payment" and Universal Pay) so a lump-sum discount
+    behaves identically wherever it is granted.
+
+    Respects the overdue restriction: if the invoice is overdue, the customer's
+    group is restricted and the override flag is not set, nothing is applied.
+
+    Does NOT commit — the caller decides. Returns the amount actually applied
+    (0 when refused or when there is nothing to spread it over).
+    """
+    from app.models import InvoiceSettings
+
+    amount = round(float(amount or 0), 2)
+    if amount <= 0:
+        return 0.0
+
+    # Same guard as the discount modal: an overdue invoice in a restricted
+    # customer group cannot take a new discount unless explicitly overridden.
+    settings = InvoiceSettings.query.first()
+    rule_applies = False
+    if settings and sale.customer:
+        rule_applies = sale.customer.group_id in settings.restricted_group_ids
+    if sale.is_overdue and not sale.ignore_overdue_discount and rule_applies:
+        return 0.0
+
+    spread_over = list(sale.items)
+    if not spread_over:
+        return 0.0
+
+    weights = [((it.quantity or 0) * (it.unit_price or 0)) for it in spread_over]
+    weight_total = sum(weights)
+
+    allocated = 0.0
+    for idx, item in enumerate(spread_over):
+        if idx < len(spread_over) - 1:
+            portion = (round(amount * weights[idx] / weight_total, 2)
+                       if weight_total > 0
+                       else round(amount / len(spread_over), 2))
+        else:
+            # Remainder lands on the last item so the parts add up exactly.
+            portion = round(amount - allocated, 2)
+        item.discount = (item.discount or 0) + portion
+        qty = item.quantity or 0
+        item.unit_discount = (item.discount / qty) if qty else 0
+        allocated += portion
+
+    sale.discount = (sale.discount or 0) + amount
+    sale.calculate_totals()
+    sale.update_status()
+    return amount
+
+
+def reverse_lump_sum_discount(sale, amount):
+    """
+    Undo a lump-sum discount previously granted by apply_lump_sum_discount.
+
+    Must be called whenever the payment that carried the discount is taken
+    back — deleted, rejected, or cancelled — otherwise the invoice keeps a
+    discount the business never actually agreed to and its total stays
+    understated forever.
+
+    Reverses using the same value weighting the discount was spread with, and
+    clamps each item so a discount can never go negative (the invoice may have
+    picked up or lost other discounts in the meantime). The remainder lands on
+    the last item so the parts subtract back exactly.
+
+    Does NOT commit — the caller decides. Returns the amount actually removed.
+    """
+    amount = round(float(amount or 0), 2)
+    if amount <= 0 or not sale:
+        return 0.0
+
+    items = list(sale.items)
+    if not items:
+        # Nothing to take it off individually; still correct the header figure.
+        removed = min(amount, float(sale.discount or 0))
+        sale.discount = max(0.0, float(sale.discount or 0) - removed)
+        sale.calculate_totals()
+        sale.update_status()
+        return removed
+
+    weights = [((it.quantity or 0) * (it.unit_price or 0)) for it in items]
+    weight_total = sum(weights)
+
+    removed_total = 0.0
+    planned = 0.0
+    for idx, item in enumerate(items):
+        if idx < len(items) - 1:
+            portion = (round(amount * weights[idx] / weight_total, 2)
+                       if weight_total > 0
+                       else round(amount / len(items), 2))
+        else:
+            portion = round(amount - planned, 2)
+        planned += portion
+
+        # Never drive an item's discount below zero.
+        take = min(portion, float(item.discount or 0))
+        if take > 0:
+            item.discount = round(float(item.discount or 0) - take, 2)
+            qty = item.quantity or 0
+            item.unit_discount = (item.discount / qty) if qty else 0
+            removed_total += take
+
+    sale.discount = max(0.0, round(float(sale.discount or 0) - removed_total, 2))
+    sale.calculate_totals()
+    sale.update_status()
+    return round(removed_total, 2)
+
+
 def auto_apply_customer_advance(sale):
     """
     Automatically consume any available advance balance on the sale's
