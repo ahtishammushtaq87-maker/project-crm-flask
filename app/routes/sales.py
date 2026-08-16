@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from app.utils import permission_required, log_activity
 from app import db
-from app.models import Sale, SaleItem, Product, ProductWarehouseStock, Warehouse, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman, CustomerGroup, Payment, PaymentMethod, SalesmanGroup, User, Task
+from app.models import Sale, SaleItem, Product, ProductWarehouseStock, Warehouse, Customer, Vendor, Company, InvoiceSettings, Currency, CustomerAdvance, SaleReturn, Salesman, CustomerGroup, Payment, PaymentMethod, SalesmanGroup, User, Task, PackingSlip, PackingSlipSettings
 from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm, SalesmanForm, CustomerGroupForm
 from datetime import datetime, date
 from sqlalchemy import func, or_, and_
@@ -618,7 +618,7 @@ def invoice_detail(id):
     # Get payment methods for dropdown and existing payments for display
     payment_methods = PaymentMethod.query.filter_by(is_active=True).order_by(PaymentMethod.name).all()
     payments = Payment.query.filter_by(invoice_id=sale.id).order_by(Payment.date.desc()).all()
-    
+
     other_invoices = []
     if sale.customer_id:
         # Includes the invoice currently being viewed (badged "Current" in the
@@ -629,15 +629,32 @@ def invoice_detail(id):
             Sale.customer_id == sale.customer_id,
             or_(Sale.id == sale.id, Sale.is_approved == True)
         ).order_by(Sale.date.desc()).all()
-        
-    return render_template('sales/invoice_detail.html', 
-                           sale=sale, 
-                           returns=returns, 
-                           date_format=date_format, 
-                           payment_methods=payment_methods, 
-                           payments=payments, 
+
+    # ── Packing Slip modal prefill: preview number + auto-computed totals ──
+    ps_settings = _packing_slip_settings()
+    next_packing_slip_number = _format_packing_slip_number(ps_settings, ps_settings.next_number)
+    packing_total_ordered_qty = sum(float(item.quantity or 0) for item in sale.items)
+    packing_net_weight = 0.0
+    packing_has_weight = False
+    for item in sale.items:
+        product = item.product
+        if product and getattr(product, 'weight', None):
+            packing_net_weight += float(item.quantity or 0) * product.weight
+            packing_has_weight = True
+    packing_slip_history = sorted(sale.packing_slips, key=lambda s: s.created_at or datetime.min, reverse=True)
+
+    return render_template('sales/invoice_detail.html',
+                           sale=sale,
+                           returns=returns,
+                           date_format=date_format,
+                           payment_methods=payment_methods,
+                           payments=payments,
                            today=datetime.utcnow().strftime('%Y-%m-%d'),
-                           other_invoices=other_invoices)
+                           other_invoices=other_invoices,
+                           next_packing_slip_number=next_packing_slip_number,
+                           packing_total_ordered_qty=packing_total_ordered_qty,
+                           packing_net_weight=packing_net_weight if packing_has_weight else None,
+                           packing_slip_history=packing_slip_history)
 
 @bp.route('/invoice/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -3189,27 +3206,147 @@ def invoice_pdf(id):
         flash(f'Error generating PDF: {str(e)}', 'error')
         return redirect(url_for('sales.invoice_detail', id=id))
 
-@bp.route('/invoice/<int:id>/packing-slip')
+def _packing_slip_settings():
+    """Get (or lazily create) the singleton PackingSlipSettings row that
+    drives the auto-generated PKG-00001-style slip numbers."""
+    settings = PackingSlipSettings.query.first()
+    if not settings:
+        settings = PackingSlipSettings(prefix='PKG-', suffix='', next_number=1, number_padding=5)
+        db.session.add(settings)
+        db.session.commit()
+    return settings
+
+
+def _format_packing_slip_number(settings, number):
+    return f"{settings.prefix or ''}{str(number).zfill(settings.number_padding or 5)}{settings.suffix or ''}"
+
+
+def _parse_form_float(value):
+    try:
+        return float(value) if value not in (None, '') else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_form_int(value):
+    try:
+        return int(value) if value not in (None, '') else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_form_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').date()
+    except ValueError:
+        return None
+
+
+@bp.route('/invoice/<int:id>/packing-slip', methods=['GET', 'POST'])
 @login_required
 def packing_slip_pdf(id):
     """Bilingual (English/Urdu) Packing Slip — a shipping/dispatch form, not a
     financial document. Customer info, related invoice number, and each
-    item's description/SKU/unit/qty ordered are auto-filled from the sale;
-    packing/shipping specifics (qty packed, carrier, weights, sign-offs) are
-    left blank on the PDF for staff to fill in by hand."""
+    item's description/SKU/unit/qty ordered are auto-filled from the sale.
+    The slip no./date/PO/partial-shipment/package/shipping/packing fields
+    are filled in by staff via the modal on the invoice detail page (POST)
+    and saved as a PackingSlip record; only the per-item Qty Packed/Balance/
+    Remarks and the sign-off grid are left blank for hand-fill at pack time."""
     sale = Sale.query.get_or_404(id)
     company = Company.query.first()
 
+    if request.method == 'GET':
+        flash('Please use the "Packing Slip" button on the invoice to fill in the shipment details first.', 'info')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
     try:
-        buffer = generate_packing_slip_pdf(sale, company)
-        response = make_response(buffer)
+        edit_slip_id = _parse_form_int(request.form.get('slip_id'))
+        is_partial = request.form.get('partial_shipment') == 'yes'
+
+        if edit_slip_id:
+            # Editing an existing slip: only an admin may do this, and it must
+            # belong to this invoice. The slip_number and settings counter are
+            # left untouched — this only updates the details, not the numbering.
+            if current_user.role != 'admin':
+                flash('Only an admin can edit a packing slip.', 'error')
+                return redirect(url_for('sales.invoice_detail', id=id))
+            slip = PackingSlip.query.get_or_404(edit_slip_id)
+            if slip.sale_id != sale.id:
+                flash('That packing slip does not belong to this invoice.', 'error')
+                return redirect(url_for('sales.invoice_detail', id=id))
+        else:
+            settings = _packing_slip_settings()
+            slip = PackingSlip(slip_number=_format_packing_slip_number(settings, settings.next_number),
+                                sale_id=sale.id, created_by=current_user.id)
+            db.session.add(slip)
+            settings.next_number = (settings.next_number or 1) + 1
+
+        slip.packing_date = _parse_form_date(request.form.get('packing_date')) or date.today()
+        slip.po_number = (request.form.get('po_number') or '').strip() or None
+        slip.is_partial = is_partial
+        slip.partial_shipment_no = _parse_form_int(request.form.get('partial_shipment_no')) if is_partial else None
+        slip.partial_shipment_total = _parse_form_int(request.form.get('partial_shipment_total')) if is_partial else None
+        slip.package_count = _parse_form_int(request.form.get('package_count'))
+        slip.transport_company = (request.form.get('transport_company') or '').strip() or None
+        slip.bilty_no = (request.form.get('bilty_no') or '').strip() or None
+        slip.tracking_no = (request.form.get('tracking_no') or '').strip() or None
+        slip.vehicle_no = (request.form.get('vehicle_no') or '').strip() or None
+        slip.gate_pass_no = (request.form.get('gate_pass_no') or '').strip() or None
+        slip.dispatch_date = _parse_form_date(request.form.get('dispatch_date'))
+        slip.total_ordered_qty = _parse_form_float(request.form.get('total_ordered_qty'))
+        slip.total_packed_qty = _parse_form_float(request.form.get('total_packed_qty'))
+        slip.balance_qty = _parse_form_float(request.form.get('balance_qty'))
+        slip.gross_weight = _parse_form_float(request.form.get('gross_weight'))
+        slip.net_weight = _parse_form_float(request.form.get('net_weight'))
+        db.session.commit()
+
+        buffer = generate_packing_slip_pdf(sale, company, slip)
+        response = make_response(buffer.getvalue())
         response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = f'inline; filename="packing_slip_{sale.invoice_number or "unknown"}.pdf"'
+        response.headers['Content-Disposition'] = f'attachment; filename="{slip.slip_number}_{sale.invoice_number or "packing-slip"}.pdf"'
         return response
     except Exception as e:
+        db.session.rollback()
         print(f"Packing slip PDF generation error: {str(e)}")
         flash(f'Error generating Packing Slip PDF: {str(e)}', 'error')
         return redirect(url_for('sales.invoice_detail', id=id))
+
+
+@bp.route('/packing-slip/<int:slip_id>/download')
+@login_required
+def download_packing_slip(slip_id):
+    """Re-download a previously generated packing slip from history — visible
+    to anyone who can view the invoice, not just admins."""
+    slip = PackingSlip.query.get_or_404(slip_id)
+    sale = Sale.query.get_or_404(slip.sale_id)
+    company = Company.query.first()
+    try:
+        buffer = generate_packing_slip_pdf(sale, company, slip)
+        response = make_response(buffer.getvalue())
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'attachment; filename="{slip.slip_number}_{sale.invoice_number or "packing-slip"}.pdf"'
+        return response
+    except Exception as e:
+        print(f"Packing slip re-download error: {str(e)}")
+        flash(f'Error generating Packing Slip PDF: {str(e)}', 'error')
+        return redirect(url_for('sales.invoice_detail', id=sale.id))
+
+
+@bp.route('/packing-slip/<int:slip_id>/delete', methods=['POST'])
+@login_required
+def delete_packing_slip(slip_id):
+    """Admin-only: remove a packing slip record from an invoice's history."""
+    slip = PackingSlip.query.get_or_404(slip_id)
+    sale_id = slip.sale_id
+    if current_user.role != 'admin':
+        flash('Only an admin can delete a packing slip.', 'error')
+        return redirect(url_for('sales.invoice_detail', id=sale_id))
+    db.session.delete(slip)
+    db.session.commit()
+    flash(f'Packing slip {slip.slip_number} deleted.', 'success')
+    return redirect(url_for('sales.invoice_detail', id=sale_id))
 
 @bp.route('/invoice/<int:id>/pdf/view')
 @login_required

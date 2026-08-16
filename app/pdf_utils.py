@@ -764,7 +764,9 @@ class ProfessionalPDFGenerator:
     def _build_packing_items_table(self, items):
         """# | Description | SKU | Unit | Qty Ordered | Qty Packed | Balance | Remarks.
         Qty Ordered comes from the sale; the last three columns are left blank
-        for staff to fill in by hand while physically packing the order."""
+        for staff to fill in by hand while physically packing the order. Only
+        as many rows as there are items — no padding blank rows, so a short
+        order doesn't waste page space."""
         headers = ['#', 'Description', 'SKU', 'Unit', 'Qty Ordered', 'Qty Packed', 'Balance', 'Remarks']
         col_w_raw = [0.3, 2.3, 0.9, 0.6, 0.9, 0.9, 0.8, 0.8]
         col_w = [w * TABLE_WIDTH / sum(col_w_raw) for w in col_w_raw]
@@ -789,11 +791,6 @@ class ProfessionalPDFGenerator:
             table_data.append([Paragraph('1', self.styles['TblCell']),
                                 Paragraph('No items listed', self.styles['TblCell'])]
                                + [Paragraph('-', self.styles['TblCell'])] * 6)
-
-        # Blank rows so a short order still gets a few extra lines to hand-write
-        # additional items or notes on, matching a printable packing-slip form.
-        while len(table_data) < 5:
-            table_data.append([Paragraph('', self.styles['TblCell'])] * 8)
 
         tbl = Table(table_data, colWidths=col_w, rowHeights=[16] + [20] * (len(table_data) - 1))
         tbl.setStyle(TableStyle([
@@ -822,11 +819,12 @@ class ProfessionalPDFGenerator:
 
     def _build_packing_verification_table(self):
         """PACKING & RECEIVING VERIFICATION sign-off grid: 2 rows x 3 columns,
-        each cell a label + blank line for a name/date/signature to be written
-        in by hand at the time of packing/dispatch/receipt."""
+        each cell a label + a blank (grid-bordered) box for a name/date/
+        signature to be written in by hand at the time of packing/dispatch/
+        receipt — no underscore fill line, just the empty bordered cell."""
         def cell(label):
             return [Paragraph(f"<b>{label}</b>", self.styles['BoxValue']),
-                    Paragraph('_' * 22, self.styles['BoxValue'])]
+                    Paragraph('', self.styles['BoxValue'])]
 
         row1 = cell('Packed By') + cell('Dispatched By') + cell('Received By')
         row2 = cell('Checked By') + cell('Date') + cell('Signature / Stamp')
@@ -835,7 +833,9 @@ class ProfessionalPDFGenerator:
         data.append([row1[0], row1[1], row1[2], row1[3], row1[4], row1[5]])
         data.append([row2[0], row2[1], row2[2], row2[3], row2[4], row2[5]])
         col_w = [0.9*inch, 1.6*inch, 1.0*inch, 1.6*inch, 0.9*inch, 1.5*inch]
-        tbl = Table(data, colWidths=col_w)
+        # Fixed row heights (rather than an underscore line) give each value
+        # cell visible blank space to sign/write in, bounded by the grid box.
+        tbl = Table(data, colWidths=col_w, rowHeights=[None, 32, 32])
         tbl.setStyle(TableStyle([
             ('SPAN',          (0,0), (-1,0)),
             ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
@@ -851,14 +851,17 @@ class ProfessionalPDFGenerator:
         ]))
         return tbl
 
-    def generate_packing_slip(self, sale):
+    def generate_packing_slip(self, sale, slip=None):
         """Bilingual (English/Urdu) Packing Slip — a shipping/logistics form,
         not a financial document (no prices, discounts, or balances shown).
         Customer info, Related Invoice No., and each item's Description/SKU/
-        Unit/Qty Ordered are auto-filled from the sale; everything a warehouse
-        worker only knows at pack time (Qty Packed, Balance, Remarks, carrier/
-        tracking details, package count, weights, sign-offs) is left blank for
-        staff to fill in by hand."""
+        Unit/Qty Ordered are auto-filled from the sale. When `slip` (a
+        PackingSlip record) is given, the slip no./date/PO/partial-shipment/
+        package/shipping/packing fields are filled from it too — only the
+        per-item Qty Packed/Balance/Remarks columns and the sign-off grid
+        stay blank, since those can only be known/signed at physical pack
+        time. Without `slip` (legacy callers), all of those fields render
+        blank for staff to fill in by hand."""
         elements = []
 
         # ── Header: company block (left) + title & meta form (right) ──────
@@ -885,16 +888,30 @@ class ProfessionalPDFGenerator:
             'PackingSlipUrduTitle', parent=self.styles['InvoiceSub'],
             fontName=self.urdu_font, fontSize=13, alignment=TA_RIGHT, textColor=TEXT_COLOR))
 
-        meta_rows = [
-            ('Packing Slip No.', ''),
-            ('Packing Date', ''),
-            ('Related Invoice No.', sale.invoice_number or ''),
-            ('Sales Order / PO No.', ''),
-            ('Partial Shipment', 'YES  /  NO'),
-            ('Package', '____  of  ____'),
-        ]
+        if slip:
+            partial_display = 'No'
+            if slip.is_partial:
+                partial_display = (f"Yes (Shipment {slip.partial_shipment_no} of {slip.partial_shipment_total})"
+                                    if slip.partial_shipment_no and slip.partial_shipment_total else 'Yes')
+            meta_rows = [
+                ('Packing Slip No.', slip.slip_number or ''),
+                ('Packing Date', slip.packing_date.strftime('%d-%b-%Y') if slip.packing_date else ''),
+                ('Related Invoice No.', sale.invoice_number or ''),
+                ('Sales Order / PO No.', slip.po_number or ''),
+                ('Partial Shipment', partial_display),
+                ('Number of Packages', str(slip.package_count) if slip.package_count else ''),
+            ]
+        else:
+            meta_rows = [
+                ('Packing Slip No.', ''),
+                ('Packing Date', ''),
+                ('Related Invoice No.', sale.invoice_number or ''),
+                ('Sales Order / PO No.', ''),
+                ('Partial Shipment', ''),
+                ('Number of Packages', ''),
+            ]
         meta_tbl = Table(
-            [[Paragraph(l, self.styles['MetaLabel']), Paragraph(v or '_' * 18, self.styles['MetaValue'])] for l, v in meta_rows],
+            [[Paragraph(l, self.styles['MetaLabel']), Paragraph(v if (v or slip) else '_' * 18, self.styles['MetaValue'])] for l, v in meta_rows],
             colWidths=[1.6 * inch, RIGHT_W - 1.6 * inch]
         )
         meta_tbl.setStyle(TableStyle([
@@ -995,20 +1012,38 @@ class ProfessionalPDFGenerator:
         elements.append(Spacer(1, 10))
 
         # ── SHIPPING DETAILS / PACKING SUMMARY ──────────────────────────────
-        shipping_fields = [
-            ('Transport Company', ''), ('Bilty / LR No.', ''), ('Tracking No.', ''),
-            ('Vehicle No.', ''), ('Gate Pass No.', ''), ('Dispatch Date', ''),
-        ]
-        summary_fields = [
-            ('Total Ordered Qty', f"{total_qty:,.2f}"),
-            ('Total Packed Qty', ''),
-            ('Balance Qty', ''),
-            ('Total Packages', ''),
-            ('Gross Weight', ''),
-            ('Net Weight', f"{total_weight:,.2f} kg" if has_weight else ''),
-        ]
+        if slip:
+            shipping_fields = [
+                ('Transport Company', slip.transport_company or ''),
+                ('Bilty / LR No.', slip.bilty_no or ''),
+                ('Tracking No.', slip.tracking_no or ''),
+                ('Vehicle No.', slip.vehicle_no or ''),
+                ('Gate Pass No.', slip.gate_pass_no or ''),
+                ('Dispatch Date', slip.dispatch_date.strftime('%d-%b-%Y') if slip.dispatch_date else ''),
+            ]
+            summary_fields = [
+                ('Total Ordered Qty', f"{slip.total_ordered_qty:,.2f}" if slip.total_ordered_qty is not None else f"{total_qty:,.2f}"),
+                ('Total Packed Qty', f"{slip.total_packed_qty:,.2f}" if slip.total_packed_qty is not None else ''),
+                ('Balance Qty', f"{slip.balance_qty:,.2f}" if slip.balance_qty is not None else ''),
+                ('Total Packages', str(slip.package_count) if slip.package_count else ''),
+                ('Gross Weight', f"{slip.gross_weight:,.2f} kg" if slip.gross_weight is not None else ''),
+                ('Net Weight', f"{slip.net_weight:,.2f} kg" if slip.net_weight is not None else (f"{total_weight:,.2f} kg" if has_weight else '')),
+            ]
+        else:
+            shipping_fields = [
+                ('Transport Company', ''), ('Bilty / LR No.', ''), ('Tracking No.', ''),
+                ('Vehicle No.', ''), ('Gate Pass No.', ''), ('Dispatch Date', ''),
+            ]
+            summary_fields = [
+                ('Total Ordered Qty', f"{total_qty:,.2f}"),
+                ('Total Packed Qty', ''),
+                ('Balance Qty', ''),
+                ('Total Packages', ''),
+                ('Gross Weight', ''),
+                ('Net Weight', f"{total_weight:,.2f} kg" if has_weight else ''),
+            ]
         box_ship = self._build_field_grid_box("SHIPPING DETAILS", shipping_fields, 3.9 * inch)
-        box_sum = self._build_field_grid_box("PACKING SUMMARY", summary_fields, 3.3 * inch)
+        box_sum = self._build_field_grid_box("PACKING DETAILS", summary_fields, 3.3 * inch)
         ship_outer = Table([[box_ship, '', box_sum]], colWidths=[3.9*inch, 0.15*inch, 3.45*inch])
         ship_outer.setStyle(TableStyle([
             ('VALIGN', (0,0), (-1,-1), 'TOP'),
@@ -1941,13 +1976,13 @@ def generate_bill_payment_receipt_pdf(payment, bill, company=None):
     )
 
 
-def generate_packing_slip_pdf(sale, company):
+def generate_packing_slip_pdf(sale, company, slip=None):
     """Bilingual (English/Urdu) shipping Packing Slip for a Sale — a physical
     packing/dispatch form, not a financial document. See
     ProfessionalPDFGenerator.generate_packing_slip() for what's auto-filled
-    from the sale vs. left blank for staff to fill in by hand."""
+    from the sale/slip vs. left blank for staff to fill in by hand."""
     buffer = io.BytesIO()
     generator = ProfessionalPDFGenerator(buffer, company, None, None)
-    generator.generate_packing_slip(sale)
+    generator.generate_packing_slip(sale, slip)
     buffer.seek(0)
     return buffer

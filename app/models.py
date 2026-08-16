@@ -1244,6 +1244,16 @@ class Quotation(db.Model):
         return self.discount or 0
 
     @property
+    def warehouse_names(self):
+        """Distinct warehouse names tagged across this quotation's line items,
+        in first-seen order — a quotation can span more than one warehouse."""
+        names = []
+        for item in self.items:
+            if item.warehouse and item.warehouse.name not in names:
+                names.append(item.warehouse.name)
+        return names
+
+    @property
     def valid_access_token(self):
         import uuid
         from datetime import datetime, timedelta
@@ -1275,12 +1285,15 @@ class Quotation(db.Model):
 
 
 class QuotationItem(db.Model):
-    """Quotation line item — mirrors SaleItem but with no warehouse/stock link."""
+    """Quotation line item — mirrors SaleItem, including an optional warehouse
+    tag per line (quotations still don't touch stock, but recording the
+    intended warehouse up front lets it carry straight through on convert-to-sale)."""
     __tablename__ = 'quotation_items'
 
     id = db.Column(db.Integer, primary_key=True)
     quotation_id = db.Column(db.Integer, db.ForeignKey('quotations.id'), nullable=False, index=True)
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
     quantity = db.Column(db.Float, nullable=False)
     unit_price = db.Column(db.Float, nullable=False)
     unit_discount = db.Column(db.Float, default=0)
@@ -1289,6 +1302,7 @@ class QuotationItem(db.Model):
     total = db.Column(db.Float, nullable=False)
 
     product = db.relationship('Product', backref='quotation_items', lazy=True)
+    warehouse = db.relationship('Warehouse', foreign_keys=[warehouse_id], lazy=True)
 
     @property
     def net_total(self):
@@ -4250,3 +4264,66 @@ class DatabaseBackup(db.Model):
 
     def __repr__(self):
         return f'<DatabaseBackup {self.filename}>'
+
+
+class PackingSlipSettings(db.Model):
+    """Packing Slip number formatting settings (mirrors InvoiceSettings'
+    prefix/suffix/next_number pattern)."""
+    __tablename__ = 'packing_slip_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    prefix = db.Column(db.String(10), default='PKG-')
+    suffix = db.Column(db.String(10), default='')
+    next_number = db.Column(db.Integer, default=1)
+    number_padding = db.Column(db.Integer, default=5)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<PackingSlipSettings {self.id}>'
+
+
+class PackingSlip(db.Model):
+    """A filled-in Packing Slip issued for a Sale — the digital record behind
+    the bilingual PDF generated in app/pdf_utils.py:generate_packing_slip().
+    Filled in by staff via the modal on the invoice detail page rather than
+    left blank for hand-writing."""
+    __tablename__ = 'packing_slips'
+
+    id = db.Column(db.Integer, primary_key=True)
+    slip_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    sale_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=False, index=True)
+
+    packing_date = db.Column(db.Date)
+    po_number = db.Column(db.String(100))
+
+    is_partial = db.Column(db.Boolean, default=False)
+    partial_shipment_no = db.Column(db.Integer)
+    partial_shipment_total = db.Column(db.Integer)
+
+    package_count = db.Column(db.Integer)
+
+    # Shipping details
+    transport_company = db.Column(db.String(150))
+    bilty_no = db.Column(db.String(100))
+    tracking_no = db.Column(db.String(100))
+    vehicle_no = db.Column(db.String(100))
+    gate_pass_no = db.Column(db.String(100))
+    dispatch_date = db.Column(db.Date)
+
+    # Packing details
+    total_ordered_qty = db.Column(db.Float)
+    total_packed_qty = db.Column(db.Float)
+    balance_qty = db.Column(db.Float)
+    gross_weight = db.Column(db.Float)
+    net_weight = db.Column(db.Float)
+
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    sale = db.relationship('Sale', backref=db.backref('packing_slips', lazy=True))
+    created_by_user = db.relationship('User', foreign_keys=[created_by], lazy=True)
+
+    def __repr__(self):
+        return f'<PackingSlip {self.slip_number}>'

@@ -26,10 +26,12 @@ def sellable_products(existing_product_ids=None):
 
 
 def _parse_items_from_form():
-    """Read the product/qty/price/discount/delivery line-item arrays posted
-    by the create/edit quotation form (same field-name convention as the
-    Sales invoice form, minus warehouse — quotations never touch stock)."""
+    """Read the product/warehouse/qty/price/discount/delivery line-item arrays
+    posted by the create/edit quotation form — same field-name convention as
+    the Sales invoice form. The warehouse tag is informational only (quotations
+    never touch stock), but carries through to the Sale on convert-to-sale."""
     product_ids = request.form.getlist('product_id[]')
+    warehouses = request.form.getlist('warehouse_id[]')
     quantities = request.form.getlist('quantity[]')
     prices = request.form.getlist('price[]')
     deliveries = request.form.getlist('delivery[]')
@@ -58,8 +60,15 @@ def _parse_items_from_form():
             total = item_subtotal + delivery_fee
             subtotal += total
 
+            warehouse_id = None
+            try:
+                warehouse_id = int(warehouses[i]) if i < len(warehouses) and warehouses[i] else None
+            except (ValueError, TypeError):
+                warehouse_id = None
+
             items.append({
                 'product_id': product.id,
+                'warehouse_id': warehouse_id,
                 'quantity': quantity,
                 'unit_price': price,
                 'delivery_fee': delivery_fee,
@@ -79,6 +88,7 @@ def list_quotations():
     to_date = request.args.get('to_date')
     salesman_id = request.args.get('salesman_id', type=int)
     customer_id = request.args.get('customer_id', type=int)
+    warehouse_id = request.args.get('warehouse_id', type=int)
 
     query = Quotation.query
 
@@ -90,6 +100,11 @@ def list_quotations():
 
     if customer_id:
         query = query.filter(Quotation.customer_id == customer_id)
+
+    if warehouse_id:
+        query = query.join(QuotationItem, QuotationItem.quotation_id == Quotation.id).filter(
+            QuotationItem.warehouse_id == warehouse_id
+        ).distinct()
 
     if search:
         like = f"%{search}%"
@@ -122,11 +137,13 @@ def list_quotations():
 
     salesmen = Salesman.query.filter_by(is_active=True).all()
     customers = Customer.query.order_by(Customer.name).all()
+    warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
     company = Company.query.first()
     date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
     return render_template('quotation/quotations.html', quotations=pagination.items, pagination=pagination,
                            status=status, search=search, counts=counts, salesmen=salesmen, customers=customers,
-                           salesman_id=salesman_id, customer_id=customer_id,
+                           warehouses=warehouses, salesman_id=salesman_id, customer_id=customer_id,
+                           warehouse_id=warehouse_id,
                            from_date=from_date, to_date=to_date, date_format=date_format)
 
 
@@ -139,6 +156,7 @@ def create_quotation():
     products = sellable_products()
     currencies = Currency.query.filter_by(is_active=True).all()
     salesmen = Salesman.query.filter_by(is_active=True).all()
+    warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
 
     form.customer_id.choices = [(0, 'Walk-in Customer')] + [(c.id, c.name) for c in customers]
     form.salesman_id.choices = [('', 'Select Salesman')] + [(s.id, s.name) for s in salesmen]
@@ -197,6 +215,7 @@ def create_quotation():
             db.session.add(QuotationItem(
                 quotation_id=quotation.id,
                 product_id=item['product_id'],
+                warehouse_id=item.get('warehouse_id'),
                 quantity=item['quantity'],
                 unit_price=item['unit_price'],
                 delivery_fee=item.get('delivery_fee', 0),
@@ -218,7 +237,7 @@ def create_quotation():
         return redirect(url_for('quotation.quotation_detail', id=quotation.id))
 
     return render_template('quotation/create_quotation.html', form=form, products=products, customers=customers,
-                           currencies=currencies, salesmen=salesmen, now=datetime.now())
+                           currencies=currencies, salesmen=salesmen, warehouses=warehouses, now=datetime.now())
 
 
 @bp.route('/<int:id>')
@@ -244,6 +263,7 @@ def edit_quotation(id):
     products = sellable_products(existing_product_ids=[item.product_id for item in quotation.items])
     currencies = Currency.query.filter_by(is_active=True).all()
     salesmen = Salesman.query.filter_by(is_active=True).all()
+    warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
 
     form.customer_id.choices = [(0, 'Walk-in Customer')] + [(c.id, c.name) for c in customers]
     form.salesman_id.choices = [('', 'Select Salesman')] + [(s.id, s.name) for s in salesmen]
@@ -288,6 +308,7 @@ def edit_quotation(id):
             db.session.add(QuotationItem(
                 quotation_id=quotation.id,
                 product_id=item['product_id'],
+                warehouse_id=item.get('warehouse_id'),
                 quantity=item['quantity'],
                 unit_price=item['unit_price'],
                 delivery_fee=item.get('delivery_fee', 0),
@@ -309,13 +330,18 @@ def edit_quotation(id):
         return redirect(url_for('quotation.quotation_detail', id=quotation.id))
 
     return render_template('quotation/edit_quotation.html', form=form, quotation=quotation, products=products,
-                           customers=customers, currencies=currencies, salesmen=salesmen, now=datetime.now())
+                           customers=customers, currencies=currencies, salesmen=salesmen, warehouses=warehouses, now=datetime.now())
 
 
 @bp.route('/<int:id>/delete', methods=['POST'])
 @login_required
-@permission_required('quotations', action='delete')
 def delete_quotation(id):
+    """Admin-only: quotations can only be deleted by an admin, regardless of
+    the granular 'quotations' delete permission other roles may hold."""
+    if current_user.role != 'admin':
+        flash('Only an admin can delete a quotation.', 'danger')
+        return redirect(url_for('quotation.list_quotations'))
+
     quotation = Quotation.query.get_or_404(id)
     number = quotation.quotation_number
     db.session.delete(quotation)
@@ -392,6 +418,7 @@ def convert_to_sale(id):
         sale_item = SaleItem(
             sale_id=sale.id,
             product_id=item.product_id,
+            warehouse_id=item.warehouse_id,
             quantity=item.quantity,
             unit_price=item.unit_price,
             delivery_fee=item.delivery_fee,
@@ -406,10 +433,11 @@ def convert_to_sale(id):
             product = Product.query.get(item.product_id)
             if product:
                 product.update_quantity(-item.quantity)
-                if product.warehouse_id:
-                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=product.warehouse_id).first()
+                wh_id = item.warehouse_id or product.warehouse_id
+                if wh_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
                     if not wh_stock:
-                        wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=product.warehouse_id, quantity=0)
+                        wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=wh_id, quantity=0)
                         db.session.add(wh_stock)
                     wh_stock.quantity -= item.quantity
         sale.stock_updated = True

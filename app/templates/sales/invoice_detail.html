@@ -144,10 +144,10 @@
             <a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" class="btn btn-info" target="_blank" rel="noopener">
                 <i class="fas fa-file-pdf me-1"></i>PDF
             </a>
-            <a href="{{ url_for('sales.packing_slip_pdf', id=sale.id) }}" class="btn btn-outline-dark" target="_blank" rel="noopener"
-                title="Bilingual packing/dispatch slip — customer &amp; items auto-filled, shipping details left blank for staff to fill in by hand">
+            <button type="button" id="packingSlipTriggerBtn" class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#packingSlipModal"
+                title="Bilingual packing/dispatch slip — fill in shipment &amp; packing details below, then download">
                 <i class="fas fa-box me-1"></i>Packing Slip
-            </a>
+            </button>
             {% if sale.customer_id %}
             <button type="button" class="btn btn-outline-info ledger-trigger" data-customer-id="{{ sale.customer_id }}"
                 onclick="showCustomerLedger({{ sale.customer_id }})">
@@ -217,6 +217,335 @@
         </div>
     </div>
 
+
+    <!-- Packing Slip Modal -->
+    <div class="modal fade" id="packingSlipModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title"><i class="fas fa-box me-2"></i>Packing Slip — {{ sale.invoice_number }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-3">
+                        Fill in the shipment details below. The PDF will download automatically once you submit —
+                        item description/SKU/qty ordered are auto-filled from the invoice; Qty Packed, Balance and
+                        sign-offs stay blank on the sheet for the warehouse to fill in by hand while physically packing.
+                    </p>
+
+                    <div class="alert alert-info small py-2 d-none" id="packingSlipEditBanner">
+                        <i class="fas fa-edit me-1"></i>Editing packing slip <strong id="editSlipNumberLabel"></strong>.
+                        <button type="button" class="btn btn-sm btn-outline-secondary float-end py-0" onclick="resetPackingSlipForm()">Cancel Edit</button>
+                    </div>
+
+                    <form action="{{ url_for('sales.packing_slip_pdf', id=sale.id) }}" method="POST" id="packingSlipForm">
+                        <input type="hidden" name="slip_id" id="packingSlipIdInput" value="">
+
+                        <h6 class="text-uppercase text-muted small fw-bold mb-2"><i class="fas fa-hashtag me-1"></i>Slip Details</h6>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Packing Slip No.</label>
+                                <input type="text" id="packingSlipNumberDisplay" class="form-control bg-light" value="{{ next_packing_slip_number }}" readonly>
+                                <div class="form-text" id="packingSlipNumberHelp">Auto-generated</div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Packing Date</label>
+                                <input type="date" name="packing_date" id="packingDateInput" class="form-control" value="{{ today }}" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Sales Order / PO No.</label>
+                                <input type="text" name="po_number" id="poNumberInput" class="form-control" placeholder="e.g. PO-1042">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Partial Shipment</label>
+                                <select name="partial_shipment" id="partialShipmentSelect" class="form-select">
+                                    <option value="no" selected>No</option>
+                                    <option value="yes">Yes</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4 partial-shipment-fields d-none">
+                                <label class="form-label fw-semibold">This Shipment No.</label>
+                                <input type="number" min="1" name="partial_shipment_no" id="partialShipmentNoInput" class="form-control" placeholder="e.g. 1">
+                            </div>
+                            <div class="col-md-4 partial-shipment-fields d-none">
+                                <label class="form-label fw-semibold">Total Shipments</label>
+                                <input type="number" min="1" name="partial_shipment_total" id="partialShipmentTotalInput" class="form-control" placeholder="e.g. 2">
+                                <div class="form-text">e.g. Shipment 1 of 2</div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Number of Packages</label>
+                                <input type="number" min="1" name="package_count" id="packageCountInput" class="form-control" placeholder="e.g. 3" required>
+                            </div>
+                        </div>
+
+                        <hr>
+                        <h6 class="text-uppercase text-muted small fw-bold mb-2"><i class="fas fa-truck me-1"></i>Shipping Details</h6>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Transport Company</label>
+                                <input type="text" name="transport_company" id="transportCompanyInput" class="form-control">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Bilty / LR No.</label>
+                                <input type="text" name="bilty_no" id="biltyNoInput" class="form-control">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Tracking No.</label>
+                                <input type="text" name="tracking_no" id="trackingNoInput" class="form-control">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Vehicle No.</label>
+                                <input type="text" name="vehicle_no" id="vehicleNoInput" class="form-control">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Gate Pass No.</label>
+                                <input type="text" name="gate_pass_no" id="gatePassNoInput" class="form-control">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Dispatch Date</label>
+                                <input type="date" name="dispatch_date" id="dispatchDateInput" class="form-control">
+                            </div>
+                        </div>
+
+                        <hr>
+                        <h6 class="text-uppercase text-muted small fw-bold mb-2"><i class="fas fa-weight-hanging me-1"></i>Packing Details</h6>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Total Ordered Qty</label>
+                                <input type="number" step="0.01" name="total_ordered_qty" id="totalOrderedQtyInput" class="form-control"
+                                    value="{{ '%.2f'|format(packing_total_ordered_qty) if packing_total_ordered_qty is not none else '' }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Total Packed Qty</label>
+                                <input type="number" step="0.01" name="total_packed_qty" id="totalPackedQtyInput" class="form-control">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Balance Qty</label>
+                                <input type="number" step="0.01" name="balance_qty" id="balanceQtyInput" class="form-control">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Gross Weight <span class="text-muted fw-normal">(kg)</span></label>
+                                <input type="number" step="0.01" name="gross_weight" id="grossWeightInput" class="form-control">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">Net Weight <span class="text-muted fw-normal">(kg)</span></label>
+                                <input type="number" step="0.01" name="net_weight" id="netWeightInput" class="form-control"
+                                    value="{{ '%.2f'|format(packing_net_weight) if packing_net_weight is not none else '' }}">
+                            </div>
+                        </div>
+                    </form>
+
+                    <hr>
+                    <h6 class="text-uppercase text-muted small fw-bold mb-2"><i class="fas fa-history me-1"></i>Packing Slip History</h6>
+                    {% if packing_slip_history %}
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Slip No.</th>
+                                    <th>Date</th>
+                                    <th>PO No.</th>
+                                    <th>Partial</th>
+                                    <th class="text-center">Packages</th>
+                                    <th>Created By</th>
+                                    <th>Created</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for slip in packing_slip_history %}
+                                <tr>
+                                    <td class="fw-semibold">{{ slip.slip_number }}</td>
+                                    <td>{{ slip.packing_date.strftime('%d-%b-%Y') if slip.packing_date else '-' }}</td>
+                                    <td>{{ slip.po_number or '-' }}</td>
+                                    <td>
+                                        {% if slip.is_partial %}
+                                        <span class="badge bg-warning text-dark">
+                                            {% if slip.partial_shipment_no and slip.partial_shipment_total %}{{ slip.partial_shipment_no }} of {{ slip.partial_shipment_total }}{% else %}Yes{% endif %}
+                                        </span>
+                                        {% else %}
+                                        <span class="text-muted">No</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">{{ slip.package_count or '-' }}</td>
+                                    <td>{{ slip.created_by_user.username if slip.created_by_user else '-' }}</td>
+                                    <td>{{ slip.created_at.strftime('%d-%b-%Y %H:%M') if slip.created_at else '-' }}</td>
+                                    <td class="text-end">
+                                        <a href="{{ url_for('sales.download_packing_slip', slip_id=slip.id) }}" class="btn btn-sm btn-outline-primary" title="Download">
+                                            <i class="fas fa-download"></i>
+                                        </a>
+                                        {% if current_user.role == 'admin' %}
+                                        <button type="button" class="btn btn-sm btn-outline-secondary edit-packing-slip-btn" title="Edit"
+                                            data-id="{{ slip.id }}"
+                                            data-slip-number="{{ slip.slip_number }}"
+                                            data-packing-date="{{ slip.packing_date.isoformat() if slip.packing_date else '' }}"
+                                            data-po-number="{{ slip.po_number or '' }}"
+                                            data-is-partial="{{ '1' if slip.is_partial else '0' }}"
+                                            data-partial-no="{{ slip.partial_shipment_no or '' }}"
+                                            data-partial-total="{{ slip.partial_shipment_total or '' }}"
+                                            data-package-count="{{ slip.package_count or '' }}"
+                                            data-transport-company="{{ slip.transport_company or '' }}"
+                                            data-bilty-no="{{ slip.bilty_no or '' }}"
+                                            data-tracking-no="{{ slip.tracking_no or '' }}"
+                                            data-vehicle-no="{{ slip.vehicle_no or '' }}"
+                                            data-gate-pass-no="{{ slip.gate_pass_no or '' }}"
+                                            data-dispatch-date="{{ slip.dispatch_date.isoformat() if slip.dispatch_date else '' }}"
+                                            data-total-ordered-qty="{{ slip.total_ordered_qty if slip.total_ordered_qty is not none else '' }}"
+                                            data-total-packed-qty="{{ slip.total_packed_qty if slip.total_packed_qty is not none else '' }}"
+                                            data-balance-qty="{{ slip.balance_qty if slip.balance_qty is not none else '' }}"
+                                            data-gross-weight="{{ slip.gross_weight if slip.gross_weight is not none else '' }}"
+                                            data-net-weight="{{ slip.net_weight if slip.net_weight is not none else '' }}">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <form action="{{ url_for('sales.delete_packing_slip', slip_id=slip.id) }}" method="POST" class="d-inline"
+                                            onsubmit="return confirm('Delete packing slip {{ slip.slip_number }}? This cannot be undone.');">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted small mb-0">No packing slips generated yet for this invoice.</p>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" form="packingSlipForm" id="packingSlipSubmitBtn" class="btn btn-dark fw-bold">
+                        <i class="fas fa-file-download me-1"></i>Generate &amp; Download
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        (function () {
+            var DEFAULTS = {
+                slipNumber: {{ next_packing_slip_number|tojson }},
+                packingDate: {{ today|tojson }},
+                totalOrderedQty: {{ (('%.2f'|format(packing_total_ordered_qty)) if packing_total_ordered_qty is not none else '')|tojson }},
+                netWeight: {{ (('%.2f'|format(packing_net_weight)) if packing_net_weight is not none else '')|tojson }}
+            };
+
+            var select = document.getElementById('partialShipmentSelect');
+            var extraFields = document.querySelectorAll('#packingSlipModal .partial-shipment-fields');
+            function togglePartialFields(show) {
+                extraFields.forEach(function (el) {
+                    el.classList.toggle('d-none', !show);
+                    el.querySelector('input').required = show;
+                });
+            }
+            if (select) {
+                select.addEventListener('change', function () {
+                    togglePartialFields(select.value === 'yes');
+                });
+            }
+
+            // Auto-suggest Balance Qty = Ordered - Packed; staff can still edit it.
+            var ordered = document.getElementById('totalOrderedQtyInput');
+            var packed = document.getElementById('totalPackedQtyInput');
+            var balance = document.getElementById('balanceQtyInput');
+            function recalcBalance() {
+                var o = parseFloat(ordered.value);
+                var p = parseFloat(packed.value);
+                if (!isNaN(o) && !isNaN(p)) {
+                    balance.value = (o - p).toFixed(2);
+                }
+            }
+            if (ordered && packed && balance) {
+                packed.addEventListener('input', recalcBalance);
+                ordered.addEventListener('input', recalcBalance);
+            }
+
+            // Close the modal right away; the browser downloads the PDF via the
+            // Content-Disposition: attachment response without leaving the page.
+            var form = document.getElementById('packingSlipForm');
+            if (form) {
+                form.addEventListener('submit', function () {
+                    var modalEl = document.getElementById('packingSlipModal');
+                    var modal = bootstrap.Modal.getInstance(modalEl);
+                    if (modal) {
+                        setTimeout(function () { modal.hide(); }, 200);
+                    }
+                });
+            }
+
+            window.resetPackingSlipForm = function () {
+                document.getElementById('packingSlipIdInput').value = '';
+                document.getElementById('packingSlipNumberDisplay').value = DEFAULTS.slipNumber;
+                document.getElementById('packingSlipNumberHelp').textContent = 'Auto-generated';
+                document.getElementById('packingDateInput').value = DEFAULTS.packingDate;
+                document.getElementById('poNumberInput').value = '';
+                select.value = 'no';
+                togglePartialFields(false);
+                document.getElementById('partialShipmentNoInput').value = '';
+                document.getElementById('partialShipmentTotalInput').value = '';
+                document.getElementById('packageCountInput').value = '';
+                document.getElementById('transportCompanyInput').value = '';
+                document.getElementById('biltyNoInput').value = '';
+                document.getElementById('trackingNoInput').value = '';
+                document.getElementById('vehicleNoInput').value = '';
+                document.getElementById('gatePassNoInput').value = '';
+                document.getElementById('dispatchDateInput').value = '';
+                document.getElementById('totalOrderedQtyInput').value = DEFAULTS.totalOrderedQty;
+                document.getElementById('totalPackedQtyInput').value = '';
+                document.getElementById('balanceQtyInput').value = '';
+                document.getElementById('grossWeightInput').value = '';
+                document.getElementById('netWeightInput').value = DEFAULTS.netWeight;
+                document.getElementById('packingSlipEditBanner').classList.add('d-none');
+                document.getElementById('packingSlipSubmitBtn').innerHTML = '<i class="fas fa-file-download me-1"></i>Generate &amp; Download';
+            };
+
+            window.populatePackingSlipForm = function (btn) {
+                var d = btn.dataset;
+                document.getElementById('packingSlipIdInput').value = d.id;
+                document.getElementById('packingSlipNumberDisplay').value = d.slipNumber;
+                document.getElementById('packingSlipNumberHelp').textContent = 'Existing slip number (unchanged when editing)';
+                document.getElementById('packingDateInput').value = d.packingDate || DEFAULTS.packingDate;
+                document.getElementById('poNumberInput').value = d.poNumber || '';
+                var isPartial = d.isPartial === '1';
+                select.value = isPartial ? 'yes' : 'no';
+                togglePartialFields(isPartial);
+                document.getElementById('partialShipmentNoInput').value = d.partialNo || '';
+                document.getElementById('partialShipmentTotalInput').value = d.partialTotal || '';
+                document.getElementById('packageCountInput').value = d.packageCount || '';
+                document.getElementById('transportCompanyInput').value = d.transportCompany || '';
+                document.getElementById('biltyNoInput').value = d.biltyNo || '';
+                document.getElementById('trackingNoInput').value = d.trackingNo || '';
+                document.getElementById('vehicleNoInput').value = d.vehicleNo || '';
+                document.getElementById('gatePassNoInput').value = d.gatePassNo || '';
+                document.getElementById('dispatchDateInput').value = d.dispatchDate || '';
+                document.getElementById('totalOrderedQtyInput').value = d.totalOrderedQty || '';
+                document.getElementById('totalPackedQtyInput').value = d.totalPackedQty || '';
+                document.getElementById('balanceQtyInput').value = d.balanceQty || '';
+                document.getElementById('grossWeightInput').value = d.grossWeight || '';
+                document.getElementById('netWeightInput').value = d.netWeight || '';
+                document.getElementById('editSlipNumberLabel').textContent = d.slipNumber;
+                document.getElementById('packingSlipEditBanner').classList.remove('d-none');
+                document.getElementById('packingSlipSubmitBtn').innerHTML = '<i class="fas fa-file-download me-1"></i>Update &amp; Download';
+            };
+
+            document.querySelectorAll('#packingSlipModal .edit-packing-slip-btn').forEach(function (btn) {
+                btn.addEventListener('click', function () { populatePackingSlipForm(btn); });
+            });
+
+            // Reopening the modal via the main header button always starts fresh,
+            // even if it was left mid-edit the last time it was open.
+            var modalEl = document.getElementById('packingSlipModal');
+            if (modalEl) {
+                modalEl.addEventListener('show.bs.modal', function (evt) {
+                    if (evt.relatedTarget && evt.relatedTarget.id === 'packingSlipTriggerBtn') {
+                        resetPackingSlipForm();
+                    }
+                });
+            }
+        })();
+    </script>
 
     <!-- Discount Modal -->
     <div class="modal fade" id="discountModal" tabindex="-1">

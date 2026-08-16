@@ -44,7 +44,7 @@ def create_app(config_class=Config):
             ProductWarehouseStock, Media,
             RecoveryTask, RecoveryLog, RecoveryComment, Salesman,
             JournalAccount, JournalEntry, JournalLine, FixedExpense,
-            Quotation, QuotationItem, DatabaseBackup
+            Quotation, QuotationItem, DatabaseBackup, PackingSlip, PackingSlipSettings
         )
         from app.filter_models import SavedFilter
         
@@ -135,6 +135,8 @@ def create_app(config_class=Config):
             'quotations': Quotation,
             'quotation_items': QuotationItem,
             'database_backups': DatabaseBackup,
+            'packing_slips': PackingSlip,
+            'packing_slip_settings': PackingSlipSettings,
         }
         
         try:

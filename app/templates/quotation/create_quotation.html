@@ -247,19 +247,21 @@
                         <div class="table-responsive">
                             <table class="table table-bordered table-sm mb-0" id="itemsTable">
                                 <colgroup>
-                                    <col style="width:26%;">
+                                    <col style="width:22%;">
+                                    <col style="width:9%;">
+                                    <col style="width:7%;">
                                     <col style="width:8%;">
-                                    <col style="width:9%;">
-                                    <col style="width:11%;">
-                                    <col style="width:11%;">
-                                    <col style="width:9%;">
-                                    <col style="width:12%;">
                                     <col style="width:10%;">
+                                    <col style="width:10%;">
+                                    <col style="width:8%;">
+                                    <col style="width:11%;">
+                                    <col style="width:9%;">
                                     <col style="width:4%;">
                                 </colgroup>
                                 <thead class="table-light">
                                     <tr class="small text-center">
                                         <th class="text-start">Product</th>
+                                        <th>Warehouse</th>
                                         <th>Qty</th>
                                         <th>Cost</th>
                                         <th>Price</th>
@@ -280,6 +282,16 @@
                                                     {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity }})
                                                 </option>
                                                 {% endfor %}
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select name="warehouse_id[]" class="form-select form-select-sm warehouse-select searchable-select">
+                                                <option value="">Select</option>
+                                                {% if warehouses %}
+                                                    {% for warehouse in warehouses %}
+                                                    <option value="{{ warehouse.id }}">{{ warehouse.name }}</option>
+                                                    {% endfor %}
+                                                {% endif %}
                                             </select>
                                         </td>
                                         <td>
@@ -356,6 +368,7 @@
         }
         document.getElementById('itemsBody').appendChild(newRow);
         initSelect2($(newRow).find('.product-select'), 'Search or select product');
+        initSelect2($(newRow).find('.warehouse-select'), '— Select Warehouse —');
         attachItemEvents(newRow);
     }
 
@@ -485,6 +498,7 @@
 
         document.querySelectorAll('.item-row').forEach(attachItemEvents);
         initSelect2('.product-select', '— Search or Select Product —');
+        initSelect2('.warehouse-select', '— Select Warehouse —');
 
         if ('ontouchstart' in window) {
             $(document).on('touchend', '#itemsTable .select2-container', function(e) {

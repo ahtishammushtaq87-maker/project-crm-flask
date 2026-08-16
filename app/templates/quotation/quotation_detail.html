@@ -100,7 +100,7 @@
                 <i class="fas fa-arrow-left me-1"></i>Back
             </a>
 
-            {% if current_user.has_permission('quotations', 'delete') %}
+            {% if current_user.role == 'admin' %}
             <form action="{{ url_for('quotation.delete_quotation', id=quotation.id) }}" method="POST" class="d-inline"
                 onsubmit="return confirm('Delete this quotation? This cannot be undone.');">
                 <button type="submit" class="btn btn-outline-danger">
@@ -191,7 +191,7 @@
                         {% set show_delivery_col = sum_item_delivery > 0 %}
                         {% set items_discount_sum = quotation.items | sum(attribute='discount') %}
                         {% set show_discount_col = items_discount_sum > 0 %}
-                        {% set base_cols = 6 %}
+                        {% set base_cols = 7 %}
                         {% set total_cols = base_cols + (1 if show_delivery_col else 0) + (2 if show_discount_col else 0) %}
                         {% set label_colspan = total_cols - 1 %}
 
@@ -200,6 +200,7 @@
                                 <tr>
                                     <th>#</th>
                                     <th>Product</th>
+                                    <th>Warehouse</th>
                                     <th class="text-center">Qty</th>
                                     <th class="text-end">List Price</th>
                                     {% if show_delivery_col %}
@@ -220,6 +221,7 @@
                                         <strong>{{ item.product.name if item.product else 'Deleted Product' }}</strong>
                                         {% if item.product and item.product.sku %}<br><small class="text-muted">{{ item.product.sku }}</small>{% endif %}
                                     </td>
+                                    <td>{{ item.warehouse.name if item.warehouse else '-' }}</td>
                                     <td class="text-center">{{ '{:,.2f}'.format(item.quantity) }}</td>
                                     <td class="text-end">PKR {{ "{:,.2f}".format(item.unit_price) }}</td>
                                     {% if show_delivery_col %}

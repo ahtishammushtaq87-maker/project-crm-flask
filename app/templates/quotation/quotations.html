@@ -69,6 +69,16 @@
                     </select>
                 </div>
 
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">Warehouse</label>
+                    <select name="warehouse_id" class="form-select searchable-select" data-placeholder="— Select Warehouse —">
+                        <option value=""></option>
+                        {% for wh in warehouses %}
+                        <option value="{{ wh.id }}" {% if warehouse_id==wh.id %}selected{% endif %}>{{ wh.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
                 <div class="col-6 col-md-2">
                     <label class="form-label small fw-bold text-muted mb-1">From Date</label>
                     <input type="date" name="from_date" class="form-control" value="{{ from_date or '' }}">
@@ -105,7 +115,7 @@
                     ('rejected', 'Rejected', 'text-danger'), ('expired', 'Expired', 'text-dark')] %}
                 <li class="nav-item">
                     <a class="nav-link {{ tab_cls }} {% if status == tab_key %}active{% endif %}"
-                        href="{{ url_for('quotation.list_quotations', status=tab_key, from_date=from_date, to_date=to_date, salesman_id=salesman_id, customer_id=customer_id, search=search) }}">
+                        href="{{ url_for('quotation.list_quotations', status=tab_key, from_date=from_date, to_date=to_date, salesman_id=salesman_id, customer_id=customer_id, warehouse_id=warehouse_id, search=search) }}">
                         {{ tab_label }}
                         {% if counts[tab_key] > 0 %}<span class="badge bg-light text-dark border ms-1">{{ counts[tab_key] }}</span>{% endif %}
                     </a>
@@ -126,6 +136,7 @@
                             <th>Valid Until</th>
                             <th>Customer</th>
                             <th>Salesman</th>
+                            <th>Warehouse</th>
                             <th class="text-end">Total</th>
                             <th class="text-center">Status</th>
                             <th class="text-center no-export">Actions</th>
@@ -141,6 +152,7 @@
                             <td>{{ q.due_date.strftime(date_format) if q.due_date else '-' }}</td>
                             <td>{{ q.customer.name if q.customer else 'Walk-in Customer' }}</td>
                             <td>{{ q.salesman.name if q.salesman else '-' }}</td>
+                            <td>{{ q.warehouse_names | join(', ') if q.warehouse_names else '-' }}</td>
                             <td class="text-end">PKR{{ "{:,.2f}".format(q.total) }}</td>
                             <td class="text-center">
                                 <span class="badge shadow-sm
@@ -165,7 +177,7 @@
                                     {% endif %}
                                     <a href="{{ url_for('quotation.quotation_pdf', id=q.id) }}" class="btn btn-outline-info"
                                         title="PDF" target="_blank"><i class="fas fa-file-pdf"></i></a>
-                                    {% if current_user.has_permission('quotations', 'delete') %}
+                                    {% if current_user.role == 'admin' %}
                                     <form action="{{ url_for('quotation.delete_quotation', id=q.id) }}" method="POST"
                                         class="d-inline"
                                         onsubmit="return confirm('Delete this quotation?');">
@@ -177,7 +189,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="8" class="text-center py-4 text-muted">No quotations found.</td>
+                            <td colspan="9" class="text-center py-4 text-muted">No quotations found.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -192,7 +204,7 @@
             {% for p in pagination.iter_pages() %}
             {% if p %}
             <li class="page-item {% if p == pagination.page %}active{% endif %}">
-                <a class="page-link" href="{{ url_for('quotation.list_quotations', page=p, status=status, from_date=from_date, to_date=to_date, salesman_id=salesman_id, customer_id=customer_id, search=search) }}">{{ p }}</a>
+                <a class="page-link" href="{{ url_for('quotation.list_quotations', page=p, status=status, from_date=from_date, to_date=to_date, salesman_id=salesman_id, customer_id=customer_id, warehouse_id=warehouse_id, search=search) }}">{{ p }}</a>
             </li>
             {% else %}
             <li class="page-item disabled"><span class="page-link">…</span></li>
