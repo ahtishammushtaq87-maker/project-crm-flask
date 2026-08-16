@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Edit Invoice {{ sale.invoice_number }}{% endblock %}
+{% block title %}Edit Quotation {{ quotation.quotation_number }}{% endblock %}
 
 {% block extra_css %}
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
@@ -24,7 +24,7 @@
             line-height: 38px !important;
             padding-left: 10px !important;
         }
-        #itemsTable { min-width: 820px; }
+        #itemsTable { min-width: 720px; }
     }
 
     #itemsTable {
@@ -55,27 +55,6 @@
         line-height: 28px;
         padding-right: 20px;
         font-size: 0.78rem;
-    }
-    .select2-container--open .select2-dropdown {
-        max-width: 350px;
-    }
-    .select2-container--open .select2-search__field {
-        font-size: 16px !important;
-        padding: 6px 8px !important;
-    }
-    @media (max-width: 768px) {
-        .table-responsive {
-            -webkit-overflow-scrolling: touch;
-        }
-        #itemsTable td .select2-container .select2-selection {
-            height: 36px !important;
-            min-height: 36px !important;
-        }
-        #itemsTable td .select2-container .select2-selection__rendered {
-            line-height: 34px;
-        }
-        #itemsTable col:nth-child(1) { width: 15% !important; }
-        #itemsTable col:nth-child(2) { width: 15% !important; }
     }
     #itemsTable .form-control-sm,
     #itemsTable .form-select-sm {
@@ -109,32 +88,23 @@
 
 {% block content %}
 <div class="container-fluid">
-    <h2 class="mb-3">Edit Invoice {{ sale.invoice_number }}</h2>
+    <h2 class="mb-3"><i class="fas fa-file-signature me-2 text-secondary"></i>Edit Quotation {{ quotation.quotation_number }}</h2>
 
-    <form method="POST" id="invoiceForm">
+    <form method="POST" id="quotationForm">
         <div class="row">
-            <!-- LEFT COLUMN: Invoice Details + Summary stacked -->
+            <!-- LEFT COLUMN: Quotation Details + Summary stacked -->
             <div class="col-lg-4 col-md-5 col-12">
-                <!-- Invoice Details -->
                 <div class="card mb-3 shadow-sm">
                     <div class="card-header bg-primary bg-opacity-10 py-2">
-                        <h6 class="mb-0 fw-bold text-primary"><i class="fas fa-file-invoice me-2"></i>Invoice Details</h6>
+                        <h6 class="mb-0 fw-bold text-primary"><i class="fas fa-file-signature me-2"></i>Quotation Details</h6>
                     </div>
                     <div class="card-body py-2">
                         <div class="mb-2">
-                            <label class="form-label mb-0 small fw-semibold">Invoice Number</label>
-                            <input type="text" class="form-control form-control-sm bg-light" value="{{ sale.invoice_number }}" readonly tabindex="-1">
-                        </div>
-                        <div class="mb-2">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <label for="customerSelect" class="form-label mb-0 small fw-semibold">Customer</label>
-                                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1" style="font-size:0.7rem;" onclick="showCustomerLedger(document.getElementById('customerSelect').value)">Ledger</button>
-                            </div>
-                            <select name="customer_id" class="form-control form-control-sm" id="customerSelect"
-                                onchange="updateCustomerInfo()">
+                            <label for="customerSelect" class="form-label mb-0 small fw-semibold">Customer</label>
+                            <select name="customer_id" class="form-control form-control-sm" id="customerSelect">
                                 <option value="0">Walk-in Customer</option>
                                 {% for customer in customers %}
-                                <option value="{{ customer.id }}" {% if sale.customer_id==customer.id %}selected{% endif %}>
+                                <option value="{{ customer.id }}" {% if quotation.customer_id==customer.id %}selected{% endif %}>
                                     {{ customer.name }}
                                 </option>
                                 {% endfor %}
@@ -145,7 +115,7 @@
                             <select name="salesman_id" class="form-control form-control-sm" id="salesmanSelect" required>
                                 <option value="">Select Salesman</option>
                                 {% for salesman in salesmen %}
-                                <option value="{{ salesman.id }}" {% if sale.salesman_id==salesman.id %}selected{% endif %}>
+                                <option value="{{ salesman.id }}" {% if quotation.salesman_id==salesman.id %}selected{% endif %}>
                                     {{ salesman.name }}
                                 </option>
                                 {% endfor %}
@@ -155,23 +125,31 @@
                             <div class="col-6">
                                 <label for="dateInput" class="form-label mb-0 small fw-semibold">Date</label>
                                 <input type="date" name="date" class="form-control form-control-sm" id="dateInput"
-                                    value="{{ sale.date.strftime('%Y-%m-%d') }}" required>
+                                    value="{{ quotation.date.strftime('%Y-%m-%d') }}" required>
                             </div>
                             <div class="col-6">
-                                <label for="dueDateInput" class="form-label mb-0 small fw-semibold">Due Date</label>
+                                <label for="dueDateInput" class="form-label mb-0 small fw-semibold">Valid Until</label>
                                 <input type="date" name="due_date" class="form-control form-control-sm" id="dueDateInput"
-                                    value="{{ sale.due_date.strftime('%Y-%m-%d') if sale.due_date else '' }}">
+                                    value="{{ quotation.due_date.strftime('%Y-%m-%d') if quotation.due_date else '' }}">
                             </div>
                         </div>
-                        <div class="mb-1">
-                            <label for="statusSelect" class="form-label mb-0 small fw-semibold">Status</label>
-                            <select name="status" class="form-control form-control-sm" id="statusSelect">
-                                <option value="draft" {% if sale.status=='draft' %}selected{% endif %}>Draft</option>
-                                <option value="unpaid" {% if sale.status=='unpaid' %}selected{% endif %}>Unpaid</option>
-                                <option value="paid" {% if sale.status=='paid' %}selected{% endif %}>Paid</option>
-                                <option value="partial" {% if sale.status=='partial' %}selected{% endif %}>Partial</option>
-                            </select>
+                        {% if currencies %}
+                        <div class="row g-2 mb-1">
+                            <div class="col-6">
+                                <label for="currencySelect" class="form-label mb-0 small fw-semibold">Currency</label>
+                                <select name="currency_id" class="form-control form-control-sm" id="currencySelect">
+                                    <option value="">Default</option>
+                                    {% for cur in currencies %}
+                                    <option value="{{ cur.id }}" {% if quotation.currency_id==cur.id %}selected{% endif %}>{{ cur.code }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label for="exchangeRateInput" class="form-label mb-0 small fw-semibold">Exchange Rate</label>
+                                <input type="number" name="exchange_rate" id="exchangeRateInput" class="form-control form-control-sm" step="0.0001" value="{{ quotation.exchange_rate or 1 }}">
+                            </div>
                         </div>
+                        {% endif %}
                     </div>
                 </div>
 
@@ -197,27 +175,22 @@
                                 </div>
                             </div>
                             <div class="col-6">
-                                <label for="discountInput" class="form-label mb-0 small fw-semibold">Invoice Discount <span class="text-muted fw-normal" id="discountAutoTag">(auto)</span></label>
+                                <label for="discountInput" class="form-label mb-0 small fw-semibold">Discount <span class="text-muted fw-normal" id="discountAutoTag">(auto)</span></label>
                                 <input type="number" name="discount" id="discountInput" class="form-control form-control-sm bg-light" step="0.01"
-                                    value="{{ '%.2f'|format(sale.discount) }}" readonly title="Auto-calculated as the sum of each item's Discount field">
+                                    value="{{ '%.2f'|format(quotation.discount) }}" readonly title="Auto-calculated as the sum of each item's Discount field">
                             </div>
                             <div class="col-6">
                                 <label for="taxRateInput" class="form-label mb-0 small fw-semibold">Tax Rate (%)</label>
                                 <input type="number" name="tax_rate" id="taxRateInput" class="form-control form-control-sm" step="0.01"
-                                    value="{{ '%.2f'|format(sale.tax_rate) }}">
+                                    value="{{ '%.2f'|format(quotation.tax_rate) }}">
                             </div>
                         </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" name="ignore_overdue_discount" id="ignoreOverdueCheck"
-                                {% if sale.ignore_overdue_discount %}checked{% endif %}>
-                            <label class="form-check-label" style="font-size:0.72rem;" for="ignoreOverdueCheck">
-                                Override Overdue Restriction
-                            </label>
-                        </div>
-                        <div class="mb-2">
-                            <label for="deliveryChargeInput" class="form-label mb-0 small fw-semibold">Delivery Charge</label>
-                            <input type="number" name="delivery_charge" id="deliveryChargeInput" class="form-control form-control-sm"
-                                step="0.01" value="{{ '%.2f'|format(sale.delivery_charge) }}">
+                        <div class="row g-2 mb-2">
+                            <div class="col-12">
+                                <label for="deliveryChargeInput" class="form-label mb-0 small fw-semibold">Delivery Charge</label>
+                                <input type="number" name="delivery_charge" id="deliveryChargeInput" class="form-control form-control-sm"
+                                    step="0.01" value="{{ '%.2f'|format(quotation.delivery_charge) }}">
+                            </div>
                         </div>
                         <hr class="my-2">
                         <div class="summary-line small">
@@ -253,44 +226,37 @@
                 </div>
 
                 <div class="d-grid gap-2 mb-3">
-                    <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Update Invoice</button>
-                    <a href="{{ url_for('sales.invoice_detail', id=sale.id) }}" class="btn btn-secondary btn-sm">Cancel</a>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Update Quotation</button>
+                    <a href="{{ url_for('quotation.quotation_detail', id=quotation.id) }}" class="btn btn-secondary btn-sm">Cancel</a>
                 </div>
             </div>
 
-            <!-- RIGHT COLUMN: Items Table (wider) -->
+            <!-- RIGHT COLUMN: Items Table -->
             <div class="col-lg-8 col-md-7 col-12">
                 <div class="card mb-3 shadow-sm">
                     <div class="card-header bg-success bg-opacity-10 py-2 d-flex justify-content-between align-items-center">
                         <h6 class="mb-0 fw-bold text-success"><i class="fas fa-boxes me-2"></i>Items</h6>
-                        <div class="btn-group">
-                            <button type="button" class="btn btn-sm btn-outline-info py-0 px-2" onclick="showCustomerLedger(document.getElementById('customerSelect').value)">
-                                <i class="fas fa-file-invoice-dollar me-1"></i>Ledger
-                            </button>
-                            <button type="button" class="btn btn-sm btn-primary py-0 px-2" onclick="addItem()">
-                                <i class="fas fa-plus me-1"></i>Add Item
-                            </button>
-                        </div>
+                        <button type="button" class="btn btn-sm btn-primary py-0 px-2" onclick="addItem()">
+                            <i class="fas fa-plus me-1"></i>Add Item
+                        </button>
                     </div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
                             <table class="table table-bordered table-sm mb-0" id="itemsTable">
                                 <colgroup>
-                                    <col style="width:22%;">
-                                    <col style="width:13%;">
-                                    <col style="width:6%;">
+                                    <col style="width:26%;">
+                                    <col style="width:8%;">
                                     <col style="width:9%;">
+                                    <col style="width:11%;">
+                                    <col style="width:11%;">
                                     <col style="width:9%;">
-                                    <col style="width:9%;">
-                                    <col style="width:7%;">
+                                    <col style="width:12%;">
                                     <col style="width:10%;">
-                                    <col style="width:9%;">
                                     <col style="width:4%;">
                                 </colgroup>
                                 <thead class="table-light">
                                     <tr class="small text-center">
                                         <th class="text-start">Product</th>
-                                        <th>Warehouse</th>
                                         <th>Qty</th>
                                         <th>Cost</th>
                                         <th>Price</th>
@@ -302,7 +268,7 @@
                                     </tr>
                                 </thead>
                                 <tbody id="itemsBody">
-                                    {% for item in sale.items %}
+                                    {% for item in quotation.items %}
                                     <tr class="item-row">
                                         <td>
                                             <select name="product_id[]" class="form-select form-select-sm product-select" required>
@@ -312,16 +278,6 @@
                                                     {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity }})
                                                 </option>
                                                 {% endfor %}
-                                            </select>
-                                        </td>
-                                        <td>
-                                            <select name="warehouse_id[]" class="form-select form-select-sm warehouse-select searchable-select">
-                                                <option value="">Select</option>
-                                                {% if warehouses %}
-                                                    {% for warehouse in warehouses %}
-                                                    <option value="{{ warehouse.id }}" {% if item.warehouse_id==warehouse.id %}selected{% endif %}>{{ warehouse.name }}</option>
-                                                    {% endfor %}
-                                                {% endif %}
                                             </select>
                                         </td>
                                         <td>
@@ -362,125 +318,6 @@
                                 </tbody>
                             </table>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Customer Ledger Summary (auto-updates with the selected customer) -->
-                <div class="card mb-3 shadow-sm" id="customerLedgerCard" style="display:none;">
-                    <div class="card-header bg-primary bg-opacity-10 py-2 d-flex justify-content-between align-items-center">
-                        <h6 class="mb-0 fw-bold text-primary">
-                            <i class="fas fa-file-invoice-dollar me-2"></i>Customer Ledger
-                            <span id="ledgerCustName" class="text-muted fw-normal small"></span>
-                        </h6>
-                        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2"
-                            onclick="showCustomerLedger(document.getElementById('customerSelect').value)">
-                            <i class="fas fa-external-link-alt me-1"></i>Full Ledger
-                        </button>
-                    </div>
-                    <div class="card-body py-2">
-                        <div id="ledgerSummaryLoading" class="text-muted small py-1" style="display:none;">
-                            <i class="fas fa-spinner fa-spin me-1"></i>Loading ledger…
-                        </div>
-                        <div id="ledgerSummaryError" class="text-danger small py-1" style="display:none;">
-                            <i class="fas fa-exclamation-circle me-1"></i>Could not load ledger for this customer.
-                        </div>
-                        <div id="ledgerSummaryContent" class="row g-2 text-center" style="display:none;">
-                            <div class="col-6 col-md-4 col-lg">
-                                <div class="border rounded py-1 px-1 h-100">
-                                    <div class="text-muted" style="font-size:0.68rem;">Total Sales</div>
-                                    <div class="fw-bold small" id="lgTotalSales">PKR0.00</div>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-4 col-lg">
-                                <div class="border rounded py-1 px-1 h-100">
-                                    <div class="text-muted" style="font-size:0.68rem;">Total Discounts</div>
-                                    <div class="fw-bold small text-danger" id="lgTotalDiscounts">PKR0.00</div>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-4 col-lg">
-                                <div class="border rounded py-1 px-1 h-100">
-                                    <div class="text-muted" style="font-size:0.68rem;">Advances Received</div>
-                                    <div class="fw-bold small text-info" id="lgAdvances">PKR0.00</div>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-4 col-lg">
-                                <div class="border rounded py-1 px-1 h-100">
-                                    <div class="text-muted" style="font-size:0.68rem;">Remaining Advance</div>
-                                    <div class="fw-bold small text-info" id="lgRemainingAdvance">PKR0.00</div>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-4 col-lg">
-                                <div class="border rounded py-1 px-1 h-100">
-                                    <div class="text-muted" style="font-size:0.68rem;">Total Paid</div>
-                                    <div class="fw-bold small text-success" id="lgTotalPaid">PKR0.00</div>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-4 col-lg">
-                                <div class="border rounded py-1 px-1 h-100 bg-primary bg-opacity-10">
-                                    <div class="text-muted" style="font-size:0.68rem;">Outstanding Balance</div>
-                                    <div class="fw-bold small text-primary" id="lgOutstanding">PKR0.00</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Payment Installments (optional) -->
-                <div class="card mb-3 shadow-sm">
-                    <div class="card-header bg-info bg-opacity-10 py-2">
-                        <h6 class="mb-0 fw-bold text-info"><i class="fas fa-calendar-check me-2"></i>Payment Installments
-                            <span class="text-muted fw-normal small">(optional)</span></h6>
-                    </div>
-                    <div class="card-body py-2">
-                        <div class="small text-muted mb-2">
-                            Split this invoice into dated tranches (e.g. PKR20,000 on 10-07-2026, PKR20,000 on 20-07-2026, PKR20,000 on 28-07-2026).
-                            Each tranche becomes overdue on its own if it isn't paid by its date, tracked independently of the single Due Date above.
-                        </div>
-                        <div class="row g-2 align-items-end mb-2">
-                            <div class="col-5 col-md-4">
-                                <label for="installmentAmountInput" class="form-label mb-0 small fw-semibold">Amount</label>
-                                <input type="number" id="installmentAmountInput" class="form-control form-control-sm" step="0.01" min="0" placeholder="0.00">
-                            </div>
-                            <div class="col-5 col-md-4">
-                                <label for="installmentDateInput" class="form-label mb-0 small fw-semibold">Receivable On</label>
-                                <input type="date" id="installmentDateInput" class="form-control form-control-sm">
-                            </div>
-                            <div class="col-2 col-md-4 d-flex gap-1">
-                                <button type="button" class="btn btn-sm btn-info flex-grow-1 text-white" id="addInstallmentBtn">
-                                    <i class="fas fa-plus me-1"></i>Add
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="cancelInstallmentEditBtn" title="Cancel edit">
-                                    <i class="fas fa-times"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="table-responsive" style="max-height: 200px; overflow-y: auto;">
-                            <table class="table table-sm table-bordered mb-1" id="installmentsTable">
-                                <thead class="table-light">
-                                    <tr class="small text-center">
-                                        <th style="width:32px;">#</th>
-                                        <th>Amount</th>
-                                        <th>Receivable On</th>
-                                        <th style="width:70px;"></th>
-                                    </tr>
-                                </thead>
-                                <tbody id="installmentsBody">
-                                    <tr id="noInstallmentsRow">
-                                        <td colspan="4" class="text-center text-muted small py-2">No installments added — invoice will use the single Due Date above.</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <div class="small">
-                            <span class="text-muted">Allocated:</span>
-                            <span id="installmentAllocated" class="fw-semibold">PKR0.00</span>
-                            <span class="text-muted ms-2">of Total:</span>
-                            <span id="installmentTotalRef" class="fw-semibold">PKR0.00</span>
-                            <span id="installmentMismatchWarning" class="text-warning ms-2" style="display:none;">
-                                <i class="fas fa-exclamation-triangle"></i> Allocated amount does not match the invoice total.
-                            </span>
-                        </div>
-                        <input type="hidden" name="installment_schedule" id="installmentScheduleJson" value="">
                     </div>
                 </div>
             </div>
@@ -524,7 +361,6 @@
         newRow.querySelector('.product-select').selectedIndex = 0;
         document.getElementById('itemsBody').appendChild(newRow);
         initSelect2($(newRow).find('.product-select'), 'Search or select product');
-        initSelect2($(newRow).find('.warehouse-select'), '— Select Warehouse —');
         attachItemEvents(newRow);
     }
 
@@ -543,7 +379,6 @@
         const deliveryInput = row.querySelector('.delivery');
         const discountInput = row.querySelector('.item-discount');
 
-        // Populate cost from the currently selected option (for edit page load)
         const selectedOpt = productSelect.options[productSelect.selectedIndex];
         if (selectedOpt && selectedOpt.value) {
             const cost = parseFloat(selectedOpt.getAttribute('data-cost')) || 0;
@@ -565,8 +400,6 @@
     }
 
     function calculateItemTotal(row) {
-        // In Lump Sum mode the per-unit figures are derived, not typed, so a
-        // quantity or price change re-splits the invoice discount first.
         if (window.isLumpSumMode && window.isLumpSumMode() && !window.__splitting) {
             window.__splitting = true;
             if (window.distributeLumpSum) window.distributeLumpSum();
@@ -575,8 +408,6 @@
         const qty = parseFloat(row.querySelector('.quantity').value) || 0;
         const price = parseFloat(row.querySelector('.price').value) || 0;
         const delivery = parseFloat(row.querySelector('.delivery').value) || 0;
-        // The field holds the discount for ONE unit, so the line discount grows
-        // with the quantity.
         const unitDiscount = parseFloat(row.querySelector('.item-discount').value) || 0;
         const discount = unitDiscount * qty;
         const costVal = parseFloat(row.querySelector('.cost-display').value) || 0;
@@ -597,9 +428,7 @@
 
         const profitEl = row.querySelector('.item-profit');
         if (costVal > 0 && price > 0) {
-            // Match the invoice-detail page exactly: line total includes delivery,
-            // and both profit and margin base are net of the item discount.
-            const lineTotal = qty * price + delivery;   // = stored SaleItem.total
+            const lineTotal = qty * price + delivery;
             const costTotal = costVal * qty;
             const profit = lineTotal - costTotal - discount;
             const base = lineTotal - discount;
@@ -614,9 +443,6 @@
     }
 
     function calculateTotals() {
-        // Subtotal is computed from the raw fields (not the displayed item-total,
-        // which now nets out the per-item discount) so the discount is only ever
-        // applied once — here, via the aggregated discount field below.
         let subtotal = 0, totalCost = 0, itemDiscountSum = 0;
         document.querySelectorAll('.item-row').forEach(row => {
             const qty = parseFloat(row.querySelector('.quantity').value) || 0;
@@ -628,8 +454,6 @@
             itemDiscountSum += (parseFloat(row.querySelector('.item-discount').value) || 0) * qty;
         });
 
-        // Header discount mirrors the per-item sum, except in Lump Sum mode where
-        // the header IS the input the user types into.
         if (!(window.isLumpSumMode && window.isLumpSumMode())) {
             document.querySelector('input[name="discount"]').value = itemDiscountSum.toFixed(2);
         }
@@ -639,145 +463,21 @@
         const discount = itemDiscountSum;
         const deliveryCharge = parseFloat(document.querySelector('input[name="delivery_charge"]').value) || 0;
 
-        const isOverdue = "{{ 'true' if sale.is_overdue else 'false' }}" === "true";
-        const overrideRestricted = document.getElementById('ignoreOverdueCheck').checked;
-        const effectiveDiscount = (isOverdue && !overrideRestricted) ? 0 : discount;
-
-        const total = subtotal + tax + deliveryCharge - effectiveDiscount;
+        const total = subtotal + tax + deliveryCharge - discount;
 
         document.getElementById('subtotal').textContent = `PKR${subtotal.toFixed(2)}`;
         document.getElementById('tax').textContent = `PKR${tax.toFixed(2)}`;
-        document.getElementById('discountDisplay').textContent = `PKR${effectiveDiscount.toFixed(2)}`;
+        document.getElementById('discountDisplay').textContent = `PKR${discount.toFixed(2)}`;
         document.getElementById('deliveryDisplay').textContent = `PKR${deliveryCharge.toFixed(2)}`;
         document.getElementById('total').textContent = `PKR${total.toFixed(2)}`;
 
-        const totalProfit = subtotal - totalCost - effectiveDiscount;
-        const totalMargin = subtotal > 0 ? ((subtotal - totalCost - effectiveDiscount) / subtotal) * 100 : 0;
+        const totalProfit = subtotal - totalCost - discount;
+        const totalMargin = subtotal > 0 ? ((subtotal - totalCost - discount) / subtotal) * 100 : 0;
         const pc = totalProfit >= 0 ? 'text-success' : 'text-danger';
         document.getElementById('totalProfit').textContent = `PKR${totalProfit.toFixed(2)}`;
         document.getElementById('totalProfit').className = `fw-bold ${pc}`;
         document.getElementById('totalMargin').textContent = `${totalMargin.toFixed(1)}%`;
         document.getElementById('totalMargin').className = `fw-bold ${pc}`;
-    }
-
-    document.getElementById('ignoreOverdueCheck').addEventListener('change', calculateTotals);
-
-    // ── Payment Installments (optional per-tranche due-date schedule) ──────
-    let installments = {{ sale.installments | tojson }};
-    let editingInstallmentIndex = -1;
-
-    function renderInstallments() {
-        const body = document.getElementById('installmentsBody');
-        body.innerHTML = '';
-
-        if (installments.length === 0) {
-            body.innerHTML = '<tr id="noInstallmentsRow"><td colspan="4" class="text-center text-muted small py-2">No installments added — invoice will use the single Due Date above.</td></tr>';
-        } else {
-            installments.forEach((inst, idx) => {
-                const tr = document.createElement('tr');
-                tr.className = 'small text-center' + (idx === editingInstallmentIndex ? ' table-warning' : '');
-                tr.innerHTML = `<td>${idx + 1}</td>` +
-                    `<td>PKR${parseFloat(inst.amount).toFixed(2)}</td>` +
-                    `<td>${inst.due_date}</td>` +
-                    `<td>` +
-                    `<button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 me-1" onclick="editInstallment(${idx})" title="Edit"><i class="fas fa-pen"></i></button>` +
-                    `<button type="button" class="btn btn-sm btn-outline-danger py-0 px-1" onclick="removeInstallment(${idx})" title="Remove"><i class="fas fa-trash"></i></button>` +
-                    `</td>`;
-                body.appendChild(tr);
-            });
-        }
-
-        document.getElementById('installmentScheduleJson').value = installments.length ? JSON.stringify(installments) : '';
-        updateInstallmentSummary();
-    }
-
-    function updateInstallmentSummary() {
-        const allocated = installments.reduce((sum, inst) => sum + (parseFloat(inst.amount) || 0), 0);
-        const totalText = (document.getElementById('total').textContent || '').replace(/[^0-9.]/g, '');
-        const invoiceTotal = parseFloat(totalText) || 0;
-
-        document.getElementById('installmentAllocated').textContent = `PKR${allocated.toFixed(2)}`;
-        document.getElementById('installmentTotalRef').textContent = `PKR${invoiceTotal.toFixed(2)}`;
-
-        const mismatchEl = document.getElementById('installmentMismatchWarning');
-        const hasMismatch = installments.length > 0 && Math.abs(allocated - invoiceTotal) > 0.01;
-        mismatchEl.style.display = hasMismatch ? 'inline' : 'none';
-    }
-
-    function setInstallmentEditMode(isEditing) {
-        const btn = document.getElementById('addInstallmentBtn');
-        const cancelBtn = document.getElementById('cancelInstallmentEditBtn');
-        if (isEditing) {
-            btn.innerHTML = '<i class="fas fa-check me-1"></i>Update';
-            btn.classList.remove('btn-info');
-            btn.classList.add('btn-success');
-            cancelBtn.classList.remove('d-none');
-        } else {
-            btn.innerHTML = '<i class="fas fa-plus me-1"></i>Add';
-            btn.classList.remove('btn-success');
-            btn.classList.add('btn-info');
-            cancelBtn.classList.add('d-none');
-        }
-    }
-
-    function addInstallment() {
-        const amountInput = document.getElementById('installmentAmountInput');
-        const dateInput = document.getElementById('installmentDateInput');
-        const amount = parseFloat(amountInput.value);
-        const dueDate = dateInput.value;
-
-        if (!amount || amount <= 0) { alert('Enter a valid installment amount.'); return; }
-        if (!dueDate) { alert('Select a receivable date for this installment.'); return; }
-
-        if (editingInstallmentIndex >= 0) {
-            installments[editingInstallmentIndex] = { amount: amount, due_date: dueDate };
-            editingInstallmentIndex = -1;
-        } else {
-            installments.push({ amount: amount, due_date: dueDate });
-        }
-        installments.sort((a, b) => a.due_date.localeCompare(b.due_date));
-
-        amountInput.value = '';
-        dateInput.value = '';
-        setInstallmentEditMode(false);
-        renderInstallments();
-    }
-
-    function editInstallment(idx) {
-        editingInstallmentIndex = idx;
-        document.getElementById('installmentAmountInput').value = installments[idx].amount;
-        document.getElementById('installmentDateInput').value = installments[idx].due_date;
-        setInstallmentEditMode(true);
-        renderInstallments();
-    }
-
-    function cancelInstallmentEdit() {
-        editingInstallmentIndex = -1;
-        document.getElementById('installmentAmountInput').value = '';
-        document.getElementById('installmentDateInput').value = '';
-        setInstallmentEditMode(false);
-        renderInstallments();
-    }
-
-    function removeInstallment(idx) {
-        installments.splice(idx, 1);
-        if (editingInstallmentIndex === idx) {
-            cancelInstallmentEdit();
-            return;
-        } else if (editingInstallmentIndex > idx) {
-            editingInstallmentIndex -= 1;
-        }
-        renderInstallments();
-    }
-
-    document.getElementById('addInstallmentBtn').addEventListener('click', addInstallment);
-    document.getElementById('cancelInstallmentEditBtn').addEventListener('click', cancelInstallmentEdit);
-
-    // Keep the "of Total" reference in sync whenever calculateTotals() updates
-    // the on-screen total, without needing to modify that function directly.
-    const installmentTotalWatcher = document.getElementById('total');
-    if (installmentTotalWatcher && window.MutationObserver) {
-        new MutationObserver(updateInstallmentSummary).observe(installmentTotalWatcher, { childList: true, characterData: true, subtree: true });
     }
 
     function initSelect2(selector, placeholder = 'Search or select', width = '100%') {
@@ -790,56 +490,17 @@
         });
     }
 
-    // Fetches the customer's ledger totals (same source as the Ledger modal) and
-    // fills the summary card under the items table. Read-only — never posts.
-    function loadCustomerLedgerSummary(customerId) {
-        const card = document.getElementById('customerLedgerCard');
-        if (!card) return;
-        const loading = document.getElementById('ledgerSummaryLoading');
-        const errBox = document.getElementById('ledgerSummaryError');
-        const content = document.getElementById('ledgerSummaryContent');
-
-        if (!customerId || customerId === '0') { card.style.display = 'none'; return; }
-
-        card.style.display = '';
-        loading.style.display = ''; errBox.style.display = 'none'; content.style.display = 'none';
-
-        const fmt = v => 'PKR ' + (parseFloat(v || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-        fetch(`/sales/customer/${customerId}/ledger-json`)
-            .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
-            .then(data => {
-                const s = data.summary || {};
-                document.getElementById('ledgerCustName').textContent = data.customer_name ? '— ' + data.customer_name : '';
-                document.getElementById('lgTotalSales').textContent = fmt(s.total_sales);
-                document.getElementById('lgTotalDiscounts').textContent = fmt(s.total_discounts);
-                document.getElementById('lgAdvances').textContent = fmt(s.total_advances);
-                document.getElementById('lgRemainingAdvance').textContent = fmt(s.remaining_advance);
-                document.getElementById('lgTotalPaid').textContent = fmt(s.total_paid);
-                document.getElementById('lgOutstanding').textContent = fmt(s.total_outstanding);
-                loading.style.display = 'none'; content.style.display = '';
-            })
-            .catch(err => { console.error('Ledger summary error:', err); loading.style.display = 'none'; errBox.style.display = ''; });
-    }
-
     $(document).ready(function () {
         initSelect2('#customerSelect', '— Search or Select Customer —');
         initSelect2('#salesmanSelect', '— Search or Select Salesman —');
 
-        // Load ledger summary for the invoice's customer, and refresh on change
-        loadCustomerLedgerSummary(document.getElementById('customerSelect').value);
-        $('#customerSelect').on('change', function () { loadCustomerLedgerSummary(this.value); });
-
-        // Attach events FIRST so cost is read from native select before Select2 wraps it
         document.querySelectorAll('.item-row').forEach(row => {
             attachItemEvents(row);
             calculateItemTotal(row);
         });
 
         initSelect2('.product-select', '— Search or Select Product —');
-        initSelect2('.warehouse-select', '— Select Warehouse —');
 
-        // Mobile fix: force Select2 open on tap inside scrollable table
         if ('ontouchstart' in window) {
             $(document).on('touchend', '#itemsTable .select2-container', function(e) {
                 var $select = $(this).siblings('select');
@@ -855,17 +516,11 @@
         document.querySelector('input[name="tax_rate"]').addEventListener('input', calculateTotals);
         document.querySelector('input[name="delivery_charge"]').addEventListener('input', calculateTotals);
         calculateTotals();
-        renderInstallments();
     });
 </script>
 
 <script>
-    /* ── Discount mode ────────────────────────────────────────────────────
-       Per Item : each row carries its own per-unit discount (default).
-       Lump Sum : one figure for the whole invoice, split across the rows in
-                  proportion to their value and written back into the same
-                  per-unit fields — so what the server receives, and every
-                  total/report downstream, is identical in both modes. */
+    /* ── Discount mode ──────────────────────────────────────────────────── */
     (function () {
         var perItemRadio = document.getElementById('dmPerItem');
         var lumpRadio = document.getElementById('dmLump');
@@ -879,8 +534,6 @@
             return Array.prototype.slice.call(document.querySelectorAll('.item-row'));
         }
 
-        // Split the lump sum across the rows by value, remainder on the last
-        // row so the parts add up to the figure typed, to the paisa.
         window.distributeLumpSum = function () {
             if (!lumpRadio.checked) return;
             var lump = parseFloat(header.value) || 0;
@@ -911,17 +564,15 @@
         function applyMode() {
             var lumpOn = lumpRadio.checked;
             help.textContent = lumpOn
-                ? 'Lump Sum: type one discount for the whole invoice below; it is divided across the items by value.'
+                ? 'Lump Sum: type one discount for the whole quotation below; it is divided across the items by value.'
                 : 'Per Item: type a per-unit discount on each row.';
 
-            // Only Per Item locks the field — there the figure is the sum of the
-            // item rows. In Lump Sum the user types the invoice discount here.
             header.readOnly = !lumpOn;
             header.classList.toggle('bg-light', !lumpOn);
             header.classList.toggle('border-warning', lumpOn);
             header.classList.toggle('fw-bold', lumpOn);
             header.title = lumpOn
-                ? 'Type the discount for the whole invoice - it is divided across the items by value'
+                ? 'Type the discount for the whole quotation - it is divided across the items by value'
                 : "Auto-calculated as the sum of each item's per-unit discount";
             var tag = document.getElementById('discountAutoTag');
             if (tag) {
@@ -962,5 +613,4 @@
         applyMode();
     })();
 </script>
-
 {% endblock %}

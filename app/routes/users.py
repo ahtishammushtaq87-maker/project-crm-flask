@@ -164,6 +164,10 @@ def create_user():
             can_add_recovery=form.can_add_recovery.data,
             can_edit_recovery=form.can_edit_recovery.data,
             can_delete_recovery=form.can_delete_recovery.data,
+            can_view_quotations=form.can_view_quotations.data,
+            can_add_quotations=form.can_add_quotations.data,
+            can_edit_quotations=form.can_edit_quotations.data,
+            can_delete_quotations=form.can_delete_quotations.data,
         )
         # Set password - form is now required to have a password
         if form.password.data and form.password.data.strip():
@@ -308,6 +312,10 @@ def edit_user(id):
         user.can_add_recovery = form.can_add_recovery.data
         user.can_edit_recovery = form.can_edit_recovery.data
         user.can_delete_recovery = form.can_delete_recovery.data
+        user.can_view_quotations = form.can_view_quotations.data
+        user.can_add_quotations = form.can_add_quotations.data
+        user.can_edit_quotations = form.can_edit_quotations.data
+        user.can_delete_quotations = form.can_delete_quotations.data
         if form.password.data and form.password.data.strip():
             user.set_password(form.password.data)
         db.session.commit()
@@ -434,6 +442,10 @@ def edit_user(id):
         form.can_add_recovery.data = getattr(user, 'can_add_recovery', False)
         form.can_edit_recovery.data = getattr(user, 'can_edit_recovery', False)
         form.can_delete_recovery.data = getattr(user, 'can_delete_recovery', False)
+        form.can_view_quotations.data = getattr(user, 'can_view_quotations', True)
+        form.can_add_quotations.data = getattr(user, 'can_add_quotations', False)
+        form.can_edit_quotations.data = getattr(user, 'can_edit_quotations', False)
+        form.can_delete_quotations.data = getattr(user, 'can_delete_quotations', False)
     return render_template('users/edit.html', form=form, user=user)
 
 # Task Management Routes

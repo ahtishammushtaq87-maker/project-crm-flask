@@ -142,6 +142,12 @@ class User(UserMixin, db.Model):
     can_edit_recovery = db.Column(db.Boolean, default=False)
     can_delete_recovery = db.Column(db.Boolean, default=False)
 
+    # Quotation Module Permissions
+    can_view_quotations = db.Column(db.Boolean, default=True)
+    can_add_quotations = db.Column(db.Boolean, default=False)
+    can_edit_quotations = db.Column(db.Boolean, default=False)
+    can_delete_quotations = db.Column(db.Boolean, default=False)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -344,6 +350,7 @@ class Customer(db.Model):
     
     # Relationships
     sales = db.relationship('Sale', backref='customer', lazy=True, cascade='all, delete-orphan')
+    quotations = db.relationship('Quotation', backref='customer', lazy=True, cascade='all, delete-orphan')
     advances = db.relationship('CustomerAdvance', backref='customer', lazy=True, cascade='all, delete-orphan')
     
     access_token = db.Column(db.String(100), unique=True, nullable=True, index=True)
@@ -448,6 +455,7 @@ class Salesman(db.Model):
 
     # Relationships
     sales = db.relationship('Sale', backref='salesman', lazy=True)
+    quotations = db.relationship('Quotation', backref='salesman', lazy=True)
     login_user = db.relationship('User', foreign_keys=[user_id], backref='linked_salesmen', lazy=True)
 
     def __repr__(self):
@@ -1174,6 +1182,142 @@ class SaleItem(db.Model):
         return f'<SaleItem {self.sale_id} - {self.product_id}>'
 
 
+class Quotation(db.Model):
+    """Standalone Quotation — a lightweight pre-sale document. Unlike Sale it
+    never touches stock, has no payments/returns/advance handling, and has no
+    admin-approval workflow. Can be converted into a real Sale once accepted."""
+    __tablename__ = 'quotations'
+
+    id = db.Column(db.Integer, primary_key=True)
+    quotation_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), index=True)
+    salesman_id = db.Column(db.Integer, db.ForeignKey('salesmen.id'), index=True, nullable=True)
+    date = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    due_date = db.Column(db.DateTime, nullable=True)  # "Valid Until"
+    currency_id = db.Column(db.Integer, db.ForeignKey('currencies.id'), nullable=True)
+    exchange_rate = db.Column(db.Float, default=1)
+    subtotal = db.Column(db.Float, default=0)
+    tax_rate = db.Column(db.Float, default=0)
+    tax = db.Column(db.Float, default=0)
+    discount_type = db.Column(db.String(10), default='fixed')
+    discount = db.Column(db.Float, default=0)
+    delivery_charge = db.Column(db.Float, default=0)
+    total = db.Column(db.Float, default=0)
+    status = db.Column(db.String(20), default='draft', index=True)  # draft, sent, accepted, rejected, expired
+    notes = db.Column(db.Text)
+    terms = db.Column(db.Text)
+    access_token = db.Column(db.String(100), unique=True, nullable=True, index=True)
+    token_expiry = db.Column(db.DateTime, nullable=True)
+    converted_sale_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    items = db.relationship('QuotationItem', backref='quotation', lazy=True, cascade='all, delete-orphan')
+    currency = db.relationship('Currency', backref='quotations', lazy=True)
+    converted_sale = db.relationship('Sale', foreign_keys=[converted_sale_id], backref='source_quotation', uselist=False, lazy=True)
+
+    STATUS_LABELS = {
+        'draft': 'DRAFT',
+        'sent': 'SENT',
+        'accepted': 'ACCEPTED',
+        'rejected': 'REJECTED',
+        'expired': 'EXPIRED',
+    }
+
+    @property
+    def invoice_number(self):
+        """Compat shim: generate_professional_pdf() reads obj.invoice_number
+        regardless of document type — see app/pdf_utils.py."""
+        return self.quotation_number
+
+    @property
+    def is_draft(self):
+        return self.status == 'draft'
+
+    @property
+    def status_label(self):
+        return self.STATUS_LABELS.get(self.status, 'DRAFT')
+
+    @property
+    def effective_discount_amount(self):
+        return self.discount or 0
+
+    @property
+    def valid_access_token(self):
+        import uuid
+        from datetime import datetime, timedelta
+        from app import db
+        if not self.access_token or not self.token_expiry or self.token_expiry < datetime.utcnow():
+            self.access_token = str(uuid.uuid4())
+            self.token_expiry = datetime.utcnow() + timedelta(days=7)
+            db.session.commit()
+        return self.access_token
+
+    def calculate_totals(self):
+        """Recompute subtotal/tax/total from line items (no returns/delivery-discount
+        overdue logic — those only apply to real Sales)."""
+        items_subtotal = sum(item.total for item in self.items)
+        self.subtotal = items_subtotal
+        self.tax = items_subtotal * (self.tax_rate / 100)
+
+        if self.discount_type == 'percentage':
+            discount_amount = items_subtotal * ((self.discount or 0) / 100)
+        else:
+            discount_amount = self.discount or 0
+
+        self.total = self.subtotal + self.tax + self.delivery_charge - discount_amount
+        if self.total < 0:
+            self.total = 0
+
+    def __repr__(self):
+        return f'<Quotation {self.quotation_number}>'
+
+
+class QuotationItem(db.Model):
+    """Quotation line item — mirrors SaleItem but with no warehouse/stock link."""
+    __tablename__ = 'quotation_items'
+
+    id = db.Column(db.Integer, primary_key=True)
+    quotation_id = db.Column(db.Integer, db.ForeignKey('quotations.id'), nullable=False, index=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    quantity = db.Column(db.Float, nullable=False)
+    unit_price = db.Column(db.Float, nullable=False)
+    unit_discount = db.Column(db.Float, default=0)
+    discount = db.Column(db.Float, default=0)
+    delivery_fee = db.Column(db.Float, default=0)
+    total = db.Column(db.Float, nullable=False)
+
+    product = db.relationship('Product', backref='quotation_items', lazy=True)
+
+    @property
+    def net_total(self):
+        return self.total - self.discount
+
+    @property
+    def item_subtotal(self):
+        return self.quantity * self.unit_price
+
+    @property
+    def effective_unit_discount(self):
+        if self.unit_discount:
+            return self.unit_discount
+        if self.discount and self.quantity:
+            return self.discount / self.quantity
+        return 0
+
+    @property
+    def remaining_discount(self):
+        """No returns concept for quotations, so nothing is ever prorated away —
+        kept as a property (rather than reusing `discount` directly) so
+        generate_professional_pdf()'s shared per-item discount block, which
+        expects this attribute name, works unmodified."""
+        return self.discount or 0
+
+    def __repr__(self):
+        return f'<QuotationItem {self.quotation_id} - {self.product_id}>'
+
+
 class SaleReturnItem(db.Model):
     """Sales return item details"""
     __tablename__ = 'sale_return_items'
@@ -1722,7 +1866,12 @@ class InvoiceSettings(db.Model):
     invoice_prefix = db.Column(db.String(10))
     invoice_suffix = db.Column(db.String(10))
     next_number = db.Column(db.Integer, default=1)
-    
+
+    # Quotation numbering (separate counter from invoices)
+    quotation_prefix = db.Column(db.String(10), default='QTN-')
+    quotation_suffix = db.Column(db.String(10), default='')
+    quotation_next_number = db.Column(db.Integer, default=1)
+
     # Tax settings
     tax_name = db.Column(db.String(50))
     tax_rate = db.Column(db.Numeric(10, 2), default=10)
@@ -4076,3 +4225,28 @@ class JournalLine(db.Model):
 
     def __repr__(self):
         return f'<JournalLine {self.entry_type} {self.amount} acct={self.account_id}>'
+
+
+class DatabaseBackup(db.Model):
+    """A snapshot of the live database file, taken automatically every night
+    at 10 PM Pakistan time or manually from the Backup module (Settings).
+    Only the most recent 10 rows are kept — see
+    app/routes/backup.py:_enforce_retention(). This table lives inside the
+    same file it describes, so a restore (which replaces that whole file)
+    can leave it out of date; app/routes/backup.py:_reconcile_backup_index()
+    re-derives any missing rows from what's actually on disk."""
+    __tablename__ = 'database_backups'
+
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), unique=True, nullable=False)
+    size_bytes = db.Column(db.Integer, default=0)
+    backup_type = db.Column(db.String(20), default='manual')  # 'manual', 'auto', 'safety', 'unknown'
+    note = db.Column(db.Text, nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    last_restored_at = db.Column(db.DateTime, nullable=True)
+
+    created_by_user = db.relationship('User', foreign_keys=[created_by], lazy=True)
+
+    def __repr__(self):
+        return f'<DatabaseBackup {self.filename}>'

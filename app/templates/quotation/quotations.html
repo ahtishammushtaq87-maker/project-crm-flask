@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}Quotations{% endblock %}
+
+{% block content %}
+<style>
+    @media (min-width: 992px) {
+
+        .container,
+        .container-fluid,
+        .container-lg,
+        .container-md,
+        .container-sm,
+        .container-xl,
+        .container-xxl {
+            padding-left: var(--bs-gutter-x, 0rem);
+        }
+
+        .h3,
+        h3 {
+            font-size: 1.4rem !important;
+        }
+    }
+</style>
+<div class="container-fluid list-page">
+    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
+        <h2 class="h3 mb-0 text-gray-800"><i class="fas fa-file-signature me-2 text-secondary"></i>Quotations</h2>
+        <div class="btn-group">
+            <a href="{{ url_for('sales.invoice_settings') }}" class="btn btn-outline-secondary me-2">
+                <i class="fas fa-cog me-1"></i> Settings
+            </a>
+            {% if current_user.has_permission('quotations', 'add') %}
+            <a href="{{ url_for('quotation.create_quotation') }}" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i> Create New Quotation
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="card shadow mb-4">
+        <div class="card-body">
+            <form method="GET" action="{{ url_for('quotation.list_quotations') }}" class="row g-3 px-2">
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">General Search</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0"><i class="fas fa-search text-muted"></i></span>
+                        <input type="text" name="search" class="form-control border-start-0"
+                            placeholder="Quotation # or customer..." value="{{ search or '' }}">
+                    </div>
+                </div>
+
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">Customer</label>
+                    <select name="customer_id" class="form-select searchable-select" data-placeholder="— Select Customer —">
+                        <option value=""></option>
+                        {% for cust in customers %}
+                        <option value="{{ cust.id }}" {% if customer_id==cust.id %}selected{% endif %}>{{ cust.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted mb-1">Salesman</label>
+                    <select name="salesman_id" class="form-select searchable-select" data-placeholder="— Select Salesman —">
+                        <option value=""></option>
+                        {% for sm in salesmen %}
+                        <option value="{{ sm.id }}" {% if salesman_id==sm.id %}selected{% endif %}>{{ sm.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-6 col-md-2">
+                    <label class="form-label small fw-bold text-muted mb-1">From Date</label>
+                    <input type="date" name="from_date" class="form-control" value="{{ from_date or '' }}">
+                </div>
+
+                <div class="col-6 col-md-2">
+                    <label class="form-label small fw-bold text-muted mb-1">To Date</label>
+                    <input type="date" name="to_date" class="form-control" value="{{ to_date or '' }}">
+                </div>
+
+                <div class="col-12">
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-filter me-1"></i> Apply Filters
+                        </button>
+                        <a href="{{ url_for('quotation.list_quotations') }}" class="btn btn-outline-secondary px-4">
+                            <i class="fas fa-undo me-1"></i> Clear
+                        </a>
+                    </div>
+                </div>
+
+                <input type="hidden" name="status" value="{{ status }}">
+            </form>
+        </div>
+    </div>
+
+    <!-- Status Tabs -->
+    <div class="card shadow mb-4">
+        <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs">
+                {% for tab_key, tab_label, tab_cls in [
+                    ('all', 'All', ''), ('draft', 'Draft', 'text-secondary'),
+                    ('sent', 'Sent', 'text-info'), ('accepted', 'Accepted', 'text-success'),
+                    ('rejected', 'Rejected', 'text-danger'), ('expired', 'Expired', 'text-dark')] %}
+                <li class="nav-item">
+                    <a class="nav-link {{ tab_cls }} {% if status == tab_key %}active{% endif %}"
+                        href="{{ url_for('quotation.list_quotations', status=tab_key, from_date=from_date, to_date=to_date, salesman_id=salesman_id, customer_id=customer_id, search=search) }}">
+                        {{ tab_label }}
+                        {% if counts[tab_key] > 0 %}<span class="badge bg-light text-dark border ms-1">{{ counts[tab_key] }}</span>{% endif %}
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+
+    <div class="card shadow mb-4">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 datatable-export" data-export-title="Quotations">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Quotation #</th>
+                            <th>Date</th>
+                            <th>Valid Until</th>
+                            <th>Customer</th>
+                            <th>Salesman</th>
+                            <th class="text-end">Total</th>
+                            <th class="text-center">Status</th>
+                            <th class="text-center no-export">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for q in quotations %}
+                        <tr>
+                            <td class="fw-bold">
+                                <a href="{{ url_for('quotation.quotation_detail', id=q.id) }}">{{ q.quotation_number }}</a>
+                            </td>
+                            <td>{{ q.date.strftime(date_format) if q.date else '-' }}</td>
+                            <td>{{ q.due_date.strftime(date_format) if q.due_date else '-' }}</td>
+                            <td>{{ q.customer.name if q.customer else 'Walk-in Customer' }}</td>
+                            <td>{{ q.salesman.name if q.salesman else '-' }}</td>
+                            <td class="text-end">PKR{{ "{:,.2f}".format(q.total) }}</td>
+                            <td class="text-center">
+                                <span class="badge shadow-sm
+                                    {% if q.status == 'draft' %}bg-secondary
+                                    {% elif q.status == 'sent' %}bg-info
+                                    {% elif q.status == 'accepted' %}bg-success
+                                    {% elif q.status == 'rejected' %}bg-danger
+                                    {% else %}bg-dark{% endif %}">
+                                    {{ q.status_label }}
+                                </span>
+                                {% if q.converted_sale_id %}
+                                <div class="mt-1"><a href="{{ url_for('sales.invoice_detail', id=q.converted_sale_id) }}" class="badge bg-light text-success border text-decoration-none"><i class="fas fa-exchange-alt me-1"></i>Converted</a></div>
+                                {% endif %}
+                            </td>
+                            <td class="text-center no-export">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{{ url_for('quotation.quotation_detail', id=q.id) }}"
+                                        class="btn btn-outline-primary" title="View"><i class="fas fa-eye"></i></a>
+                                    {% if current_user.has_permission('quotations', 'edit') and not q.converted_sale_id %}
+                                    <a href="{{ url_for('quotation.edit_quotation', id=q.id) }}"
+                                        class="btn btn-outline-secondary" title="Edit"><i class="fas fa-edit"></i></a>
+                                    {% endif %}
+                                    <a href="{{ url_for('quotation.quotation_pdf', id=q.id) }}" class="btn btn-outline-info"
+                                        title="PDF" target="_blank"><i class="fas fa-file-pdf"></i></a>
+                                    {% if current_user.has_permission('quotations', 'delete') %}
+                                    <form action="{{ url_for('quotation.delete_quotation', id=q.id) }}" method="POST"
+                                        class="d-inline"
+                                        onsubmit="return confirm('Delete this quotation?');">
+                                        <button type="submit" class="btn btn-outline-danger" title="Delete"><i class="fas fa-trash"></i></button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="8" class="text-center py-4 text-muted">No quotations found.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% if pagination and pagination.pages > 1 %}
+    <nav>
+        <ul class="pagination justify-content-center">
+            {% for p in pagination.iter_pages() %}
+            {% if p %}
+            <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                <a class="page-link" href="{{ url_for('quotation.list_quotations', page=p, status=status, from_date=from_date, to_date=to_date, salesman_id=salesman_id, customer_id=customer_id, search=search) }}">{{ p }}</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled"><span class="page-link">…</span></li>
+            {% endif %}
+            {% endfor %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+    $(document).ready(function () {
+        $('.searchable-select').each(function () {
+            var placeholder = $(this).data('placeholder');
+            $(this).select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                allowClear: true,
+                placeholder: placeholder
+            });
+        });
+    });
+</script>
+{% endblock %}

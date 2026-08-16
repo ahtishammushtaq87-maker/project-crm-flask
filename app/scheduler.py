@@ -57,3 +57,43 @@ def start_recovery_scheduler(app):
     scheduler.start()
     scheduler.modify_job('recovery_automation', next_run_time=datetime.now())
     _scheduler = scheduler
+
+
+_backup_scheduler = None
+
+
+def start_backup_scheduler(app):
+    """Start the nightly automatic-database-backup job exactly once per
+    running process, firing daily at 10:00 PM Pakistan time. Same guards as
+    start_recovery_scheduler() above (separate scheduler instance/guard so
+    this can never interfere with the recovery job)."""
+    global _backup_scheduler
+
+    if os.environ.get('BACKUP_SCHEDULER_DISABLED') == '1':
+        return
+
+    if app.debug and os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
+        return  # this is the reloader's watcher process, not the real server
+
+    if _backup_scheduler is not None:
+        return  # already started in this process
+
+    def _run():
+        with app.app_context():
+            from app.routes.backup import create_backup
+            try:
+                create_backup(backup_type='auto')
+            except Exception:
+                app.logger.exception('Automatic nightly database backup failed')
+
+    scheduler = BackgroundScheduler(daemon=True)
+    scheduler.add_job(
+        _run,
+        'cron',
+        hour=22, minute=0,
+        timezone='Asia/Karachi',
+        id='nightly_database_backup',
+        replace_existing=True,
+    )
+    scheduler.start()
+    _backup_scheduler = scheduler

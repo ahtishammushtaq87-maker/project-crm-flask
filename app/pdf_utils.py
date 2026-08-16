@@ -736,6 +736,315 @@ class ProfessionalPDFGenerator:
         ]))
         return tbl
 
+    # ── PACKING SLIP ───────────────────────────────────────────────────────
+    def _build_field_grid_box(self, title, fields, width):
+        """A titled box with one (label | value) row per field, gridded like a
+        form — used for the packing slip's fill-in-by-hand sections. A value
+        of '' renders as a blank cell (pen field); anything else is auto-filled."""
+        data = [[Paragraph(f"<b>{title}</b>", self.styles['NotesTitle']), '']]
+        for label, value in fields:
+            data.append([Paragraph(f"<b>{label}</b>", self.styles['BoxValue']),
+                         Paragraph(value or '', self.styles['BoxValue'])])
+        tbl = Table(data, colWidths=[width * 0.58, width * 0.42])
+        tbl.setStyle(TableStyle([
+            ('SPAN',          (0,0), (-1,0)),
+            ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
+            ('TOPPADDING',    (0,0), (-1,-1), 5),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('LEFTPADDING',   (0,0), (-1,-1), 8),
+            ('RIGHTPADDING',  (0,0), (-1,-1), 6),
+            ('BOX',           (0,0), (-1,-1), 0.5, BORDER_GREY),
+            ('INNERGRID',     (0,1), (-1,-1), 0.3, LIGHT_GREY),
+            ('BACKGROUND',    (0,0), (-1,-1), WHITE),
+            ('BACKGROUND',    (0,0), (-1,0),  ACCENT_COLOR),
+        ]))
+        return tbl
+
+    def _build_packing_items_table(self, items):
+        """# | Description | SKU | Unit | Qty Ordered | Qty Packed | Balance | Remarks.
+        Qty Ordered comes from the sale; the last three columns are left blank
+        for staff to fill in by hand while physically packing the order."""
+        headers = ['#', 'Description', 'SKU', 'Unit', 'Qty Ordered', 'Qty Packed', 'Balance', 'Remarks']
+        col_w_raw = [0.3, 2.3, 0.9, 0.6, 0.9, 0.9, 0.8, 0.8]
+        col_w = [w * TABLE_WIDTH / sum(col_w_raw) for w in col_w_raw]
+
+        header_row = [Paragraph(f"<b>{h}</b>", self.styles['TblHeader']) for h in headers]
+        table_data = [header_row]
+        for idx, item in enumerate(items, 1):
+            qty = item.get('quantity', 0)
+            qty_str = f"{qty:,.2f}" if isinstance(qty, (int, float)) else str(qty)
+            table_data.append([
+                Paragraph(str(idx), self.styles['TblCell']),
+                Paragraph(item.get('description', 'N/A'), self.styles['TblCell']),
+                Paragraph(item.get('sku', '-'), self.styles['TblCell']),
+                Paragraph(item.get('unit', '-'), self.styles['TblCell']),
+                Paragraph(qty_str, self.styles['TblCell']),
+                Paragraph('', self.styles['TblCell']),
+                Paragraph('', self.styles['TblCell']),
+                Paragraph('', self.styles['TblCell']),
+            ])
+
+        if len(table_data) == 1:
+            table_data.append([Paragraph('1', self.styles['TblCell']),
+                                Paragraph('No items listed', self.styles['TblCell'])]
+                               + [Paragraph('-', self.styles['TblCell'])] * 6)
+
+        # Blank rows so a short order still gets a few extra lines to hand-write
+        # additional items or notes on, matching a printable packing-slip form.
+        while len(table_data) < 5:
+            table_data.append([Paragraph('', self.styles['TblCell'])] * 8)
+
+        tbl = Table(table_data, colWidths=col_w, rowHeights=[16] + [20] * (len(table_data) - 1))
+        tbl.setStyle(TableStyle([
+            ('BACKGROUND',    (0,0),  (-1,0),  HEADER_STRIPE),
+            ('TEXTCOLOR',     (0,0),  (-1,0),  WHITE),
+            ('FONTNAME',      (0,0),  (-1,0),  'Helvetica-Bold'),
+            ('FONTSIZE',      (0,0),  (-1,0),  7.5),
+            ('TOPPADDING',    (0,0),  (-1,0),  5),
+            ('BOTTOMPADDING', (0,0),  (-1,0),  5),
+            ('LEFTPADDING',   (0,0),  (-1,0),  6),
+            ('FONTSIZE',      (0,1),  (-1,-1), 7.5),
+            ('TOPPADDING',    (0,1),  (-1,-1), 4),
+            ('BOTTOMPADDING', (0,1),  (-1,-1), 4),
+            ('LEFTPADDING',   (0,1),  (-1,-1), 6),
+            ('RIGHTPADDING',  (0,0),  (-1,-1), 6),
+            ('TEXTCOLOR',     (0,1),  (-1,-1), TEXT_COLOR),
+            ('ROWBACKGROUNDS',(0,1),  (-1,-1), [WHITE, ACCENT_COLOR]),
+            ('VALIGN',        (0,0),  (-1,-1), 'TOP'),
+            ('ALIGN',         (0,0),  (0,-1),  'CENTER'),
+            ('ALIGN',         (1,0),  (-1,-1), 'LEFT'),
+            ('LINEBELOW',     (0,0),  (-1,0),  1.0, PRIMARY_COLOR),
+            ('GRID',          (0,0),  (-1,-1), 0.3, LIGHT_GREY),
+            ('LINEBELOW',     (0,-1), (-1,-1), 0.5, BORDER_GREY),
+        ]))
+        return tbl
+
+    def _build_packing_verification_table(self):
+        """PACKING & RECEIVING VERIFICATION sign-off grid: 2 rows x 3 columns,
+        each cell a label + blank line for a name/date/signature to be written
+        in by hand at the time of packing/dispatch/receipt."""
+        def cell(label):
+            return [Paragraph(f"<b>{label}</b>", self.styles['BoxValue']),
+                    Paragraph('_' * 22, self.styles['BoxValue'])]
+
+        row1 = cell('Packed By') + cell('Dispatched By') + cell('Received By')
+        row2 = cell('Checked By') + cell('Date') + cell('Signature / Stamp')
+        data = [[Paragraph("PACKING & RECEIVING VERIFICATION", self.styles['NotesTitle']), '', '', '', '', '']]
+        # Interleave label/value pairs into 6 columns per row for the 3-across layout
+        data.append([row1[0], row1[1], row1[2], row1[3], row1[4], row1[5]])
+        data.append([row2[0], row2[1], row2[2], row2[3], row2[4], row2[5]])
+        col_w = [0.9*inch, 1.6*inch, 1.0*inch, 1.6*inch, 0.9*inch, 1.5*inch]
+        tbl = Table(data, colWidths=col_w)
+        tbl.setStyle(TableStyle([
+            ('SPAN',          (0,0), (-1,0)),
+            ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
+            ('TOPPADDING',    (0,0), (-1,-1), 6),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('LEFTPADDING',   (0,0), (-1,-1), 6),
+            ('RIGHTPADDING',  (0,0), (-1,-1), 4),
+            ('BOX',           (0,0), (-1,-1), 0.5, BORDER_GREY),
+            ('INNERGRID',     (0,1), (-1,-1), 0.3, LIGHT_GREY),
+            ('BACKGROUND',    (0,0), (-1,0),  ACCENT_COLOR),
+            ('BACKGROUND',    (0,1), (-1,-1), WHITE),
+        ]))
+        return tbl
+
+    def generate_packing_slip(self, sale):
+        """Bilingual (English/Urdu) Packing Slip — a shipping/logistics form,
+        not a financial document (no prices, discounts, or balances shown).
+        Customer info, Related Invoice No., and each item's Description/SKU/
+        Unit/Qty Ordered are auto-filled from the sale; everything a warehouse
+        worker only knows at pack time (Qty Packed, Balance, Remarks, carrier/
+        tracking details, package count, weights, sign-offs) is left blank for
+        staff to fill in by hand."""
+        elements = []
+
+        # ── Header: company block (left) + title & meta form (right) ──────
+        left = []
+        logo = self._get_logo()
+        if logo:
+            left.append(logo)
+            left.append(Spacer(1, 6))
+        cname = self.company.name if self.company else "COMPANY"
+        left.append(Paragraph(cname, self.styles['CompanyName']))
+        if self.company:
+            for attr, label in [('email', '<b>Email:</b> {}'), ('phone', '<b>Phone:</b> {}'), ('website', '<b>Website:</b> {}')]:
+                val = getattr(self.company, attr, None)
+                if val:
+                    left.append(Paragraph(label.format(val), self.styles['CompanyInfo']))
+
+        RIGHT_W = 3.4 * inch
+        title_p = Paragraph("PACKING SLIP", self.styles['InvoiceTitle'])
+        try:
+            ur_reshaped = get_display(arabic_reshaper.reshape("پیکنگ سلپ"))
+        except Exception:
+            ur_reshaped = "پیکنگ سلپ"
+        subtitle_p = Paragraph(ur_reshaped, ParagraphStyle(
+            'PackingSlipUrduTitle', parent=self.styles['InvoiceSub'],
+            fontName=self.urdu_font, fontSize=13, alignment=TA_RIGHT, textColor=TEXT_COLOR))
+
+        meta_rows = [
+            ('Packing Slip No.', ''),
+            ('Packing Date', ''),
+            ('Related Invoice No.', sale.invoice_number or ''),
+            ('Sales Order / PO No.', ''),
+            ('Partial Shipment', 'YES  /  NO'),
+            ('Package', '____  of  ____'),
+        ]
+        meta_tbl = Table(
+            [[Paragraph(l, self.styles['MetaLabel']), Paragraph(v or '_' * 18, self.styles['MetaValue'])] for l, v in meta_rows],
+            colWidths=[1.6 * inch, RIGHT_W - 1.6 * inch]
+        )
+        meta_tbl.setStyle(TableStyle([
+            ('ALIGN',         (0,0), (-1,-1), 'LEFT'),
+            ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING',    (0,0), (-1,-1), 2),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+            ('LEFTPADDING',   (0,0), (-1,-1), 0),
+            ('RIGHTPADDING',  (0,0), (-1,-1), 0),
+            ('LINEBELOW',     (0,0), (-1,-1), 0.3, LIGHT_GREY),
+        ]))
+        # InvoiceTitle is 26pt but inherits Normal's ~12pt leading (unset here, same
+        # as every other document's header), so its glyphs overflow well below the
+        # row's nominal height — a wide gap is needed before the next row starts,
+        # same margin the plain invoice header leaves via its own Spacer(1, 22).
+        right_tbl = Table([[title_p], [Spacer(1, 20)], [subtitle_p], [Spacer(1, 10)], [meta_tbl]], colWidths=[RIGHT_W])
+        right_tbl.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+            ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ]))
+
+        LEFT_W = TABLE_WIDTH - RIGHT_W - 0.1 * inch
+        header_tbl = Table([[left, right_tbl]], colWidths=[LEFT_W, RIGHT_W])
+        header_tbl.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+            ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ]))
+        elements.append(header_tbl)
+        elements.append(Spacer(1, 8))
+        elements.append(HRFlowable(width="100%", thickness=0.6, color=BORDER_GREY, spaceAfter=8))
+
+        # ── SHIP TO / OUR LOCATIONS ─────────────────────────────────────────
+        customer = sale.customer
+        ship_rows = [f"<b>Customer:</b> {customer.name}" if customer else "<b>Customer:</b> Walk-in Customer"]
+        if customer:
+            if getattr(customer, 'contact_person', None):
+                ship_rows.append(f"<b>Contact Person:</b> {customer.contact_person}")
+            if customer.phone:
+                ship_rows.append(f"<b>Phone:</b> {customer.phone}")
+            if customer.address:
+                ship_rows.append(f"<b>Address:</b> {customer.address}")
+            if getattr(customer, 'city', None):
+                ship_rows.append(f"<b>City:</b> {customer.city}")
+
+        def make_box(title_text, rows, width):
+            data = [[Paragraph(f"<b>{title_text}</b>", self.styles['BoxTitle'])]]
+            for row in rows:
+                data.append([Paragraph(row, self.styles['BoxValue'])])
+            tbl = Table(data, colWidths=[width])
+            tbl.setStyle(TableStyle([
+                ('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+                ('TOPPADDING', (0,0), (-1,0), 3), ('BOTTOMPADDING', (0,0), (-1,0), 3),
+                ('TOPPADDING', (0,1), (-1,-1), 0), ('BOTTOMPADDING', (0,1), (-1,-1), 2),
+                ('LEFTPADDING', (0,0), (-1,-1), 8), ('RIGHTPADDING', (0,0), (-1,-1), 6),
+                ('BOX', (0,0), (-1,-1), 0.5, BORDER_GREY), ('BACKGROUND', (0,0), (-1,-1), WHITE),
+            ]))
+            return tbl
+
+        head_office_addr = (getattr(self.company, 'address', None) if self.company else None) or 'N/A'
+        loc_rows = [
+            f"<b>Head Office:</b> {head_office_addr}",
+            "<b>Karachi:</b> LS-25, Super Auto Parts Market, Main Super Highway, Sohrab Goth, Karachi.",
+        ]
+        box1 = make_box("SHIP TO", ship_rows, 3.9 * inch)
+        box2 = make_box("OUR LOCATIONS", loc_rows, 3.3 * inch)
+        info_outer = Table([[box1, '', box2]], colWidths=[3.9*inch, 0.15*inch, 3.45*inch])
+        info_outer.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ]))
+        elements.append(info_outer)
+        elements.append(Spacer(1, 10))
+
+        # ── PACKED ITEMS ─────────────────────────────────────────────────────
+        elements.append(Paragraph("PACKED ITEMS", self.styles['SectionHeader']))
+        items = []
+        total_qty = 0.0
+        total_weight = 0.0
+        has_weight = False
+        for item in sale.items:
+            qty = float(item.quantity or 0)
+            total_qty += qty
+            product = item.product
+            if product and getattr(product, 'weight', None):
+                total_weight += qty * product.weight
+                has_weight = True
+            items.append({
+                'description': product.name if product else 'Unknown Product',
+                'sku': (product.sku if product and product.sku else '-'),
+                'unit': (product.unit if product and product.unit else 'pcs'),
+                'quantity': qty,
+            })
+        elements.append(self._build_packing_items_table(items))
+        elements.append(Spacer(1, 10))
+
+        # ── SHIPPING DETAILS / PACKING SUMMARY ──────────────────────────────
+        shipping_fields = [
+            ('Transport Company', ''), ('Bilty / LR No.', ''), ('Tracking No.', ''),
+            ('Vehicle No.', ''), ('Gate Pass No.', ''), ('Dispatch Date', ''),
+        ]
+        summary_fields = [
+            ('Total Ordered Qty', f"{total_qty:,.2f}"),
+            ('Total Packed Qty', ''),
+            ('Balance Qty', ''),
+            ('Total Packages', ''),
+            ('Gross Weight', ''),
+            ('Net Weight', f"{total_weight:,.2f} kg" if has_weight else ''),
+        ]
+        box_ship = self._build_field_grid_box("SHIPPING DETAILS", shipping_fields, 3.9 * inch)
+        box_sum = self._build_field_grid_box("PACKING SUMMARY", summary_fields, 3.3 * inch)
+        ship_outer = Table([[box_ship, '', box_sum]], colWidths=[3.9*inch, 0.15*inch, 3.45*inch])
+        ship_outer.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ]))
+        elements.append(ship_outer)
+        elements.append(Spacer(1, 10))
+
+        # ── VERIFICATION ─────────────────────────────────────────────────────
+        elements.append(self._build_packing_verification_table())
+        elements.append(Spacer(1, 10))
+
+        # ── IMPORTANT NOTICE (bilingual) ────────────────────────────────────
+        cname_for_notice = self.company.name if self.company else 'us'
+        notice_en = (
+            f"Verify the number of packages, SKU, product description, and quantity at the time of receipt. "
+            f"Report any shortage, damage, incorrect product, or packaging issue to {cname_for_notice} immediately. "
+            f"This Packing Slip is for packing, shipping, and delivery verification only. It is not an invoice, "
+            f"payment receipt, or proof of payment. Prices, discounts, payments, and balances are intentionally not shown."
+        )
+        notice_ur = (
+            f"سامان وصول کرتے وقت پیکجز کی تعداد، SKU، پروڈکٹ کی تفصیل اور مقدار کی تصدیق کریں۔ کسی کمی، نقصان، غلط پروڈکٹ یا "
+            f"پیکنگ کے مسئلے کی صورت میں فوری طور پر {cname_for_notice} کو اطلاع دیں۔ یہ پیکنگ سلپ صرف پیکنگ، ترسیل اور وصولی کی "
+            f"تصدیق کے لیے ہے۔ یہ انوائس، ادائیگی کی رسید یا ادائیگی کا ثبوت نہیں ہے۔ قیمت، ڈسکاؤنٹ، ادائیگی اور بقایا رقم اس "
+            f"دستاویز پر درج نہیں کی گئی۔"
+        )
+        elements.append(self._build_important_notice(notice_en, notice_ur))
+
+        self.footer_message = f"Thank you for your business! / {cname_for_notice}"
+        self.doc.build(
+            elements,
+            onFirstPage=self._draw_page_decorations,
+            onLaterPages=self._draw_page_decorations,
+        )
+
     # ── FOOTER — drawn directly on canvas, always at page bottom ──────────
     def _draw_footer(self, c, doc):
         w, h = A4
@@ -1170,7 +1479,10 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
 
         quote_extra = {}
         if is_quote:
-            if getattr(obj, 'is_draft', False):
+            status_label = getattr(obj, 'status_label', None)
+            if status_label:
+                quote_status = status_label
+            elif getattr(obj, 'is_draft', False):
                 quote_status = 'DRAFT'
             elif not getattr(obj, 'is_approved', True):
                 quote_status = 'PENDING APPROVAL'
@@ -1627,3 +1939,15 @@ def generate_bill_payment_receipt_pdf(payment, bill, company=None):
         thank_you_note='Thank you for your business.',
         company=company,
     )
+
+
+def generate_packing_slip_pdf(sale, company):
+    """Bilingual (English/Urdu) shipping Packing Slip for a Sale — a physical
+    packing/dispatch form, not a financial document. See
+    ProfessionalPDFGenerator.generate_packing_slip() for what's auto-filled
+    from the sale vs. left blank for staff to fill in by hand."""
+    buffer = io.BytesIO()
+    generator = ProfessionalPDFGenerator(buffer, company, None, None)
+    generator.generate_packing_slip(sale)
+    buffer.seek(0)
+    return buffer

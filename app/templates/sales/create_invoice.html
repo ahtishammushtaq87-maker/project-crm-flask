@@ -133,6 +133,11 @@
                     </div>
                     <div class="card-body py-2">
                         <div class="mb-2">
+                            <label class="form-label mb-0 small fw-semibold">Invoice Number</label>
+                            <input type="text" class="form-control form-control-sm bg-light" value="{{ next_invoice_number }}" readonly tabindex="-1">
+                            <div class="form-text" style="font-size:0.68rem;">Auto-generated on save — the actual number may be higher if another invoice is created first.</div>
+                        </div>
+                        <div class="mb-2">
                             <div class="d-flex justify-content-between align-items-center">
                                 <label for="customerSelect" class="form-label mb-0 small fw-semibold">Customer</label>
                                 <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1" style="font-size:0.7rem;" onclick="showCustomerLedger(document.getElementById('customerSelect').value)">Ledger</button>

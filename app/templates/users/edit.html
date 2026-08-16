@@ -172,6 +172,21 @@
         </div>
     </div>
 </div>
+                                        <div class="form-check mb-2">
+    {{ form.can_view_quotations(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'quotations')") }}
+    <label class="form-check-label fw-semibold"><i class="fas fa-file-signature me-1 text-secondary"></i> {{ form.can_view_quotations.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-quotations" id="sub_quotations">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_quotations(class="form-check-input sub-cb-quotations") }} <label class="form-check-label small text-muted">Add</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_quotations(class="form-check-input sub-cb-quotations") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_quotations(class="form-check-input sub-cb-quotations") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                     </div>
                                 </div>
                             </div>

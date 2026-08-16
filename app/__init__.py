@@ -43,7 +43,8 @@ def create_app(config_class=Config):
             ToolReceiving, ToolReceivingItem, ToolDelivering, ToolDeliveringItem, ToolSettings,
             ProductWarehouseStock, Media,
             RecoveryTask, RecoveryLog, RecoveryComment, Salesman,
-            JournalAccount, JournalEntry, JournalLine, FixedExpense
+            JournalAccount, JournalEntry, JournalLine, FixedExpense,
+            Quotation, QuotationItem, DatabaseBackup
         )
         from app.filter_models import SavedFilter
         
@@ -131,6 +132,9 @@ def create_app(config_class=Config):
             'journal_entries': JournalEntry,
             'journal_lines': JournalLine,
             'fixed_expenses': FixedExpense,
+            'quotations': Quotation,
+            'quotation_items': QuotationItem,
+            'database_backups': DatabaseBackup,
         }
         
         try:
@@ -237,6 +241,7 @@ def create_app(config_class=Config):
     from app.routes.dashboard import bp as dashboard_bp
     from app.routes.accounting import bp as accounting_bp
     from app.routes.sales import bp as sales_bp
+    from app.routes.quotation import bp as quotation_bp
     from app.routes.inventory import bp as inventory_bp
     from app.routes.warehouse import bp as warehouse_bp
     from app.routes.purchase import bp as purchase_bp
@@ -259,10 +264,12 @@ def create_app(config_class=Config):
     from app.routes.media import bp as media_bp
     from app.routes.recovery import bp as recovery_bp
     from app.routes.journal import bp as journal_bp
+    from app.routes.backup import bp as backup_bp
 
     app.register_blueprint(dashboard_bp, url_prefix='/')
     app.register_blueprint(accounting_bp, url_prefix='/accounting')
     app.register_blueprint(sales_bp, url_prefix='/sales')
+    app.register_blueprint(quotation_bp, url_prefix='/quotation')
     app.register_blueprint(inventory_bp, url_prefix='/inventory')
     app.register_blueprint(warehouse_bp, url_prefix='/warehouse')
     app.register_blueprint(purchase_bp, url_prefix='/purchase')
@@ -285,6 +292,7 @@ def create_app(config_class=Config):
     app.register_blueprint(media_bp, url_prefix='/media')
     app.register_blueprint(recovery_bp, url_prefix='/recovery')
     app.register_blueprint(journal_bp, url_prefix='/journal')
+    app.register_blueprint(backup_bp, url_prefix='/backup')
     
     @app.context_processor
     def inject_company():
@@ -520,7 +528,8 @@ def create_app(config_class=Config):
         except Exception:
             return dict(recovery_escalation_alerts=[])
 
-    from app.scheduler import start_recovery_scheduler
+    from app.scheduler import start_recovery_scheduler, start_backup_scheduler
     start_recovery_scheduler(app)
+    start_backup_scheduler(app)
 
     return app

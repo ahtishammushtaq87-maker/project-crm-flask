@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% block title %}Quotation {{ quotation.quotation_number }}{% endblock %}
+
+{% block content %}
+<style>
+    .table-premium thead th {
+        background: #f8f9fc;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: .03em;
+    }
+    .table-premium tbody td {
+        font-size: 0.85rem;
+        vertical-align: middle;
+    }
+    .table-premium tr:hover {
+        background-color: rgba(78, 115, 223, 0.03);
+    }
+</style>
+<div class="container-fluid">
+
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div>
+            <h2 class="h3 mb-0 text-gray-800">
+                <i class="fas fa-file-signature me-2 text-secondary"></i>Quotation: {{ quotation.quotation_number }}
+            </h2>
+            <small class="text-muted">{{ quotation.date.strftime(date_format) if quotation.date else '' }}</small>
+            <span class="badge ms-2
+                {% if quotation.status == 'draft' %}bg-secondary
+                {% elif quotation.status == 'sent' %}bg-info
+                {% elif quotation.status == 'accepted' %}bg-success
+                {% elif quotation.status == 'rejected' %}bg-danger
+                {% else %}bg-dark{% endif %}">
+                {{ quotation.status_label }}
+            </span>
+            {% if quotation.due_date %}
+            <small class="text-muted ms-2"><i class="fas fa-calendar-alt me-1"></i>Valid Until: {{ quotation.due_date.strftime(date_format) }}</small>
+            {% endif %}
+        </div>
+        <div class="btn-group flex-wrap gap-1">
+            <a href="{{ url_for('quotation.quotation_pdf', id=quotation.id) }}" class="btn btn-info" target="_blank" rel="noopener">
+                <i class="fas fa-file-pdf me-1"></i>PDF
+            </a>
+
+            {% if current_user.has_permission('quotations', 'edit') and not quotation.converted_sale_id %}
+            <a href="{{ url_for('quotation.edit_quotation', id=quotation.id) }}" class="btn btn-warning">
+                <i class="fas fa-edit me-1"></i>Edit
+            </a>
+            {% endif %}
+
+            {% if quotation.customer and quotation.customer.phone %}
+            {% set phone = quotation.customer.phone|replace('+', '')|replace(' ', '')|replace('-', '')|replace('(', '')|replace(')', '') %}
+            {% if phone|length >= 10 %}
+            <button type="button" class="btn btn-success share-pdf-btn"
+                data-pdf-url="{{ url_for('quotation.public_quotation', token=quotation.valid_access_token) }}"
+                data-phone="{{ phone }}" data-invoice="{{ quotation.quotation_number }}" data-label="Quotation"
+                onclick="shareInvoicePDF(this)">
+                <i class="fab fa-whatsapp me-1"></i>Share PDF
+            </button>
+            {% endif %}
+            {% endif %}
+
+            {% if current_user.has_permission('quotations', 'edit') and not quotation.converted_sale_id %}
+            <div class="btn-group">
+                <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-flag me-1"></i>Status
+                </button>
+                <ul class="dropdown-menu">
+                    {% for st, label in [('draft','Draft'), ('sent','Sent'), ('accepted','Accepted'), ('rejected','Rejected'), ('expired','Expired')] %}
+                    <li>
+                        <form action="{{ url_for('quotation.update_quotation_status', id=quotation.id) }}" method="POST">
+                            <input type="hidden" name="status" value="{{ st }}">
+                            <button type="submit" class="dropdown-item {% if quotation.status == st %}active{% endif %}">Mark {{ label }}</button>
+                        </form>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% if quotation.converted_sale_id %}
+            <a href="{{ url_for('sales.invoice_detail', id=quotation.converted_sale_id) }}" class="btn btn-outline-success">
+                <i class="fas fa-exchange-alt me-1"></i>View Converted Invoice
+            </a>
+            {% elif current_user.has_permission('quotations', 'edit') %}
+            <form action="{{ url_for('quotation.convert_to_sale', id=quotation.id) }}" method="POST" class="d-inline"
+                onsubmit="return confirm('Convert this quotation into a real Sales Invoice? This will deduct stock and create a new invoice.');">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-exchange-alt me-1"></i>Convert to Sale
+                </button>
+            </form>
+            {% endif %}
+
+            {% if current_user.has_permission('quotations', 'add') %}
+            <a href="{{ url_for('quotation.create_quotation') }}" class="btn btn-outline-primary">
+                <i class="fas fa-plus me-1"></i>New Quotation
+            </a>
+            {% endif %}
+            <a href="{{ url_for('quotation.list_quotations') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Back
+            </a>
+
+            {% if current_user.has_permission('quotations', 'delete') %}
+            <form action="{{ url_for('quotation.delete_quotation', id=quotation.id) }}" method="POST" class="d-inline"
+                onsubmit="return confirm('Delete this quotation? This cannot be undone.');">
+                <button type="submit" class="btn btn-outline-danger">
+                    <i class="fas fa-trash me-1"></i>Delete
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- LEFT: Customer Info + Summary -->
+        <div class="col-md-4">
+            <div class="card shadow mb-4">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-user me-2"></i>Customer Information</h6>
+                </div>
+                <div class="card-body">
+                    <p class="mb-1">
+                        <strong>Customer: </strong>
+                        {% if quotation.customer %}
+                        <a href="{{ url_for('sales.customer_profile', id=quotation.customer.id) }}" class="text-decoration-none fw-bold text-primary">
+                            {{ quotation.customer.name }}
+                        </a>
+                        {% else %}
+                        Walk-in Customer
+                        {% endif %}
+                    </p>
+                    <p class="mb-1"><strong>Phone:</strong> {{ quotation.customer.phone if quotation.customer else 'N/A' }}</p>
+                    <p class="mb-1"><strong>Email:</strong> {{ quotation.customer.email if quotation.customer else 'N/A' }}</p>
+                    <p class="mb-1"><strong>Address:</strong> {{ quotation.customer.address if quotation.customer else 'N/A' }}</p>
+                    <hr class="my-2">
+                    <h6 class="text-primary mb-2"><i class="fas fa-calendar-alt me-2"></i>Quotation Dates</h6>
+                    <p class="mb-1 small"><strong>Quotation Date:</strong> {{ quotation.date.strftime(date_format) if quotation.date else 'N/A' }}</p>
+                    <p class="mb-0 small"><strong>Valid Until:</strong> {{ quotation.due_date.strftime(date_format) if quotation.due_date else 'N/A' }}</p>
+                    <p class="mb-0 small"><strong>Salesman:</strong> {{ quotation.salesman.name if quotation.salesman else 'N/A' }}</p>
+                </div>
+            </div>
+
+            <!-- Summary -->
+            <div class="card shadow mb-4">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-warning"><i class="fas fa-calculator me-2"></i>Summary</h6>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm table-borderless mb-0">
+                        <tr>
+                            <td class="text-muted">Subtotal</td>
+                            <td class="text-end">PKR {{ "{:,.2f}".format(quotation.subtotal) }}</td>
+                        </tr>
+                        {% if quotation.delivery_charge > 0 %}
+                        <tr>
+                            <td class="text-info"><i class="fas fa-truck me-1"></i>Delivery</td>
+                            <td class="text-end text-info fw-semibold">PKR {{ "{:,.2f}".format(quotation.delivery_charge) }}</td>
+                        </tr>
+                        {% endif %}
+                        {% if quotation.tax > 0 %}
+                        <tr>
+                            <td class="text-muted">Tax ({{ quotation.tax_rate }}%)</td>
+                            <td class="text-end">PKR {{ "{:,.2f}".format(quotation.tax) }}</td>
+                        </tr>
+                        {% endif %}
+                        {% if quotation.discount > 0 %}
+                        <tr>
+                            <td class="text-success">Discount</td>
+                            <td class="text-end text-success">-Rs {{ "{:,.2f}".format(quotation.effective_discount_amount) }}</td>
+                        </tr>
+                        {% endif %}
+                        <tr class="border-top">
+                            <td class="fw-bold">Total Quoted Amount</td>
+                            <td class="text-end fw-bold fs-5 text-primary">PKR {{ "{:,.2f}".format(quotation.total) }}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: Items -->
+        <div class="col-md-8">
+            <div class="card shadow mb-4">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-list me-2"></i>Item Details</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-mobile-scroll">
+                        {% set total_qty = quotation.items | sum(attribute='quantity') %}
+                        {% set sum_item_delivery = quotation.items | sum(attribute='delivery_fee') %}
+                        {% set show_delivery_col = sum_item_delivery > 0 %}
+                        {% set items_discount_sum = quotation.items | sum(attribute='discount') %}
+                        {% set show_discount_col = items_discount_sum > 0 %}
+                        {% set base_cols = 6 %}
+                        {% set total_cols = base_cols + (1 if show_delivery_col else 0) + (2 if show_discount_col else 0) %}
+                        {% set label_colspan = total_cols - 1 %}
+
+                        <table class="table table-bordered table-premium mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Product</th>
+                                    <th class="text-center">Qty</th>
+                                    <th class="text-end">List Price</th>
+                                    {% if show_delivery_col %}
+                                    <th class="text-end text-info"><i class="fas fa-truck me-1"></i>Delivery</th>
+                                    {% endif %}
+                                    {% if show_discount_col %}
+                                    <th class="text-end text-success">Unit Discount</th>
+                                    <th class="text-end text-success">Total Discount</th>
+                                    {% endif %}
+                                    <th class="text-end">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in quotation.items %}
+                                <tr>
+                                    <td>{{ loop.index }}</td>
+                                    <td>
+                                        <strong>{{ item.product.name if item.product else 'Deleted Product' }}</strong>
+                                        {% if item.product and item.product.sku %}<br><small class="text-muted">{{ item.product.sku }}</small>{% endif %}
+                                    </td>
+                                    <td class="text-center">{{ '{:,.2f}'.format(item.quantity) }}</td>
+                                    <td class="text-end">PKR {{ "{:,.2f}".format(item.unit_price) }}</td>
+                                    {% if show_delivery_col %}
+                                    <td class="text-end text-info">PKR {{ "{:,.2f}".format(item.delivery_fee) }}</td>
+                                    {% endif %}
+                                    {% if show_discount_col %}
+                                    <td class="text-end text-success">
+                                        {% if item.effective_unit_discount > 0 %}
+                                        -Rs {{ "{:,.2f}".format(item.effective_unit_discount) }}
+                                        {% else %}
+                                        <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end text-success">-Rs {{ "{:,.2f}".format(item.discount) }}</td>
+                                    {% endif %}
+                                    <td class="text-end fw-semibold">PKR {{ "{:,.2f}".format(item.total) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <th colspan="{{ label_colspan }}" class="text-end">Subtotal ({{ total_qty }} items)</th>
+                                    <th class="text-end">PKR {{ "{:,.2f}".format(quotation.subtotal) }}</th>
+                                </tr>
+                                {% if quotation.delivery_charge > 0 %}
+                                <tr>
+                                    <th colspan="{{ label_colspan }}" class="text-end text-info"><i class="fas fa-truck me-1"></i>Delivery Charges</th>
+                                    <th class="text-end text-info">PKR {{ "{:,.2f}".format(quotation.delivery_charge) }}</th>
+                                </tr>
+                                {% endif %}
+                                {% if quotation.tax > 0 %}
+                                <tr>
+                                    <th colspan="{{ label_colspan }}" class="text-end">Tax ({{ quotation.tax_rate }}%)</th>
+                                    <th class="text-end">PKR {{ "{:,.2f}".format(quotation.tax) }}</th>
+                                </tr>
+                                {% endif %}
+                                {% if quotation.discount > 0 %}
+                                <tr>
+                                    <th colspan="{{ label_colspan }}" class="text-end text-success">Discount</th>
+                                    <th class="text-end text-success">-Rs {{ "{:,.2f}".format(quotation.effective_discount_amount) }}</th>
+                                </tr>
+                                {% endif %}
+                                <tr>
+                                    <th colspan="{{ label_colspan }}" class="text-end fs-5">Total Quoted Amount</th>
+                                    <th class="text-end fs-5 text-primary">PKR {{ "{:,.2f}".format(quotation.total) }}</th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function shareInvoicePDF(btn) {
+        const pdfUrl = btn.getAttribute('data-pdf-url');
+        const phone = btn.getAttribute('data-phone');
+        const invoiceNumber = btn.getAttribute('data-invoice');
+        const docLabel = btn.getAttribute('data-label') || 'Quotation';
+
+        const fullPdfUrl = window.location.origin + pdfUrl;
+
+        const message = `Hi! Here is your ${docLabel} ${invoiceNumber}. You can view and securely download your PDF directly here:\n\n${fullPdfUrl}\n\nThank you for your business!`;
+        const waText = encodeURIComponent(message);
+        const whatsappUrl = `https://wa.me/${phone}?text=${waText}`;
+
+        const newWin = window.open(whatsappUrl, '_blank');
+        if (!newWin) {
+            alert("Please allow popups to open WhatsApp automatically.");
+        }
+    }
+</script>
+{% endblock %}

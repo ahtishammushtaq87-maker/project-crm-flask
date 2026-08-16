@@ -6,7 +6,7 @@ from app.models import Sale, SaleItem, Product, ProductWarehouseStock, Warehouse
 from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm, SalesmanForm, CustomerGroupForm
 from datetime import datetime, date
 from sqlalchemy import func, or_, and_
-from app.pdf_utils import generate_professional_pdf
+from app.pdf_utils import generate_professional_pdf, generate_packing_slip_pdf
 import os
 from werkzeug.utils import secure_filename
 import json
@@ -597,7 +597,16 @@ def create_invoice():
     
     salesmen = Salesman.query.filter_by(is_active=True).all()
     warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
-    return render_template('sales/create_invoice.html', form=form, products=products, customers=customers, vendors=vendors, currencies=currencies, now=datetime.now(), customer_advances=customer_advances, customer_total_advances=customer_total_advances, salesmen=salesmen, warehouses=warehouses)
+
+    # Preview-only: the real invoice_number is assigned server-side on save
+    # (see the POST branch above), so this doesn't touch/increment the counter.
+    inv_settings = InvoiceSettings.query.first()
+    if inv_settings:
+        next_invoice_number = f"{inv_settings.invoice_prefix or ''}{inv_settings.next_number or 1}{inv_settings.invoice_suffix or ''}"
+    else:
+        next_invoice_number = "INV-1"
+
+    return render_template('sales/create_invoice.html', form=form, products=products, customers=customers, vendors=vendors, currencies=currencies, now=datetime.now(), customer_advances=customer_advances, customer_total_advances=customer_total_advances, salesmen=salesmen, warehouses=warehouses, next_invoice_number=next_invoice_number)
 
 @bp.route('/invoice/<int:id>')
 @login_required
@@ -3180,6 +3189,28 @@ def invoice_pdf(id):
         flash(f'Error generating PDF: {str(e)}', 'error')
         return redirect(url_for('sales.invoice_detail', id=id))
 
+@bp.route('/invoice/<int:id>/packing-slip')
+@login_required
+def packing_slip_pdf(id):
+    """Bilingual (English/Urdu) Packing Slip — a shipping/dispatch form, not a
+    financial document. Customer info, related invoice number, and each
+    item's description/SKU/unit/qty ordered are auto-filled from the sale;
+    packing/shipping specifics (qty packed, carrier, weights, sign-offs) are
+    left blank on the PDF for staff to fill in by hand."""
+    sale = Sale.query.get_or_404(id)
+    company = Company.query.first()
+
+    try:
+        buffer = generate_packing_slip_pdf(sale, company)
+        response = make_response(buffer)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'inline; filename="packing_slip_{sale.invoice_number or "unknown"}.pdf"'
+        return response
+    except Exception as e:
+        print(f"Packing slip PDF generation error: {str(e)}")
+        flash(f'Error generating Packing Slip PDF: {str(e)}', 'error')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
 @bp.route('/invoice/<int:id>/pdf/view')
 @login_required
 def invoice_pdf_view(id):
@@ -3239,26 +3270,6 @@ def invoice_pdf_share(id):
         return {'error': str(e)}, 500
 
 
-@bp.route('/invoice/<int:id>/quotation-pdf')
-@login_required
-def quotation_pdf(id):
-    """Quotation PDF — same design as the sales invoice, titled 'Quotation'.
-    Opens inline in a new tab (and can be downloaded from there), exactly like
-    the invoice PDF."""
-    sale = Sale.query.get_or_404(id)
-    company = Company.query.first()
-    invoice_settings = InvoiceSettings.query.first()
-
-    try:
-        buffer = generate_professional_pdf('quotation', sale, company, invoice_settings)
-        response = make_response(buffer)
-        response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = f'inline; filename="quotation_{sale.invoice_number or "unknown"}.pdf"'
-        return response
-    except Exception as e:
-        print(f"Quotation PDF generation error: {str(e)}")
-        flash(f'Error generating Quotation PDF: {str(e)}', 'error')
-        return redirect(url_for('sales.invoice_detail', id=id))
 
 @bp.route('/company', methods=['GET', 'POST'])
 @login_required
@@ -3391,6 +3402,9 @@ def invoice_settings():
         settings.invoice_prefix = form.invoice_prefix.data or ''
         settings.invoice_suffix = form.invoice_suffix.data or ''
         settings.next_number = form.next_number.data or 1
+        settings.quotation_prefix = form.quotation_prefix.data or ''
+        settings.quotation_suffix = form.quotation_suffix.data or ''
+        settings.quotation_next_number = form.quotation_next_number.data or 1
         settings.tax_name = form.tax_name.data
         settings.tax_rate = form.tax_rate.data
         settings.payment_terms = form.payment_terms.data
@@ -3924,32 +3938,6 @@ def public_invoice(token):
         response = make_response(buffer)
         response.headers['Content-Type'] = 'application/pdf'
         response.headers['Content-Disposition'] = f'inline; filename="invoice_{sale.invoice_number or "unknown"}.pdf"'
-        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '0'
-        return response
-    except Exception as e:
-        return f"Error generating PDF: {str(e)}", 500
-
-@bp.route('/public/quotation/<token>')
-def public_quotation(token):
-    """Public (customer-facing, token-based) Quotation PDF — the link shared to a
-    customer over WhatsApp. Same token as the invoice; renders the quotation design."""
-    from datetime import datetime
-    from app.models import Company, InvoiceSettings
-    sale = Sale.query.filter_by(access_token=token).first_or_404()
-
-    if sale.token_expiry and sale.token_expiry < datetime.utcnow():
-        return "Link expired", 403
-
-    company = Company.query.first()
-    invoice_settings = InvoiceSettings.query.first()
-
-    try:
-        buffer = generate_professional_pdf('quotation', sale, company, invoice_settings)
-        response = make_response(buffer)
-        response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = f'inline; filename="quotation_{sale.invoice_number or "unknown"}.pdf"'
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'

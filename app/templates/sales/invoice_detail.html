@@ -141,21 +141,13 @@
             </span>
         </div>
         <div class="btn-group flex-wrap gap-1">
-            <div class="btn-group">
-                <a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" class="btn btn-info" target="_blank" rel="noopener">
-                    <i class="fas fa-file-pdf me-1"></i>PDF
-                </a>
-                <button type="button" class="btn btn-info dropdown-toggle dropdown-toggle-split"
-                    data-bs-toggle="dropdown" aria-expanded="false">
-                    <span class="visually-hidden">Choose PDF</span>
-                </button>
-                <ul class="dropdown-menu">
-                    <li><a class="dropdown-item" href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" target="_blank" rel="noopener">
-                        <i class="fas fa-file-invoice me-2 text-info"></i>Invoice PDF</a></li>
-                    <li><a class="dropdown-item" href="{{ url_for('sales.quotation_pdf', id=sale.id) }}" target="_blank" rel="noopener">
-                        <i class="fas fa-file-signature me-2 text-secondary"></i>Quotation PDF</a></li>
-                </ul>
-            </div>
+            <a href="{{ url_for('sales.invoice_pdf', id=sale.id) }}" class="btn btn-info" target="_blank" rel="noopener">
+                <i class="fas fa-file-pdf me-1"></i>PDF
+            </a>
+            <a href="{{ url_for('sales.packing_slip_pdf', id=sale.id) }}" class="btn btn-outline-dark" target="_blank" rel="noopener"
+                title="Bilingual packing/dispatch slip — customer &amp; items auto-filled, shipping details left blank for staff to fill in by hand">
+                <i class="fas fa-box me-1"></i>Packing Slip
+            </a>
             {% if sale.customer_id %}
             <button type="button" class="btn btn-outline-info ledger-trigger" data-customer-id="{{ sale.customer_id }}"
                 onclick="showCustomerLedger({{ sale.customer_id }})">
@@ -171,23 +163,12 @@
             {% set phone = sale.customer.phone|replace('+', '')|replace(' ', '')|replace('-', '')|replace('(',
             '')|replace(')', '') %}
             {% if phone|length >= 10 %}
-            <div class="btn-group">
-                <button type="button" class="btn btn-success dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-                    <i class="fab fa-whatsapp me-1"></i>Share PDF
-                </button>
-                <ul class="dropdown-menu">
-                    <li><button type="button" class="dropdown-item share-pdf-btn"
-                        data-pdf-url="{{ url_for('sales.public_invoice', token=sale.valid_access_token) }}"
-                        data-phone="{{ phone }}" data-invoice="{{ sale.invoice_number }}" data-label="Invoice"
-                        onclick="shareInvoicePDF(this)">
-                        <i class="fas fa-file-invoice me-2 text-info"></i>Share Invoice</button></li>
-                    <li><button type="button" class="dropdown-item share-pdf-btn"
-                        data-pdf-url="{{ url_for('sales.public_quotation', token=sale.valid_access_token) }}"
-                        data-phone="{{ phone }}" data-invoice="{{ sale.invoice_number }}" data-label="Quotation"
-                        onclick="shareInvoicePDF(this)">
-                        <i class="fas fa-file-signature me-2 text-secondary"></i>Share Quotation</button></li>
-                </ul>
-            </div>
+            <button type="button" class="btn btn-success share-pdf-btn"
+                data-pdf-url="{{ url_for('sales.public_invoice', token=sale.valid_access_token) }}"
+                data-phone="{{ phone }}" data-invoice="{{ sale.invoice_number }}" data-label="Invoice"
+                onclick="shareInvoicePDF(this)">
+                <i class="fab fa-whatsapp me-1"></i>Share PDF
+            </button>
             {% endif %}
             {% endif %}
             {% if sale.is_approved %}
