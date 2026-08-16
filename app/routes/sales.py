@@ -6,6 +6,7 @@ from app.models import Sale, SaleItem, Product, ProductWarehouseStock, Warehouse
 from app.forms import SaleForm, CustomerForm, InvoiceSettingsForm, SalesmanForm, CustomerGroupForm
 from datetime import datetime, date
 from sqlalchemy import func, or_, and_
+from sqlalchemy.exc import SQLAlchemyError
 from app.pdf_utils import generate_professional_pdf, generate_packing_slip_pdf
 import os
 from werkzeug.utils import secure_filename
@@ -631,8 +632,17 @@ def invoice_detail(id):
         ).order_by(Sale.date.desc()).all()
 
     # ── Packing Slip modal prefill: preview number + auto-computed totals ──
-    ps_settings = _packing_slip_settings()
-    next_packing_slip_number = _format_packing_slip_number(ps_settings, ps_settings.next_number)
+    # Wrapped defensively — a hiccup here must never take down the whole
+    # invoice page; the modal just falls back to sane defaults and the user
+    # can still generate a slip normally (the real number is assigned at
+    # submit time regardless of what's previewed here).
+    try:
+        ps_settings = _packing_slip_settings()
+        next_packing_slip_number = _format_packing_slip_number(ps_settings, ps_settings.next_number)
+    except SQLAlchemyError:
+        db.session.rollback()
+        next_packing_slip_number = 'PKG-00001'
+
     packing_total_ordered_qty = sum(float(item.quantity or 0) for item in sale.items)
     packing_net_weight = 0.0
     packing_has_weight = False
@@ -641,7 +651,12 @@ def invoice_detail(id):
         if product and getattr(product, 'weight', None):
             packing_net_weight += float(item.quantity or 0) * product.weight
             packing_has_weight = True
-    packing_slip_history = sorted(sale.packing_slips, key=lambda s: s.created_at or datetime.min, reverse=True)
+
+    try:
+        packing_slip_history = sorted(sale.packing_slips, key=lambda s: s.created_at or datetime.min, reverse=True)
+    except SQLAlchemyError:
+        db.session.rollback()
+        packing_slip_history = []
 
     return render_template('sales/invoice_detail.html',
                            sale=sale,
@@ -3208,12 +3223,30 @@ def invoice_pdf(id):
 
 def _packing_slip_settings():
     """Get (or lazily create) the singleton PackingSlipSettings row that
-    drives the auto-generated PKG-00001-style slip numbers."""
-    settings = PackingSlipSettings.query.first()
-    if not settings:
-        settings = PackingSlipSettings(prefix='PKG-', suffix='', next_number=1, number_padding=5)
-        db.session.add(settings)
+    drives the auto-generated PKG-00001-style slip numbers. Defensive against
+    two gunicorn workers racing to create the first row, and against a stale/
+    expired session object left over from an earlier failed query in the same
+    request — rolls back and re-fetches rather than letting a SQLAlchemyError
+    (e.g. ObjectDeletedError) bubble up and take down the whole page."""
+    try:
+        settings = PackingSlipSettings.query.first()
+    except SQLAlchemyError:
+        db.session.rollback()
+        settings = PackingSlipSettings.query.first()
+
+    if settings:
+        return settings
+
+    settings = PackingSlipSettings(prefix='PKG-', suffix='', next_number=1, number_padding=5)
+    db.session.add(settings)
+    try:
         db.session.commit()
+    except SQLAlchemyError:
+        # Another worker created the row first — use whatever is there now.
+        db.session.rollback()
+        settings = PackingSlipSettings.query.first()
+        if not settings:
+            raise
     return settings
 
 
