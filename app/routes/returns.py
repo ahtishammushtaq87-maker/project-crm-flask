@@ -3,7 +3,8 @@ from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
 from app.models import (Sale, SaleItem, SaleReturn, SaleReturnItem, Product, ProductWarehouseStock, Warehouse,
-                        Customer, SaleReturnSettings, CustomerGroup, Salesman, CustomerAdvance)
+                        Customer, SaleReturnSettings, CustomerGroup, Salesman, CustomerAdvance, StockMovement,
+                        SaleReturnReason)
 from app.forms import SaleReturnSettingsForm
 from datetime import datetime
 from app.routes.filters import apply_saved_filter_to_query
@@ -109,6 +110,7 @@ def return_list():
 @permission_required('returns', action='add')
 def create_return():
     if request.method == 'GET':
+        reasons = SaleReturnReason.query.order_by(SaleReturnReason.reason).all()
         sale_id = request.args.get('sale_id')
         if sale_id:
             sale = Sale.query.get_or_404(int(sale_id))
@@ -117,6 +119,7 @@ def create_return():
                                    sale=sale,
                                    products=Product.query.filter_by(is_active=True).all(),
                                    warehouses=warehouses,
+                                   reasons=reasons,
                                    now=datetime.now())
 
         sales = Sale.query.order_by(Sale.date.desc()).all()
@@ -126,11 +129,17 @@ def create_return():
                        sale=None,
                        products=Product.query.filter_by(is_active=True).all(),
                        warehouses=warehouses,
+                       reasons=reasons,
                        now=datetime.now())
 
     # POST - process return
     sale_id = request.form.get('sale_id')
     sale = Sale.query.get_or_404(int(sale_id))
+
+    reason = (request.form.get('reason') or '').strip()
+    if not reason:
+        flash('Please select a reason for the return.', 'warning')
+        return redirect(url_for('returns.create_return', sale_id=sale_id))
 
     product_ids = request.form.getlist('product_id[]')
     quantities = request.form.getlist('quantity[]')
@@ -232,7 +241,7 @@ def create_return():
         tax=tax,
         discount=discount,
         total=total,
-        reason=request.form.get('reason', ''),
+        reason=reason,
         status='approved' if is_admin else 'pending',
         is_approved=is_admin,
         approved_by=current_user.id if is_admin else None,
@@ -321,11 +330,63 @@ def create_return():
     return redirect(url_for('returns.return_detail', id=sale_return.id))
 
 
+@bp.route('/reasons/add', methods=['POST'])
+@login_required
+def add_return_reason():
+    """Admin-only: add a new selectable reason for the Sales Return create
+    form's "Reason for Return" dropdown."""
+    if current_user.role != 'admin':
+        return jsonify(success=False, message='Only an admin can add return reasons.'), 403
+
+    data = request.get_json(silent=True) or {}
+    reason_text = (data.get('reason') or '').strip()
+    if not reason_text:
+        return jsonify(success=False, message='Reason text is required.'), 400
+
+    existing = SaleReturnReason.query.filter(db.func.lower(SaleReturnReason.reason) == reason_text.lower()).first()
+    if existing:
+        return jsonify(success=False, message='This reason already exists.'), 400
+
+    reason = SaleReturnReason(reason=reason_text, created_by=current_user.id)
+    db.session.add(reason)
+    db.session.commit()
+    log_activity('Returns', f'Added return reason: {reason_text}')
+    return jsonify(success=True, id=reason.id, reason=reason.reason)
+
+
+@bp.route('/reasons/delete/<int:reason_id>', methods=['POST'])
+@login_required
+def delete_return_reason(reason_id):
+    """Admin-only: remove a return reason from the dropdown list."""
+    if current_user.role != 'admin':
+        return jsonify(success=False, message='Only an admin can delete return reasons.'), 403
+
+    reason = SaleReturnReason.query.get_or_404(reason_id)
+    reason_text = reason.reason
+    db.session.delete(reason)
+    db.session.commit()
+    log_activity('Returns', f'Deleted return reason: {reason_text}')
+    return jsonify(success=True)
+
+
 @bp.route('/<int:id>')
 @login_required
 def return_detail(id):
     sale_return = SaleReturn.query.get_or_404(id)
-    return render_template('sales/return_detail.html', sale_return=sale_return)
+
+    # Inventory before/after per item: keyed by product_id, taking the most
+    # recent stock movement logged when this return was added back to stock
+    # (see return_to_inventory() below). Older returns processed before this
+    # tracking existed simply won't have one — the template falls back
+    # gracefully to showing the current stock level in that case.
+    stock_movements = {}
+    movements = StockMovement.query.filter_by(
+        reference_type='sale_return', reference_id=sale_return.id
+    ).order_by(StockMovement.created_at.asc()).all()
+    for m in movements:
+        stock_movements[m.product_id] = m
+
+    return render_template('sales/return_detail.html', sale_return=sale_return, stock_movements=stock_movements)
 
 
 @bp.route('/<int:id>/approve', methods=['POST'])
@@ -441,8 +502,23 @@ def return_to_inventory(id):
     for item in sale_return.items:
         product = Product.query.get(item.product_id)
         if product:
-            # update global product quantity
+            # update global product quantity — snapshot before/after for the
+            # audit trail shown on the return detail page and the product's
+            # full stock-movement history (same StockMovement convention used
+            # by sales/purchases/manufacturing, see product_full_history.html)
+            qty_before = product.quantity
             product.update_quantity(item.quantity)
+            db.session.add(StockMovement(
+                product_id=product.id,
+                movement_type='in',
+                reference_type='sale_return',
+                reference_id=sale_return.id,
+                quantity=item.quantity,
+                previous_quantity=qty_before,
+                new_quantity=product.quantity,
+                reason=f'Returned to inventory — Return #{sale_return.return_number}',
+                created_by=current_user.id,
+            ))
 
             # update per-warehouse stock if recorded
             try:

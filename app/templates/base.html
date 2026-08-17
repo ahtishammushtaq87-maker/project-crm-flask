@@ -1202,6 +1202,24 @@
                     </div>
                     {% endif %}
 
+                    <!-- Expired Quotation Notifications (Quotation module only) -->
+                    {% if expired_quotation_alerts %}
+                    <div class="overdue-alert-stack mb-3">
+                        {% for q in expired_quotation_alerts %}
+                        <div class="alert alert-warning premium-alert py-2 px-3 d-flex align-items-center flex-wrap gap-2 mb-2" role="alert" style="font-size:0.85rem;">
+                            <i class="fas fa-triangle-exclamation me-1"></i>
+                            <strong>Quotation Expired:</strong>
+                            <a href="{{ url_for('quotation.quotation_detail', id=q.id) }}" class="fw-semibold">{{ q.quotation_number }}</a>
+                            {% if q.customer %}
+                            <span class="text-muted">— {{ q.customer.name }}</span>
+                            {% endif %}
+                            <span class="badge bg-warning text-dark">{{ q.days_expired }} day{{ 's' if q.days_expired != 1 else '' }} past valid until</span>
+                            <a href="{{ url_for('quotation.quotation_detail', id=q.id) }}" class="btn btn-sm btn-outline-warning py-0 px-2 ms-auto">View</a>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
                 </div>
 
                 <!-- Page Content Internal Padding Container -->

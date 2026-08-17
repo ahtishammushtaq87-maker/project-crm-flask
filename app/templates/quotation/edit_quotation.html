@@ -100,6 +100,10 @@
                     </div>
                     <div class="card-body py-2">
                         <div class="mb-2">
+                            <label class="form-label mb-0 small fw-semibold">Quotation Number</label>
+                            <input type="text" class="form-control form-control-sm bg-light" value="{{ quotation.quotation_number }}" readonly tabindex="-1">
+                        </div>
+                        <div class="mb-2">
                             <label for="customerSelect" class="form-label mb-0 small fw-semibold">Customer</label>
                             <select name="customer_id" class="form-control form-control-sm" id="customerSelect">
                                 <option value="0">Walk-in Customer</option>

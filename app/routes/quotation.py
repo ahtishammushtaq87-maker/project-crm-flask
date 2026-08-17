@@ -13,6 +13,11 @@ from app.pdf_utils import generate_professional_pdf
 bp = Blueprint('quotation', __name__)
 
 
+def _format_quotation_number(settings, number):
+    """Prefix + plain sequential number, e.g. QTN-7 — no zero-padding."""
+    return f"{settings.quotation_prefix or 'QO-'}{number}{settings.quotation_suffix or ''}"
+
+
 def sellable_products(existing_product_ids=None):
     """Same restriction as the Sales module: only finished-good products,
     plus any product already used on the quotation being edited."""
@@ -176,9 +181,9 @@ def create_quotation():
 
         settings = InvoiceSettings.query.first()
         if not settings:
-            settings = InvoiceSettings(quotation_prefix='QTN-', quotation_suffix='', quotation_next_number=1)
+            settings = InvoiceSettings(quotation_prefix='QO-', quotation_suffix='', quotation_next_number=1)
             db.session.add(settings)
-        quotation_number = f"{settings.quotation_prefix or 'QTN-'}{settings.quotation_next_number or 1}{settings.quotation_suffix or ''}"
+        quotation_number = _format_quotation_number(settings, settings.quotation_next_number or 1)
         settings.quotation_next_number = (settings.quotation_next_number or 1) + 1
 
         quotation = Quotation(
@@ -236,8 +241,17 @@ def create_quotation():
         flash('Quotation created successfully!', 'success')
         return redirect(url_for('quotation.quotation_detail', id=quotation.id))
 
+    # Preview-only: the real quotation_number is assigned server-side on save
+    # (see the POST branch above), so this doesn't touch/increment the counter.
+    qn_settings = InvoiceSettings.query.first()
+    if qn_settings:
+        next_quotation_number = _format_quotation_number(qn_settings, qn_settings.quotation_next_number or 1)
+    else:
+        next_quotation_number = 'QO-1'
+
     return render_template('quotation/create_quotation.html', form=form, products=products, customers=customers,
-                           currencies=currencies, salesmen=salesmen, warehouses=warehouses, now=datetime.now())
+                           currencies=currencies, salesmen=salesmen, warehouses=warehouses, now=datetime.now(),
+                           next_quotation_number=next_quotation_number)
 
 
 @bp.route('/<int:id>')

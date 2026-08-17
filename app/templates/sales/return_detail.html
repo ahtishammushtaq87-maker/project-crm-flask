@@ -121,6 +121,8 @@
                     <thead>
                         <tr>
                             <th>Product</th>
+                            <th>SKU</th>
+                            <th>Warehouse</th>
                             <th>Quantity</th>
                             <th>Unit Price</th>
                             <th class="text-success">Discount</th>
@@ -131,6 +133,8 @@
                         {% for item in sale_return.items %}
                         <tr>
                             <td class="{% if item.product and item.product.margin_color %}text-{{ item.product.margin_color }} fw-bold{% endif %}">{{ item.product.name if item.product else 'Unknown' }}</td>
+                            <td>{{ sku_link(item.product.sku, item.product.id) if item.product and item.product.sku else '-' }}</td>
+                            <td>{{ item.warehouse.name if item.warehouse else '-' }}</td>
                             <td>{{ item.quantity }}</td>
                             <td>PKR{{ "%.2f"|format(item.unit_price) }}</td>
                             <td class="text-success">{% if item.discount %}-PKR{{ "%.2f"|format(item.discount) }}{% else %}-{% endif %}</td>
@@ -140,12 +144,84 @@
                     </tbody>
                     <tfoot>
                         <tr class="table-dark">
-                            <th colspan="4" class="text-end">Total:</th>
+                            <th colspan="6" class="text-end">Total:</th>
                             <th>PKR{{ "%.2f"|format(sale_return.total) }}</th>
                         </tr>
                     </tfoot>
                 </table>
             </div>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-warehouse me-2"></i>Inventory Impact</h5>
+            {% if sale_return.returned_to_inventory %}
+            <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Applied to Stock</span>
+            {% else %}
+            <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Not Applied Yet</span>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Product</th>
+                            <th>SKU</th>
+                            <th>Warehouse</th>
+                            <th class="text-center">Qty Returned</th>
+                            <th class="text-center">Stock Before</th>
+                            <th class="text-center">Stock After</th>
+                            <th>Processed</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in sale_return.items %}
+                        {% set mv = stock_movements.get(item.product_id) %}
+                        <tr>
+                            <td>{{ item.product.name if item.product else 'Unknown' }}</td>
+                            <td>{{ sku_link(item.product.sku, item.product.id) if item.product and item.product.sku else '-' }}</td>
+                            <td>{{ item.warehouse.name if item.warehouse else '-' }}</td>
+                            <td class="text-center fw-semibold text-success">+{{ item.quantity }}</td>
+                            {% if mv %}
+                            <td class="text-center">{{ mv.previous_quantity }}</td>
+                            <td class="text-center fw-bold text-dark">{{ mv.new_quantity }}</td>
+                            <td><small class="text-muted">{{ mv.created_at.strftime('%d-%b-%Y %H:%M') }}</small></td>
+                            {% elif sale_return.returned_to_inventory %}
+                            <td class="text-center text-muted">
+                                {% if item.product %}~{{ item.product.quantity - item.quantity }}{% else %}-{% endif %}
+                                <br><small class="fst-italic">estimated</small>
+                            </td>
+                            <td class="text-center fw-bold text-dark">
+                                {{ item.product.quantity if item.product else '-' }}
+                                <br><small class="text-muted fst-italic">current stock</small>
+                            </td>
+                            <td><small class="text-muted">Applied before inventory tracking was added</small></td>
+                            {% else %}
+                            <td class="text-center">
+                                {{ item.product.quantity if item.product else '-' }}
+                                <br><small class="text-muted fst-italic">current stock</small>
+                            </td>
+                            <td class="text-center text-muted">
+                                {% if item.product %}~{{ item.product.quantity + item.quantity }}{% else %}-{% endif %}
+                                <br><small class="fst-italic">projected once applied</small>
+                            </td>
+                            <td><span class="badge bg-warning text-dark">Pending</span></td>
+                            {% endif %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <p class="text-muted small mt-3 mb-0">
+                <i class="fas fa-info-circle me-1"></i>
+                "Stock Before/After" reflects the product's overall inventory quantity at the exact moment this
+                return was added back to stock via the "Return to Inventory" action above. Until that action is
+                taken, the figures shown are the current stock and a projected value only. For returns applied
+                before this tracking existed, "Stock Before" is an estimate (current stock minus the quantity this
+                return added) — it can be off if other stock changes happened after this return was processed.
+            </p>
         </div>
     </div>
 </div>

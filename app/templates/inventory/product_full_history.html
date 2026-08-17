@@ -219,6 +219,12 @@
                                             title="View MO">
                                             <i class="fas fa-industry me-1"></i>MO
                                         </a>
+                                        {% elif movement.reference_type == 'sale_return' %}
+                                        <a href="{{ url_for('returns.return_detail', id=movement.reference_id) }}"
+                                            class="btn btn-sm btn-outline-success rounded-pill" target="_blank"
+                                            title="View Return">
+                                            <i class="fas fa-undo me-1"></i>Return
+                                        </a>
                                         {% else %}
                                         <span class="badge bg-light text-muted">{{ movement.reference_type|replace('_','
                                             ')|title }}</span>

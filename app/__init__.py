@@ -44,7 +44,7 @@ def create_app(config_class=Config):
             ProductWarehouseStock, Media,
             RecoveryTask, RecoveryLog, RecoveryComment, Salesman,
             JournalAccount, JournalEntry, JournalLine, FixedExpense,
-            Quotation, QuotationItem, DatabaseBackup, PackingSlip, PackingSlipSettings
+            Quotation, QuotationItem, DatabaseBackup, PackingSlip, PackingSlipSettings, SaleReturnReason
         )
         from app.filter_models import SavedFilter
         
@@ -137,6 +137,7 @@ def create_app(config_class=Config):
             'database_backups': DatabaseBackup,
             'packing_slips': PackingSlip,
             'packing_slip_settings': PackingSlipSettings,
+            'sale_return_reasons': SaleReturnReason,
         }
         
         try:
@@ -510,6 +511,27 @@ def create_app(config_class=Config):
             return dict(overdue_alert_invoices=overdue_alert_invoices)
         except Exception:
             return dict(overdue_alert_invoices=[])
+
+    @app.context_processor
+    def inject_expired_quotation_alerts():
+        """Top-of-page notification banner for quotations whose "Valid Until"
+        date has passed while still awaiting a decision — shown only on
+        Quotation module pages (see app/templates/base.html). Drafts,
+        already-accepted, and already-rejected quotations never trigger it."""
+        from flask_login import current_user
+        if not current_user.is_authenticated or request.blueprint != 'quotation':
+            return dict(expired_quotation_alerts=[])
+        try:
+            from app.models import Quotation
+            candidates = Quotation.query.filter(
+                Quotation.status.notin_(['draft', 'accepted', 'rejected']),
+                Quotation.due_date.isnot(None),
+            ).all()
+            expired_quotation_alerts = [q for q in candidates if q.is_expired_pending]
+            expired_quotation_alerts.sort(key=lambda q: q.days_expired, reverse=True)
+            return dict(expired_quotation_alerts=expired_quotation_alerts)
+        except Exception:
+            return dict(expired_quotation_alerts=[])
 
     @app.context_processor
     def inject_recovery_escalation_alerts():

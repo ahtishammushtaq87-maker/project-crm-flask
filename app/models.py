@@ -1240,6 +1240,23 @@ class Quotation(db.Model):
         return self.STATUS_LABELS.get(self.status, 'DRAFT')
 
     @property
+    def is_expired_pending(self):
+        """"Valid Until" has passed while this quotation still awaits a
+        decision — not a draft, not yet accepted, and not rejected. Powers
+        the top-of-page notification banner on the Quotation module pages."""
+        if self.status in ('draft', 'accepted', 'rejected'):
+            return False
+        if not self.due_date:
+            return False
+        return datetime.utcnow().date() > self.due_date.date()
+
+    @property
+    def days_expired(self):
+        if not self.is_expired_pending:
+            return 0
+        return (datetime.utcnow().date() - self.due_date.date()).days
+
+    @property
     def effective_discount_amount(self):
         return self.discount or 0
 
@@ -1346,6 +1363,7 @@ class SaleReturnItem(db.Model):
     total = db.Column(db.Float, nullable=False)
 
     product = db.relationship('Product', backref='return_items', lazy=True)
+    warehouse = db.relationship('Warehouse', foreign_keys=[warehouse_id], lazy=True)
 
     @property
     def net_total(self):
@@ -1882,7 +1900,7 @@ class InvoiceSettings(db.Model):
     next_number = db.Column(db.Integer, default=1)
 
     # Quotation numbering (separate counter from invoices)
-    quotation_prefix = db.Column(db.String(10), default='QTN-')
+    quotation_prefix = db.Column(db.String(10), default='QO-')
     quotation_suffix = db.Column(db.String(10), default='')
     quotation_next_number = db.Column(db.Integer, default=1)
 
@@ -1986,6 +2004,21 @@ class PurchaseReturnSettings(db.Model):
 
     def __repr__(self):
         return f'<PurchaseReturnSettings {self.id}>'
+
+
+class SaleReturnReason(db.Model):
+    """Admin-managed list of selectable reasons for the Sales Return creation
+    form's "Reason for Return" dropdown — added/removed via the "Manage
+    Reasons" popup on that page (admin-only)."""
+    __tablename__ = 'sale_return_reasons'
+
+    id = db.Column(db.Integer, primary_key=True)
+    reason = db.Column(db.String(200), nullable=False, unique=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<SaleReturnReason {self.reason}>'
 
 
 class SaleReturn(db.Model):

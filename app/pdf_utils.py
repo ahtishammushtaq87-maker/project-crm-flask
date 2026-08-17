@@ -185,7 +185,8 @@ class ProfessionalPDFGenerator:
         return None
 
     # ── HEADER ─────────────────────────────────────────────────────────────
-    def _build_header(self, title, doc_number, date, due_date, currency=None, status=None, meta_labels=None):
+    def _build_header(self, title, doc_number, date, due_date, currency=None, status=None, meta_labels=None,
+                       show_company_address=True):
         left = []
         logo = self._get_logo()
         if logo:
@@ -196,7 +197,10 @@ class ProfessionalPDFGenerator:
         left.append(Paragraph(cname, self.styles['CompanyName']))
 
         if self.company:
-            for attr, label in [('email','<b>Email:</b> {}'), ('phone','<b>Phone:</b> {}'), ('whatsapp','<b>WhatsApp:</b> {}'), ('address','{}'), ('address2','{}')]:
+            info_fields = [('email','<b>Email:</b> {}'), ('phone','<b>Phone:</b> {}'), ('whatsapp','<b>WhatsApp:</b> {}')]
+            if show_company_address:
+                info_fields += [('address','{}'), ('address2','{}')]
+            for attr, label in info_fields:
                 val = getattr(self.company, attr, None)
                 if val:
                     left.append(Paragraph(label.format(val), self.styles['CompanyInfo']))
@@ -710,18 +714,21 @@ class ProfessionalPDFGenerator:
         return tbl
 
     def _build_acceptance_table(self):
-        """CUSTOMER ACCEPTANCE sign-off grid: 2 rows x (label | blank line) x2."""
-        blank = Paragraph('_' * 28, self.styles['BoxValue'])
+        """CUSTOMER ACCEPTANCE sign-off grid: 2 rows x (label | blank box) x2 —
+        no underscore fill line, just the empty grid-bordered cell."""
+        blank = Paragraph('', self.styles['BoxValue'])
         rows = [
             [Paragraph("<b>Authorized Person</b>", self.styles['BoxValue']), blank,
              Paragraph("<b>Approval Method</b>", self.styles['BoxValue']),
              Paragraph("SIGN / WHATSAPP / EMAIL / PO", self.styles['BoxValue'])],
-            [Paragraph("<b>Signature / Stamp</b>", self.styles['BoxValue']), Paragraph('_' * 28, self.styles['BoxValue']),
-             Paragraph("<b>Acceptance Date</b>", self.styles['BoxValue']), Paragraph('_' * 28, self.styles['BoxValue'])],
+            [Paragraph("<b>Signature / Stamp</b>", self.styles['BoxValue']), Paragraph('', self.styles['BoxValue']),
+             Paragraph("<b>Acceptance Date</b>", self.styles['BoxValue']), Paragraph('', self.styles['BoxValue'])],
         ]
         col_w = [1.3*inch, 2.45*inch, 1.3*inch, 2.45*inch]
         data = [[Paragraph("CUSTOMER ACCEPTANCE", self.styles['NotesTitle']), '', '', '']] + rows
-        tbl = Table(data, colWidths=col_w)
+        # Fixed row heights (rather than an underscore line) give each value
+        # cell visible blank space to sign/write in, bounded by the grid box.
+        tbl = Table(data, colWidths=col_w, rowHeights=[None, 34, 34])
         tbl.setStyle(TableStyle([
             ('SPAN',          (0,0), (-1,0)),
             ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
@@ -1195,7 +1202,8 @@ class ProfessionalPDFGenerator:
                            meta_labels=None, items_header='INVOICE ITEMS',
                            show_unit_col=False, discount_header='Unit Discount',
                            commercial_terms=None, important_notice=None,
-                           show_acceptance=False, footer_message_override=None):
+                           show_acceptance=False, footer_message_override=None,
+                           show_company_address=True):
         self.is_purchase = is_purchase
         if footer_message_override:
             self.footer_message = footer_message_override
@@ -1213,7 +1221,8 @@ class ProfessionalPDFGenerator:
         else:
             self._bill_to_label = None
 
-        elements.append(self._build_header(title, doc_number, date, due_date, currency, status, meta_labels=meta_labels))
+        elements.append(self._build_header(title, doc_number, date, due_date, currency, status, meta_labels=meta_labels,
+                                            show_company_address=show_company_address))
         elements.append(Spacer(1, 8))
         elements.append(HRFlowable(width="100%", thickness=0.6, color=BORDER_GREY, spaceAfter=8))
         show_locations = is_invoice or is_purchase
@@ -1455,13 +1464,30 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
                 discount_label = "<b>Discount</b>"
                 discount_display = "Reversal"
 
+            # obj.subtotal/obj.tax are already net-of-returns (see
+            # Sale.calculate_totals()) — reverse that here so the PDF shows the
+            # gross, pre-return subtotal/tax with "Returns" as its own visible
+            # deduction line. That way Subtotal - Discount + Shipping + Tax -
+            # Returns reconciles exactly to Total Due instead of double-counting
+            # the return (which is what net Subtotal + a separate Returns line
+            # would do).
+            returns_subtotal = sum(ret.subtotal for ret in obj.returns) if hasattr(obj, 'returns') else 0
+            returns_tax = sum(ret.tax for ret in obj.returns) if hasattr(obj, 'returns') else 0
+            returns_total = sum(ret.total for ret in obj.returns) if hasattr(obj, 'returns') else 0
+            gross_subtotal = obj.subtotal + returns_subtotal
+            gross_tax = obj.tax + returns_tax
+
             totals = [
-                ("Subtotal",           f"{currency}{obj.subtotal:,.2f}"),
+                ("Subtotal",           f"{currency}{gross_subtotal:,.2f}"),
                 (discount_label,       discount_display),
                 ("Shipping / Freight", f"{currency}{sc:,.2f}"),
-                ("Tax",                f"{currency}{obj.tax:,.2f}"),
-                ("Total Due",          f"{currency}{obj.total:,.2f}"),
+                ("Tax",                f"{currency}{gross_tax:,.2f}"),
             ]
+
+            if returns_total > 0.009:
+                totals.append(("Returns", f"-{currency}{returns_total:,.2f}"))
+
+            totals.append(("Total Due", f"{currency}{obj.total:,.2f}"))
 
             # obj.paid_amount is a mix of actual cash payments AND any customer
             # advance credit applied to this invoice. Break the advance portion
@@ -1524,8 +1550,20 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             else:
                 quote_status = 'CONFIRMED'
 
+            # Validity reflects the quotation's actual "Valid Until" date rather
+            # than a fixed figure — falls back to the old static wording only
+            # when no due_date is set (e.g. an older quotation created before
+            # "Valid Until" was required).
+            if obj.due_date and obj.date and obj.due_date > obj.date:
+                validity_days = (obj.due_date - obj.date).days
+                validity_display = f"{validity_days} Calendar Day{'s' if validity_days != 1 else ''} (until {obj.due_date.strftime('%d-%b-%Y')})"
+            elif obj.due_date:
+                validity_display = f"Until {obj.due_date.strftime('%d-%b-%Y')}"
+            else:
+                validity_display = '7 Calendar Days'
+
             commercial_terms = [
-                ('Validity',     '7 Calendar Days',            'Payment Terms', '100% Advance / Credit Terms'),
+                ('Validity',     validity_display,            'Payment Terms', '100% Advance / Credit Terms'),
                 ('Delivery',     '3-5 Working Days',           'Freight',       'Included / Excluded'),
                 ('Availability', 'Subject to Stock Confirmation', 'Warranty',   f"As per {company.name if company else 'Company'} Warranty Policy"),
             ]
@@ -1561,6 +1599,7 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             is_invoice=True,
             meta_labels=quote_meta_labels,
             items_header=quote_items_header,
+            show_company_address=False,
             **quote_extra,
         )
 

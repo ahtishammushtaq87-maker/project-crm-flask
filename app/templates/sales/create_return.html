@@ -129,8 +129,20 @@
                             <input type="date" name="date" class="form-control" value="{{ now.strftime('%Y-%m-%d') }}" required>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Reason for Return</label>
-                            <textarea name="reason" class="form-control" rows="3" placeholder="Enter reason for return..."></textarea>
+                            <label class="form-label d-flex justify-content-between align-items-center">
+                                <span>Reason for Return <span class="text-danger">*</span></span>
+                                {% if current_user.role == 'admin' %}
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" data-bs-toggle="modal" data-bs-target="#manageReturnReasonsModal">
+                                    <i class="fas fa-cog me-1"></i>Manage Reasons
+                                </button>
+                                {% endif %}
+                            </label>
+                            <select name="reason" id="reasonSelect" class="form-control searchable-select" required>
+                                <option value=""></option>
+                                {% for r in reasons %}
+                                <option value="{{ r.reason }}">{{ r.reason }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -251,6 +263,41 @@
             <a href="{{ url_for('returns.return_list') }}" class="btn btn-secondary">Cancel</a>
         </div>
     </form>
+
+    {% if current_user.role == 'admin' %}
+    <!-- Manage Return Reasons Modal -->
+    <div class="modal fade" id="manageReturnReasonsModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-list me-2"></i>Manage Return Reasons</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="input-group mb-3">
+                        <input type="text" id="newReasonInput" class="form-control" placeholder="e.g. Wrong item shipped">
+                        <button type="button" class="btn btn-primary" id="addReasonBtn"><i class="fas fa-plus me-1"></i>Add</button>
+                    </div>
+                    <ul class="list-group" id="reasonListGroup">
+                        {% for r in reasons %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ r.id }}">
+                            {{ r.reason }}
+                            <button type="button" class="btn btn-sm btn-outline-danger delete-reason-btn" data-id="{{ r.id }}" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </li>
+                        {% else %}
+                        <li class="list-group-item text-muted" id="noReasonsMsg">No reasons added yet.</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
     {% endif %}
 </div>
 {% endblock %}
@@ -391,8 +438,54 @@
 
         const taxInput = document.querySelector('input[name="tax_rate"]');
         if (taxInput) taxInput.addEventListener('input', calculateTotals);
-        
+
         calculateTotals();
     });
+
+    // ── Manage Return Reasons (admin-only) ──────────────────────────────────
+    (function () {
+        const addBtn = document.getElementById('addReasonBtn');
+        if (!addBtn) return; // non-admin: modal/button not rendered
+
+        addBtn.addEventListener('click', function () {
+            const input = document.getElementById('newReasonInput');
+            const text = input.value.trim();
+            if (!text) return;
+            addBtn.disabled = true;
+            fetch("{{ url_for('returns.add_return_reason') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: text })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    addBtn.disabled = false;
+                    if (data.success) {
+                        input.value = '';
+                        location.reload();
+                    } else {
+                        alert(data.message || 'Failed to add reason.');
+                    }
+                })
+                .catch(() => { addBtn.disabled = false; alert('Failed to add reason.'); });
+        });
+
+        document.querySelectorAll('.delete-reason-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                if (!confirm('Delete this reason? It will no longer appear in the dropdown.')) return;
+                const id = btn.getAttribute('data-id');
+                fetch(`/returns/reasons/delete/${id}`, { method: 'POST' })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            location.reload();
+                        } else {
+                            alert(data.message || 'Failed to delete reason.');
+                        }
+                    })
+                    .catch(() => alert('Failed to delete reason.'));
+            });
+        });
+    })();
 </script>
 {% endblock %}
