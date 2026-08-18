@@ -3227,12 +3227,24 @@ def _packing_slip_settings():
     two gunicorn workers racing to create the first row, and against a stale/
     expired session object left over from an earlier failed query in the same
     request — rolls back and re-fetches rather than letting a SQLAlchemyError
-    (e.g. ObjectDeletedError) bubble up and take down the whole page."""
-    try:
+    (e.g. ObjectDeletedError) bubble up and take down the whole page.
+
+    Also eagerly touches every column right after fetching, inside this
+    function's own try/except — SQLAlchemy only actually re-queries an
+    expired object's row on first *attribute access*, not on the initial
+    .first() call, so without this the same error could still surface later
+    in the caller, past where it'd be caught here."""
+    def _load():
         settings = PackingSlipSettings.query.first()
+        if settings:
+            _ = (settings.prefix, settings.suffix, settings.next_number, settings.number_padding)
+        return settings
+
+    try:
+        settings = _load()
     except SQLAlchemyError:
         db.session.rollback()
-        settings = PackingSlipSettings.query.first()
+        settings = _load()
 
     if settings:
         return settings
@@ -3244,7 +3256,7 @@ def _packing_slip_settings():
     except SQLAlchemyError:
         # Another worker created the row first — use whatever is there now.
         db.session.rollback()
-        settings = PackingSlipSettings.query.first()
+        settings = _load()
         if not settings:
             raise
     return settings
@@ -3294,54 +3306,73 @@ def packing_slip_pdf(id):
         flash('Please use the "Packing Slip" button on the invoice to fill in the shipment details first.', 'info')
         return redirect(url_for('sales.invoice_detail', id=id))
 
+    edit_slip_id = _parse_form_int(request.form.get('slip_id'))
+    is_partial = request.form.get('partial_shipment') == 'yes'
+
+    if edit_slip_id and current_user.role != 'admin':
+        flash('Only an admin can edit a packing slip.', 'error')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
+    # The whole build-and-save step is retried once on a SQLAlchemyError
+    # (e.g. ObjectDeletedError from a stale session, or a transient SQLite
+    # lock under concurrent gunicorn workers) — a fresh attempt re-fetches
+    # everything from scratch rather than reusing whatever went stale.
+    last_error = None
+    slip = None
+    for attempt in range(2):
+        try:
+            if edit_slip_id:
+                # Editing an existing slip: the slip_number and settings
+                # counter are left untouched — this only updates the details.
+                slip = PackingSlip.query.get_or_404(edit_slip_id)
+                if slip.sale_id != sale.id:
+                    flash('That packing slip does not belong to this invoice.', 'error')
+                    return redirect(url_for('sales.invoice_detail', id=id))
+            else:
+                settings = _packing_slip_settings()
+                slip = PackingSlip(slip_number=_format_packing_slip_number(settings, settings.next_number),
+                                    sale_id=sale.id, created_by=current_user.id)
+                db.session.add(slip)
+                settings.next_number = (settings.next_number or 1) + 1
+
+            slip.packing_date = _parse_form_date(request.form.get('packing_date')) or date.today()
+            slip.po_number = (request.form.get('po_number') or '').strip() or None
+            slip.is_partial = is_partial
+            slip.partial_shipment_no = _parse_form_int(request.form.get('partial_shipment_no')) if is_partial else None
+            slip.partial_shipment_total = _parse_form_int(request.form.get('partial_shipment_total')) if is_partial else None
+            slip.package_count = _parse_form_int(request.form.get('package_count'))
+            slip.transport_company = (request.form.get('transport_company') or '').strip() or None
+            slip.bilty_no = (request.form.get('bilty_no') or '').strip() or None
+            slip.tracking_no = (request.form.get('tracking_no') or '').strip() or None
+            slip.vehicle_no = (request.form.get('vehicle_no') or '').strip() or None
+            slip.gate_pass_no = (request.form.get('gate_pass_no') or '').strip() or None
+            slip.dispatch_date = _parse_form_date(request.form.get('dispatch_date'))
+            slip.total_ordered_qty = _parse_form_float(request.form.get('total_ordered_qty'))
+            slip.total_packed_qty = _parse_form_float(request.form.get('total_packed_qty'))
+            slip.balance_qty = _parse_form_float(request.form.get('balance_qty'))
+            slip.gross_weight = _parse_form_float(request.form.get('gross_weight'))
+            slip.net_weight = _parse_form_float(request.form.get('net_weight'))
+            db.session.commit()
+            last_error = None
+            break
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            last_error = e
+            slip = None
+            continue
+
+    if last_error is not None:
+        print(f"Packing slip save error (after retry): {str(last_error)}")
+        flash('Error generating Packing Slip PDF — please try again.', 'error')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
     try:
-        edit_slip_id = _parse_form_int(request.form.get('slip_id'))
-        is_partial = request.form.get('partial_shipment') == 'yes'
-
-        if edit_slip_id:
-            # Editing an existing slip: only an admin may do this, and it must
-            # belong to this invoice. The slip_number and settings counter are
-            # left untouched — this only updates the details, not the numbering.
-            if current_user.role != 'admin':
-                flash('Only an admin can edit a packing slip.', 'error')
-                return redirect(url_for('sales.invoice_detail', id=id))
-            slip = PackingSlip.query.get_or_404(edit_slip_id)
-            if slip.sale_id != sale.id:
-                flash('That packing slip does not belong to this invoice.', 'error')
-                return redirect(url_for('sales.invoice_detail', id=id))
-        else:
-            settings = _packing_slip_settings()
-            slip = PackingSlip(slip_number=_format_packing_slip_number(settings, settings.next_number),
-                                sale_id=sale.id, created_by=current_user.id)
-            db.session.add(slip)
-            settings.next_number = (settings.next_number or 1) + 1
-
-        slip.packing_date = _parse_form_date(request.form.get('packing_date')) or date.today()
-        slip.po_number = (request.form.get('po_number') or '').strip() or None
-        slip.is_partial = is_partial
-        slip.partial_shipment_no = _parse_form_int(request.form.get('partial_shipment_no')) if is_partial else None
-        slip.partial_shipment_total = _parse_form_int(request.form.get('partial_shipment_total')) if is_partial else None
-        slip.package_count = _parse_form_int(request.form.get('package_count'))
-        slip.transport_company = (request.form.get('transport_company') or '').strip() or None
-        slip.bilty_no = (request.form.get('bilty_no') or '').strip() or None
-        slip.tracking_no = (request.form.get('tracking_no') or '').strip() or None
-        slip.vehicle_no = (request.form.get('vehicle_no') or '').strip() or None
-        slip.gate_pass_no = (request.form.get('gate_pass_no') or '').strip() or None
-        slip.dispatch_date = _parse_form_date(request.form.get('dispatch_date'))
-        slip.total_ordered_qty = _parse_form_float(request.form.get('total_ordered_qty'))
-        slip.total_packed_qty = _parse_form_float(request.form.get('total_packed_qty'))
-        slip.balance_qty = _parse_form_float(request.form.get('balance_qty'))
-        slip.gross_weight = _parse_form_float(request.form.get('gross_weight'))
-        slip.net_weight = _parse_form_float(request.form.get('net_weight'))
-        db.session.commit()
-
         buffer = generate_packing_slip_pdf(sale, company, slip)
         response = make_response(buffer.getvalue())
         response.headers['Content-Type'] = 'application/pdf'
         response.headers['Content-Disposition'] = f'attachment; filename="{slip.slip_number}_{sale.invoice_number or "packing-slip"}.pdf"'
         return response
     except Exception as e:
-        db.session.rollback()
         print(f"Packing slip PDF generation error: {str(e)}")
         flash(f'Error generating Packing Slip PDF: {str(e)}', 'error')
         return redirect(url_for('sales.invoice_detail', id=id))
