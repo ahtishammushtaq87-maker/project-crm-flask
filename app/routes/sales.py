@@ -3356,7 +3356,16 @@ def packing_slip_pdf(id):
             last_error = None
             break
         except SQLAlchemyError as e:
+            # A plain rollback() reuses the same underlying DB connection —
+            # if THAT connection itself is broken (e.g. inherited from a
+            # gunicorn --preload fork, sharing file-descriptor state across
+            # workers), every retry on it fails identically. Tear the whole
+            # session down and dispose the connection pool so the next
+            # attempt opens a genuinely fresh connection instead of reusing
+            # the poisoned one.
             db.session.rollback()
+            db.session.remove()
+            db.engine.dispose()
             last_error = e
             slip = None
             continue
