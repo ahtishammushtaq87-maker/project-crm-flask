@@ -168,6 +168,10 @@ def create_user():
             can_add_quotations=form.can_add_quotations.data,
             can_edit_quotations=form.can_edit_quotations.data,
             can_delete_quotations=form.can_delete_quotations.data,
+            can_view_packing=form.can_view_packing.data,
+            can_add_packing=form.can_add_packing.data,
+            can_edit_packing=form.can_edit_packing.data,
+            can_delete_packing=form.can_delete_packing.data,
         )
         # Set password - form is now required to have a password
         if form.password.data and form.password.data.strip():
@@ -316,6 +320,10 @@ def edit_user(id):
         user.can_add_quotations = form.can_add_quotations.data
         user.can_edit_quotations = form.can_edit_quotations.data
         user.can_delete_quotations = form.can_delete_quotations.data
+        user.can_view_packing = form.can_view_packing.data
+        user.can_add_packing = form.can_add_packing.data
+        user.can_edit_packing = form.can_edit_packing.data
+        user.can_delete_packing = form.can_delete_packing.data
         if form.password.data and form.password.data.strip():
             user.set_password(form.password.data)
         db.session.commit()
@@ -446,6 +454,10 @@ def edit_user(id):
         form.can_add_quotations.data = getattr(user, 'can_add_quotations', False)
         form.can_edit_quotations.data = getattr(user, 'can_edit_quotations', False)
         form.can_delete_quotations.data = getattr(user, 'can_delete_quotations', False)
+        form.can_view_packing.data = getattr(user, 'can_view_packing', True)
+        form.can_add_packing.data = getattr(user, 'can_add_packing', False)
+        form.can_edit_packing.data = getattr(user, 'can_edit_packing', False)
+        form.can_delete_packing.data = getattr(user, 'can_delete_packing', False)
     return render_template('users/edit.html', form=form, user=user)
 
 # Task Management Routes

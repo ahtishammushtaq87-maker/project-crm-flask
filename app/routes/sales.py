@@ -643,7 +643,11 @@ def invoice_detail(id):
         db.session.rollback()
         next_packing_slip_number = 'PKG-00001'
 
-    packing_total_ordered_qty = sum(float(item.quantity or 0) for item in sale.items)
+    # "Total Ordered Qty" on the Create form is the REMAINING packable qty —
+    # the invoice total minus whatever earlier slips for this invoice already
+    # packed — not the invoice's flat total. A second slip on a 22-qty
+    # invoice where the first slip packed 10 previews 12 here, not 22.
+    packing_total_ordered_qty = _remaining_packable_qty(sale)
     packing_net_weight = 0.0
     packing_has_weight = False
     for item in sale.items:
@@ -669,7 +673,8 @@ def invoice_detail(id):
                            next_packing_slip_number=next_packing_slip_number,
                            packing_total_ordered_qty=packing_total_ordered_qty,
                            packing_net_weight=packing_net_weight if packing_has_weight else None,
-                           packing_slip_history=packing_slip_history)
+                           packing_slip_history=packing_slip_history,
+                           remaining_packable_qty=_remaining_packable_qty)
 
 @bp.route('/invoice/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -3221,6 +3226,25 @@ def invoice_pdf(id):
         flash(f'Error generating PDF: {str(e)}', 'error')
         return redirect(url_for('sales.invoice_detail', id=id))
 
+def _remaining_packable_qty(sale, exclude_slip_id=None):
+    """How much of the invoice's ordered qty is still available to pack into
+    a slip: the invoice's total line-item quantity minus whatever's already
+    recorded as packed on every OTHER slip already issued for this sale.
+
+    Pass a slip's own id as `exclude_slip_id` (when editing that slip) so its
+    own prior contribution isn't counted against itself. Deleting a slip
+    needs no special "reverse" handling for this — it simply stops appearing
+    in `sale.packing_slips` the next time this runs, so its qty is
+    automatically freed back up."""
+    total_qty = sum(float(item.quantity or 0) for item in sale.items)
+    already_packed = sum(
+        float(s.total_packed_qty or 0)
+        for s in sale.packing_slips
+        if s.id != exclude_slip_id
+    )
+    return max(total_qty - already_packed, 0.0)
+
+
 def _packing_slip_settings():
     """Get (or lazily create) the singleton PackingSlipSettings row that
     drives the auto-generated PKG-00001-style slip numbers. Defensive against
@@ -3313,6 +3337,21 @@ def packing_slip_pdf(id):
         flash('Only an admin can edit a packing slip.', 'error')
         return redirect(url_for('sales.invoice_detail', id=id))
 
+    # Hard rule, enforced server-side as well as by the form's own JS: a slip
+    # cannot pack more than is actually still left on the invoice — the
+    # invoice's total qty minus whatever every OTHER slip for it already
+    # packed, not just whatever the submitted "Total Ordered Qty" says (that
+    # field is a display/prefill, not the source of truth). Checked before
+    # anything touches the DB, so a rejected submission never burns a slip
+    # number, and deleting a slip needs no special handling to "give back"
+    # its qty — it just stops counting against this the next time round.
+    requested_packed_qty = _parse_form_float(request.form.get('total_packed_qty'))
+    remaining_qty = _remaining_packable_qty(sale, exclude_slip_id=edit_slip_id)
+    if requested_packed_qty is not None and requested_packed_qty > remaining_qty:
+        flash(f'Total Packed Qty ({requested_packed_qty:g}) cannot exceed the remaining packable '
+              f'quantity ({remaining_qty:g}) for this invoice.', 'error')
+        return redirect(url_for('sales.invoice_detail', id=id))
+
     # The whole build-and-save step is retried once on a SQLAlchemyError
     # (e.g. ObjectDeletedError from a stale session, or a transient SQLite
     # lock under concurrent gunicorn workers) — a fresh attempt re-fetches
@@ -3379,7 +3418,7 @@ def packing_slip_pdf(id):
         buffer = generate_packing_slip_pdf(sale, company, slip)
         response = make_response(buffer.getvalue())
         response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = f'attachment; filename="{slip.slip_number}_{sale.invoice_number or "packing-slip"}.pdf"'
+        response.headers['Content-Disposition'] = f'inline; filename="{slip.slip_number}_{sale.invoice_number or "packing-slip"}.pdf"'
         return response
     except Exception as e:
         print(f"Packing slip PDF generation error: {str(e)}")
@@ -3399,7 +3438,7 @@ def download_packing_slip(slip_id):
         buffer = generate_packing_slip_pdf(sale, company, slip)
         response = make_response(buffer.getvalue())
         response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = f'attachment; filename="{slip.slip_number}_{sale.invoice_number or "packing-slip"}.pdf"'
+        response.headers['Content-Disposition'] = f'inline; filename="{slip.slip_number}_{sale.invoice_number or "packing-slip"}.pdf"'
         return response
     except Exception as e:
         print(f"Packing slip re-download error: {str(e)}")

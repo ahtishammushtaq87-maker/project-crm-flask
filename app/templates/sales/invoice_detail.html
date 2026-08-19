@@ -228,17 +228,17 @@
                 </div>
                 <div class="modal-body">
                     <p class="text-muted small mb-3">
-                        Fill in the shipment details below. The PDF will download automatically once you submit —
+                        Fill in the shipment details below. The PDF opens in a new tab once you submit — download it from there —
                         item description/SKU/qty ordered are auto-filled from the invoice; Qty Packed, Balance and
                         sign-offs stay blank on the sheet for the warehouse to fill in by hand while physically packing.
                     </p>
 
-                    <div class="alert alert-info small py-2 d-none" id="packingSlipEditBanner">
+                    <div class="alert alert-info static-alert small py-2 d-none" id="packingSlipEditBanner">
                         <i class="fas fa-edit me-1"></i>Editing packing slip <strong id="editSlipNumberLabel"></strong>.
                         <button type="button" class="btn btn-sm btn-outline-secondary float-end py-0" onclick="resetPackingSlipForm()">Cancel Edit</button>
                     </div>
 
-                    <form action="{{ url_for('sales.packing_slip_pdf', id=sale.id) }}" method="POST" id="packingSlipForm">
+                    <form action="{{ url_for('sales.packing_slip_pdf', id=sale.id) }}" method="POST" id="packingSlipForm" target="_blank">
                         <input type="hidden" name="slip_id" id="packingSlipIdInput" value="">
 
                         <h6 class="text-uppercase text-muted small fw-bold mb-2"><i class="fas fa-hashtag me-1"></i>Slip Details</h6>
@@ -312,12 +312,14 @@
                         <div class="row g-3">
                             <div class="col-md-4">
                                 <label class="form-label fw-semibold">Total Ordered Qty</label>
-                                <input type="number" step="0.01" name="total_ordered_qty" id="totalOrderedQtyInput" class="form-control"
-                                    value="{{ '%.2f'|format(packing_total_ordered_qty) if packing_total_ordered_qty is not none else '' }}">
+                                <input type="number" step="0.01" name="total_ordered_qty" id="totalOrderedQtyInput" class="form-control bg-light"
+                                    value="{{ '%.2f'|format(packing_total_ordered_qty) if packing_total_ordered_qty is not none else '' }}" readonly>
+                                <div class="form-text">Remaining qty still to be packed on this invoice</div>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-semibold">Total Packed Qty</label>
-                                <input type="number" step="0.01" name="total_packed_qty" id="totalPackedQtyInput" class="form-control">
+                                <input type="number" step="0.01" min="0" name="total_packed_qty" id="totalPackedQtyInput" class="form-control">
+                                <div class="form-text">Cannot exceed Total Ordered Qty</div>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label fw-semibold">Balance Qty</label>
@@ -371,7 +373,7 @@
                                     <td>{{ slip.created_by_user.username if slip.created_by_user else '-' }}</td>
                                     <td>{{ slip.created_at.strftime('%d-%b-%Y %H:%M') if slip.created_at else '-' }}</td>
                                     <td class="text-end">
-                                        <a href="{{ url_for('sales.download_packing_slip', slip_id=slip.id) }}" class="btn btn-sm btn-outline-primary" title="Download">
+                                        <a href="{{ url_for('sales.download_packing_slip', slip_id=slip.id) }}" class="btn btn-sm btn-outline-primary" title="Download" target="_blank" rel="noopener">
                                             <i class="fas fa-download"></i>
                                         </a>
                                         {% if current_user.role == 'admin' %}
@@ -390,7 +392,7 @@
                                             data-vehicle-no="{{ slip.vehicle_no or '' }}"
                                             data-gate-pass-no="{{ slip.gate_pass_no or '' }}"
                                             data-dispatch-date="{{ slip.dispatch_date.isoformat() if slip.dispatch_date else '' }}"
-                                            data-total-ordered-qty="{{ slip.total_ordered_qty if slip.total_ordered_qty is not none else '' }}"
+                                            data-total-ordered-qty="{{ '%.2f'|format(remaining_packable_qty(sale, slip.id)) }}"
                                             data-total-packed-qty="{{ slip.total_packed_qty if slip.total_packed_qty is not none else '' }}"
                                             data-balance-qty="{{ slip.balance_qty if slip.balance_qty is not none else '' }}"
                                             data-gross-weight="{{ slip.gross_weight if slip.gross_weight is not none else '' }}"
@@ -447,10 +449,25 @@
             }
 
             // Auto-suggest Balance Qty = Ordered - Packed; staff can still edit it.
+            // Packed Qty is hard-capped at Ordered Qty — it can never go over,
+            // whichever field changed last.
             var ordered = document.getElementById('totalOrderedQtyInput');
             var packed = document.getElementById('totalPackedQtyInput');
             var balance = document.getElementById('balanceQtyInput');
+            function clampPacked() {
+                var o = parseFloat(ordered.value);
+                if (isNaN(o)) {
+                    packed.removeAttribute('max');
+                    return;
+                }
+                packed.max = o;
+                var p = parseFloat(packed.value);
+                if (!isNaN(p) && p > o) {
+                    packed.value = o.toFixed(2);
+                }
+            }
             function recalcBalance() {
+                clampPacked();
                 var o = parseFloat(ordered.value);
                 var p = parseFloat(packed.value);
                 if (!isNaN(o) && !isNaN(p)) {
@@ -460,6 +477,7 @@
             if (ordered && packed && balance) {
                 packed.addEventListener('input', recalcBalance);
                 ordered.addEventListener('input', recalcBalance);
+                clampPacked();
             }
 
             // Close the modal right away; the browser downloads the PDF via the
@@ -499,6 +517,7 @@
                 document.getElementById('netWeightInput').value = DEFAULTS.netWeight;
                 document.getElementById('packingSlipEditBanner').classList.add('d-none');
                 document.getElementById('packingSlipSubmitBtn').innerHTML = '<i class="fas fa-file-download me-1"></i>Generate &amp; Download';
+                clampPacked();
             };
 
             window.populatePackingSlipForm = function (btn) {
@@ -528,6 +547,7 @@
                 document.getElementById('editSlipNumberLabel').textContent = d.slipNumber;
                 document.getElementById('packingSlipEditBanner').classList.remove('d-none');
                 document.getElementById('packingSlipSubmitBtn').innerHTML = '<i class="fas fa-file-download me-1"></i>Update &amp; Download';
+                clampPacked();
             };
 
             document.querySelectorAll('#packingSlipModal .edit-packing-slip-btn').forEach(function (btn) {

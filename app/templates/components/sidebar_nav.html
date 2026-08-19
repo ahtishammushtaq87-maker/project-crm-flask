@@ -12,7 +12,7 @@
 {% set u = current_user %}
 {% set adm = u.is_admin %}
 
-{% set show_sales = adm or u.can_view_sales or u.can_view_returns or u.can_view_recovery or u.can_view_customers or u.can_view_customer_groups or u.can_view_salesmen or u.can_view_quotations %}
+{% set show_sales = adm or u.can_view_sales or u.can_view_returns or u.can_view_recovery or u.can_view_customers or u.can_view_customer_groups or u.can_view_salesmen or u.can_view_quotations or u.can_view_packing %}
 {% set show_purchase = adm or u.can_view_purchases or u.can_view_vendors %}
 {% set show_inventory = adm or u.can_view_inventory or u.can_view_warehouse or u.can_view_categories %}
 {% set show_mfg = adm or u.can_view_manufacturing or u.can_view_production %}
@@ -39,6 +39,9 @@
     <div class="collapse" id="{{ nav_ns }}NavSales">
         {% if adm or u.can_view_sales %}
         <a class="nav-link" href="{{ url_for('sales.invoices') }}">Sales Invoices</a>
+        {% endif %}
+        {% if adm or u.can_view_packing %}
+        <a class="nav-link" href="{{ url_for('packing.index') }}">Packing Slips</a>
         {% endif %}
         {% if adm or u.can_view_quotations %}
         <a class="nav-link" href="{{ url_for('quotation.list_quotations') }}">Quotations</a>

@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Issued Packing Slips{% endblock %}
+
+{#
+  Every packing slip ever issued, across all invoices — the history view.
+  Same price-free rule as the worklist page.
+#}
+
+{% block content %}
+<div class="container-fluid list-page">
+
+    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
+        <div>
+            <h2 class="h3 mb-0 text-gray-800"><i class="fas fa-history me-2 text-dark"></i>Issued Packing Slips</h2>
+            <p class="text-muted small mb-0 mt-1">Every packing slip generated so far, newest first.</p>
+        </div>
+        <a href="{{ url_for('packing.index') }}" class="btn btn-outline-dark">
+            <i class="fas fa-arrow-left me-1"></i> Back to Worklist
+        </a>
+    </div>
+
+    <!-- Filter Bar -->
+    {% set filter_action = url_for('packing.slips') %}
+    {% set show_slip_filters = true %}
+    {% include 'packing/_filter_bar.html' %}
+
+    <div class="card shadow mb-4">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 datatable-export" data-export-title="Issued Packing Slips">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Slip No.</th>
+                            <th>Packing Date</th>
+                            <th>Invoice #</th>
+                            <th>Customer</th>
+                            <th>Warehouse</th>
+                            <th>PO No.</th>
+                            <th>Partial</th>
+                            <th class="text-center">Packages</th>
+                            <th>Transport</th>
+                            <th>Created By</th>
+                            <th>Created</th>
+                            <th class="text-end no-export">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for slip in slips %}
+                        <tr>
+                            <td class="fw-semibold">{{ slip.slip_number }}</td>
+                            <td>{{ slip.packing_date.strftime('%d-%b-%Y') if slip.packing_date else '-' }}</td>
+                            <td>
+                                {% if slip.sale %}
+                                <a href="{{ url_for('packing.index', invoice_number=slip.sale.invoice_number) }}">
+                                    {{ slip.sale.invoice_number }}
+                                </a>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ slip.sale.customer.name if slip.sale and slip.sale.customer else 'Walk-in Customer' }}</td>
+                            <td>{{ sale_warehouses(slip.sale) if slip.sale else '-' }}</td>
+                            <td>{{ slip.po_number or '-' }}</td>
+                            <td>
+                                {% if slip.is_partial %}
+                                <span class="badge bg-warning text-dark">
+                                    {% if slip.partial_shipment_no and slip.partial_shipment_total %}
+                                    {{ slip.partial_shipment_no }} of {{ slip.partial_shipment_total }}
+                                    {% else %}Yes{% endif %}
+                                </span>
+                                {% else %}
+                                <span class="text-muted">No</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">{{ slip.package_count or '-' }}</td>
+                            <td>{{ slip.transport_company or '-' }}</td>
+                            <td>{{ slip.created_by_user.username if slip.created_by_user else '-' }}</td>
+                            <td>{{ slip.created_at.strftime('%d-%b-%Y %H:%M') if slip.created_at else '-' }}</td>
+                            <td class="text-end no-export">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{{ url_for('packing.download_slip', slip_id=slip.id) }}"
+                                        class="btn btn-outline-primary" title="Download" target="_blank" rel="noopener">
+                                        <i class="fas fa-download"></i>
+                                    </a>
+                                    {% if slip.sale and (current_user.is_admin or current_user.can_edit_packing) %}
+                                    <button type="button" class="btn btn-outline-secondary edit-packing-slip-btn"
+                                        data-bs-toggle="modal" data-bs-target="#packingSlipModal" title="Edit"
+                                        data-action="{{ url_for('packing.save_slip', id=slip.sale.id) }}"
+                                        data-invoice-number="{{ slip.sale.invoice_number }}"
+                                        data-customer="{{ slip.sale.customer.name if slip.sale.customer else 'Walk-in Customer' }}"
+                                        data-id="{{ slip.id }}"
+                                        data-slip-number="{{ slip.slip_number }}"
+                                        data-packing-date="{{ slip.packing_date.isoformat() if slip.packing_date else '' }}"
+                                        data-po-number="{{ slip.po_number or '' }}"
+                                        data-is-partial="{{ '1' if slip.is_partial else '0' }}"
+                                        data-partial-no="{{ slip.partial_shipment_no or '' }}"
+                                        data-partial-total="{{ slip.partial_shipment_total or '' }}"
+                                        data-package-count="{{ slip.package_count or '' }}"
+                                        data-transport-company="{{ slip.transport_company or '' }}"
+                                        data-bilty-no="{{ slip.bilty_no or '' }}"
+                                        data-tracking-no="{{ slip.tracking_no or '' }}"
+                                        data-vehicle-no="{{ slip.vehicle_no or '' }}"
+                                        data-gate-pass-no="{{ slip.gate_pass_no or '' }}"
+                                        data-dispatch-date="{{ slip.dispatch_date.isoformat() if slip.dispatch_date else '' }}"
+                                        data-total-ordered-qty="{{ '%.2f'|format(remaining_packable_qty(slip.sale, slip.id)) if slip.sale else '' }}"
+                                        data-total-packed-qty="{{ slip.total_packed_qty if slip.total_packed_qty is not none else '' }}"
+                                        data-balance-qty="{{ slip.balance_qty if slip.balance_qty is not none else '' }}"
+                                        data-gross-weight="{{ slip.gross_weight if slip.gross_weight is not none else '' }}"
+                                        data-net-weight="{{ slip.net_weight if slip.net_weight is not none else '' }}">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    {% endif %}
+                                    {% if current_user.is_admin or current_user.can_delete_packing %}
+                                    <form action="{{ url_for('packing.delete_slip', slip_id=slip.id) }}" method="POST"
+                                        class="d-inline"
+                                        onsubmit="return confirm('Delete packing slip {{ slip.slip_number }}? This cannot be undone.');">
+                                        <input type="hidden" name="next" value="{{ request.full_path }}">
+                                        <button type="submit" class="btn btn-outline-danger" title="Delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="12" class="text-center text-muted py-4">
+                                <i class="fas fa-inbox fa-2x d-block mb-2 opacity-50"></i>
+                                No packing slips match these filters.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if current_user.is_admin or current_user.can_edit_packing %}
+{% set next_slip_number = '' %}
+{% include 'packing/_slip_modal.html' %}
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+    $(document).ready(function () {
+        $('.searchable-select').each(function () {
+            $(this).select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                allowClear: true,
+                placeholder: $(this).data('placeholder')
+            });
+        });
+    });
+</script>
+{% endblock %}

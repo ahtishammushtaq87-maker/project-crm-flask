@@ -172,6 +172,7 @@ class UserForm(FlaskForm):
     can_view_activity_logs = BooleanField('Activity Log Access', default=False)
     can_view_recovery = BooleanField('Sales Recovery Access', default=True)
     can_view_quotations = BooleanField('Quotations Access', default=True)
+    can_view_packing = BooleanField('Packing Slips Access', default=True)
     can_add_sales = BooleanField('Add Sales', default=False)
     can_add_purchases = BooleanField('Add Purchases', default=False)
     can_add_inventory = BooleanField('Add Inventory', default=False)
@@ -201,6 +202,7 @@ class UserForm(FlaskForm):
     can_add_media = BooleanField('Add Media', default=False)
     can_add_recovery = BooleanField('Add Recovery Logs', default=False)
     can_add_quotations = BooleanField('Add Quotations', default=False)
+    can_add_packing = BooleanField('Add Packing Slips', default=False)
 
     can_edit_sales = BooleanField('Edit Sales', default=False)
     can_edit_purchases = BooleanField('Edit Purchases', default=False)
@@ -230,6 +232,7 @@ class UserForm(FlaskForm):
     can_edit_delivering = BooleanField('Edit Delivering', default=False)
     can_edit_recovery = BooleanField('Edit/Close Recovery Tasks', default=False)
     can_edit_quotations = BooleanField('Edit Quotations', default=False)
+    can_edit_packing = BooleanField('Edit Packing Slips', default=False)
 
     can_delete_sales = BooleanField('Delete Sales', default=False)
     can_delete_purchases = BooleanField('Delete Purchases', default=False)
@@ -262,6 +265,7 @@ class UserForm(FlaskForm):
     can_delete_activity_logs = BooleanField('Delete Activity Logs', default=False)
     can_delete_recovery = BooleanField('Delete Recovery Tasks', default=False)
     can_delete_quotations = BooleanField('Delete Quotations', default=False)
+    can_delete_packing = BooleanField('Delete Packing Slips', default=False)
 
 
 class UserEditForm(FlaskForm):
@@ -301,6 +305,7 @@ class UserEditForm(FlaskForm):
     can_view_activity_logs = BooleanField('Activity Log Access', default=False)
     can_view_recovery = BooleanField('Sales Recovery Access', default=True)
     can_view_quotations = BooleanField('Quotations Access', default=True)
+    can_view_packing = BooleanField('Packing Slips Access', default=True)
     can_add_sales = BooleanField('Add Sales', default=False)
     can_add_purchases = BooleanField('Add Purchases', default=False)
     can_add_inventory = BooleanField('Add Inventory', default=False)
@@ -330,6 +335,7 @@ class UserEditForm(FlaskForm):
     can_add_media = BooleanField('Add Media', default=False)
     can_add_recovery = BooleanField('Add Recovery Logs', default=False)
     can_add_quotations = BooleanField('Add Quotations', default=False)
+    can_add_packing = BooleanField('Add Packing Slips', default=False)
 
     can_edit_sales = BooleanField('Edit Sales', default=False)
     can_edit_purchases = BooleanField('Edit Purchases', default=False)
@@ -359,6 +365,7 @@ class UserEditForm(FlaskForm):
     can_edit_delivering = BooleanField('Edit Delivering', default=False)
     can_edit_recovery = BooleanField('Edit/Close Recovery Tasks', default=False)
     can_edit_quotations = BooleanField('Edit Quotations', default=False)
+    can_edit_packing = BooleanField('Edit Packing Slips', default=False)
 
     can_delete_sales = BooleanField('Delete Sales', default=False)
     can_delete_purchases = BooleanField('Delete Purchases', default=False)
@@ -390,6 +397,7 @@ class UserEditForm(FlaskForm):
     can_delete_activity_logs = BooleanField('Delete Activity Logs', default=False)
     can_delete_recovery = BooleanField('Delete Recovery Tasks', default=False)
     can_delete_quotations = BooleanField('Delete Quotations', default=False)
+    can_delete_packing = BooleanField('Delete Packing Slips', default=False)
 
 
 class TaskForm(FlaskForm):

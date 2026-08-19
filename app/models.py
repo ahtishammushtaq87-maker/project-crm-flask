@@ -148,6 +148,16 @@ class User(UserMixin, db.Model):
     can_edit_quotations = db.Column(db.Boolean, default=False)
     can_delete_quotations = db.Column(db.Boolean, default=False)
 
+    # Packing Slip Module Permissions
+    # Gates the standalone Packing Slips module (app/routes/packing.py) — the
+    # price-free invoice list warehouse/dispatch staff use to issue slips.
+    # Deliberately separate from can_*_sales so someone can be given packing
+    # access without ever seeing invoice amounts.
+    can_view_packing = db.Column(db.Boolean, default=True)
+    can_add_packing = db.Column(db.Boolean, default=False)
+    can_edit_packing = db.Column(db.Boolean, default=False)
+    can_delete_packing = db.Column(db.Boolean, default=False)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

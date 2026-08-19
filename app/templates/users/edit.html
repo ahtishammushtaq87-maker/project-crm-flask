@@ -187,6 +187,21 @@
         </div>
     </div>
 </div>
+<div class="form-check mb-2">
+    {{ form.can_view_packing(class="form-check-input view-toggle", onchange="toggleSubPermissions(this, 'packing')") }}
+    <label class="form-check-label fw-semibold"><i class="fas fa-box me-1 text-dark"></i> {{ form.can_view_packing.label.text }}</label>
+    <div class="ms-4 mt-1 border-start ps-3 sub-permissions-packing" id="sub_packing">
+        <div class="form-check form-check-inline">
+            {{ form.can_add_packing(class="form-check-input sub-cb-packing") }} <label class="form-check-label small text-muted">Create Slip</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_edit_packing(class="form-check-input sub-cb-packing") }} <label class="form-check-label small text-muted">Edit</label>
+        </div>
+        <div class="form-check form-check-inline">
+            {{ form.can_delete_packing(class="form-check-input sub-cb-packing") }} <label class="form-check-label small text-muted">Delete</label>
+        </div>
+    </div>
+</div>
                                     </div>
                                 </div>
                             </div>

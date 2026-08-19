@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}Packing Slips{% endblock %}
+
+{#
+  Packing Slips — invoice worklist.
+
+  Every confirmed invoice, with the full Sales filter set, shown WITHOUT any
+  monetary column. Quantities, packages and dispatch state only. Keep it that
+  way: this page is what makes it safe to grant a packer access without
+  exposing order values.
+#}
+
+{% block content %}
+<div class="container-fluid list-page">
+
+    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
+        <div>
+            <h2 class="h3 mb-0 text-gray-800"><i class="fas fa-box me-2 text-dark"></i>Packing Slips</h2>
+            <p class="text-muted small mb-0 mt-1">
+                Issue bilingual packing &amp; dispatch slips against confirmed invoices. No pricing is shown here.
+            </p>
+        </div>
+        <a href="{{ url_for('packing.slips') }}" class="btn btn-outline-dark">
+            <i class="fas fa-list me-1"></i> All Issued Slips
+        </a>
+    </div>
+
+    <!-- Filter Bar -->
+    {% set filter_action = url_for('packing.index') %}
+    {% set hidden_status = packing_status %}
+    {% include 'packing/_filter_bar.html' %}
+
+    <!-- Status Tabs -->
+    <div class="card shadow mb-4">
+        <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs">
+                <li class="nav-item">
+                    <a class="nav-link {% if packing_status == 'all' %}active{% endif %}"
+                        href="{{ url_for('packing.index', **dict(request.args, packing_status='all')) }}">
+                        All Invoices <span class="badge bg-secondary">{{ counts.all }}</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link text-warning fw-bold {% if packing_status == 'pending' %}active{% endif %}"
+                        href="{{ url_for('packing.index', **dict(request.args, packing_status='pending')) }}">
+                        Pending Packing <span class="badge bg-warning text-dark">{{ counts.pending }}</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link text-success fw-bold {% if packing_status == 'packed' %}active{% endif %}"
+                        href="{{ url_for('packing.index', **dict(request.args, packing_status='packed')) }}">
+                        Slip Issued <span class="badge bg-success">{{ counts.packed }}</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link text-info fw-bold {% if packing_status == 'partial' %}active{% endif %}"
+                        href="{{ url_for('packing.index', **dict(request.args, packing_status='partial')) }}">
+                        Partial Shipments <span class="badge bg-info text-dark">{{ counts.partial }}</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 datatable-export" data-export-title="Packing Slips">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Invoice #</th>
+                            <th>Date</th>
+                            <th>Customer</th>
+                            <th>Customer Group</th>
+                            <th>Salesman</th>
+                            <th>Warehouse</th>
+                            <th class="text-center">Items</th>
+                            <th class="text-center">Total Qty</th>
+                            <th class="text-center">Slips</th>
+                            <th>Last Packed</th>
+                            <th class="text-center">Packing Status</th>
+                            <th class="text-center no-export">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sale in sales %}
+                        {% set slips_for_sale = sale.packing_slips|list %}
+                        {% set latest = (slips_for_sale|sort(attribute='created_at'))|last if slips_for_sale else None %}
+                        {% set total_qty = sale.items|sum(attribute='quantity') %}
+                        <tr>
+                            <td class="fw-semibold">{{ sale.invoice_number }}</td>
+                            <td>{{ sale.date.strftime(date_format) if sale.date else '-' }}</td>
+                            <td>{{ sale.customer.name if sale.customer else 'Walk-in Customer' }}</td>
+                            <td>
+                                {% if sale.customer and sale.customer.group %}
+                                {{ sale.customer.group.name }}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ sale.salesman.name if sale.salesman else '-' }}</td>
+                            <td>{{ sale_warehouses(sale) }}</td>
+                            <td class="text-center">{{ sale.items|length }}</td>
+                            <td class="text-center fw-semibold">{{ '%.2f'|format(total_qty or 0) }}</td>
+                            <td class="text-center">
+                                {% if slips_for_sale %}
+                                <span class="badge bg-dark">{{ slips_for_sale|length }}</span>
+                                {% else %}
+                                <span class="text-muted">0</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if latest and latest.packing_date %}
+                                {{ latest.packing_date.strftime('%d-%b-%Y') }}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if not slips_for_sale %}
+                                <span class="badge bg-warning text-dark">Pending</span>
+                                {% elif slips_for_sale|selectattr('is_partial')|list %}
+                                <span class="badge bg-info text-dark">Partial</span>
+                                {% else %}
+                                <span class="badge bg-success">Packed</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center no-export">
+                                <div class="btn-group btn-group-sm">
+                                    {% if current_user.is_admin or current_user.can_add_packing %}
+                                    <button type="button" class="btn btn-dark create-packing-slip-btn"
+                                        data-bs-toggle="modal" data-bs-target="#packingSlipModal"
+                                        title="Create packing slip"
+                                        data-action="{{ url_for('packing.save_slip', id=sale.id) }}"
+                                        data-invoice-number="{{ sale.invoice_number }}"
+                                        data-customer="{{ sale.customer.name if sale.customer else 'Walk-in Customer' }}"
+                                        data-total-ordered-qty="{{ slip_defaults[sale.id].total_ordered_qty }}"
+                                        data-net-weight="{{ slip_defaults[sale.id].net_weight }}">
+                                        <i class="fas fa-plus me-1"></i>Create Slip
+                                    </button>
+                                    {% endif %}
+                                    {% if slips_for_sale %}
+                                    <a href="{{ url_for('packing.slips', invoice_number=sale.invoice_number) }}"
+                                        class="btn btn-outline-secondary" title="View issued slips">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="12" class="text-center text-muted py-4">
+                                <i class="fas fa-inbox fa-2x d-block mb-2 opacity-50"></i>
+                                No invoices match these filters.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if current_user.is_admin or current_user.can_add_packing %}
+{% include 'packing/_slip_modal.html' %}
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+    $(document).ready(function () {
+        $('.searchable-select').each(function () {
+            $(this).select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                allowClear: true,
+                placeholder: $(this).data('placeholder')
+            });
+        });
+    });
+</script>
+{% endblock %}

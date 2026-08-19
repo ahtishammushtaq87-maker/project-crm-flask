@@ -245,6 +245,7 @@ def create_app(config_class=Config):
     from app.routes.accounting import bp as accounting_bp
     from app.routes.sales import bp as sales_bp
     from app.routes.quotation import bp as quotation_bp
+    from app.routes.packing import bp as packing_bp
     from app.routes.inventory import bp as inventory_bp
     from app.routes.warehouse import bp as warehouse_bp
     from app.routes.purchase import bp as purchase_bp
@@ -273,6 +274,7 @@ def create_app(config_class=Config):
     app.register_blueprint(accounting_bp, url_prefix='/accounting')
     app.register_blueprint(sales_bp, url_prefix='/sales')
     app.register_blueprint(quotation_bp, url_prefix='/quotation')
+    app.register_blueprint(packing_bp, url_prefix='/packing')
     app.register_blueprint(inventory_bp, url_prefix='/inventory')
     app.register_blueprint(warehouse_bp, url_prefix='/warehouse')
     app.register_blueprint(purchase_bp, url_prefix='/purchase')

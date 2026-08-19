@@ -770,13 +770,23 @@ class ProfessionalPDFGenerator:
 
     def _build_packing_items_table(self, items):
         """# | Description | SKU | Unit | Qty Ordered | Qty Packed | Balance | Remarks.
-        Qty Ordered comes from the sale; the last three columns are left blank
-        for staff to fill in by hand while physically packing the order. Only
-        as many rows as there are items — no padding blank rows, so a short
-        order doesn't waste page space."""
+        Qty Ordered comes from the sale. Qty Packed/Balance are filled in only
+        when the caller supplies them on the item dict (qty_packed/balance
+        keys) — that only happens for a single-item order, where the slip's
+        one Total Packed Qty / Balance Qty figure maps unambiguously onto
+        that one line. A multi-item order has no per-item packed breakdown to
+        draw on, so those columns (and Remarks, always) are left blank for
+        staff to fill in by hand while physically packing. Only as many rows
+        as there are items — no padding blank rows, so a short order doesn't
+        waste page space."""
         headers = ['#', 'Description', 'SKU', 'Unit', 'Qty Ordered', 'Qty Packed', 'Balance', 'Remarks']
         col_w_raw = [0.3, 2.3, 0.9, 0.6, 0.9, 0.9, 0.8, 0.8]
         col_w = [w * TABLE_WIDTH / sum(col_w_raw) for w in col_w_raw]
+
+        def fmt(value):
+            if value is None:
+                return ''
+            return f"{value:,.2f}" if isinstance(value, (int, float)) else str(value)
 
         header_row = [Paragraph(f"<b>{h}</b>", self.styles['TblHeader']) for h in headers]
         table_data = [header_row]
@@ -789,8 +799,8 @@ class ProfessionalPDFGenerator:
                 Paragraph(item.get('sku', '-'), self.styles['TblCell']),
                 Paragraph(item.get('unit', '-'), self.styles['TblCell']),
                 Paragraph(qty_str, self.styles['TblCell']),
-                Paragraph('', self.styles['TblCell']),
-                Paragraph('', self.styles['TblCell']),
+                Paragraph(fmt(item.get('qty_packed')), self.styles['TblCell']),
+                Paragraph(fmt(item.get('balance')), self.styles['TblCell']),
                 Paragraph('', self.styles['TblCell']),
             ])
 
@@ -1015,6 +1025,13 @@ class ProfessionalPDFGenerator:
                 'unit': (product.unit if product and product.unit else 'pcs'),
                 'quantity': qty,
             })
+        # A single-item order has an unambiguous mapping from the slip's one
+        # Total Packed Qty / Balance Qty onto that one line, so pre-fill it
+        # rather than leaving it for hand-fill. An order with more than one
+        # item has no per-item breakdown to draw on, so those stay blank.
+        if slip and len(items) == 1:
+            items[0]['qty_packed'] = slip.total_packed_qty
+            items[0]['balance'] = slip.balance_qty
         elements.append(self._build_packing_items_table(items))
         elements.append(Spacer(1, 10))
 

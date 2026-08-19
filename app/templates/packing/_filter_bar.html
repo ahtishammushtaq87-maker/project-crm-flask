@@ -1,0 +1,134 @@
+{#
+  Shared filter bar for both Packing Slip views.
+
+  Mirrors the Sales Invoices filter bar so staff moving between the two see the
+  same controls — minus anything money-related.
+
+  Caller must set:
+    filter_action     — the url_for() target this form submits to
+  Optional:
+    show_slip_filters — also render the slip-number / slip-date / partial filters
+    hidden_status     — value carried through in a hidden `packing_status` field
+#}
+<div class="card shadow mb-4">
+    <div class="card-body">
+        <form method="GET" action="{{ filter_action }}" class="row g-3 px-2">
+
+            <div class="col-12 col-md-3">
+                <label class="form-label small fw-bold text-muted mb-1">General Search</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-light border-end-0"><i class="fas fa-search text-muted"></i></span>
+                    <input type="text" name="search" class="form-control border-start-0"
+                        placeholder="Invoice or customer..." value="{{ search or '' }}">
+                </div>
+            </div>
+
+            <div class="col-12 col-md-3">
+                <label class="form-label small fw-bold text-muted mb-1">Invoice Number</label>
+                <select name="invoice_number" class="form-select searchable-select"
+                    data-placeholder="— Select Invoice —">
+                    <option value=""></option>
+                    {% for inv in recent_invoices %}
+                    <option value="{{ inv.invoice_number }}" {% if invoice_number==inv.invoice_number %}selected{% endif %}>
+                        {{ inv.invoice_number }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-12 col-md-3">
+                <label class="form-label small fw-bold text-muted mb-1">Customer</label>
+                <select name="customer_id" class="form-select searchable-select" data-placeholder="— Select Customer —">
+                    <option value=""></option>
+                    {% for cust in all_customers %}
+                    <option value="{{ cust.id }}" {% if customer_id==cust.id %}selected{% endif %}>{{ cust.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-12 col-md-3">
+                <label class="form-label small fw-bold text-muted mb-1">Customer Group</label>
+                <select name="customer_group_id" class="form-select searchable-select"
+                    data-placeholder="— Select Group —">
+                    <option value=""></option>
+                    {% for group in customer_groups %}
+                    <option value="{{ group.id }}" {% if customer_group_id==group.id %}selected{% endif %}>{{ group.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-12 col-md-3">
+                <label class="form-label small fw-bold text-muted mb-1">Salesman</label>
+                <select name="salesman_id" class="form-select searchable-select" data-placeholder="— Select Salesman —">
+                    <option value=""></option>
+                    {% for sm in salesmen %}
+                    <option value="{{ sm.id }}" {% if salesman_id==sm.id %}selected{% endif %}>{{ sm.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-12 col-md-3">
+                <label class="form-label small fw-bold text-muted mb-1">Warehouse</label>
+                <select name="warehouse_id" class="form-select searchable-select" data-placeholder="— Select Warehouse —">
+                    <option value=""></option>
+                    {% for wh in warehouses %}
+                    <option value="{{ wh.id }}" {% if warehouse_id==wh.id %}selected{% endif %}>{{ wh.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-6 col-md-2">
+                <label class="form-label small fw-bold text-muted mb-1">Invoice From</label>
+                <input type="date" name="from_date" class="form-control" value="{{ from_date or '' }}">
+            </div>
+
+            <div class="col-6 col-md-2">
+                <label class="form-label small fw-bold text-muted mb-1">Invoice To</label>
+                <input type="date" name="to_date" class="form-control" value="{{ to_date or '' }}">
+            </div>
+
+            {% if show_slip_filters %}
+            <div class="col-12 col-md-3">
+                <label class="form-label small fw-bold text-muted mb-1">Slip Number</label>
+                <input type="text" name="slip_number" class="form-control" placeholder="e.g. PKG-00012"
+                    value="{{ slip_number or '' }}">
+            </div>
+
+            <div class="col-6 col-md-2">
+                <label class="form-label small fw-bold text-muted mb-1">Packed From</label>
+                <input type="date" name="slip_from_date" class="form-control" value="{{ slip_from_date or '' }}">
+            </div>
+
+            <div class="col-6 col-md-2">
+                <label class="form-label small fw-bold text-muted mb-1">Packed To</label>
+                <input type="date" name="slip_to_date" class="form-control" value="{{ slip_to_date or '' }}">
+            </div>
+
+            <div class="col-12 col-md-2">
+                <label class="form-label small fw-bold text-muted mb-1">Partial</label>
+                <select name="partial" class="form-select">
+                    <option value="" {% if not partial %}selected{% endif %}>All</option>
+                    <option value="yes" {% if partial=='yes' %}selected{% endif %}>Partial only</option>
+                    <option value="no" {% if partial=='no' %}selected{% endif %}>Full shipments only</option>
+                </select>
+            </div>
+            {% endif %}
+
+            <div class="col-12 {% if show_slip_filters %}col-md-3{% else %}col-md-5{% endif %}">
+                <label class="form-label d-none d-md-block" style="height: 20px;"></label>
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary flex-grow-1">
+                        <i class="fas fa-filter me-1"></i> Apply Filters
+                    </button>
+                    <a href="{{ filter_action }}" class="btn btn-outline-secondary px-4">
+                        <i class="fas fa-undo me-1"></i> Clear
+                    </a>
+                </div>
+            </div>
+
+            {% if hidden_status is defined %}
+            <input type="hidden" name="packing_status" value="{{ hidden_status }}">
+            {% endif %}
+        </form>
+    </div>
+</div>
