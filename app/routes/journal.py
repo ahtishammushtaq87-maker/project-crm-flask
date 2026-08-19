@@ -141,6 +141,38 @@ def create_account():
     return render_template('journal/account_form.html', account=None)
 
 
+@bp.route('/accounts/create-quick', methods=['POST'])
+@login_required
+def create_account_quick():
+    """AJAX/JSON version of create_account() — lets an admin add a new
+    JournalAccount inline from a searchable dropdown (e.g. on the Add/Edit
+    Expense forms) without leaving the page. Same validation and admin-only
+    rule as the full create_account() page."""
+    if not _can_view():
+        return jsonify({'success': False, 'message': 'You do not have permission to access the Journal module.'}), 403
+    if not (current_user.role == 'admin' or getattr(current_user, 'is_admin', False)):
+        return jsonify({'success': False, 'message': 'Only admins can create accounts.'}), 403
+
+    name = (request.form.get('name') or '').strip()
+    if not name:
+        return jsonify({'success': False, 'message': 'Account name is required.'})
+    if JournalAccount.query.filter(db.func.lower(JournalAccount.name) == name.lower()).first():
+        return jsonify({'success': False, 'message': f'An account named "{name}" already exists.'})
+
+    acct = JournalAccount(
+        name=name,
+        account_type=(request.form.get('account_type') or '').strip() or None,
+        opening_balance=_to_float(request.form.get('opening_balance')),
+        notes=(request.form.get('notes') or '').strip() or None,
+        created_by=current_user.id,
+    )
+    db.session.add(acct)
+    db.session.commit()
+    return jsonify({'success': True, 'account': {
+        'id': acct.id, 'name': acct.name, 'account_type': acct.account_type or '',
+    }})
+
+
 @bp.route('/accounts/<int:account_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_account(account_id):

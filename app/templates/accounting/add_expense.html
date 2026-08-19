@@ -83,14 +83,55 @@
                     <h4>Add New Expense</h4>
                 </div>
                 <div class="card-body">
-                    <form method="POST" enctype="multipart/form-data">
+                    <form method="POST" enctype="multipart/form-data" id="expenseForm">
                         {{ form.hidden_tag() }}
+
+                        <!-- Transaction Type: Credit = normal Expense (money out), Debit = just Add Money to an account (not an expense) -->
+                        <div class="mb-4 p-3 border rounded" style="background:#f8f9ff;">
+                            <label class="form-label fw-semibold mb-2">Transaction Type</label>
+                            <div class="d-flex gap-3 flex-wrap">
+                                <div class="form-check flex-fill border rounded p-3" id="txnCreditCard" style="cursor:pointer; background:#fff; min-width:220px;">
+                                    <input class="form-check-input" type="radio" name="txn_type" id="txnCredit" value="credit" checked>
+                                    <label class="form-check-label fw-semibold" for="txnCredit">
+                                        <i class="bi bi-dash-circle-fill text-danger me-1"></i> Expense <span class="text-muted fw-normal">(Credit — money out)</span>
+                                    </label>
+                                    <div class="text-muted small mt-1">Normal expense. If an account is linked below, its balance goes down by this amount.</div>
+                                </div>
+                                <div class="form-check flex-fill border rounded p-3" id="txnDebitCard" style="cursor:pointer; background:#fff; min-width:220px;">
+                                    <input class="form-check-input" type="radio" name="txn_type" id="txnDebit" value="debit">
+                                    <label class="form-check-label fw-semibold" for="txnDebit">
+                                        <i class="bi bi-plus-circle-fill text-success me-1"></i> Add Money <span class="text-muted fw-normal">(Debit — money in)</span>
+                                    </label>
+                                    <div class="text-muted small mt-1">Not an expense — just adds money to the selected account. No expense record is created.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Account (optional for Expense, required for Add Money) -->
+                        <div class="mb-3">
+                            <label class="form-label">Account <span class="text-muted small" id="accountRequiredHint">(optional)</span></label>
+                            <div class="d-flex gap-2">
+                                <select id="accountIdSelect" name="account_id" class="form-select flex-grow-1">
+                                    <option value="">— No Account —</option>
+                                    {% for acct in journal_accounts %}
+                                    <option value="{{ acct.id }}">{{ acct.name }}{% if acct.account_type %} ({{ acct.account_type }}){% endif %}</option>
+                                    {% endfor %}
+                                </select>
+                                {% if current_user.is_admin %}
+                                <button type="button" class="btn btn-outline-primary text-nowrap" id="newAccountBtn" title="Create new account">
+                                    <i class="bi bi-plus-lg"></i> New Account
+                                </button>
+                                {% endif %}
+                            </div>
+                            <div class="form-text" id="accountHelpText">If selected, this expense deducts the amount from this account's balance.</div>
+                        </div>
+
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Date</label>
                                 {{ form.date(class="form-control") }}
                             </div>
-                            <div class="col-md-6 mb-3">
+                            <div class="col-md-6 mb-3 expense-only-field">
                                 <label class="form-label">Category</label>
                                 {{ form.category_id(class="form-control") }}
                                 <small class="text-muted">
@@ -98,12 +139,12 @@
                                 </small>
                             </div>
                         </div>
-                        <div class="mb-3">
+                        <div class="mb-3 expense-only-field">
                             <label class="form-label">Vendor (Optional)</label>
                             {{ form.vendor_id(class="form-control") }}
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Description</label>
+                            <label class="form-label" id="descriptionLabel">Description</label>
                             {{ form.description(class="form-control", rows=3) }}
                         </div>
                         <div class="row">
@@ -111,7 +152,7 @@
                                 <label class="form-label">Amount</label>
                                 {{ form.amount(class="form-control") }}
                             </div>
-                            <div class="col-md-6 mb-3">
+                            <div class="col-md-6 mb-3 expense-only-field">
                                 <label class="form-label">Payment Method</label>
                                 {{ form.payment_method(class="form-control") }}
                             </div>
@@ -175,6 +216,8 @@
                             {{ form.notes(class="form-control", rows=2) }}
                         </div>
 
+                        <!-- Monthly Division + BOM Overhead: only relevant when this is really an Expense (Credit) -->
+                        <div class="expense-only-field">
                         <!-- Monthly Division Section -->
                         <hr class="my-4">
                         <h5 class="mb-3">Monthly Division Options</h5>
@@ -266,13 +309,46 @@
                                 </div>
                             </div>
                         </div>
+                        </div>
+                        <!-- /expense-only-field: Monthly Division + BOM Overhead -->
 
                         <div class="mb-3 d-flex gap-2">
-                            <button type="submit" class="btn btn-success">Save Expense</button>
+                            <button type="submit" class="btn btn-success" id="submitBtn">Save Expense</button>
                             <a href="{{ url_for('accounting.expenses') }}" class="btn btn-secondary">Cancel</a>
                         </div>
                     </form>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New Account modal (inline "create account" for the searchable Account dropdown, admin-only) -->
+<div class="modal fade" id="newAccountModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-book me-2"></i>Create Account</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="newAccountError" class="alert alert-danger py-2 d-none"></div>
+                <div class="mb-3">
+                    <label class="form-label">Account Name <span class="text-danger">*</span></label>
+                    <input type="text" id="newAccountName" class="form-control" placeholder="e.g., Cash, Bank, Office Expense">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Type <span class="text-muted small">(optional)</span></label>
+                    <input type="text" id="newAccountType" class="form-control" placeholder="e.g., Cash / Bank / Expense / Income">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Opening Balance</label>
+                    <input type="number" step="0.01" id="newAccountOpeningBalance" class="form-control" value="0">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveNewAccountBtn"><i class="fas fa-save me-1"></i>Create</button>
             </div>
         </div>
     </div>
@@ -287,6 +363,102 @@ document.addEventListener('DOMContentLoaded', function() {
     $('select[name="category_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Category —', allowClear: true, width: '100%' });
     $('select[name="payment_method"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Payment Method —', allowClear: true, width: '100%' });
     $('select[name="vendor_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Vendor (Optional) —', allowClear: true, width: '100%' });
+    $('#accountIdSelect').select2({ theme: 'bootstrap-5', placeholder: '— Select Account —', allowClear: true, width: '100%' });
+
+    // ── Transaction Type: Credit (Expense) vs Debit (Add Money to account) ──
+    const txnCredit = document.getElementById('txnCredit');
+    const txnDebit = document.getElementById('txnDebit');
+    const txnCreditCard = document.getElementById('txnCreditCard');
+    const txnDebitCard = document.getElementById('txnDebitCard');
+    const expenseOnlyFields = document.querySelectorAll('.expense-only-field');
+    const accountRequiredHint = document.getElementById('accountRequiredHint');
+    const accountHelpText = document.getElementById('accountHelpText');
+    const descriptionLabel = document.getElementById('descriptionLabel');
+    const submitBtn = document.getElementById('submitBtn');
+
+    function applyTxnType() {
+        const isDebit = txnDebit.checked;
+        expenseOnlyFields.forEach(el => { el.style.display = isDebit ? 'none' : ''; });
+        if (isDebit) {
+            accountRequiredHint.textContent = '(required)';
+            accountHelpText.textContent = 'This amount will be added to the selected account\'s balance. No expense record is created.';
+            descriptionLabel.textContent = 'Details';
+            submitBtn.textContent = 'Add Money to Account';
+            submitBtn.classList.remove('btn-success');
+            submitBtn.classList.add('btn-primary');
+        } else {
+            accountRequiredHint.textContent = '(optional)';
+            accountHelpText.textContent = "If selected, this expense deducts the amount from this account's balance.";
+            descriptionLabel.textContent = 'Description';
+            submitBtn.textContent = 'Save Expense';
+            submitBtn.classList.remove('btn-primary');
+            submitBtn.classList.add('btn-success');
+        }
+        txnCreditCard.style.borderColor = !isDebit ? '#dc3545' : '';
+        txnCreditCard.style.background = !isDebit ? '#fff5f5' : '#fff';
+        txnDebitCard.style.borderColor = isDebit ? '#198754' : '';
+        txnDebitCard.style.background = isDebit ? '#f0fff4' : '#fff';
+    }
+    txnCredit.addEventListener('change', applyTxnType);
+    txnDebit.addEventListener('change', applyTxnType);
+    txnCreditCard.addEventListener('click', () => { txnCredit.checked = true; applyTxnType(); });
+    txnDebitCard.addEventListener('click', () => { txnDebit.checked = true; applyTxnType(); });
+    applyTxnType();
+
+    document.getElementById('expenseForm').addEventListener('submit', function(e) {
+        if (txnDebit.checked && !document.getElementById('accountIdSelect').value) {
+            e.preventDefault();
+            alert('Please select an account to add money to.');
+        }
+    });
+
+    // ── "New Account" modal (admin-only) ──────────────────────────────────
+    const newAccountBtn = document.getElementById('newAccountBtn');
+    if (newAccountBtn) {
+        const newAccountModalEl = document.getElementById('newAccountModal');
+        const newAccountModal = new bootstrap.Modal(newAccountModalEl);
+        newAccountBtn.addEventListener('click', function() {
+            document.getElementById('newAccountName').value = '';
+            document.getElementById('newAccountType').value = '';
+            document.getElementById('newAccountOpeningBalance').value = 0;
+            document.getElementById('newAccountError').classList.add('d-none');
+            newAccountModal.show();
+        });
+        document.getElementById('saveNewAccountBtn').addEventListener('click', function() {
+            const name = document.getElementById('newAccountName').value.trim();
+            const errorBox = document.getElementById('newAccountError');
+            errorBox.classList.add('d-none');
+            if (!name) {
+                errorBox.textContent = 'Account name is required.';
+                errorBox.classList.remove('d-none');
+                return;
+            }
+            const fd = new FormData();
+            fd.append('name', name);
+            fd.append('account_type', document.getElementById('newAccountType').value.trim());
+            fd.append('opening_balance', document.getElementById('newAccountOpeningBalance').value || 0);
+
+            fetch('{{ url_for("journal.create_account_quick") }}', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        const opt = new Option(
+                            data.account.name + (data.account.account_type ? ' (' + data.account.account_type + ')' : ''),
+                            data.account.id, true, true
+                        );
+                        $('#accountIdSelect').append(opt).trigger('change');
+                        newAccountModal.hide();
+                    } else {
+                        errorBox.textContent = data.message || 'Could not create account.';
+                        errorBox.classList.remove('d-none');
+                    }
+                })
+                .catch(() => {
+                    errorBox.textContent = 'Network error — could not create account.';
+                    errorBox.classList.remove('d-none');
+                });
+        });
+    }
 
     // MO multi-select
     $('#mo_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select In Progress Manufacturing Order(s) —', allowClear: true, width: '100%', closeOnSelect: false });

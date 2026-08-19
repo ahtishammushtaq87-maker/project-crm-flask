@@ -189,7 +189,7 @@ def _reconcile_backup_index():
         if not os.path.isfile(fpath):
             continue
         prefix = fname.split('_', 1)[0]
-        backup_type = prefix if prefix in ('manual', 'auto', 'safety') else 'unknown'
+        backup_type = prefix if prefix in ('manual', 'auto', 'safety', 'uploaded') else 'unknown'
         stat = os.stat(fpath)
         db.session.add(DatabaseBackup(
             filename=fname,
@@ -209,6 +209,79 @@ def _require_admin():
         flash('Only an admin can access Database Backup.', 'danger')
         return redirect(url_for('dashboard.index'))
     return None
+
+
+def _perform_restore(backup, user_id):
+    """The actual swap sequence, shared by restoring from an existing backup
+    row and restoring from a freshly-uploaded file (see restore() and
+    restore_upload() below) — `backup` must already be a saved DatabaseBackup
+    row whose file lives in the backups dir. Returns (ok, message); callers
+    just flash the message, they don't need to know the swap's internals."""
+    db_path = _get_sqlite_path()
+    backup_dir = _get_backup_dir()
+    backup_path = os.path.join(backup_dir, backup.filename)
+
+    # Verify the chosen file BEFORE it's allowed anywhere near the live
+    # database — a corrupt/incomplete source must never be used to overwrite
+    # good data.
+    ok, reason = _verify_sqlite_file(backup_path)
+    if not ok:
+        return False, (f'Restore aborted: {backup.filename} failed verification ({reason}). '
+                       f'The live database was not touched.')
+
+    try:
+        # Safety net: snapshot the CURRENT database before overwriting it, so
+        # this restore can always be undone if it turns out to be wrong.
+        # create_backup() verifies this snapshot itself before it's recorded.
+        safety = create_backup(
+            backup_type='safety', user_id=user_id,
+            note=f'Automatic safety snapshot taken immediately before restoring backup #{backup.id} ({backup.filename}).'
+        )
+
+        # Release pooled connections/locks before touching the file on disk.
+        db.session.remove()
+        db.engine.dispose()
+
+        src_conn = sqlite3.connect(backup_path)
+        dest_conn = sqlite3.connect(db_path)
+        try:
+            with dest_conn:
+                src_conn.backup(dest_conn)
+        finally:
+            src_conn.close()
+            dest_conn.close()
+
+        db.engine.dispose()  # drop any pooled connections still holding the old file's state
+
+        # Verify the LIVE file itself immediately after the swap — belt and
+        # suspenders on top of verifying the source above. If this ever
+        # fails, the safety snapshot just taken is the way back.
+        ok, reason = _verify_sqlite_file(db_path)
+        if not ok:
+            _log(f'Restore from {backup.filename} left the live database in a bad state — see safety snapshot {safety.filename}',
+                 user_id=user_id)
+            return False, (f'CRITICAL: the live database failed verification after restoring ({reason}). '
+                           f'Restore it immediately from the safety snapshot {safety.filename} (or an earlier backup) '
+                           f'via this same page, then investigate before using the app further.')
+
+        # The DB file we just wrote back is a snapshot from BEFORE this
+        # restore and before the safety backup above, so it doesn't contain
+        # rows for either — reconcile from disk so nothing looks lost.
+        _reconcile_backup_index()
+
+        restored_row = DatabaseBackup.query.filter_by(filename=backup.filename).first()
+        if restored_row:
+            restored_row.last_restored_at = datetime.utcnow()
+            db.session.commit()
+
+        _log(f'Restored database from backup {backup.filename}',
+             f'Safety snapshot taken first: {safety.filename}', user_id=user_id)
+        return True, (f'Database restored from {backup.filename}. A safety snapshot of the previous state was saved as '
+                      f'{safety.filename}. For a fully clean state (all connections/sessions refreshed), restart the '
+                      f'application now.')
+    except Exception as e:
+        current_app.logger.exception('Restore failed')
+        return False, f'Restore failed: {e}'
 
 
 @bp.route('/')
@@ -274,72 +347,94 @@ def restore(id):
         flash('Restore only supports SQLite.', 'danger')
         return redirect(url_for('backup.index'))
 
-    backup_path = os.path.join(backup_dir, backup.filename)
+    ok, message = _perform_restore(backup, current_user.id)
+    flash(message, 'success' if ok else 'danger')
+    return redirect(url_for('backup.index'))
 
-    # Verify the chosen backup BEFORE it's allowed anywhere near the live
-    # database — a corrupt/incomplete backup file must never be used to
-    # overwrite good data.
-    ok, reason = _verify_sqlite_file(backup_path)
+
+# Allowed extensions for an uploaded restore source, and a size cap so a
+# mistaken/oversized upload can't fill the disk — this deployment has no
+# global Flask MAX_CONTENT_LENGTH configured, so the cap is enforced here
+# rather than by touching that app-wide setting.
+ALLOWED_RESTORE_EXTENSIONS = ('.db', '.sqlite', '.sqlite3')
+MAX_UPLOAD_BYTES = 500 * 1024 * 1024  # 500 MB
+
+
+@bp.route('/restore-upload', methods=['POST'])
+@login_required
+def restore_upload():
+    guard = _require_admin()
+    if guard:
+        return guard
+
+    if request.form.get('confirm_text', '').strip().upper() != 'RESTORE':
+        flash('Restore cancelled — confirmation text did not match.', 'warning')
+        return redirect(url_for('backup.index'))
+
+    db_path = _get_sqlite_path()
+    backup_dir = _get_backup_dir()
+    if not db_path or not backup_dir:
+        flash('Restore only supports SQLite.', 'danger')
+        return redirect(url_for('backup.index'))
+
+    file = request.files.get('file')
+    if not file or not file.filename:
+        flash('No file selected.', 'warning')
+        return redirect(url_for('backup.index'))
+
+    original_name = file.filename
+    ext = os.path.splitext(original_name)[1].lower()
+    if ext not in ALLOWED_RESTORE_EXTENSIONS:
+        flash(f'"{original_name}" is not a recognized database file type. '
+              f'Expected one of: {", ".join(ALLOWED_RESTORE_EXTENSIONS)}.', 'danger')
+        return redirect(url_for('backup.index'))
+
+    if request.content_length and request.content_length > MAX_UPLOAD_BYTES:
+        flash(f'Upload is too large (over {MAX_UPLOAD_BYTES // 1024 // 1024} MB).', 'danger')
+        return redirect(url_for('backup.index'))
+
+    # Save under the same backups/ dir and naming scheme as create_backup()
+    # uses — never write straight over the live database file. It's kept
+    # (and indexed below) alongside regular backups rather than deleted after
+    # use, so "what was restored and when" stays visible/downloadable later.
+    os.makedirs(backup_dir, exist_ok=True)
+    timestamp = pk_now().strftime('%Y-%m-%d_%H%M%S')
+    saved_filename = f'uploaded_{timestamp}_{uuid.uuid4().hex[:8]}.db'
+    saved_path = os.path.join(backup_dir, saved_filename)
+    file.save(saved_path)
+
+    size = os.path.getsize(saved_path)
+    if size > MAX_UPLOAD_BYTES:
+        os.remove(saved_path)
+        flash(f'"{original_name}" is {size / 1024 / 1024:.1f} MB, which exceeds the '
+              f'{MAX_UPLOAD_BYTES // 1024 // 1024} MB upload limit.', 'danger')
+        return redirect(url_for('backup.index'))
+
+    # Verify the uploaded file BEFORE it's recorded or allowed anywhere near
+    # the live database — an invalid upload must never be used to overwrite
+    # good data, and must never even show up as a usable backup in the list.
+    ok, reason = _verify_sqlite_file(saved_path)
     if not ok:
-        flash(f'Restore aborted: {backup.filename} failed verification ({reason}). '
+        os.remove(saved_path)
+        flash(f'Restore aborted: "{original_name}" failed verification ({reason}). '
               f'The live database was not touched.', 'danger')
         return redirect(url_for('backup.index'))
 
-    try:
-        # Safety net: snapshot the CURRENT database before overwriting it,
-        # so this restore can always be undone if it turns out to be wrong.
-        # create_backup() verifies this snapshot itself before it's recorded.
-        safety = create_backup(
-            backup_type='safety', user_id=current_user.id,
-            note=f'Automatic safety snapshot taken immediately before restoring backup #{backup.id} ({backup.filename}).'
-        )
+    backup = DatabaseBackup(
+        filename=saved_filename,
+        size_bytes=size,
+        backup_type='uploaded',
+        note=f'Uploaded by {current_user.username} for restore. Original filename: {original_name}',
+        created_by=current_user.id,
+        created_at=datetime.utcnow(),
+    )
+    db.session.add(backup)
+    db.session.commit()
+    _log(f'Uploaded database file for restore: {original_name} (saved as {saved_filename})',
+         f'Size: {size:,} bytes', user_id=current_user.id)
 
-        # Release pooled connections/locks before touching the file on disk.
-        db.session.remove()
-        db.engine.dispose()
-
-        src_conn = sqlite3.connect(backup_path)
-        dest_conn = sqlite3.connect(db_path)
-        try:
-            with dest_conn:
-                src_conn.backup(dest_conn)
-        finally:
-            src_conn.close()
-            dest_conn.close()
-
-        db.engine.dispose()  # drop any pooled connections still holding the old file's state
-
-        # Verify the LIVE file itself immediately after the swap — belt and
-        # suspenders on top of verifying the source above. If this ever
-        # fails, the safety snapshot just taken is the way back.
-        ok, reason = _verify_sqlite_file(db_path)
-        if not ok:
-            flash(f'CRITICAL: the live database failed verification after restoring ({reason}). '
-                  f'Restore it immediately from the safety snapshot {safety.filename} (or an earlier backup) '
-                  f'via this same page, then investigate before using the app further.', 'danger')
-            _log(f'Restore from {backup.filename} left the live database in a bad state — see safety snapshot {safety.filename}',
-                 user_id=current_user.id)
-            return redirect(url_for('backup.index'))
-
-        # The DB file we just wrote back is a snapshot from BEFORE this
-        # restore and before the safety backup above, so it doesn't contain
-        # rows for either — reconcile from disk so nothing looks lost.
-        _reconcile_backup_index()
-
-        restored_row = DatabaseBackup.query.filter_by(filename=backup.filename).first()
-        if restored_row:
-            restored_row.last_restored_at = datetime.utcnow()
-            db.session.commit()
-
-        _log(f'Restored database from backup {backup.filename}',
-             f'Safety snapshot taken first: {safety.filename}', user_id=current_user.id)
-        flash(f'Database restored from {backup.filename}. A safety snapshot of the previous state was saved as '
-              f'{safety.filename}. For a fully clean state (all connections/sessions refreshed), restart the '
-              f'application now.', 'success')
-    except Exception as e:
-        current_app.logger.exception('Restore failed')
-        flash(f'Restore failed: {e}', 'danger')
-
+    ok, message = _perform_restore(backup, current_user.id)
+    flash(message, 'success' if ok else 'danger')
     return redirect(url_for('backup.index'))
 
 

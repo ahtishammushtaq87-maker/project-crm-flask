@@ -26,7 +26,125 @@ def get_unique_expense_number(settings, next_num):
         existing = Expense.query.filter_by(expense_number=expense_number).first()
         if not existing:
             return expense_number, next_num + 1
-        next_num += 1
+
+
+# ─── Expense <-> Journal Account linking ────────────────────────────────────
+# An Expense can optionally be tied to a JournalAccount: the amount is posted
+# as a single 'credit' JournalLine (money out of that account), linked back via
+# JournalEntry.expense_id — the same FK the existing Journal -> Expense bridge
+# (journal.send_entry_to_expense) already uses. The Expense table itself stays
+# schema-free; nothing here touches its columns.
+
+def _sync_expense_journal_line(expense, account_id, is_confirmed):
+    """Create/refresh the linked JournalEntry+JournalLine that mirrors this
+    expense's effect on `account_id` (money out, i.e. 'credit'). Removes the
+    linked entry if account_id is falsy or invalid. `expense` must already
+    have a flushed id."""
+    from app.models import JournalAccount, JournalEntry, JournalLine
+
+    existing_entry = JournalEntry.query.filter_by(expense_id=expense.id).first()
+
+    if not account_id or not JournalAccount.query.get(account_id):
+        if existing_entry:
+            db.session.delete(existing_entry)
+        return
+
+    expense_date = expense.date.date() if hasattr(expense.date, 'date') else expense.date
+
+    if existing_entry:
+        entry = existing_entry
+        entry.date = expense_date
+        entry.reference = expense.reference
+        entry.description = expense.description
+        JournalLine.query.filter_by(entry_id=entry.id).delete()
+    else:
+        entry = JournalEntry(
+            date=expense_date,
+            reference=expense.reference,
+            description=expense.description,
+            created_by=expense.created_by,
+            is_approved=is_confirmed,
+            is_rejected=False,
+            approved_by=expense.created_by if is_confirmed else None,
+            approved_at=datetime.utcnow() if is_confirmed else None,
+            expense_id=expense.id,
+        )
+        db.session.add(entry)
+        db.session.flush()
+
+    entry.lines.append(JournalLine(
+        account_id=account_id,
+        category_id=expense.category_id,
+        description=expense.description,
+        entry_type='credit',
+        amount=expense.amount,
+        bill_image_path=expense.bill_image_path,
+    ))
+
+
+def _delete_linked_journal_entry(expense_id):
+    """Remove the JournalEntry (if any) that _sync_expense_journal_line created
+    for this expense, so deleting the expense doesn't leave a dangling entry
+    still affecting an account's balance."""
+    from app.models import JournalEntry
+    entry = JournalEntry.query.filter_by(expense_id=expense_id).first()
+    if entry:
+        db.session.delete(entry)
+
+
+def _add_money_from_expense_form():
+    """Handle the 'Debit' branch of the Add Expense form: the user picked an
+    account + Debit, meaning money is going INTO that account. This is NOT an
+    expense, so no Expense row is created — it's just the Journal module's
+    existing 'Add Money' action (see journal._create_add_money_entry), reached
+    from the Expense form for convenience."""
+    from app.models import JournalAccount
+    from app.routes.journal import _create_add_money_entry
+
+    account_id = request.form.get('account_id', type=int)
+    acct = JournalAccount.query.get(account_id) if account_id else None
+    if not acct:
+        flash('Please select an account to add money to.', 'warning')
+        return redirect(url_for('accounting.add_expense'))
+
+    try:
+        amount = float(request.form.get('amount') or 0)
+    except (TypeError, ValueError):
+        amount = 0
+    if amount <= 0:
+        flash('Enter an amount greater than zero.', 'warning')
+        return redirect(url_for('accounting.add_expense'))
+
+    entry, is_admin = _create_add_money_entry(
+        acct, amount, 'debit', request.form.get('date'),
+        request.form.get('reference'), request.form.get('description'),
+        request.files.get('bill_image'),
+    )
+    if is_admin:
+        flash(f'PKR {amount:,.0f} added to "{acct.name}". Recorded as a Journal entry, not an Expense.', 'success')
+    else:
+        flash(f'Entry of PKR {amount:,.0f} added to "{acct.name}" submitted for Admin approval.', 'info')
+    return redirect(url_for('journal.account_ledger', account_id=acct.id))
+
+
+def _parse_expense_date(raw):
+    """Parse a bulk-upload sheet's Date cell — openpyxl already hands back a
+    datetime/date object for date-formatted cells, otherwise fall back to the
+    common text formats. Returns a datetime, or None if unparseable."""
+    if raw is None or str(raw).strip() in ('', '-'):
+        return None
+    if isinstance(raw, datetime):
+        return raw
+    if hasattr(raw, 'year') and hasattr(raw, 'month') and hasattr(raw, 'day'):
+        return datetime.combine(raw, datetime.min.time())
+    s = str(raw).strip()
+    for fmt in ('%d-%m-%Y', '%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%y'):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    return None
+
 
 @bp.route('/ledger')
 def ledger():
@@ -1218,10 +1336,13 @@ def unshift_expense_from_inventory():
 @login_required
 @permission_required('accounting', action='add')
 def add_expense():
-    from app.models import ExpenseCategory, Vendor, BOM
+    from app.models import ExpenseCategory, Vendor, BOM, JournalAccount
     from werkzeug.utils import secure_filename
     import os
-    
+
+    if request.method == 'POST' and request.form.get('txn_type') == 'debit':
+        return _add_money_from_expense_form()
+
     form = ExpenseForm()
     
     # Populate category choices
@@ -1472,11 +1593,17 @@ def add_expense():
         
         # Update expense settings next number
         settings.next_number = next_expense_num
-        
+
         try:
+            account_id = request.form.get('account_id', type=int)
+            if account_id:
+                db.session.flush()  # assign ids to the new Expense row(s) first
+                for exp in created_expenses:
+                    _sync_expense_journal_line(exp, account_id, target_status == 'confirmed')
+
             db.session.commit()
-            
-            log_activity('Accounting', f'Added Expense: {flash_msg}', 
+
+            log_activity('Accounting', f'Added Expense: {flash_msg}',
                         f'Total: {base_amount}, Mode: {mode}, Status: {target_status}')
             
             flash(flash_msg, 'success')
@@ -1488,8 +1615,273 @@ def add_expense():
             else:
                 flash(f'Error creating expense: {str(e)}', 'danger')
             return redirect(url_for('accounting.add_expense'))
-        
-    return render_template('accounting/add_expense.html', form=form)
+
+    journal_accounts = JournalAccount.query.filter_by(is_active=True).order_by(JournalAccount.name).all()
+    return render_template('accounting/add_expense.html', form=form, journal_accounts=journal_accounts)
+
+
+@bp.route('/expense/bulk-upload', methods=['GET', 'POST'])
+@login_required
+@permission_required('accounting', action='add')
+def bulk_upload_expense():
+    """Bulk-create/update Expenses from an uploaded Excel sheet (same shape as
+    the app's own Expense report export). Deliberately out of scope: BOM
+    Overhead linkage, Manufacturing Order allocation, monthly division, and
+    the Journal Account/Debit-Credit link — those stay individual-only via
+    Add/Edit Expense so a spreadsheet can never silently mis-allocate cost."""
+    from app.models import ExpenseCategory, Vendor, JournalEntry
+    import re
+
+    if request.method == 'POST':
+        if 'file' not in request.files or not request.files['file'].filename:
+            flash('No file selected.', 'error')
+            return redirect(url_for('accounting.bulk_upload_expense'))
+
+        file = request.files['file']
+        if not file.filename.lower().endswith(('.xlsx', '.xls')):
+            flash('Please upload an Excel file (.xlsx or .xls).', 'error')
+            return redirect(url_for('accounting.bulk_upload_expense'))
+
+        try:
+            from openpyxl import load_workbook
+            from io import BytesIO
+            wb = load_workbook(filename=BytesIO(file.read()), read_only=True, data_only=True)
+            ws = wb.active
+            rows = list(ws.values)
+        except Exception as e:
+            flash(f'Error reading file: {str(e)}', 'error')
+            return redirect(url_for('accounting.bulk_upload_expense'))
+
+        if not rows:
+            flash('File is empty.', 'error')
+            return redirect(url_for('accounting.bulk_upload_expense'))
+
+        # Some exports (like the app's own) put a title row above the real
+        # header — scan the first few rows for one that has both Date and Amount.
+        header_idx = None
+        for i, r in enumerate(rows[:5]):
+            cells = [str(c).strip().lower() if c is not None else '' for c in r]
+            if 'date' in cells and 'amount' in cells:
+                header_idx = i
+                break
+        if header_idx is None:
+            flash('Could not find a header row with Date and Amount columns.', 'error')
+            return redirect(url_for('accounting.bulk_upload_expense'))
+
+        headers = [str(c).strip().lower() if c is not None else '' for c in rows[header_idx]]
+
+        def col(*names):
+            for name in names:
+                if name in headers:
+                    return headers.index(name)
+            return None
+
+        idx_num = col('expense #', 'expense#', 'expense number')
+        idx_date = col('date')
+        idx_category = col('category')
+        idx_vendor = col('vendor')
+        idx_desc = col('description')
+        idx_amount = col('amount')
+        idx_approval = col('approval', 'status')
+
+        if None in (idx_date, idx_category, idx_desc, idx_amount):
+            flash('The sheet must have Date, Category, Description and Amount columns.', 'error')
+            return redirect(url_for('accounting.bulk_upload_expense'))
+
+        settings = ExpenseSettings.query.first()
+        if not settings:
+            settings = ExpenseSettings(expense_prefix='EXP-', expense_suffix='', next_number=1)
+            db.session.add(settings)
+            db.session.commit()
+
+        is_admin = getattr(current_user, 'is_admin', False)
+        category_cache = {c.name.lower(): c for c in ExpenseCategory.query.all()}
+        vendor_cache = {v.name.lower(): v for v in Vendor.query.all()}
+
+        created = 0
+        updated = 0
+        errors = []
+
+        for i, row in enumerate(rows[header_idx + 1:]):
+            row_num = header_idx + 2 + i  # Excel row number, matching what the user sees
+
+            def cell(idx):
+                return row[idx] if idx is not None and idx < len(row) else None
+
+            # Skip fully blank rows silently (common at the end of exported sheets)
+            if all(c is None or str(c).strip() in ('', '-') for c in row):
+                continue
+
+            try:
+                raw_amount = cell(idx_amount)
+                if raw_amount is None or str(raw_amount).strip() in ('', '-'):
+                    errors.append(f'Row {row_num}: Missing amount')
+                    continue
+                amount_str = re.sub(r'[^\d.\-]', '', str(raw_amount))
+                try:
+                    amount = float(amount_str)
+                except ValueError:
+                    errors.append(f'Row {row_num}: Invalid amount "{raw_amount}"')
+                    continue
+                if amount <= 0:
+                    errors.append(f'Row {row_num}: Amount must be greater than zero')
+                    continue
+
+                exp_date = _parse_expense_date(cell(idx_date))
+                if not exp_date:
+                    errors.append(f'Row {row_num}: Invalid or missing date "{cell(idx_date)}"')
+                    continue
+
+                cat_name = str(cell(idx_category) or '').strip()
+                if not cat_name or cat_name == '-':
+                    errors.append(f'Row {row_num}: Missing category')
+                    continue
+                category = category_cache.get(cat_name.lower())
+                if not category:
+                    category = ExpenseCategory(name=cat_name)
+                    db.session.add(category)
+                    db.session.flush()
+                    category_cache[cat_name.lower()] = category
+
+                vendor = None
+                if idx_vendor is not None:
+                    vendor_name = str(cell(idx_vendor) or '').strip()
+                    if vendor_name and vendor_name != '-':
+                        vendor = vendor_cache.get(vendor_name.lower())
+                        if not vendor:
+                            vendor = Vendor(name=vendor_name)
+                            db.session.add(vendor)
+                            db.session.flush()
+                            vendor_cache[vendor_name.lower()] = vendor
+
+                description = str(cell(idx_desc) or '').strip()
+                if not description:
+                    errors.append(f'Row {row_num}: Missing description')
+                    continue
+
+                # Approval column -> status flags. Non-admin uploaders always land
+                # Pending, same as a normal non-admin Add Expense submission — a
+                # spreadsheet can never self-approve on their behalf.
+                approval_raw = str(cell(idx_approval) or '').strip().lower() if idx_approval is not None else ''
+                status, is_approved, is_rejected, is_draft, rejection_reason = 'pending', False, False, False, None
+                if is_admin and approval_raw == 'approved':
+                    status, is_approved = 'confirmed', True
+                elif is_admin and approval_raw == 'rejected':
+                    status, is_rejected, rejection_reason = 'rejected', True, 'Bulk import: marked Rejected'
+                elif is_admin and approval_raw == 'draft':
+                    is_draft = True
+
+                # Expense # -> upsert match. Exported sheets sometimes glue extra
+                # badge text onto this cell (e.g. "EXP-10221 ... BOM Overhead"), so
+                # only the first whitespace-delimited token counts as the number.
+                raw_num = str(cell(idx_num) or '').strip() if idx_num is not None else ''
+                clean_num = raw_num.split()[0] if raw_num and raw_num != '-' else ''
+                existing = Expense.query.filter_by(expense_number=clean_num).first() if clean_num else None
+
+                if existing:
+                    if existing.is_bom_overhead:
+                        errors.append(f'Row {row_num}: {clean_num} is a BOM Overhead expense — edit it individually, not via bulk upload.')
+                        continue
+
+                    linked_entry = JournalEntry.query.filter_by(expense_id=existing.id).first()
+                    linked_account_id = linked_entry.lines[0].account_id if (linked_entry and linked_entry.lines) else None
+
+                    existing.date = exp_date
+                    existing.category_id = category.id
+                    existing.vendor_id = vendor.id if vendor else None
+                    existing.description = description
+                    existing.amount = amount
+                    existing.status = status
+                    existing.is_approved = is_approved
+                    existing.is_rejected = is_rejected
+                    existing.is_draft = is_draft
+                    existing.rejection_reason = rejection_reason
+                    if is_approved:
+                        existing.approved_by = current_user.id
+                        existing.approved_at = datetime.utcnow()
+
+                    if linked_account_id:
+                        _sync_expense_journal_line(existing, linked_account_id, is_approved)
+
+                    updated += 1
+                else:
+                    expense_number, next_num = get_unique_expense_number(settings, settings.next_number)
+                    settings.next_number = next_num
+                    exp = Expense(
+                        expense_number=expense_number,
+                        date=exp_date,
+                        category_id=category.id,
+                        vendor_id=vendor.id if vendor else None,
+                        description=description,
+                        amount=amount,
+                        status=status,
+                        is_approved=is_approved,
+                        is_rejected=is_rejected,
+                        is_draft=is_draft,
+                        rejection_reason=rejection_reason,
+                        approved_by=current_user.id if is_approved else None,
+                        approved_at=datetime.utcnow() if is_approved else None,
+                        created_by=current_user.id,
+                    )
+                    db.session.add(exp)
+                    created += 1
+
+                db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                errors.append(f'Row {row_num}: {str(e)}')
+
+        if created or updated:
+            log_activity('Accounting', 'Bulk Uploaded Expenses',
+                        f'Created: {created}, Updated: {updated}, Errors: {len(errors)}')
+
+        if created:
+            flash(f'{created} expense(s) created.', 'success')
+        if updated:
+            flash(f'{updated} expense(s) updated.', 'success')
+        if errors:
+            shown = '; '.join(errors[:15])
+            more = f' … and {len(errors) - 15} more' if len(errors) > 15 else ''
+            flash(f'{len(errors)} row(s) skipped: {shown}{more}', 'warning')
+        if not created and not updated and not errors:
+            flash('No data rows found to import.', 'warning')
+
+        return redirect(url_for('accounting.expenses'))
+
+    return render_template('accounting/bulk_upload_expense.html')
+
+
+@bp.route('/expense/download-sample')
+@login_required
+@permission_required('accounting', action='add')
+def download_expense_sample():
+    from openpyxl import Workbook
+    from io import BytesIO
+    from flask import send_file
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Expenses'
+
+    headers = ['Expense #', 'Date', 'Category', 'Vendor', 'Description', 'Amount', 'Approval']
+    ws.append(headers)
+    sample_data = [
+        ['', '01-04-2026', 'Fuel - Factory', '', 'Bike petrol', 250, 'Pending'],
+        ['', '02-04-2026', 'Office Supplies', 'ABC Traders', 'Stationery purchase', 1200, 'Approved'],
+        ['EXP-1050', '03-04-2026', 'Utilities', '', 'Electricity bill (updates existing EXP-1050 if it exists)', 5400, 'Approved'],
+    ]
+    for row in sample_data:
+        ws.append(row)
+    ws.column_dimensions['A'].width = 14
+    ws.column_dimensions['C'].width = 20
+    ws.column_dimensions['D'].width = 18
+    ws.column_dimensions['E'].width = 40
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return send_file(output, download_name='sample_expenses.xlsx', as_attachment=True)
+
 
 @bp.route('/expense/<int:id>/delete', methods=['POST'])
 @login_required
@@ -1513,9 +1905,10 @@ def delete_expense(id):
         mo_id_to_reduce = expense.mo_id
 
     description = expense.description
-    
+
+    _delete_linked_journal_entry(expense.id)
     db.session.delete(expense)
-    
+
     # Also reduce actual_overhead_cost and total_cost in MO if it was linked and confirmed
     if mo_id_to_reduce and is_confirmed:
         linked_mo = ManufacturingOrder.query.get(mo_id_to_reduce)
@@ -1597,9 +1990,10 @@ def bulk_delete_expenses():
                     boms_to_update.add(('product', expense.product_id))
                 if has_column('expenses', 'mo_id') and expense.mo_id:
                     mo_id_to_reduce = expense.mo_id
-            
+
+            _delete_linked_journal_entry(expense.id)
             db.session.delete(expense)
-            
+
             if mo_id_to_reduce and is_confirmed:
                 linked_mo = ManufacturingOrder.query.get(mo_id_to_reduce)
                 if linked_mo:
@@ -1979,7 +2373,17 @@ def edit_expense(id):
                 if new_mo:
                     new_mo.actual_overhead_cost = (new_mo.actual_overhead_cost or 0) + new_exp.amount
                     new_mo.total_cost = (new_mo.actual_material_cost or 0) + (new_mo.actual_labor_cost or 0) + new_mo.actual_overhead_cost
-                    
+
+        # Keep the linked Journal account entry (if any) in sync with this
+        # expense's current account/amount/description. Stays 'credit' —
+        # switching an existing expense to Debit isn't offered here since that
+        # would mean it's no longer really an expense.
+        account_id = request.form.get('account_id', type=int)
+        db.session.flush()
+        _sync_expense_journal_line(expense, account_id, is_confirmed)
+        for new_exp, _target_type, _target_id in created_expenses:
+            _sync_expense_journal_line(new_exp, account_id, is_confirmed)
+
         db.session.commit()
         log_activity('Accounting', f'Updated Expense: {expense.expense_number}',
                     f'Amount: {expense.amount}, Description: {expense.description}')
@@ -2038,8 +2442,14 @@ def edit_expense(id):
         
         flash('Expense updated successfully', 'success')
         return redirect(url_for('accounting.expenses'))
-    
-    return render_template('accounting/edit_expense.html', form=form, expense=expense)
+
+    from app.models import JournalAccount, JournalEntry
+    journal_accounts = JournalAccount.query.filter_by(is_active=True).order_by(JournalAccount.name).all()
+    linked_entry = JournalEntry.query.filter_by(expense_id=expense.id).first()
+    existing_account_id = linked_entry.lines[0].account_id if (linked_entry and linked_entry.lines) else None
+
+    return render_template('accounting/edit_expense.html', form=form, expense=expense,
+                           journal_accounts=journal_accounts, existing_account_id=existing_account_id)
 
 @bp.route('/expense-categories')
 @login_required
@@ -2119,7 +2529,15 @@ def confirm_expense(id):
                 )
             except Exception as e:
                 print(f"Error updating BOM during confirmation: {e}")
-                
+
+    from app.models import JournalEntry
+    linked_entry = JournalEntry.query.filter_by(expense_id=expense.id).first()
+    if linked_entry:
+        linked_entry.is_approved = True
+        linked_entry.is_rejected = False
+        linked_entry.approved_by = current_user.id
+        linked_entry.approved_at = datetime.utcnow()
+
     db.session.commit()
     log_activity('Accounting', f'Confirmed Expense: {expense.expense_number}',
                 f'Amount: {expense.amount}, Description: {expense.description}')
@@ -2141,7 +2559,14 @@ def reject_expense(id):
     expense.is_approved = False
     expense.is_rejected = True
     expense.rejection_reason = reason
-    
+
+    from app.models import JournalEntry
+    linked_entry = JournalEntry.query.filter_by(expense_id=expense.id).first()
+    if linked_entry:
+        linked_entry.is_approved = False
+        linked_entry.is_rejected = True
+        linked_entry.rejection_reason = reason
+
     db.session.commit()
     log_activity('Accounting', f'Rejected Expense: {expense.expense_number}',
                 f'Reason: {reason or "No reason provided"}')

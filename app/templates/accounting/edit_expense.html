@@ -102,6 +102,28 @@
                 <div class="card-body">
                     <form method="POST" enctype="multipart/form-data">
                         {{ form.hidden_tag() }}
+
+                        <!-- Account this expense deducts from (optional). Kept Credit-only here — an
+                             existing expense already exists, so switching it to a plain "Add Money" (Debit)
+                             transaction isn't offered on this page; that's only available on Add Expense. -->
+                        <div class="mb-3 p-3 border rounded" style="background:#f8f9ff;">
+                            <label class="form-label fw-semibold">Account <span class="text-muted small fw-normal">(optional)</span></label>
+                            <div class="d-flex gap-2">
+                                <select id="accountIdSelect" name="account_id" class="form-select flex-grow-1">
+                                    <option value="">— No Account —</option>
+                                    {% for acct in journal_accounts %}
+                                    <option value="{{ acct.id }}" {% if existing_account_id == acct.id %}selected{% endif %}>{{ acct.name }}{% if acct.account_type %} ({{ acct.account_type }}){% endif %}</option>
+                                    {% endfor %}
+                                </select>
+                                {% if current_user.is_admin %}
+                                <button type="button" class="btn btn-outline-primary text-nowrap" id="newAccountBtn" title="Create new account">
+                                    <i class="bi bi-plus-lg"></i> New Account
+                                </button>
+                                {% endif %}
+                            </div>
+                            <div class="form-text">If selected, this expense deducts its amount (Credit) from this account's balance.</div>
+                        </div>
+
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Date</label>
@@ -301,6 +323,37 @@
         </div>
     </div>
 </div>
+
+<!-- New Account modal (inline "create account" for the searchable Account dropdown, admin-only) -->
+<div class="modal fade" id="newAccountModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-book me-2"></i>Create Account</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="newAccountError" class="alert alert-danger py-2 d-none"></div>
+                <div class="mb-3">
+                    <label class="form-label">Account Name <span class="text-danger">*</span></label>
+                    <input type="text" id="newAccountName" class="form-control" placeholder="e.g., Cash, Bank, Office Expense">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Type <span class="text-muted small">(optional)</span></label>
+                    <input type="text" id="newAccountType" class="form-control" placeholder="e.g., Cash / Bank / Expense / Income">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Opening Balance</label>
+                    <input type="number" step="0.01" id="newAccountOpeningBalance" class="form-control" value="0">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveNewAccountBtn"><i class="fas fa-save me-1"></i>Create</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -311,9 +364,58 @@ document.addEventListener('DOMContentLoaded', function() {
     $('select[name="category_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Category —', allowClear: true, width: '100%' });
     $('select[name="payment_method"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Payment Method —', allowClear: true, width: '100%' });
     $('select[name="vendor_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Vendor (Optional) —', allowClear: true, width: '100%' });
+    $('#accountIdSelect').select2({ theme: 'bootstrap-5', placeholder: '— Select Account —', allowClear: true, width: '100%' });
     $('#mo_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select In Progress Manufacturing Order(s) —', allowClear: true, width: '100%', closeOnSelect: false });
     $('#product_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select Finished Products —', allowClear: true, width: '100%', closeOnSelect: false });
     $('#bom_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select BOMs —', allowClear: true, width: '100%', closeOnSelect: false });
+
+    // ── "New Account" modal (admin-only) ──────────────────────────────────
+    const newAccountBtn = document.getElementById('newAccountBtn');
+    if (newAccountBtn) {
+        const newAccountModalEl = document.getElementById('newAccountModal');
+        const newAccountModal = new bootstrap.Modal(newAccountModalEl);
+        newAccountBtn.addEventListener('click', function() {
+            document.getElementById('newAccountName').value = '';
+            document.getElementById('newAccountType').value = '';
+            document.getElementById('newAccountOpeningBalance').value = 0;
+            document.getElementById('newAccountError').classList.add('d-none');
+            newAccountModal.show();
+        });
+        document.getElementById('saveNewAccountBtn').addEventListener('click', function() {
+            const name = document.getElementById('newAccountName').value.trim();
+            const errorBox = document.getElementById('newAccountError');
+            errorBox.classList.add('d-none');
+            if (!name) {
+                errorBox.textContent = 'Account name is required.';
+                errorBox.classList.remove('d-none');
+                return;
+            }
+            const fd = new FormData();
+            fd.append('name', name);
+            fd.append('account_type', document.getElementById('newAccountType').value.trim());
+            fd.append('opening_balance', document.getElementById('newAccountOpeningBalance').value || 0);
+
+            fetch('{{ url_for("journal.create_account_quick") }}', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        const opt = new Option(
+                            data.account.name + (data.account.account_type ? ' (' + data.account.account_type + ')' : ''),
+                            data.account.id, true, true
+                        );
+                        $('#accountIdSelect').append(opt).trigger('change');
+                        newAccountModal.hide();
+                    } else {
+                        errorBox.textContent = data.message || 'Could not create account.';
+                        errorBox.classList.remove('d-none');
+                    }
+                })
+                .catch(() => {
+                    errorBox.textContent = 'Network error — could not create account.';
+                    errorBox.classList.remove('d-none');
+                });
+        });
+    }
 
     // DOM Elements
     const isBomOverheadCheckbox = document.getElementById('is_bom_overhead');

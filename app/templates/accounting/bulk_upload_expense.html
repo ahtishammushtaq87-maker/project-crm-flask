@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Upload Expenses{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-sm-flex align-items-center justify-content-between mb-4">
+        <h1 class="h3 mb-0 text-gray-800">Bulk Upload Expenses</h1>
+        <a href="{{ url_for('accounting.expenses') }}" class="btn btn-sm btn-secondary shadow-sm">
+            <i class="fas fa-arrow-left fa-sm text-white-50"></i> Back to Expenses
+        </a>
+    </div>
+
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">Upload Excel File</h6>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info">
+                <h5><i class="fas fa-info-circle"></i> Instructions</h5>
+                <ul class="mb-2">
+                    <li>Upload an Excel file (.xlsx or .xls). Columns are matched by name (case-insensitive), in any order.</li>
+                    <li>Required columns: <strong>Date</strong>, <strong>Category</strong>, <strong>Description</strong>, <strong>Amount</strong></li>
+                    <li>Optional columns: <strong>Expense #</strong>, <strong>Vendor</strong>, <strong>Approval</strong></li>
+                    <li><strong>Category</strong> / <strong>Vendor</strong> are matched by name — if a name isn't found yet, it's created automatically.</li>
+                    <li><strong>Expense #</strong>: leave blank to always create a new expense. If it matches an existing expense number, that expense is <strong>updated</strong> instead of duplicated.</li>
+                    <li><strong>Approval</strong>: one of <em>Pending</em>, <em>Approved</em>, <em>Rejected</em>, <em>Draft</em>. Only admins can set <em>Approved</em>/<em>Rejected</em>/<em>Draft</em> this way — for everyone else every row lands as Pending, same as a normal Add Expense submission.</li>
+                    <li><strong>Amount</strong> accepts plain numbers or values like <code>PKR 1,250.00</code> — currency symbols and commas are stripped automatically.</li>
+                </ul>
+                <div class="alert alert-warning py-2 px-3 mb-0">
+                    <i class="fas fa-triangle-exclamation me-1"></i>
+                    Not supported via bulk upload — add/edit these individually instead: BOM Overhead / Manufacturing Order allocation, Monthly Division, and linking an expense to a Journal Account (Debit/Credit). An existing expense that is a BOM Overhead expense is skipped rather than modified.
+                </div>
+            </div>
+
+            <form method="POST" enctype="multipart/form-data" class="mb-0">
+                <div class="mb-3">
+                    <label for="file" class="form-label">Select Excel File</label>
+                    <input type="file" name="file" id="file" class="form-control" accept=".xlsx,.xls" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-upload me-1"></i> Upload Expenses
+                </button>
+                <a href="{{ url_for('accounting.download_expense_sample') }}" class="btn btn-success">
+                    <i class="fas fa-download me-1"></i> Download Sample
+                </a>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
