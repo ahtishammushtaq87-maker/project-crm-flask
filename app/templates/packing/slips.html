@@ -87,13 +87,13 @@
                                         class="btn btn-outline-primary" title="Download" target="_blank" rel="noopener">
                                         <i class="fas fa-download"></i>
                                     </a>
-                                    {% if slip.sale and slip.sale.customer and slip.sale.customer.phone %}
-                                    {% set slip_phone = slip.sale.customer.phone|replace('+', '')|replace(' ', '')|replace('-', '')|replace('(', '')|replace(')', '') %}
+                                    {% if slip.sale and slip.sale.salesman and slip.sale.salesman.phone %}
+                                    {% set slip_phone = slip.sale.salesman.phone|replace('+', '')|replace(' ', '')|replace('-', '')|replace('(', '')|replace(')', '') %}
                                     {% if slip_phone|length >= 10 %}
                                     <button type="button" class="btn btn-outline-success share-slip-btn"
                                         data-share-url="{{ url_for('packing.slip_share_link', slip_id=slip.id) }}"
                                         data-phone="{{ slip_phone }}" data-slip-number="{{ slip.display_number }}"
-                                        title="Share via WhatsApp">
+                                        title="Share via WhatsApp (to salesman {{ slip.sale.salesman.name }})">
                                         <i class="fab fa-whatsapp"></i>
                                     </button>
                                     {% endif %}
@@ -197,9 +197,9 @@
                 var phone = btn.getAttribute('data-phone');
                 var slipNumber = btn.getAttribute('data-slip-number');
                 var fullPdfUrl = window.location.origin + data.url;
-                var message = 'Hi! Here is your Packing Slip ' + slipNumber +
-                    '. You can view and securely download your PDF directly here:\n\n' +
-                    fullPdfUrl + '\n\nThank you for your business!';
+                var message = 'Hi! Here is Packing Slip ' + slipNumber +
+                    '. You can view and download the PDF directly here:\n\n' +
+                    fullPdfUrl;
                 var whatsappUrl = 'https://wa.me/' + phone + '?text=' + encodeURIComponent(message);
                 var newWin = window.open(whatsappUrl, '_blank');
                 if (!newWin) {
