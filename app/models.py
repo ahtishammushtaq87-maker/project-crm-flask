@@ -4531,8 +4531,31 @@ class PackingSlip(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
+    # Same public-share pattern as Sale/PurchaseBill/Quotation — lets the
+    # WhatsApp share button link straight to the PDF with no login required.
+    access_token = db.Column(db.String(100), unique=True, nullable=True, index=True)
+    token_expiry = db.Column(db.DateTime, nullable=True)
+
     sale = db.relationship('Sale', backref=db.backref('packing_slips', lazy=True))
     created_by_user = db.relationship('User', foreign_keys=[created_by], lazy=True)
+
+    @property
+    def valid_access_token(self):
+        import uuid
+        from datetime import datetime, timedelta
+        from app import db
+        if not self.access_token or not self.token_expiry or self.token_expiry < datetime.utcnow():
+            self.access_token = str(uuid.uuid4())
+            self.token_expiry = datetime.utcnow() + timedelta(days=30)
+            db.session.commit()
+        return self.access_token
+
+    @property
+    def display_number(self):
+        """slip_number without the zero-padding, e.g. 'PKG-00021' -> 'PKG-21'
+        — cosmetic only, the stored/generated number is unchanged."""
+        import re
+        return re.sub(r'0*(\d+)', r'\1', self.slip_number or '', count=1)
 
     def __repr__(self):
         return f'<PackingSlip {self.slip_number}>'

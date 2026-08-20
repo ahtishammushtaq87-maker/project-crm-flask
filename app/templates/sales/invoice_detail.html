@@ -965,7 +965,7 @@
                     </h6>
                 </div>
                 <div class="card-body">
-                    <p class="mb-1"><strong>Company Name:</strong>
+                    <p class="mb-1"><strong>Customer:</strong>
                         {% if sale.customer %}
                         <a href="{{ url_for('sales.customer_profile', id=sale.customer.id) }}"
                             class="text-decoration-none fw-bold text-primary">
@@ -976,10 +976,44 @@
                         Walk-in Customer
                         {% endif %}
                     </p>
+                    {% if sale.customer and sale.customer.company_name %}
+                    <p class="mb-1"><strong>Company Name:</strong> {{ sale.customer.company_name }}</p>
+                    {% endif %}
+                    {% if sale.customer and sale.customer.contact_person %}
+                    <p class="mb-1"><strong>Contact Person:</strong> {{ sale.customer.contact_person }}</p>
+                    {% endif %}
                     <p class="mb-1"><strong>Phone:</strong> {{ sale.customer.phone if sale.customer else 'N/A' }}</p>
                     <p class="mb-1"><strong>Email:</strong> {{ sale.customer.email if sale.customer else 'N/A' }}</p>
                     <p class="mb-1"><strong>Address:</strong> {{ sale.customer.address if sale.customer else 'N/A' }}
                     </p>
+                    {% if sale.customer and (sale.customer.city or sale.customer.state or sale.customer.country or sale.customer.postal_code) %}
+                    <p class="mb-1"><strong>Location:</strong>
+                        {{ [sale.customer.city, sale.customer.state, sale.customer.country]|select('string')|join(', ') }}
+                        {%- if sale.customer.postal_code %} - {{ sale.customer.postal_code }}{% endif %}
+                    </p>
+                    {% endif %}
+                    {% if sale.customer and sale.customer.sub_customers_list %}
+                    <p class="mb-1"><strong>Customer Names &amp; Numbers:</strong></p>
+                    <ul class="list-unstyled mb-1 small">
+                        {% for sub in sale.customer.sub_customers_list %}
+                        <li class="mb-1"><i class="fas fa-user-circle text-muted me-1"></i>{{ sub.name }}
+                            {% if sub.phone %}<i class="fas fa-phone text-success ms-2 me-1"></i>{{ sub.phone }}{% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                    {% if sale.customer and sale.customer.gst_number %}
+                    <p class="mb-1"><strong>GST Number:</strong> {{ sale.customer.gst_number }}</p>
+                    {% endif %}
+                    {% if sale.customer and sale.customer.pan_number %}
+                    <p class="mb-1"><strong>PAN Number:</strong> {{ sale.customer.pan_number }}</p>
+                    {% endif %}
+                    {% if sale.customer and sale.customer.payment_method %}
+                    <p class="mb-1"><strong>Payment Method:</strong> {{ sale.customer.payment_method }}</p>
+                    {% endif %}
+                    {% if sale.customer and sale.customer.payment_terms %}
+                    <p class="mb-1"><strong>Payment Terms:</strong> {{ sale.customer.payment_terms }} days</p>
+                    {% endif %}
                     <hr class="my-2">
                     <h6 class="text-primary mb-2"><i class="fas fa-calendar-alt me-2"></i>Invoice Dates</h6>
                     <p class="mb-1 small"><strong>Invoice Date:</strong> {{ sale.date.strftime(date_format) }}</p>

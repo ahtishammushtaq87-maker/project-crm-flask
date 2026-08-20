@@ -47,7 +47,12 @@
                     <tbody>
                         {% for slip in slips %}
                         <tr>
-                            <td class="fw-semibold">{{ slip.slip_number }}</td>
+                            <td class="fw-semibold">
+                                <a href="{{ url_for('packing.download_slip', slip_id=slip.id) }}"
+                                    target="_blank" rel="noopener" title="Open PDF">
+                                    {{ slip.display_number }}
+                                </a>
+                            </td>
                             <td>{{ slip.packing_date.strftime('%d-%b-%Y') if slip.packing_date else '-' }}</td>
                             <td>
                                 {% if slip.sale %}
@@ -82,6 +87,17 @@
                                         class="btn btn-outline-primary" title="Download" target="_blank" rel="noopener">
                                         <i class="fas fa-download"></i>
                                     </a>
+                                    {% if slip.sale and slip.sale.customer and slip.sale.customer.phone %}
+                                    {% set slip_phone = slip.sale.customer.phone|replace('+', '')|replace(' ', '')|replace('-', '')|replace('(', '')|replace(')', '') %}
+                                    {% if slip_phone|length >= 10 %}
+                                    <button type="button" class="btn btn-outline-success share-slip-btn"
+                                        data-share-url="{{ url_for('packing.slip_share_link', slip_id=slip.id) }}"
+                                        data-phone="{{ slip_phone }}" data-slip-number="{{ slip.display_number }}"
+                                        title="Share via WhatsApp">
+                                        <i class="fab fa-whatsapp"></i>
+                                    </button>
+                                    {% endif %}
+                                    {% endif %}
                                     {% if slip.sale and (current_user.is_admin or current_user.can_edit_packing) %}
                                     <button type="button" class="btn btn-outline-secondary edit-packing-slip-btn"
                                         data-bs-toggle="modal" data-bs-target="#packingSlipModal" title="Edit"
@@ -156,6 +172,46 @@
                 placeholder: $(this).data('placeholder')
             });
         });
+    });
+
+    // Share a packing slip's PDF via WhatsApp — fetches (and lazily issues) the
+    // slip's public share link only when the button is actually clicked,
+    // rather than generating a token for every row on every page load.
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest('.share-slip-btn');
+        if (!btn) return;
+
+        var originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+        fetch(btn.getAttribute('data-share-url'), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+                if (!data.success) {
+                    alert(data.message || 'Could not create a share link.');
+                    return;
+                }
+                var phone = btn.getAttribute('data-phone');
+                var slipNumber = btn.getAttribute('data-slip-number');
+                var fullPdfUrl = window.location.origin + data.url;
+                var message = 'Hi! Here is your Packing Slip ' + slipNumber +
+                    '. You can view and securely download your PDF directly here:\n\n' +
+                    fullPdfUrl + '\n\nThank you for your business!';
+                var whatsappUrl = 'https://wa.me/' + phone + '?text=' + encodeURIComponent(message);
+                var newWin = window.open(whatsappUrl, '_blank');
+                if (!newWin) {
+                    alert('Please allow popups to open WhatsApp automatically.');
+                }
+            })
+            .catch(function (err) {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+                console.error(err);
+                alert('An error occurred while creating the share link.');
+            });
     });
 </script>
 {% endblock %}

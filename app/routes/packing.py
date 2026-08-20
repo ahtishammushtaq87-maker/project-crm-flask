@@ -405,6 +405,20 @@ def save_slip(id):
         return redirect(redirect_to)
 
 
+@bp.route('/slip/<int:slip_id>/share-link')
+@login_required
+@permission_required('packing', action='view')
+def slip_share_link(slip_id):
+    """JSON endpoint backing the WhatsApp Share button — issues the slip's
+    public token only when a share is actually requested, not on every page
+    load (unlike embedding valid_access_token directly in the list template,
+    which would silently write a token for every row on every visit)."""
+    from flask import jsonify
+    slip = PackingSlip.query.get_or_404(slip_id)
+    url = url_for('packing.public_slip', token=slip.valid_access_token)
+    return jsonify({'success': True, 'url': url})
+
+
 @bp.route('/slip/<int:slip_id>/download')
 @login_required
 @permission_required('packing', action='view')
@@ -424,6 +438,31 @@ def download_slip(slip_id):
         print(f"Packing slip re-download error: {str(e)}")
         flash(f'Error generating Packing Slip PDF: {str(e)}', 'error')
         return redirect(url_for('packing.slips'))
+
+
+@bp.route('/public/slip/<token>')
+def public_slip(token):
+    """Unauthenticated PDF link for the WhatsApp share button — same
+    token-expiry pattern as sales.public_invoice, scoped to this one slip."""
+    slip = PackingSlip.query.filter_by(access_token=token).first_or_404()
+
+    if slip.token_expiry and slip.token_expiry < datetime.utcnow():
+        return "Link expired", 403
+
+    sale = Sale.query.get_or_404(slip.sale_id)
+    company = Company.query.first()
+    try:
+        buffer = generate_packing_slip_pdf(sale, company, slip)
+        response = make_response(buffer.getvalue())
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = (
+            f'inline; filename="{slip.slip_number}_{sale.invoice_number or "packing-slip"}.pdf"')
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+    except Exception as e:
+        return f"Error generating PDF: {str(e)}", 500
 
 
 @bp.route('/slip/<int:slip_id>/delete', methods=['POST'])
