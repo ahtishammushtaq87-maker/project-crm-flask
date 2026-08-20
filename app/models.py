@@ -4077,8 +4077,33 @@ class FixedExpense(db.Model):
 
     mode = db.Column(db.String(10), default='divide')   # 'divide' | 'multiply'
     amount = db.Column(db.Float, default=0)             # divide: cycle total; multiply: per-day rate
-    days = db.Column(db.Integer, default=1)             # cycle length in days
+    days = db.Column(db.Integer, default=1)             # cycle length in days (fixed_days mode only)
     start_date = db.Column(db.Date, nullable=True)
+
+    # Optional Journal Account this template's cycles are charged against
+    # (always a credit/money-out — a Fixed Expense is always a recurring
+    # cost). Applied to every cycle's Expense row as it's posted, the same
+    # way a one-off Add Expense links to an account; edits to account_id
+    # only affect cycles posted AFTER the change, never past ones.
+    account_id = db.Column(db.Integer, db.ForeignKey('journal_accounts.id'), nullable=True)
+    # Payment method and bill image are set once on the template and copied
+    # onto every cycle's generated Expense row (e.g. the same rent receipt /
+    # "Bank Transfer" for every month), same fields Add Expense uses.
+    payment_method = db.Column(db.String(50), nullable=True)
+    bill_image_path = db.Column(db.String(255), nullable=True)
+
+    # cycle_type: 'fixed_days' (default, existing behavior — a rolling N-day
+    # window from start_date) or 'calendar_month' (cycle 1 runs from
+    # start_date to the end of that month; every cycle after that is a full
+    # calendar month, so the "day count" naturally varies 28-31 and resets on
+    # the 1st). cycle_base_n supports pause/resume under calendar_month mode:
+    # when a resume re-anchors start_date to the resume date, cycle_base_n is
+    # set to cycles_posted at that moment, so cycle_window(n) can keep
+    # counting forward correctly (n - cycle_base_n = cycles since the anchor)
+    # without disturbing the numbering of cycles already posted. Unused in
+    # fixed_days mode.
+    cycle_type = db.Column(db.String(20), default='fixed_days')
+    cycle_base_n = db.Column(db.Integer, default=0)
 
     is_active = db.Column(db.Boolean, default=True, index=True)
     # When on, each cycle is written into the Expense book automatically as a
@@ -4099,32 +4124,93 @@ class FixedExpense(db.Model):
 
     category = db.relationship('ExpenseCategory', foreign_keys=[category_id])
     vendor = db.relationship('Vendor', foreign_keys=[vendor_id])
+    account = db.relationship('JournalAccount', foreign_keys=[account_id])
     expenses = db.relationship('Expense', backref='fixed_expense',
                                foreign_keys='Expense.fixed_expense_id', lazy=True)
 
     @property
+    def _is_calendar_month(self):
+        return (self.cycle_type or 'fixed_days') == 'calendar_month'
+
+    @property
     def cycle_days(self):
+        """Length in days of the CURRENT (today's) cycle. Constant in
+        fixed_days mode; varies 28-31 in calendar_month mode."""
+        if self._is_calendar_month and self.start_date:
+            n = max(1, self.cycles_started() or 1)
+            return self.cycle_length_for(n)
         return max(1, int(self.days or 1))
 
     @property
     def per_day_amount(self):
-        """Amount accrued for one day."""
-        amt = float(self.amount or 0)
-        if (self.mode or 'divide') == 'multiply':
-            return amt
-        return amt / self.cycle_days
+        """Amount accrued for one day of the CURRENT cycle."""
+        if self._is_calendar_month and self.start_date:
+            return self.per_day_amount_for(max(1, self.cycles_started() or 1))
+        return self._rate_for_length(self.cycle_days)
 
     @property
     def cycle_total(self):
-        """What one full cycle costs."""
+        """What the CURRENT cycle costs in total."""
+        if self._is_calendar_month and self.start_date:
+            return self.cycle_total_for(max(1, self.cycles_started() or 1))
+        return self._total_for_length(self.cycle_days)
+
+    def _rate_for_length(self, length_days):
         amt = float(self.amount or 0)
         if (self.mode or 'divide') == 'multiply':
-            return amt * self.cycle_days
+            return amt
+        return amt / max(1, length_days)
+
+    def _total_for_length(self, length_days):
+        amt = float(self.amount or 0)
+        if (self.mode or 'divide') == 'multiply':
+            return amt * max(1, length_days)
         return amt
+
+    def cycle_length_for(self, n):
+        """Length in days of cycle `n` specifically."""
+        start, end = self.cycle_window(n)
+        return max(1, (end - start).days + 1)
+
+    def per_day_amount_for(self, n):
+        """Per-day rate for cycle `n` specifically.
+
+        calendar_month + divide mode: 'Total Amount' means per FULL calendar
+        month, so the rate is amount / (days in THAT month) even when the
+        cycle itself is a partial period (a first cycle that starts mid-month)
+        — that's what lets cycle_total_for() prorate a partial cycle DOWN from
+        the full monthly amount, rather than charging the whole month's
+        amount for only part of it.
+
+        fixed_days mode (and multiply mode, any cycle_type): unchanged —
+        amount / that cycle's own length (multiply: just `amount`).
+        """
+        if self._is_calendar_month and (self.mode or 'divide') == 'divide':
+            import calendar
+            start, _end = self.cycle_window(n)
+            full_month_days = calendar.monthrange(start.year, start.month)[1]
+            return self._rate_for_length(full_month_days)
+        return self._rate_for_length(self.cycle_length_for(n))
+
+    def cycle_total_for(self, n):
+        """What cycle `n` actually costs — its per-day rate times its own
+        (possibly partial, in calendar_month mode) length."""
+        return self.per_day_amount_for(n) * self.cycle_length_for(n)
 
     @property
     def day_in_cycle(self):
-        """Which day of the current cycle we are on (1..days, 0 before it starts)."""
+        """Which day of the current cycle we are on (1.., 0 before it starts).
+        Driven by last_accrued_date so it stays correct across variable-length
+        calendar-month cycles; days_accrued alone (a lifetime counter) can't
+        be turned back into "day of cycle" once cycles stop being uniform."""
+        if self._is_calendar_month:
+            if not self.last_accrued_date or not self.start_date:
+                return 0
+            n = self.cycles_started(self.last_accrued_date)
+            if n <= 0:
+                return 0
+            start, _end = self.cycle_window(n)
+            return (self.last_accrued_date - start).days + 1
         done = int(self.days_accrued or 0)
         if done <= 0:
             return 0
@@ -4132,6 +4218,14 @@ class FixedExpense(db.Model):
 
     @property
     def cycles_completed(self):
+        if self._is_calendar_month:
+            if not self.last_accrued_date or not self.start_date:
+                return 0
+            n = self.cycles_started(self.last_accrued_date)
+            if n <= 0:
+                return 0
+            _start, end = self.cycle_window(n)
+            return n if self.last_accrued_date >= end else n - 1
         return int(self.days_accrued or 0) // self.cycle_days
 
     @property
@@ -4140,11 +4234,35 @@ class FixedExpense(db.Model):
             return 0
         return round(self.day_in_cycle * 100.0 / self.cycle_days)
 
+    def _calendar_window(self, rel_n):
+        """(start, end) of the rel_n-th (1-based) calendar-month cycle,
+        relative to start_date: cycle 1 runs start_date -> end of that month
+        (a partial month unless start_date happens to be the 1st); every
+        cycle after that is a full calendar month."""
+        import calendar
+        from datetime import date as _date
+        if rel_n <= 1:
+            start = self.start_date
+        else:
+            total_month_index = (self.start_date.year * 12 + (self.start_date.month - 1)) + (rel_n - 1)
+            y2, m2 = divmod(total_month_index, 12)
+            start = _date(y2, m2 + 1, 1)
+        last_day = calendar.monthrange(start.year, start.month)[1]
+        end = _date(start.year, start.month, last_day)
+        return start, end
+
     def cycle_window(self, n):
-        """(start, end) dates of cycle `n` (1-based)."""
+        """(start, end) dates of cycle `n` (1-based, absolute — counts from
+        the template's whole lifetime, not reset by a pause/resume)."""
+        if self._is_calendar_month:
+            rel_n = n - int(self.cycle_base_n or 0)
+            if rel_n < 1:
+                rel_n = 1
+            return self._calendar_window(rel_n)
         from datetime import timedelta as _timedelta
-        first = self.start_date + _timedelta(days=(n - 1) * self.cycle_days)
-        return first, first + _timedelta(days=self.cycle_days - 1)
+        cycle_days = max(1, int(self.days or 1))
+        first = self.start_date + _timedelta(days=(n - 1) * cycle_days)
+        return first, first + _timedelta(days=cycle_days - 1)
 
     def cycles_started(self, as_of=None):
         """How many cycles have begun on or before `as_of` (0 before the start)."""
@@ -4152,7 +4270,36 @@ class FixedExpense(db.Model):
         as_of = as_of or _date.today()
         if not self.start_date or as_of < self.start_date:
             return 0
-        return ((as_of - self.start_date).days // self.cycle_days) + 1
+        if self._is_calendar_month:
+            base = int(self.cycle_base_n or 0)
+            rel = 1
+            while True:
+                nxt_start, _end = self._calendar_window(rel + 1)
+                if nxt_start > as_of:
+                    return base + rel
+                rel += 1
+                if rel > 1200:      # ~100 years — should never be reached in practice
+                    return base + rel
+        cycle_days = max(1, int(self.days or 1))
+        return ((as_of - self.start_date).days // cycle_days) + 1
+
+    def _cycle_number_for_date(self, d):
+        """Which cycle number (absolute, 1-based) contains date `d`. Assumes
+        d >= start_date (callers only ever ask for dates in that range)."""
+        if not self._is_calendar_month:
+            cycle_days = max(1, int(self.days or 1))
+            return ((d - self.start_date).days // cycle_days) + 1
+        base = int(self.cycle_base_n or 0)
+        n = base + 1
+        while True:
+            start, end = self.cycle_window(n)
+            if start <= d <= end:
+                return n
+            if d < start:
+                return max(base + 1, n - 1)
+            n += 1
+            if n > base + 1200:
+                return n
 
     def sync_accrual(self, as_of=None):
         """Advance the accrual to `as_of` (default today). Returns days added.
@@ -4175,7 +4322,26 @@ class FixedExpense(db.Model):
         if new_days <= 0:
             return 0
 
-        self.accrued_amount = float(self.accrued_amount or 0) + (self.per_day_amount * new_days)
+        if self._is_calendar_month:
+            # Walk day by day so a gap spanning a month boundary charges each
+            # day at THAT day's own month rate, not one blended rate — the
+            # common case (synced roughly daily) only ever runs this loop once.
+            added_amount = 0.0
+            cursor = base + _timedelta(days=1)
+            n = self._cycle_number_for_date(cursor)
+            rate = self.per_day_amount_for(n)
+            _cyc_start, cyc_end = self.cycle_window(n)
+            for _ in range(new_days):
+                if cursor > cyc_end:
+                    n += 1
+                    rate = self.per_day_amount_for(n)
+                    _cyc_start, cyc_end = self.cycle_window(n)
+                added_amount += rate
+                cursor += _timedelta(days=1)
+            self.accrued_amount = float(self.accrued_amount or 0) + added_amount
+        else:
+            self.accrued_amount = float(self.accrued_amount or 0) + (self.per_day_amount * new_days)
+
         self.days_accrued = int(self.days_accrued or 0) + new_days
         self.last_accrued_date = as_of
         return new_days

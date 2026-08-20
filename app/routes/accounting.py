@@ -1168,8 +1168,10 @@ def expenses():
     # Get filter options
     categories = ExpenseCategory.query.filter_by(is_active=True).order_by(ExpenseCategory.name).all()
     vendors = Vendor.query.filter_by(is_active=True).order_by(Vendor.name).all()
-    from app.models import ManufacturingOrder
+    from app.models import ManufacturingOrder, JournalAccount, PaymentMethod
     manufacturing_orders = ManufacturingOrder.query.order_by(ManufacturingOrder.order_number.desc()).all()
+    journal_accounts = JournalAccount.query.filter_by(is_active=True).order_by(JournalAccount.name).all()
+    payment_methods = PaymentMethod.query.filter_by(is_active=True).order_by(PaymentMethod.name).all()
     
     # Get active/draft PD projects for the shift modal
     from app.models import PDProject
@@ -1200,6 +1202,8 @@ def expenses():
                          total_pd_shifted_expense=total_pd_shifted_expense,
                          categories=categories,
                          vendors=vendors,
+                         journal_accounts=journal_accounts,
+                         payment_methods=payment_methods,
                          manufacturing_orders=manufacturing_orders,
                          active_pd_projects=active_pd_projects,
                          inventory_items=inventory_items,
@@ -2792,19 +2796,30 @@ def _fixed_expense_json(fx):
     today = datetime.utcnow().date()
     if fx.auto_post and fx.start_date and int(fx.cycles_posted or 0) > 0:
         n = int(fx.cycles_posted or 0)
-        cyc_start, _ = fx.cycle_window(n)
+        cyc_start, cyc_end = fx.cycle_window(n)
+        cur_cycle_days = fx.cycle_length_for(n)
         gone = (today - cyc_start).days + 1
-        day_in_cycle = 0 if gone < 0 else (fx.cycle_days if gone > fx.cycle_days else gone)
-        cycles_completed = (n - 1) + (1 if day_in_cycle >= fx.cycle_days else 0)
+        day_in_cycle = 0 if gone < 0 else (cur_cycle_days if gone > cur_cycle_days else gone)
+        cycles_completed = (n - 1) + (1 if day_in_cycle >= cur_cycle_days else 0)
+        # Elapsed days/money from real dates rather than assuming every cycle
+        # is the same length — correct for both fixed N-day cycles and
+        # variable-length calendar-month cycles (mathematically equivalent to
+        # the old cycles_completed*cycle_days formula when cycles ARE uniform).
+        elapsed_days = (cyc_start - fx.start_date).days + day_in_cycle
+        completed_total = float(fx.posted_amount or 0) - fx.cycle_total_for(n)
+        incurred = round(completed_total + fx.per_day_amount_for(n) * day_in_cycle, 2)
     else:
         day_in_cycle = fx.day_in_cycle
         cycles_completed = fx.cycles_completed
+        cur_cycle_days = fx.cycle_days
+        # days_accrued/accrued_amount are already the exact lifetime running
+        # totals (kept correct per-day by sync_accrual, including across
+        # calendar-month rate changes) — no need to reconstruct them from a
+        # single current-cycle rate.
+        elapsed_days = int(fx.days_accrued or 0)
+        incurred = round(float(fx.posted_amount or 0) + float(fx.accrued_amount or 0), 2)
 
-    progress_pct = int(day_in_cycle * 100 / fx.cycle_days) if fx.cycle_days else 0
-    # Days and money actually incurred so far (cycle 0-day rows count for nothing)
-    elapsed_days = cycles_completed * fx.cycle_days + (
-        0 if day_in_cycle >= fx.cycle_days else day_in_cycle)
-    incurred = round(fx.per_day_amount * elapsed_days, 2)
+    progress_pct = int(day_in_cycle * 100 / cur_cycle_days) if cur_cycle_days else 0
 
     return {
         'id': fx.id,
@@ -2814,9 +2829,15 @@ def _fixed_expense_json(fx):
         'category_name': fx.category.name if fx.category else '',
         'vendor_id': fx.vendor_id,
         'vendor_name': fx.vendor.name if fx.vendor else '',
+        'account_id': fx.account_id,
+        'account_name': fx.account.name if fx.account else '',
+        'payment_method': fx.payment_method or '',
+        'bill_image_path': fx.bill_image_path or '',
         'mode': fx.mode or 'divide',
         'amount': round(float(fx.amount or 0), 2),
         'days': fx.cycle_days,
+        'days_raw': int(fx.days or 1),
+        'cycle_type': fx.cycle_type or 'fixed_days',
         'start_date': fx.start_date.strftime('%Y-%m-%d') if fx.start_date else '',
         'is_active': bool(fx.is_active),
         'auto_post': bool(fx.auto_post),
@@ -2885,15 +2906,20 @@ def ensure_fixed_expense_rows():
             while done < started and created < 60:
                 done += 1
                 cyc_start, cyc_end = fx.cycle_window(done)
+                cyc_days = fx.cycle_length_for(done)
+                cyc_total = fx.cycle_total_for(done)
+                cyc_daily = fx.per_day_amount_for(done)
                 expense_number, next_num = get_unique_expense_number(settings, next_num)
                 exp = Expense(
                     expense_number=expense_number,
                     date=datetime.combine(cyc_start, datetime.min.time()),
-                    amount=fx.cycle_total,
+                    amount=cyc_total,
                     description='%s - Fixed Expense (cycle %d of %d days)'
-                                % (fx.name, done, fx.cycle_days),
+                                % (fx.name, done, cyc_days),
                     category_id=fx.category_id,
                     vendor_id=fx.vendor_id,
+                    payment_method=fx.payment_method,
+                    bill_image_path=fx.bill_image_path,
                     status='confirmed',
                     created_by=fx.created_by,
                     is_approved=True,
@@ -2903,17 +2929,27 @@ def ensure_fixed_expense_rows():
                     is_monthly_divided=True,
                     monthly_start_date=cyc_start,
                     monthly_end_date=cyc_end,
-                    daily_amount=fx.per_day_amount,
+                    daily_amount=cyc_daily,
                     fixed_expense_id=fx.id,
                 )
                 db.session.add(exp)
                 fx.cycles_posted = done
-                fx.days_posted = done * fx.cycle_days
-                fx.posted_amount = float(fx.posted_amount or 0) + fx.cycle_total
+                # Cumulative days from start_date through the end of this cycle —
+                # correct whether every cycle is the same length (fixed_days) or
+                # not (calendar_month), unlike done * a-single-cycle-length.
+                fx.days_posted = (cyc_end - fx.start_date).days + 1
+                fx.posted_amount = float(fx.posted_amount or 0) + cyc_total
                 # The cycle is in the book now; clear the manual accrual so the
                 # same money can never be posted a second time by hand.
                 fx.accrued_amount = 0
                 created += 1
+
+                # Charge this cycle against the linked Journal Account, if any
+                # — same bridge Add/Edit Expense uses (credit = money out).
+                # Needs exp.id, so flush before linking.
+                if fx.account_id:
+                    db.session.flush()
+                    _sync_expense_journal_line(exp, fx.account_id, True)
 
         if created:
             settings.next_number = next_num
@@ -3002,10 +3038,11 @@ def _restore_open_cycle(fx):
     cyc_start, cyc_end = fx.cycle_window(n)
     if row.monthly_start_date != cyc_start or row.monthly_end_date == cyc_end:
         return False                      # not the trimmed row, or nothing to undo
+    cyc_total = fx.cycle_total_for(n)
     fx.posted_amount = (max(0.0, float(fx.posted_amount or 0) - float(row.amount or 0))
-                        + fx.cycle_total)
+                        + cyc_total)
     row.monthly_end_date = cyc_end
-    row.amount = fx.cycle_total
+    row.amount = cyc_total
     row.description = row.description.split(' [stopped on ')[0]
     return True
 
@@ -3028,12 +3065,46 @@ def _resume_fixed_expense(fx, resume_date=None):
         return
 
     done = int(fx.cycles_posted or 0)
-    fx.start_date = resume_date - timedelta(days=done * fx.cycle_days)
-    fx.days_posted = done * fx.cycle_days
+    if (fx.cycle_type or 'fixed_days') == 'calendar_month':
+        # Calendar-month cycles aren't uniform-length, so there's no single
+        # day-count that re-anchors start_date the way fixed_days does below.
+        # Instead: the next cycle starts fresh right on the resume date (like
+        # a new cycle 1, possibly a partial month), and cycle_base_n records
+        # how many cycles were already posted before this anchor so future
+        # cycle_window() calls keep numbering forward correctly.
+        # days_posted is left as-is — it's informational bookkeeping only,
+        # and gets a correct value again the moment the next cycle posts.
+        fx.start_date = resume_date
+        fx.cycle_base_n = done
+    else:
+        fx.start_date = resume_date - timedelta(days=done * fx.cycle_days)
+        fx.days_posted = done * fx.cycle_days
     fx.days_accrued = 0
     fx.accrued_amount = 0
     fx.last_accrued_date = None
     fx.paused_on = None
+
+
+def _save_fixed_expense_bill_image(file_storage):
+    """Save an uploaded bill image for a Fixed Expense template under
+    app/static/uploads/bills/ and return the project-root-relative path —
+    same convention Add Expense and the Journal module already use. Returns
+    None if no file was actually chosen."""
+    if not file_storage or not file_storage.filename:
+        return None
+    import os
+    import time
+    import uuid
+    from werkzeug.utils import secure_filename
+
+    original_filename = secure_filename(file_storage.filename)
+    unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+    filename = f"{unique_prefix}_{original_filename}"
+
+    full_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    file_storage.save(full_path)
+    return f"app/static/uploads/bills/{filename}"
 
 
 def _read_fixed_expense_form(fx, form):
@@ -3045,6 +3116,20 @@ def _read_fixed_expense_form(fx, form):
     mode = (form.get('mode') or 'divide').strip().lower()
     if mode not in ('divide', 'multiply'):
         mode = 'divide'
+
+    cycle_type = (form.get('cycle_type') or 'fixed_days').strip().lower()
+    if cycle_type not in ('fixed_days', 'calendar_month'):
+        cycle_type = 'fixed_days'
+    # Switching cycle_type on a template that has already run would reinterpret
+    # its whole cycle history under a different set of rules (fixed N-day
+    # windows vs. calendar months), which can desync cycles_posted/days_accrued
+    # from what's actually in the Expense book. Once it's running, the choice
+    # is locked — delete and recreate instead if a different schedule is
+    # really needed.
+    if fx.id and cycle_type != (fx.cycle_type or 'fixed_days'):
+        if int(fx.cycles_posted or 0) > 0 or int(fx.days_accrued or 0) > 0:
+            return ('Cycle type can\'t be changed after cycles have already run — '
+                    'delete and recreate this Fixed Expense if you need a different reset schedule.')
 
     try:
         amount = float(form.get('amount') or 0)
@@ -3080,12 +3165,19 @@ def _read_fixed_expense_form(fx, form):
         vendor_id = form.get('vendor_id') or None
         fx.vendor_id = int(vendor_id) if vendor_id else None
     fx.mode = mode
+    fx.cycle_type = cycle_type
     fx.amount = amount
     fx.days = days
     fx.start_date = start_date
     fx.is_active = str(form.get('is_active', '1')).lower() in ('1', 'true', 'on', 'yes')
     if 'auto_post' in form:
         fx.auto_post = str(form.get('auto_post')).lower() in ('1', 'true', 'on', 'yes')
+    # Account/payment method are optional, applied to every cycle's Expense
+    # row as it posts (see ensure_fixed_expense_rows/post_fixed_expense) —
+    # never touching cycles already in the book.
+    account_id = form.get('account_id') or None
+    fx.account_id = int(account_id) if account_id else None
+    fx.payment_method = (form.get('payment_method') or '').strip() or None
     return None
 
 
@@ -3115,6 +3207,10 @@ def create_fixed_expense():
     if err:
         return jsonify({'success': False, 'message': err}), 400
 
+    bill_path = _save_fixed_expense_bill_image(request.files.get('bill_image'))
+    if bill_path:
+        fx.bill_image_path = bill_path
+
     db.session.add(fx)
     db.session.commit()
     fx.sync_accrual()
@@ -3138,6 +3234,12 @@ def update_fixed_expense(fx_id):
     err = _read_fixed_expense_form(fx, request.form)
     if err:
         return jsonify({'success': False, 'message': err}), 400
+
+    # Only replace the bill image if a new one was actually chosen — leaves
+    # the existing one alone otherwise, same as Add/Edit Expense.
+    bill_path = _save_fixed_expense_bill_image(request.files.get('bill_image'))
+    if bill_path:
+        fx.bill_image_path = bill_path
 
     # A stop trims the open cycle; a resume starts a fresh cycle from today
     # rather than back-charging the time the template spent switched off.
@@ -3228,17 +3330,26 @@ def post_fixed_expense(fx_id):
         description='%s - fixed expense (%s)' % (fx.name, days_note),
         category_id=fx.category_id,
         vendor_id=fx.vendor_id,
+        payment_method=fx.payment_method,
+        bill_image_path=fx.bill_image_path,
         status='confirmed' if is_admin else 'pending',
         created_by=current_user.id,
         is_approved=is_admin,
         approved_by=current_user.id if is_admin else None,
         approved_at=datetime.utcnow() if is_admin else None,
         is_rejected=False,
+        fixed_expense_id=fx.id,
     )
     db.session.add(expense)
 
     fx.posted_amount = float(fx.posted_amount or 0) + pending
     fx.accrued_amount = 0
+
+    # Charge this posted amount against the linked Journal Account, if any.
+    if fx.account_id:
+        db.session.flush()
+        _sync_expense_journal_line(expense, fx.account_id, is_admin)
+
     db.session.commit()
 
     log_activity('Accounting', 'Posted Fixed Expense: ' + fx.name,

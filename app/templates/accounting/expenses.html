@@ -960,10 +960,22 @@ document.addEventListener('DOMContentLoaded', function() {
                                                    class="form-control form-control-sm" placeholder="0.00" required>
                                         </div>
                                         <div class="col-5">
-                                            <label class="form-label small fw-semibold mb-1">Days <span
+                                            <label class="form-label small fw-semibold mb-1" id="fxDaysLabel">Days <span
                                                     class="text-danger">*</span></label>
                                             <input type="number" min="1" step="1" name="days" id="fxDays"
                                                    class="form-control form-control-sm" value="30" required>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-2">
+                                        <label class="form-label small fw-semibold mb-1">Cycle resets</label>
+                                        <select name="cycle_type" id="fxCycleType" class="form-select form-select-sm">
+                                            <option value="fixed_days">Every N days (fixed, above)</option>
+                                            <option value="calendar_month">Every calendar month (1st to end of month)</option>
+                                        </select>
+                                        <div class="form-text small" id="fxCycleTypeHelp">
+                                            Monthly reset uses the real day count for each month (28-31) and starts a
+                                            fresh cycle on the 1st automatically.
                                         </div>
                                     </div>
 
@@ -976,7 +988,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                             <span class="text-muted">Full cycle</span>
                                             <span class="fw-bold" id="fxPreviewTotal">0.00</span>
                                         </div>
-                                        <div class="text-muted mt-1" style="font-size:.75rem;">
+                                        <div class="text-muted mt-1" style="font-size:.75rem;" id="fxPreviewNote">
                                             When the cycle finishes it restarts from day 1 automatically.
                                         </div>
                                     </div>
@@ -993,9 +1005,45 @@ document.addEventListener('DOMContentLoaded', function() {
                                     </div>
 
                                     <div class="mb-2">
-                                        <label class="form-label small fw-semibold mb-1">Start Date</label>
-                                        <input type="date" name="start_date" id="fxStartDate"
-                                               class="form-control form-control-sm">
+                                        <label class="form-label small fw-semibold mb-1">Account <span class="text-muted fw-normal">(optional)</span></label>
+                                        <div class="d-flex gap-1">
+                                            <select name="account_id" id="fxAccount" class="form-select form-select-sm flex-grow-1">
+                                                <option value="">— No Account —</option>
+                                                {% for acct in journal_accounts %}
+                                                <option value="{{ acct.id }}">{{ acct.name }}{% if acct.account_type %} ({{ acct.account_type }}){% endif %}</option>
+                                                {% endfor %}
+                                            </select>
+                                            {% if current_user.is_admin %}
+                                            <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" id="fxNewAccountBtn" title="Create new account">
+                                                <i class="bi bi-plus-lg"></i>
+                                            </button>
+                                            {% endif %}
+                                        </div>
+                                        <div class="form-text small">If selected, every posted cycle deducts its amount from this account.</div>
+                                    </div>
+
+                                    <div class="row g-2 mb-2">
+                                        <div class="col-7">
+                                            <label class="form-label small fw-semibold mb-1">Start Date</label>
+                                            <input type="date" name="start_date" id="fxStartDate"
+                                                   class="form-control form-control-sm">
+                                        </div>
+                                        <div class="col-5">
+                                            <label class="form-label small fw-semibold mb-1">Payment Method</label>
+                                            <select name="payment_method" id="fxPaymentMethod" class="form-select form-select-sm">
+                                                <option value="">—</option>
+                                                {% for pm in payment_methods %}
+                                                <option value="{{ pm.name }}">{{ pm.name }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-2">
+                                        <label class="form-label small fw-semibold mb-1">Bill Image <span class="text-muted fw-normal">(optional)</span></label>
+                                        <input type="file" name="bill_image" id="fxBillImage" class="form-control form-control-sm" accept="image/*">
+                                        <div class="form-text small">Copied onto every cycle's expense (e.g. the same rent receipt each month).</div>
+                                        <div id="fxBillImagePreview" class="mt-1"></div>
                                     </div>
 
                                     <div class="mb-2">
@@ -1086,6 +1134,37 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
+<!-- New Account modal for the Fixed Expense form's Account dropdown (admin-only) -->
+<div class="modal fade" id="fxNewAccountModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-book me-2"></i>Create Account</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="fxNewAccountError" class="alert alert-danger py-2 d-none"></div>
+                <div class="mb-3">
+                    <label class="form-label">Account Name <span class="text-danger">*</span></label>
+                    <input type="text" id="fxNewAccountName" class="form-control" placeholder="e.g., Cash, Bank, Office Expense">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Type <span class="text-muted small">(optional)</span></label>
+                    <input type="text" id="fxNewAccountType" class="form-control" placeholder="e.g., Cash / Bank / Expense / Income">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Opening Balance</label>
+                    <input type="number" step="0.01" id="fxNewAccountOpeningBalance" class="form-control" value="0">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="fxSaveNewAccountBtn"><i class="fas fa-save me-1"></i>Create</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     (function () {
         var URLS = {
@@ -1130,14 +1209,37 @@ document.addEventListener('DOMContentLoaded', function() {
         var items = [];
 
         // ── Live preview of per-day / cycle total ──────────────────────────
+        function daysInMonth(year, monthIndex0) {
+            return new Date(year, monthIndex0 + 1, 0).getDate();
+        }
         function updatePreview() {
             var amount = parseFloat(document.getElementById('fxAmount').value) || 0;
-            var days = parseInt(document.getElementById('fxDays').value, 10) || 1;
-            if (days < 1) days = 1;
+            var cycleType = document.getElementById('fxCycleType').value;
+            var daysInput = document.getElementById('fxDays');
+            var days;
+            if (cycleType === 'calendar_month') {
+                var sdVal = document.getElementById('fxStartDate').value;
+                var ref = sdVal ? new Date(sdVal + 'T00:00:00') : new Date();
+                days = daysInMonth(ref.getFullYear(), ref.getMonth());
+                daysInput.readOnly = true;
+                daysInput.value = days;
+                document.getElementById('fxDaysLabel').innerHTML = 'Days <span class="text-muted">(auto)</span>';
+                document.getElementById('fxPreviewNote').textContent =
+                    'Resets on the 1st of every month automatically — this preview uses ' + days +
+                    ' day(s), the length of ' +
+                    ref.toLocaleString(undefined, { month: 'long', year: 'numeric' }) + '.';
+            } else {
+                daysInput.readOnly = false;
+                days = parseInt(daysInput.value, 10) || 1;
+                if (days < 1) days = 1;
+                document.getElementById('fxDaysLabel').innerHTML = 'Days <span class="text-danger">*</span>';
+                document.getElementById('fxPreviewNote').textContent =
+                    'When the cycle finishes it restarts from day 1 automatically.';
+            }
             document.getElementById('fxPreviewPerDay').textContent = money(amount / days);
             document.getElementById('fxPreviewTotal').textContent = money(amount);
         }
-        ['fxAmount', 'fxDays'].forEach(function (id) {
+        ['fxAmount', 'fxDays', 'fxCycleType', 'fxStartDate'].forEach(function (id) {
             var el = document.getElementById(id);
             if (el) { el.addEventListener('input', updatePreview); el.addEventListener('change', updatePreview); }
         });
@@ -1157,7 +1259,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     badge += '<div class="badge bg-dark mt-1" title="Written into Expenses automatically">' +
                         '<i class="fas fa-bolt me-1"></i>Auto</div>';
                 }
-                var modeTag = '<span class="badge bg-primary">' + it.days + ' days</span>';
+                var modeTag = it.cycle_type === 'calendar_month'
+                    ? '<span class="badge bg-info text-dark" title="Resets on the 1st of every month">Monthly</span>'
+                    : '<span class="badge bg-primary">' + it.days + ' days</span>';
                 var running = it.auto_post ? (it.cycles_posted > 0) : (it.days_accrued > 0);
                 var cycle = running
                     ? ('Day ' + it.day_in_cycle + ' / ' + it.days +
@@ -1226,15 +1330,35 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // ── Form: create / update ─────────────────────────────────────────
+        var DEFAULT_CYCLE_TYPE_HELP = 'Monthly reset uses the real day count for each month (28-31) and starts a ' +
+            'fresh cycle on the 1st automatically.';
+
+        function setCycleTypeLocked(locked) {
+            var sel = document.getElementById('fxCycleType');
+            Array.prototype.forEach.call(sel.options, function (opt) {
+                opt.disabled = locked && opt.value !== sel.value;
+            });
+            document.getElementById('fxCycleTypeHelp').textContent = locked
+                ? 'This template has already run, so its reset schedule can\'t be changed — delete and recreate it for a different one.'
+                : DEFAULT_CYCLE_TYPE_HELP;
+        }
+
         function resetForm() {
             form.reset();
             document.getElementById('fxId').value = '';
             document.getElementById('fxDays').value = 30;
+            document.getElementById('fxCycleType').value = 'fixed_days';
             document.getElementById('fxIsActive').checked = true;
             document.getElementById('fxAutoPost').checked = true;
             document.getElementById('fxMode').value = 'divide';
+            document.getElementById('fxBillImage').value = '';
+            document.getElementById('fxBillImagePreview').innerHTML = '';
+            $('#fxCategory').val('').trigger('change');
+            $('#fxPaymentMethod').val('').trigger('change');
+            $('#fxAccount').val('').trigger('change');
             document.getElementById('fxFormTitle').textContent = 'New Fixed Expense';
             document.getElementById('fxCancelEditBtn').classList.add('d-none');
+            setCycleTypeLocked(false);
             updatePreview();
         }
 
@@ -1242,15 +1366,28 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('fxId').value = it.id;
             document.getElementById('fxName').value = it.name;
             document.getElementById('fxAmount').value = it.amount;
-            document.getElementById('fxDays').value = it.days;
-            document.getElementById('fxCategory').value = it.category_id || '';
+            document.getElementById('fxDays').value = it.days_raw || it.days;
+            document.getElementById('fxCycleType').value = it.cycle_type || 'fixed_days';
             document.getElementById('fxStartDate').value = it.start_date || '';
             document.getElementById('fxDescription').value = it.description || '';
             document.getElementById('fxIsActive').checked = !!it.is_active;
             document.getElementById('fxAutoPost').checked = !!it.auto_post;
             document.getElementById('fxMode').value = 'divide';
+            document.getElementById('fxBillImage').value = '';
+            $('#fxCategory').val(it.category_id || '').trigger('change');
+            $('#fxPaymentMethod').val(it.payment_method || '').trigger('change');
+            $('#fxAccount').val(it.account_id || '').trigger('change');
+            var preview = document.getElementById('fxBillImagePreview');
+            if (it.bill_image_path) {
+                var staticRel = it.bill_image_path.replace(/^app\/static\//, '');
+                preview.innerHTML = '<a href="/static/' + staticRel +
+                    '" target="_blank" class="small"><i class="fas fa-image me-1"></i>Current bill image</a>';
+            } else {
+                preview.innerHTML = '';
+            }
             document.getElementById('fxFormTitle').textContent = 'Edit: ' + it.name;
             document.getElementById('fxCancelEditBtn').classList.remove('d-none');
+            setCycleTypeLocked((it.cycles_posted > 0) || (it.days_accrued > 0));
             updatePreview();
         }
 
@@ -1340,9 +1477,84 @@ document.addEventListener('DOMContentLoaded', function() {
         modalEl.addEventListener('show.bs.modal', function () {
             var sd = document.getElementById('fxStartDate');
             if (!sd.value) sd.value = new Date().toISOString().slice(0, 10);
+            $('#fxAccount').select2({
+                theme: 'bootstrap-5', width: '100%', allowClear: true,
+                placeholder: '— No Account —', dropdownParent: $('#fixedExpenseModal')
+            });
+            $('#fxCategory').select2({
+                theme: 'bootstrap-5', width: '100%', allowClear: true,
+                placeholder: 'Select category', dropdownParent: $('#fixedExpenseModal')
+            });
+            $('#fxPaymentMethod').select2({
+                theme: 'bootstrap-5', width: '100%', allowClear: true,
+                placeholder: '— Select Payment Method —', dropdownParent: $('#fixedExpenseModal')
+            });
             updatePreview();
             load();
         });
+
+        // ── Bill image live preview ─────────────────────────────────────────
+        var fxBillImageInput = document.getElementById('fxBillImage');
+        if (fxBillImageInput) {
+            fxBillImageInput.addEventListener('change', function (e) {
+                var file = e.target.files[0];
+                var preview = document.getElementById('fxBillImagePreview');
+                if (!file) { preview.innerHTML = ''; return; }
+                var reader = new FileReader();
+                reader.onload = function (ev) {
+                    preview.innerHTML = '<img src="' + ev.target.result +
+                        '" class="img-thumbnail" style="max-width:120px; max-height:120px;">';
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // ── "New Account" modal (admin-only) ────────────────────────────────
+        var fxNewAccountBtn = document.getElementById('fxNewAccountBtn');
+        if (fxNewAccountBtn) {
+            var fxNewAccountModal = new bootstrap.Modal(document.getElementById('fxNewAccountModal'));
+            fxNewAccountBtn.addEventListener('click', function () {
+                document.getElementById('fxNewAccountName').value = '';
+                document.getElementById('fxNewAccountType').value = '';
+                document.getElementById('fxNewAccountOpeningBalance').value = 0;
+                document.getElementById('fxNewAccountError').classList.add('d-none');
+                fxNewAccountModal.show();
+            });
+            document.getElementById('fxSaveNewAccountBtn').addEventListener('click', function () {
+                var name = document.getElementById('fxNewAccountName').value.trim();
+                var errorBox = document.getElementById('fxNewAccountError');
+                errorBox.classList.add('d-none');
+                if (!name) {
+                    errorBox.textContent = 'Account name is required.';
+                    errorBox.classList.remove('d-none');
+                    return;
+                }
+                var fd2 = new FormData();
+                fd2.append('name', name);
+                fd2.append('account_type', document.getElementById('fxNewAccountType').value.trim());
+                fd2.append('opening_balance', document.getElementById('fxNewAccountOpeningBalance').value || 0);
+
+                fetch('{{ url_for("journal.create_account_quick") }}', { method: 'POST', body: fd2 })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (data.success) {
+                            var opt = new Option(
+                                data.account.name + (data.account.account_type ? ' (' + data.account.account_type + ')' : ''),
+                                data.account.id, true, true
+                            );
+                            $('#fxAccount').append(opt).trigger('change');
+                            fxNewAccountModal.hide();
+                        } else {
+                            errorBox.textContent = data.message || 'Could not create account.';
+                            errorBox.classList.remove('d-none');
+                        }
+                    })
+                    .catch(function () {
+                        errorBox.textContent = 'Network error — could not create account.';
+                        errorBox.classList.remove('d-none');
+                    });
+            });
+        }
     })();
 </script>
 
