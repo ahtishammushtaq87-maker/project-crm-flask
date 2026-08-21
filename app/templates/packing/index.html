@@ -74,6 +74,7 @@
                             <th>Warehouse</th>
                             <th class="text-center">Items</th>
                             <th class="text-center">Total Qty</th>
+                            <th class="text-center">Remaining to Pack</th>
                             <th class="text-center">Slips</th>
                             <th>Last Packed</th>
                             <th class="text-center">Packing Status</th>
@@ -98,8 +99,23 @@
                             </td>
                             <td>{{ sale.salesman.name if sale.salesman else '-' }}</td>
                             <td>{{ sale_warehouses(sale) }}</td>
-                            <td class="text-center">{{ sale.items|length }}</td>
+                            <td class="text-center">
+                                <span class="badge bg-secondary">{{ sale.items|length }}</span>
+                                <div class="small text-muted mt-1">
+                                    {% for item in sale.items %}
+                                    {{- item.product.sku if item.product and item.product.sku else '-' }}{% if not loop.last %}, {% endif %}
+                                    {%- endfor %}
+                                </div>
+                            </td>
                             <td class="text-center fw-semibold">{{ '%.2f'|format(total_qty or 0) }}</td>
+                            <td class="text-center fw-semibold">
+                                {% set rem = remaining_qty[sale.id] %}
+                                {% if rem and rem > 0 %}
+                                <span class="text-danger">{{ '%.2f'|format(rem) }}</span>
+                                {% else %}
+                                <span class="text-success">0.00</span>
+                                {% endif %}
+                            </td>
                             <td class="text-center">
                                 {% if slips_for_sale %}
                                 <span class="badge bg-dark">{{ slips_for_sale|length }}</span>
@@ -115,9 +131,10 @@
                                 {% endif %}
                             </td>
                             <td class="text-center">
-                                {% if not slips_for_sale %}
+                                {% set bucket = sale_status[sale.id] %}
+                                {% if bucket == 'pending' %}
                                 <span class="badge bg-warning text-dark">Pending</span>
-                                {% elif slips_for_sale|selectattr('is_partial')|list %}
+                                {% elif bucket == 'partial' %}
                                 <span class="badge bg-info text-dark">Partial</span>
                                 {% else %}
                                 <span class="badge bg-success">Packed</span>
@@ -148,7 +165,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="12" class="text-center text-muted py-4">
+                            <td colspan="13" class="text-center text-muted py-4">
                                 <i class="fas fa-inbox fa-2x d-block mb-2 opacity-50"></i>
                                 No invoices match these filters.
                             </td>

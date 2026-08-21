@@ -395,7 +395,8 @@ class ProfessionalPDFGenerator:
     # ── ITEMS TABLE ────────────────────────────────────────────────────────
     def _build_items_table(self, items, show_item_code=True, show_sku=False, show_discount=False,
                             discount_header='Unit Discount', show_unit_col=False,
-                            show_total_discount=False):
+                            show_total_discount=False, show_net_after_discount=False,
+                            unit_price_header='Unit Price'):
         headers = ['#', 'Description']
         if show_sku:
             headers += ['SKU']
@@ -404,9 +405,9 @@ class ProfessionalPDFGenerator:
         # Only add Cancelled column if any item has a cancelled quantity
         show_cancelled = getattr(self, 'is_purchase', False) and getattr(self, '_has_cancelled_items', False)
         if show_cancelled:
-            headers += ['Qty', 'Unit Price', 'Cancelled', 'Amount']
+            headers += ['Qty', unit_price_header, 'Cancelled', 'Amount']
         else:
-            headers += ['Qty', 'Unit Price', 'Amount']
+            headers += ['Qty', unit_price_header, 'Amount']
         if show_unit_col:
             # A separate Unit column (pcs/kg/etc), right after Qty — distinct from
             # the purchase-bill behavior of folding the unit into the Qty text.
@@ -419,6 +420,10 @@ class ProfessionalPDFGenerator:
                 # Line-total discount, mirroring the invoice detail page which
                 # shows "Unit Discount" and "Total Discount" side by side.
                 headers.insert(-1, 'Total Discount')
+        if show_net_after_discount:
+            # Trailing column, after Amount — the actual payable total per line
+            # once its discount is applied (quotations only).
+            headers.append('Total Payable After Discount')
 
         header_row = [Paragraph(f"<b>{h}</b>", self.styles['TblHeader']) for h in headers]
 
@@ -433,7 +438,16 @@ class ProfessionalPDFGenerator:
             col_w += [0.5*inch, 0.5*inch, 0.95*inch]
             if show_discount:
                 col_w.append(0.85*inch)
+                if show_total_discount:
+                    col_w.append(0.85*inch)
+                    # A third and fourth money column added on top of Unit Price/
+                    # Amount is tight — take the space from Description (which
+                    # wraps gracefully for long product names) rather than
+                    # squeezing every numeric column onto two lines.
+                    col_w[1] = max(1.5*inch, col_w[1] - 0.7*inch)
             col_w.append(0.95*inch)
+            if show_net_after_discount:
+                col_w.append(1.0*inch)
         elif show_sku and show_item_code:
             col_w = [0.385*inch, 2.3*inch, 0.7*inch, 0.7*inch, 0.6*inch, 0.6*inch, 0.7*inch]
             if show_cancelled: col_w.insert(6, 0.8*inch)
@@ -485,7 +499,11 @@ class ProfessionalPDFGenerator:
                 row.append(Paragraph(item.get('rate', '-'), self.styles['TblCell']))
                 if show_discount:
                     row.append(Paragraph(item.get('unit_discount', '-'), self.styles['TblCell']))
+                    if show_total_discount:
+                        row.append(Paragraph(item.get('total_discount', '-'), self.styles['TblCell']))
                 row.append(Paragraph(item.get('amount', '-'), self.styles['TblCell']))
+                if show_net_after_discount:
+                    row.append(Paragraph(item.get('net_amount', '-'), self.styles['TblCell']))
                 table_data.append(row)
                 continue
 
@@ -521,7 +539,8 @@ class ProfessionalPDFGenerator:
             if show_item_code:
                 empty.append(Paragraph('-', self.styles['TblCell']))
             empty_trailing = (3 + (1 if show_unit_col else 0) + (1 if show_discount else 0)
-                              + (1 if (show_discount and show_total_discount) else 0))
+                              + (1 if (show_discount and show_total_discount) else 0)
+                              + (1 if show_net_after_discount else 0))
             empty += [Paragraph('-', self.styles['TblCell'])] * empty_trailing
             table_data.append(empty)
 
@@ -1218,6 +1237,7 @@ class ProfessionalPDFGenerator:
                            is_purchase=False, is_invoice=False,
                            meta_labels=None, items_header='INVOICE ITEMS',
                            show_unit_col=False, discount_header='Unit Discount',
+                           unit_price_header='Unit Price',
                            commercial_terms=None, important_notice=None,
                            show_acceptance=False, footer_message_override=None,
                            show_company_address=True):
@@ -1251,9 +1271,12 @@ class ProfessionalPDFGenerator:
         show_sku = any('sku' in item for item in items)
         show_discount = any('unit_discount' in item for item in items)
         show_total_discount = any('total_discount' in item for item in items)
+        show_net_after_discount = any('net_amount' in item for item in items)
         elements.append(self._build_items_table(items, show_item_code, show_sku, show_discount,
                                                   discount_header=discount_header, show_unit_col=show_unit_col,
-                                                  show_total_discount=show_total_discount))
+                                                  show_total_discount=show_total_discount,
+                                                  show_net_after_discount=show_net_after_discount,
+                                                  unit_price_header=unit_price_header))
         elements.append(Spacer(1, 10))
 
         # Prepare extra thank you message for invoices only
@@ -1423,13 +1446,18 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
         items_discount_sum = sum(float(it.discount or 0) for it in obj.items)
         show_item_discount = (not is_restricted) and (effective_discount > 0 or items_discount_sum > 0)
 
+        # Quotation money figures drop the decimals (".00") — with this many
+        # columns on one line, the extra characters wrap onto a second line;
+        # invoices keep their existing 2-decimal formatting untouched.
+        money_fmt = '{:,.0f}' if is_quote else '{:,.2f}'
+
         items = []
         for item in obj.items:
             entry = {
                 'description': item.product.name if item.product else "Unknown Product",
                 'quantity':    item.quantity,
-                'rate':        f"{currency}{item.unit_price:,.2f}",
-                'amount':      f"{currency}{item.total:,.2f}",
+                'rate':        f"{currency}{money_fmt.format(item.unit_price)}",
+                'amount':      f"{currency}{money_fmt.format(item.total)}",
             }
             if item.product and hasattr(item.product, 'sku') and item.product.sku:
                 entry['sku'] = item.product.sku
@@ -1439,25 +1467,33 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
                 entry['unit'] = (item.product.unit if item.product and item.product.unit else 'pcs')
             elif hasattr(item, 'unit') and item.unit:
                 entry['unit'] = item.unit
+            item_discount_for_net = 0
             if show_item_discount:
                 if items_discount_sum > 0:
                     item_discount_total = float(item.remaining_discount or 0)
                 else:
                     item_discount_total = (item.total / obj.subtotal * effective_discount) if obj.subtotal > 0 else 0
-                # Quotation shows the line's total discount (matches the "Amount" column
-                # being a line total too); the invoice PDF shows a genuine per-unit figure.
-                shown_discount = item_discount_total if is_quote else ((item_discount_total / item.quantity) if item.quantity else 0)
-                entry['unit_discount'] = f"{currency}{shown_discount:,.2f}"
-                if not is_quote:
-                    # Line-total discount alongside the per-unit figure, with the
-                    # percentage of the line subtotal — same pair the invoice
-                    # detail page shows ("Unit Discount" / "Total Discount").
-                    line_subtotal = float(item.quantity or 0) * float(item.unit_price or 0)
-                    pct = (item_discount_total / line_subtotal * 100) if line_subtotal > 0 else 0
-                    entry['total_discount'] = (
-                        f"{currency}{item_discount_total:,.2f}"
-                        + (f" ({pct:.0f}%)" if item_discount_total > 0 else "")
-                    )
+                # A genuine per-unit figure (matches the quotation detail page's
+                # own "Unit Discount" column and QuotationItem.effective_unit_discount)
+                # — the line's full discount total still drives Total Payable
+                # After Discount below via item_discount_for_net.
+                shown_discount = (item_discount_total / item.quantity) if item.quantity else 0
+                entry['unit_discount'] = f"{currency}{money_fmt.format(shown_discount)}"
+                # Line-total discount alongside the per-unit figure, with the
+                # percentage of the line subtotal — same pair the invoice AND
+                # quotation detail pages show ("Unit Discount" / "Total Discount").
+                line_subtotal = float(item.quantity or 0) * float(item.unit_price or 0)
+                pct = (item_discount_total / line_subtotal * 100) if line_subtotal > 0 else 0
+                entry['total_discount'] = (
+                    f"{currency}{money_fmt.format(item_discount_total)}"
+                    + (f" ({pct:.0f}%)" if item_discount_total > 0 else "")
+                )
+                item_discount_for_net = item_discount_total
+            if is_quote:
+                # Extra trailing column, always shown on quotations (even with no
+                # discount, where it just equals Amount) — the final line total a
+                # customer would actually pay for this item.
+                entry['net_amount'] = f"{currency}{money_fmt.format(item.total - item_discount_for_net)}"
             items.append(entry)
 
         sc = obj.shipping_charge if (hasattr(obj, 'shipping_charge') and obj.shipping_charge) else 0
@@ -1592,7 +1628,8 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             }
             quote_extra = dict(
                 show_unit_col=True,
-                discount_header='Discount',
+                discount_header='Unit Discount',
+                unit_price_header='List Price',
                 commercial_terms=commercial_terms,
                 important_notice=important_notice,
                 show_acceptance=True,

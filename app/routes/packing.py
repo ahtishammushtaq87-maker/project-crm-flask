@@ -84,6 +84,23 @@ def _sale_warehouses(sale):
     return ', '.join(names) if names else '-'
 
 
+def _sale_packing_bucket(sale):
+    """'pending' | 'partial' | 'packed' for the worklist tabs/badge — derived
+    from actual remaining packable quantity (_remaining_packable_qty), not
+    from the per-slip is_partial checkbox.
+
+    is_partial is set by whoever raises a slip to mean "this is one shipment
+    of several" — genuinely useful on the issued-slips list, but relying on
+    it here meant a multi-item invoice with only some items packed (or a slip
+    saved without remembering to tick that box) silently fell into "Slip
+    Issued" instead of "Partial Shipments", even though real quantity was
+    still outstanding.
+    """
+    if not sale.packing_slips:
+        return 'pending'
+    return 'partial' if _remaining_packable_qty(sale) > 0.0001 else 'packed'
+
+
 def _slip_defaults(sale):
     """Auto-computed prefill for the create-slip modal: the REMAINING
     packable qty (invoice total minus whatever earlier slips for this
@@ -182,26 +199,23 @@ def index():
     packing_status = request.args.get('packing_status', 'all')
 
     query = _apply_common_filters(_packable_invoices_query(), request.args)
-
-    if packing_status == 'pending':
-        query = query.filter(~Sale.packing_slips.any())
-    elif packing_status == 'packed':
-        query = query.filter(Sale.packing_slips.any())
-    elif packing_status == 'partial':
-        query = query.filter(Sale.packing_slips.any(PackingSlip.is_partial == True))
-
     query = apply_saved_filter_to_query(query, 'sale', request.args)
-    sales = query.order_by(Sale.date.desc()).all()
+    # packing_status is applied in Python below (via _sale_packing_bucket)
+    # rather than as a SQL filter — "partial"/"packed" depend on comparing
+    # packed vs. ordered quantity across every item, which isn't a single
+    # column any filter() can check.
+    filtered_sales = query.order_by(Sale.date.desc()).all()
+    sale_status = {sale.id: _sale_packing_bucket(sale) for sale in filtered_sales}
+    sales = filtered_sales if packing_status == 'all' \
+        else [s for s in filtered_sales if sale_status[s.id] == packing_status]
 
     # Tab counts are computed off the unfiltered packable set so they stay a
     # stable overview rather than shifting with the active filter.
-    base = _packable_invoices_query()
-    counts = {
-        'all': base.count(),
-        'pending': base.filter(~Sale.packing_slips.any()).count(),
-        'packed': base.filter(Sale.packing_slips.any()).count(),
-        'partial': base.filter(Sale.packing_slips.any(PackingSlip.is_partial == True)).count(),
-    }
+    base_sales = _packable_invoices_query().all()
+    counts = {'all': 0, 'pending': 0, 'packed': 0, 'partial': 0}
+    for s in base_sales:
+        counts['all'] += 1
+        counts[_sale_packing_bucket(s)] += 1
 
     try:
         ps_settings = _packing_slip_settings()
@@ -212,17 +226,24 @@ def index():
 
     # Per-invoice prefill for the shared modal, keyed by sale id.
     slip_defaults = {}
+    remaining_qty = {}
     for sale in sales:
         total_qty, net_weight = _slip_defaults(sale)
         slip_defaults[sale.id] = {
             'total_ordered_qty': f'{total_qty:.2f}' if total_qty else '',
             'net_weight': f'{net_weight:.2f}' if net_weight else '',
         }
+        # Same figure, but always a real number (0.00, not '') for its own
+        # "Remaining to Pack" column — a fully packed invoice should read as
+        # 0.00, not blank.
+        remaining_qty[sale.id] = total_qty
 
     return render_template(
         'packing/index.html',
         sales=sales,
         counts=counts,
+        sale_status=sale_status,
+        remaining_qty=remaining_qty,
         packing_status=packing_status,
         next_slip_number=next_slip_number,
         slip_defaults=slip_defaults,

@@ -56,9 +56,7 @@
                             <td>{{ slip.packing_date.strftime('%d-%b-%Y') if slip.packing_date else '-' }}</td>
                             <td>
                                 {% if slip.sale %}
-                                <a href="{{ url_for('packing.index', invoice_number=slip.sale.invoice_number) }}">
-                                    {{ slip.sale.invoice_number }}
-                                </a>
+                                {{ slip.sale.invoice_number }}
                                 {% else %}
                                 <span class="text-muted">-</span>
                                 {% endif %}
