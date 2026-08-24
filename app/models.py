@@ -1911,7 +1911,51 @@ class Expense(db.Model):
             if self.monthly_start_date <= today <= self.monthly_end_date:
                 return self.daily_amount
         return 0
-    
+
+    @property
+    def shifted_products(self):
+        """Products this expense was shifted onto via "Shift to Inventory
+        Cost" (accounting.shift_expense_to_inventory), each paired with the
+        value applied and how it was applied. Parses `shifted_to_product_ids`:
+        current format 'pid:new_cost:old_cost,...' replaces the item's cost
+        outright (mode 'set', value is new_cost); the older per-item
+        'pid:amount,...' format and the original equal-split plain-id format
+        ('pid,pid,...', split from `amount`) both added the value on top of
+        whatever the item's cost already was (mode 'add'). Empty list when
+        not shifted. Returns a list of (product, value, mode) tuples."""
+        if not self.shifted_to_product_ids:
+            return []
+        tokens = [t.strip() for t in self.shifted_to_product_ids.split(',') if t.strip()]
+        if not tokens:
+            return []
+        triples = []
+        first_parts = tokens[0].split(':')
+        if len(first_parts) >= 3:
+            for t in tokens:
+                parts = t.split(':')
+                if len(parts) < 3:
+                    continue
+                try:
+                    triples.append((int(parts[0]), float(parts[1]), 'set'))
+                except (ValueError, IndexError):
+                    continue
+        elif len(first_parts) == 2:
+            for t in tokens:
+                try:
+                    pid_str, amt_str = t.split(':', 1)
+                    triples.append((int(pid_str), float(amt_str), 'add'))
+                except (ValueError, IndexError):
+                    continue
+        else:
+            ids = [int(t) for t in tokens if t.isdigit()]
+            if ids:
+                per = (self.amount or 0) / len(ids)
+                triples = [(pid, per, 'add') for pid in ids]
+        if not triples:
+            return []
+        products_by_id = {p.id: p for p in Product.query.filter(Product.id.in_([pid for pid, _, _ in triples])).all()}
+        return [(products_by_id[pid], val, mode) for pid, val, mode in triples if pid in products_by_id]
+
     def __repr__(self):
         return f'<Expense {self.expense_number}>'
 

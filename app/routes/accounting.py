@@ -1745,24 +1745,40 @@ def delete_expense_account_quick(account_id):
 
 
 def _parse_shifted_product_costs(raw, expense_amount):
-    """Parse `Expense.shifted_to_product_ids` into {product_id: amount_applied}.
+    """Parse `Expense.shifted_to_product_ids` into {product_id: ('set', old_cost) | ('add', amount)}
+    describing how to reverse the shift on that item.
 
-    Current format is 'pid:amount,pid:amount,...' — each item's own share, so
-    an unshift can reverse exactly what was added to it. Falls back to an
-    equal split across ids for the legacy plain-id format ('pid,pid,...')
-    written before per-item costs existed, matching how those rows were
-    originally applied."""
+    Current format is 'pid:new_cost:old_cost,...' — the item's cost is SET to
+    new_cost when shifted, so undoing it restores old_cost directly ('set').
+    Two older formats are also understood, both additive (the item's cost was
+    increased by an amount rather than replaced, so undoing subtracts it back
+    off, 'add'): the per-item 'pid:amount,...' format used before shifts
+    replaced cost outright, and the original equal-split plain-id format
+    ('pid,pid,...') from before per-item costs existed at all."""
     if not raw:
         return {}
     tokens = [t.strip() for t in raw.split(',') if t.strip()]
     if not tokens:
         return {}
-    if ':' in tokens[0]:
+    first_parts = tokens[0].split(':')
+    if len(first_parts) >= 3:
+        result = {}
+        for t in tokens:
+            parts = t.split(':')
+            if len(parts) < 3:
+                continue
+            try:
+                pid, old_cost = int(parts[0]), float(parts[2])
+            except (ValueError, IndexError):
+                continue
+            result[pid] = ('set', old_cost)
+        return result
+    if len(first_parts) == 2:
         result = {}
         for t in tokens:
             try:
                 pid_str, amt_str = t.split(':', 1)
-                result[int(pid_str)] = float(amt_str)
+                result[int(pid_str)] = ('add', float(amt_str))
             except (ValueError, IndexError):
                 continue
         return result
@@ -1770,7 +1786,7 @@ def _parse_shifted_product_costs(raw, expense_amount):
     if not ids:
         return {}
     per = expense_amount / len(ids)
-    return {pid: per for pid in ids}
+    return {pid: ('add', per) for pid in ids}
 
 
 @bp.route('/expense/shift-to-inventory', methods=['POST'])
@@ -1781,7 +1797,9 @@ def shift_expense_to_inventory():
     Each selected item's share defaults to an equal split of the expense
     amount but is editable in the popup, so the amounts actually applied may
     differ per item — they must still add up to the expense's full amount.
-    Item quantities are left unchanged.
+    Each item's cost_price is REPLACED with its share (not added on top of
+    whatever it already was) — the popup's "Cost to Add" value becomes the
+    item's new cost outright. Item quantities are left unchanged.
     """
     if not getattr(current_user, 'is_admin', False):
         return jsonify({'success': False, 'message': 'Admin access required.'}), 403
@@ -1825,12 +1843,11 @@ def shift_expense_to_inventory():
     if not products:
         return jsonify({'success': False, 'message': 'No valid inventory items found.'}), 400
 
-    # Per-item cost to add — the "Shift to Inventory Cost" popup pre-fills
-    # each item's share as an equal split of the expense amount but leaves it
-    # editable, so the amounts actually submitted may differ per item. They
-    # must still add up to the expense's full amount — this is a dollar-for-
-    # dollar move of that amount from "expense" onto item cost, not a
-    # separate top-up.
+    # Per-item new cost — the "Shift to Inventory Cost" popup pre-fills each
+    # item's share as an equal split of the expense amount but leaves it
+    # editable, so the values actually submitted may differ per item. They
+    # must still add up to the expense's full amount. Each value REPLACES
+    # that item's cost_price outright — it is not added on top of it.
     item_costs = {}
     total_entered = 0.0
     for product in products:
@@ -1851,12 +1868,16 @@ def shift_expense_to_inventory():
 
     try:
         applied_names = []
+        shifted_tokens = []
         for product in products:
-            product.cost_price = (product.cost_price or 0) + item_costs[product.id]
-            applied_names.append(f'{product.name} (+PKR {item_costs[product.id]:,.2f})')
+            old_cost = product.cost_price or 0
+            new_cost = item_costs[product.id]
+            product.cost_price = new_cost
+            applied_names.append(f'{product.name} (PKR {old_cost:,.2f} -> PKR {new_cost:,.2f})')
+            shifted_tokens.append(f'{product.id}:{new_cost}:{old_cost}')
 
         expense.is_inventory_shifted = True
-        expense.shifted_to_product_ids = ','.join(f'{p.id}:{item_costs[p.id]}' for p in products)
+        expense.shifted_to_product_ids = ','.join(shifted_tokens)
 
         db.session.commit()
 
@@ -1865,9 +1886,9 @@ def shift_expense_to_inventory():
                      f'PKR {expense.amount} applied across {len(products)} item(s): {", ".join(applied_names)}')
 
         if len(products) == 1:
-            msg = f'Expense shifted to {products[0].name} cost.'
+            msg = f'{products[0].name} cost set to PKR {item_costs[products[0].id]:,.2f}.'
         else:
-            msg = f'PKR {expense.amount} applied across {len(products)} items.'
+            msg = f'Cost updated on {len(products)} items (PKR {expense.amount:,.2f} total).'
         return jsonify({'success': True, 'message': msg})
     except Exception as e:
         db.session.rollback()
@@ -1877,7 +1898,9 @@ def shift_expense_to_inventory():
 @bp.route('/expense/unshift-from-inventory', methods=['POST'])
 @login_required
 def unshift_expense_from_inventory():
-    """Reverse an inventory cost shift, subtracting the amount back off item cost."""
+    """Reverse an inventory cost shift — restores each item's cost back to
+    what it was before the shift (or, for a shift made before costs were
+    replaced outright, subtracts the amount that had been added)."""
     if not getattr(current_user, 'is_admin', False):
         return jsonify({'success': False, 'message': 'Admin access required.'}), 403
 
@@ -1890,10 +1913,14 @@ def unshift_expense_from_inventory():
         return jsonify({'success': False, 'message': 'This expense is not shifted to inventory.'}), 400
 
     try:
-        item_costs = _parse_shifted_product_costs(expense.shifted_to_product_ids, expense.amount)
-        products = Product.query.filter(Product.id.in_(item_costs.keys())).all() if item_costs else []
+        item_specs = _parse_shifted_product_costs(expense.shifted_to_product_ids, expense.amount)
+        products = Product.query.filter(Product.id.in_(item_specs.keys())).all() if item_specs else []
         for product in products:
-            product.cost_price = max(0, (product.cost_price or 0) - item_costs.get(product.id, 0))
+            mode, value = item_specs.get(product.id, ('add', 0))
+            if mode == 'set':
+                product.cost_price = max(0, value)
+            else:
+                product.cost_price = max(0, (product.cost_price or 0) - value)
 
         expense.is_inventory_shifted = False
         expense.shifted_to_product_ids = None

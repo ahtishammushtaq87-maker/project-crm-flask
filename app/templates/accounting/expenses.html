@@ -485,6 +485,22 @@
                                     <span class="badge text-white" style="font-size:0.7rem; background-color:#0b8793;">
                                         <i class="fas fa-boxes me-1"></i> Shifted to Inventory
                                     </span>
+                                    <div class="d-flex flex-wrap gap-1 mt-1">
+                                        {% for product, val, mode in exp.shifted_products %}
+                                        <a href="javascript:void(0)" class="entity-history-trigger badge bg-light text-dark border text-decoration-none"
+                                           data-bs-toggle="modal" data-bs-target="#entityHistoryModal"
+                                           data-entity-type="inventory" data-entity-id="{{ product.id }}"
+                                           style="font-size:0.7rem;"
+                                           title="{{ product.name }} — {% if mode == 'set' %}cost replaced with PKR {{ '%.2f'|format(val) }}{% else %}PKR {{ '%.2f'|format(val) }} added to cost{% endif %} (current cost: PKR {{ '%.2f'|format(product.cost_price or 0) }})">
+                                            <i class="fas fa-tag me-1"></i>{{ product.sku }}
+                                            {% if mode == 'set' %}
+                                            <span class="text-primary fw-semibold ms-1">&rarr; PKR {{ '%.2f'|format(val) }}</span>
+                                            {% else %}
+                                            <span class="text-success fw-semibold ms-1">+PKR {{ '%.2f'|format(val) }}</span>
+                                            {% endif %}
+                                        </a>
+                                        {% endfor %}
+                                    </div>
                                     {% if current_user.is_admin %}
                                     <button type="button" class="btn btn-sm btn-link text-danger p-0 mt-1 unshift-inv-btn"
                                             style="font-size:0.7rem;"
@@ -674,7 +690,7 @@
                             <option value="{{ item.id }}" data-cost="{{ item.cost_price or 0 }}" data-name="{{ item.sku }} - {{ item.name }}">{{ item.sku }} - {{ item.name }} (cost: PKR {{ '%.2f'|format(item.cost_price or 0) }})</option>
                             {% endfor %}
                         </select>
-                        <small class="text-muted">Select one item to add the full amount to its cost, or several items (bulk) to split the amount — each item's share is editable below and must add up to the expense amount.</small>
+                        <small class="text-muted">Select one item to set its cost to the full amount, or several items (bulk) to split the amount across them — each item's <strong>new cost</strong> is editable below (it replaces the current cost, it isn't added to it) and the shares must add up to the expense amount.</small>
                     </div>
                     <div id="inv_cost_rows" style="display:none;">
                         <div class="table-responsive">
@@ -688,7 +704,7 @@
                                     <tr>
                                         <th>Item</th>
                                         <th class="text-end">Current Cost</th>
-                                        <th class="text-end">Cost to Add</th>
+                                        <th class="text-end">New Cost</th>
                                     </tr>
                                 </thead>
                                 <tbody id="inv_cost_rows_body"></tbody>
@@ -794,17 +810,24 @@ document.addEventListener('DOMContentLoaded', function() {
     const invCostRowsWrap = document.getElementById('inv_cost_rows');
     const invCostRowsBody = document.getElementById('inv_cost_rows_body');
 
+    // Product ids the user has manually typed a value into — those stay
+    // exactly as entered; every other selected item auto-adjusts to absorb
+    // whatever's left of the expense amount, split equally among them.
+    let dirtyInvItemIds = new Set();
+
     function fmtMoney(n) {
         return (n || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
 
-    // Rebuilds the per-item "Cost to Add" rows whenever the selected items
+    // Rebuilds the per-item "New Cost" rows whenever the selected items
     // change — each row defaults to an equal split of the expense amount but
     // stays freely editable; the total must match the expense amount exactly
-    // before the shift can be confirmed.
+    // before the shift can be confirmed. Submitting replaces each item's
+    // cost_price with its row value outright (not added on top of it).
     function rebuildInvCostRows() {
         const ids = $invSelect.val() || [];
         const preview = document.getElementById('inv_split_preview');
+        dirtyInvItemIds = new Set();
 
         if (!ids.length) {
             invCostRowsWrap.style.display = 'none';
@@ -830,6 +853,30 @@ document.addEventListener('DOMContentLoaded', function() {
             invCostRowsBody.appendChild(row);
         });
         invCostRowsWrap.style.display = '';
+        updateInvSplitPreview();
+    }
+
+    // Re-splits whatever's left of the expense amount (after the fields the
+    // user has typed into) equally across the remaining, still-auto fields.
+    // Skips the field currently being edited so it's never overwritten out
+    // from under the user while they're typing.
+    function redistributeInvCostRows(editedInput) {
+        const inputs = Array.from(invCostRowsBody.querySelectorAll('.inv-cost-input'));
+        let dirtySum = 0;
+        const autoInputs = [];
+        inputs.forEach(function (inp) {
+            const pid = inp.name.replace('item_cost_', '');
+            if (inp === editedInput || dirtyInvItemIds.has(pid)) {
+                dirtySum += parseFloat(inp.value) || 0;
+            } else {
+                autoInputs.push(inp);
+            }
+        });
+        if (autoInputs.length) {
+            const remaining = Math.max(0, invShiftAmount - dirtySum);
+            const per = remaining / autoInputs.length;
+            autoInputs.forEach(function (inp) { inp.value = per.toFixed(2); });
+        }
         updateInvSplitPreview();
     }
 
@@ -865,7 +912,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         $invSelect.on('change', rebuildInvCostRows);
         invCostRowsBody.addEventListener('input', function (e) {
-            if (e.target.classList.contains('inv-cost-input')) updateInvSplitPreview();
+            if (!e.target.classList.contains('inv-cost-input')) return;
+            const pid = e.target.name.replace('item_cost_', '');
+            dirtyInvItemIds.add(pid);
+            redistributeInvCostRows(e.target);
         });
 
         invShiftModal.addEventListener('show.bs.modal', function(event) {
