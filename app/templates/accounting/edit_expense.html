@@ -125,6 +125,11 @@
                             <div class="form-text">If selected, this expense deducts its amount (Credit) from this account's balance.</div>
                         </div>
 
+                        {% if existing_payment_transfer %}
+                        <script>window.__paymentTransferPreselect = {{ existing_payment_transfer | tojson }};</script>
+                        {% endif %}
+                        {% include 'accounting/_payment_transfer_block.html' %}
+
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Date</label>

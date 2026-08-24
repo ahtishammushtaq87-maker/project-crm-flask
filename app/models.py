@@ -1869,12 +1869,25 @@ class Expense(db.Model):
     # Inventory cost shifting fields (shift an op expense onto inventory item cost)
     is_inventory_shifted = db.Column(db.Boolean, default=False)
     shifted_to_product_ids = db.Column(db.Text, nullable=True)  # comma-separated product ids the expense was applied to
-    
+
+    # ── Sale/Purchase payment transfer ──────────────────────────────────────
+    # When set, this expense's amount was applied as a real payment against a
+    # Sale invoice (linked_sale_id) or PurchaseBill (linked_bill_id) instead of
+    # being a genuine cost — see _sync_expense_payment_transfer in
+    # app/routes/accounting.py. is_payment_transfer is the flag totals/reports
+    # filter on to exclude it; the two link columns are mutually exclusive and
+    # only used to render the "Transferred" badge / know which side to reverse.
+    linked_sale_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=True, index=True)
+    linked_bill_id = db.Column(db.Integer, db.ForeignKey('purchase_bills.id'), nullable=True, index=True)
+    is_payment_transfer = db.Column(db.Boolean, default=False, index=True)
+
     # Relationships
     vendor = db.relationship('Vendor', backref='expenses', lazy=True)
     product = db.relationship('Product', backref='overhead_expenses', lazy=True)
     bom = db.relationship('BOM', backref='overhead_expenses', lazy=True)
     manufacturing_order = db.relationship('ManufacturingOrder', backref='overhead_expenses', lazy=True)
+    linked_sale = db.relationship('Sale', foreign_keys=[linked_sale_id])
+    linked_bill = db.relationship('PurchaseBill', foreign_keys=[linked_bill_id])
     
     @property
     def days_in_month(self):
@@ -3093,9 +3106,13 @@ class BillPayment(db.Model):
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
     advance_id = db.Column(db.Integer, db.ForeignKey('vendor_advances.id'), nullable=True)
+    # Set when this payment was created by checking "Add this to Purchase
+    # Payment" on an Expense — mirrors Payment.expense_id on the sale side.
+    expense_id = db.Column(db.Integer, db.ForeignKey('expenses.id'), nullable=True, index=True)
 
     creator = db.relationship('User', foreign_keys=[created_by], backref='bill_payments_created', lazy=True)
     approver = db.relationship('User', foreign_keys=[approved_by], lazy=True)
+    expense = db.relationship('Expense', foreign_keys=[expense_id], backref='bill_payments')
 
     def __repr__(self):
         return f'<BillPayment bill={self.bill_id} amount={self.amount}>'

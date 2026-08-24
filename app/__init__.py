@@ -45,7 +45,7 @@ def create_app(config_class=Config):
             RecoveryTask, RecoveryLog, RecoveryComment, Salesman,
             JournalAccount, JournalEntry, JournalLine, FixedExpense,
             Quotation, QuotationItem, DatabaseBackup, PackingSlip, PackingSlipSettings, SaleReturnReason,
-            ExpenseAccount, ExpenseAccountTransaction
+            ExpenseAccount, ExpenseAccountTransaction, BillPayment
         )
         from app.filter_models import SavedFilter
         
@@ -141,6 +141,7 @@ def create_app(config_class=Config):
             'sale_return_reasons': SaleReturnReason,
             'expense_accounts': ExpenseAccount,
             'expense_account_transactions': ExpenseAccountTransaction,
+            'bill_payments': BillPayment,
         }
         
         try:

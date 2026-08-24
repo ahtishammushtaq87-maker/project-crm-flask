@@ -93,6 +93,10 @@ def index():
         PurchaseBill.date <= end_datetime
     ).scalar() or 0
 
+    # Exclude expenses that were only recorded as a transfer to a Sale/Purchase
+    # payment (not a real cost) — see Expense.is_payment_transfer.
+    transfer_filter = [Expense.is_payment_transfer == False] if has_column('expenses', 'is_payment_transfer') else []
+
     # Total Operating Expenses (Non-BOM, Non-Divided) - handle missing column gracefully
     if has_column('expenses', 'is_bom_overhead'):
         if has_column('expenses', 'is_monthly_divided'):
@@ -104,7 +108,8 @@ def index():
                 Expense.is_inventory_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
-                Expense.status == 'confirmed'
+                Expense.status == 'confirmed',
+                *transfer_filter
             ).scalar() or 0
 
             # Total Manufacturing Overhead (BOM linked, non-divided)
@@ -115,7 +120,8 @@ def index():
                 Expense.is_inventory_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
-                Expense.status == 'confirmed'
+                Expense.status == 'confirmed',
+                *transfer_filter
             ).scalar() or 0
         else:
             # Fallback: exclude BOM only
@@ -125,7 +131,8 @@ def index():
                 Expense.is_inventory_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
-                Expense.status == 'confirmed'
+                Expense.status == 'confirmed',
+                *transfer_filter
             ).scalar() or 0
 
             # Total Manufacturing Overhead (BOM linked)
@@ -135,7 +142,8 @@ def index():
                 Expense.is_inventory_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
-                Expense.status == 'confirmed'
+                Expense.status == 'confirmed',
+                *transfer_filter
             ).scalar() or 0
     else:
         # Fallback: is_bom_overhead doesn't exist
@@ -147,7 +155,8 @@ def index():
                 Expense.is_inventory_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
-                Expense.status == 'confirmed'
+                Expense.status == 'confirmed',
+                *transfer_filter
             ).scalar() or 0
         else:
             # Fallback: include all expenses
@@ -156,7 +165,8 @@ def index():
                 Expense.is_inventory_shifted == False,
                 Expense.date >= start_datetime,
                 Expense.date <= end_datetime,
-                Expense.status == 'confirmed'
+                Expense.status == 'confirmed',
+                *transfer_filter
             ).scalar() or 0
         manufacturing_overhead = 0
     
@@ -167,7 +177,8 @@ def index():
             Expense.is_monthly_divided == True,
             Expense.is_shifted == False,
             Expense.is_inventory_shifted == False,
-            Expense.status == 'confirmed'
+            Expense.status == 'confirmed',
+            *transfer_filter
         ).all()
         for exp in monthly_expenses:
             if exp.monthly_start_date and exp.monthly_end_date:
@@ -188,9 +199,11 @@ def index():
     tools_expenses = db.session.query(func.sum(Expense.amount)).join(ExpenseCategory).filter(
         ExpenseCategory.name == 'Tools Expense',
         Expense.is_shifted == False,
+        Expense.is_inventory_shifted == False,
         Expense.date >= start_datetime,
         Expense.date <= end_datetime,
-        Expense.status == 'confirmed'
+        Expense.status == 'confirmed',
+        *transfer_filter
     ).scalar() or 0
     
     # Subtract tools_expenses from operating_expenses to avoid double counting in display

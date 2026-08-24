@@ -470,7 +470,9 @@ class AttendanceForm(FlaskForm):
 class ExpenseForm(FlaskForm):
     reference = StringField('Reference')
     description = StringField('Description', validators=[DataRequired()])
-    amount = FloatField('Amount', validators=[DataRequired(), NumberRange(min=0.01)])
+    # InputRequired (not DataRequired) — DataRequired treats a coerced 0.0 as
+    # "missing" and rejects it, which would block a genuine zero-amount expense.
+    amount = FloatField('Amount', validators=[InputRequired(), NumberRange(min=0)])
     date = DateField('Date', validators=[DataRequired()])
     category_id = SelectField('Category', coerce=int, validators=[DataRequired()])
     vendor_id = SelectField('Vendor (Optional)', coerce=int, validators=[Optional()])

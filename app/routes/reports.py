@@ -777,6 +777,7 @@ def compute_profit_loss(start_date, end_date):
         Expense.is_bom_overhead == False,
         Expense.is_shifted == False,
         Expense.is_inventory_shifted == False,
+        Expense.is_payment_transfer == False,
         Expense.status == 'confirmed'
     ).all()
 
@@ -878,6 +879,7 @@ def compute_profit_loss(start_date, end_date):
         Expense.date >= start_date,
         Expense.date <= end_date,
         Expense.is_bom_overhead == True,
+        Expense.is_payment_transfer == False,
         Expense.status == 'confirmed'
     ).all()
     total_bom_overhead = sum(e.amount for e in bom_overhead_expenses)

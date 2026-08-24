@@ -1,0 +1,84 @@
+<!-- "Add this to Invoice/Purchase Payment" — shared by add_expense.html and
+     edit_expense.html. Set window.__paymentTransferPreselect = {id, type,
+     label} before including this partial (edit page only) to pre-select the
+     existing linked Sale/Bill. -->
+<div class="mb-3 p-3 border rounded expense-only-field" id="paymentTransferBlock" style="background:#fff8ec;">
+    <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="paymentTransferEnabled">
+        <label class="form-check-label fw-semibold" for="paymentTransferEnabled">
+            <i class="bi bi-arrow-left-right me-1"></i> Add this to Invoice / Purchase Payment
+        </label>
+    </div>
+    <div class="text-muted small mt-1 mb-2">
+        Instead of counting as a normal expense, this amount is applied as a real payment against the Sale
+        Invoice or Purchase Bill you pick below — the invoice/bill balance updates immediately. This expense is
+        kept only as a record (badged "Transferred"), excluded from expense totals.
+    </div>
+    <div id="paymentTransferFields" style="display:none;">
+        <div class="d-flex gap-3 flex-wrap mb-2">
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="payment_transfer_type" id="transferTypeSale" value="sale" checked>
+                <label class="form-check-label" for="transferTypeSale">Add this to Invoice Payment</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="payment_transfer_type" id="transferTypeBill" value="bill">
+                <label class="form-check-label" for="transferTypeBill">Add this to Purchase Payment</label>
+            </div>
+        </div>
+        <label class="form-label">Select Invoice / Bill</label>
+        <select id="paymentTransferTargetSelect" name="payment_transfer_target_id" class="form-select"></select>
+        <div class="form-text">Search by invoice/bill number, customer or vendor name. Only unpaid/partially paid ones are shown.</div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const enabledCb = document.getElementById('paymentTransferEnabled');
+    const fieldsWrap = document.getElementById('paymentTransferFields');
+    const typeSale = document.getElementById('transferTypeSale');
+    const typeBill = document.getElementById('transferTypeBill');
+    const targetSelect = $('#paymentTransferTargetSelect');
+    const SALES_SEARCH_URL = "{{ url_for('accounting.search_sales_json') }}";
+    const BILLS_SEARCH_URL = "{{ url_for('accounting.search_bills_json') }}";
+
+    function initSelect2() {
+        if (targetSelect.hasClass('select2-hidden-accessible')) {
+            targetSelect.select2('destroy');
+        }
+        targetSelect.empty();
+        targetSelect.select2({
+            theme: 'bootstrap-5',
+            placeholder: typeBill.checked ? '— Search Purchase Bill by number/vendor —' : '— Search Invoice by number/customer —',
+            width: '100%',
+            allowClear: true,
+            minimumInputLength: 0,
+            ajax: {
+                url: typeBill.checked ? BILLS_SEARCH_URL : SALES_SEARCH_URL,
+                dataType: 'json',
+                delay: 250,
+                data: function (params) { return { q: params.term || '' }; },
+                processResults: function (data) { return { results: data.results }; }
+            }
+        });
+    }
+    initSelect2();
+
+    function applyEnabled() {
+        fieldsWrap.style.display = enabledCb.checked ? '' : 'none';
+    }
+    enabledCb.addEventListener('change', applyEnabled);
+    applyEnabled();
+
+    [typeSale, typeBill].forEach(function (r) { r.addEventListener('change', initSelect2); });
+
+    const preselect = window.__paymentTransferPreselect;
+    if (preselect && preselect.id) {
+        enabledCb.checked = true;
+        if (preselect.type === 'bill') { typeBill.checked = true; } else { typeSale.checked = true; }
+        initSelect2();
+        const opt = new Option(preselect.text, preselect.id, true, true);
+        targetSelect.append(opt).trigger('change');
+        applyEnabled();
+    }
+});
+</script>

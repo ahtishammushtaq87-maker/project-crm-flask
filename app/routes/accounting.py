@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, jsonify, redirect, url_fo
 from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
-from app.models import Sale, PurchaseBill, Transaction, Expense, ExpenseCategory, Vendor, Account, Payment, TaxRate, Currency, RecurringExpense, Staff, Attendance, ExpenseSettings
+from app.models import Sale, PurchaseBill, Transaction, Expense, ExpenseCategory, Vendor, Account, Payment, BillPayment, TaxRate, Currency, RecurringExpense, Staff, Attendance, ExpenseSettings, Customer
 from app.forms import ExpenseForm, ExpenseCategoryForm
 from datetime import datetime, timedelta
 from sqlalchemy import func, and_, inspect
@@ -77,6 +77,178 @@ def _delete_linked_expense_account_transaction(expense_id):
     txn = ExpenseAccountTransaction.query.filter_by(expense_id=expense_id).first()
     if txn:
         db.session.delete(txn)
+
+
+# ─── Expense as a Sale/Purchase payment ("Add this to Invoice/Purchase
+# Payment") ────────────────────────────────────────────────────────────────
+# Checking the box on Add/Edit Expense applies the expense's amount as a real
+# Payment (sale) or BillPayment (purchase bill) — found/reversed via
+# expense_id, the same idempotent-bridge pattern ExpenseAccountTransaction and
+# the (now-removed) JournalEntry link used. The Payment/BillPayment keeps its
+# own independent approval workflow exactly like one created from the
+# invoice/bill's own "Record Payment" — the linked Expense is just the record
+# of where the money came from and never re-applies/reverses money based on
+# the Expense's own approve/reject/draft status.
+
+def _reverse_and_delete_sale_payment(payment, user_id):
+    """Undo a Payment created from an Expense and delete it. Only reverses
+    money if it was actually applied (is_approved) — mirrors
+    sales.delete_payment."""
+    from app.utils import adjust_sale_payment
+    sale = Sale.query.get(payment.invoice_id)
+    if sale and payment.is_approved:
+        adjust_sale_payment(sale, -payment.amount, user_id)
+    db.session.delete(payment)
+
+
+def _reverse_and_delete_bill_payment(bill_payment):
+    """Undo a BillPayment created from an Expense and delete it. Only
+    reverses money if it was actually applied (is_approved) — mirrors
+    purchase.delete_bill_payment."""
+    bill = PurchaseBill.query.get(bill_payment.bill_id)
+    if bill and bill_payment.is_approved:
+        bill.paid_amount = max(0.0, (bill.paid_amount or 0) - bill_payment.amount)
+        bill.update_status()
+    db.session.delete(bill_payment)
+
+
+def _reverse_expense_payment_transfer(expense, user_id):
+    """Reverse and remove any Payment/BillPayment linked to this expense, and
+    clear its transfer flags. Used when the expense is deleted, or when the
+    checkbox is unchecked / target changed on edit. `expense` must already
+    have a flushed id."""
+    existing_payment = Payment.query.filter_by(expense_id=expense.id).first()
+    if existing_payment:
+        _reverse_and_delete_sale_payment(existing_payment, user_id)
+    existing_bill_payment = BillPayment.query.filter_by(expense_id=expense.id).first()
+    if existing_bill_payment:
+        _reverse_and_delete_bill_payment(existing_bill_payment)
+    expense.linked_sale_id = None
+    expense.linked_bill_id = None
+    expense.is_payment_transfer = False
+
+
+def _sync_expense_payment_transfer(expense, target_type, target_id, amount, user_id, is_admin):
+    """Keep the Payment/BillPayment tied to this expense in sync with the
+    "Add this to Invoice/Purchase Payment" checkbox + dropdown + amount.
+    Idempotent: finds-or-creates-or-reverses by expense_id, same convention as
+    _sync_expense_account_transaction. `expense` must already have a flushed
+    id. `target_type` is 'sale', 'bill', or falsy (box unchecked/no target)."""
+    from app.utils import adjust_sale_payment, apply_sale_payment_with_credit, apply_bill_payment_with_credit
+
+    if target_type not in ('sale', 'bill') or not target_id:
+        _reverse_expense_payment_transfer(expense, user_id)
+        return
+
+    amount = round(float(amount or 0), 2)
+    if amount <= 0:
+        _reverse_expense_payment_transfer(expense, user_id)
+        return
+
+    existing_payment = Payment.query.filter_by(expense_id=expense.id).first()
+    existing_bill_payment = BillPayment.query.filter_by(expense_id=expense.id).first()
+
+    if target_type == 'sale':
+        if existing_bill_payment:
+            _reverse_and_delete_bill_payment(existing_bill_payment)
+
+        sale = Sale.query.get(target_id)
+        if not sale:
+            _reverse_expense_payment_transfer(expense, user_id)
+            return
+
+        if existing_payment and existing_payment.invoice_id == target_id:
+            delta = round(amount - existing_payment.amount, 2)
+            existing_payment.amount = amount
+            existing_payment.date = expense.date
+            existing_payment.method = expense.payment_method or existing_payment.method
+            existing_payment.notes = f'Transferred from Expense #{expense.expense_number}'
+            # Payment.image_path uses the same project-root-relative format as
+            # Expense.bill_image_path (e.g. "app/static/uploads/..."), so the
+            # bill image the expense carries can be copied over as-is.
+            if expense.bill_image_path:
+                existing_payment.image_path = expense.bill_image_path
+            if abs(delta) > 0.009 and existing_payment.is_approved:
+                adjust_sale_payment(sale, delta, user_id)
+        else:
+            if existing_payment:
+                _reverse_and_delete_sale_payment(existing_payment, user_id)
+            apply_sale_payment_with_credit(sale, amount, user_id)
+            last_payment = Payment.query.order_by(Payment.id.desc()).first()
+            payment_num = f"PAY-{last_payment.id + 1 if last_payment else 1}"
+            new_payment = Payment(
+                payment_number=payment_num,
+                date=expense.date,
+                amount=amount,
+                method=expense.payment_method or 'Cash',
+                invoice_id=sale.id,
+                expense_id=expense.id,
+                notes=f'Transferred from Expense #{expense.expense_number}',
+                image_path=expense.bill_image_path,
+                created_by=user_id,
+                is_approved=True,
+                needs_approval=not is_admin,
+                approved_by=user_id if is_admin else None,
+                approved_at=datetime.utcnow() if is_admin else None
+            )
+            db.session.add(new_payment)
+
+        expense.linked_sale_id = target_id
+        expense.linked_bill_id = None
+        expense.is_payment_transfer = True
+
+    else:  # target_type == 'bill'
+        if existing_payment:
+            _reverse_and_delete_sale_payment(existing_payment, user_id)
+
+        bill = PurchaseBill.query.get(target_id)
+        if not bill:
+            _reverse_expense_payment_transfer(expense, user_id)
+            return
+
+        # BillPayment.image_path is relative to the static folder (e.g.
+        # "uploads/payments/xxx.png"), unlike Expense.bill_image_path which is
+        # project-root-relative (e.g. "app/static/uploads/bills/xxx.png") — so
+        # the "app/static/" prefix has to be stripped off when copying it over.
+        bp_image_path = None
+        if expense.bill_image_path:
+            bp_image_path = expense.bill_image_path.replace('app/static/', '').replace('app\\static\\', '')
+
+        if existing_bill_payment and existing_bill_payment.bill_id == target_id:
+            delta = round(amount - existing_bill_payment.amount, 2)
+            existing_bill_payment.amount = amount
+            existing_bill_payment.date = expense.date
+            existing_bill_payment.payment_method = expense.payment_method or existing_bill_payment.payment_method
+            existing_bill_payment.notes = f'Transferred from Expense #{expense.expense_number}'
+            if bp_image_path:
+                existing_bill_payment.image_path = bp_image_path
+            if abs(delta) > 0.009 and existing_bill_payment.is_approved:
+                bill.paid_amount = max(0.0, min(bill.total, (bill.paid_amount or 0) + delta))
+                bill.update_status()
+        else:
+            if existing_bill_payment:
+                _reverse_and_delete_bill_payment(existing_bill_payment)
+            if is_admin:
+                apply_bill_payment_with_credit(bill, amount, user_id)
+                bill.update_status()
+            new_bp = BillPayment(
+                bill_id=bill.id,
+                date=expense.date,
+                amount=amount,
+                payment_method=expense.payment_method or 'Cash',
+                notes=f'Transferred from Expense #{expense.expense_number}',
+                image_path=bp_image_path,
+                created_by=user_id,
+                expense_id=expense.id,
+                is_approved=is_admin,
+                approved_by=user_id if is_admin else None,
+                approved_at=datetime.utcnow() if is_admin else None
+            )
+            db.session.add(new_bp)
+
+        expense.linked_bill_id = target_id
+        expense.linked_sale_id = None
+        expense.is_payment_transfer = True
 
 
 def _add_money_from_expense_form():
@@ -232,8 +404,10 @@ def dashboard():
     # Only filter divided expenses if column exists
     if has_column('expenses', 'is_monthly_divided'):
         operating_filter.append(Expense.is_monthly_divided == False)
+    if has_column('expenses', 'is_payment_transfer'):
+        operating_filter.append(Expense.is_payment_transfer == False)
     operating_filter.append(Expense.status == 'confirmed')
-    
+
     operating_expenses = db.session.query(func.sum(Expense.amount)).filter(*operating_filter).scalar() or 0
 
     # Build filters for manufacturing overhead
@@ -246,6 +420,8 @@ def dashboard():
     # Only filter divided expenses if column exists
     if has_column('expenses', 'is_monthly_divided'):
         bom_filter.append(Expense.is_monthly_divided == False)
+    if has_column('expenses', 'is_payment_transfer'):
+        bom_filter.append(Expense.is_payment_transfer == False)
     bom_filter.append(Expense.status == 'confirmed')
     
     manufacturing_overhead = db.session.query(func.sum(Expense.amount)).filter(*bom_filter).scalar() or 0
@@ -326,7 +502,10 @@ def dashboard():
         month_expenses = db.session.query(func.sum(Expense.amount)).filter(
             func.extract('year', Expense.date) == current_date.year,
             func.extract('month', Expense.date) == current_date.month,
-            Expense.status == 'confirmed'
+            Expense.status == 'confirmed',
+            Expense.is_shifted == False,
+            Expense.is_inventory_shifted == False,
+            Expense.is_payment_transfer == False
         ).scalar() or 0
 
         monthly_sales.append(float(month_sales))
@@ -350,7 +529,10 @@ def dashboard():
         ).scalar() or 0
         y_exp = db.session.query(func.sum(Expense.amount)).filter(
             func.extract('year', Expense.date) == y,
-            Expense.status == 'confirmed'
+            Expense.status == 'confirmed',
+            Expense.is_shifted == False,
+            Expense.is_inventory_shifted == False,
+            Expense.is_payment_transfer == False
         ).scalar() or 0
         yearly.append({'year': y, 'sales': float(y_sales), 'expenses': float(y_exp)})
 
@@ -1160,7 +1342,7 @@ def expenses():
 
     expenses = query.order_by(Expense.date.desc()).all()
     # Calculate confirmed expenses, excluding those shifted to PD projects
-    total_expense = sum(e.amount for e in expenses if e.status == 'confirmed' and not getattr(e, 'is_shifted', False) and not getattr(e, 'is_inventory_shifted', False))
+    total_expense = sum(e.amount for e in expenses if e.status == 'confirmed' and not getattr(e, 'is_shifted', False) and not getattr(e, 'is_inventory_shifted', False) and not getattr(e, 'is_payment_transfer', False))
     total_pd_shifted_expense = sum(e.amount for e in expenses if e.status == 'confirmed' and getattr(e, 'is_shifted', False))
     
     # Get filter options
@@ -1222,6 +1404,53 @@ def expenses():
                          filter_id=request.args.get('filter_id'))
 
 
+@bp.route('/expenses/search-sales-json')
+@login_required
+def search_sales_json():
+    """Searchable dropdown source for "Add this to Invoice Payment" on
+    Add/Edit Expense — Sale invoices with a balance still due, matched by
+    invoice number or customer name. Mirrors sales.customers_list_json."""
+    q = request.args.get('q', '').strip()
+    query = Sale.query.filter(Sale.is_draft == False, Sale.status != 'paid')
+    if q:
+        like = f"%{q}%"
+        query = query.join(Sale.customer, isouter=True).filter(
+            (Sale.invoice_number.ilike(like)) | (Customer.name.ilike(like))
+        )
+    sales = query.order_by(Sale.date.desc()).limit(50).all()
+    results = []
+    for s in sales:
+        if s.balance_due <= 0.009:
+            continue
+        label = f"{s.invoice_number} — {s.customer.name if s.customer else 'No Customer'} (Due: PKR {s.balance_due:,.2f})"
+        results.append({'id': s.id, 'text': label})
+    return jsonify({'results': results})
+
+
+@bp.route('/expenses/search-bills-json')
+@login_required
+def search_bills_json():
+    """Searchable dropdown source for "Add this to Purchase Payment" on
+    Add/Edit Expense — Purchase bills with a balance still due, matched by
+    bill number or vendor name."""
+    q = request.args.get('q', '').strip()
+    query = PurchaseBill.query.filter(PurchaseBill.status.notin_(['paid', 'cancelled']))
+    if q:
+        like = f"%{q}%"
+        query = query.join(PurchaseBill.vendor, isouter=True).filter(
+            (PurchaseBill.bill_number.ilike(like)) | (Vendor.name.ilike(like))
+        )
+    bills = query.order_by(PurchaseBill.date.desc()).limit(50).all()
+    results = []
+    for b in bills:
+        balance = max(0.0, b.total - b.paid_amount - (b.cancelled_amount or 0))
+        if balance <= 0.009:
+            continue
+        label = f"{b.bill_number} — {b.vendor.name if b.vendor else 'No Vendor'} (Due: PKR {balance:,.2f})"
+        results.append({'id': b.id, 'text': label})
+    return jsonify({'results': results})
+
+
 @bp.route('/expenses/account-activity')
 @login_required
 def account_activity():
@@ -1246,17 +1475,19 @@ def account_activity():
     if selected_account:
         txns = (ExpenseAccountTransaction.query
                 .filter_by(account_id=selected_account.id)
-                .order_by(ExpenseAccountTransaction.date.asc(), ExpenseAccountTransaction.id.asc())
+                .order_by(ExpenseAccountTransaction.date.desc(), ExpenseAccountTransaction.id.desc())
                 .all())
 
-        # Running balance in chronological order, then reversed for newest-first
-        # display.
+        # Running balance walked in the same newest-first order the table is
+        # displayed in — starts at the account's opening balance and applies
+        # each row's amount going down the page, so the Balance column reads
+        # as a plain running total top-to-bottom (10,000 -> 10,000-500=9,500 ->
+        # 9,500-4,000=5,500 -> ... -> lands on the Remaining Balance row).
         running = selected_account.opening_balance or 0
         for txn in txns:
             delta = (txn.amount or 0) if txn.entry_type == 'debit' else -(txn.amount or 0)
             running += delta
             rows.append({'txn': txn, 'running': running, 'expense': txn.expense})
-        rows.reverse()
 
     # No active_module passed here on purpose — that's what turns on the
     # floating "Advanced Filter" button (base.html), and this page's only
@@ -1513,15 +1744,44 @@ def delete_expense_account_quick(account_id):
     return jsonify({'success': True})
 
 
+def _parse_shifted_product_costs(raw, expense_amount):
+    """Parse `Expense.shifted_to_product_ids` into {product_id: amount_applied}.
+
+    Current format is 'pid:amount,pid:amount,...' — each item's own share, so
+    an unshift can reverse exactly what was added to it. Falls back to an
+    equal split across ids for the legacy plain-id format ('pid,pid,...')
+    written before per-item costs existed, matching how those rows were
+    originally applied."""
+    if not raw:
+        return {}
+    tokens = [t.strip() for t in raw.split(',') if t.strip()]
+    if not tokens:
+        return {}
+    if ':' in tokens[0]:
+        result = {}
+        for t in tokens:
+            try:
+                pid_str, amt_str = t.split(':', 1)
+                result[int(pid_str)] = float(amt_str)
+            except (ValueError, IndexError):
+                continue
+        return result
+    ids = [int(t) for t in tokens if t.isdigit()]
+    if not ids:
+        return {}
+    per = expense_amount / len(ids)
+    return {pid: per for pid in ids}
+
+
 @bp.route('/expense/shift-to-inventory', methods=['POST'])
 @login_required
 def shift_expense_to_inventory():
     """Shift an operating expense onto one or more inventory items' cost.
 
-    The full expense amount is added to the selected item's cost_price. When
-    multiple (bulk) items are selected, the amount is split equally among them
-    and each item's cost_price is increased by its share. Item quantities are
-    left unchanged.
+    Each selected item's share defaults to an equal split of the expense
+    amount but is editable in the popup, so the amounts actually applied may
+    differ per item — they must still add up to the expense's full amount.
+    Item quantities are left unchanged.
     """
     if not getattr(current_user, 'is_admin', False):
         return jsonify({'success': False, 'message': 'Admin access required.'}), 403
@@ -1546,6 +1806,8 @@ def shift_expense_to_inventory():
         return jsonify({'success': False, 'message': 'Overhead expenses cannot be shifted to inventory.'}), 400
     if getattr(expense, 'is_monthly_divided', False):
         return jsonify({'success': False, 'message': 'Monthly divided expenses cannot be shifted to inventory.'}), 400
+    if getattr(expense, 'is_payment_transfer', False):
+        return jsonify({'success': False, 'message': 'This expense was transferred to a Sale/Purchase payment and cannot be shifted to inventory.'}), 400
 
     # Resolve unique, valid product ids
     seen = set()
@@ -1563,26 +1825,49 @@ def shift_expense_to_inventory():
     if not products:
         return jsonify({'success': False, 'message': 'No valid inventory items found.'}), 400
 
+    # Per-item cost to add — the "Shift to Inventory Cost" popup pre-fills
+    # each item's share as an equal split of the expense amount but leaves it
+    # editable, so the amounts actually submitted may differ per item. They
+    # must still add up to the expense's full amount — this is a dollar-for-
+    # dollar move of that amount from "expense" onto item cost, not a
+    # separate top-up.
+    item_costs = {}
+    total_entered = 0.0
+    for product in products:
+        raw_cost = (request.form.get(f'item_cost_{product.id}') or '').strip()
+        try:
+            cost = round(float(raw_cost), 2) if raw_cost else None
+        except (TypeError, ValueError):
+            cost = None
+        if cost is None or cost < 0:
+            return jsonify({'success': False, 'message': f'Enter a valid cost amount for {product.name}.'}), 400
+        item_costs[product.id] = cost
+        total_entered += cost
+
+    if abs(round(total_entered - expense.amount, 2)) > 0.01:
+        return jsonify({'success': False,
+                        'message': f'The item costs must add up to the expense amount (PKR {expense.amount:,.2f}). '
+                                   f'They currently total PKR {total_entered:,.2f}.'}), 400
+
     try:
-        amount_per_item = expense.amount / len(products)
         applied_names = []
         for product in products:
-            product.cost_price = (product.cost_price or 0) + amount_per_item
-            applied_names.append(product.name)
+            product.cost_price = (product.cost_price or 0) + item_costs[product.id]
+            applied_names.append(f'{product.name} (+PKR {item_costs[product.id]:,.2f})')
 
         expense.is_inventory_shifted = True
-        expense.shifted_to_product_ids = ','.join(str(p.id) for p in products)
+        expense.shifted_to_product_ids = ','.join(f'{p.id}:{item_costs[p.id]}' for p in products)
 
         db.session.commit()
 
         log_activity('Accounting',
                      f'Shifted expense {expense.expense_number} to inventory cost',
-                     f'PKR {expense.amount} split across {len(products)} item(s): {", ".join(applied_names)}')
+                     f'PKR {expense.amount} applied across {len(products)} item(s): {", ".join(applied_names)}')
 
         if len(products) == 1:
-            msg = f'Expense shifted to {applied_names[0]} cost.'
+            msg = f'Expense shifted to {products[0].name} cost.'
         else:
-            msg = f'PKR {expense.amount} split across {len(products)} items (PKR {amount_per_item:.2f} each).'
+            msg = f'PKR {expense.amount} applied across {len(products)} items.'
         return jsonify({'success': True, 'message': msg})
     except Exception as e:
         db.session.rollback()
@@ -1605,12 +1890,10 @@ def unshift_expense_from_inventory():
         return jsonify({'success': False, 'message': 'This expense is not shifted to inventory.'}), 400
 
     try:
-        product_ids = [int(x) for x in (expense.shifted_to_product_ids or '').split(',') if x.strip().isdigit()]
-        products = Product.query.filter(Product.id.in_(product_ids)).all() if product_ids else []
-        if products:
-            amount_per_item = expense.amount / len(products)
-            for product in products:
-                product.cost_price = max(0, (product.cost_price or 0) - amount_per_item)
+        item_costs = _parse_shifted_product_costs(expense.shifted_to_product_ids, expense.amount)
+        products = Product.query.filter(Product.id.in_(item_costs.keys())).all() if item_costs else []
+        for product in products:
+            product.cost_price = max(0, (product.cost_price or 0) - item_costs.get(product.id, 0))
 
         expense.is_inventory_shifted = False
         expense.shifted_to_product_ids = None
@@ -1893,6 +2176,18 @@ def add_expense():
                 db.session.flush()  # assign ids to the new Expense row(s) first
                 for exp in created_expenses:
                     _sync_expense_account_transaction(exp, account_id, target_status == 'confirmed')
+
+            # "Add this to Invoice/Purchase Payment" — only meaningful for a
+            # single plain expense; a BOM-overhead allocation split across
+            # several MOs/products/rows has no one row to hang a real
+            # Sale/Bill payment off, so the checkbox is ignored if the form
+            # ended up creating more than one Expense row.
+            transfer_type = request.form.get('payment_transfer_type')
+            transfer_target_id = request.form.get('payment_transfer_target_id', type=int)
+            if transfer_type in ('sale', 'bill') and transfer_target_id and len(created_expenses) == 1:
+                db.session.flush()
+                _sync_expense_payment_transfer(created_expenses[0], transfer_type, transfer_target_id,
+                                               created_expenses[0].amount, current_user.id, is_admin)
 
             db.session.commit()
 
@@ -2200,6 +2495,7 @@ def delete_expense(id):
     description = expense.description
 
     _delete_linked_expense_account_transaction(expense.id)
+    _reverse_expense_payment_transfer(expense, current_user.id)
     db.session.delete(expense)
 
     # Also reduce actual_overhead_cost and total_cost in MO if it was linked and confirmed
@@ -2285,6 +2581,7 @@ def bulk_delete_expenses():
                     mo_id_to_reduce = expense.mo_id
 
             _delete_linked_expense_account_transaction(expense.id)
+            _reverse_expense_payment_transfer(expense, current_user.id)
             db.session.delete(expense)
 
             if mo_id_to_reduce and is_confirmed:
@@ -2677,6 +2974,18 @@ def edit_expense(id):
         for new_exp, _target_type, _target_id in created_expenses:
             _sync_expense_account_transaction(new_exp, account_id, is_confirmed)
 
+        # "Add this to Invoice/Purchase Payment" — same single-row restriction
+        # as Add Expense: only applies to the original row, never to rows
+        # spun off by a BOM-overhead split on this edit.
+        is_admin = getattr(current_user, 'is_admin', False)
+        transfer_type = request.form.get('payment_transfer_type')
+        transfer_target_id = request.form.get('payment_transfer_target_id', type=int)
+        if transfer_type in ('sale', 'bill') and transfer_target_id:
+            _sync_expense_payment_transfer(expense, transfer_type, transfer_target_id,
+                                           expense.amount, current_user.id, is_admin)
+        else:
+            _reverse_expense_payment_transfer(expense, current_user.id)
+
         db.session.commit()
         log_activity('Accounting', f'Updated Expense: {expense.expense_number}',
                     f'Amount: {expense.amount}, Description: {expense.description}')
@@ -2741,8 +3050,20 @@ def edit_expense(id):
     linked_txn = ExpenseAccountTransaction.query.filter_by(expense_id=expense.id).first()
     existing_account_id = linked_txn.account_id if linked_txn else None
 
+    existing_payment_transfer = None
+    if expense.linked_sale_id and expense.linked_sale:
+        s = expense.linked_sale
+        existing_payment_transfer = {'id': s.id, 'type': 'sale',
+                                     'text': f"{s.invoice_number} — {s.customer.name if s.customer else 'No Customer'} (Due: PKR {s.balance_due:,.2f})"}
+    elif expense.linked_bill_id and expense.linked_bill:
+        b = expense.linked_bill
+        balance = max(0.0, b.total - b.paid_amount - (b.cancelled_amount or 0))
+        existing_payment_transfer = {'id': b.id, 'type': 'bill',
+                                     'text': f"{b.bill_number} — {b.vendor.name if b.vendor else 'No Vendor'} (Due: PKR {balance:,.2f})"}
+
     return render_template('accounting/edit_expense.html', form=form, expense=expense,
-                           expense_accounts=expense_accounts, existing_account_id=existing_account_id)
+                           expense_accounts=expense_accounts, existing_account_id=existing_account_id,
+                           existing_payment_transfer=existing_payment_transfer)
 
 @bp.route('/expense-categories')
 @login_required

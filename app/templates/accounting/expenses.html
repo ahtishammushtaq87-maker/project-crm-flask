@@ -361,6 +361,13 @@
                                 </span>
                                 {% endif %}
                                 {% endif %}
+                                {% if exp.is_payment_transfer %}
+                                <a href="{% if exp.linked_sale_id %}{{ url_for('sales.invoice_detail', id=exp.linked_sale_id) }}{% elif exp.linked_bill_id %}{{ url_for('purchase.bill_detail', id=exp.linked_bill_id) }}{% endif %}"
+                                   class="badge bg-warning text-dark ms-1 text-decoration-none" style="font-size: 0.7rem;"
+                                   title="This amount was applied as a real payment and is excluded from expense totals">
+                                    <i class="fas fa-exchange-alt me-1"></i>Transferred to {{ 'Sale' if exp.linked_sale_id else 'Purchase' }}{% if exp.linked_sale %} #{{ exp.linked_sale.invoice_number }}{% elif exp.linked_bill %} #{{ exp.linked_bill.bill_number }}{% endif %}
+                                </a>
+                                {% endif %}
                             </td>
                             <td class="clickable-date" data-date="{{ exp.date.strftime('%Y-%m-%d') }}"
                                 style="cursor: pointer; color: #000000;" title="Click to filter by this month">
@@ -443,7 +450,7 @@
                             </td>
                             <td>
                                 <div class="d-flex flex-column gap-1 align-items-start">
-                                    {% set is_op_expense = not exp.is_shifted and not exp.is_inventory_shifted and not exp.is_bom_overhead and not exp.is_monthly_divided %}
+                                    {% set is_op_expense = not exp.is_shifted and not exp.is_inventory_shifted and not exp.is_bom_overhead and not exp.is_monthly_divided and not exp.is_payment_transfer %}
                                     <div class="d-flex align-items-center">
                                         {{ approval_widget(module='expense', entity=exp) }}
                                         {% if current_user.is_admin and not exp.is_shifted and not exp.is_inventory_shifted %}
@@ -638,7 +645,7 @@
 
 <!-- Shift to Inventory Cost Modal -->
 <div class="modal fade" id="shiftToInventoryModal" tabindex="-1" aria-labelledby="shiftToInventoryModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <form id="shiftToInventoryForm">
                 <div class="modal-header text-white" style="background-color:#0b8793;">
@@ -664,10 +671,29 @@
                         <label for="product_ids" class="form-label">Select Inventory Item(s) <span class="text-danger">*</span></label>
                         <select name="product_ids" id="product_ids" class="form-select" multiple required>
                             {% for item in inventory_items %}
-                            <option value="{{ item.id }}">{{ item.sku }} - {{ item.name }} (cost: PKR {{ '%.2f'|format(item.cost_price or 0) }})</option>
+                            <option value="{{ item.id }}" data-cost="{{ item.cost_price or 0 }}" data-name="{{ item.sku }} - {{ item.name }}">{{ item.sku }} - {{ item.name }} (cost: PKR {{ '%.2f'|format(item.cost_price or 0) }})</option>
                             {% endfor %}
                         </select>
-                        <small class="text-muted">Select one item to add the full amount to its cost, or several items (bulk) to split the amount equally among them.</small>
+                        <small class="text-muted">Select one item to add the full amount to its cost, or several items (bulk) to split the amount — each item's share is editable below and must add up to the expense amount.</small>
+                    </div>
+                    <div id="inv_cost_rows" style="display:none;">
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-1 no-datatable">
+                                <colgroup>
+                                    <col style="width:50%;">
+                                    <col style="width:25%;">
+                                    <col style="width:25%;">
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th>Item</th>
+                                        <th class="text-end">Current Cost</th>
+                                        <th class="text-end">Cost to Add</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="inv_cost_rows_body"></tbody>
+                            </table>
+                        </div>
                     </div>
                     <div class="alert alert-secondary py-2 mb-0" id="inv_split_preview" style="display:none;">
                         <small><i class="fas fa-calculator me-1"></i> <span id="inv_split_text"></span></small>
@@ -765,22 +791,68 @@ document.addEventListener('DOMContentLoaded', function() {
     let invShiftAmount = 0;
     const invShiftModal = document.getElementById('shiftToInventoryModal');
     const $invSelect = $('#product_ids');
+    const invCostRowsWrap = document.getElementById('inv_cost_rows');
+    const invCostRowsBody = document.getElementById('inv_cost_rows_body');
+
+    function fmtMoney(n) {
+        return (n || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
+
+    // Rebuilds the per-item "Cost to Add" rows whenever the selected items
+    // change — each row defaults to an equal split of the expense amount but
+    // stays freely editable; the total must match the expense amount exactly
+    // before the shift can be confirmed.
+    function rebuildInvCostRows() {
+        const ids = $invSelect.val() || [];
+        const preview = document.getElementById('inv_split_preview');
+
+        if (!ids.length) {
+            invCostRowsWrap.style.display = 'none';
+            invCostRowsBody.innerHTML = '';
+            preview.style.display = 'none';
+            return;
+        }
+
+        const per = ids.length ? (invShiftAmount / ids.length) : 0;
+        invCostRowsBody.innerHTML = '';
+        ids.forEach(function (id) {
+            const opt = $invSelect.find('option[value="' + id + '"]');
+            const name = opt.data('name') || ('Item #' + id);
+            const currentCost = parseFloat(opt.data('cost')) || 0;
+            const row = document.createElement('tr');
+            row.innerHTML =
+                '<td>' + name + '</td>' +
+                '<td class="text-end text-muted">PKR ' + fmtMoney(currentCost) + '</td>' +
+                '<td class="text-end">' +
+                    '<input type="number" step="0.01" min="0" class="form-control form-control-sm text-end inv-cost-input" ' +
+                    'style="min-width:100px;" name="item_cost_' + id + '" value="' + per.toFixed(2) + '">' +
+                '</td>';
+            invCostRowsBody.appendChild(row);
+        });
+        invCostRowsWrap.style.display = '';
+        updateInvSplitPreview();
+    }
 
     function updateInvSplitPreview() {
-        const count = ($invSelect.val() || []).length;
         const preview = document.getElementById('inv_split_preview');
         const text = document.getElementById('inv_split_text');
-        if (count > 1 && invShiftAmount > 0) {
-            const per = (invShiftAmount / count);
-            text.textContent = 'PKR ' + invShiftAmount.toLocaleString() + ' will be split across ' + count +
-                ' items = PKR ' + per.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' added to each item cost.';
-            preview.style.display = '';
-        } else if (count === 1 && invShiftAmount > 0) {
-            text.textContent = 'PKR ' + invShiftAmount.toLocaleString() + ' will be added to the selected item cost.';
-            preview.style.display = '';
-        } else {
+        const inputs = invCostRowsBody.querySelectorAll('.inv-cost-input');
+        if (!inputs.length) {
             preview.style.display = 'none';
+            return;
         }
+        let total = 0;
+        inputs.forEach(function (inp) { total += parseFloat(inp.value) || 0; });
+        const diff = Math.round((total - invShiftAmount) * 100) / 100;
+        if (Math.abs(diff) < 0.01) {
+            text.innerHTML = '<span class="text-success"><i class="fas fa-check-circle me-1"></i>Total PKR ' +
+                fmtMoney(total) + ' matches the expense amount.</span>';
+        } else {
+            text.innerHTML = '<span class="text-danger"><i class="fas fa-exclamation-triangle me-1"></i>Total PKR ' +
+                fmtMoney(total) + ' — must equal the expense amount (PKR ' + fmtMoney(invShiftAmount) +
+                '). Difference: PKR ' + fmtMoney(Math.abs(diff)) + '.</span>';
+        }
+        preview.style.display = '';
     }
 
     if (invShiftModal) {
@@ -791,7 +863,10 @@ document.addEventListener('DOMContentLoaded', function() {
             closeOnSelect: false,
             dropdownParent: $('#shiftToInventoryModal')
         });
-        $invSelect.on('change', updateInvSplitPreview);
+        $invSelect.on('change', rebuildInvCostRows);
+        invCostRowsBody.addEventListener('input', function (e) {
+            if (e.target.classList.contains('inv-cost-input')) updateInvSplitPreview();
+        });
 
         invShiftModal.addEventListener('show.bs.modal', function(event) {
             const button = event.relatedTarget;
@@ -811,6 +886,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 alert('Please select at least one inventory item.');
                 return;
             }
+            const inputs = invCostRowsBody.querySelectorAll('.inv-cost-input');
+            let total = 0;
+            inputs.forEach(function (inp) { total += parseFloat(inp.value) || 0; });
+            if (Math.abs(total - invShiftAmount) > 0.01) {
+                alert('The item costs must add up to the expense amount (PKR ' + fmtMoney(invShiftAmount) +
+                      '). They currently total PKR ' + fmtMoney(total) + '.');
+                return;
+            }
+
             const btn = document.getElementById('confirmInvShiftBtn');
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Shifting...';

@@ -154,6 +154,12 @@
                             </td>
                         </tr>
                         {% endfor %}
+                        <tr class="table-secondary">
+                            <td colspan="7" class="fw-bold">Remaining Balance</td>
+                            <td class="text-end fw-bold {{ 'text-success' if selected_account.balance >= 0 else 'text-danger' }}">
+                                {{ "{:,.2f}".format(selected_account.balance) }}
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
