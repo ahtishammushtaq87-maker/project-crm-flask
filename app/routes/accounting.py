@@ -28,81 +28,66 @@ def get_unique_expense_number(settings, next_num):
             return expense_number, next_num + 1
 
 
-# ─── Expense <-> Journal Account linking ────────────────────────────────────
-# An Expense can optionally be tied to a JournalAccount: the amount is posted
-# as a single 'credit' JournalLine (money out of that account), linked back via
-# JournalEntry.expense_id — the same FK the existing Journal -> Expense bridge
-# (journal.send_entry_to_expense) already uses. The Expense table itself stays
-# schema-free; nothing here touches its columns.
+# ─── Expense's own accounts (ExpenseAccount / ExpenseAccountTransaction) ────
+# Fully independent of the Journal module — Expense owns and manages these
+# accounts end to end (create/edit/delete, debit/credit, balance) rather than
+# sharing state with Journal's own separate accounts.
 
-def _sync_expense_journal_line(expense, account_id, is_confirmed):
-    """Create/refresh the linked JournalEntry+JournalLine that mirrors this
+def _sync_expense_account_transaction(expense, account_id, is_confirmed):
+    """Create/refresh the ExpenseAccountTransaction that mirrors this
     expense's effect on `account_id` (money out, i.e. 'credit'). Removes the
-    linked entry if account_id is falsy or invalid. `expense` must already
+    transaction if account_id is falsy or invalid. `expense` must already
     have a flushed id."""
-    from app.models import JournalAccount, JournalEntry, JournalLine
+    from app.models import ExpenseAccount, ExpenseAccountTransaction
 
-    existing_entry = JournalEntry.query.filter_by(expense_id=expense.id).first()
+    existing = ExpenseAccountTransaction.query.filter_by(expense_id=expense.id).first()
 
-    if not account_id or not JournalAccount.query.get(account_id):
-        if existing_entry:
-            db.session.delete(existing_entry)
+    if not account_id or not ExpenseAccount.query.get(account_id):
+        if existing:
+            db.session.delete(existing)
         return
 
     expense_date = expense.date.date() if hasattr(expense.date, 'date') else expense.date
 
-    if existing_entry:
-        entry = existing_entry
-        entry.date = expense_date
-        entry.reference = expense.reference
-        entry.description = expense.description
-        JournalLine.query.filter_by(entry_id=entry.id).delete()
+    if existing:
+        txn = existing
     else:
-        entry = JournalEntry(
-            date=expense_date,
-            reference=expense.reference,
-            description=expense.description,
-            created_by=expense.created_by,
-            is_approved=is_confirmed,
-            is_rejected=False,
-            approved_by=expense.created_by if is_confirmed else None,
-            approved_at=datetime.utcnow() if is_confirmed else None,
-            expense_id=expense.id,
-        )
-        db.session.add(entry)
-        db.session.flush()
+        txn = ExpenseAccountTransaction(expense_id=expense.id, entry_type='credit',
+                                        created_by=expense.created_by)
+        db.session.add(txn)
 
-    entry.lines.append(JournalLine(
-        account_id=account_id,
-        category_id=expense.category_id,
-        description=expense.description,
-        entry_type='credit',
-        amount=expense.amount,
-        bill_image_path=expense.bill_image_path,
-    ))
+    txn.account_id = account_id
+    txn.date = expense_date
+    txn.amount = expense.amount
+    txn.description = expense.description
+    txn.reference = expense.reference
+    txn.bill_image_path = expense.bill_image_path
+    txn.is_approved = is_confirmed
+    txn.is_rejected = False
+    txn.approved_by = expense.created_by if is_confirmed else None
+    txn.approved_at = datetime.utcnow() if is_confirmed else None
 
 
-def _delete_linked_journal_entry(expense_id):
-    """Remove the JournalEntry (if any) that _sync_expense_journal_line created
-    for this expense, so deleting the expense doesn't leave a dangling entry
-    still affecting an account's balance."""
-    from app.models import JournalEntry
-    entry = JournalEntry.query.filter_by(expense_id=expense_id).first()
-    if entry:
-        db.session.delete(entry)
+def _delete_linked_expense_account_transaction(expense_id):
+    """Remove the ExpenseAccountTransaction (if any) that
+    _sync_expense_account_transaction created for this expense, so deleting
+    the expense doesn't leave a dangling transaction still affecting an
+    account's balance."""
+    from app.models import ExpenseAccountTransaction
+    txn = ExpenseAccountTransaction.query.filter_by(expense_id=expense_id).first()
+    if txn:
+        db.session.delete(txn)
 
 
 def _add_money_from_expense_form():
     """Handle the 'Debit' branch of the Add Expense form: the user picked an
     account + Debit, meaning money is going INTO that account. This is NOT an
-    expense, so no Expense row is created — it's just the Journal module's
-    existing 'Add Money' action (see journal._create_add_money_entry), reached
-    from the Expense form for convenience."""
-    from app.models import JournalAccount
-    from app.routes.journal import _create_add_money_entry
+    expense, so no Expense row is created — just a debit ExpenseAccountTransaction
+    against the Expense module's own account."""
+    from app.models import ExpenseAccount, ExpenseAccountTransaction
 
     account_id = request.form.get('account_id', type=int)
-    acct = JournalAccount.query.get(account_id) if account_id else None
+    acct = ExpenseAccount.query.get(account_id) if account_id else None
     if not acct:
         flash('Please select an account to add money to.', 'warning')
         return redirect(url_for('accounting.add_expense'))
@@ -115,16 +100,29 @@ def _add_money_from_expense_form():
         flash('Enter an amount greater than zero.', 'warning')
         return redirect(url_for('accounting.add_expense'))
 
-    entry, is_admin = _create_add_money_entry(
-        acct, amount, 'debit', request.form.get('date'),
-        request.form.get('reference'), request.form.get('description'),
-        request.files.get('bill_image'),
+    bill_path = _save_fixed_expense_bill_image(request.files.get('bill_image'))
+    is_admin = getattr(current_user, 'is_admin', False)
+    txn = ExpenseAccountTransaction(
+        account_id=acct.id,
+        entry_type='debit',
+        date=_parse_expense_date(request.form.get('date')) or datetime.utcnow().date(),
+        amount=amount,
+        description=(request.form.get('description') or '').strip() or None,
+        reference=(request.form.get('reference') or '').strip() or None,
+        bill_image_path=bill_path,
+        is_approved=is_admin,
+        approved_by=current_user.id if is_admin else None,
+        approved_at=datetime.utcnow() if is_admin else None,
+        created_by=current_user.id,
     )
+    db.session.add(txn)
+    db.session.commit()
+
     if is_admin:
-        flash(f'PKR {amount:,.0f} added to "{acct.name}". Recorded as a Journal entry, not an Expense.', 'success')
+        flash(f'PKR {amount:,.0f} added to "{acct.name}". Recorded as an account transaction, not an Expense.', 'success')
     else:
         flash(f'Entry of PKR {amount:,.0f} added to "{acct.name}" submitted for Admin approval.', 'info')
-    return redirect(url_for('journal.account_ledger', account_id=acct.id))
+    return redirect(url_for('accounting.account_activity', account_id=acct.id))
 
 
 def _parse_expense_date(raw):
@@ -1168,9 +1166,9 @@ def expenses():
     # Get filter options
     categories = ExpenseCategory.query.filter_by(is_active=True).order_by(ExpenseCategory.name).all()
     vendors = Vendor.query.filter_by(is_active=True).order_by(Vendor.name).all()
-    from app.models import ManufacturingOrder, JournalAccount, PaymentMethod
+    from app.models import ManufacturingOrder, ExpenseAccount, PaymentMethod
     manufacturing_orders = ManufacturingOrder.query.order_by(ManufacturingOrder.order_number.desc()).all()
-    journal_accounts = JournalAccount.query.filter_by(is_active=True).order_by(JournalAccount.name).all()
+    expense_accounts = ExpenseAccount.query.filter_by(is_active=True).order_by(ExpenseAccount.name).all()
     payment_methods = PaymentMethod.query.filter_by(is_active=True).order_by(PaymentMethod.name).all()
     
     # Get active/draft PD projects for the shift modal
@@ -1202,7 +1200,7 @@ def expenses():
                          total_pd_shifted_expense=total_pd_shifted_expense,
                          categories=categories,
                          vendors=vendors,
-                         journal_accounts=journal_accounts,
+                         expense_accounts=expense_accounts,
                          payment_methods=payment_methods,
                          manufacturing_orders=manufacturing_orders,
                          active_pd_projects=active_pd_projects,
@@ -1222,6 +1220,297 @@ def expenses():
                          draft_count=draft_count,
                          cancelled_count=cancelled_count,
                          filter_id=request.args.get('filter_id'))
+
+
+@bp.route('/expenses/account-activity')
+@login_required
+def account_activity():
+    """A tab on the Expense module showing everything charged against one of
+    Expense's own accounts — both real Expenses (credit) and plain 'Add
+    Money' transactions (debit) — since Debit transactions never create an
+    Expense row (by design; see _add_money_from_expense_form) and so are
+    otherwise invisible from inside Expenses. Read-only: no data is created
+    here. Entirely independent of the Journal module's own accounts."""
+    from app.models import ExpenseAccount, ExpenseAccountTransaction
+
+    accounts = ExpenseAccount.query.order_by(ExpenseAccount.name).all()
+    account_id = request.args.get('account_id', type=int)
+    selected_account = None
+    if account_id:
+        selected_account = ExpenseAccount.query.get(account_id)
+    if not selected_account and accounts:
+        selected_account = accounts[0]
+        account_id = selected_account.id
+
+    rows = []
+    if selected_account:
+        txns = (ExpenseAccountTransaction.query
+                .filter_by(account_id=selected_account.id)
+                .order_by(ExpenseAccountTransaction.date.asc(), ExpenseAccountTransaction.id.asc())
+                .all())
+
+        # Running balance in chronological order, then reversed for newest-first
+        # display.
+        running = selected_account.opening_balance or 0
+        for txn in txns:
+            delta = (txn.amount or 0) if txn.entry_type == 'debit' else -(txn.amount or 0)
+            running += delta
+            rows.append({'txn': txn, 'running': running, 'expense': txn.expense})
+        rows.reverse()
+
+    # No active_module passed here on purpose — that's what turns on the
+    # floating "Advanced Filter" button (base.html), and this page's only
+    # filter is the account picker above, so it isn't needed.
+    return render_template('accounting/account_activity.html',
+                           accounts=accounts,
+                           selected_account=selected_account,
+                           selected_account_id=account_id,
+                           rows=rows,
+                           current_status='account_activity')
+
+
+@bp.route('/expenses/account-activity/export/excel')
+@login_required
+def account_activity_export_excel():
+    """Excel download of one account's activity — same 'account-wise ledger'
+    layout as the Journal module's own export (journal.export_excel), applied
+    to Expense's own independent accounts."""
+    import io
+    from flask import send_file
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from app.models import ExpenseAccount, ExpenseAccountTransaction
+
+    account_id = request.args.get('account_id', type=int)
+    selected_account = ExpenseAccount.query.get(account_id) if account_id else None
+    if not selected_account:
+        flash('Select an account first.', 'warning')
+        return redirect(url_for('accounting.account_activity'))
+
+    txns = (ExpenseAccountTransaction.query
+            .filter_by(account_id=selected_account.id)
+            .order_by(ExpenseAccountTransaction.date.asc(), ExpenseAccountTransaction.id.asc())
+            .all())
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Account Activity'
+
+    title_font = Font(bold=True, size=14)
+    acct_font = Font(bold=True, size=12, color='FFFFFF')
+    acct_fill = PatternFill('solid', fgColor='0D6EFD')
+    head_font = Font(bold=True)
+    head_fill = PatternFill('solid', fgColor='E9ECEF')
+    total_font = Font(bold=True)
+    total_fill = PatternFill('solid', fgColor='F1F3F5')
+    thin = Side(style='thin', color='CCCCCC')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    right = Alignment(horizontal='right')
+
+    headers = ['Date', 'Entry #', 'Reference', 'Description', 'Debit (In)', 'Credit (Out)', 'Balance']
+    NCOL = len(headers)
+
+    ws['A1'] = 'Expense Account Activity'
+    ws['A1'].font = title_font
+    ws['A2'] = f'Account: {selected_account.name}'
+    ws['A2'].font = Font(italic=True, color='6C757D')
+    r = 4
+
+    opening = selected_account.opening_balance or 0
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=NCOL)
+    cell = ws.cell(row=r, column=1,
+                   value=selected_account.name
+                         + (f"  ({selected_account.account_type})" if selected_account.account_type else ''))
+    cell.font = acct_font
+    cell.fill = acct_fill
+    r += 1
+
+    for ci, h in enumerate(headers, start=1):
+        c = ws.cell(row=r, column=ci, value=h)
+        c.font = head_font
+        c.fill = head_fill
+        c.border = border
+        if ci >= 5:
+            c.alignment = right
+    r += 1
+
+    running = opening
+    c = ws.cell(row=r, column=4, value='Opening Balance')
+    c.font = total_font; c.alignment = right; c.border = border
+    c = ws.cell(row=r, column=7, value=running)
+    c.font = total_font; c.alignment = right; c.border = border; c.number_format = '#,##0'
+    for ci in (1, 2, 3, 5, 6):
+        ws.cell(row=r, column=ci).border = border
+    r += 1
+
+    sub_debit = sub_credit = 0
+    for t in txns:
+        debit = t.amount if t.entry_type == 'debit' else 0
+        credit = t.amount if t.entry_type == 'credit' else 0
+        # Debit adds (+), credit subtracts (−) from the running balance.
+        running += debit - credit
+        sub_debit += debit
+        sub_credit += credit
+        row_vals = [
+            t.date.strftime('%d-%m-%Y') if t.date else '',
+            f'#{t.id}',
+            t.reference or '',
+            t.description or '',
+            debit or '',
+            credit or '',
+            running,
+        ]
+        for ci, v in enumerate(row_vals, start=1):
+            c = ws.cell(row=r, column=ci, value=v)
+            c.border = border
+            if ci >= 5:
+                c.alignment = right
+                if v != '':
+                    c.number_format = '#,##0'
+        r += 1
+
+    # Remaining balance row for this account (running == closing balance).
+    c = ws.cell(row=r, column=4, value='Remaining Balance')
+    c.font = total_font; c.fill = total_fill; c.alignment = right; c.border = border
+    for ci, v in [(5, sub_debit), (6, sub_credit), (7, running)]:
+        c = ws.cell(row=r, column=ci, value=v)
+        c.font = total_font; c.fill = total_fill; c.alignment = right
+        c.border = border; c.number_format = '#,##0'
+    for ci in (1, 2, 3):
+        ws.cell(row=r, column=ci).fill = total_fill
+        ws.cell(row=r, column=ci).border = border
+    r += 2
+
+    if not txns:
+        ws.cell(row=r, column=1, value='No transactions for this account.')
+    else:
+        c = ws.cell(row=r, column=4, value='GRAND TOTAL')
+        c.font = Font(bold=True, size=12); c.alignment = right
+        for ci, v in [(5, sub_debit), (6, sub_credit), (7, running)]:
+            c = ws.cell(row=r, column=ci, value=v)
+            c.font = Font(bold=True, size=12); c.alignment = right; c.number_format = '#,##0'
+
+    widths = [14, 10, 18, 38, 14, 14, 16]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    import re
+    safe_name = re.sub(r'[^A-Za-z0-9_-]+', '_', selected_account.name).strip('_') or 'account'
+    return send_file(buf, as_attachment=True,
+                     download_name=f'account_activity_{safe_name}.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+# ─── Expense's own account management (create/edit/delete) — AJAX/JSON ─────
+# Entirely independent of the Journal module's equivalent routes. Read
+# access only needs login (matches how Add/Edit Expense already shows the
+# account dropdown to any user with accounting access); create/edit/delete
+# are admin-only, matching the "Manage Accounts" button which is only
+# rendered for admins in the first place.
+
+@bp.route('/expense-accounts/list-json')
+@login_required
+def list_expense_accounts_json():
+    from app.models import ExpenseAccount
+    accounts = ExpenseAccount.query.order_by(ExpenseAccount.name).all()
+    return jsonify({'success': True, 'accounts': [{
+        'id': a.id,
+        'name': a.name,
+        'account_type': a.account_type or '',
+        'opening_balance': round(a.opening_balance or 0, 2),
+        'balance': round(a.balance, 2),
+        'is_active': bool(a.is_active),
+        'has_lines': bool(a.transactions),
+    } for a in accounts]})
+
+
+@bp.route('/expense-accounts/create-quick', methods=['POST'])
+@login_required
+def create_expense_account_quick():
+    from app.models import ExpenseAccount
+    if not getattr(current_user, 'is_admin', False):
+        return jsonify({'success': False, 'message': 'Only admins can create accounts.'}), 403
+
+    name = (request.form.get('name') or '').strip()
+    if not name:
+        return jsonify({'success': False, 'message': 'Account name is required.'})
+    if ExpenseAccount.query.filter(db.func.lower(ExpenseAccount.name) == name.lower()).first():
+        return jsonify({'success': False, 'message': f'An account named "{name}" already exists.'})
+
+    try:
+        opening_balance = float(request.form.get('opening_balance') or 0)
+    except (TypeError, ValueError):
+        opening_balance = 0.0
+
+    acct = ExpenseAccount(
+        name=name,
+        account_type=(request.form.get('account_type') or '').strip() or None,
+        opening_balance=opening_balance,
+        notes=(request.form.get('notes') or '').strip() or None,
+        created_by=current_user.id,
+    )
+    db.session.add(acct)
+    db.session.commit()
+    return jsonify({'success': True, 'account': {
+        'id': acct.id, 'name': acct.name, 'account_type': acct.account_type or '',
+    }})
+
+
+@bp.route('/expense-accounts/<int:account_id>/edit-quick', methods=['POST'])
+@login_required
+def edit_expense_account_quick(account_id):
+    from app.models import ExpenseAccount
+    if not getattr(current_user, 'is_admin', False):
+        return jsonify({'success': False, 'message': 'Only admins can edit accounts.'}), 403
+
+    acct = ExpenseAccount.query.get_or_404(account_id)
+    name = (request.form.get('name') or '').strip()
+    if not name:
+        return jsonify({'success': False, 'message': 'Account name is required.'})
+    dupe = ExpenseAccount.query.filter(
+        db.func.lower(ExpenseAccount.name) == name.lower(),
+        ExpenseAccount.id != acct.id
+    ).first()
+    if dupe:
+        return jsonify({'success': False, 'message': f'Another account named "{name}" already exists.'})
+
+    try:
+        opening_balance = float(request.form.get('opening_balance') or 0)
+    except (TypeError, ValueError):
+        opening_balance = 0.0
+
+    acct.name = name
+    acct.account_type = (request.form.get('account_type') or '').strip() or None
+    acct.opening_balance = opening_balance
+    if 'is_active' in request.form:
+        acct.is_active = str(request.form.get('is_active')).lower() in ('1', 'true', 'on', 'yes')
+    db.session.commit()
+    return jsonify({'success': True, 'account': {
+        'id': acct.id, 'name': acct.name, 'account_type': acct.account_type or '',
+        'opening_balance': round(acct.opening_balance or 0, 2),
+        'balance': round(acct.balance, 2),
+        'is_active': bool(acct.is_active),
+        'has_lines': bool(acct.transactions),
+    }})
+
+
+@bp.route('/expense-accounts/<int:account_id>/delete-quick', methods=['POST'])
+@login_required
+def delete_expense_account_quick(account_id):
+    from app.models import ExpenseAccount
+    if not getattr(current_user, 'is_admin', False):
+        return jsonify({'success': False, 'message': 'Only admins can delete accounts.'}), 403
+
+    acct = ExpenseAccount.query.get_or_404(account_id)
+    if acct.transactions:
+        return jsonify({'success': False,
+                        'message': 'Cannot delete an account that has transactions. Deactivate it instead.'})
+    db.session.delete(acct)
+    db.session.commit()
+    return jsonify({'success': True})
 
 
 @bp.route('/expense/shift-to-inventory', methods=['POST'])
@@ -1340,7 +1629,7 @@ def unshift_expense_from_inventory():
 @login_required
 @permission_required('accounting', action='add')
 def add_expense():
-    from app.models import ExpenseCategory, Vendor, BOM, JournalAccount
+    from app.models import ExpenseCategory, Vendor, BOM, ExpenseAccount
     from werkzeug.utils import secure_filename
     import os
 
@@ -1603,7 +1892,7 @@ def add_expense():
             if account_id:
                 db.session.flush()  # assign ids to the new Expense row(s) first
                 for exp in created_expenses:
-                    _sync_expense_journal_line(exp, account_id, target_status == 'confirmed')
+                    _sync_expense_account_transaction(exp, account_id, target_status == 'confirmed')
 
             db.session.commit()
 
@@ -1620,8 +1909,8 @@ def add_expense():
                 flash(f'Error creating expense: {str(e)}', 'danger')
             return redirect(url_for('accounting.add_expense'))
 
-    journal_accounts = JournalAccount.query.filter_by(is_active=True).order_by(JournalAccount.name).all()
-    return render_template('accounting/add_expense.html', form=form, journal_accounts=journal_accounts)
+    expense_accounts = ExpenseAccount.query.filter_by(is_active=True).order_by(ExpenseAccount.name).all()
+    return render_template('accounting/add_expense.html', form=form, expense_accounts=expense_accounts)
 
 
 @bp.route('/expense/bulk-upload', methods=['GET', 'POST'])
@@ -1631,9 +1920,9 @@ def bulk_upload_expense():
     """Bulk-create/update Expenses from an uploaded Excel sheet (same shape as
     the app's own Expense report export). Deliberately out of scope: BOM
     Overhead linkage, Manufacturing Order allocation, monthly division, and
-    the Journal Account/Debit-Credit link — those stay individual-only via
+    the Account/Debit-Credit link — those stay individual-only via
     Add/Edit Expense so a spreadsheet can never silently mis-allocate cost."""
-    from app.models import ExpenseCategory, Vendor, JournalEntry
+    from app.models import ExpenseCategory, Vendor, ExpenseAccountTransaction
     import re
 
     if request.method == 'POST':
@@ -1787,8 +2076,8 @@ def bulk_upload_expense():
                         errors.append(f'Row {row_num}: {clean_num} is a BOM Overhead expense — edit it individually, not via bulk upload.')
                         continue
 
-                    linked_entry = JournalEntry.query.filter_by(expense_id=existing.id).first()
-                    linked_account_id = linked_entry.lines[0].account_id if (linked_entry and linked_entry.lines) else None
+                    linked_txn = ExpenseAccountTransaction.query.filter_by(expense_id=existing.id).first()
+                    linked_account_id = linked_txn.account_id if linked_txn else None
 
                     existing.date = exp_date
                     existing.category_id = category.id
@@ -1805,7 +2094,7 @@ def bulk_upload_expense():
                         existing.approved_at = datetime.utcnow()
 
                     if linked_account_id:
-                        _sync_expense_journal_line(existing, linked_account_id, is_approved)
+                        _sync_expense_account_transaction(existing, linked_account_id, is_approved)
 
                     updated += 1
                 else:
@@ -1910,7 +2199,7 @@ def delete_expense(id):
 
     description = expense.description
 
-    _delete_linked_journal_entry(expense.id)
+    _delete_linked_expense_account_transaction(expense.id)
     db.session.delete(expense)
 
     # Also reduce actual_overhead_cost and total_cost in MO if it was linked and confirmed
@@ -1995,7 +2284,7 @@ def bulk_delete_expenses():
                 if has_column('expenses', 'mo_id') and expense.mo_id:
                     mo_id_to_reduce = expense.mo_id
 
-            _delete_linked_journal_entry(expense.id)
+            _delete_linked_expense_account_transaction(expense.id)
             db.session.delete(expense)
 
             if mo_id_to_reduce and is_confirmed:
@@ -2378,15 +2667,15 @@ def edit_expense(id):
                     new_mo.actual_overhead_cost = (new_mo.actual_overhead_cost or 0) + new_exp.amount
                     new_mo.total_cost = (new_mo.actual_material_cost or 0) + (new_mo.actual_labor_cost or 0) + new_mo.actual_overhead_cost
 
-        # Keep the linked Journal account entry (if any) in sync with this
+        # Keep the linked account transaction (if any) in sync with this
         # expense's current account/amount/description. Stays 'credit' —
         # switching an existing expense to Debit isn't offered here since that
         # would mean it's no longer really an expense.
         account_id = request.form.get('account_id', type=int)
         db.session.flush()
-        _sync_expense_journal_line(expense, account_id, is_confirmed)
+        _sync_expense_account_transaction(expense, account_id, is_confirmed)
         for new_exp, _target_type, _target_id in created_expenses:
-            _sync_expense_journal_line(new_exp, account_id, is_confirmed)
+            _sync_expense_account_transaction(new_exp, account_id, is_confirmed)
 
         db.session.commit()
         log_activity('Accounting', f'Updated Expense: {expense.expense_number}',
@@ -2447,13 +2736,13 @@ def edit_expense(id):
         flash('Expense updated successfully', 'success')
         return redirect(url_for('accounting.expenses'))
 
-    from app.models import JournalAccount, JournalEntry
-    journal_accounts = JournalAccount.query.filter_by(is_active=True).order_by(JournalAccount.name).all()
-    linked_entry = JournalEntry.query.filter_by(expense_id=expense.id).first()
-    existing_account_id = linked_entry.lines[0].account_id if (linked_entry and linked_entry.lines) else None
+    from app.models import ExpenseAccount, ExpenseAccountTransaction
+    expense_accounts = ExpenseAccount.query.filter_by(is_active=True).order_by(ExpenseAccount.name).all()
+    linked_txn = ExpenseAccountTransaction.query.filter_by(expense_id=expense.id).first()
+    existing_account_id = linked_txn.account_id if linked_txn else None
 
     return render_template('accounting/edit_expense.html', form=form, expense=expense,
-                           journal_accounts=journal_accounts, existing_account_id=existing_account_id)
+                           expense_accounts=expense_accounts, existing_account_id=existing_account_id)
 
 @bp.route('/expense-categories')
 @login_required
@@ -2534,13 +2823,13 @@ def confirm_expense(id):
             except Exception as e:
                 print(f"Error updating BOM during confirmation: {e}")
 
-    from app.models import JournalEntry
-    linked_entry = JournalEntry.query.filter_by(expense_id=expense.id).first()
-    if linked_entry:
-        linked_entry.is_approved = True
-        linked_entry.is_rejected = False
-        linked_entry.approved_by = current_user.id
-        linked_entry.approved_at = datetime.utcnow()
+    from app.models import ExpenseAccountTransaction
+    linked_txn = ExpenseAccountTransaction.query.filter_by(expense_id=expense.id).first()
+    if linked_txn:
+        linked_txn.is_approved = True
+        linked_txn.is_rejected = False
+        linked_txn.approved_by = current_user.id
+        linked_txn.approved_at = datetime.utcnow()
 
     db.session.commit()
     log_activity('Accounting', f'Confirmed Expense: {expense.expense_number}',
@@ -2564,12 +2853,12 @@ def reject_expense(id):
     expense.is_rejected = True
     expense.rejection_reason = reason
 
-    from app.models import JournalEntry
-    linked_entry = JournalEntry.query.filter_by(expense_id=expense.id).first()
-    if linked_entry:
-        linked_entry.is_approved = False
-        linked_entry.is_rejected = True
-        linked_entry.rejection_reason = reason
+    from app.models import ExpenseAccountTransaction
+    linked_txn = ExpenseAccountTransaction.query.filter_by(expense_id=expense.id).first()
+    if linked_txn:
+        linked_txn.is_approved = False
+        linked_txn.is_rejected = True
+        linked_txn.rejection_reason = reason
 
     db.session.commit()
     log_activity('Accounting', f'Rejected Expense: {expense.expense_number}',
@@ -2829,8 +3118,8 @@ def _fixed_expense_json(fx):
         'category_name': fx.category.name if fx.category else '',
         'vendor_id': fx.vendor_id,
         'vendor_name': fx.vendor.name if fx.vendor else '',
-        'account_id': fx.account_id,
-        'account_name': fx.account.name if fx.account else '',
+        'account_id': fx.expense_account_id,
+        'account_name': fx.expense_account.name if fx.expense_account else '',
         'payment_method': fx.payment_method or '',
         'bill_image_path': fx.bill_image_path or '',
         'mode': fx.mode or 'divide',
@@ -2944,12 +3233,12 @@ def ensure_fixed_expense_rows():
                 fx.accrued_amount = 0
                 created += 1
 
-                # Charge this cycle against the linked Journal Account, if any
+                # Charge this cycle against the linked Expense Account, if any
                 # — same bridge Add/Edit Expense uses (credit = money out).
                 # Needs exp.id, so flush before linking.
-                if fx.account_id:
+                if fx.expense_account_id:
                     db.session.flush()
-                    _sync_expense_journal_line(exp, fx.account_id, True)
+                    _sync_expense_account_transaction(exp, fx.expense_account_id, True)
 
         if created:
             settings.next_number = next_num
@@ -3174,9 +3463,10 @@ def _read_fixed_expense_form(fx, form):
         fx.auto_post = str(form.get('auto_post')).lower() in ('1', 'true', 'on', 'yes')
     # Account/payment method are optional, applied to every cycle's Expense
     # row as it posts (see ensure_fixed_expense_rows/post_fixed_expense) —
-    # never touching cycles already in the book.
+    # never touching cycles already in the book. Uses the Expense module's own
+    # ExpenseAccount, not fx.account_id (legacy, read-only Journal link).
     account_id = form.get('account_id') or None
-    fx.account_id = int(account_id) if account_id else None
+    fx.expense_account_id = int(account_id) if account_id else None
     fx.payment_method = (form.get('payment_method') or '').strip() or None
     return None
 
@@ -3215,6 +3505,13 @@ def create_fixed_expense():
     db.session.commit()
     fx.sync_accrual()
     db.session.commit()
+    if fx.is_active:
+        # Without this, a brand-new active+auto_post template sits with no
+        # cycle posted until something else happens to call
+        # ensure_fixed_expense_rows() (visiting Expenses/Dashboard/Reports,
+        # or toggling it off and on) — it looked like the cycle "hadn't
+        # started" even though the template itself was created correctly.
+        ensure_fixed_expense_rows()
 
     log_activity('Accounting', 'Created Fixed Expense: ' + fx.name,
                  '%s - %s over %s day(s)' % (fx.mode, fx.amount, fx.days))
@@ -3345,10 +3642,10 @@ def post_fixed_expense(fx_id):
     fx.posted_amount = float(fx.posted_amount or 0) + pending
     fx.accrued_amount = 0
 
-    # Charge this posted amount against the linked Journal Account, if any.
-    if fx.account_id:
+    # Charge this posted amount against the linked Expense Account, if any.
+    if fx.expense_account_id:
         db.session.flush()
-        _sync_expense_journal_line(expense, fx.account_id, is_admin)
+        _sync_expense_account_transaction(expense, fx.expense_account_id, is_admin)
 
     db.session.commit()
 

@@ -158,6 +158,12 @@
                     data-bs-target="#fixedExpenseModal">
                 <i class="fas fa-repeat me-1"></i> Fixed Expense
             </button>
+            {% if current_user.is_admin %}
+            <button type="button" class="btn btn-outline-primary me-2" id="manageAccountsBtn"
+                    data-bs-toggle="modal" data-bs-target="#accountManagerModal" title="Manage accounts">
+                <i class="bi bi-gear"></i> Manage Accounts
+            </button>
+            {% endif %}
             {% if current_user.has_permission('accounting', 'add') %}
             <a href="{{ url_for('accounting.bulk_upload_expense') }}" class="btn btn-outline-primary me-2">
                 <i class="fas fa-file-excel me-1"></i> Bulk Upload
@@ -294,58 +300,7 @@
             {% set tab_args = {'vendor_id': selected_vendor, 'category_id': selected_category,
                                'mo_id': selected_mo_id, 'start_date': selected_start_date,
                                'end_date': selected_end_date} %}
-            <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto">
-                <li class="nav-item">
-                    <a class="nav-link text-nowrap {% if current_status == 'all' %}active{% endif %}"
-                       href="{{ url_for('accounting.expenses', status='all', **tab_args) }}">
-                        <i class="fas fa-list me-1"></i> All
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link text-success fw-bold text-nowrap {% if current_status == 'approved' %}active{% endif %}"
-                       href="{{ url_for('accounting.expenses', status='approved', **tab_args) }}">
-                        <i class="fas fa-check-circle me-1"></i> Approved
-                    </a>
-                </li>
-                {% if current_user.is_admin %}
-                <li class="nav-item">
-                    <a class="nav-link text-warning fw-bold text-nowrap {% if current_status == 'unapproved' %}active{% endif %}"
-                       href="{{ url_for('accounting.expenses', status='unapproved', **tab_args) }}">
-                        <i class="fas fa-clock me-1"></i> Unapproved
-                        {% if unapproved_count > 0 %}
-                        <span class="badge bg-warning text-dark ms-1">{{ unapproved_count }}</span>
-                        {% endif %}
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link text-danger fw-bold text-nowrap {% if current_status == 'rejected_items' %}active{% endif %}"
-                       href="{{ url_for('accounting.expenses', status='rejected_items', **tab_args) }}">
-                        <i class="fas fa-times-circle me-1"></i> Rejected Items
-                        {% if rejected_item_count > 0 %}
-                        <span class="badge bg-danger ms-1">{{ rejected_item_count }}</span>
-                        {% endif %}
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link text-info fw-bold text-nowrap {% if current_status == 'draft' %}active{% endif %}"
-                       href="{{ url_for('accounting.expenses', status='draft', **tab_args) }}">
-                        <i class="fas fa-file me-1"></i> Draft
-                        {% if draft_count > 0 %}
-                        <span class="badge bg-info ms-1">{{ draft_count }}</span>
-                        {% endif %}
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link text-secondary fw-bold text-nowrap {% if current_status == 'cancelled' %}active{% endif %}"
-                       href="{{ url_for('accounting.expenses', status='cancelled', **tab_args) }}">
-                        <i class="fas fa-ban me-1"></i> Cancelled
-                        {% if cancelled_count > 0 %}
-                        <span class="badge bg-secondary ms-1">{{ cancelled_count }}</span>
-                        {% endif %}
-                    </a>
-                </li>
-                {% endif %}
-            </ul>
+            {% include 'accounting/_expense_tabs.html' %}
 
             <div class="table-responsive expenses-table-responsive">
                 <table class="table table-striped datatable-export" data-export-title="Expenses">
@@ -1009,7 +964,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                         <div class="d-flex gap-1">
                                             <select name="account_id" id="fxAccount" class="form-select form-select-sm flex-grow-1">
                                                 <option value="">— No Account —</option>
-                                                {% for acct in journal_accounts %}
+                                                {% for acct in expense_accounts %}
                                                 <option value="{{ acct.id }}">{{ acct.name }}{% if acct.account_type %} ({{ acct.account_type }}){% endif %}</option>
                                                 {% endfor %}
                                             </select>
@@ -1164,6 +1119,10 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
     </div>
 </div>
+
+{% if current_user.is_admin %}
+{% include 'accounting/_account_manager_modal.html' %}
+{% endif %}
 
 <script>
     (function () {
@@ -1534,7 +1493,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 fd2.append('account_type', document.getElementById('fxNewAccountType').value.trim());
                 fd2.append('opening_balance', document.getElementById('fxNewAccountOpeningBalance').value || 0);
 
-                fetch('{{ url_for("journal.create_account_quick") }}', { method: 'POST', body: fd2 })
+                fetch('{{ url_for("accounting.create_expense_account_quick") }}', { method: 'POST', body: fd2 })
                     .then(function (r) { return r.json(); })
                     .then(function (data) {
                         if (data.success) {

@@ -1,0 +1,285 @@
+{# Shared "Manage Accounts" modal — the Expense module's OWN accounts
+   (ExpenseAccount), entirely independent of the Journal module's own
+   accounts. Create / edit / delete. Included on: Add Expense, Edit Expense,
+   and the main Expenses list page (next to the Fixed Expense button).
+   Admin-only end to end: the button that opens this modal is already wrapped
+   in `{% if current_user.is_admin %}` by every including page, and every
+   AJAX endpoint it calls (accounting.create_expense_account_quick /
+   edit_expense_account_quick / delete_expense_account_quick) independently
+   re-checks admin server-side too.
+
+   If the including page has a searchable <select id="accountIdSelect"> and/or
+   <select id="fxAccount"> (Select2-decorated), this modal keeps that
+   dropdown's options in sync with whatever is created/edited/deleted here —
+   whichever one isn't present is just skipped, so no page reload is needed. #}
+<div class="modal fade" id="accountManagerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-book me-2"></i>Manage Accounts</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="acctMgrError" class="alert alert-danger py-2 d-none"></div>
+
+                <div class="border rounded p-3 mb-3 bg-light">
+                    <h6 class="mb-2">Create New Account</h6>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label small mb-1">Name <span class="text-danger">*</span></label>
+                            <input type="text" id="acctMgrNewName" class="form-control form-control-sm" placeholder="e.g., Cash, Bank">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Type</label>
+                            <input type="text" id="acctMgrNewType" class="form-control form-control-sm" placeholder="Cash / Bank / Income">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Opening Balance</label>
+                            <input type="number" step="0.01" id="acctMgrNewOpening" class="form-control form-control-sm" value="0">
+                        </div>
+                        <div class="col-md-2">
+                            <button type="button" class="btn btn-primary btn-sm w-100" id="acctMgrCreateBtn">
+                                <i class="fas fa-plus me-1"></i>Create
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th class="text-end">Opening</th>
+                                <th class="text-end">Balance</th>
+                                <th class="text-center">Active</th>
+                                <th class="text-center" style="width:110px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="acctMgrTableBody">
+                            <tr><td colspan="6" class="text-center text-muted py-3">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var URLS = {
+        list:   '{{ url_for("accounting.list_expense_accounts_json") }}',
+        create: '{{ url_for("accounting.create_expense_account_quick") }}',
+        editFor: function (id) { return '{{ url_for("accounting.edit_expense_account_quick", account_id=0) }}'.replace('/0/', '/' + id + '/'); },
+        deleteFor: function (id) { return '{{ url_for("accounting.delete_expense_account_quick", account_id=0) }}'.replace('/0/', '/' + id + '/'); }
+    };
+
+    var modalEl = document.getElementById('accountManagerModal');
+    if (!modalEl) return;
+    var tbody = document.getElementById('acctMgrTableBody');
+    var errorBox = document.getElementById('acctMgrError');
+    var accounts = [];
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+    function money(n) {
+        return (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function showError(msg) {
+        errorBox.textContent = msg;
+        errorBox.classList.remove('d-none');
+    }
+    function clearError() {
+        errorBox.classList.add('d-none');
+    }
+
+    // Keep the page's account picker(s) (Select2) in sync with this modal's
+    // changes. Different pages use different select ids for their own Account
+    // dropdown — Add/Edit Expense use #accountIdSelect, the Fixed Expense
+    // popup on the Expenses list page uses #fxAccount — so try both; whichever
+    // isn't present on the current page is just skipped.
+    var ACCOUNT_SELECT_IDS = ['#accountIdSelect', '#fxAccount'];
+    function syncSelectOption(account, isNew) {
+        if (!window.jQuery) return;
+        var label = account.name + (account.account_type ? ' (' + account.account_type + ')' : '');
+        ACCOUNT_SELECT_IDS.forEach(function (sel) {
+            var $select = $(sel);
+            if (!$select.length) return;
+            var $existing = $select.find('option[value="' + account.id + '"]');
+            if ($existing.length) {
+                $existing.text(label);
+                $select.trigger('change');
+            } else if (isNew) {
+                $select.append(new Option(label, account.id, false, false));
+                $select.trigger('change');
+            }
+        });
+    }
+    function removeSelectOption(accountId) {
+        if (!window.jQuery) return;
+        ACCOUNT_SELECT_IDS.forEach(function (sel) {
+            var $select = $(sel);
+            if (!$select.length) return;
+            var wasSelected = String($select.val()) === String(accountId);
+            $select.find('option[value="' + accountId + '"]').remove();
+            if (wasSelected) $select.val('');
+            $select.trigger('change');
+        });
+    }
+
+    function renderRow(a) {
+        var badge = a.is_active
+            ? '<span class="badge bg-success">Yes</span>'
+            : '<span class="badge bg-secondary">No</span>';
+        return '<tr data-id="' + a.id + '">' +
+            '<td class="acct-name">' + esc(a.name) + '</td>' +
+            '<td class="acct-type">' + (a.account_type ? esc(a.account_type) : '<span class="text-muted">—</span>') + '</td>' +
+            '<td class="acct-opening text-end">' + money(a.opening_balance) + '</td>' +
+            '<td class="text-end fw-semibold ' + (a.balance >= 0 ? 'text-success' : 'text-danger') + '">' + money(a.balance) + '</td>' +
+            '<td class="acct-active text-center">' + badge + '</td>' +
+            '<td class="text-center">' +
+                '<div class="btn-group btn-group-sm">' +
+                    '<button type="button" class="btn btn-outline-secondary acct-edit-btn" title="Edit"><i class="fas fa-edit"></i></button>' +
+                    '<button type="button" class="btn btn-outline-danger acct-delete-btn" title="Delete"' +
+                        (a.has_lines ? ' disabled title="Has journal lines — deactivate instead"' : '') + '>' +
+                        '<i class="fas fa-trash"></i></button>' +
+                '</div>' +
+            '</td>' +
+        '</tr>';
+    }
+
+    function renderEditRow(a) {
+        return '<tr data-id="' + a.id + '">' +
+            '<td><input type="text" class="form-control form-control-sm acct-edit-name" value="' + esc(a.name) + '"></td>' +
+            '<td><input type="text" class="form-control form-control-sm acct-edit-type" value="' + esc(a.account_type || '') + '"></td>' +
+            '<td><input type="number" step="0.01" class="form-control form-control-sm acct-edit-opening" value="' + (a.opening_balance || 0) + '"></td>' +
+            '<td class="text-end text-muted small">(unchanged)</td>' +
+            '<td class="text-center">' +
+                '<input type="checkbox" class="form-check-input acct-edit-active"' + (a.is_active ? ' checked' : '') + '>' +
+            '</td>' +
+            '<td class="text-center">' +
+                '<div class="btn-group btn-group-sm">' +
+                    '<button type="button" class="btn btn-success acct-save-btn" title="Save"><i class="fas fa-check"></i></button>' +
+                    '<button type="button" class="btn btn-outline-secondary acct-cancel-btn" title="Cancel"><i class="fas fa-times"></i></button>' +
+                '</div>' +
+            '</td>' +
+        '</tr>';
+    }
+
+    function render() {
+        if (!accounts.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No accounts yet — create one above.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = accounts.map(renderRow).join('');
+    }
+
+    function load() {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Loading…</td></tr>';
+        fetch(URLS.list, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.success) { showError(data.message || 'Could not load accounts.'); return; }
+                accounts = data.accounts;
+                render();
+            })
+            .catch(function () {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-3">Could not load accounts.</td></tr>';
+            });
+    }
+
+    modalEl.addEventListener('show.bs.modal', function () {
+        clearError();
+        document.getElementById('acctMgrNewName').value = '';
+        document.getElementById('acctMgrNewType').value = '';
+        document.getElementById('acctMgrNewOpening').value = 0;
+        load();
+    });
+
+    document.getElementById('acctMgrCreateBtn').addEventListener('click', function () {
+        clearError();
+        var name = document.getElementById('acctMgrNewName').value.trim();
+        if (!name) { showError('Account name is required.'); return; }
+        var fd = new FormData();
+        fd.append('name', name);
+        fd.append('account_type', document.getElementById('acctMgrNewType').value.trim());
+        fd.append('opening_balance', document.getElementById('acctMgrNewOpening').value || 0);
+
+        fetch(URLS.create, { method: 'POST', body: fd })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.success) { showError(data.message || 'Could not create account.'); return; }
+                document.getElementById('acctMgrNewName').value = '';
+                document.getElementById('acctMgrNewType').value = '';
+                document.getElementById('acctMgrNewOpening').value = 0;
+                var acct = data.account;
+                accounts.push({
+                    id: acct.id, name: acct.name, account_type: acct.account_type,
+                    opening_balance: 0, balance: 0, is_active: true, has_lines: false
+                });
+                render();
+                syncSelectOption(acct, true);
+            })
+            .catch(function () { showError('Network error — could not create account.'); });
+    });
+
+    tbody.addEventListener('click', function (e) {
+        var tr = e.target.closest('tr[data-id]');
+        if (!tr) return;
+        var id = tr.getAttribute('data-id');
+        var acct = accounts.filter(function (a) { return String(a.id) === String(id); })[0];
+        if (!acct) return;
+
+        if (e.target.closest('.acct-edit-btn')) {
+            tr.outerHTML = renderEditRow(acct);
+            return;
+        }
+        if (e.target.closest('.acct-cancel-btn')) {
+            render();
+            return;
+        }
+        if (e.target.closest('.acct-delete-btn')) {
+            if (!confirm('Delete account "' + acct.name + '"? This cannot be undone.')) return;
+            fetch(URLS.deleteFor(id), { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data.success) { showError(data.message || 'Could not delete account.'); return; }
+                    accounts = accounts.filter(function (a) { return String(a.id) !== String(id); });
+                    render();
+                    removeSelectOption(id);
+                })
+                .catch(function () { showError('Network error — could not delete account.'); });
+            return;
+        }
+        if (e.target.closest('.acct-save-btn')) {
+            clearError();
+            var newTr = e.target.closest('tr');
+            var name = newTr.querySelector('.acct-edit-name').value.trim();
+            if (!name) { showError('Account name is required.'); return; }
+            var fd = new FormData();
+            fd.append('name', name);
+            fd.append('account_type', newTr.querySelector('.acct-edit-type').value.trim());
+            fd.append('opening_balance', newTr.querySelector('.acct-edit-opening').value || 0);
+            fd.append('is_active', newTr.querySelector('.acct-edit-active').checked ? '1' : '0');
+
+            fetch(URLS.editFor(id), { method: 'POST', body: fd })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data.success) { showError(data.message || 'Could not update account.'); return; }
+                    accounts = accounts.map(function (a) { return String(a.id) === String(id) ? data.account : a; });
+                    render();
+                    syncSelectOption(data.account, false);
+                })
+                .catch(function () { showError('Network error — could not update account.'); });
+        }
+    });
+})();
+</script>

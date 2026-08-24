@@ -1743,6 +1743,83 @@ class PaymentMethod(db.Model):
     def __repr__(self):
         return f'<PaymentMethod {self.name}>'
 
+
+class ExpenseAccount(db.Model):
+    """A named account (e.g. Cash, Bank, Owner) that Expenses and Fixed
+    Expenses can be charged against — entirely independent of the Journal
+    module's own JournalAccount. The Expense module owns and manages its own
+    accounts end to end (create/edit/delete, debit/credit, balance) rather
+    than sharing state with Journal, which keeps its own accounts separately."""
+    __tablename__ = 'expense_accounts'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False, unique=True, index=True)
+    account_type = db.Column(db.String(50), nullable=True)   # optional label: Cash / Bank / Income …
+    opening_balance = db.Column(db.Float, default=0)
+    notes = db.Column(db.Text, nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    @property
+    def total_debit(self):
+        return sum((t.amount or 0) for t in self.transactions if t.entry_type == 'debit' and t.is_approved)
+
+    @property
+    def total_credit(self):
+        return sum((t.amount or 0) for t in self.transactions if t.entry_type == 'credit' and t.is_approved)
+
+    @property
+    def balance(self):
+        """Running balance: opening + debits (money in) − credits (money out).
+        Only approved transactions count, same convention as the rest of the
+        app's balance figures."""
+        return (self.opening_balance or 0) + self.total_debit - self.total_credit
+
+    def __repr__(self):
+        return f'<ExpenseAccount {self.name}>'
+
+
+class ExpenseAccountTransaction(db.Model):
+    """One debit or credit movement against an ExpenseAccount. Unlike the
+    Journal module's two-table JournalEntry+JournalLine design, this is a
+    single row per movement — an Expense (or a Fixed Expense cycle) only ever
+    posts one account movement at a time, so there's no need for a
+    multi-line "entry" wrapper.
+
+    entry_type='credit' means money OUT of the account (a real expense —
+    expense_id is set). entry_type='debit' means money IN to the account (a
+    plain "add money" transaction — expense_id stays None, since debit
+    transactions never create an Expense record)."""
+    __tablename__ = 'expense_account_transactions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('expense_accounts.id'), nullable=False, index=True)
+    expense_id = db.Column(db.Integer, db.ForeignKey('expenses.id'), nullable=True, index=True)
+
+    date = db.Column(db.Date, nullable=False, index=True)
+    entry_type = db.Column(db.String(10), nullable=False, default='credit')  # 'debit' | 'credit'
+    amount = db.Column(db.Float, nullable=False, default=0)
+    description = db.Column(db.Text, nullable=True)
+    reference = db.Column(db.String(120), nullable=True)
+    bill_image_path = db.Column(db.String(255), nullable=True)
+
+    is_approved = db.Column(db.Boolean, default=False, index=True)
+    is_rejected = db.Column(db.Boolean, default=False, index=True)
+    rejection_reason = db.Column(db.Text, nullable=True)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
+
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    account = db.relationship('ExpenseAccount', backref=db.backref('transactions', lazy=True))
+    expense = db.relationship('Expense', backref=db.backref('account_transaction', uselist=False, lazy=True))
+
+    def __repr__(self):
+        return f'<ExpenseAccountTransaction {self.entry_type} {self.amount} -> account {self.account_id}>'
+
+
 class Expense(db.Model):
     """Expense tracking model"""
     __tablename__ = 'expenses'
@@ -4080,12 +4157,19 @@ class FixedExpense(db.Model):
     days = db.Column(db.Integer, default=1)             # cycle length in days (fixed_days mode only)
     start_date = db.Column(db.Date, nullable=True)
 
-    # Optional Journal Account this template's cycles are charged against
-    # (always a credit/money-out — a Fixed Expense is always a recurring
-    # cost). Applied to every cycle's Expense row as it's posted, the same
-    # way a one-off Add Expense links to an account; edits to account_id
-    # only affect cycles posted AFTER the change, never past ones.
+    # Legacy: an early version of this feature charged cycles against a
+    # Journal Account. Kept only so any pre-existing linked data (and its
+    # ExpenseAccountTransaction-free history) keeps working read-only —
+    # nothing writes to this column anymore. See expense_account_id below
+    # for the account field the app actually uses now.
     account_id = db.Column(db.Integer, db.ForeignKey('journal_accounts.id'), nullable=True)
+    # The Expense module's OWN account (ExpenseAccount, independent of the
+    # Journal module) this template's cycles are charged against (always a
+    # credit/money-out — a Fixed Expense is always a recurring cost). Applied
+    # to every cycle's Expense row as it's posted, the same way a one-off Add
+    # Expense links to an account; edits only affect cycles posted AFTER the
+    # change, never past ones.
+    expense_account_id = db.Column(db.Integer, db.ForeignKey('expense_accounts.id'), nullable=True)
     # Payment method and bill image are set once on the template and copied
     # onto every cycle's generated Expense row (e.g. the same rent receipt /
     # "Bank Transfer" for every month), same fields Add Expense uses.
@@ -4124,7 +4208,8 @@ class FixedExpense(db.Model):
 
     category = db.relationship('ExpenseCategory', foreign_keys=[category_id])
     vendor = db.relationship('Vendor', foreign_keys=[vendor_id])
-    account = db.relationship('JournalAccount', foreign_keys=[account_id])
+    account = db.relationship('JournalAccount', foreign_keys=[account_id])  # legacy, read-only
+    expense_account = db.relationship('ExpenseAccount', foreign_keys=[expense_account_id])
     expenses = db.relationship('Expense', backref='fixed_expense',
                                foreign_keys='Expense.fixed_expense_id', lazy=True)
 

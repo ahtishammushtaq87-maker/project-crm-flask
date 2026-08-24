@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Account Activity{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Account Activity</h2>
+        {% if selected_account %}
+        <a href="{{ url_for('accounting.account_activity_export_excel', account_id=selected_account.id) }}"
+           class="btn btn-success">
+            <i class="fas fa-file-excel me-1"></i> Excel
+        </a>
+        {% endif %}
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body pb-0">
+            {% include 'accounting/_expense_tabs.html' %}
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold mb-1">Account</label>
+                    <select name="account_id" class="form-select" onchange="this.form.submit()">
+                        {% if not accounts %}
+                        <option value="">No accounts yet</option>
+                        {% endif %}
+                        {% for acct in accounts %}
+                        <option value="{{ acct.id }}" {% if selected_account and acct.id == selected_account.id %}selected{% endif %}>
+                            {{ acct.name }}{% if acct.account_type %} ({{ acct.account_type }}){% endif %}{% if not acct.is_active %} — Inactive{% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% if current_user.is_admin %}
+                <div class="col-md-3">
+                    <a href="{{ url_for('accounting.add_expense') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-book me-1"></i> Manage Accounts
+                    </a>
+                </div>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    {% if not accounts %}
+    <div class="alert alert-info">
+        No accounts have been created yet. Create one from the "Manage Accounts" button on the
+        <a href="{{ url_for('accounting.add_expense') }}">Add Expense</a> page.
+    </div>
+    {% elif selected_account %}
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <div class="small text-muted text-uppercase">Remaining Balance</div>
+                    <div class="h4 mb-0 fw-bold {{ 'text-success' if selected_account.balance >= 0 else 'text-danger' }}">
+                        PKR {{ "{:,.2f}".format(selected_account.balance) }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <div class="small text-muted text-uppercase">Total Debit <span class="text-muted">(money in)</span></div>
+                    <div class="h4 mb-0 fw-bold text-success">PKR {{ "{:,.2f}".format(selected_account.total_debit) }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <div class="small text-muted text-uppercase">Total Credit <span class="text-muted">(money out / expenses)</span></div>
+                    <div class="h4 mb-0 fw-bold text-danger">PKR {{ "{:,.2f}".format(selected_account.total_credit) }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="text-muted small mb-3">
+        <i class="fas fa-info-circle me-1"></i>
+        The boxes above only count <strong>approved</strong> entries — same as the account's balance everywhere else in
+        the app. Pending/rejected rows still show in the table below (marked accordingly) but don't move the balance yet.
+    </div>
+
+    <div class="card">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">{{ selected_account.name }} — Transactions</h6>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th class="text-center">Type</th>
+                            <th>Description</th>
+                            <th>Source</th>
+                            <th class="text-center">Status</th>
+                            <th class="text-end">Debit (In)</th>
+                            <th class="text-end">Credit (Out)</th>
+                            <th class="text-end">Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="table-light">
+                            <td colspan="7" class="fw-semibold">Opening Balance</td>
+                            <td class="text-end fw-semibold">{{ "{:,.2f}".format(selected_account.opening_balance or 0) }}</td>
+                        </tr>
+                        {% for r in rows %}
+                        {% set t = r.txn %}
+                        <tr>
+                            <td>{{ t.date.strftime('%d-%m-%Y') if t.date else '—' }}</td>
+                            <td class="text-center">
+                                {% if t.entry_type == 'debit' %}
+                                <span class="badge bg-success">Debit</span>
+                                {% else %}
+                                <span class="badge bg-danger">Credit</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ t.description or '—' }}</td>
+                            <td>
+                                {% if r.expense %}
+                                <a href="{{ url_for('accounting.edit_expense', id=r.expense.id) }}" class="text-decoration-none">
+                                    <i class="fas fa-receipt me-1"></i>{{ r.expense.expense_number }}
+                                </a>
+                                {% else %}
+                                <span class="text-muted"><i class="fas fa-money-bill-wave me-1"></i>Add Money</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if t.is_rejected %}
+                                <span class="badge bg-secondary">Rejected</span>
+                                {% elif t.is_approved %}
+                                <span class="badge bg-success">Approved</span>
+                                {% else %}
+                                <span class="badge bg-warning text-dark">Pending</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end text-success">{{ "{:,.2f}".format(t.amount) if t.entry_type == 'debit' else '' }}</td>
+                            <td class="text-end text-danger">{{ "{:,.2f}".format(t.amount) if t.entry_type == 'credit' else '' }}</td>
+                            <td class="text-end fw-semibold {{ 'text-success' if r.running >= 0 else 'text-danger' }}">
+                                {{ "{:,.2f}".format(r.running) }}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-4">
+                                <i class="fas fa-inbox fa-2x d-block mb-2 opacity-50"></i>
+                                No transactions on this account yet.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,70 @@
+{# Shared status-tab strip for the Expense module — used by both expenses.html
+   (current_status is one of all/approved/unapproved/rejected_items/draft/
+   cancelled) and account_activity.html (current_status='account_activity',
+   with the approval-count tabs simply not highlighted there).
+   Links carry the current filters through, so switching tabs narrows the
+   view instead of resetting it — tab_args/counts default to empty/zero so
+   this partial works even on pages that don't define them. #}
+{% set tab_args = tab_args if tab_args is defined else {} %}
+{% set unapproved_count = unapproved_count if unapproved_count is defined else 0 %}
+{% set rejected_item_count = rejected_item_count if rejected_item_count is defined else 0 %}
+{% set draft_count = draft_count if draft_count is defined else 0 %}
+{% set cancelled_count = cancelled_count if cancelled_count is defined else 0 %}
+<ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto">
+    <li class="nav-item">
+        <a class="nav-link text-nowrap {% if current_status == 'all' %}active{% endif %}"
+           href="{{ url_for('accounting.expenses', status='all', **tab_args) }}">
+            <i class="fas fa-list me-1"></i> All
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link text-success fw-bold text-nowrap {% if current_status == 'approved' %}active{% endif %}"
+           href="{{ url_for('accounting.expenses', status='approved', **tab_args) }}">
+            <i class="fas fa-check-circle me-1"></i> Approved
+        </a>
+    </li>
+    {% if current_user.is_admin %}
+    <li class="nav-item">
+        <a class="nav-link text-warning fw-bold text-nowrap {% if current_status == 'unapproved' %}active{% endif %}"
+           href="{{ url_for('accounting.expenses', status='unapproved', **tab_args) }}">
+            <i class="fas fa-clock me-1"></i> Unapproved
+            {% if unapproved_count > 0 %}
+            <span class="badge bg-warning text-dark ms-1">{{ unapproved_count }}</span>
+            {% endif %}
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link text-danger fw-bold text-nowrap {% if current_status == 'rejected_items' %}active{% endif %}"
+           href="{{ url_for('accounting.expenses', status='rejected_items', **tab_args) }}">
+            <i class="fas fa-times-circle me-1"></i> Rejected Items
+            {% if rejected_item_count > 0 %}
+            <span class="badge bg-danger ms-1">{{ rejected_item_count }}</span>
+            {% endif %}
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link text-info fw-bold text-nowrap {% if current_status == 'draft' %}active{% endif %}"
+           href="{{ url_for('accounting.expenses', status='draft', **tab_args) }}">
+            <i class="fas fa-file me-1"></i> Draft
+            {% if draft_count > 0 %}
+            <span class="badge bg-info ms-1">{{ draft_count }}</span>
+            {% endif %}
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link text-secondary fw-bold text-nowrap {% if current_status == 'cancelled' %}active{% endif %}"
+           href="{{ url_for('accounting.expenses', status='cancelled', **tab_args) }}">
+            <i class="fas fa-ban me-1"></i> Cancelled
+            {% if cancelled_count > 0 %}
+            <span class="badge bg-secondary ms-1">{{ cancelled_count }}</span>
+            {% endif %}
+        </a>
+    </li>
+    {% endif %}
+    <li class="nav-item">
+        <a class="nav-link text-primary fw-bold text-nowrap {% if current_status == 'account_activity' %}active{% endif %}"
+           href="{{ url_for('accounting.account_activity') }}">
+            <i class="fas fa-exchange-alt me-1"></i> Account Activity
+        </a>
+    </li>
+</ul>

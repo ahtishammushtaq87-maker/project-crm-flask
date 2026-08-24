@@ -145,9 +145,11 @@ def create_account():
 @login_required
 def create_account_quick():
     """AJAX/JSON version of create_account() — lets an admin add a new
-    JournalAccount inline from a searchable dropdown (e.g. on the Add/Edit
-    Expense forms) without leaving the page. Same validation and admin-only
-    rule as the full create_account() page."""
+    JournalAccount inline from a searchable dropdown without leaving the
+    page. Same validation and admin-only rule as the full create_account()
+    page. (The Expense module has its own separate, independent set of
+    accounts — see accounting.create_expense_account_quick — this one is
+    Journal-only.)"""
     if not _can_view():
         return jsonify({'success': False, 'message': 'You do not have permission to access the Journal module.'}), 403
     if not (current_user.role == 'admin' or getattr(current_user, 'is_admin', False)):
@@ -171,6 +173,81 @@ def create_account_quick():
     return jsonify({'success': True, 'account': {
         'id': acct.id, 'name': acct.name, 'account_type': acct.account_type or '',
     }})
+
+
+@bp.route('/accounts/list-json')
+@login_required
+def list_accounts_json():
+    """JSON account list for the Journal module's own accounts — read-only,
+    so any viewer (not just admins) can use it, same as account_ledger()."""
+    if not _can_view():
+        return jsonify({'success': False, 'message': 'You do not have permission to access the Journal module.'}), 403
+
+    accounts = JournalAccount.query.order_by(JournalAccount.name).all()
+    return jsonify({'success': True, 'accounts': [{
+        'id': a.id,
+        'name': a.name,
+        'account_type': a.account_type or '',
+        'opening_balance': round(a.opening_balance or 0, 2),
+        'balance': round(a.balance, 2),
+        'is_active': bool(a.is_active),
+        'has_lines': bool(a.lines),
+    } for a in accounts]})
+
+
+@bp.route('/accounts/<int:account_id>/edit-quick', methods=['POST'])
+@login_required
+def edit_account_quick(account_id):
+    """AJAX/JSON version of edit_account() — same validation as the full
+    edit_account() page, admin-only like create_account_quick()."""
+    if not _can_view():
+        return jsonify({'success': False, 'message': 'You do not have permission to access the Journal module.'}), 403
+    if not (current_user.role == 'admin' or getattr(current_user, 'is_admin', False)):
+        return jsonify({'success': False, 'message': 'Only admins can edit accounts.'}), 403
+
+    acct = JournalAccount.query.get_or_404(account_id)
+    name = (request.form.get('name') or '').strip()
+    if not name:
+        return jsonify({'success': False, 'message': 'Account name is required.'})
+    dupe = JournalAccount.query.filter(
+        db.func.lower(JournalAccount.name) == name.lower(),
+        JournalAccount.id != acct.id
+    ).first()
+    if dupe:
+        return jsonify({'success': False, 'message': f'Another account named "{name}" already exists.'})
+
+    acct.name = name
+    acct.account_type = (request.form.get('account_type') or '').strip() or None
+    acct.opening_balance = _to_float(request.form.get('opening_balance'))
+    if 'is_active' in request.form:
+        acct.is_active = str(request.form.get('is_active')).lower() in ('1', 'true', 'on', 'yes')
+    db.session.commit()
+    return jsonify({'success': True, 'account': {
+        'id': acct.id, 'name': acct.name, 'account_type': acct.account_type or '',
+        'opening_balance': round(acct.opening_balance or 0, 2),
+        'balance': round(acct.balance, 2),
+        'is_active': bool(acct.is_active),
+        'has_lines': bool(acct.lines),
+    }})
+
+
+@bp.route('/accounts/<int:account_id>/delete-quick', methods=['POST'])
+@login_required
+def delete_account_quick(account_id):
+    """AJAX/JSON version of delete_account() — same "cannot delete an account
+    that has journal lines" safety check as the full page, admin-only."""
+    if not _can_view():
+        return jsonify({'success': False, 'message': 'You do not have permission to access the Journal module.'}), 403
+    if not (current_user.role == 'admin' or getattr(current_user, 'is_admin', False)):
+        return jsonify({'success': False, 'message': 'Only admins can delete accounts.'}), 403
+
+    acct = JournalAccount.query.get_or_404(account_id)
+    if acct.lines:
+        return jsonify({'success': False,
+                        'message': 'Cannot delete an account that has journal lines. Deactivate it instead.'})
+    db.session.delete(acct)
+    db.session.commit()
+    return jsonify({'success': True})
 
 
 @bp.route('/accounts/<int:account_id>/edit', methods=['GET', 'POST'])

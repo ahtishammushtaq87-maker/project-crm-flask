@@ -44,7 +44,8 @@ def create_app(config_class=Config):
             ProductWarehouseStock, Media,
             RecoveryTask, RecoveryLog, RecoveryComment, Salesman,
             JournalAccount, JournalEntry, JournalLine, FixedExpense,
-            Quotation, QuotationItem, DatabaseBackup, PackingSlip, PackingSlipSettings, SaleReturnReason
+            Quotation, QuotationItem, DatabaseBackup, PackingSlip, PackingSlipSettings, SaleReturnReason,
+            ExpenseAccount, ExpenseAccountTransaction
         )
         from app.filter_models import SavedFilter
         
@@ -138,6 +139,8 @@ def create_app(config_class=Config):
             'packing_slips': PackingSlip,
             'packing_slip_settings': PackingSlipSettings,
             'sale_return_reasons': SaleReturnReason,
+            'expense_accounts': ExpenseAccount,
+            'expense_account_transactions': ExpenseAccountTransaction,
         }
         
         try:
