@@ -2180,6 +2180,7 @@ class SaleReturn(db.Model):
     discount = db.Column(db.Float, default=0)
     total = db.Column(db.Float, default=0)
     reason = db.Column(db.Text)
+    notes = db.Column(db.Text, nullable=True)
     status = db.Column(Enum('pending', 'approved', 'completed', name='return_status'), default='pending', index=True)
     returned_to_inventory = db.Column(db.Boolean, default=False)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))

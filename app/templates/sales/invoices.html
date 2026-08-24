@@ -206,10 +206,12 @@
                         Payments requiring approval:
                         <div class="mt-1 d-flex flex-wrap gap-1">
                             {% for p in unapproved_payments_all[:12] %}
-                            <span class="badge {% if p.is_rejected %}bg-danger{% else %}bg-white text-dark{% endif %} shadow-sm" style="font-size: 0.65rem;">
+                            <a href="{{ url_for('sales.invoice_detail', id=p.invoice_id) }}#payment-row-{{ p.id }}"
+                                class="badge {% if p.is_rejected %}bg-danger{% else %}bg-white text-dark{% endif %} shadow-sm text-decoration-none"
+                                style="font-size: 0.65rem;" title="Click to open this payment on its invoice">
                                 {{ p.payment_number or '#'~p.id }}
                                 {% if p.is_rejected %}(Rejected){% endif %}
-                            </span>
+                            </a>
                             {% endfor %}
                             {% if unapproved_payment_count > 12 %}<span class="text-white-50 ms-1" style="font-size: 0.6rem;">+ {{ unapproved_payment_count - 12 }} more</span>{% endif %}
                         </div>

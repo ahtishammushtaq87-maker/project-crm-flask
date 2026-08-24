@@ -141,6 +141,8 @@ def create_return():
         flash('Please select a reason for the return.', 'warning')
         return redirect(url_for('returns.create_return', sale_id=sale_id))
 
+    notes = (request.form.get('notes') or '').strip() or None
+
     product_ids = request.form.getlist('product_id[]')
     quantities = request.form.getlist('quantity[]')
     prices = request.form.getlist('price[]')
@@ -242,6 +244,7 @@ def create_return():
         discount=discount,
         total=total,
         reason=reason,
+        notes=notes,
         status='approved' if is_admin else 'pending',
         is_approved=is_admin,
         approved_by=current_user.id if is_admin else None,
