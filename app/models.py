@@ -1941,6 +1941,13 @@ class Expense(db.Model):
     # Inventory cost shifting fields (shift an op expense onto inventory item cost)
     is_inventory_shifted = db.Column(db.Boolean, default=False)
     shifted_to_product_ids = db.Column(db.Text, nullable=True)  # comma-separated product ids the expense was applied to
+    # Quantity added to each product's stock when this expense was shifted to
+    # inventory cost (see shift_expense_to_inventory) — 'pid:qty,pid:qty,...'.
+    # Kept separate from shifted_to_product_ids (whose 'pid:new_cost:old_cost'
+    # format is parsed by _parse_shifted_product_costs) so reversing a shift
+    # made before quantity support existed still works with no quantity to
+    # subtract back off.
+    shifted_product_quantities = db.Column(db.Text, nullable=True)
 
     # ── Sale/Purchase payment transfer ──────────────────────────────────────
     # When set, this expense's amount was applied as a real payment against a

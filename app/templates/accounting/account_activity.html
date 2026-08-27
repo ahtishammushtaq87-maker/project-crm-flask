@@ -31,25 +31,6 @@
         </div>
     </div>
 
-    {% if selected_account %}
-    <div class="d-flex flex-wrap gap-3 small mb-3 text-muted">
-        <div><strong class="text-body">Linked funding account:</strong>
-            {{ selected_account.linked_funding_account.name if selected_account.linked_funding_account else 'Not linked' }}</div>
-        <div><strong class="text-body">Last daily close:</strong>
-            {{ latest_close.closed_at.strftime('%d-%b-%Y %I:%M %p') if latest_close else 'Not closed yet' }}</div>
-        <div>
-            <strong class="text-body">Reconciliation status:</strong>
-            {% if latest_close and latest_close.is_reconciled %}
-            <span class="text-success fw-semibold">Reconciled</span>
-            {% elif latest_close %}
-            <span class="text-warning fw-semibold">Pending</span>
-            {% else %}
-            <span class="text-muted">—</span>
-            {% endif %}
-        </div>
-    </div>
-    {% endif %}
-
     <div class="card mb-3">
         <div class="card-body">
             <form method="GET" class="row g-2 align-items-end">

@@ -2306,17 +2306,40 @@ def _parse_shifted_product_costs(raw, expense_amount):
     return {pid: ('add', per) for pid in ids}
 
 
+def _parse_shifted_product_quantities(raw):
+    """Parse `Expense.shifted_product_quantities` ('pid:qty,pid:qty,...')
+    into {product_id: qty}. Empty/None for a shift made before quantity
+    support existed, or for a shift that didn't add any — nothing to
+    subtract back on unshift in that case."""
+    if not raw:
+        return {}
+    result = {}
+    for token in raw.split(','):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            pid_str, qty_str = token.split(':', 1)
+            result[int(pid_str)] = float(qty_str)
+        except (ValueError, IndexError):
+            continue
+    return result
+
+
 @bp.route('/expense/shift-to-inventory', methods=['POST'])
 @login_required
 def shift_expense_to_inventory():
-    """Shift an operating expense onto one or more inventory items' cost.
+    """Shift an operating expense onto one or more inventory items' cost —
+    and, when a quantity is given, treat it as receiving that many units at
+    that total cost (e.g. PKR 1,000 across a quantity of 2 -> PKR 500/unit),
+    the same way a landed-cost purchase receipt would.
 
-    Each selected item's share defaults to an equal split of the expense
+    Each selected item's amount defaults to an equal split of the expense
     amount but is editable in the popup, so the amounts actually applied may
     differ per item — they must still add up to the expense's full amount.
-    Each item's cost_price is REPLACED with its share (not added on top of
-    whatever it already was) — the popup's "Cost to Add" value becomes the
-    item's new cost outright. Item quantities are left unchanged.
+    Each item's cost_price is REPLACED with amount/quantity (not added on top
+    of whatever it already was), and quantity (default 1 if left blank) is
+    ADDED onto the item's existing stock quantity.
     """
     if not getattr(current_user, 'is_admin', False):
         return jsonify({'success': False, 'message': 'Admin access required.'}), 403
@@ -2366,6 +2389,7 @@ def shift_expense_to_inventory():
     # must still add up to the expense's full amount. Each value REPLACES
     # that item's cost_price outright — it is not added on top of it.
     item_costs = {}
+    item_qtys = {}
     total_entered = 0.0
     for product in products:
         raw_cost = (request.form.get(f'item_cost_{product.id}') or '').strip()
@@ -2378,6 +2402,15 @@ def shift_expense_to_inventory():
         item_costs[product.id] = cost
         total_entered += cost
 
+        raw_qty = (request.form.get(f'item_qty_{product.id}') or '').strip()
+        try:
+            qty = float(raw_qty) if raw_qty else 1.0
+        except (TypeError, ValueError):
+            qty = None
+        if qty is None or qty <= 0:
+            return jsonify({'success': False, 'message': f'Enter a valid quantity (greater than 0) for {product.name}.'}), 400
+        item_qtys[product.id] = qty
+
     if abs(round(total_entered - expense.amount, 2)) > 0.01:
         return jsonify({'success': False,
                         'message': f'The item costs must add up to the expense amount (PKR {expense.amount:,.2f}). '
@@ -2386,15 +2419,21 @@ def shift_expense_to_inventory():
     try:
         applied_names = []
         shifted_tokens = []
+        qty_tokens = []
         for product in products:
             old_cost = product.cost_price or 0
-            new_cost = item_costs[product.id]
-            product.cost_price = new_cost
-            applied_names.append(f'{product.name} (PKR {old_cost:,.2f} -> PKR {new_cost:,.2f})')
-            shifted_tokens.append(f'{product.id}:{new_cost}:{old_cost}')
+            qty = item_qtys[product.id]
+            unit_cost = round(item_costs[product.id] / qty, 2)
+            product.cost_price = unit_cost
+            product.quantity = (product.quantity or 0) + qty
+            applied_names.append(
+                f'{product.name} (PKR {old_cost:,.2f} -> PKR {unit_cost:,.2f}/unit, +{qty:g} qty)')
+            shifted_tokens.append(f'{product.id}:{unit_cost}:{old_cost}')
+            qty_tokens.append(f'{product.id}:{qty}')
 
         expense.is_inventory_shifted = True
         expense.shifted_to_product_ids = ','.join(shifted_tokens)
+        expense.shifted_product_quantities = ','.join(qty_tokens)
 
         db.session.commit()
 
@@ -2403,9 +2442,11 @@ def shift_expense_to_inventory():
                      f'PKR {expense.amount} applied across {len(products)} item(s): {", ".join(applied_names)}')
 
         if len(products) == 1:
-            msg = f'{products[0].name} cost set to PKR {item_costs[products[0].id]:,.2f}.'
+            p = products[0]
+            msg = (f'{p.name} cost set to PKR {item_costs[p.id] / item_qtys[p.id]:,.2f}/unit '
+                   f'and quantity increased by {item_qtys[p.id]:g}.')
         else:
-            msg = f'Cost updated on {len(products)} items (PKR {expense.amount:,.2f} total).'
+            msg = f'Cost and quantity updated on {len(products)} items (PKR {expense.amount:,.2f} total).'
         return jsonify({'success': True, 'message': msg})
     except Exception as e:
         db.session.rollback()
@@ -2417,7 +2458,8 @@ def shift_expense_to_inventory():
 def unshift_expense_from_inventory():
     """Reverse an inventory cost shift — restores each item's cost back to
     what it was before the shift (or, for a shift made before costs were
-    replaced outright, subtracts the amount that had been added)."""
+    replaced outright, subtracts the amount that had been added), and
+    subtracts back off any quantity the shift had added."""
     if not getattr(current_user, 'is_admin', False):
         return jsonify({'success': False, 'message': 'Admin access required.'}), 403
 
@@ -2431,6 +2473,7 @@ def unshift_expense_from_inventory():
 
     try:
         item_specs = _parse_shifted_product_costs(expense.shifted_to_product_ids, expense.amount)
+        item_qtys = _parse_shifted_product_quantities(expense.shifted_product_quantities)
         products = Product.query.filter(Product.id.in_(item_specs.keys())).all() if item_specs else []
         for product in products:
             mode, value = item_specs.get(product.id, ('add', 0))
@@ -2438,9 +2481,13 @@ def unshift_expense_from_inventory():
                 product.cost_price = max(0, value)
             else:
                 product.cost_price = max(0, (product.cost_price or 0) - value)
+            qty = item_qtys.get(product.id, 0)
+            if qty:
+                product.quantity = max(0, (product.quantity or 0) - qty)
 
         expense.is_inventory_shifted = False
         expense.shifted_to_product_ids = None
+        expense.shifted_product_quantities = None
 
         db.session.commit()
         log_activity('Accounting',

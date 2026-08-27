@@ -869,24 +869,30 @@
                         <label for="product_ids" class="form-label">Select Inventory Item(s) <span class="text-danger">*</span></label>
                         <select name="product_ids" id="product_ids" class="form-select" multiple required>
                             {% for item in inventory_items %}
-                            <option value="{{ item.id }}" data-cost="{{ item.cost_price or 0 }}" data-name="{{ item.sku }} - {{ item.name }}">{{ item.sku }} - {{ item.name }} (cost: PKR {{ '%.2f'|format(item.cost_price or 0) }})</option>
+                            <option value="{{ item.id }}" data-cost="{{ item.cost_price or 0 }}" data-qty="{{ item.quantity or 0 }}" data-name="{{ item.sku }} - {{ item.name }}">{{ item.sku }} - {{ item.name }} (cost: PKR {{ '%.2f'|format(item.cost_price or 0) }}, qty: {{ '%.2f'|format(item.quantity or 0) }})</option>
                             {% endfor %}
                         </select>
-                        <small class="text-muted">Select one item to set its cost to the full amount, or several items (bulk) to split the amount across them — each item's <strong>new cost</strong> is editable below (it replaces the current cost, it isn't added to it) and the shares must add up to the expense amount.</small>
+                        <small class="text-muted">Select one item to apply the full amount, or several items (bulk) to split it across them — each item's <strong>amount</strong> and <strong>quantity received</strong> are editable below (amounts must add up to the expense total). Cost/unit = amount ÷ quantity, which <strong>replaces</strong> the item's current cost; quantity is <strong>added</strong> to its current stock.</small>
                     </div>
                     <div id="inv_cost_rows" style="display:none;">
                         <div class="table-responsive">
                             <table class="table table-sm align-middle mb-1 no-datatable">
                                 <colgroup>
-                                    <col style="width:50%;">
-                                    <col style="width:25%;">
-                                    <col style="width:25%;">
+                                    <col style="width:26%;">
+                                    <col style="width:13%;">
+                                    <col style="width:13%;">
+                                    <col style="width:16%;">
+                                    <col style="width:13%;">
+                                    <col style="width:19%;">
                                 </colgroup>
                                 <thead>
                                     <tr>
                                         <th>Item</th>
                                         <th class="text-end">Current Cost</th>
-                                        <th class="text-end">New Cost</th>
+                                        <th class="text-end">Current Qty</th>
+                                        <th class="text-end">Amount</th>
+                                        <th class="text-end">Quantity</th>
+                                        <th class="text-end">New Cost/Unit</th>
                                     </tr>
                                 </thead>
                                 <tbody id="inv_cost_rows_body"></tbody>
@@ -1024,18 +1030,41 @@ document.addEventListener('DOMContentLoaded', function() {
             const opt = $invSelect.find('option[value="' + id + '"]');
             const name = opt.data('name') || ('Item #' + id);
             const currentCost = parseFloat(opt.data('cost')) || 0;
+            const currentQty = parseFloat(opt.data('qty')) || 0;
             const row = document.createElement('tr');
             row.innerHTML =
                 '<td>' + name + '</td>' +
                 '<td class="text-end text-muted">PKR ' + fmtMoney(currentCost) + '</td>' +
+                '<td class="text-end text-muted">' + currentQty.toFixed(2) + '</td>' +
                 '<td class="text-end">' +
                     '<input type="number" step="0.01" min="0" class="form-control form-control-sm text-end inv-cost-input" ' +
                     'style="min-width:100px;" name="item_cost_' + id + '" value="' + per.toFixed(2) + '">' +
-                '</td>';
+                '</td>' +
+                '<td class="text-end">' +
+                    '<input type="number" step="0.01" min="0.01" class="form-control form-control-sm text-end inv-qty-input" ' +
+                    'style="min-width:90px;" name="item_qty_' + id + '" value="1">' +
+                '</td>' +
+                '<td class="text-end fw-semibold inv-unit-cost-display">PKR ' + fmtMoney(per) + '</td>';
             invCostRowsBody.appendChild(row);
         });
         invCostRowsWrap.style.display = '';
         updateInvSplitPreview();
+        updateInvUnitCostDisplays();
+    }
+
+    // Recomputes each row's "New Cost/Unit" = amount ÷ quantity, live, as
+    // either field changes (including when redistribution auto-adjusts an
+    // untouched row's amount programmatically).
+    function updateInvUnitCostDisplays() {
+        invCostRowsBody.querySelectorAll('tr').forEach(function (row) {
+            const costInput = row.querySelector('.inv-cost-input');
+            const qtyInput = row.querySelector('.inv-qty-input');
+            const display = row.querySelector('.inv-unit-cost-display');
+            if (!costInput || !qtyInput || !display) return;
+            const cost = parseFloat(costInput.value) || 0;
+            const qty = parseFloat(qtyInput.value) || 0;
+            display.textContent = qty > 0 ? ('PKR ' + fmtMoney(cost / qty)) : '—';
+        });
     }
 
     // Re-splits whatever's left of the expense amount (after the fields the
@@ -1060,6 +1089,7 @@ document.addEventListener('DOMContentLoaded', function() {
             autoInputs.forEach(function (inp) { inp.value = per.toFixed(2); });
         }
         updateInvSplitPreview();
+        updateInvUnitCostDisplays();
     }
 
     function updateInvSplitPreview() {
@@ -1094,10 +1124,15 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         $invSelect.on('change', rebuildInvCostRows);
         invCostRowsBody.addEventListener('input', function (e) {
-            if (!e.target.classList.contains('inv-cost-input')) return;
-            const pid = e.target.name.replace('item_cost_', '');
-            dirtyInvItemIds.add(pid);
-            redistributeInvCostRows(e.target);
+            if (e.target.classList.contains('inv-cost-input')) {
+                const pid = e.target.name.replace('item_cost_', '');
+                dirtyInvItemIds.add(pid);
+                redistributeInvCostRows(e.target);
+                return;
+            }
+            if (e.target.classList.contains('inv-qty-input')) {
+                updateInvUnitCostDisplays();
+            }
         });
 
         invShiftModal.addEventListener('show.bs.modal', function(event) {
@@ -1125,6 +1160,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 alert('The item costs must add up to the expense amount (PKR ' + fmtMoney(invShiftAmount) +
                       '). They currently total PKR ' + fmtMoney(total) + '.');
                 return;
+            }
+            const qtyInputs = invCostRowsBody.querySelectorAll('.inv-qty-input');
+            for (const inp of qtyInputs) {
+                if (!(parseFloat(inp.value) > 0)) {
+                    alert('Enter a quantity greater than 0 for every selected item.');
+                    return;
+                }
             }
 
             const btn = document.getElementById('confirmInvShiftBtn');
