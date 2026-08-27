@@ -3,87 +3,182 @@
 
 {% block content %}
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Account Activity</h2>
-        {% if selected_account %}
-        <a href="{{ url_for('accounting.account_activity_export_excel', account_id=selected_account.id) }}"
-           class="btn btn-success">
-            <i class="fas fa-file-excel me-1"></i> Excel
-        </a>
-        {% endif %}
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+        <div>
+            <h2 class="mb-1">Account Activity</h2>
+            <div class="text-muted small">Approved money-in, money-out, transfers, running balance, daily confirmation, and reconciliation by account.</div>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('accounting.all_transfers') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-list me-1"></i> All Transfers
+            </a>
+            {% if selected_account %}
+            {% if current_user.is_admin %}
+            <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#transferFundsModal">
+                <i class="fas fa-exchange-alt me-1"></i> Transfer Funds
+            </button>
+            {% endif %}
+            <a href="{{ url_for('accounting.account_activity_export_excel', account_id=selected_account.id) }}" class="btn btn-success">
+                <i class="fas fa-file-excel me-1"></i> Excel
+            </a>
+            {% endif %}
+        </div>
     </div>
 
-    <div class="card mb-4">
+    <div class="card mb-3">
         <div class="card-body pb-0">
             {% include 'accounting/_expense_tabs.html' %}
         </div>
     </div>
 
-    <div class="card mb-4">
+    {% if selected_account %}
+    <div class="d-flex flex-wrap gap-3 small mb-3 text-muted">
+        <div><strong class="text-body">Linked funding account:</strong>
+            {{ selected_account.linked_funding_account.name if selected_account.linked_funding_account else 'Not linked' }}</div>
+        <div><strong class="text-body">Last daily close:</strong>
+            {{ latest_close.closed_at.strftime('%d-%b-%Y %I:%M %p') if latest_close else 'Not closed yet' }}</div>
+        <div>
+            <strong class="text-body">Reconciliation status:</strong>
+            {% if latest_close and latest_close.is_reconciled %}
+            <span class="text-success fw-semibold">Reconciled</span>
+            {% elif latest_close %}
+            <span class="text-warning fw-semibold">Pending</span>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card mb-3">
         <div class="card-body">
             <form method="GET" class="row g-2 align-items-end">
-                <div class="col-md-4">
-                    <label class="form-label small fw-semibold mb-1">Account</label>
-                    <select name="account_id" class="form-select" onchange="this.form.submit()">
+                <input type="hidden" name="row_status" value="{{ row_status }}">
+                <div class="col-6 col-md-2">
+                    <label class="form-label small fw-semibold mb-1">Account <span class="text-danger">*</span></label>
+                    <select name="account_id" class="form-select">
                         {% if not accounts %}
-                        <option value="">No accounts yet</option>
+                        <option value="">No accounts match</option>
                         {% endif %}
                         {% for acct in accounts %}
                         <option value="{{ acct.id }}" {% if selected_account and acct.id == selected_account.id %}selected{% endif %}>
-                            {{ acct.name }}{% if acct.account_type %} ({{ acct.account_type }}){% endif %}{% if not acct.is_active %} — Inactive{% endif %}
+                            {{ acct.name }}{% if not acct.is_active %} — Inactive{% endif %}
                         </option>
                         {% endfor %}
                     </select>
                 </div>
-                {% if current_user.is_admin %}
-                <div class="col-md-3">
-                    <a href="{{ url_for('accounting.add_expense') }}" class="btn btn-outline-secondary">
-                        <i class="fas fa-book me-1"></i> Manage Accounts
-                    </a>
+                <div class="col-6 col-md-2">
+                    <label class="form-label small fw-semibold mb-1">Account Type</label>
+                    <select name="account_type" class="form-select">
+                        <option value="">All Types</option>
+                        {% for t in account_type_options %}
+                        <option value="{{ t }}" {% if selected_account_type == t %}selected{% endif %}>{{ t }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
-                {% endif %}
+                <div class="col-6 col-md-2">
+                    <label class="form-label small fw-semibold mb-1">Custodian</label>
+                    <select name="custodian" class="form-select">
+                        <option value="">All Custodians</option>
+                        {% for c in custodian_options %}
+                        <option value="{{ c }}" {% if selected_custodian == c %}selected{% endif %}>{{ c }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label small fw-semibold mb-1">Location</label>
+                    <select name="location" class="form-select">
+                        <option value="">All Locations</option>
+                        {% for l in location_options %}
+                        <option value="{{ l }}" {% if selected_location == l %}selected{% endif %}>{{ l }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-1">
+                    <label class="form-label small fw-semibold mb-1">From Date</label>
+                    <input type="date" name="date_from" class="form-control" value="{{ date_from.strftime('%Y-%m-%d') }}">
+                </div>
+                <div class="col-6 col-md-1">
+                    <label class="form-label small fw-semibold mb-1">To Date</label>
+                    <input type="date" name="date_to" class="form-control" value="{{ date_to.strftime('%Y-%m-%d') }}">
+                </div>
+                <div class="col-6 col-md-2 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary flex-grow-1">
+                        <i class="fas fa-filter me-1"></i> Apply Filters
+                    </button>
+                    {% if current_user.is_admin %}
+                    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#accountManagerModal" title="Manage Accounts">
+                        <i class="fas fa-book"></i>
+                    </button>
+                    {% endif %}
+                </div>
             </form>
         </div>
     </div>
 
-    {% if not accounts %}
+    {% if not accounts and not all_accounts %}
     <div class="alert alert-info">
-        No accounts have been created yet. Create one from the "Manage Accounts" button on the
-        <a href="{{ url_for('accounting.add_expense') }}">Add Expense</a> page.
+        No accounts have been created yet. Create one from the <i class="fas fa-book"></i> button above.
     </div>
-    {% elif selected_account %}
-    <div class="row g-3 mb-4">
-        <div class="col-md-4">
-            <div class="card shadow-sm h-100">
+    {% elif not selected_account %}
+    <div class="alert alert-warning">
+        No account matches the current filters. Adjust the filters above or pick an account.
+    </div>
+    {% else %}
+
+    {% include 'accounting/_account_activity_tabs.html' %}
+
+    <div class="row g-3 mb-3">
+        <div class="col-6 col-md">
+            <div class="card shadow-sm h-100 border-start border-4 border-secondary">
                 <div class="card-body">
-                    <div class="small text-muted text-uppercase">Remaining Balance</div>
-                    <div class="h4 mb-0 fw-bold {{ 'text-success' if selected_account.balance >= 0 else 'text-danger' }}">
-                        PKR {{ "{:,.2f}".format(selected_account.balance) }}
-                    </div>
+                    <div class="small text-muted text-uppercase">Opening Balance</div>
+                    <div class="h5 mb-0 fw-bold">PKR {{ "{:,.0f}".format(range_opening_balance) }}</div>
+                    <div class="small text-muted">Approved opening entry</div>
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
-            <div class="card shadow-sm h-100">
+        <div class="col-6 col-md">
+            <div class="card shadow-sm h-100 border-start border-4 border-success">
                 <div class="card-body">
-                    <div class="small text-muted text-uppercase">Total Debit <span class="text-muted">(money in)</span></div>
-                    <div class="h4 mb-0 fw-bold text-success">PKR {{ "{:,.2f}".format(selected_account.total_debit) }}</div>
+                    <div class="small text-muted text-uppercase">Money In</div>
+                    <div class="h5 mb-0 fw-bold text-success">PKR {{ "{:,.0f}".format(money_in) }}</div>
+                    <div class="small text-muted">Approved debits</div>
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
-            <div class="card shadow-sm h-100">
+        <div class="col-6 col-md">
+            <div class="card shadow-sm h-100 border-start border-4 border-danger">
                 <div class="card-body">
-                    <div class="small text-muted text-uppercase">Total Credit <span class="text-muted">(money out / expenses)</span></div>
-                    <div class="h4 mb-0 fw-bold text-danger">PKR {{ "{:,.2f}".format(selected_account.total_credit) }}</div>
+                    <div class="small text-muted text-uppercase">Money Out</div>
+                    <div class="h5 mb-0 fw-bold text-danger">PKR {{ "{:,.0f}".format(money_out) }}</div>
+                    <div class="small text-muted">Approved credits</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md">
+            <div class="card shadow-sm h-100 border-start border-4 border-primary">
+                <div class="card-body">
+                    <div class="small text-muted text-uppercase">Expected Balance</div>
+                    <div class="h5 mb-0 fw-bold">PKR {{ "{:,.0f}".format(expected_balance) }}</div>
+                    <div class="small text-muted">Opening + In − Out</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md">
+            <div class="card shadow-sm h-100 border-start border-4 border-info">
+                <div class="card-body">
+                    <div class="small text-muted text-uppercase">Actual Balance</div>
+                    <div class="h5 mb-0 fw-bold">PKR {{ "{:,.0f}".format(actual_balance) }}</div>
+                    <div class="small text-muted">{{ 'Custodian confirmed' if latest_close else 'No close yet' }}</div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="text-muted small mb-3">
-        <i class="fas fa-info-circle me-1"></i>
-        The boxes above only count <strong>approved</strong> entries — same as the account's balance everywhere else in
-        the app. Pending/rejected rows still show in the table below (marked accordingly) but don't move the balance yet.
+
+    <div class="alert alert-primary py-2 small mb-3">
+        <strong><i class="fas fa-info-circle me-1"></i>Balance rule:</strong>
+        Only approved transactions affect the expected balance. Pending, rejected, and draft entries remain visible but don't move the balance.
     </div>
 
     <div class="card">
@@ -95,44 +190,91 @@
                 <table class="table table-hover mb-0 align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th>Date</th>
-                            <th class="text-center">Type</th>
+                            <th>Date / Time</th>
+                            <th>Transaction</th>
+                            <th>Type</th>
+                            <th>From Account</th>
+                            <th>To Account / Payee</th>
                             <th>Description</th>
-                            <th>Source</th>
-                            <th class="text-center">Status</th>
-                            <th class="text-end">Debit (In)</th>
-                            <th class="text-end">Credit (Out)</th>
+                            <th>Reference</th>
+                            <th>Customer</th>
+                            <th>Warehouse</th>
+                            <th class="text-end">Money In</th>
+                            <th class="text-end">Money Out</th>
                             <th class="text-end">Balance</th>
+                            <th>Linked Doc.</th>
+                            <th class="no-export">Bill</th>
+                            <th class="text-center">Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr class="table-light">
-                            <td colspan="7" class="fw-semibold">Opening Balance</td>
-                            <td class="text-end fw-semibold">{{ "{:,.2f}".format(selected_account.opening_balance or 0) }}</td>
+                            <td colspan="11" class="fw-semibold">Opening Balance (as of {{ date_from.strftime('%d-%b-%Y') }})</td>
+                            <td class="text-end fw-semibold">{{ "{:,.2f}".format(range_opening_balance) }}</td>
+                            <td colspan="3"></td>
                         </tr>
                         {% for r in rows %}
                         {% set t = r.txn %}
                         <tr>
-                            <td>{{ t.date.strftime('%d-%m-%Y') if t.date else '—' }}</td>
-                            <td class="text-center">
-                                {% if t.entry_type == 'debit' %}
-                                <span class="badge bg-success">Debit</span>
-                                {% else %}
-                                <span class="badge bg-danger">Credit</span>
+                            <td>{{ t.date.strftime('%d-%b') if t.date else '—' }}{% if t.created_at %} {{ t.created_at.strftime('%H:%M') }}{% endif %}</td>
+                            <td class="fw-semibold text-nowrap">
+                                {% if t.transaction_type == 'transfer' %}TRV-{{ '%04d'|format(t.id) }}
+                                {% elif r.expense %}{{ r.expense.expense_number }}
+                                {% else %}ADD-{{ '%04d'|format(t.id) }}
                                 {% endif %}
                             </td>
+                            <td class="text-nowrap">
+                                {% if t.transaction_type == 'transfer' %}
+                                    {{ 'Funds Received' if t.entry_type == 'debit' else 'Funds Sent' }}
+                                {% elif r.expense %}Expense Paid
+                                {% else %}Add Money
+                                {% endif %}
+                            </td>
+                            <td>{{ r.from_label }}</td>
+                            <td>{{ r.to_label }}</td>
                             <td>{{ t.description or '—' }}</td>
+                            <td>{{ t.reference or '—' }}</td>
+                            <td>{{ r.expense.customer.name if r.expense and r.expense.customer else '—' }}</td>
+                            <td>{{ r.expense.warehouse.name if r.expense and r.expense.warehouse else '—' }}</td>
+                            <td class="text-end text-success">{{ "{:,.2f}".format(t.amount) if t.entry_type == 'debit' else '' }}</td>
+                            <td class="text-end text-danger">{{ "{:,.2f}".format(t.amount) if t.entry_type == 'credit' else '' }}</td>
+                            <td class="text-end fw-semibold {{ 'text-success' if r.running >= 0 else 'text-danger' }}">
+                                {{ "{:,.2f}".format(r.running) }}
+                            </td>
                             <td>
                                 {% if r.expense %}
                                 <a href="{{ url_for('accounting.edit_expense', id=r.expense.id) }}" class="text-decoration-none">
                                     <i class="fas fa-receipt me-1"></i>{{ r.expense.expense_number }}
                                 </a>
+                                {% elif t.transaction_type == 'transfer' %}
+                                <span class="text-muted"><i class="fas fa-exchange-alt me-1"></i>Transfer Voucher</span>
                                 {% else %}
                                 <span class="text-muted"><i class="fas fa-money-bill-wave me-1"></i>Add Money</span>
                                 {% endif %}
                             </td>
+                            <td class="no-export">
+                                {% if t.bill_image_path %}
+                                <div class="btn-group" role="group">
+                                    <button type="button" class="btn btn-sm btn-info" data-bs-toggle="modal"
+                                        data-bs-target="#billModalActivity{{ t.id }}"
+                                        title="Preview {{ 'Transfer Receipt' if t.transaction_type == 'transfer' else ('Expense Bill' if r.expense else 'Bill') }}">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                    <a href="{{ url_for('static', filename=t.bill_image_path.replace('app/static/', '')) }}"
+                                        target="_blank" class="btn btn-sm btn-secondary" title="View Full Size">
+                                        <i class="fas fa-external-link-alt"></i>
+                                    </a>
+                                </div>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
                             <td class="text-center">
-                                {% if t.is_rejected %}
+                                {% if t.is_reversed %}
+                                <span class="badge bg-dark">Reversed</span>
+                                {% elif t.is_draft %}
+                                <span class="badge bg-info text-dark">Draft</span>
+                                {% elif t.is_rejected %}
                                 <span class="badge bg-secondary">Rejected</span>
                                 {% elif t.is_approved %}
                                 <span class="badge bg-success">Approved</span>
@@ -140,25 +282,21 @@
                                 <span class="badge bg-warning text-dark">Pending</span>
                                 {% endif %}
                             </td>
-                            <td class="text-end text-success">{{ "{:,.2f}".format(t.amount) if t.entry_type == 'debit' else '' }}</td>
-                            <td class="text-end text-danger">{{ "{:,.2f}".format(t.amount) if t.entry_type == 'credit' else '' }}</td>
-                            <td class="text-end fw-semibold {{ 'text-success' if r.running >= 0 else 'text-danger' }}">
-                                {{ "{:,.2f}".format(r.running) }}
-                            </td>
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-4">
+                            <td colspan="15" class="text-center text-muted py-4">
                                 <i class="fas fa-inbox fa-2x d-block mb-2 opacity-50"></i>
-                                No transactions on this account yet.
+                                No transactions in this range for this tab.
                             </td>
                         </tr>
                         {% endfor %}
                         <tr class="table-secondary">
-                            <td colspan="7" class="fw-bold">Remaining Balance</td>
-                            <td class="text-end fw-bold {{ 'text-success' if selected_account.balance >= 0 else 'text-danger' }}">
-                                {{ "{:,.2f}".format(selected_account.balance) }}
+                            <td colspan="11" class="fw-bold">Closing Balance (as of {{ date_to.strftime('%d-%b-%Y') }})</td>
+                            <td class="text-end fw-bold {{ 'text-success' if (rows[-1].running if rows else range_opening_balance) >= 0 else 'text-danger' }}">
+                                {{ "{:,.2f}".format(rows[-1].running if rows else range_opening_balance) }}
                             </td>
+                            <td colspan="3"></td>
                         </tr>
                     </tbody>
                 </table>
@@ -167,4 +305,39 @@
     </div>
     {% endif %}
 </div>
+
+<!-- Transaction Bill Preview Modals — covers Expense bills, Transfer receipts, and Add Money bills alike (all read from the same t.bill_image_path, copied onto the transaction from whichever source it came from). -->
+{% for r in rows %}
+{% set t = r.txn %}
+{% if t.bill_image_path %}
+<div class="modal fade" id="billModalActivity{{ t.id }}" tabindex="-1" aria-labelledby="billModalActivityLabel{{ t.id }}"
+    aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="billModalActivityLabel{{ t.id }}">
+                    {% if t.transaction_type == 'transfer' %}Transfer Receipt - TRV-{{ '%04d'|format(t.id) }}
+                    {% elif r.expense %}Expense Bill - {{ r.expense.expense_number }}
+                    {% else %}Bill - ADD-{{ '%04d'|format(t.id) }}
+                    {% endif %}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img src="{{ url_for('static', filename=t.bill_image_path.replace('app/static/', '')) }}"
+                    class="img-fluid" alt="Bill Image" style="max-height: 70vh;">
+            </div>
+            <div class="modal-footer">
+                <a href="{{ url_for('static', filename=t.bill_image_path.replace('app/static/', '')) }}"
+                    target="_blank" class="btn btn-primary">View Full Size</a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+
+{% include 'accounting/_account_manager_modal.html' %}
+{% include 'accounting/_transfer_funds_modal.html' %}
 {% endblock %}

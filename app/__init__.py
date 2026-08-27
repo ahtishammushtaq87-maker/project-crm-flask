@@ -45,7 +45,7 @@ def create_app(config_class=Config):
             RecoveryTask, RecoveryLog, RecoveryComment, Salesman,
             JournalAccount, JournalEntry, JournalLine, FixedExpense,
             Quotation, QuotationItem, DatabaseBackup, PackingSlip, PackingSlipSettings, SaleReturnReason,
-            ExpenseAccount, ExpenseAccountTransaction, BillPayment
+            ExpenseAccount, ExpenseAccountTransaction, BillPayment, AccountDailyClose
         )
         from app.filter_models import SavedFilter
         
@@ -141,6 +141,7 @@ def create_app(config_class=Config):
             'sale_return_reasons': SaleReturnReason,
             'expense_accounts': ExpenseAccount,
             'expense_account_transactions': ExpenseAccountTransaction,
+            'account_daily_closes': AccountDailyClose,
             'bill_payments': BillPayment,
         }
         

@@ -1,0 +1,91 @@
+{# Daily Cash Close modal — the custodian confirms the physical/actual
+   balance for the selected account for today; Expected Balance is the
+   system's computed balance from approved ledger movements. Saves one
+   AccountDailyClose row per account per day (upsert on same-day resubmit). #}
+<div class="modal fade" id="dailyCashCloseModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-cash-register me-2"></i>Daily Cash Close</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="dccError" class="alert alert-danger py-2 d-none"></div>
+                {% if selected_account %}
+                <p class="text-muted small mb-3">
+                    Confirming today's closing balance for <strong>{{ selected_account.name }}</strong>.
+                </p>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold mb-1">Expected Balance (system)</label>
+                    <input type="text" class="form-control" value="PKR {{ '{:,.2f}'.format(selected_account.balance) }}" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold mb-1">Actual Balance (counted) <span class="text-danger">*</span></label>
+                    <input type="number" step="0.01" id="dccActual" class="form-control" placeholder="0.00">
+                </div>
+                <div class="mb-1">
+                    <label class="form-label small fw-semibold mb-1">Notes</label>
+                    <textarea id="dccNotes" class="form-control" rows="2" placeholder="Any discrepancy explanation…"></textarea>
+                </div>
+                <div id="dccResult" class="alert alert-info py-2 mt-3 d-none"></div>
+                {% else %}
+                <div class="alert alert-warning mb-0">Select an account first.</div>
+                {% endif %}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                {% if selected_account %}
+                <button type="button" class="btn btn-primary" id="dccSubmitBtn">
+                    <i class="fas fa-check-circle me-1"></i>Save Daily Close
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var submitBtn = document.getElementById('dccSubmitBtn');
+    if (!submitBtn) return;
+    var errorBox = document.getElementById('dccError');
+    var resultBox = document.getElementById('dccResult');
+    var URL_CLOSE = '{{ url_for("accounting.daily_close_quick", account_id=selected_account.id) if selected_account else "" }}';
+
+    function fmt(n) { return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+    function showError(msg) { errorBox.textContent = msg; errorBox.classList.remove('d-none'); }
+    function clearError() { errorBox.classList.add('d-none'); resultBox.classList.add('d-none'); }
+
+    document.getElementById('dailyCashCloseModal').addEventListener('show.bs.modal', function () {
+        clearError();
+        document.getElementById('dccActual').value = '';
+        document.getElementById('dccNotes').value = '';
+    });
+
+    submitBtn.addEventListener('click', function () {
+        clearError();
+        var actual = document.getElementById('dccActual').value;
+        if (actual === '' || isNaN(Number(actual))) { showError('Enter the counted actual balance.'); return; }
+
+        var fd = new FormData();
+        fd.append('actual_balance', actual);
+        fd.append('notes', document.getElementById('dccNotes').value.trim());
+
+        submitBtn.disabled = true;
+        fetch(URL_CLOSE, { method: 'POST', body: fd })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                submitBtn.disabled = false;
+                if (!data.success) { showError(data.message || 'Could not save the daily close.'); return; }
+                var varianceText = Number(data.variance) === 0
+                    ? 'Balanced — no variance.'
+                    : 'Variance: PKR ' + fmt(data.variance);
+                resultBox.textContent = 'Saved. Expected PKR ' + fmt(data.expected_balance) +
+                    ' vs Actual PKR ' + fmt(data.actual_balance) + '. ' + varianceText;
+                resultBox.classList.remove('d-none');
+                setTimeout(function () { window.location.reload(); }, 1200);
+            })
+            .catch(function () { submitBtn.disabled = false; showError('Network error — could not save the daily close.'); });
+    });
+})();
+</script>

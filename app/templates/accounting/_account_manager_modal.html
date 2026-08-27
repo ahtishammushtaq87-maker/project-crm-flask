@@ -25,22 +25,45 @@
                 <div class="border rounded p-3 mb-3 bg-light">
                     <h6 class="mb-2">Create New Account</h6>
                     <div class="row g-2 align-items-end">
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label class="form-label small mb-1">Name <span class="text-danger">*</span></label>
                             <input type="text" id="acctMgrNewName" class="form-control form-control-sm" placeholder="e.g., Cash, Bank">
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-2">
                             <label class="form-label small mb-1">Type</label>
-                            <input type="text" id="acctMgrNewType" class="form-control form-control-sm" placeholder="Cash / Bank / Income">
+                            <input type="text" id="acctMgrNewType" class="form-control form-control-sm" placeholder="Bank / Custodian Funds">
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-2">
+                            <label class="form-label small mb-1">Custodian</label>
+                            <input type="text" id="acctMgrNewCustodian" class="form-control form-control-sm" placeholder="Person responsible">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small mb-1">Location</label>
+                            <input type="text" id="acctMgrNewLocation" class="form-control form-control-sm" placeholder="e.g., Lahore Factory">
+                        </div>
+                        <div class="col-md-2">
                             <label class="form-label small mb-1">Opening Balance</label>
                             <input type="number" step="0.01" id="acctMgrNewOpening" class="form-control form-control-sm" value="0">
                         </div>
-                        <div class="col-md-2">
-                            <button type="button" class="btn btn-primary btn-sm w-100" id="acctMgrCreateBtn">
-                                <i class="fas fa-plus me-1"></i>Create
+                        <div class="col-md-1">
+                            <button type="button" class="btn btn-primary btn-sm w-100" id="acctMgrCreateBtn" title="Create">
+                                <i class="fas fa-plus"></i>
                             </button>
+                        </div>
+                    </div>
+                    <div class="row g-2 align-items-end mt-1">
+                        <div class="col-md-8 mb-3">
+                            <label class="form-label small mb-1">Account Image / Logo</label>
+                            <div class="input-group input-group-sm">
+                                <button type="button" class="btn btn-outline-info" id="acctMgrWebcamBtn">
+                                    <i class="fas fa-camera me-1"></i>Camera Capture
+                                </button>
+                                <input type="file" id="acctMgrNewImage" accept="image/*" class="form-control form-control-sm">
+                            </div>
+                            <div class="form-text">Camera capture, choose a file, or paste (Ctrl+V) an image — Optional</div>
+                        </div>
+                        <div class="col-md-4">
+                            <div id="acctMgrNewImagePreview"></div>
                         </div>
                     </div>
                 </div>
@@ -49,8 +72,11 @@
                     <table class="table table-sm table-hover align-middle mb-0">
                         <thead class="table-light">
                             <tr>
+                                <th style="width:48px;">Logo</th>
                                 <th>Name</th>
                                 <th>Type</th>
+                                <th>Custodian</th>
+                                <th>Location</th>
                                 <th class="text-end">Opening</th>
                                 <th class="text-end">Balance</th>
                                 <th class="text-center">Active</th>
@@ -58,7 +84,7 @@
                             </tr>
                         </thead>
                         <tbody id="acctMgrTableBody">
-                            <tr><td colspan="6" class="text-center text-muted py-3">Loading…</td></tr>
+                            <tr><td colspan="9" class="text-center text-muted py-3">Loading…</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -68,6 +94,40 @@
             </div>
         </div>
     </div>
+</div>
+
+{# Camera Capture sub-modal for the Account Image field above — self-contained
+   with ids namespaced "acctMgr*" so it can't collide with other camera-capture
+   modals (Add Expense's own #cameraModal, Transfer Funds' #tfCameraModal)
+   that may be included on the same page. #}
+<div class="modal fade" id="acctMgrCameraModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Capture Image from Camera</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <div id="acctMgrCameraStreamContainer">
+          <video id="acctMgrWebcamVideo" autoplay playsinline class="w-100 rounded border bg-dark" style="max-height: 400px; transform: scaleX(-1);"></video>
+          <canvas id="acctMgrCaptureCanvas" style="display:none;"></canvas>
+          <div class="mt-3">
+            <button type="button" class="btn btn-primary btn-lg" id="acctMgrSnapBtn"><i class="fas fa-camera"></i> Take Photo</button>
+          </div>
+        </div>
+        <div id="acctMgrCameraResultContainer" style="display:none;">
+          <img id="acctMgrCapturePreview" class="img-fluid rounded border mb-3">
+          <div class="d-flex justify-content-center gap-2">
+            <button type="button" class="btn btn-warning" id="acctMgrRetakeBtn"><i class="fas fa-redo"></i> Retake</button>
+            <button type="button" class="btn btn-success" id="acctMgrConfirmPhotoBtn"><i class="fas fa-check"></i> Use Photo</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -135,13 +195,22 @@
         });
     }
 
+    function logoCell(a) {
+        return a.image_url
+            ? '<img src="' + esc(a.image_url) + '" class="rounded" style="width:32px;height:32px;object-fit:cover;">'
+            : '<span class="text-muted"><i class="fas fa-image"></i></span>';
+    }
+
     function renderRow(a) {
         var badge = a.is_active
             ? '<span class="badge bg-success">Yes</span>'
             : '<span class="badge bg-secondary">No</span>';
         return '<tr data-id="' + a.id + '">' +
+            '<td class="text-center">' + logoCell(a) + '</td>' +
             '<td class="acct-name">' + esc(a.name) + '</td>' +
             '<td class="acct-type">' + (a.account_type ? esc(a.account_type) : '<span class="text-muted">—</span>') + '</td>' +
+            '<td class="acct-custodian">' + (a.custodian_name ? esc(a.custodian_name) : '<span class="text-muted">—</span>') + '</td>' +
+            '<td class="acct-location">' + (a.location ? esc(a.location) : '<span class="text-muted">—</span>') + '</td>' +
             '<td class="acct-opening text-end">' + money(a.opening_balance) + '</td>' +
             '<td class="text-end fw-semibold ' + (a.balance >= 0 ? 'text-success' : 'text-danger') + '">' + money(a.balance) + '</td>' +
             '<td class="acct-active text-center">' + badge + '</td>' +
@@ -158,8 +227,11 @@
 
     function renderEditRow(a) {
         return '<tr data-id="' + a.id + '">' +
+            '<td class="text-center">' + logoCell(a) + '</td>' +
             '<td><input type="text" class="form-control form-control-sm acct-edit-name" value="' + esc(a.name) + '"></td>' +
             '<td><input type="text" class="form-control form-control-sm acct-edit-type" value="' + esc(a.account_type || '') + '"></td>' +
+            '<td><input type="text" class="form-control form-control-sm acct-edit-custodian" value="' + esc(a.custodian_name || '') + '"></td>' +
+            '<td><input type="text" class="form-control form-control-sm acct-edit-location" value="' + esc(a.location || '') + '"></td>' +
             '<td><input type="number" step="0.01" class="form-control form-control-sm acct-edit-opening" value="' + (a.opening_balance || 0) + '"></td>' +
             '<td class="text-end text-muted small">(unchanged)</td>' +
             '<td class="text-center">' +
@@ -176,14 +248,14 @@
 
     function render() {
         if (!accounts.length) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No accounts yet — create one above.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-3">No accounts yet — create one above.</td></tr>';
             return;
         }
         tbody.innerHTML = accounts.map(renderRow).join('');
     }
 
     function load() {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Loading…</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-3">Loading…</td></tr>';
         fetch(URLS.list, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (r) { return r.json(); })
             .then(function (data) {
@@ -192,15 +264,33 @@
                 render();
             })
             .catch(function () {
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-3">Could not load accounts.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger py-3">Could not load accounts.</td></tr>';
             });
     }
+
+    var newImageInput = document.getElementById('acctMgrNewImage');
+    var newImagePreview = document.getElementById('acctMgrNewImagePreview');
+    function updateNewImagePreview(file) {
+        if (!file) { newImagePreview.innerHTML = ''; return; }
+        var reader = new FileReader();
+        reader.onload = function (e) {
+            newImagePreview.innerHTML = '<img src="' + e.target.result + '" class="img-thumbnail" style="max-height:60px;">';
+        };
+        reader.readAsDataURL(file);
+    }
+    newImageInput.addEventListener('change', function () {
+        updateNewImagePreview(newImageInput.files && newImageInput.files[0]);
+    });
 
     modalEl.addEventListener('show.bs.modal', function () {
         clearError();
         document.getElementById('acctMgrNewName').value = '';
         document.getElementById('acctMgrNewType').value = '';
+        document.getElementById('acctMgrNewCustodian').value = '';
+        document.getElementById('acctMgrNewLocation').value = '';
         document.getElementById('acctMgrNewOpening').value = 0;
+        newImageInput.value = '';
+        newImagePreview.innerHTML = '';
         load();
     });
 
@@ -211,7 +301,12 @@
         var fd = new FormData();
         fd.append('name', name);
         fd.append('account_type', document.getElementById('acctMgrNewType').value.trim());
+        fd.append('custodian_name', document.getElementById('acctMgrNewCustodian').value.trim());
+        fd.append('location', document.getElementById('acctMgrNewLocation').value.trim());
         fd.append('opening_balance', document.getElementById('acctMgrNewOpening').value || 0);
+        if (newImageInput.files && newImageInput.files[0]) {
+            fd.append('image', newImageInput.files[0]);
+        }
 
         fetch(URLS.create, { method: 'POST', body: fd })
             .then(function (r) { return r.json(); })
@@ -219,10 +314,16 @@
                 if (!data.success) { showError(data.message || 'Could not create account.'); return; }
                 document.getElementById('acctMgrNewName').value = '';
                 document.getElementById('acctMgrNewType').value = '';
+                document.getElementById('acctMgrNewCustodian').value = '';
+                document.getElementById('acctMgrNewLocation').value = '';
                 document.getElementById('acctMgrNewOpening').value = 0;
+                newImageInput.value = '';
+                newImagePreview.innerHTML = '';
                 var acct = data.account;
                 accounts.push({
                     id: acct.id, name: acct.name, account_type: acct.account_type,
+                    custodian_name: acct.custodian_name || '', location: acct.location || '',
+                    image_url: acct.image_url || null,
                     opening_balance: 0, balance: 0, is_active: true, has_lines: false
                 });
                 render();
@@ -230,6 +331,72 @@
             })
             .catch(function () { showError('Network error — could not create account.'); });
     });
+
+    // Camera capture — canvas -> blob -> File -> DataTransfer onto the real
+    // file input, so paste/drag-drop (handled globally in base.html) and
+    // FormData submission both see a normal File either way.
+    (function () {
+        var webcamBtn = document.getElementById('acctMgrWebcamBtn');
+        var camModalEl = document.getElementById('acctMgrCameraModal');
+        var video = document.getElementById('acctMgrWebcamVideo');
+        var canvas = document.getElementById('acctMgrCaptureCanvas');
+        var streamContainer = document.getElementById('acctMgrCameraStreamContainer');
+        var resultContainer = document.getElementById('acctMgrCameraResultContainer');
+        var capturePreview = document.getElementById('acctMgrCapturePreview');
+        var snapBtn = document.getElementById('acctMgrSnapBtn');
+        var retakeBtn = document.getElementById('acctMgrRetakeBtn');
+        var confirmBtn = document.getElementById('acctMgrConfirmPhotoBtn');
+        var cameraModal = null;
+        var videoStream = null;
+
+        function startWebcam() {
+            streamContainer.style.display = '';
+            resultContainer.style.display = 'none';
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } })
+                .then(function (stream) { videoStream = stream; video.srcObject = stream; })
+                .catch(function () {
+                    showError('Could not access the camera. Check permissions, or upload/paste a file instead.');
+                    if (cameraModal) cameraModal.hide();
+                });
+        }
+        function stopWebcam() {
+            if (videoStream) { videoStream.getTracks().forEach(function (t) { t.stop(); }); videoStream = null; }
+        }
+
+        webcamBtn.addEventListener('click', function () {
+            if (!cameraModal) cameraModal = new bootstrap.Modal(camModalEl);
+            cameraModal.show();
+            startWebcam();
+        });
+        camModalEl.addEventListener('hidden.bs.modal', stopWebcam);
+
+        snapBtn.addEventListener('click', function () {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            var ctx = canvas.getContext('2d');
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            capturePreview.src = canvas.toDataURL('image/jpeg');
+            streamContainer.style.display = 'none';
+            resultContainer.style.display = '';
+        });
+        retakeBtn.addEventListener('click', function () {
+            streamContainer.style.display = '';
+            resultContainer.style.display = 'none';
+        });
+        confirmBtn.addEventListener('click', function () {
+            canvas.toBlob(function (blob) {
+                var file = new File([blob], 'account_image_' + Date.now() + '.jpg', { type: 'image/jpeg' });
+                var dt = new DataTransfer();
+                dt.items.add(file);
+                newImageInput.files = dt.files;
+                updateNewImagePreview(file);
+                stopWebcam();
+                if (cameraModal) cameraModal.hide();
+            }, 'image/jpeg', 0.9);
+        });
+    })();
 
     tbody.addEventListener('click', function (e) {
         var tr = e.target.closest('tr[data-id]');
@@ -267,6 +434,8 @@
             var fd = new FormData();
             fd.append('name', name);
             fd.append('account_type', newTr.querySelector('.acct-edit-type').value.trim());
+            fd.append('custodian_name', newTr.querySelector('.acct-edit-custodian').value.trim());
+            fd.append('location', newTr.querySelector('.acct-edit-location').value.trim());
             fd.append('opening_balance', newTr.querySelector('.acct-edit-opening').value || 0);
             fd.append('is_active', newTr.querySelector('.acct-edit-active').checked ? '1' : '0');
 

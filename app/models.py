@@ -1761,6 +1761,12 @@ class ExpenseAccount(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
+    custodian_name = db.Column(db.String(120), nullable=True)
+    location = db.Column(db.String(120), nullable=True)
+    image_path = db.Column(db.String(255), nullable=True)
+    linked_funding_account_id = db.Column(db.Integer, db.ForeignKey('expense_accounts.id'), nullable=True)
+    linked_funding_account = db.relationship('ExpenseAccount', remote_side=[id])
+
     @property
     def total_debit(self):
         return sum((t.amount or 0) for t in self.transactions if t.entry_type == 'debit' and t.is_approved)
@@ -1796,6 +1802,11 @@ class ExpenseAccountTransaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     account_id = db.Column(db.Integer, db.ForeignKey('expense_accounts.id'), nullable=False, index=True)
     expense_id = db.Column(db.Integer, db.ForeignKey('expenses.id'), nullable=True, index=True)
+    # Only ever set directly on a debit ("Add Money") row — a credit row
+    # linked to an Expense shows its customer/warehouse via expense.customer/
+    # expense.warehouse instead, same as Expense's own fields.
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True, index=True)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
 
     date = db.Column(db.Date, nullable=False, index=True)
     entry_type = db.Column(db.String(10), nullable=False, default='credit')  # 'debit' | 'credit'
@@ -1813,11 +1824,70 @@ class ExpenseAccountTransaction(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    account = db.relationship('ExpenseAccount', backref=db.backref('transactions', lazy=True))
+    # transaction_type distinguishes what kind of movement this row represents,
+    # since entry_type alone only says debit/credit direction, not the source
+    # ('expense' rows always carry an expense_id; 'transfer' rows always come
+    # in pairs sharing transfer_group; 'add_money' is the older single-sided
+    # manual debit path with no counterparty).
+    transaction_type = db.Column(db.String(20), nullable=False, default='expense')
+    counterparty_account_id = db.Column(db.Integer, db.ForeignKey('expense_accounts.id'), nullable=True)
+    transfer_group = db.Column(db.String(36), nullable=True, index=True)
+    payee = db.Column(db.String(160), nullable=True)
+
+    is_draft = db.Column(db.Boolean, default=False, index=True)
+    is_reversed = db.Column(db.Boolean, default=False, index=True)
+    reversed_at = db.Column(db.DateTime, nullable=True)
+    reversed_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    # Set when this debit ("Add Money") row was routed to a Sale invoice
+    # payment instead of a plain account top-up — see
+    # _sync_add_money_sale_transfer. Mirrors Expense.linked_sale_id/
+    # is_payment_transfer, but points at the specific Payment row created
+    # (rather than duplicating the Sale reference here too, since
+    # Payment.invoice_id already reaches it).
+    linked_payment_id = db.Column(db.Integer, db.ForeignKey('payments.id'), nullable=True, index=True)
+
+    account = db.relationship('ExpenseAccount', foreign_keys=[account_id],
+                               backref=db.backref('transactions', lazy=True))
+    counterparty_account = db.relationship('ExpenseAccount', foreign_keys=[counterparty_account_id])
     expense = db.relationship('Expense', backref=db.backref('account_transaction', uselist=False, lazy=True))
+    linked_payment = db.relationship('Payment', foreign_keys=[linked_payment_id])
+    customer = db.relationship('Customer', backref='account_debit_entries', lazy=True)
+    warehouse = db.relationship('Warehouse', backref='account_debit_entries', lazy=True)
 
     def __repr__(self):
         return f'<ExpenseAccountTransaction {self.entry_type} {self.amount} -> account {self.account_id}>'
+
+
+class AccountDailyClose(db.Model):
+    """One physical cash-count record per ExpenseAccount per day. Expected
+    balance is the system's computed balance at close time; actual balance is
+    what the custodian counted. Reconciliation is a verified flag on this same
+    row (set by finance) rather than a separate table — a close only ever
+    needs one verification pass."""
+    __tablename__ = 'account_daily_closes'
+
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('expense_accounts.id'), nullable=False, index=True)
+    close_date = db.Column(db.Date, nullable=False, index=True)
+    expected_balance = db.Column(db.Float, nullable=False, default=0)
+    actual_balance = db.Column(db.Float, nullable=False, default=0)
+    notes = db.Column(db.Text, nullable=True)
+    closed_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    closed_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    is_reconciled = db.Column(db.Boolean, default=False)
+    reconciled_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    reconciled_at = db.Column(db.DateTime, nullable=True)
+
+    account = db.relationship('ExpenseAccount', backref=db.backref('daily_closes', lazy=True))
+
+    @property
+    def variance(self):
+        return (self.actual_balance or 0) - (self.expected_balance or 0)
+
+    def __repr__(self):
+        return f'<AccountDailyClose account={self.account_id} {self.close_date}>'
 
 
 class Expense(db.Model):
@@ -1829,6 +1899,8 @@ class Expense(db.Model):
     date = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     category_id = db.Column(db.Integer, db.ForeignKey('expense_categories.id'), index=True)
     vendor_id = db.Column(db.Integer, db.ForeignKey('vendors.id'), index=True, nullable=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), index=True, nullable=True)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), index=True, nullable=True)
     description = db.Column(db.Text)
     amount = db.Column(db.Float, nullable=False)
     payment_method = db.Column(db.String(50))
@@ -1883,6 +1955,8 @@ class Expense(db.Model):
 
     # Relationships
     vendor = db.relationship('Vendor', backref='expenses', lazy=True)
+    customer = db.relationship('Customer', backref='expenses', lazy=True)
+    warehouse = db.relationship('Warehouse', backref='expenses', lazy=True)
     product = db.relationship('Product', backref='overhead_expenses', lazy=True)
     bom = db.relationship('BOM', backref='overhead_expenses', lazy=True)
     manufacturing_order = db.relationship('ManufacturingOrder', backref='overhead_expenses', lazy=True)

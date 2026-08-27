@@ -146,6 +146,16 @@
                             <label class="form-label">Vendor (Optional)</label>
                             {{ form.vendor_id(class="form-control") }}
                         </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Customer (Optional)</label>
+                                {{ form.customer_id(class="form-control") }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Warehouse (Optional)</label>
+                                {{ form.warehouse_id(class="form-control") }}
+                            </div>
+                        </div>
                         <div class="mb-3">
                             <label class="form-label" id="descriptionLabel">Description</label>
                             {{ form.description(class="form-control", rows=3) }}
@@ -337,6 +347,8 @@ document.addEventListener('DOMContentLoaded', function() {
     $('select[name="category_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Category —', allowClear: true, width: '100%' });
     $('select[name="payment_method"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Payment Method —', allowClear: true, width: '100%' });
     $('select[name="vendor_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Vendor (Optional) —', allowClear: true, width: '100%' });
+    $('select[name="customer_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Customer (Optional) —', allowClear: true, width: '100%' });
+    $('select[name="warehouse_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Warehouse (Optional) —', allowClear: true, width: '100%' });
     $('#accountIdSelect').select2({ theme: 'bootstrap-5', placeholder: '— Select Account —', allowClear: true, width: '100%' });
 
     // ── Transaction Type: Credit (Expense) vs Debit (Add Money to account) ──

@@ -10,6 +10,26 @@
 {% set rejected_item_count = rejected_item_count if rejected_item_count is defined else 0 %}
 {% set draft_count = draft_count if draft_count is defined else 0 %}
 {% set cancelled_count = cancelled_count if cancelled_count is defined else 0 %}
+{% set entry_view = entry_view if entry_view is defined else 'credit' %}
+{% set debit_count = debit_count if debit_count is defined else 0 %}
+
+{% if current_status != 'account_activity' %}
+<div class="btn-group btn-group-sm mb-2" role="group">
+    <a class="btn {{ 'btn-primary' if entry_view == 'credit' else 'btn-outline-secondary' }}"
+       href="{{ url_for('accounting.expenses', entry_view='credit', status=current_status, **tab_args) }}">
+        <i class="fas fa-arrow-down text-danger me-1"></i> Credit (Expenses)
+    </a>
+    <a class="btn {{ 'btn-primary' if entry_view == 'debit' else 'btn-outline-secondary' }}"
+       href="{{ url_for('accounting.expenses', entry_view='debit', **tab_args) }}">
+        <i class="fas fa-arrow-up text-success me-1"></i> Debit (Add Money)
+        {% if debit_count > 0 %}
+        <span class="badge {{ 'bg-white text-dark' if entry_view == 'debit' else 'bg-secondary' }} ms-1">{{ debit_count }}</span>
+        {% endif %}
+    </a>
+</div>
+{% endif %}
+
+{% if entry_view != 'debit' %}
 <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto">
     <li class="nav-item">
         <a class="nav-link text-nowrap {% if current_status == 'all' %}active{% endif %}"
@@ -68,3 +88,4 @@
         </a>
     </li>
 </ul>
+{% endif %}

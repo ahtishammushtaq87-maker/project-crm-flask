@@ -152,13 +152,11 @@
         {% endif %}
         {% if adm or u.can_view_expenses %}
         <a class="nav-link" href="{{ url_for('accounting.expenses') }}">Expenses</a>
+        <a class="nav-link" href="{{ url_for('accounting.account_activity') }}">Account Activity</a>
         {% endif %}
         {% if adm or u.can_view_settings %}
         <a class="nav-link" href="{{ url_for('accounting.expense_categories') }}">Expense Categories</a>
         <a class="nav-link" href="{{ url_for('accounting.payment_methods') }}">Payment Methods</a>
-        {% endif %}
-        {% if adm or u.can_view_accounting %}
-        <a class="nav-link" href="{{ url_for('journal.entries') }}">Journal Entry</a>
         {% endif %}
     </div>
     {% endif %}

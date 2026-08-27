@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}All Transfers{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+        <div>
+            <h2 class="mb-1">All Transfers</h2>
+            <div class="text-muted small">Every Transfer Funds movement across all accounts, in one searchable list.</div>
+        </div>
+        <a href="{{ url_for('accounting.account_activity') }}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Back to Account Activity
+        </a>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <form method="GET" class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold mb-1">From Date</label>
+                    <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold mb-1">To Date</label>
+                    <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold mb-1">Search</label>
+                    <input type="text" name="q" class="form-control" placeholder="Reference, description, or account name…" value="{{ q }}">
+                </div>
+                <div class="col-md-2 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary flex-grow-1">
+                        <i class="fas fa-search me-1"></i> Search
+                    </button>
+                    {% if date_from or date_to or q %}
+                    <a href="{{ url_for('accounting.all_transfers') }}" class="btn btn-outline-secondary" title="Clear">
+                        <i class="fas fa-times"></i>
+                    </a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center py-3">
+            <h6 class="m-0 font-weight-bold text-primary">
+                {{ transfers|length }} transfer{{ 's' if transfers|length != 1 else '' }}
+            </h6>
+            <strong>Total: PKR {{ "{:,.2f}".format(total_amount) }}</strong>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Transfer #</th>
+                            <th>Date</th>
+                            <th>From Account</th>
+                            <th>To Account</th>
+                            <th class="text-end">Amount</th>
+                            <th>Reference</th>
+                            <th>Description</th>
+                            <th class="no-export">Bill</th>
+                            <th class="text-center">Status</th>
+                            {% if current_user.is_admin %}<th class="text-center">Actions</th>{% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in transfers %}
+                        <tr>
+                            <td class="fw-semibold text-nowrap">TRV-{{ '%04d'|format(t.id) }}</td>
+                            <td>{{ t.date.strftime('%d-%b-%Y') if t.date else '—' }}</td>
+                            <td>{{ t.account.name if t.account else '—' }}</td>
+                            <td>{{ t.counterparty_account.name if t.counterparty_account else '—' }}</td>
+                            <td class="text-end fw-semibold">{{ "{:,.2f}".format(t.amount) }}</td>
+                            <td>{{ t.reference or '—' }}</td>
+                            <td>{{ t.description or '—' }}</td>
+                            <td class="no-export">
+                                {% if t.bill_image_path %}
+                                <div class="btn-group" role="group">
+                                    <button type="button" class="btn btn-sm btn-info" data-bs-toggle="modal"
+                                        data-bs-target="#billModalTransfer{{ t.id }}" title="Preview Bill">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                    <a href="{{ url_for('static', filename=t.bill_image_path.replace('app/static/', '')) }}"
+                                        target="_blank" class="btn btn-sm btn-secondary" title="View Full Bill">
+                                        <i class="fas fa-external-link-alt"></i>
+                                    </a>
+                                </div>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if t.is_approved %}
+                                <span class="badge bg-success">Approved</span>
+                                {% else %}
+                                <span class="badge bg-warning text-dark">Pending</span>
+                                {% endif %}
+                            </td>
+                            {% if current_user.is_admin %}
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-warning edit-transfer-btn" title="Edit"
+                                        data-transfer-group="{{ t.transfer_group }}" data-amount="{{ t.amount }}"
+                                        data-date="{{ t.date.strftime('%Y-%m-%d') if t.date else '' }}"
+                                        data-reference="{{ t.reference or '' }}" data-description="{{ t.description or '' }}">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <form method="POST" action="{{ url_for('accounting.delete_transfer', transfer_group=t.transfer_group) }}"
+                                          style="display:inline;"
+                                          onsubmit="return confirm('Delete this transfer? Both accounts\' balances will be reversed.');">
+                                        <button type="submit" class="btn btn-danger" title="Delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                            {% endif %}
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="10" class="text-center text-muted py-4">
+                                <i class="fas fa-exchange-alt fa-2x d-block mb-2 opacity-50"></i>
+                                No transfers match these filters.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Transfer Bill Preview Modals -->
+{% for t in transfers %}
+{% if t.bill_image_path %}
+<div class="modal fade" id="billModalTransfer{{ t.id }}" tabindex="-1" aria-labelledby="billModalTransferLabel{{ t.id }}"
+    aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="billModalTransferLabel{{ t.id }}">Bill Preview - TRV-{{ '%04d'|format(t.id) }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img src="{{ url_for('static', filename=t.bill_image_path.replace('app/static/', '')) }}"
+                    class="img-fluid" alt="Bill Image" style="max-height: 70vh;">
+            </div>
+            <div class="modal-footer">
+                <a href="{{ url_for('static', filename=t.bill_image_path.replace('app/static/', '')) }}"
+                    target="_blank" class="btn btn-primary">View Full Size</a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+
+{% if current_user.is_admin %}
+{% include 'accounting/_edit_transfer_modal.html' %}
+{% endif %}
+{% endblock %}

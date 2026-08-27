@@ -1,0 +1,24 @@
+{# Row-status tab strip for Account Activity — filters the transaction table
+   below by status. Distinct from the Expense-module navigation tabs included
+   above (_expense_tabs.html) — these only affect this page's own table. #}
+{% set tab_defs = [
+    ('all', 'All', 'secondary'),
+    ('approved', 'Approved', 'success'),
+    ('pending', 'Pending', 'warning'),
+    ('rejected', 'Rejected', 'danger'),
+    ('draft', 'Draft', 'info'),
+    ('reversed', 'Reversed', 'dark'),
+] %}
+<ul class="nav nav-pills gap-1 flex-wrap mb-3">
+    {% for key, label, color in tab_defs %}
+    <li class="nav-item">
+        <a class="nav-link py-1 px-3 {{ 'active' if row_status == key else 'text-body bg-light' }}"
+           href="{{ url_for('accounting.account_activity', account_id=selected_account_id, account_type=selected_account_type, custodian=selected_custodian, location=selected_location, date_from=date_from.strftime('%Y-%m-%d'), date_to=date_to.strftime('%Y-%m-%d'), row_status=key) }}">
+            {{ label }}
+            {% if status_counts.get(key) %}
+            <span class="badge {{ 'bg-white text-dark border' if row_status == key else 'bg-' + color }} ms-1">{{ status_counts[key] }}</span>
+            {% endif %}
+        </a>
+    </li>
+    {% endfor %}
+</ul>

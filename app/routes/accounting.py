@@ -251,11 +251,60 @@ def _sync_expense_payment_transfer(expense, target_type, target_id, amount, user
         expense.is_payment_transfer = True
 
 
+def _sync_add_money_sale_transfer(txn, account, sale_id, amount, user_id, is_admin):
+    """Mirror of _sync_expense_payment_transfer's 'sale' branch, but for a
+    standalone debit ('Add Money') ExpenseAccountTransaction instead of an
+    Expense — Add Money entries never create an Expense row (see
+    _add_money_from_expense_form), so the Payment is created directly with no
+    expense_id (Payment.expense_id is nullable, same as for Payments recorded
+    straight from the Sales module); `txn.linked_payment_id` is the link back
+    instead. Only ever creates — called once, right after the entry is
+    created. Editing an already-transferred entry's amount is handled inline
+    in edit_expense_account_debit_entry() instead (it only adjusts the
+    existing Payment's amount via adjust_sale_payment, it never re-targets
+    which Sale a transfer points at)."""
+    from app.utils import apply_sale_payment_with_credit
+
+    sale = Sale.query.get(sale_id)
+    if not sale:
+        return
+
+    apply_sale_payment_with_credit(sale, amount, user_id)
+    last_payment = Payment.query.order_by(Payment.id.desc()).first()
+    payment_num = f"PAY-{last_payment.id + 1 if last_payment else 1}"
+    notes = f'Transferred from Add Money entry on "{account.name}"'
+    if txn.reference:
+        notes += f' (Ref: {txn.reference})'
+    new_payment = Payment(
+        payment_number=payment_num,
+        date=txn.date,
+        amount=amount,
+        method='Cash',
+        invoice_id=sale.id,
+        notes=notes,
+        image_path=txn.bill_image_path,
+        created_by=user_id,
+        is_approved=True,
+        needs_approval=not is_admin,
+        approved_by=user_id if is_admin else None,
+        approved_at=datetime.utcnow() if is_admin else None,
+    )
+    db.session.add(new_payment)
+    db.session.flush()
+    txn.linked_payment_id = new_payment.id
+
+
 def _add_money_from_expense_form():
     """Handle the 'Debit' branch of the Add Expense form: the user picked an
     account + Debit, meaning money is going INTO that account. This is NOT an
     expense, so no Expense row is created — just a debit ExpenseAccountTransaction
-    against the Expense module's own account."""
+    against the Expense module's own account. Optionally, that incoming money
+    can instead be recorded as a customer's payment against a Sale invoice
+    ("Add this to Invoice Payment" — see _sync_add_money_sale_transfer) since
+    a Debit is money coming IN, same direction as a customer payment. The
+    mirror-image "Add this to Purchase Payment" (paying a vendor bill) only
+    makes sense for outgoing Credit expenses, so it's handled in add_expense()
+    instead, not here."""
     from app.models import ExpenseAccount, ExpenseAccountTransaction
 
     account_id = request.form.get('account_id', type=int)
@@ -277,11 +326,14 @@ def _add_money_from_expense_form():
     txn = ExpenseAccountTransaction(
         account_id=acct.id,
         entry_type='debit',
+        transaction_type='add_money',
         date=_parse_expense_date(request.form.get('date')) or datetime.utcnow().date(),
         amount=amount,
         description=(request.form.get('description') or '').strip() or None,
         reference=(request.form.get('reference') or '').strip() or None,
         bill_image_path=bill_path,
+        customer_id=request.form.get('customer_id', type=int) or None,
+        warehouse_id=request.form.get('warehouse_id', type=int) or None,
         is_approved=is_admin,
         approved_by=current_user.id if is_admin else None,
         approved_at=datetime.utcnow() if is_admin else None,
@@ -289,6 +341,14 @@ def _add_money_from_expense_form():
     )
     db.session.add(txn)
     db.session.commit()
+
+    # "Add this to Invoice Payment" — only meaningful for Debit (money in),
+    # so this is the only place that ever honors payment_transfer_type='sale'.
+    transfer_type = request.form.get('payment_transfer_type')
+    transfer_target_id = request.form.get('payment_transfer_target_id', type=int)
+    if transfer_type == 'sale' and transfer_target_id:
+        _sync_add_money_sale_transfer(txn, acct, transfer_target_id, amount, current_user.id, is_admin)
+        db.session.commit()
 
     if is_admin:
         flash(f'PKR {amount:,.0f} added to "{acct.name}". Recorded as an account transaction, not an Expense.', 'success')
@@ -1268,16 +1328,28 @@ def expenses():
 
     # Get filter parameters with persistence
     vendor_id = get_filter('vendor_id', int)
+    customer_id = get_filter('customer_id', int)
+    warehouse_id = get_filter('warehouse_id', int)
     category_id = get_filter('category_id', int)
     mo_id = get_filter('mo_id', int)
     start_date = get_filter('start_date')
     end_date = get_filter('end_date')
-    
+
+    # Credit (real Expenses, money out) vs Debit (standalone "Add Money"
+    # entries, money in — see _add_money_from_expense_form) view toggle.
+    entry_view = (request.args.get('entry_view') or 'credit').strip().lower()
+    if entry_view not in ('credit', 'debit'):
+        entry_view = 'credit'
+
     # Build query
     query = Expense.query
     
     if vendor_id:
         query = query.filter(Expense.vendor_id == vendor_id)
+    if customer_id:
+        query = query.filter(Expense.customer_id == customer_id)
+    if warehouse_id:
+        query = query.filter(Expense.warehouse_id == warehouse_id)
     if category_id:
         query = query.filter(Expense.category_id == category_id)
     if mo_id:
@@ -1340,6 +1412,31 @@ def expenses():
     draft_count = Expense.query.filter(is_draft_only).count()
     cancelled_count = Expense.query.filter(is_cancelled).count()
 
+    # Standalone debit ("Add Money") entries — never tied to an Expense row,
+    # so otherwise invisible on this page. Transfer Funds legs are excluded:
+    # deleting only one side of a transfer would break its double-entry pair,
+    # so those stay visible only on Account Activity.
+    from app.models import ExpenseAccountTransaction
+    debit_base_query = ExpenseAccountTransaction.query.filter(
+        ExpenseAccountTransaction.expense_id.is_(None),
+        ExpenseAccountTransaction.entry_type == 'debit',
+        ExpenseAccountTransaction.transaction_type != 'transfer',
+    )
+    debit_count = debit_base_query.count()
+
+    debit_entries = []
+    if entry_view == 'debit':
+        debit_query = debit_base_query
+        if start_date:
+            debit_query = debit_query.filter(
+                ExpenseAccountTransaction.date >= datetime.strptime(start_date, '%Y-%m-%d').date())
+        if end_date:
+            debit_query = debit_query.filter(
+                ExpenseAccountTransaction.date < (datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)).date())
+        debit_entries = (debit_query
+                          .order_by(ExpenseAccountTransaction.date.desc(), ExpenseAccountTransaction.id.desc())
+                          .all())
+
     expenses = query.order_by(Expense.date.desc()).all()
     # Calculate confirmed expenses, excluding those shifted to PD projects
     total_expense = sum(e.amount for e in expenses if e.status == 'confirmed' and not getattr(e, 'is_shifted', False) and not getattr(e, 'is_inventory_shifted', False) and not getattr(e, 'is_payment_transfer', False))
@@ -1348,6 +1445,9 @@ def expenses():
     # Get filter options
     categories = ExpenseCategory.query.filter_by(is_active=True).order_by(ExpenseCategory.name).all()
     vendors = Vendor.query.filter_by(is_active=True).order_by(Vendor.name).all()
+    from app.models import Customer, Warehouse
+    customers = Customer.query.filter_by(is_active=True).order_by(Customer.name).all()
+    warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
     from app.models import ManufacturingOrder, ExpenseAccount, PaymentMethod
     manufacturing_orders = ManufacturingOrder.query.order_by(ManufacturingOrder.order_number.desc()).all()
     expense_accounts = ExpenseAccount.query.filter_by(is_active=True).order_by(ExpenseAccount.name).all()
@@ -1382,6 +1482,8 @@ def expenses():
                          total_pd_shifted_expense=total_pd_shifted_expense,
                          categories=categories,
                          vendors=vendors,
+                         customers=customers,
+                         warehouses=warehouses,
                          expense_accounts=expense_accounts,
                          payment_methods=payment_methods,
                          manufacturing_orders=manufacturing_orders,
@@ -1389,6 +1491,8 @@ def expenses():
                          inventory_items=inventory_items,
                          pd_expense_categories=pd_expense_categories,
                          selected_vendor=vendor_id,
+                         selected_customer=customer_id,
+                         selected_warehouse=warehouse_id,
                          selected_category=category_id,
                          selected_mo_id=mo_id,
                          selected_start_date=start_date,
@@ -1401,6 +1505,9 @@ def expenses():
                          rejected_item_count=rejected_item_count,
                          draft_count=draft_count,
                          cancelled_count=cancelled_count,
+                         entry_view=entry_view,
+                         debit_entries=debit_entries,
+                         debit_count=debit_count,
                          filter_id=request.args.get('filter_id'))
 
 
@@ -1454,49 +1561,190 @@ def search_bills_json():
 @bp.route('/expenses/account-activity')
 @login_required
 def account_activity():
-    """A tab on the Expense module showing everything charged against one of
-    Expense's own accounts — both real Expenses (credit) and plain 'Add
-    Money' transactions (debit) — since Debit transactions never create an
-    Expense row (by design; see _add_money_from_expense_form) and so are
-    otherwise invisible from inside Expenses. Read-only: no data is created
-    here. Entirely independent of the Journal module's own accounts."""
-    from app.models import ExpenseAccount, ExpenseAccountTransaction
+    """Approved money-in, money-out, transfers, running balance, daily
+    confirmation, and reconciliation for one of Expense's own accounts.
+    Covers real Expenses (credit), plain 'Add Money' transactions (debit —
+    see _add_money_from_expense_form, which never creates an Expense row),
+    and Transfer Funds movements (a credit/debit pair across two accounts,
+    see transfer_funds_quick). Read-only: no ledger data is created here.
+    Entirely independent of the Journal module's own accounts."""
+    from app.models import ExpenseAccount, ExpenseAccountTransaction, AccountDailyClose
 
-    accounts = ExpenseAccount.query.order_by(ExpenseAccount.name).all()
+    all_accounts = ExpenseAccount.query.order_by(ExpenseAccount.name).all()
+
+    account_type = (request.args.get('account_type') or '').strip()
+    custodian = (request.args.get('custodian') or '').strip()
+    location = (request.args.get('location') or '').strip()
+
+    filtered_accounts = [
+        a for a in all_accounts
+        if (not account_type or a.account_type == account_type)
+        and (not custodian or a.custodian_name == custodian)
+        and (not location or a.location == location)
+    ]
+
+    account_type_options = sorted({a.account_type for a in all_accounts if a.account_type})
+    custodian_options = sorted({a.custodian_name for a in all_accounts if a.custodian_name})
+    location_options = sorted({a.location for a in all_accounts if a.location})
+
     account_id = request.args.get('account_id', type=int)
-    selected_account = None
-    if account_id:
-        selected_account = ExpenseAccount.query.get(account_id)
-    if not selected_account and accounts:
-        selected_account = accounts[0]
+    selected_account = ExpenseAccount.query.get(account_id) if account_id else None
+    if not selected_account and filtered_accounts:
+        selected_account = filtered_accounts[0]
         account_id = selected_account.id
 
-    rows = []
-    if selected_account:
-        txns = (ExpenseAccountTransaction.query
-                .filter_by(account_id=selected_account.id)
-                .order_by(ExpenseAccountTransaction.date.desc(), ExpenseAccountTransaction.id.desc())
-                .all())
+    today = datetime.utcnow().date()
 
-        # Running balance walked in the same newest-first order the table is
-        # displayed in — starts at the account's opening balance and applies
-        # each row's amount going down the page, so the Balance column reads
-        # as a plain running total top-to-bottom (10,000 -> 10,000-500=9,500 ->
-        # 9,500-4,000=5,500 -> ... -> lands on the Remaining Balance row).
-        running = selected_account.opening_balance or 0
-        for txn in txns:
-            delta = (txn.amount or 0) if txn.entry_type == 'debit' else -(txn.amount or 0)
+    def _parse_date(raw, default):
+        if not raw:
+            return default
+        try:
+            return datetime.strptime(raw, '%Y-%m-%d').date()
+        except ValueError:
+            return default
+
+    # Default to the account's FULL history rather than an arbitrary lookback
+    # window — a fixed "last 7 days" default silently hid older (or
+    # future-dated) transactions from the ledger, summary cards, and running
+    # balance, making a transfer look "missing" or the totals look wrong even
+    # though it was recorded correctly. Explicit date_from/date_to in the URL
+    # still narrow the view same as before.
+    if selected_account:
+        earliest_txn = (ExpenseAccountTransaction.query
+                         .filter_by(account_id=selected_account.id)
+                         .order_by(ExpenseAccountTransaction.date.asc())
+                         .first())
+        latest_txn = (ExpenseAccountTransaction.query
+                       .filter_by(account_id=selected_account.id)
+                       .order_by(ExpenseAccountTransaction.date.desc())
+                       .first())
+        default_date_from = earliest_txn.date if earliest_txn else (
+            selected_account.created_at.date() if selected_account.created_at else today)
+        default_date_to = max(today, latest_txn.date) if latest_txn else today
+    else:
+        default_date_from = today - timedelta(days=30)
+        default_date_to = today
+
+    date_from = _parse_date(request.args.get('date_from'), default_date_from)
+    date_to = _parse_date(request.args.get('date_to'), default_date_to)
+    if date_from > date_to:
+        date_from, date_to = date_to, date_from
+
+    row_status = request.args.get('row_status', 'all')
+
+    rows = []
+    status_counts = {'all': 0, 'approved': 0, 'pending': 0, 'rejected': 0, 'draft': 0, 'reversed': 0}
+    range_opening_balance = 0.0
+    money_in = money_out = 0.0
+    expected_balance = actual_balance = variance = 0.0
+    latest_close = None
+    daily_closes = []
+
+    def _status_of(t):
+        if t.is_reversed:
+            return 'reversed'
+        if t.is_draft:
+            return 'draft'
+        if t.is_rejected:
+            return 'rejected'
+        if t.is_approved:
+            return 'approved'
+        return 'pending'
+
+    if selected_account:
+        range_opening_balance = selected_account.opening_balance or 0
+        prior_txns = (ExpenseAccountTransaction.query
+                      .filter(ExpenseAccountTransaction.account_id == selected_account.id,
+                              ExpenseAccountTransaction.is_approved.is_(True),
+                              ExpenseAccountTransaction.date < date_from)
+                      .all())
+        for t in prior_txns:
+            range_opening_balance += (t.amount or 0) if t.entry_type == 'debit' else -(t.amount or 0)
+
+        range_txns = (ExpenseAccountTransaction.query
+                      .filter(ExpenseAccountTransaction.account_id == selected_account.id,
+                              ExpenseAccountTransaction.date >= date_from,
+                              ExpenseAccountTransaction.date <= date_to)
+                      .order_by(ExpenseAccountTransaction.date.desc(), ExpenseAccountTransaction.id.desc())
+                      .all())
+
+        for t in range_txns:
+            status = _status_of(t)
+            status_counts['all'] += 1
+            status_counts[status] += 1
+            if t.is_approved and not t.is_rejected:
+                if t.entry_type == 'debit':
+                    money_in += t.amount or 0
+                else:
+                    money_out += t.amount or 0
+
+        expected_balance = range_opening_balance + money_in - money_out
+
+        latest_close = (AccountDailyClose.query
+                         .filter(AccountDailyClose.account_id == selected_account.id,
+                                 AccountDailyClose.close_date <= date_to)
+                         .order_by(AccountDailyClose.close_date.desc(), AccountDailyClose.closed_at.desc())
+                         .first())
+        actual_balance = latest_close.actual_balance if latest_close else expected_balance
+        variance = actual_balance - expected_balance
+
+        running = range_opening_balance
+        for t in range_txns:
+            if row_status != 'all' and _status_of(t) != row_status:
+                continue
+            delta = (t.amount or 0) if t.entry_type == 'debit' else -(t.amount or 0)
             running += delta
-            rows.append({'txn': txn, 'running': running, 'expense': txn.expense})
+
+            if t.entry_type == 'debit':
+                from_label = t.counterparty_account.name if t.counterparty_account else (t.payee or 'External')
+                to_label = selected_account.name
+            else:
+                from_label = selected_account.name
+                if t.counterparty_account:
+                    to_label = t.counterparty_account.name
+                elif t.payee:
+                    to_label = t.payee
+                elif t.expense:
+                    to_label = t.expense.expense_number
+                else:
+                    to_label = 'Expense Payment'
+
+            rows.append({'txn': t, 'running': running, 'expense': t.expense,
+                        'from_label': from_label, 'to_label': to_label})
+
+        daily_closes = (AccountDailyClose.query
+                        .filter_by(account_id=selected_account.id)
+                        .order_by(AccountDailyClose.close_date.desc())
+                        .all())
 
     # No active_module passed here on purpose — that's what turns on the
-    # floating "Advanced Filter" button (base.html), and this page's only
-    # filter is the account picker above, so it isn't needed.
+    # floating "Advanced Filter" button (base.html), and this page has its
+    # own dedicated filter bar, so it isn't needed.
     return render_template('accounting/account_activity.html',
-                           accounts=accounts,
+                           accounts=filtered_accounts,
+                           all_accounts=all_accounts,
+                           account_type_options=account_type_options,
+                           custodian_options=custodian_options,
+                           location_options=location_options,
                            selected_account=selected_account,
                            selected_account_id=account_id,
+                           selected_account_type=account_type,
+                           selected_custodian=custodian,
+                           selected_location=location,
+                           date_from=date_from,
+                           date_to=date_to,
+                           row_status=row_status,
+                           status_counts=status_counts,
                            rows=rows,
+                           range_opening_balance=range_opening_balance,
+                           money_in=money_in,
+                           money_out=money_out,
+                           expected_balance=expected_balance,
+                           actual_balance=actual_balance,
+                           variance=variance,
+                           latest_close=latest_close,
+                           daily_closes=daily_closes,
+                           today=today,
                            current_status='account_activity')
 
 
@@ -1651,10 +1899,13 @@ def list_expense_accounts_json():
         'id': a.id,
         'name': a.name,
         'account_type': a.account_type or '',
+        'custodian_name': a.custodian_name or '',
+        'location': a.location or '',
         'opening_balance': round(a.opening_balance or 0, 2),
         'balance': round(a.balance, 2),
         'is_active': bool(a.is_active),
         'has_lines': bool(a.transactions),
+        'image_url': (url_for('static', filename=a.image_path.replace('app/static/', '')) if a.image_path else None),
     } for a in accounts]})
 
 
@@ -1676,17 +1927,25 @@ def create_expense_account_quick():
     except (TypeError, ValueError):
         opening_balance = 0.0
 
+    image_path = _save_fixed_expense_bill_image(request.files.get('image'))
+
     acct = ExpenseAccount(
         name=name,
         account_type=(request.form.get('account_type') or '').strip() or None,
         opening_balance=opening_balance,
         notes=(request.form.get('notes') or '').strip() or None,
+        custodian_name=(request.form.get('custodian_name') or '').strip() or None,
+        location=(request.form.get('location') or '').strip() or None,
+        linked_funding_account_id=request.form.get('linked_funding_account_id', type=int) or None,
+        image_path=image_path,
         created_by=current_user.id,
     )
     db.session.add(acct)
     db.session.commit()
     return jsonify({'success': True, 'account': {
         'id': acct.id, 'name': acct.name, 'account_type': acct.account_type or '',
+        'custodian_name': acct.custodian_name or '', 'location': acct.location or '',
+        'image_url': (url_for('static', filename=image_path.replace('app/static/', '')) if image_path else None),
     }})
 
 
@@ -1716,11 +1975,15 @@ def edit_expense_account_quick(account_id):
     acct.name = name
     acct.account_type = (request.form.get('account_type') or '').strip() or None
     acct.opening_balance = opening_balance
+    acct.custodian_name = (request.form.get('custodian_name') or '').strip() or None
+    acct.location = (request.form.get('location') or '').strip() or None
+    acct.linked_funding_account_id = request.form.get('linked_funding_account_id', type=int) or None
     if 'is_active' in request.form:
         acct.is_active = str(request.form.get('is_active')).lower() in ('1', 'true', 'on', 'yes')
     db.session.commit()
     return jsonify({'success': True, 'account': {
         'id': acct.id, 'name': acct.name, 'account_type': acct.account_type or '',
+        'custodian_name': acct.custodian_name or '', 'location': acct.location or '',
         'opening_balance': round(acct.opening_balance or 0, 2),
         'balance': round(acct.balance, 2),
         'is_active': bool(acct.is_active),
@@ -1742,6 +2005,260 @@ def delete_expense_account_quick(account_id):
     db.session.delete(acct)
     db.session.commit()
     return jsonify({'success': True})
+
+
+# ─── Transfer Funds / Daily Cash Close / Reconciliation — AJAX/JSON ────────
+# A transfer moves money between two of Expense's own accounts as a single
+# atomic pair: a Credit (money out) on the source account and a matching
+# Debit (money in) on the destination account, linked by transfer_group so
+# they always show up together on both accounts' ledgers. Admin-only, same
+# as creating/editing/deleting accounts.
+
+@bp.route('/expense-accounts/transfer-quick', methods=['POST'])
+@login_required
+def transfer_funds_quick():
+    from app.models import ExpenseAccount, ExpenseAccountTransaction
+    import uuid
+
+    if not getattr(current_user, 'is_admin', False):
+        return jsonify({'success': False, 'message': 'Only admins can transfer funds between accounts.'}), 403
+
+    from_id = request.form.get('from_account_id', type=int)
+    to_id = request.form.get('to_account_id', type=int)
+    if not from_id or not to_id:
+        return jsonify({'success': False, 'message': 'Select both a From Account and a To Account.'})
+    if from_id == to_id:
+        return jsonify({'success': False, 'message': 'From Account and To Account must be different.'})
+
+    from_acct = ExpenseAccount.query.get(from_id)
+    to_acct = ExpenseAccount.query.get(to_id)
+    if not from_acct or not to_acct:
+        return jsonify({'success': False, 'message': 'One of the selected accounts no longer exists.'})
+    if not from_acct.is_active or not to_acct.is_active:
+        return jsonify({'success': False, 'message': 'Both accounts must be active to transfer funds.'})
+
+    try:
+        amount = float(request.form.get('amount') or 0)
+    except (TypeError, ValueError):
+        amount = 0
+    if amount <= 0:
+        return jsonify({'success': False, 'message': 'Enter a transfer amount greater than zero.'})
+
+    date_str = request.form.get('date')
+    try:
+        txn_date = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else datetime.utcnow().date()
+    except ValueError:
+        txn_date = datetime.utcnow().date()
+
+    reference = (request.form.get('reference') or '').strip() or None
+    description = (request.form.get('description') or '').strip() or None
+    bill_image_path = _save_fixed_expense_bill_image(request.files.get('bill_image'))
+
+    transfer_group = uuid.uuid4().hex
+    now = datetime.utcnow()
+
+    out_txn = ExpenseAccountTransaction(
+        account_id=from_acct.id, date=txn_date, entry_type='credit', amount=amount,
+        description=description or f'Funds transferred to {to_acct.name}',
+        reference=reference, transaction_type='transfer', bill_image_path=bill_image_path,
+        counterparty_account_id=to_acct.id, transfer_group=transfer_group, payee=to_acct.name,
+        is_approved=True, approved_by=current_user.id, approved_at=now, created_by=current_user.id,
+    )
+    in_txn = ExpenseAccountTransaction(
+        account_id=to_acct.id, date=txn_date, entry_type='debit', amount=amount,
+        description=description or f'Funds received from {from_acct.name}',
+        reference=reference, transaction_type='transfer', bill_image_path=bill_image_path,
+        counterparty_account_id=from_acct.id, transfer_group=transfer_group, payee=from_acct.name,
+        is_approved=True, approved_by=current_user.id, approved_at=now, created_by=current_user.id,
+    )
+    db.session.add(out_txn)
+    db.session.add(in_txn)
+    db.session.commit()
+
+    return jsonify({'success': True,
+                    'message': f'PKR {amount:,.2f} transferred from {from_acct.name} to {to_acct.name}.'})
+
+
+@bp.route('/expense-accounts/transfers')
+@login_required
+def all_transfers():
+    """Every Transfer Funds movement across every account in one flat,
+    searchable list — one row per transfer, keyed on its 'out' (credit) leg;
+    the matching 'in' (debit) leg shares the same transfer_group and mirrors
+    it, so showing just one side avoids listing each transfer twice."""
+    from app.models import ExpenseAccountTransaction
+
+    date_from_raw = (request.args.get('date_from') or '').strip()
+    date_to_raw = (request.args.get('date_to') or '').strip()
+    q = (request.args.get('q') or '').strip()
+
+    def _parse_date(raw):
+        if not raw:
+            return None
+        try:
+            return datetime.strptime(raw, '%Y-%m-%d').date()
+        except ValueError:
+            return None
+
+    date_from = _parse_date(date_from_raw)
+    date_to = _parse_date(date_to_raw)
+
+    query = ExpenseAccountTransaction.query.filter(
+        ExpenseAccountTransaction.transaction_type == 'transfer',
+        ExpenseAccountTransaction.entry_type == 'credit',
+    )
+    if date_from:
+        query = query.filter(ExpenseAccountTransaction.date >= date_from)
+    if date_to:
+        query = query.filter(ExpenseAccountTransaction.date <= date_to)
+
+    transfers = query.order_by(ExpenseAccountTransaction.date.desc(), ExpenseAccountTransaction.id.desc()).all()
+
+    if q:
+        ql = q.lower()
+
+        def _matches(t):
+            haystack = ' '.join(filter(None, [
+                t.reference, t.description,
+                t.account.name if t.account else '',
+                t.counterparty_account.name if t.counterparty_account else '',
+            ])).lower()
+            return ql in haystack
+
+        transfers = [t for t in transfers if _matches(t)]
+
+    total_amount = sum(t.amount or 0 for t in transfers)
+
+    return render_template('accounting/all_transfers.html',
+                           transfers=transfers, total_amount=total_amount,
+                           date_from=date_from_raw, date_to=date_to_raw, q=q)
+
+
+@bp.route('/expense-accounts/transfer/<transfer_group>/delete', methods=['POST'])
+@login_required
+def delete_transfer(transfer_group):
+    """Deletes both legs of a transfer (matched by transfer_group). Removing
+    the rows IS the reversal — same live-computed-balance convention as
+    delete_expense_account_debit_entry. Admin-only: an account-to-account
+    transfer moves real money, same gating as creating one."""
+    from app.models import ExpenseAccountTransaction
+    if not getattr(current_user, 'is_admin', False):
+        flash('Only admins can delete a transfer.', 'danger')
+        return redirect(url_for('accounting.all_transfers'))
+
+    legs = ExpenseAccountTransaction.query.filter_by(
+        transfer_group=transfer_group, transaction_type='transfer').all()
+    if not legs:
+        flash('Transfer not found.', 'warning')
+        return redirect(url_for('accounting.all_transfers'))
+
+    for leg in legs:
+        db.session.delete(leg)
+    db.session.commit()
+    flash('Transfer deleted — both accounts\' balances have been reversed.', 'success')
+    return redirect(url_for('accounting.all_transfers'))
+
+
+@bp.route('/expense-accounts/transfer/<transfer_group>/edit-quick', methods=['POST'])
+@login_required
+def edit_transfer_quick(transfer_group):
+    """Edits both legs of a transfer (matched by transfer_group) — amount,
+    date, reference, description, and optionally a new bill image. Never
+    re-targets which two accounts were involved (that would mean undoing one
+    transfer and creating a different one, not editing this one) — use
+    Delete + a fresh Transfer Funds for that instead. Admin-only, same
+    gating as creating or deleting a transfer."""
+    from app.models import ExpenseAccountTransaction
+    if not getattr(current_user, 'is_admin', False):
+        return jsonify({'success': False, 'message': 'Only admins can edit a transfer.'}), 403
+
+    legs = ExpenseAccountTransaction.query.filter_by(
+        transfer_group=transfer_group, transaction_type='transfer').all()
+    if len(legs) != 2:
+        return jsonify({'success': False, 'message': 'Transfer not found.'})
+
+    try:
+        amount = float(request.form.get('amount') or 0)
+    except (TypeError, ValueError):
+        amount = 0
+    if amount <= 0:
+        return jsonify({'success': False, 'message': 'Enter an amount greater than zero.'})
+
+    date_str = request.form.get('date')
+    try:
+        txn_date = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else None
+    except ValueError:
+        txn_date = None
+
+    reference = (request.form.get('reference') or '').strip() or None
+    description = (request.form.get('description') or '').strip() or None
+    new_bill = _save_fixed_expense_bill_image(request.files.get('bill_image'))
+
+    for leg in legs:
+        leg.amount = amount
+        if txn_date:
+            leg.date = txn_date
+        leg.reference = reference
+        if description:
+            leg.description = description
+        if new_bill:
+            leg.bill_image_path = new_bill
+
+    db.session.commit()
+    return jsonify({'success': True, 'message': 'Transfer updated.'})
+
+
+@bp.route('/expense-accounts/<int:account_id>/daily-close-quick', methods=['POST'])
+@login_required
+def daily_close_quick(account_id):
+    from app.models import ExpenseAccount, AccountDailyClose
+
+    account = ExpenseAccount.query.get_or_404(account_id)
+    try:
+        actual_balance = float(request.form.get('actual_balance'))
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'Enter the counted actual balance.'})
+
+    notes = (request.form.get('notes') or '').strip() or None
+    expected_balance = account.balance
+    today = datetime.utcnow().date()
+
+    close = AccountDailyClose.query.filter_by(account_id=account.id, close_date=today).first()
+    if not close:
+        close = AccountDailyClose(account_id=account.id, close_date=today)
+        db.session.add(close)
+
+    close.expected_balance = expected_balance
+    close.actual_balance = actual_balance
+    close.notes = notes
+    close.closed_by = current_user.id
+    close.closed_at = datetime.utcnow()
+    # Re-closing the same day resets any prior reconciliation — finance needs to re-verify.
+    close.is_reconciled = False
+    close.reconciled_by = None
+    close.reconciled_at = None
+
+    db.session.commit()
+
+    return jsonify({'success': True, 'message': f'Daily cash close saved for {account.name}.',
+                    'expected_balance': round(expected_balance, 2),
+                    'actual_balance': round(actual_balance, 2),
+                    'variance': round(close.variance, 2)})
+
+
+@bp.route('/account-daily-closes/<int:close_id>/reconcile-quick', methods=['POST'])
+@login_required
+def reconcile_daily_close_quick(close_id):
+    from app.models import AccountDailyClose
+    if not getattr(current_user, 'is_admin', False):
+        return jsonify({'success': False, 'message': 'Only admins can mark a close as reconciled.'}), 403
+
+    close = AccountDailyClose.query.get_or_404(close_id)
+    close.is_reconciled = True
+    close.reconciled_by = current_user.id
+    close.reconciled_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'success': True, 'message': 'Marked as reconciled.'})
 
 
 def _parse_shifted_product_costs(raw, expense_amount):
@@ -1955,7 +2472,14 @@ def add_expense():
     # Populate vendor choices
     vendors = Vendor.query.filter_by(is_active=True).order_by(Vendor.name).all()
     form.vendor_id.choices = [(0, 'Select Vendor (Optional)')] + [(v.id, v.name) for v in vendors]
-    
+
+    # Populate customer / warehouse choices
+    from app.models import Customer, Warehouse
+    customers = Customer.query.filter_by(is_active=True).order_by(Customer.name).all()
+    form.customer_id.choices = [(0, 'Select Customer (Optional)')] + [(c.id, c.name) for c in customers]
+    warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
+    form.warehouse_id.choices = [(0, 'Select Warehouse (Optional)')] + [(w.id, w.name) for w in warehouses]
+
     # Populate Payment Method choices
     from app.models import PaymentMethod
     methods = PaymentMethod.query.filter_by(is_active=True).order_by(PaymentMethod.name).all()
@@ -2014,6 +2538,8 @@ def add_expense():
             date=form.date.data,
             category_id=form.category_id.data,
             vendor_id=form.vendor_id.data if form.vendor_id.data != 0 else None,
+            customer_id=form.customer_id.data if form.customer_id.data != 0 else None,
+            warehouse_id=form.warehouse_id.data if form.warehouse_id.data != 0 else None,
             description=form.description.data,
             payment_method=form.payment_method.data,
             reference=form.reference.data,
@@ -2208,8 +2734,15 @@ def add_expense():
             # single plain expense; a BOM-overhead allocation split across
             # several MOs/products/rows has no one row to hang a real
             # Sale/Bill payment off, so the checkbox is ignored if the form
-            # ended up creating more than one Expense row.
+            # ended up creating more than one Expense row. "Add to Invoice
+            # Payment" (sale) never applies here — this is the Credit/expense
+            # path (money OUT), so only "Add to Purchase Payment" (bill,
+            # paying a vendor) makes sense; sale transfers only happen from
+            # the Debit path (_add_money_from_expense_form /
+            # _sync_add_money_sale_transfer), money coming IN.
             transfer_type = request.form.get('payment_transfer_type')
+            if transfer_type == 'sale':
+                transfer_type = None
             transfer_target_id = request.form.get('payment_transfer_target_id', type=int)
             if transfer_type in ('sale', 'bill') and transfer_target_id and len(created_expenses) == 1:
                 db.session.flush()
@@ -2568,9 +3101,108 @@ def delete_expense(id):
                 print(f"Error updating BOM after deleting expense: {e}")
     
     log_activity('Accounting', f'Deleted Expense: {expense.expense_number}', f'Description: {description}, Amount: {amount_to_reduce}')
-    
+
     flash('Expense removed', 'success')
     return redirect(url_for('accounting.expenses'))
+
+
+@bp.route('/expense-accounts/transaction/<int:id>/delete', methods=['POST'])
+@login_required
+@permission_required('accounting', action='delete')
+def delete_expense_account_debit_entry(id):
+    """Deletes a standalone debit ('Add Money') ExpenseAccountTransaction.
+    The account's balance is a live-computed property (see ExpenseAccount.balance),
+    so removing the row IS the reversal — no separate bookkeeping entry needed.
+    Refuses rows tied to a real Expense (delete_expense already cascades those)
+    or either leg of a Transfer Funds pair (deleting only one side would break
+    the double-entry balance — see transfer_funds_quick). If the entry was
+    routed to a Sale invoice payment (see _sync_add_money_sale_transfer), that
+    Payment is reversed and deleted too, so the invoice's paid_amount doesn't
+    stay stuck counting money that no longer exists."""
+    from app.models import ExpenseAccountTransaction
+
+    txn = ExpenseAccountTransaction.query.get_or_404(id)
+    if txn.expense_id is not None:
+        flash('This entry belongs to an expense — delete the expense instead.', 'warning')
+        return redirect(url_for('accounting.expenses', entry_view='debit'))
+    if txn.transaction_type == 'transfer':
+        flash('This is part of a fund transfer and cannot be deleted on its own.', 'warning')
+        return redirect(url_for('accounting.expenses', entry_view='debit'))
+
+    if txn.linked_payment_id:
+        payment = Payment.query.get(txn.linked_payment_id)
+        if payment:
+            _reverse_and_delete_sale_payment(payment, current_user.id)
+
+    account_name = txn.account.name if txn.account else 'account'
+    amount = txn.amount
+    db.session.delete(txn)
+    db.session.commit()
+    log_activity('Accounting', f'Deleted debit entry on {account_name}', f'Amount: {amount}')
+
+    flash('Debit entry deleted — the account balance has been reversed.', 'success')
+    return redirect(url_for('accounting.expenses', entry_view='debit'))
+
+
+@bp.route('/expense-accounts/transaction/<int:id>/edit-quick', methods=['POST'])
+@login_required
+@permission_required('accounting', action='edit')
+def edit_expense_account_debit_entry(id):
+    """Edits a standalone debit ('Add Money') ExpenseAccountTransaction —
+    account, amount, date, description, reference, and optionally a new bill
+    image. Same safety guards as delete: refuses expense-linked or transfer
+    rows. If this entry was routed to a Sale invoice payment, changing the
+    amount adjusts that Payment (and the Sale's paid_amount) by the same
+    delta via adjust_sale_payment — it never re-targets which Sale/Bill the
+    transfer points at; that's create-only, in _sync_add_money_sale_transfer."""
+    from app.models import ExpenseAccountTransaction, ExpenseAccount
+
+    txn = ExpenseAccountTransaction.query.get_or_404(id)
+    if txn.expense_id is not None:
+        return jsonify({'success': False, 'message': 'This entry belongs to an expense — edit the expense instead.'})
+    if txn.transaction_type == 'transfer':
+        return jsonify({'success': False, 'message': 'This is part of a fund transfer and cannot be edited on its own.'})
+
+    account_id = request.form.get('account_id', type=int)
+    acct = ExpenseAccount.query.get(account_id) if account_id else None
+    if not acct:
+        return jsonify({'success': False, 'message': 'Select an account.'})
+
+    try:
+        amount = float(request.form.get('amount') or 0)
+    except (TypeError, ValueError):
+        amount = 0
+    if amount <= 0:
+        return jsonify({'success': False, 'message': 'Enter an amount greater than zero.'})
+
+    if txn.linked_payment_id:
+        payment = Payment.query.get(txn.linked_payment_id)
+        if payment:
+            delta = round(amount - payment.amount, 2)
+            if abs(delta) > 0.009:
+                from app.utils import adjust_sale_payment
+                sale = Sale.query.get(payment.invoice_id)
+                if sale and payment.is_approved:
+                    adjust_sale_payment(sale, delta, current_user.id)
+                payment.amount = amount
+
+    bill_path = txn.bill_image_path
+    new_bill = _save_fixed_expense_bill_image(request.files.get('bill_image'))
+    if new_bill:
+        bill_path = new_bill
+
+    txn.account_id = acct.id
+    txn.amount = amount
+    txn.date = _parse_expense_date(request.form.get('date')) or txn.date
+    txn.description = (request.form.get('description') or '').strip() or None
+    txn.reference = (request.form.get('reference') or '').strip() or None
+    txn.bill_image_path = bill_path
+    txn.customer_id = request.form.get('customer_id', type=int) or None
+    txn.warehouse_id = request.form.get('warehouse_id', type=int) or None
+    db.session.commit()
+
+    return jsonify({'success': True, 'message': 'Debit entry updated.'})
+
 
 @bp.route('/expenses/bulk-delete', methods=['POST'])
 @login_required
@@ -2753,7 +3385,14 @@ def edit_expense(id):
     # Populate vendor choices
     vendors = Vendor.query.filter_by(is_active=True).order_by(Vendor.name).all()
     form.vendor_id.choices = [(0, 'Select Vendor (Optional)')] + [(v.id, v.name) for v in vendors]
-    
+
+    # Populate customer / warehouse choices
+    from app.models import Customer, Warehouse
+    customers = Customer.query.filter_by(is_active=True).order_by(Customer.name).all()
+    form.customer_id.choices = [(0, 'Select Customer (Optional)')] + [(c.id, c.name) for c in customers]
+    warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
+    form.warehouse_id.choices = [(0, 'Select Warehouse (Optional)')] + [(w.id, w.name) for w in warehouses]
+
     # Populate manufactured product choices (if column exists)
     from app.models import Product
     if has_column('products', 'is_manufactured'):
@@ -2802,12 +3441,14 @@ def edit_expense(id):
         form.payment_method.choices.append((expense.payment_method, expense.payment_method + " (Inactive)"))
     
     if request.method == 'GET':
-        # Set current vendor selection
+        # Set current vendor/customer/warehouse selection
         if expense.vendor_id:
             form.vendor_id.data = expense.vendor_id
         else:
             form.vendor_id.data = 0
-            
+        form.customer_id.data = expense.customer_id or 0
+        form.warehouse_id.data = expense.warehouse_id or 0
+
         # product_id, bom_id, mo_id are SelectMultipleField — must be set as lists
         if has_column('expenses', 'product_id') and expense.product_id:
             form.product_id.data = [expense.product_id]
@@ -2831,6 +3472,8 @@ def edit_expense(id):
         expense.date = form.date.data
         expense.category_id = form.category_id.data
         expense.vendor_id = form.vendor_id.data if form.vendor_id.data != 0 else None
+        expense.customer_id = form.customer_id.data if form.customer_id.data != 0 else None
+        expense.warehouse_id = form.warehouse_id.data if form.warehouse_id.data != 0 else None
         expense.description = form.description.data
         # Track if we are dealing with overhead and multiple targets
         if has_column('expenses', 'is_bom_overhead'):
@@ -3003,10 +3646,18 @@ def edit_expense(id):
 
         # "Add this to Invoice/Purchase Payment" — same single-row restriction
         # as Add Expense: only applies to the original row, never to rows
-        # spun off by a BOM-overhead split on this edit.
+        # spun off by a BOM-overhead split on this edit. An existing Expense
+        # being edited is always a Credit row (Debit/Add Money entries never
+        # create an Expense — see _add_money_from_expense_form), so "Add to
+        # Invoice Payment" (sale) is rejected here too, same as in
+        # add_expense()'s Credit path — EXCEPT re-saving a legacy expense
+        # that was already sale-linked before this restriction existed, which
+        # stays untouched rather than silently reassigned/dropped.
         is_admin = getattr(current_user, 'is_admin', False)
         transfer_type = request.form.get('payment_transfer_type')
         transfer_target_id = request.form.get('payment_transfer_target_id', type=int)
+        if transfer_type == 'sale' and not (expense.linked_sale_id and expense.linked_sale_id == transfer_target_id):
+            transfer_type = None
         if transfer_type in ('sale', 'bill') and transfer_target_id:
             _sync_expense_payment_transfer(expense, transfer_type, transfer_target_id,
                                            expense.amount, current_user.id, is_admin)

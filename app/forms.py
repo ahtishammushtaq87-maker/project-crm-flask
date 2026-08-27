@@ -476,6 +476,8 @@ class ExpenseForm(FlaskForm):
     date = DateField('Date', validators=[DataRequired()])
     category_id = SelectField('Category', coerce=int, validators=[DataRequired()])
     vendor_id = SelectField('Vendor (Optional)', coerce=int, validators=[Optional()])
+    customer_id = SelectField('Customer (Optional)', coerce=int, validators=[Optional()])
+    warehouse_id = SelectField('Warehouse (Optional)', coerce=int, validators=[Optional()])
     payment_method = SelectField('Payment Method', choices=[])
     notes = TextAreaField('Notes')
     product_id = SelectMultipleField('Product (Optional)', coerce=int, validators=[Optional()])

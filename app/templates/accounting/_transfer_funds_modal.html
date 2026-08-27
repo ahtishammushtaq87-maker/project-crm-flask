@@ -1,0 +1,246 @@
+{# Transfer Funds modal — moves money between two of Expense's own accounts
+   as one atomic pair: a Credit (money out) on the source account and a
+   matching Debit (money in) on the destination account, linked by
+   transfer_group. Admin-only, same gating as Manage Accounts. #}
+<div class="modal fade" id="transferFundsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-exchange-alt me-2"></i>Transfer Funds</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="tfError" class="alert alert-danger py-2 d-none"></div>
+                <div class="alert alert-light border small mb-3">
+                    <i class="fas fa-circle-info me-1 text-primary"></i>
+                    Moving money out of <strong>From Account</strong> records a <span class="badge bg-danger">Credit</span> there;
+                    <strong>To Account</strong> gets a matching <span class="badge bg-success">Debit</span>. Nothing is created or
+                    destroyed — the combined total across both accounts stays the same.
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold mb-1">From Account <span class="text-danger">*</span></label>
+                    <select id="tfFromAccount" class="form-select">
+                        <option value="">Select account…</option>
+                        {% for acct in all_accounts %}
+                        <option value="{{ acct.id }}">{{ acct.name }}{% if acct.account_type %} ({{ acct.account_type }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold mb-1">To Account <span class="text-danger">*</span></label>
+                    <select id="tfToAccount" class="form-select">
+                        <option value="">Select account…</option>
+                        {% for acct in all_accounts %}
+                        <option value="{{ acct.id }}">{{ acct.name }}{% if acct.account_type %} ({{ acct.account_type }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold mb-1">Amount <span class="text-danger">*</span></label>
+                        <input type="number" step="0.01" min="0.01" id="tfAmount" class="form-control" placeholder="0.00">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold mb-1">Date</label>
+                        <input type="date" id="tfDate" class="form-control">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold mb-1">Reference</label>
+                    <input type="text" id="tfReference" class="form-control" placeholder="e.g., Bank Ref. 63841">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold mb-1">Description</label>
+                    <textarea id="tfDescription" class="form-control" rows="2" placeholder="e.g., Factory operating funds transferred to Ali"></textarea>
+                </div>
+                <div class="mb-1">
+                    <label class="form-label small fw-semibold mb-1">Receipt / Bill Image</label>
+                    <div class="input-group">
+                        <button type="button" class="btn btn-outline-info" id="tfWebcamBtn">
+                            <i class="fas fa-camera me-1"></i>Camera Capture
+                        </button>
+                        <input type="file" id="tfImageInput" accept="image/*" class="form-control">
+                    </div>
+                    <div class="form-text">Camera capture, choose a file, or paste (Ctrl+V) an image — Optional</div>
+                    <div id="tfImagePreview" class="mt-2"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="tfSubmitBtn">
+                    <i class="fas fa-exchange-alt me-1"></i>Transfer Funds
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Camera Capture sub-modal for the Receipt/Bill Image field above — self-contained
+   with ids namespaced "tf*" so it can't collide with other camera-capture modals
+   (e.g. Add Expense's own #cameraModal, or Manage Accounts' #acctMgrCameraModal)
+   included on the same page. #}
+<div class="modal fade" id="tfCameraModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Capture Receipt from Camera</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <div id="tfCameraStreamContainer">
+          <video id="tfWebcamVideo" autoplay playsinline class="w-100 rounded border bg-dark" style="max-height: 400px; transform: scaleX(-1);"></video>
+          <canvas id="tfCaptureCanvas" style="display:none;"></canvas>
+          <div class="mt-3">
+            <button type="button" class="btn btn-primary btn-lg" id="tfSnapBtn"><i class="fas fa-camera"></i> Take Photo</button>
+          </div>
+        </div>
+        <div id="tfCameraResultContainer" style="display:none;">
+          <img id="tfCapturePreview" class="img-fluid rounded border mb-3">
+          <div class="d-flex justify-content-center gap-2">
+            <button type="button" class="btn btn-warning" id="tfRetakeBtn"><i class="fas fa-redo"></i> Retake</button>
+            <button type="button" class="btn btn-success" id="tfConfirmPhotoBtn"><i class="fas fa-check"></i> Use Photo</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+    var modalEl = document.getElementById('transferFundsModal');
+    if (!modalEl) return;
+    var errorBox = document.getElementById('tfError');
+    var URL_TRANSFER = '{{ url_for("accounting.transfer_funds_quick") }}';
+    var imageInput = document.getElementById('tfImageInput');
+    var imagePreview = document.getElementById('tfImagePreview');
+
+    function showError(msg) { errorBox.textContent = msg; errorBox.classList.remove('d-none'); }
+    function clearError() { errorBox.classList.add('d-none'); }
+    function updateImagePreview(file) {
+        if (!file) { imagePreview.innerHTML = ''; return; }
+        var reader = new FileReader();
+        reader.onload = function (e) {
+            imagePreview.innerHTML = '<img src="' + e.target.result + '" class="img-thumbnail" style="max-height:80px;">';
+        };
+        reader.readAsDataURL(file);
+    }
+
+    modalEl.addEventListener('show.bs.modal', function () {
+        clearError();
+        document.getElementById('tfFromAccount').value = '{{ selected_account.id if selected_account else "" }}';
+        document.getElementById('tfToAccount').value = '';
+        document.getElementById('tfAmount').value = '';
+        document.getElementById('tfDate').value = '{{ today.strftime("%Y-%m-%d") if today else "" }}';
+        document.getElementById('tfReference').value = '';
+        document.getElementById('tfDescription').value = '';
+        imageInput.value = '';
+        imagePreview.innerHTML = '';
+    });
+
+    imageInput.addEventListener('change', function () {
+        updateImagePreview(imageInput.files && imageInput.files[0]);
+    });
+
+    // Camera capture — canvas -> blob -> File -> DataTransfer onto the real
+    // file input, so paste/drag-drop (handled globally in base.html) and
+    // FormData submission both see a normal File either way.
+    (function () {
+        var webcamBtn = document.getElementById('tfWebcamBtn');
+        var modal2 = document.getElementById('tfCameraModal');
+        var video = document.getElementById('tfWebcamVideo');
+        var canvas = document.getElementById('tfCaptureCanvas');
+        var streamContainer = document.getElementById('tfCameraStreamContainer');
+        var resultContainer = document.getElementById('tfCameraResultContainer');
+        var capturePreview = document.getElementById('tfCapturePreview');
+        var snapBtn = document.getElementById('tfSnapBtn');
+        var retakeBtn = document.getElementById('tfRetakeBtn');
+        var confirmBtn = document.getElementById('tfConfirmPhotoBtn');
+        var cameraModal = null;
+        var videoStream = null;
+
+        function startWebcam() {
+            streamContainer.style.display = '';
+            resultContainer.style.display = 'none';
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } })
+                .then(function (stream) { videoStream = stream; video.srcObject = stream; })
+                .catch(function () {
+                    showError('Could not access the camera. Check permissions, or upload/paste a file instead.');
+                    if (cameraModal) cameraModal.hide();
+                });
+        }
+        function stopWebcam() {
+            if (videoStream) { videoStream.getTracks().forEach(function (t) { t.stop(); }); videoStream = null; }
+        }
+
+        webcamBtn.addEventListener('click', function () {
+            if (!cameraModal) cameraModal = new bootstrap.Modal(modal2);
+            cameraModal.show();
+            startWebcam();
+        });
+        modal2.addEventListener('hidden.bs.modal', stopWebcam);
+
+        snapBtn.addEventListener('click', function () {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            var ctx = canvas.getContext('2d');
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            capturePreview.src = canvas.toDataURL('image/jpeg');
+            streamContainer.style.display = 'none';
+            resultContainer.style.display = '';
+        });
+        retakeBtn.addEventListener('click', function () {
+            streamContainer.style.display = '';
+            resultContainer.style.display = 'none';
+        });
+        confirmBtn.addEventListener('click', function () {
+            canvas.toBlob(function (blob) {
+                var file = new File([blob], 'transfer_receipt_' + Date.now() + '.jpg', { type: 'image/jpeg' });
+                var dt = new DataTransfer();
+                dt.items.add(file);
+                imageInput.files = dt.files;
+                updateImagePreview(file);
+                stopWebcam();
+                if (cameraModal) cameraModal.hide();
+            }, 'image/jpeg', 0.9);
+        });
+    })();
+
+    document.getElementById('tfSubmitBtn').addEventListener('click', function () {
+        clearError();
+        var fromId = document.getElementById('tfFromAccount').value;
+        var toId = document.getElementById('tfToAccount').value;
+        var amount = document.getElementById('tfAmount').value;
+        if (!fromId || !toId) { showError('Select both a From Account and a To Account.'); return; }
+        if (fromId === toId) { showError('From Account and To Account must be different.'); return; }
+        if (!amount || Number(amount) <= 0) { showError('Enter a transfer amount greater than zero.'); return; }
+
+        var fd = new FormData();
+        fd.append('from_account_id', fromId);
+        fd.append('to_account_id', toId);
+        fd.append('amount', amount);
+        fd.append('date', document.getElementById('tfDate').value);
+        fd.append('reference', document.getElementById('tfReference').value.trim());
+        fd.append('description', document.getElementById('tfDescription').value.trim());
+        if (imageInput.files && imageInput.files[0]) {
+            fd.append('bill_image', imageInput.files[0]);
+        }
+
+        var btn = document.getElementById('tfSubmitBtn');
+        btn.disabled = true;
+        fetch(URL_TRANSFER, { method: 'POST', body: fd })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                btn.disabled = false;
+                if (!data.success) { showError(data.message || 'Could not complete the transfer.'); return; }
+                window.location.reload();
+            })
+            .catch(function () { btn.disabled = false; showError('Network error — could not complete the transfer.'); });
+    });
+})();
+</script>

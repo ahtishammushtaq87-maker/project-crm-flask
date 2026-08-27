@@ -1,8 +1,16 @@
 <!-- "Add this to Invoice/Purchase Payment" — shared by add_expense.html and
      edit_expense.html. Set window.__paymentTransferPreselect = {id, type,
      label} before including this partial (edit page only) to pre-select the
-     existing linked Sale/Bill. -->
-<div class="mb-3 p-3 border rounded expense-only-field" id="paymentTransferBlock" style="background:#fff8ec;">
+     existing linked Sale/Bill.
+
+     Deliberately NOT tagged "expense-only-field": unlike the rest of that
+     group, this block stays visible in BOTH Debit and Credit mode on Add
+     Expense — "Add to Invoice Payment" (sale, money coming IN) only makes
+     sense for Debit, while "Add to Purchase Payment" (bill, money going OUT)
+     only makes sense for Credit, so which of the two radio options is
+     available flips with the mode instead of the whole block hiding (see the
+     script below). -->
+<div class="mb-3 p-3 border rounded" id="paymentTransferBlock" style="background:#fff8ec;">
     <div class="form-check form-switch">
         <input class="form-check-input" type="checkbox" id="paymentTransferEnabled">
         <label class="form-check-label fw-semibold" for="paymentTransferEnabled">
@@ -16,11 +24,11 @@
     </div>
     <div id="paymentTransferFields" style="display:none;">
         <div class="d-flex gap-3 flex-wrap mb-2">
-            <div class="form-check">
+            <div class="form-check" id="transferTypeSaleWrap">
                 <input class="form-check-input" type="radio" name="payment_transfer_type" id="transferTypeSale" value="sale" checked>
                 <label class="form-check-label" for="transferTypeSale">Add this to Invoice Payment</label>
             </div>
-            <div class="form-check">
+            <div class="form-check" id="transferTypeBillWrap">
                 <input class="form-check-input" type="radio" name="payment_transfer_type" id="transferTypeBill" value="bill">
                 <label class="form-check-label" for="transferTypeBill">Add this to Purchase Payment</label>
             </div>
@@ -37,6 +45,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const fieldsWrap = document.getElementById('paymentTransferFields');
     const typeSale = document.getElementById('transferTypeSale');
     const typeBill = document.getElementById('transferTypeBill');
+    const typeSaleWrap = document.getElementById('transferTypeSaleWrap');
+    const typeBillWrap = document.getElementById('transferTypeBillWrap');
     const targetSelect = $('#paymentTransferTargetSelect');
     const SALES_SEARCH_URL = "{{ url_for('accounting.search_sales_json') }}";
     const BILLS_SEARCH_URL = "{{ url_for('accounting.search_bills_json') }}";
@@ -69,12 +79,61 @@ document.addEventListener('DOMContentLoaded', function () {
     enabledCb.addEventListener('change', applyEnabled);
     applyEnabled();
 
+    // Which of Sale / Bill is even offered depends on Debit vs Credit:
+    // "Add to Invoice Payment" (sale) is money coming IN, so it only makes
+    // sense alongside Debit; "Add to Purchase Payment" (bill) is money going
+    // OUT, so it only makes sense alongside Credit (the normal expense path).
+    // Add Expense has a #txnDebit/#txnCredit toggle; Edit Expense has none —
+    // an existing Expense row is always Credit there (Debit/Add Money entries
+    // never create an Expense row), EXCEPT a legacy row that was already
+    // sale-linked before this restriction existed, which stays selectable so
+    // re-saving it doesn't silently drop/reassign the link.
+    const txnDebitRadio = document.getElementById('txnDebit');
+    const preselect = window.__paymentTransferPreselect;
+    const allowLegacySale = !!(preselect && preselect.type === 'sale');
+
+    function currentTxnMode() {
+        return txnDebitRadio ? (txnDebitRadio.checked ? 'debit' : 'credit') : 'credit';
+    }
+
+    function applyTransferGating() {
+        const mode = currentTxnMode();
+        const saleAllowed = mode === 'debit' || allowLegacySale;
+        const billAllowed = mode === 'credit';
+
+        typeSaleWrap.style.display = saleAllowed ? '' : 'none';
+        typeBillWrap.style.display = billAllowed ? '' : 'none';
+        typeSale.disabled = !saleAllowed;
+        typeBill.disabled = !billAllowed;
+
+        let changed = false;
+        if (!saleAllowed && typeSale.checked) { typeBill.checked = true; changed = true; }
+        if (!billAllowed && typeBill.checked) { typeSale.checked = true; changed = true; }
+        if (changed) initSelect2();
+    }
+    applyTransferGating();
+    if (txnDebitRadio) {
+        const txnCreditRadio = document.getElementById('txnCredit');
+        const txnCreditCard = document.getElementById('txnCreditCard');
+        const txnDebitCard = document.getElementById('txnDebitCard');
+        txnCreditRadio.addEventListener('change', applyTransferGating);
+        txnDebitRadio.addEventListener('change', applyTransferGating);
+        // The mode cards set .checked programmatically on click (see add_expense.html's
+        // own txnCreditCard/txnDebitCard click handlers), which does NOT fire a native
+        // 'change' event — so a plain 'change' listener above misses clicks anywhere on
+        // the card except the exact radio dot. setTimeout(...,0) defers to the next tick,
+        // after that programmatic .checked assignment has already happened, regardless of
+        // which click handler (theirs or this one) runs first.
+        if (txnCreditCard) txnCreditCard.addEventListener('click', function () { setTimeout(applyTransferGating, 0); });
+        if (txnDebitCard) txnDebitCard.addEventListener('click', function () { setTimeout(applyTransferGating, 0); });
+    }
+
     [typeSale, typeBill].forEach(function (r) { r.addEventListener('change', initSelect2); });
 
-    const preselect = window.__paymentTransferPreselect;
     if (preselect && preselect.id) {
         enabledCb.checked = true;
         if (preselect.type === 'bill') { typeBill.checked = true; } else { typeSale.checked = true; }
+        applyTransferGating();
         initSelect2();
         const opt = new Option(preselect.text, preselect.id, true, true);
         targetSelect.append(opt).trigger('change');

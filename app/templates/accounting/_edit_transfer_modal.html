@@ -1,0 +1,228 @@
+{# Edit modal for a Transfer Funds pair — triggered by .edit-transfer-btn
+   buttons in all_transfers.html, which carry the transfer's current values
+   as data-* attributes. Submits via AJAX FormData to
+   accounting.edit_transfer_quick, keyed on transfer_group so both legs
+   update together. Never lets you change which two accounts were involved —
+   only amount/date/reference/description/bill image. Admin-only (the
+   including page already gates the include itself, and the route re-checks
+   server-side too). #}
+<div class="modal fade" id="editTransferModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-edit me-2"></i>Edit Transfer</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="etfError" class="alert alert-danger py-2 d-none"></div>
+                <div class="alert alert-light border small mb-3">
+                    <i class="fas fa-circle-info me-1 text-primary"></i>
+                    Changes apply to both sides of this transfer. The From/To accounts themselves can't be changed here —
+                    delete this transfer and create a new one instead if you need to move it to different accounts.
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold mb-1">Amount <span class="text-danger">*</span></label>
+                        <input type="number" step="0.01" min="0.01" id="etfAmount" class="form-control" placeholder="0.00">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold mb-1">Date</label>
+                        <input type="date" id="etfDate" class="form-control">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold mb-1">Reference</label>
+                    <input type="text" id="etfReference" class="form-control">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold mb-1">Description</label>
+                    <textarea id="etfDescription" class="form-control" rows="2"></textarea>
+                </div>
+                <div class="mb-1">
+                    <label class="form-label small fw-semibold mb-1">Receipt / Bill Image</label>
+                    <div class="input-group">
+                        <button type="button" class="btn btn-outline-info" id="etfWebcamBtn">
+                            <i class="fas fa-camera me-1"></i>Camera Capture
+                        </button>
+                        <input type="file" id="etfImageInput" accept="image/*" class="form-control">
+                    </div>
+                    <div class="form-text">Camera capture, choose a file, or paste (Ctrl+V) an image — leave empty to keep the current one</div>
+                    <div id="etfImagePreview" class="mt-2"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="etfSubmitBtn">
+                    <i class="fas fa-save me-1"></i>Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Camera Capture sub-modal — self-contained with ids namespaced "etf*" so it
+   can't collide with other camera-capture modals on this page. #}
+<div class="modal fade" id="etfCameraModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Capture Image from Camera</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <div id="etfCameraStreamContainer">
+          <video id="etfWebcamVideo" autoplay playsinline class="w-100 rounded border bg-dark" style="max-height: 400px; transform: scaleX(-1);"></video>
+          <canvas id="etfCaptureCanvas" style="display:none;"></canvas>
+          <div class="mt-3">
+            <button type="button" class="btn btn-primary btn-lg" id="etfSnapBtn"><i class="fas fa-camera"></i> Take Photo</button>
+          </div>
+        </div>
+        <div id="etfCameraResultContainer" style="display:none;">
+          <img id="etfCapturePreview" class="img-fluid rounded border mb-3">
+          <div class="d-flex justify-content-center gap-2">
+            <button type="button" class="btn btn-warning" id="etfRetakeBtn"><i class="fas fa-redo"></i> Retake</button>
+            <button type="button" class="btn btn-success" id="etfConfirmPhotoBtn"><i class="fas fa-check"></i> Use Photo</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+    var modalEl = document.getElementById('editTransferModal');
+    if (!modalEl) return;
+    var errorBox = document.getElementById('etfError');
+    var imageInput = document.getElementById('etfImageInput');
+    var imagePreview = document.getElementById('etfImagePreview');
+    var currentGroup = null;
+    var URL_EDIT_TEMPLATE = '{{ url_for("accounting.edit_transfer_quick", transfer_group="__GROUP__") }}';
+
+    function showError(msg) { errorBox.textContent = msg; errorBox.classList.remove('d-none'); }
+    function clearError() { errorBox.classList.add('d-none'); }
+    function updateImagePreview(file) {
+        if (!file) { imagePreview.innerHTML = ''; return; }
+        var reader = new FileReader();
+        reader.onload = function (e) {
+            imagePreview.innerHTML = '<img src="' + e.target.result + '" class="img-thumbnail" style="max-height:80px;">';
+        };
+        reader.readAsDataURL(file);
+    }
+
+    document.querySelectorAll('.edit-transfer-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            clearError();
+            currentGroup = btn.getAttribute('data-transfer-group');
+            document.getElementById('etfAmount').value = btn.getAttribute('data-amount') || '';
+            document.getElementById('etfDate').value = btn.getAttribute('data-date') || '';
+            document.getElementById('etfReference').value = btn.getAttribute('data-reference') || '';
+            document.getElementById('etfDescription').value = btn.getAttribute('data-description') || '';
+            imageInput.value = '';
+            imagePreview.innerHTML = '';
+            var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            modal.show();
+        });
+    });
+
+    imageInput.addEventListener('change', function () {
+        updateImagePreview(imageInput.files && imageInput.files[0]);
+    });
+
+    // Camera capture — canvas -> blob -> File -> DataTransfer onto the real
+    // file input, same as the other camera-capture widgets in this module.
+    (function () {
+        var webcamBtn = document.getElementById('etfWebcamBtn');
+        var camModalEl = document.getElementById('etfCameraModal');
+        var video = document.getElementById('etfWebcamVideo');
+        var canvas = document.getElementById('etfCaptureCanvas');
+        var streamContainer = document.getElementById('etfCameraStreamContainer');
+        var resultContainer = document.getElementById('etfCameraResultContainer');
+        var capturePreview = document.getElementById('etfCapturePreview');
+        var snapBtn = document.getElementById('etfSnapBtn');
+        var retakeBtn = document.getElementById('etfRetakeBtn');
+        var confirmBtn = document.getElementById('etfConfirmPhotoBtn');
+        var cameraModal = null;
+        var videoStream = null;
+
+        function startWebcam() {
+            streamContainer.style.display = '';
+            resultContainer.style.display = 'none';
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } })
+                .then(function (stream) { videoStream = stream; video.srcObject = stream; })
+                .catch(function () {
+                    showError('Could not access the camera. Check permissions, or upload/paste a file instead.');
+                    if (cameraModal) cameraModal.hide();
+                });
+        }
+        function stopWebcam() {
+            if (videoStream) { videoStream.getTracks().forEach(function (t) { t.stop(); }); videoStream = null; }
+        }
+
+        webcamBtn.addEventListener('click', function () {
+            if (!cameraModal) cameraModal = new bootstrap.Modal(camModalEl);
+            cameraModal.show();
+            startWebcam();
+        });
+        camModalEl.addEventListener('hidden.bs.modal', stopWebcam);
+
+        snapBtn.addEventListener('click', function () {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            var ctx = canvas.getContext('2d');
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            capturePreview.src = canvas.toDataURL('image/jpeg');
+            streamContainer.style.display = 'none';
+            resultContainer.style.display = '';
+        });
+        retakeBtn.addEventListener('click', function () {
+            streamContainer.style.display = '';
+            resultContainer.style.display = 'none';
+        });
+        confirmBtn.addEventListener('click', function () {
+            canvas.toBlob(function (blob) {
+                var file = new File([blob], 'transfer_' + Date.now() + '.jpg', { type: 'image/jpeg' });
+                var dt = new DataTransfer();
+                dt.items.add(file);
+                imageInput.files = dt.files;
+                updateImagePreview(file);
+                stopWebcam();
+                if (cameraModal) cameraModal.hide();
+            }, 'image/jpeg', 0.9);
+        });
+    })();
+
+    document.getElementById('etfSubmitBtn').addEventListener('click', function () {
+        clearError();
+        if (!currentGroup) return;
+        var amount = document.getElementById('etfAmount').value;
+        if (!amount || Number(amount) <= 0) { showError('Enter an amount greater than zero.'); return; }
+
+        var fd = new FormData();
+        fd.append('amount', amount);
+        fd.append('date', document.getElementById('etfDate').value);
+        fd.append('reference', document.getElementById('etfReference').value.trim());
+        fd.append('description', document.getElementById('etfDescription').value.trim());
+        if (imageInput.files && imageInput.files[0]) {
+            fd.append('bill_image', imageInput.files[0]);
+        }
+
+        var url = URL_EDIT_TEMPLATE.replace('__GROUP__', encodeURIComponent(currentGroup));
+        var btn = document.getElementById('etfSubmitBtn');
+        btn.disabled = true;
+        fetch(url, { method: 'POST', body: fd })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                btn.disabled = false;
+                if (!data.success) { showError(data.message || 'Could not save changes.'); return; }
+                window.location.reload();
+            })
+            .catch(function () { btn.disabled = false; showError('Network error — could not save changes.'); });
+    });
+})();
+</script>
