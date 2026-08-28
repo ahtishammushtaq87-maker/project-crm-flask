@@ -83,11 +83,15 @@ def get_entity_details(entity_type, entity_id):
             # Payments history would go here if tracked similarly
             
             # Actions
-            data['actions'] = [
+            data['actions'] = []
+            if entity.vendor_id:
+                data['actions'].append({'label': 'View Ledger', 'url': url_for('purchase.vendor_ledger', id=entity.vendor_id), 'btn_class': 'btn-outline-primary'})
+
+            data['actions'].extend([
                 {'label': 'View Full', 'url': url_for('purchase.bill_detail', id=entity.id), 'btn_class': 'btn-primary'},
                 {'label': 'Edit', 'url': url_for('purchase.edit_bill', id=entity.id), 'btn_class': 'btn-info', 'permission': 'purchases.edit'},
                 {'label': 'Delete', 'url': url_for('purchase.delete_bill', id=entity.id), 'btn_class': 'btn-danger', 'permission': 'purchases.delete', 'is_form': True}
-            ]
+            ])
 
         elif entity_type == 'expense':
             entity = Expense.query.get_or_404(entity_id)

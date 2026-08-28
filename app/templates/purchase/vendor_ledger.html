@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}{{ vendor.name }} - Ledger{% endblock %}
+
+{% block extra_css %}
+{% include 'purchase/_vendor_ledger_style.html' %}
+<style>
+    .ledger-controls { max-width: 1400px; margin: 0 auto 14px auto; }
+
+    @media print {
+        .no-print,
+        .hamburger-btn,
+        .mobile-sidebar,
+        .mobile-sidebar-overlay,
+        .sidebar,
+        .notification-bell-wrapper,
+        #universal-filter-trigger-wrapper,
+        .global-alert-container {
+            display: none !important;
+        }
+        /* Collapse the sidebar column so the ledger sheet uses the full page width */
+        .container-fluid, .row, .main-content {
+            width: 100% !important;
+            max-width: 100% !important;
+            flex: 0 0 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .ledger-sheet { border: 1px solid #000; }
+        .ledger-wrap { max-width: 100% !important; }
+        body { background: #fff !important; }
+        @page { margin: 10mm; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid ledger-wrap">
+
+    <div class="ledger-controls no-print d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <a href="{{ url_for('purchase.vendor_profile', id=vendor.id) }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Back to Vendor
+            </a>
+        </div>
+        <form method="get" class="d-flex align-items-center gap-2">
+            <input type="date" name="date_from" value="{{ date_from }}" class="form-control form-control-sm" style="width:150px;">
+            <span>to</span>
+            <input type="date" name="date_to" value="{{ date_to }}" class="form-control form-control-sm" style="width:150px;">
+            <button type="submit" class="btn btn-sm btn-outline-primary">Filter</button>
+            {% if date_from or date_to %}
+            <a href="{{ url_for('purchase.vendor_ledger', id=vendor.id) }}" class="btn btn-sm btn-outline-secondary">Clear</a>
+            {% endif %}
+        </form>
+        <div class="d-flex gap-2">
+            <div class="dropdown">
+                <button class="btn btn-info dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-download me-1"></i> Export
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="{{ url_for('purchase.vendor_ledger_pdf', id=vendor.id, date_from=date_from, date_to=date_to) }}" target="_blank">
+                        <i class="fas fa-file-pdf text-danger me-2"></i> PDF
+                    </a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('purchase.vendor_ledger_excel', id=vendor.id, date_from=date_from, date_to=date_to) }}">
+                        <i class="fas fa-file-excel text-success me-2"></i> Excel
+                    </a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('purchase.vendor_ledger_csv', id=vendor.id, date_from=date_from, date_to=date_to) }}">
+                        <i class="fas fa-file-csv text-primary me-2"></i> CSV
+                    </a></li>
+                </ul>
+            </div>
+            <button type="button" class="btn btn-primary" onclick="window.print()">
+                <i class="fas fa-print me-1"></i> Print Ledger
+            </button>
+        </div>
+    </div>
+
+    {% include 'purchase/_vendor_ledger_body.html' %}
+
+</div>
+{% endblock %}

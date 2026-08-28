@@ -1,0 +1,96 @@
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400..700&display=swap" rel="stylesheet">
+<style>
+    .ledger-wrap { font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaliq', 'Segoe UI', sans-serif; }
+    .ledger-sheet {
+        background: #fff;
+        border: 1px solid #222;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    .ledger-titlebar {
+        display: flex;
+        align-items: stretch;
+        border-bottom: 1px solid #222;
+    }
+    .ledger-titlebar .title-main {
+        flex: 1;
+        text-align: center;
+        padding: 14px 10px;
+    }
+    .ledger-titlebar .title-name {
+        font-size: 1.7rem;
+        font-weight: 700;
+    }
+    .ledger-titlebar .title-contact {
+        font-family: 'Segoe UI', sans-serif;
+        font-size: 0.85rem;
+        color: #555;
+        margin-top: 4px;
+    }
+    .ledger-titlebar .title-contact i { color: #1e9c4f; margin-right: 3px; }
+    .ledger-titlebar .title-logo {
+        width: 110px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-right: 1px solid #222;
+        padding: 6px;
+    }
+    .ledger-titlebar .title-logo img { max-width: 90px; max-height: 90px; object-fit: contain; }
+    .ledger-partybar {
+        background: #1e9c4f;
+        color: #fff;
+        text-align: center;
+        font-size: 1.3rem;
+        font-weight: 700;
+        padding: 8px 10px;
+        border-bottom: 1px solid #222;
+    }
+    .ledger-table {
+        width: 100%;
+        border-collapse: collapse;
+        direction: rtl;
+        font-size: 1.02rem;
+    }
+    .ledger-table th, .ledger-table td {
+        border: 1px solid #222;
+        padding: 8px 10px;
+        text-align: center;
+        white-space: nowrap;
+    }
+    .ledger-table td.detail-cell { white-space: normal; text-align: right; }
+    .ledger-table thead th {
+        background: #f2f2f2;
+        font-weight: 700;
+        font-size: 1.05rem;
+    }
+    .ledger-table tbody tr:nth-child(even) { background: #fafafa; }
+    .ledger-table .amt-debit { color: #c0392b; font-weight: 600; }
+    .ledger-table .amt-credit { color: #1e9c4f; font-weight: 600; }
+    .ledger-table .amt-balance { font-weight: 700; }
+    .ledger-table .amt-balance.neg { color: #c0392b; }
+    .ledger-table .amt-balance.zero { color: #444; }
+    .ledger-table .row-opening td { background: #eaf2fb; font-weight: 700; }
+    .ledger-table .row-neutral td { color: #666; font-style: italic; }
+    .ledger-footer-summary {
+        display: flex;
+        justify-content: flex-end;
+        gap: 28px;
+        padding: 12px 16px;
+        font-size: 1.05rem;
+        font-weight: 700;
+        border-top: 2px solid #222;
+    }
+    /*
+     * Date cells hold plain LTR text ("24-Aug-2026") inside an RTL ancestor
+     * (.ledger-table has direction: rtl). Left un-isolated, the bidi
+     * algorithm treats the hyphens as neutral characters and can reorder the
+     * three segments (day / month / year) as whole units — rendering
+     * "Aug-2026-24" instead of "24-Aug-2026". unicode-bidi: isolate scopes
+     * the cell as its own bidi run so the LTR content displays in source
+     * order regardless of the surrounding RTL context.
+     */
+    .ledger-table .date-cell { unicode-bidi: isolate; direction: ltr; }
+</style>

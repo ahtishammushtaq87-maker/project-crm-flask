@@ -1897,6 +1897,357 @@ def vendor_profile(id):
                            date_from=date_from_str,
                            date_to=date_to_str)
 
+
+def _parse_ledger_date_range():
+    """Shared date_from/date_to query-param parsing for the vendor ledger views."""
+    date_from_str = request.args.get('date_from', '').strip()
+    date_to_str = request.args.get('date_to', '').strip()
+    date_from = None
+    date_to = None
+    try:
+        if date_from_str:
+            date_from = datetime.strptime(date_from_str, '%Y-%m-%d')
+        if date_to_str:
+            date_to = datetime.strptime(date_to_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+    except ValueError:
+        pass
+    return date_from_str, date_to_str, date_from, date_to
+
+
+def build_vendor_ledger(vendor, date_from=None, date_to=None):
+    """
+    Build the vendor ledger's running-balance entries (mirrors the sales
+    customer ledger's event-building logic, adapted for purchases). Shared by
+    the on-screen ledger page and its PDF/Excel/CSV exports so all four always
+    agree on the same numbers.
+
+    Note on returns: unlike a Sale, PurchaseBill.total is recalculated net of
+    its returns as soon as a return is saved (see edit_purchase_return /
+    create_purchase_return, which call bill.calculate_totals() right after
+    purchase_return.calculate_totals()). So the bill's debit row already
+    reflects any return. A return still gets its own zero-amount row here for
+    visibility, but is NOT added again as a credit — doing so would double
+    count it and understate the balance owed.
+
+    Returns a dict: opening_balance, entries, total_debit, total_credit, closing_balance.
+    """
+    opening_balance = float(vendor.opening_balance or 0)
+
+    # Bills a ledger is allowed to count — cancelled/rejected bills neither add
+    # to nor subtract from the balance (mirrors ledger_sales_query).
+    bills = PurchaseBill.query.filter(
+        PurchaseBill.vendor_id == vendor.id,
+        PurchaseBill.is_rejected == False,
+        PurchaseBill.status != 'cancelled'
+    ).order_by(PurchaseBill.date.asc()).all()
+
+    if date_from or date_to:
+        bills = [
+            b for b in bills
+            if (date_from is None or b.date >= date_from)
+            and (date_to is None or b.date <= date_to)
+        ]
+
+    advances = VendorAdvance.query.filter_by(vendor_id=vendor.id).order_by(VendorAdvance.date.asc()).all()
+
+    # Standalone advances are interleaved by date before each bill, exactly
+    # like the sales ledger. Debit/credit are 0 here — the advance only moves
+    # the balance once it is actually applied to a bill (below).
+    advance_events = []
+    for a in advances:
+        dt = datetime.combine(a.date, datetime.min.time())
+        advance_events.append((dt, {
+            'date': dt,
+            'type': 'advance',
+            'item_pass': '-',
+            'detail': f"Advance Given{': ' + a.description if a.description else ''} (Rs {float(a.amount or 0):,.0f})",
+            'weight': None, 'rate': None,
+            'debit': 0, 'credit': 0,
+        }))
+    advance_events.sort(key=lambda x: x[0])
+    adv_idx = 0
+
+    events = []
+    for b in bills:
+        while adv_idx < len(advance_events) and advance_events[adv_idx][0].date() <= b.date.date():
+            events.append(advance_events[adv_idx][1])
+            adv_idx += 1
+
+        item_names = ', '.join(sorted({item.product.name for item in b.items if item.product})) or '-'
+        total_weight = sum(item.quantity for item in b.items)
+        avg_rate = (sum(item.total for item in b.items) / total_weight) if total_weight else None
+
+        events.append({
+            'date': b.date,
+            'type': 'bill',
+            'item_pass': b.bill_number,
+            'detail': item_names,
+            'weight': total_weight or None,
+            'rate': avg_rate,
+            'debit': float(b.total or 0),
+            'credit': 0,
+        })
+
+        for p in sorted(b.bill_payments, key=lambda x: x.date):
+            if not getattr(p, 'is_approved', True):
+                continue
+            detail = f"Payment ({p.payment_method or 'Cash'})"
+            if p.reference_number:
+                detail += f" — {p.reference_number}"
+            events.append({
+                'date': p.date, 'type': 'payment',
+                'item_pass': '-',
+                'detail': detail,
+                'weight': None, 'rate': None,
+                'debit': 0, 'credit': float(p.amount or 0),
+            })
+
+        if b.advance_applied and b.advance_applied > 0:
+            events.append({
+                'date': b.date, 'type': 'advance_applied',
+                'item_pass': b.bill_number,
+                'detail': f"Advance Applied (Bill #{b.bill_number})",
+                'weight': None, 'rate': None,
+                'debit': 0, 'credit': float(b.advance_applied or 0),
+            })
+
+        for r in sorted(b.purchase_returns, key=lambda x: x.date):
+            events.append({
+                'date': r.date, 'type': 'return',
+                'item_pass': r.return_number,
+                'detail': f"Purchase Return #{r.return_number} (already netted into bill total above)",
+                'weight': None, 'rate': None,
+                'debit': 0, 'credit': 0,
+            })
+
+    while adv_idx < len(advance_events):
+        events.append(advance_events[adv_idx][1])
+        adv_idx += 1
+
+    events.sort(key=lambda e: e['date'])
+
+    entries = []
+    running_balance = opening_balance
+    total_debit = 0.0
+    total_credit = 0.0
+    for e in events:
+        debit = e['debit']
+        credit = e['credit']
+        running_balance += (debit - credit)
+        total_debit += debit
+        total_credit += credit
+        entries.append({
+            'date': e['date'],
+            'item_pass': e['item_pass'],
+            'detail': e['detail'],
+            'weight': e['weight'],
+            'rate': e['rate'],
+            'debit': debit,
+            'credit': credit,
+            'balance': running_balance,
+        })
+
+    return {
+        'opening_balance': opening_balance,
+        'entries': entries,
+        'total_debit': total_debit,
+        'total_credit': total_credit,
+        'closing_balance': running_balance,
+    }
+
+
+def _company_logo_url(company):
+    """
+    Absolute URL for the company logo, usable both by a normal browser tab and
+    by Playwright rendering an in-memory HTML string (which has no page origin
+    to resolve a relative path against).
+    """
+    if not company or not company.logo_path:
+        return None
+    return request.host_url.rstrip('/') + '/' + company.logo_path.replace('app/', '').lstrip('/')
+
+
+@bp.route('/vendor/<int:id>/ledger')
+@login_required
+def vendor_ledger(id):
+    """Vendor ledger, styled as a printable running-balance sheet."""
+    vendor = Vendor.query.get_or_404(id)
+    company = Company.query.first()
+    date_from_str, date_to_str, date_from, date_to = _parse_ledger_date_range()
+    ledger = build_vendor_ledger(vendor, date_from, date_to)
+
+    return render_template('purchase/vendor_ledger.html',
+                           vendor=vendor,
+                           company=company,
+                           logo_url=_company_logo_url(company),
+                           opening_balance=ledger['opening_balance'],
+                           entries=ledger['entries'],
+                           total_debit=ledger['total_debit'],
+                           total_credit=ledger['total_credit'],
+                           closing_balance=ledger['closing_balance'],
+                           date_from=date_from_str,
+                           date_to=date_to_str)
+
+
+@bp.route('/vendor/<int:id>/ledger/excel')
+@login_required
+def vendor_ledger_excel(id):
+    """Export the vendor ledger to an RTL-formatted Excel workbook."""
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    vendor = Vendor.query.get_or_404(id)
+    _, _, date_from, date_to = _parse_ledger_date_range()
+    ledger = build_vendor_ledger(vendor, date_from, date_to)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Vendor Ledger"
+    ws.sheet_view.rightToLeft = True
+
+    headers = ['تاریخ', 'ائٹ پاس', 'تفصیل', 'وزن', 'ریٹ', 'بنام', 'جمع', 'بیلنس']
+    ws.append(headers)
+
+    header_fill = PatternFill(start_color="1E9C4F", end_color="1E9C4F", fill_type="solid")
+    bold_white = Font(bold=True, color="FFFFFF")
+    thin_border = Border(*(Side(style='thin'),) * 4)
+    for cell in ws[1]:
+        cell.font = bold_white
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+        cell.border = thin_border
+
+    def _row(date_str, item_pass, detail, weight, rate, debit, credit, balance):
+        ws.append([date_str, item_pass, detail, weight, rate, debit or None, credit or None, balance])
+        r = ws.max_row
+        for c in range(1, 9):
+            ws.cell(row=r, column=c).border = thin_border
+            ws.cell(row=r, column=c).alignment = Alignment(horizontal="center", wrap_text=(c == 3))
+        if debit:
+            ws.cell(row=r, column=6).font = Font(color="C0392B", bold=True)
+        if credit:
+            ws.cell(row=r, column=7).font = Font(color="1E9C4F", bold=True)
+        ws.cell(row=r, column=8).font = Font(bold=True)
+
+    _row('-', '-', 'Opening Balance', '-', '-',
+         ledger['opening_balance'] if ledger['opening_balance'] > 0 else 0,
+         abs(ledger['opening_balance']) if ledger['opening_balance'] < 0 else 0,
+         ledger['opening_balance'])
+
+    for e in ledger['entries']:
+        _row(
+            e['date'].strftime('%d-%b-%Y') if e['date'] else '-',
+            e['item_pass'],
+            e['detail'],
+            round(e['weight'], 3) if e['weight'] is not None else '-',
+            round(e['rate'], 2) if e['rate'] is not None else '-',
+            round(e['debit'], 2), round(e['credit'], 2), round(e['balance'], 2)
+        )
+
+    ws.append(['', '', 'Totals', '', '', round(ledger['total_debit'], 2), round(ledger['total_credit'], 2), round(ledger['closing_balance'], 2)])
+    for c in range(1, 9):
+        ws.cell(row=ws.max_row, column=c).font = bold_white
+        ws.cell(row=ws.max_row, column=c).fill = header_fill
+
+    widths = [14, 12, 45, 10, 10, 14, 14, 14]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=f"vendor_{vendor.id}_{vendor.name}_ledger.xlsx"
+    )
+
+
+@bp.route('/vendor/<int:id>/ledger/csv')
+@login_required
+def vendor_ledger_csv(id):
+    """Export the vendor ledger to CSV (UTF-8 with BOM so Urdu text opens correctly in Excel)."""
+    vendor = Vendor.query.get_or_404(id)
+    _, _, date_from, date_to = _parse_ledger_date_range()
+    ledger = build_vendor_ledger(vendor, date_from, date_to)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['تاریخ', 'ائٹ پاس', 'تفصیل', 'وزن', 'ریٹ', 'بنام', 'جمع', 'بیلنس'])
+    writer.writerow([
+        '-', '-', 'Opening Balance', '-', '-',
+        ledger['opening_balance'] if ledger['opening_balance'] > 0 else 0,
+        abs(ledger['opening_balance']) if ledger['opening_balance'] < 0 else 0,
+        ledger['opening_balance']
+    ])
+    for e in ledger['entries']:
+        writer.writerow([
+            e['date'].strftime('%d-%b-%Y') if e['date'] else '-',
+            e['item_pass'], e['detail'],
+            round(e['weight'], 3) if e['weight'] is not None else '-',
+            round(e['rate'], 2) if e['rate'] is not None else '-',
+            round(e['debit'], 2), round(e['credit'], 2), round(e['balance'], 2)
+        ])
+    writer.writerow(['', '', 'Totals', '', '', round(ledger['total_debit'], 2), round(ledger['total_credit'], 2), round(ledger['closing_balance'], 2)])
+
+    csv_bytes = io.BytesIO(output.getvalue().encode('utf-8-sig'))
+    return send_file(
+        csv_bytes,
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=f"vendor_{vendor.id}_{vendor.name}_ledger.csv"
+    )
+
+
+@bp.route('/vendor/<int:id>/ledger/pdf')
+@login_required
+def vendor_ledger_pdf(id):
+    """
+    Export the vendor ledger as a PDF that is pixel-identical to the on-screen
+    page. Reportlab was tried first, but it has no OpenType shaping engine
+    (no HarfBuzz), so the Noto Nastaliq Urdu font used on screen renders as
+    unjoined tofu boxes there — Nastaliq specifically depends on complex
+    GSUB/GPOS shaping that reportlab's simple cmap-based text layout cannot
+    perform. Instead, this renders the exact same Jinja partial the on-screen
+    page uses (_vendor_ledger_body.html / _vendor_ledger_style.html) to an
+    HTML string and prints THAT with a real browser engine (Playwright's
+    headless Chromium), which has full font shaping — guaranteeing the PDF
+    can never visually drift from the page, since they share one template.
+    """
+    from playwright.sync_api import sync_playwright
+
+    vendor = Vendor.query.get_or_404(id)
+    company = Company.query.first()
+    _, _, date_from, date_to = _parse_ledger_date_range()
+    ledger = build_vendor_ledger(vendor, date_from, date_to)
+
+    html = render_template('purchase/vendor_ledger_pdf.html',
+                           vendor=vendor,
+                           company=company,
+                           logo_url=_company_logo_url(company),
+                           opening_balance=ledger['opening_balance'],
+                           entries=ledger['entries'],
+                           total_debit=ledger['total_debit'],
+                           total_credit=ledger['total_credit'],
+                           closing_balance=ledger['closing_balance'])
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content(html, wait_until='networkidle')
+        pdf_bytes = page.pdf(format='A4', landscape=True, print_background=True,
+                             margin={'top': '10mm', 'bottom': '10mm', 'left': '8mm', 'right': '8mm'})
+        browser.close()
+
+    output = io.BytesIO(pdf_bytes)
+    return send_file(
+        output,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"vendor_{vendor.id}_{vendor.name}_ledger.pdf"
+    )
+
+
 @bp.route('/vendor/add', methods=['GET', 'POST'])
 @login_required
 @permission_required('vendors', action='add')

@@ -1,0 +1,67 @@
+<div class="ledger-sheet">
+    <div class="ledger-titlebar">
+        <div class="title-main">
+            <div class="title-name">{{ company.name if company and company.name else 'Company Ledger' }}</div>
+            {% if company and company.phone %}
+            <div class="title-contact">
+                <span>&#128222; {{ company.phone }}</span>
+            </div>
+            {% endif %}
+        </div>
+        <div class="title-logo">
+            {% if logo_url %}
+            <img src="{{ logo_url }}" alt="{{ company.name if company else '' }}">
+            {% endif %}
+        </div>
+    </div>
+    <div class="ledger-partybar">
+        {% if vendor.company_name %}({{ vendor.company_name }}) {% endif %}{{ vendor.name }}
+    </div>
+
+    <div class="table-responsive">
+        <table class="ledger-table">
+            <thead>
+                <tr>
+                    <th>تاریخ</th>
+                    <th>ائٹ پاس</th>
+                    <th>تفصیل</th>
+                    <th>وزن</th>
+                    <th>ریٹ</th>
+                    <th>بنام</th>
+                    <th>جمع</th>
+                    <th>بیلنس</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="row-opening">
+                    <td class="date-cell">-</td>
+                    <td>-</td>
+                    <td class="detail-cell">اوپننگ بیلنس (Opening Balance)</td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td>{{ '{:,.0f}'.format(opening_balance) if opening_balance > 0 else '-' }}</td>
+                    <td>{{ '{:,.0f}'.format(opening_balance|abs) if opening_balance < 0 else '-' }}</td>
+                    <td>Rs{{ '{:,.0f}'.format(opening_balance) }}</td>
+                </tr>
+                {% for e in entries %}
+                <tr class="{{ 'row-neutral' if e.debit == 0 and e.credit == 0 else '' }}">
+                    <td class="date-cell">{{ e.date.strftime('%d-%b-%Y') if e.date else '-' }}</td>
+                    <td>{{ e.item_pass }}</td>
+                    <td class="detail-cell">{{ e.detail }}</td>
+                    <td>{{ '%.3f'|format(e.weight) if e.weight is not none else '-' }}</td>
+                    <td>{{ '{:,.0f}'.format(e.rate) if e.rate is not none else '-' }}</td>
+                    <td class="{{ 'amt-debit' if e.debit > 0 else '' }}">{{ '{:,.0f}'.format(e.debit) if e.debit > 0 else '-' }}</td>
+                    <td class="{{ 'amt-credit' if e.credit > 0 else '' }}">{{ '{:,.0f}'.format(e.credit) if e.credit > 0 else '-' }}</td>
+                    <td class="amt-balance {{ 'neg' if e.balance > 0 else 'zero' }}">Rs{{ '{:,.0f}'.format(e.balance) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="ledger-footer-summary">
+        <div>Total بنام: <span class="amt-debit">Rs{{ '{:,.0f}'.format(total_debit) }}</span></div>
+        <div>Total جمع: <span class="amt-credit">Rs{{ '{:,.0f}'.format(total_credit) }}</span></div>
+        <div>Closing بیلنس: <span class="amt-balance {{ 'neg' if closing_balance > 0 else 'zero' }}">Rs{{ '{:,.0f}'.format(closing_balance) }}</span></div>
+    </div>
+</div>
