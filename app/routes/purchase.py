@@ -9,6 +9,7 @@ from app.pdf_utils import generate_professional_pdf
 from app.services.bom_versioning import BOMVersioningService
 from werkzeug.utils import secure_filename
 import os
+import re
 from app.routes.filters import apply_saved_filter_to_query
 import io
 import csv
@@ -1956,10 +1957,14 @@ def build_vendor_ledger(vendor, date_from=None, date_to=None):
     advance_events = []
     for a in advances:
         dt = datetime.combine(a.date, datetime.min.time())
+        # An auto-credit advance's description names its source bill ("...on
+        # Bill #PO-54"); surface that in the item-pass column too so it's
+        # never ambiguous which bill generated the credit.
+        source_bill_match = re.search(r'Bill #(\S+)', a.description or '')
         advance_events.append((dt, {
             'date': dt,
             'type': 'advance',
-            'item_pass': '-',
+            'item_pass': source_bill_match.group(1) if source_bill_match else '-',
             'detail': f"Advance Given{': ' + a.description if a.description else ''} (Rs {float(a.amount or 0):,.0f})",
             'weight': None, 'rate': None,
             'debit': 0, 'credit': 0,
@@ -1991,24 +1996,47 @@ def build_vendor_ledger(vendor, date_from=None, date_to=None):
         for p in sorted(b.bill_payments, key=lambda x: x.date):
             if not getattr(p, 'is_approved', True):
                 continue
-            detail = f"Payment ({p.payment_method or 'Cash'})"
+            # Label with this payment's own bill number — without it, a
+            # payment that happens to land on the same calendar date as a
+            # different bill reads as if it belongs to that other bill.
+            detail = f"Payment ({p.payment_method or 'Cash'}) — Bill #{b.bill_number}"
             if p.reference_number:
                 detail += f" — {p.reference_number}"
             events.append({
                 'date': p.date, 'type': 'payment',
-                'item_pass': '-',
+                'item_pass': b.bill_number,
                 'detail': detail,
                 'weight': None, 'rate': None,
                 'debit': 0, 'credit': float(p.amount or 0),
             })
 
-        if b.advance_applied and b.advance_applied > 0:
+        # One event per VendorAdvance actually applied to this bill (not one
+        # combined b.advance_applied event) — because an "auto-credit
+        # overpayment" advance is money that was already counted in full when
+        # the ORIGINAL overpayment's BillPayment.amount reduced the balance
+        # (apply_bill_payment_with_credit in app/utils.py stores the raw,
+        # uncapped payment amount, then shunts the excess into a new
+        # VendorAdvance). Counting that excess again here, when it's later
+        # applied to a different bill, would subtract the same rupees twice
+        # and understate the balance owed. A genuinely standalone advance
+        # (vendor_give_advance, a PO's upfront advance, or a return refund)
+        # has no such prior payment event, so it counts as real credit here —
+        # the first and only time that cash reduces the balance.
+        # Caveat: adjusted_bill_id only remembers the LAST bill an advance
+        # touched, so an advance split across multiple bills over time will
+        # only attribute here to its most recent one — a schema limitation,
+        # not a ledger bug.
+        for a in advances:
+            if a.adjusted_bill_id != b.id or not a.applied_amount:
+                continue
+            is_auto_credit = bool(re.match(r'Auto-credit: overpayment on Bill #', a.description or ''))
             events.append({
                 'date': b.date, 'type': 'advance_applied',
                 'item_pass': b.bill_number,
-                'detail': f"Advance Applied (Bill #{b.bill_number})",
+                'detail': (f"Advance Applied (Bill #{b.bill_number}) — already counted in original payment"
+                           if is_auto_credit else f"Advance Applied (Bill #{b.bill_number})"),
                 'weight': None, 'rate': None,
-                'debit': 0, 'credit': float(b.advance_applied or 0),
+                'debit': 0, 'credit': 0 if is_auto_credit else float(a.applied_amount or 0),
             })
 
         for r in sorted(b.purchase_returns, key=lambda x: x.date):
