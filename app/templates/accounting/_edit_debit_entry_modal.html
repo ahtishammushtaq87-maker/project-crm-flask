@@ -15,7 +15,7 @@
             <div class="modal-body">
                 <div id="debError" class="alert alert-danger py-2 d-none"></div>
                 <div class="mb-3">
-                    <label class="form-label small fw-semibold mb-1">Account <span class="text-danger">*</span></label>
+                    <label class="form-label small fw-semibold mb-1">Custodian Account <span class="text-danger">*</span></label>
                     <select id="debAccount" class="form-select">
                         {% for acct in expense_accounts %}
                         <option value="{{ acct.id }}">{{ acct.name }}{% if acct.account_type %} ({{ acct.account_type }}){% endif %}</option>

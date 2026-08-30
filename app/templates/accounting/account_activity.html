@@ -36,7 +36,7 @@
             <form method="GET" class="row g-2 align-items-end">
                 <input type="hidden" name="row_status" value="{{ row_status }}">
                 <div class="col-6 col-md-2">
-                    <label class="form-label small fw-semibold mb-1">Account</label>
+                    <label class="form-label small fw-semibold mb-1">Custodian Account</label>
                     <select name="account_id" class="form-select">
                         <option value="" {% if not selected_account %}selected{% endif %}>All Accounts</option>
                         {% for acct in accounts %}

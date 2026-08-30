@@ -1751,6 +1751,10 @@ def account_activity():
         account_groups.append({'account': acct, 'opening': acct_opening,
                                'rows': acct_rows, 'closing': acct_closing})
 
+    # Highest closing balance first, so in "All Accounts" mode the accounts
+    # holding the most money surface at the top instead of alphabetically.
+    account_groups.sort(key=lambda g: g['closing'], reverse=True)
+
     expected_balance = range_opening_balance + money_in - money_out
     total_closing_balance = sum(g['closing'] for g in account_groups)
 

@@ -107,17 +107,17 @@
                              existing expense already exists, so switching it to a plain "Add Money" (Debit)
                              transaction isn't offered on this page; that's only available on Add Expense. -->
                         <div class="mb-3 p-3 border rounded" style="background:#f8f9ff;">
-                            <label class="form-label fw-semibold">Account <span class="text-muted small fw-normal">(optional)</span></label>
+                            <label class="form-label fw-semibold">Custodian Account <span class="text-muted small fw-normal">(optional)</span></label>
                             <div class="d-flex gap-2">
                                 <select id="accountIdSelect" name="account_id" class="form-select flex-grow-1">
-                                    <option value="">— No Account —</option>
+                                    <option value="">— No Custodian Account —</option>
                                     {% for acct in expense_accounts %}
                                     <option value="{{ acct.id }}" {% if existing_account_id == acct.id %}selected{% endif %}>{{ acct.name }}{% if acct.account_type %} ({{ acct.account_type }}){% endif %}</option>
                                     {% endfor %}
                                 </select>
                                 {% if current_user.is_admin %}
                                 <button type="button" class="btn btn-outline-primary text-nowrap" id="manageAccountsBtn"
-                                        data-bs-toggle="modal" data-bs-target="#accountManagerModal" title="Manage accounts">
+                                        data-bs-toggle="modal" data-bs-target="#accountManagerModal" title="Manage custodian accounts">
                                     <i class="bi bi-gear"></i> Manage Accounts
                                 </button>
                                 {% endif %}
@@ -353,7 +353,7 @@ document.addEventListener('DOMContentLoaded', function() {
     $('select[name="vendor_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Vendor (Optional) —', allowClear: true, width: '100%' });
     $('select[name="customer_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Customer (Optional) —', allowClear: true, width: '100%' });
     $('select[name="warehouse_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Warehouse (Optional) —', allowClear: true, width: '100%' });
-    $('#accountIdSelect').select2({ theme: 'bootstrap-5', placeholder: '— Select Account —', allowClear: true, width: '100%' });
+    $('#accountIdSelect').select2({ theme: 'bootstrap-5', placeholder: '— Select Custodian Account —', allowClear: true, width: '100%' });
     $('#mo_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select In Progress Manufacturing Order(s) —', allowClear: true, width: '100%', closeOnSelect: false });
     $('#product_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select Finished Products —', allowClear: true, width: '100%', closeOnSelect: false });
     $('#bom_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select BOMs —', allowClear: true, width: '100%', closeOnSelect: false });
