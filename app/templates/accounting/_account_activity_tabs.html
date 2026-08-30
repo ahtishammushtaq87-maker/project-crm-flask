@@ -13,7 +13,7 @@
     {% for key, label, color in tab_defs %}
     <li class="nav-item">
         <a class="nav-link py-1 px-3 {{ 'active' if row_status == key else 'text-body bg-light' }}"
-           href="{{ url_for('accounting.account_activity', account_id=selected_account_id, account_type=selected_account_type, custodian=selected_custodian, location=selected_location, date_from=date_from.strftime('%Y-%m-%d'), date_to=date_to.strftime('%Y-%m-%d'), row_status=key) }}">
+           href="{{ url_for('accounting.account_activity', account_id=selected_account_id, account_type=selected_account_type, location=selected_location, date_from=date_from.strftime('%Y-%m-%d'), date_to=date_to.strftime('%Y-%m-%d'), row_status=key) }}">
             {{ label }}
             {% if status_counts.get(key) %}
             <span class="badge {{ 'bg-white text-dark border' if row_status == key else 'bg-' + color }} ms-1">{{ status_counts[key] }}</span>

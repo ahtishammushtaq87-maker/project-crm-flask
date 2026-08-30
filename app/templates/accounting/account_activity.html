@@ -36,11 +36,9 @@
             <form method="GET" class="row g-2 align-items-end">
                 <input type="hidden" name="row_status" value="{{ row_status }}">
                 <div class="col-6 col-md-2">
-                    <label class="form-label small fw-semibold mb-1">Account <span class="text-danger">*</span></label>
+                    <label class="form-label small fw-semibold mb-1">Account</label>
                     <select name="account_id" class="form-select">
-                        {% if not accounts %}
-                        <option value="">No accounts match</option>
-                        {% endif %}
+                        <option value="" {% if not selected_account %}selected{% endif %}>All Accounts</option>
                         {% for acct in accounts %}
                         <option value="{{ acct.id }}" {% if selected_account and acct.id == selected_account.id %}selected{% endif %}>
                             {{ acct.name }}{% if not acct.is_active %} — Inactive{% endif %}
@@ -58,20 +56,20 @@
                     </select>
                 </div>
                 <div class="col-6 col-md-2">
-                    <label class="form-label small fw-semibold mb-1">Custodian</label>
-                    <select name="custodian" class="form-select">
-                        <option value="">All Custodians</option>
-                        {% for c in custodian_options %}
-                        <option value="{{ c }}" {% if selected_custodian == c %}selected{% endif %}>{{ c }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-6 col-md-2">
                     <label class="form-label small fw-semibold mb-1">Location</label>
                     <select name="location" class="form-select">
                         <option value="">All Locations</option>
                         {% for l in location_options %}
                         <option value="{{ l }}" {% if selected_location == l %}selected{% endif %}>{{ l }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label small fw-semibold mb-1">Source</label>
+                    <select name="source_id" class="form-select">
+                        <option value="">All Sources</option>
+                        {% for s in source_options %}
+                        <option value="{{ s.id }}" {% if selected_source_id == s.id %}selected{% endif %}>{{ s.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -101,7 +99,7 @@
     <div class="alert alert-info">
         No accounts have been created yet. Create one from the <i class="fas fa-book"></i> button above.
     </div>
-    {% elif not selected_account %}
+    {% elif not selected_account and not accounts %}
     <div class="alert alert-warning">
         No account matches the current filters. Adjust the filters above or pick an account.
     </div>
@@ -151,7 +149,11 @@
                 <div class="card-body">
                     <div class="small text-muted text-uppercase">Actual Balance</div>
                     <div class="h5 mb-0 fw-bold">PKR {{ "{:,.0f}".format(actual_balance) }}</div>
-                    <div class="small text-muted">{{ 'Custodian confirmed' if latest_close else 'No close yet' }}</div>
+                    <div class="small text-muted">
+                        {% if selected_account %}{{ 'Custodian confirmed' if latest_close else 'No close yet' }}
+                        {% else %}Combined across {{ accounts_in_scope_count }} account{{ 's' if accounts_in_scope_count != 1 }}
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -164,7 +166,7 @@
 
     <div class="card">
         <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">{{ selected_account.name }} — Transactions</h6>
+            <h6 class="m-0 font-weight-bold text-primary">{{ selected_account.name if selected_account else 'All Accounts' }} — Transactions</h6>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
@@ -189,12 +191,19 @@
                         </tr>
                     </thead>
                     <tbody>
+                        {% set multi = account_groups|length > 1 %}
+                        {% for group in account_groups %}
+                        {% if multi %}
+                        <tr class="table-primary">
+                            <td colspan="15" class="fw-bold"><i class="fas fa-university me-1"></i>{{ group.account.name }}</td>
+                        </tr>
+                        {% endif %}
                         <tr class="table-light">
-                            <td colspan="11" class="fw-semibold">Opening Balance (as of {{ date_from.strftime('%d-%b-%Y') }})</td>
-                            <td class="text-end fw-semibold">{{ "{:,.2f}".format(range_opening_balance) }}</td>
+                            <td colspan="11" class="fw-semibold">Opening Balance{% if not multi %} (as of {{ date_from.strftime('%d-%b-%Y') }}){% endif %}</td>
+                            <td class="text-end fw-semibold">{{ "{:,.2f}".format(group.opening) }}</td>
                             <td colspan="3"></td>
                         </tr>
-                        {% for r in rows %}
+                        {% for r in group.rows %}
                         {% set t = r.txn %}
                         <tr>
                             <td>{{ t.date.strftime('%d-%b') if t.date else '—' }}{% if t.created_at %} {{ t.created_at.strftime('%H:%M') }}{% endif %}</td>
@@ -273,12 +282,20 @@
                         </tr>
                         {% endfor %}
                         <tr class="table-secondary">
-                            <td colspan="11" class="fw-bold">Closing Balance (as of {{ date_to.strftime('%d-%b-%Y') }})</td>
-                            <td class="text-end fw-bold {{ 'text-success' if (rows[-1].running if rows else range_opening_balance) >= 0 else 'text-danger' }}">
-                                {{ "{:,.2f}".format(rows[-1].running if rows else range_opening_balance) }}
+                            <td colspan="11" class="fw-bold">Closing Balance{% if not multi %} (as of {{ date_to.strftime('%d-%b-%Y') }}){% endif %}</td>
+                            <td class="text-end fw-bold {{ 'text-success' if group.closing >= 0 else 'text-danger' }}">
+                                {{ "{:,.2f}".format(group.closing) }}
                             </td>
                             <td colspan="3"></td>
                         </tr>
+                        {% endfor %}
+                        {% if multi %}
+                        <tr class="table-dark">
+                            <td colspan="11" class="fw-bold">Total Closing Balance — all accounts (as of {{ date_to.strftime('%d-%b-%Y') }})</td>
+                            <td class="text-end fw-bold">{{ "{:,.2f}".format(total_closing_balance) }}</td>
+                            <td colspan="3"></td>
+                        </tr>
+                        {% endif %}
                     </tbody>
                 </table>
             </div>

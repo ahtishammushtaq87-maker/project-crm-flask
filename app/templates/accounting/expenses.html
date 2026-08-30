@@ -396,7 +396,7 @@
                                 <div class="btn-group btn-group-sm">
                                     {% if current_user.has_permission('accounting', 'edit') %}
                                     <button type="button" class="btn btn-warning edit-debit-btn" title="Edit"
-                                        data-id="{{ t.id }}" data-account-id="{{ t.account_id }}"
+                                        data-id="{{ t.id }}" data-account-id="{{ t.account_id }}" data-source-id="{{ t.source_id or '' }}"
                                         data-amount="{{ t.amount }}" data-date="{{ t.date.strftime('%Y-%m-%d') if t.date else '' }}"
                                         data-description="{{ t.description or '' }}" data-reference="{{ t.reference or '' }}"
                                         data-customer-id="{{ t.customer_id or '' }}" data-warehouse-id="{{ t.warehouse_id or '' }}">
@@ -1480,6 +1480,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 {% if current_user.is_admin %}
 {% include 'accounting/_account_manager_modal.html' %}
+{% include 'accounting/_source_manager_modal.html' %}
 {% endif %}
 
 <script>

@@ -1,0 +1,182 @@
+{# Shared "Add Source" modal — reference tags for where the money in a debit
+   ("Add Money") entry came from (ExpenseSource), purely descriptive, no
+   balance of its own. Admin-only end to end: the button that opens this
+   modal is already wrapped in `{% if current_user.is_admin %}` by every
+   including page, and every AJAX endpoint it calls
+   (accounting.create_expense_source_quick / delete_expense_source_quick)
+   independently re-checks admin server-side too.
+
+   If the including page has a searchable <select id="sourceIdSelect"> and/or
+   <select id="debSource"> (Select2-decorated), this modal keeps that
+   dropdown's options in sync with whatever is created/deleted here —
+   whichever one isn't present is just skipped, so no page reload is needed. #}
+<div class="modal fade" id="sourceManagerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-tags me-2"></i>Manage Sources</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="srcMgrError" class="alert alert-danger py-2 d-none"></div>
+
+                <div class="border rounded p-3 mb-3 bg-light">
+                    <h6 class="mb-2">Add New Source</h6>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-8">
+                            <label class="form-label small mb-1">Name <span class="text-danger">*</span></label>
+                            <input type="text" id="srcMgrNewName" class="form-control form-control-sm" placeholder="e.g., Owner Investment, Bank Loan">
+                        </div>
+                        <div class="col-4">
+                            <button type="button" class="btn btn-primary btn-sm w-100" id="srcMgrCreateBtn">
+                                <i class="fas fa-plus me-1"></i>Add
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Name</th>
+                                <th class="text-center" style="width:70px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="srcMgrTableBody">
+                            <tr><td colspan="2" class="text-center text-muted py-3">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var URLS = {
+        list:   '{{ url_for("accounting.list_expense_sources_json") }}',
+        create: '{{ url_for("accounting.create_expense_source_quick") }}',
+        deleteFor: function (id) { return '{{ url_for("accounting.delete_expense_source_quick", source_id=0) }}'.replace('/0/', '/' + id + '/'); }
+    };
+
+    var modalEl = document.getElementById('sourceManagerModal');
+    if (!modalEl) return;
+    var tbody = document.getElementById('srcMgrTableBody');
+    var errorBox = document.getElementById('srcMgrError');
+    var sources = [];
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+    function showError(msg) { errorBox.textContent = msg; errorBox.classList.remove('d-none'); }
+    function clearError() { errorBox.classList.add('d-none'); }
+
+    // Keep the page's source picker(s) (Select2) in sync with this modal's
+    // changes. Different pages use different select ids for their own Source
+    // dropdown — Add Expense uses #sourceIdSelect, the Edit Debit Entry modal
+    // on the Expenses list page uses #debSource — try both.
+    var SOURCE_SELECT_IDS = ['#sourceIdSelect', '#debSource'];
+    function addSelectOption(source) {
+        if (!window.jQuery) return;
+        SOURCE_SELECT_IDS.forEach(function (sel) {
+            var $select = $(sel);
+            if (!$select.length) return;
+            if ($select.find('option[value="' + source.id + '"]').length) return;
+            $select.append(new Option(source.name, source.id, false, false));
+            $select.trigger('change');
+        });
+    }
+    function removeSelectOption(sourceId) {
+        if (!window.jQuery) return;
+        SOURCE_SELECT_IDS.forEach(function (sel) {
+            var $select = $(sel);
+            if (!$select.length) return;
+            var wasSelected = String($select.val()) === String(sourceId);
+            $select.find('option[value="' + sourceId + '"]').remove();
+            if (wasSelected) $select.val('');
+            $select.trigger('change');
+        });
+    }
+
+    function render() {
+        if (!sources.length) {
+            tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted py-3">No sources yet — add one above.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = sources.map(function (s) {
+            return '<tr data-id="' + s.id + '">' +
+                '<td>' + esc(s.name) + '</td>' +
+                '<td class="text-center">' +
+                    '<button type="button" class="btn btn-sm btn-outline-danger src-delete-btn" title="Delete"><i class="fas fa-trash"></i></button>' +
+                '</td>' +
+            '</tr>';
+        }).join('');
+    }
+
+    function load() {
+        tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted py-3">Loading…</td></tr>';
+        fetch(URLS.list, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.success) { showError(data.message || 'Could not load sources.'); return; }
+                sources = data.sources;
+                render();
+            })
+            .catch(function () {
+                tbody.innerHTML = '<tr><td colspan="2" class="text-center text-danger py-3">Could not load sources.</td></tr>';
+            });
+    }
+
+    modalEl.addEventListener('show.bs.modal', function () {
+        clearError();
+        document.getElementById('srcMgrNewName').value = '';
+        load();
+    });
+
+    document.getElementById('srcMgrCreateBtn').addEventListener('click', function () {
+        clearError();
+        var name = document.getElementById('srcMgrNewName').value.trim();
+        if (!name) { showError('Source name is required.'); return; }
+        var fd = new FormData();
+        fd.append('name', name);
+
+        fetch(URLS.create, { method: 'POST', body: fd })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.success) { showError(data.message || 'Could not create source.'); return; }
+                document.getElementById('srcMgrNewName').value = '';
+                sources.push(data.source);
+                render();
+                addSelectOption(data.source);
+            })
+            .catch(function () { showError('Network error — could not create source.'); });
+    });
+
+    tbody.addEventListener('click', function (e) {
+        var tr = e.target.closest('tr[data-id]');
+        if (!tr) return;
+        var id = tr.getAttribute('data-id');
+        if (!e.target.closest('.src-delete-btn')) return;
+
+        var src = sources.filter(function (s) { return String(s.id) === String(id); })[0];
+        if (!src) return;
+        if (!confirm('Delete source "' + src.name + '"? This cannot be undone.')) return;
+        fetch(URLS.deleteFor(id), { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.success) { showError(data.message || 'Could not delete source.'); return; }
+                sources = sources.filter(function (s) { return String(s.id) !== String(id); });
+                render();
+                removeSelectOption(id);
+            })
+            .catch(function () { showError('Network error — could not delete source.'); });
+    });
+})();
+</script>

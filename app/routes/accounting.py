@@ -305,12 +305,18 @@ def _add_money_from_expense_form():
     mirror-image "Add this to Purchase Payment" (paying a vendor bill) only
     makes sense for outgoing Credit expenses, so it's handled in add_expense()
     instead, not here."""
-    from app.models import ExpenseAccount, ExpenseAccountTransaction
+    from app.models import ExpenseAccount, ExpenseAccountTransaction, ExpenseSource
 
     account_id = request.form.get('account_id', type=int)
     acct = ExpenseAccount.query.get(account_id) if account_id else None
     if not acct:
         flash('Please select an account to add money to.', 'warning')
+        return redirect(url_for('accounting.add_expense'))
+
+    source_id = request.form.get('source_id', type=int)
+    source = ExpenseSource.query.get(source_id) if source_id else None
+    if not source:
+        flash('Please select a source for this money.', 'warning')
         return redirect(url_for('accounting.add_expense'))
 
     try:
@@ -325,6 +331,7 @@ def _add_money_from_expense_form():
     is_admin = getattr(current_user, 'is_admin', False)
     txn = ExpenseAccountTransaction(
         account_id=acct.id,
+        source_id=source.id,
         entry_type='debit',
         transaction_type='add_money',
         date=_parse_expense_date(request.form.get('date')) or datetime.utcnow().date(),
@@ -1448,9 +1455,10 @@ def expenses():
     from app.models import Customer, Warehouse
     customers = Customer.query.filter_by(is_active=True).order_by(Customer.name).all()
     warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
-    from app.models import ManufacturingOrder, ExpenseAccount, PaymentMethod
+    from app.models import ManufacturingOrder, ExpenseAccount, PaymentMethod, ExpenseSource
     manufacturing_orders = ManufacturingOrder.query.order_by(ManufacturingOrder.order_number.desc()).all()
     expense_accounts = ExpenseAccount.query.filter_by(is_active=True).order_by(ExpenseAccount.name).all()
+    expense_sources = ExpenseSource.query.filter_by(is_active=True).order_by(ExpenseSource.name).all()
     payment_methods = PaymentMethod.query.filter_by(is_active=True).order_by(PaymentMethod.name).all()
     
     # Get active/draft PD projects for the shift modal
@@ -1485,6 +1493,7 @@ def expenses():
                          customers=customers,
                          warehouses=warehouses,
                          expense_accounts=expense_accounts,
+                         expense_sources=expense_sources,
                          payment_methods=payment_methods,
                          manufacturing_orders=manufacturing_orders,
                          active_pd_projects=active_pd_projects,
@@ -1568,30 +1577,30 @@ def account_activity():
     and Transfer Funds movements (a credit/debit pair across two accounts,
     see transfer_funds_quick). Read-only: no ledger data is created here.
     Entirely independent of the Journal module's own accounts."""
-    from app.models import ExpenseAccount, ExpenseAccountTransaction, AccountDailyClose
+    from app.models import ExpenseAccount, ExpenseAccountTransaction, AccountDailyClose, ExpenseSource
 
     all_accounts = ExpenseAccount.query.order_by(ExpenseAccount.name).all()
+    source_options = ExpenseSource.query.filter_by(is_active=True).order_by(ExpenseSource.name).all()
 
     account_type = (request.args.get('account_type') or '').strip()
-    custodian = (request.args.get('custodian') or '').strip()
     location = (request.args.get('location') or '').strip()
+    source_id = request.args.get('source_id', type=int)
 
     filtered_accounts = [
         a for a in all_accounts
         if (not account_type or a.account_type == account_type)
-        and (not custodian or a.custodian_name == custodian)
         and (not location or a.location == location)
     ]
 
     account_type_options = sorted({a.account_type for a in all_accounts if a.account_type})
-    custodian_options = sorted({a.custodian_name for a in all_accounts if a.custodian_name})
     location_options = sorted({a.location for a in all_accounts if a.location})
 
     account_id = request.args.get('account_id', type=int)
     selected_account = ExpenseAccount.query.get(account_id) if account_id else None
-    if not selected_account and filtered_accounts:
-        selected_account = filtered_accounts[0]
-        account_id = selected_account.id
+    # No account_id in the URL means "All Accounts" — that's the default view
+    # now, combining every account that passes the Account Type / Location
+    # filters, rather than silently picking just the first one.
+    accounts_in_scope = [selected_account] if selected_account else filtered_accounts
 
     today = datetime.utcnow().date()
 
@@ -1609,17 +1618,19 @@ def account_activity():
     # balance, making a transfer look "missing" or the totals look wrong even
     # though it was recorded correctly. Explicit date_from/date_to in the URL
     # still narrow the view same as before.
-    if selected_account:
+    if accounts_in_scope:
+        scope_ids = [a.id for a in accounts_in_scope]
         earliest_txn = (ExpenseAccountTransaction.query
-                         .filter_by(account_id=selected_account.id)
+                         .filter(ExpenseAccountTransaction.account_id.in_(scope_ids))
                          .order_by(ExpenseAccountTransaction.date.asc())
                          .first())
         latest_txn = (ExpenseAccountTransaction.query
-                       .filter_by(account_id=selected_account.id)
+                       .filter(ExpenseAccountTransaction.account_id.in_(scope_ids))
                        .order_by(ExpenseAccountTransaction.date.desc())
                        .first())
+        earliest_created = min((a.created_at for a in accounts_in_scope if a.created_at), default=None)
         default_date_from = earliest_txn.date if earliest_txn else (
-            selected_account.created_at.date() if selected_account.created_at else today)
+            earliest_created.date() if earliest_created else today)
         default_date_to = max(today, latest_txn.date) if latest_txn else today
     else:
         default_date_from = today - timedelta(days=30)
@@ -1633,6 +1644,7 @@ def account_activity():
     row_status = request.args.get('row_status', 'all')
 
     rows = []
+    account_groups = []
     status_counts = {'all': 0, 'approved': 0, 'pending': 0, 'rejected': 0, 'draft': 0, 'reversed': 0}
     range_opening_balance = 0.0
     money_in = money_out = 0.0
@@ -1651,44 +1663,66 @@ def account_activity():
             return 'approved'
         return 'pending'
 
-    if selected_account:
-        range_opening_balance = selected_account.opening_balance or 0
+    # "All Accounts" (no single selected_account) combines this same
+    # per-account computation across every account in scope: opening/money
+    # in/out/expected/actual sum up. Each account keeps its own section in
+    # the ledger — its own opening/closing balance — rather than being
+    # interleaved by date, since a single merged running balance across
+    # different accounts isn't a meaningful number; a grand total closing
+    # balance is shown once after every account's section.
+    for acct in accounts_in_scope:
+        acct_opening = acct.opening_balance or 0
         prior_txns = (ExpenseAccountTransaction.query
-                      .filter(ExpenseAccountTransaction.account_id == selected_account.id,
+                      .filter(ExpenseAccountTransaction.account_id == acct.id,
                               ExpenseAccountTransaction.is_approved.is_(True),
                               ExpenseAccountTransaction.date < date_from)
                       .all())
         for t in prior_txns:
-            range_opening_balance += (t.amount or 0) if t.entry_type == 'debit' else -(t.amount or 0)
+            acct_opening += (t.amount or 0) if t.entry_type == 'debit' else -(t.amount or 0)
+        range_opening_balance += acct_opening
 
         range_txns = (ExpenseAccountTransaction.query
-                      .filter(ExpenseAccountTransaction.account_id == selected_account.id,
+                      .filter(ExpenseAccountTransaction.account_id == acct.id,
                               ExpenseAccountTransaction.date >= date_from,
                               ExpenseAccountTransaction.date <= date_to)
                       .order_by(ExpenseAccountTransaction.date.desc(), ExpenseAccountTransaction.id.desc())
                       .all())
+        # Source filters the whole view, not just the displayed rows — a
+        # credit (money out) row never has a source, so filtering by source
+        # naturally narrows this to just that source's debit activity.
+        # row_status stays a display-only filter below (per the "Balance
+        # rule" alert: pending/rejected/draft entries stay visible here but
+        # never move the totals), so it isn't applied to this list.
+        if source_id:
+            range_txns = [t for t in range_txns if t.source_id == source_id]
 
+        acct_money_in = acct_money_out = 0.0
         for t in range_txns:
             status = _status_of(t)
             status_counts['all'] += 1
             status_counts[status] += 1
             if t.is_approved and not t.is_rejected:
                 if t.entry_type == 'debit':
-                    money_in += t.amount or 0
+                    acct_money_in += t.amount or 0
                 else:
-                    money_out += t.amount or 0
+                    acct_money_out += t.amount or 0
+        money_in += acct_money_in
+        money_out += acct_money_out
 
-        expected_balance = range_opening_balance + money_in - money_out
+        acct_expected = acct_opening + acct_money_in - acct_money_out
+        acct_latest_close = (AccountDailyClose.query
+                              .filter(AccountDailyClose.account_id == acct.id,
+                                      AccountDailyClose.close_date <= date_to)
+                              .order_by(AccountDailyClose.close_date.desc(), AccountDailyClose.closed_at.desc())
+                              .first())
+        acct_actual = acct_latest_close.actual_balance if acct_latest_close else acct_expected
+        actual_balance += acct_actual
+        variance += acct_actual - acct_expected
+        if selected_account:
+            latest_close = acct_latest_close
 
-        latest_close = (AccountDailyClose.query
-                         .filter(AccountDailyClose.account_id == selected_account.id,
-                                 AccountDailyClose.close_date <= date_to)
-                         .order_by(AccountDailyClose.close_date.desc(), AccountDailyClose.closed_at.desc())
-                         .first())
-        actual_balance = latest_close.actual_balance if latest_close else expected_balance
-        variance = actual_balance - expected_balance
-
-        running = range_opening_balance
+        running = acct_opening
+        acct_rows = []
         for t in range_txns:
             if row_status != 'all' and _status_of(t) != row_status:
                 continue
@@ -1696,10 +1730,10 @@ def account_activity():
             running += delta
 
             if t.entry_type == 'debit':
-                from_label = t.counterparty_account.name if t.counterparty_account else (t.payee or 'External')
-                to_label = selected_account.name
+                from_label = t.counterparty_account.name if t.counterparty_account else (t.source.name if t.source else (t.payee or 'External'))
+                to_label = acct.name
             else:
-                from_label = selected_account.name
+                from_label = acct.name
                 if t.counterparty_account:
                     to_label = t.counterparty_account.name
                 elif t.payee:
@@ -1709,13 +1743,21 @@ def account_activity():
                 else:
                     to_label = 'Expense Payment'
 
-            rows.append({'txn': t, 'running': running, 'expense': t.expense,
-                        'from_label': from_label, 'to_label': to_label})
+            acct_rows.append({'txn': t, 'running': running, 'expense': t.expense,
+                              'from_label': from_label, 'to_label': to_label})
 
-        daily_closes = (AccountDailyClose.query
-                        .filter_by(account_id=selected_account.id)
-                        .order_by(AccountDailyClose.close_date.desc())
-                        .all())
+        rows.extend(acct_rows)
+        acct_closing = acct_rows[-1]['running'] if acct_rows else acct_opening
+        account_groups.append({'account': acct, 'opening': acct_opening,
+                               'rows': acct_rows, 'closing': acct_closing})
+
+    expected_balance = range_opening_balance + money_in - money_out
+    total_closing_balance = sum(g['closing'] for g in account_groups)
+
+    daily_closes = (AccountDailyClose.query
+                    .filter_by(account_id=selected_account.id)
+                    .order_by(AccountDailyClose.close_date.desc())
+                    .all()) if selected_account else []
 
     # No active_module passed here on purpose — that's what turns on the
     # floating "Advanced Filter" button (base.html), and this page has its
@@ -1724,18 +1766,21 @@ def account_activity():
                            accounts=filtered_accounts,
                            all_accounts=all_accounts,
                            account_type_options=account_type_options,
-                           custodian_options=custodian_options,
                            location_options=location_options,
+                           source_options=source_options,
                            selected_account=selected_account,
                            selected_account_id=account_id,
                            selected_account_type=account_type,
-                           selected_custodian=custodian,
                            selected_location=location,
+                           selected_source_id=source_id,
+                           accounts_in_scope_count=len(accounts_in_scope),
                            date_from=date_from,
                            date_to=date_to,
                            row_status=row_status,
                            status_counts=status_counts,
                            rows=rows,
+                           account_groups=account_groups,
+                           total_closing_balance=total_closing_balance,
                            range_opening_balance=range_opening_balance,
                            money_in=money_in,
                            money_out=money_out,
@@ -2003,6 +2048,56 @@ def delete_expense_account_quick(account_id):
         return jsonify({'success': False,
                         'message': 'Cannot delete an account that has transactions. Deactivate it instead.'})
     db.session.delete(acct)
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+# ─── Expense Source management (create/delete) — AJAX/JSON ────────────────
+# Source is a reference tag for where the money in a debit ("Add Money")
+# transaction came from — purely descriptive, used for filtering. Same
+# read/write split as accounts above: any logged-in user can list sources to
+# populate the dropdown, only admins can add/delete via the "Add Source"
+# button, which is only rendered for admins in the first place.
+
+@bp.route('/expense-sources/list-json')
+@login_required
+def list_expense_sources_json():
+    from app.models import ExpenseSource
+    sources = ExpenseSource.query.filter_by(is_active=True).order_by(ExpenseSource.name).all()
+    return jsonify({'success': True, 'sources': [{'id': s.id, 'name': s.name} for s in sources]})
+
+
+@bp.route('/expense-sources/create-quick', methods=['POST'])
+@login_required
+def create_expense_source_quick():
+    from app.models import ExpenseSource
+    if not getattr(current_user, 'is_admin', False):
+        return jsonify({'success': False, 'message': 'Only admins can add sources.'}), 403
+
+    name = (request.form.get('name') or '').strip()
+    if not name:
+        return jsonify({'success': False, 'message': 'Source name is required.'})
+    if ExpenseSource.query.filter(db.func.lower(ExpenseSource.name) == name.lower()).first():
+        return jsonify({'success': False, 'message': f'A source named "{name}" already exists.'})
+
+    source = ExpenseSource(name=name, created_by=current_user.id)
+    db.session.add(source)
+    db.session.commit()
+    return jsonify({'success': True, 'source': {'id': source.id, 'name': source.name}})
+
+
+@bp.route('/expense-sources/<int:source_id>/delete-quick', methods=['POST'])
+@login_required
+def delete_expense_source_quick(source_id):
+    from app.models import ExpenseSource
+    if not getattr(current_user, 'is_admin', False):
+        return jsonify({'success': False, 'message': 'Only admins can delete sources.'}), 403
+
+    source = ExpenseSource.query.get_or_404(source_id)
+    if source.transactions:
+        return jsonify({'success': False,
+                        'message': 'Cannot delete a source that has entries. Deactivate it instead.'})
+    db.session.delete(source)
     db.session.commit()
     return jsonify({'success': True})
 
@@ -2503,7 +2598,7 @@ def unshift_expense_from_inventory():
 @login_required
 @permission_required('accounting', action='add')
 def add_expense():
-    from app.models import ExpenseCategory, Vendor, BOM, ExpenseAccount
+    from app.models import ExpenseCategory, Vendor, BOM, ExpenseAccount, ExpenseSource
     from werkzeug.utils import secure_filename
     import os
 
@@ -2555,6 +2650,12 @@ def add_expense():
     form.mo_id.choices = [(mo.id, f"{mo.order_number} — {mo.bom.product.name}") for mo in in_progress_mos]
     
     if form.validate_on_submit():
+        if not request.form.get('account_id', type=int):
+            flash('Please select an account for this expense.', 'warning')
+            return render_template('accounting/add_expense.html', form=form,
+                                    expense_accounts=ExpenseAccount.query.filter_by(is_active=True).order_by(ExpenseAccount.name).all(),
+                                    expense_sources=ExpenseSource.query.filter_by(is_active=True).order_by(ExpenseSource.name).all())
+
         # Get selected targets
         base_amount = form.amount.data
         is_overhead = form.is_bom_overhead.data
@@ -2812,7 +2913,8 @@ def add_expense():
             return redirect(url_for('accounting.add_expense'))
 
     expense_accounts = ExpenseAccount.query.filter_by(is_active=True).order_by(ExpenseAccount.name).all()
-    return render_template('accounting/add_expense.html', form=form, expense_accounts=expense_accounts)
+    expense_sources = ExpenseSource.query.filter_by(is_active=True).order_by(ExpenseSource.name).all()
+    return render_template('accounting/add_expense.html', form=form, expense_accounts=expense_accounts, expense_sources=expense_sources)
 
 
 @bp.route('/expense/bulk-upload', methods=['GET', 'POST'])
@@ -3202,7 +3304,7 @@ def edit_expense_account_debit_entry(id):
     amount adjusts that Payment (and the Sale's paid_amount) by the same
     delta via adjust_sale_payment — it never re-targets which Sale/Bill the
     transfer points at; that's create-only, in _sync_add_money_sale_transfer."""
-    from app.models import ExpenseAccountTransaction, ExpenseAccount
+    from app.models import ExpenseAccountTransaction, ExpenseAccount, ExpenseSource
 
     txn = ExpenseAccountTransaction.query.get_or_404(id)
     if txn.expense_id is not None:
@@ -3214,6 +3316,11 @@ def edit_expense_account_debit_entry(id):
     acct = ExpenseAccount.query.get(account_id) if account_id else None
     if not acct:
         return jsonify({'success': False, 'message': 'Select an account.'})
+
+    source_id = request.form.get('source_id', type=int)
+    source = ExpenseSource.query.get(source_id) if source_id else None
+    if not source:
+        return jsonify({'success': False, 'message': 'Select a source.'})
 
     try:
         amount = float(request.form.get('amount') or 0)
@@ -3239,6 +3346,7 @@ def edit_expense_account_debit_entry(id):
         bill_path = new_bill
 
     txn.account_id = acct.id
+    txn.source_id = source.id
     txn.amount = amount
     txn.date = _parse_expense_date(request.form.get('date')) or txn.date
     txn.description = (request.form.get('description') or '').strip() or None

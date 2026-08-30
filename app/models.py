@@ -1745,6 +1745,25 @@ class PaymentMethod(db.Model):
         return f'<PaymentMethod {self.name}>'
 
 
+class ExpenseSource(db.Model):
+    """A reference tag for where the money in a debit ('Add Money')
+    ExpenseAccountTransaction actually came from (e.g. Owner Investment, Bank
+    Loan, Sales Collection). Purely descriptive/for filtering — unlike
+    ExpenseAccount it carries no balance of its own. Managed the same way as
+    ExpenseCategory: admins add entries via the "Add Source" button, and any
+    logged-in user can pick from the list when recording a debit."""
+    __tablename__ = 'expense_sources'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False, unique=True, index=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    def __repr__(self):
+        return f'<ExpenseSource {self.name}>'
+
+
 class ExpenseAccount(db.Model):
     """A named account (e.g. Cash, Bank, Owner) that Expenses and Fixed
     Expenses can be charged against — entirely independent of the Journal
@@ -1808,6 +1827,11 @@ class ExpenseAccountTransaction(db.Model):
     # expense.warehouse instead, same as Expense's own fields.
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True, index=True)
     warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
+    # Only ever set on a debit ("Add Money") row — where that incoming money
+    # actually came from (see ExpenseSource). Required in the UI for new
+    # debit entries, but nullable here so older rows recorded before this
+    # field existed stay valid.
+    source_id = db.Column(db.Integer, db.ForeignKey('expense_sources.id'), nullable=True, index=True)
 
     date = db.Column(db.Date, nullable=False, index=True)
     entry_type = db.Column(db.String(10), nullable=False, default='credit')  # 'debit' | 'credit'
@@ -1855,6 +1879,7 @@ class ExpenseAccountTransaction(db.Model):
     linked_payment = db.relationship('Payment', foreign_keys=[linked_payment_id])
     customer = db.relationship('Customer', backref='account_debit_entries', lazy=True)
     warehouse = db.relationship('Warehouse', backref='account_debit_entries', lazy=True)
+    source = db.relationship('ExpenseSource', backref='transactions', lazy=True)
 
     def __repr__(self):
         return f'<ExpenseAccountTransaction {self.entry_type} {self.amount} -> account {self.account_id}>'

@@ -22,6 +22,22 @@
                         {% endfor %}
                     </select>
                 </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold mb-1">Source <span class="text-danger">*</span></label>
+                    <div class="d-flex gap-2">
+                        <select id="debSource" class="form-select flex-grow-1">
+                            <option value="">— Select Source —</option>
+                            {% for src in expense_sources %}
+                            <option value="{{ src.id }}">{{ src.name }}</option>
+                            {% endfor %}
+                        </select>
+                        {% if current_user.is_admin %}
+                        <button type="button" class="btn btn-outline-primary text-nowrap" data-bs-toggle="modal" data-bs-target="#sourceManagerModal" title="Manage sources">
+                            <i class="bi bi-gear"></i> Add Source
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
                 <div class="row g-2 mb-3">
                     <div class="col-md-6">
                         <label class="form-label small fw-semibold mb-1">Amount <span class="text-danger">*</span></label>
@@ -142,6 +158,7 @@
             clearError();
             currentId = btn.getAttribute('data-id');
             document.getElementById('debAccount').value = btn.getAttribute('data-account-id') || '';
+            document.getElementById('debSource').value = btn.getAttribute('data-source-id') || '';
             document.getElementById('debAmount').value = btn.getAttribute('data-amount') || '';
             document.getElementById('debDate').value = btn.getAttribute('data-date') || '';
             document.getElementById('debDescription').value = btn.getAttribute('data-description') || '';
@@ -228,12 +245,15 @@
         clearError();
         if (!currentId) return;
         var accountId = document.getElementById('debAccount').value;
+        var sourceId = document.getElementById('debSource').value;
         var amount = document.getElementById('debAmount').value;
         if (!accountId) { showError('Select an account.'); return; }
+        if (!sourceId) { showError('Select a source.'); return; }
         if (!amount || Number(amount) <= 0) { showError('Enter an amount greater than zero.'); return; }
 
         var fd = new FormData();
         fd.append('account_id', accountId);
+        fd.append('source_id', sourceId);
         fd.append('amount', amount);
         fd.append('date', document.getElementById('debDate').value);
         fd.append('reference', document.getElementById('debReference').value.trim());

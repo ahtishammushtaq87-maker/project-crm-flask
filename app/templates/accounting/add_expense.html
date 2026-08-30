@@ -71,6 +71,13 @@
     position: absolute !important;
     width: 1px !important;
 }
+
+/* Visible invalid state for the Select2-wrapped Account dropdown, since the
+   real <select> is clipped off-screen and can't show the native tooltip. */
+.select2-container--bootstrap-5.is-invalid-select2 .select2-selection {
+    border-color: #dc3545 !important;
+    box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25);
+}
 </style>
 {% endblock %}
 
@@ -107,9 +114,9 @@
                             </div>
                         </div>
 
-                        <!-- Account (optional for Expense, required for Add Money) -->
+                        <!-- Account (required for both Expense and Add Money) -->
                         <div class="mb-3">
-                            <label class="form-label">Account <span class="text-muted small" id="accountRequiredHint">(optional)</span></label>
+                            <label class="form-label">Account <span class="text-danger" id="accountRequiredHint">*</span></label>
                             <div class="d-flex gap-2">
                                 <select id="accountIdSelect" name="account_id" class="form-select flex-grow-1">
                                     <option value="">— No Account —</option>
@@ -125,6 +132,26 @@
                                 {% endif %}
                             </div>
                             <div class="form-text" id="accountHelpText">If selected, this expense deducts the amount from this account's balance.</div>
+                        </div>
+
+                        <!-- Source: where the incoming money came from — only relevant for Add Money (Debit) -->
+                        <div class="mb-3" id="sourceFieldContainer" style="display:none;">
+                            <label class="form-label">Source <span class="text-danger">*</span></label>
+                            <div class="d-flex gap-2">
+                                <select id="sourceIdSelect" name="source_id" class="form-select flex-grow-1">
+                                    <option value="">— Select Source —</option>
+                                    {% for src in expense_sources %}
+                                    <option value="{{ src.id }}">{{ src.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                {% if current_user.is_admin %}
+                                <button type="button" class="btn btn-outline-primary text-nowrap" id="manageSourcesBtn"
+                                        data-bs-toggle="modal" data-bs-target="#sourceManagerModal" title="Manage sources">
+                                    <i class="bi bi-gear"></i> Add Source
+                                </button>
+                                {% endif %}
+                            </div>
+                            <div class="form-text">Where this money is coming from (for reference and filtering on Account Activity).</div>
                         </div>
 
                         {% include 'accounting/_payment_transfer_block.html' %}
@@ -337,6 +364,7 @@
 </div>
 
 {% include 'accounting/_account_manager_modal.html' %}
+{% include 'accounting/_source_manager_modal.html' %}
 {% endblock %}
 
 {% block extra_js %}
@@ -350,6 +378,7 @@ document.addEventListener('DOMContentLoaded', function() {
     $('select[name="customer_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Customer (Optional) —', allowClear: true, width: '100%' });
     $('select[name="warehouse_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Warehouse (Optional) —', allowClear: true, width: '100%' });
     $('#accountIdSelect').select2({ theme: 'bootstrap-5', placeholder: '— Select Account —', allowClear: true, width: '100%' });
+    $('#sourceIdSelect').select2({ theme: 'bootstrap-5', placeholder: '— Select Source —', allowClear: true, width: '100%' });
 
     // ── Transaction Type: Credit (Expense) vs Debit (Add Money to account) ──
     const txnCredit = document.getElementById('txnCredit');
@@ -361,24 +390,30 @@ document.addEventListener('DOMContentLoaded', function() {
     const accountHelpText = document.getElementById('accountHelpText');
     const descriptionLabel = document.getElementById('descriptionLabel');
     const submitBtn = document.getElementById('submitBtn');
+    const sourceFieldContainer = document.getElementById('sourceFieldContainer');
+
+    function markInvalid(selector, invalid) {
+        const container = $(selector).next('.select2-container');
+        container.toggleClass('is-invalid-select2', invalid);
+    }
 
     function applyTxnType() {
         const isDebit = txnDebit.checked;
         expenseOnlyFields.forEach(el => { el.style.display = isDebit ? 'none' : ''; });
+        sourceFieldContainer.style.display = isDebit ? '' : 'none';
         if (isDebit) {
-            accountRequiredHint.textContent = '(required)';
             accountHelpText.textContent = 'This amount will be added to the selected account\'s balance. No expense record is created.';
             descriptionLabel.textContent = 'Details';
             submitBtn.textContent = 'Add Money to Account';
             submitBtn.classList.remove('btn-success');
             submitBtn.classList.add('btn-primary');
         } else {
-            accountRequiredHint.textContent = '(optional)';
-            accountHelpText.textContent = "If selected, this expense deducts the amount from this account's balance.";
+            accountHelpText.textContent = "This expense deducts the amount from this account's balance.";
             descriptionLabel.textContent = 'Description';
             submitBtn.textContent = 'Save Expense';
             submitBtn.classList.remove('btn-primary');
             submitBtn.classList.add('btn-success');
+            markInvalid('#sourceIdSelect', false);
         }
         txnCreditCard.style.borderColor = !isDebit ? '#dc3545' : '';
         txnCreditCard.style.background = !isDebit ? '#fff5f5' : '#fff';
@@ -391,10 +426,28 @@ document.addEventListener('DOMContentLoaded', function() {
     txnDebitCard.addEventListener('click', () => { txnDebit.checked = true; applyTxnType(); });
     applyTxnType();
 
+    $('#accountIdSelect').on('change', function() { markInvalid('#accountIdSelect', false); });
+    $('#sourceIdSelect').on('change', function() { markInvalid('#sourceIdSelect', false); });
+
     document.getElementById('expenseForm').addEventListener('submit', function(e) {
-        if (txnDebit.checked && !document.getElementById('accountIdSelect').value) {
+        const isDebit = txnDebit.checked;
+        let firstInvalid = null;
+
+        if (!document.getElementById('accountIdSelect').value) {
+            markInvalid('#accountIdSelect', true);
+            firstInvalid = firstInvalid || '#accountIdSelect';
+        }
+        if (isDebit && !document.getElementById('sourceIdSelect').value) {
+            markInvalid('#sourceIdSelect', true);
+            firstInvalid = firstInvalid || '#sourceIdSelect';
+        }
+
+        if (firstInvalid) {
             e.preventDefault();
-            alert('Please select an account to add money to.');
+            document.querySelector(firstInvalid).closest('.mb-3').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            alert(firstInvalid === '#sourceIdSelect'
+                ? 'Please select a source for this money.'
+                : (isDebit ? 'Please select an account to add money to.' : 'Please select an account for this expense.'));
         }
     });
 
