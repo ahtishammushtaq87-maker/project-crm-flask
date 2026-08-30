@@ -29,15 +29,11 @@
                             <label class="form-label small mb-1">Name <span class="text-danger">*</span></label>
                             <input type="text" id="acctMgrNewName" class="form-control form-control-sm" placeholder="e.g., Cash, Bank">
                         </div>
-                        <div class="col-md-2">
+                        <div class="col-md-3">
                             <label class="form-label small mb-1">Type</label>
                             <input type="text" id="acctMgrNewType" class="form-control form-control-sm" placeholder="Bank / Custodian Funds">
                         </div>
-                        <div class="col-md-2">
-                            <label class="form-label small mb-1">Custodian</label>
-                            <input type="text" id="acctMgrNewCustodian" class="form-control form-control-sm" placeholder="Person responsible">
-                        </div>
-                        <div class="col-md-2">
+                        <div class="col-md-3">
                             <label class="form-label small mb-1">Location</label>
                             <input type="text" id="acctMgrNewLocation" class="form-control form-control-sm" placeholder="e.g., Lahore Factory">
                         </div>
@@ -75,7 +71,6 @@
                                 <th style="width:48px;">Logo</th>
                                 <th>Name</th>
                                 <th>Type</th>
-                                <th>Custodian</th>
                                 <th>Location</th>
                                 <th class="text-end">Opening</th>
                                 <th class="text-end">Balance</th>
@@ -84,7 +79,7 @@
                             </tr>
                         </thead>
                         <tbody id="acctMgrTableBody">
-                            <tr><td colspan="9" class="text-center text-muted py-3">Loading…</td></tr>
+                            <tr><td colspan="8" class="text-center text-muted py-3">Loading…</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -209,7 +204,6 @@
             '<td class="text-center">' + logoCell(a) + '</td>' +
             '<td class="acct-name">' + esc(a.name) + '</td>' +
             '<td class="acct-type">' + (a.account_type ? esc(a.account_type) : '<span class="text-muted">—</span>') + '</td>' +
-            '<td class="acct-custodian">' + (a.custodian_name ? esc(a.custodian_name) : '<span class="text-muted">—</span>') + '</td>' +
             '<td class="acct-location">' + (a.location ? esc(a.location) : '<span class="text-muted">—</span>') + '</td>' +
             '<td class="acct-opening text-end">' + money(a.opening_balance) + '</td>' +
             '<td class="text-end fw-semibold ' + (a.balance >= 0 ? 'text-success' : 'text-danger') + '">' + money(a.balance) + '</td>' +
@@ -230,7 +224,6 @@
             '<td class="text-center">' + logoCell(a) + '</td>' +
             '<td><input type="text" class="form-control form-control-sm acct-edit-name" value="' + esc(a.name) + '"></td>' +
             '<td><input type="text" class="form-control form-control-sm acct-edit-type" value="' + esc(a.account_type || '') + '"></td>' +
-            '<td><input type="text" class="form-control form-control-sm acct-edit-custodian" value="' + esc(a.custodian_name || '') + '"></td>' +
             '<td><input type="text" class="form-control form-control-sm acct-edit-location" value="' + esc(a.location || '') + '"></td>' +
             '<td><input type="number" step="0.01" class="form-control form-control-sm acct-edit-opening" value="' + (a.opening_balance || 0) + '"></td>' +
             '<td class="text-end text-muted small">(unchanged)</td>' +
@@ -248,14 +241,14 @@
 
     function render() {
         if (!accounts.length) {
-            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-3">No accounts yet — create one above.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No accounts yet — create one above.</td></tr>';
             return;
         }
         tbody.innerHTML = accounts.map(renderRow).join('');
     }
 
     function load() {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-3">Loading…</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">Loading…</td></tr>';
         fetch(URLS.list, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(function (r) { return r.json(); })
             .then(function (data) {
@@ -264,7 +257,7 @@
                 render();
             })
             .catch(function () {
-                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger py-3">Could not load accounts.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger py-3">Could not load accounts.</td></tr>';
             });
     }
 
@@ -286,7 +279,6 @@
         clearError();
         document.getElementById('acctMgrNewName').value = '';
         document.getElementById('acctMgrNewType').value = '';
-        document.getElementById('acctMgrNewCustodian').value = '';
         document.getElementById('acctMgrNewLocation').value = '';
         document.getElementById('acctMgrNewOpening').value = 0;
         newImageInput.value = '';
@@ -301,7 +293,6 @@
         var fd = new FormData();
         fd.append('name', name);
         fd.append('account_type', document.getElementById('acctMgrNewType').value.trim());
-        fd.append('custodian_name', document.getElementById('acctMgrNewCustodian').value.trim());
         fd.append('location', document.getElementById('acctMgrNewLocation').value.trim());
         fd.append('opening_balance', document.getElementById('acctMgrNewOpening').value || 0);
         if (newImageInput.files && newImageInput.files[0]) {
@@ -314,7 +305,6 @@
                 if (!data.success) { showError(data.message || 'Could not create account.'); return; }
                 document.getElementById('acctMgrNewName').value = '';
                 document.getElementById('acctMgrNewType').value = '';
-                document.getElementById('acctMgrNewCustodian').value = '';
                 document.getElementById('acctMgrNewLocation').value = '';
                 document.getElementById('acctMgrNewOpening').value = 0;
                 newImageInput.value = '';
@@ -322,7 +312,7 @@
                 var acct = data.account;
                 accounts.push({
                     id: acct.id, name: acct.name, account_type: acct.account_type,
-                    custodian_name: acct.custodian_name || '', location: acct.location || '',
+                    location: acct.location || '',
                     image_url: acct.image_url || null,
                     opening_balance: 0, balance: 0, is_active: true, has_lines: false
                 });
@@ -434,7 +424,6 @@
             var fd = new FormData();
             fd.append('name', name);
             fd.append('account_type', newTr.querySelector('.acct-edit-type').value.trim());
-            fd.append('custodian_name', newTr.querySelector('.acct-edit-custodian').value.trim());
             fd.append('location', newTr.querySelector('.acct-edit-location').value.trim());
             fd.append('opening_balance', newTr.querySelector('.acct-edit-opening').value || 0);
             fd.append('is_active', newTr.querySelector('.acct-edit-active').checked ? '1' : '0');

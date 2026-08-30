@@ -1787,6 +1787,13 @@ class ExpenseAccount(db.Model):
     linked_funding_account_id = db.Column(db.Integer, db.ForeignKey('expense_accounts.id'), nullable=True)
     linked_funding_account = db.relationship('ExpenseAccount', remote_side=[id])
 
+    # Set when this account was auto-created for an HR staff member (see
+    # _ensure_staff_expense_account in app/routes/salary.py) — one account
+    # per staff member, so it can be found again on later edits instead of
+    # creating a duplicate.
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=True, unique=True)
+    staff = db.relationship('Staff', backref=db.backref('expense_account', uselist=False))
+
     @property
     def total_debit(self):
         return sum((t.amount or 0) for t in self.transactions if t.entry_type == 'debit' and t.is_approved)

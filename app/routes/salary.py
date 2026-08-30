@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
-from app.models import Staff, SalaryAdvance, SalaryPayment, Attendance
+from app.models import Staff, SalaryAdvance, SalaryPayment, Attendance, ExpenseAccount
 from app.forms import StaffForm, SalaryAdvanceForm, SalaryPaymentForm
 from datetime import datetime
 from sqlalchemy import extract
@@ -100,6 +100,31 @@ def recalculate_all_salaries():
         
     return redirect(url_for('attendance.index'))
 
+def _ensure_staff_expense_account(staff):
+    """Auto-create the Expense account for a staff member, named after them
+    with a 0 opening balance, linked via staff_id — idempotent, so calling
+    this again for a staff member that already has one is a no-op. Account
+    names must be unique, so a name colliding with an existing account gets
+    a numeric suffix rather than failing."""
+    if staff.expense_account:
+        return staff.expense_account
+
+    base_name = (staff.name or '').strip()
+    if not base_name:
+        return None
+
+    name = base_name
+    suffix = 2
+    while ExpenseAccount.query.filter(db.func.lower(ExpenseAccount.name) == name.lower()).first():
+        name = f'{base_name} ({suffix})'
+        suffix += 1
+
+    account = ExpenseAccount(name=name, opening_balance=0, staff_id=staff.id,
+                              created_by=getattr(current_user, 'id', None))
+    db.session.add(account)
+    return account
+
+
 @bp.route('/staff/add', methods=['GET', 'POST'])
 @login_required
 @permission_required('salary', action='add')
@@ -130,6 +155,8 @@ def add_staff():
         staff.remaining_joining_advance = form.joining_advance.data or 0
         staff.calculate_daily_salary()  # Calculate daily salary
         db.session.add(staff)
+        db.session.flush()  # assign staff.id before linking its Expense account
+        _ensure_staff_expense_account(staff)
         db.session.commit()
         log_activity('Salary', f'Added Staff: {staff.name}', f'Designation: {staff.designation}, Salary: {staff.monthly_salary}')
         flash('Staff member added successfully!', 'success')
@@ -257,6 +284,8 @@ def bulk_upload_staff():
                     )
                     staff.calculate_daily_salary()
                     db.session.add(staff)
+                    db.session.flush()  # assign staff.id before linking its Expense account
+                    _ensure_staff_expense_account(staff)
                     added += 1
                 except Exception as e:
                     errors.append(f'Row {idx}: {str(e)}')
