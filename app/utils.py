@@ -1,7 +1,7 @@
 """Payment management utility functions"""
 
 from calendar import monthrange
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app import db
@@ -38,6 +38,43 @@ def get_working_days_in_month(year, month):
         if date(year, month, day).weekday() == 6
     )
     return days_in_month - sundays
+
+
+def get_required_hours_in_range(staff, start_date=None, end_date=None, hours_per_day=8):
+    """
+    Required attendance hours for a staff member over [start_date, end_date],
+    using the same "working day" convention as get_working_days_in_month:
+    every day except Sunday, minus that staff's holiday-marked attendance days.
+
+    Defaults end_date to today and start_date to the staff's joining_date;
+    if that's not set, falls back to their earliest attendance record, so an
+    all-time call (no args) still spans their actual attendance history
+    rather than collapsing to a single day.
+    """
+    if end_date is None:
+        end_date = date.today()
+    if start_date is None:
+        start_date = staff.joining_date
+    if start_date is None:
+        earliest = min((a.date for a in staff.attendance_records), default=None)
+        start_date = earliest or end_date
+    if start_date > end_date:
+        return 0
+
+    holiday_dates = {
+        a.date for a in staff.attendance_records
+        if a.is_holiday and start_date <= a.date <= end_date
+    }
+
+    working_days = 0
+    day = start_date
+    one_day = timedelta(days=1)
+    while day <= end_date:
+        if day.weekday() != 6 and day not in holiday_dates:
+            working_days += 1
+        day += one_day
+
+    return working_days * hours_per_day
 
 
 def safe_update_paid_amount(model_instance, delta_amount):

@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from app.utils import permission_required, log_activity
 from flask_login import login_required, current_user
 from app import db
-from app.models import Staff, SalaryAdvance, SalaryPayment, Attendance, ExpenseAccount
+from app.models import Staff, SalaryAdvance, SalaryPayment, Attendance, ExpenseAccount, ExpenseAccountTransaction, StaffReview
 from app.forms import StaffForm, SalaryAdvanceForm, SalaryPaymentForm
 from datetime import datetime
 from sqlalchemy import extract
@@ -24,20 +24,33 @@ def staff_list():
     # Simple manual filters
     staff_id = request.args.get('staff_id', type=int)
     designation = request.args.get('designation')
-    status = request.args.get('status')
+    # Default tab is "Active" so staff who have left aren't mixed into the
+    # main view; pass status=all or status=left/inactive to see the others.
+    status = request.args.get('status', 'active')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
-    
+
     if staff_id:
         query = query.filter(Staff.id == staff_id)
     if designation:
         query = query.filter(Staff.designation.ilike(f'%{designation}%'))
     if status == 'active':
         query = query.filter(Staff.is_active == True)
-    elif status == 'inactive':
+    elif status in ('inactive', 'left'):
         query = query.filter(Staff.is_active == False)
+    # status == 'all' -> no is_active filter
     query = apply_saved_filter_to_query(query, 'staff', request.args)
     staff_members = query.all()
+
+    # Tab counts (independent of the status filter itself, so switching tabs
+    # always shows the right total for that tab)
+    active_count = Staff.query.filter(Staff.is_active == True).count()
+    left_count = Staff.query.filter(Staff.is_active == False).count()
+    total_count = active_count + left_count
+
+    # Preserve every other filter (staff_id, designation, dates, saved-filter
+    # params) when a tab link swaps just the status value
+    tab_args = {k: v for k, v in request.args.items() if k != 'status'}
     
     # Pre-process dates for template calculations
     start_date_obj = None
@@ -67,6 +80,10 @@ def staff_list():
                            selected_end_date=end_date,
                            start_date_obj=start_date_obj,
                            end_date_obj=end_date_obj,
+                           active_count=active_count,
+                           left_count=left_count,
+                           total_count=total_count,
+                           tab_args=tab_args,
                            active_module='staff')
 
 @bp.route('/staff/recalculate-all', methods=['POST'])
@@ -141,16 +158,21 @@ def add_staff():
             is_active=form.is_active.data
         )
         
-        # Handle agreement letter upload
-        if form.agreement_letter.data:
-            file = form.agreement_letter.data
-            filename = secure_filename(f"staff_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{file.filename}")
-            upload_folder = os.path.join('app', 'static', 'uploads', 'staff_agreements')
-            if not os.path.exists(upload_folder):
-                os.makedirs(upload_folder)
-            file.save(os.path.join(upload_folder, filename))
-            staff.agreement_letter = f"uploads/staff_agreements/{filename}"
-            
+        # Handle agreement letter / CNIC / CV uploads
+        for field, subfolder, attr in (
+            (form.agreement_letter, 'staff_agreements', 'agreement_letter'),
+            (form.cnic, 'staff_cnic', 'cnic'),
+            (form.cv, 'staff_cv', 'cv'),
+        ):
+            if field.data:
+                file = field.data
+                filename = secure_filename(f"staff_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+                upload_folder = os.path.join('app', 'static', 'uploads', subfolder)
+                if not os.path.exists(upload_folder):
+                    os.makedirs(upload_folder)
+                file.save(os.path.join(upload_folder, filename))
+                setattr(staff, attr, f"uploads/{subfolder}/{filename}")
+
         staff.joining_advance = form.joining_advance.data or 0
         staff.remaining_joining_advance = form.joining_advance.data or 0
         staff.calculate_daily_salary()  # Calculate daily salary
@@ -186,22 +208,27 @@ def edit_staff(id):
             staff.joining_advance = new_ja
         staff.is_active = form.is_active.data
         
-        # Handle agreement letter upload
-        if form.agreement_letter.data:
-            file = form.agreement_letter.data
-            filename = secure_filename(f"staff_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{file.filename}")
-            upload_folder = os.path.join('app', 'static', 'uploads', 'staff_agreements')
-            if not os.path.exists(upload_folder):
-                os.makedirs(upload_folder)
-            file.save(os.path.join(upload_folder, filename))
-            staff.agreement_letter = f"uploads/staff_agreements/{filename}"
-            
+        # Handle agreement letter / CNIC / CV uploads
+        for field, subfolder, attr in (
+            (form.agreement_letter, 'staff_agreements', 'agreement_letter'),
+            (form.cnic, 'staff_cnic', 'cnic'),
+            (form.cv, 'staff_cv', 'cv'),
+        ):
+            if field.data:
+                file = field.data
+                filename = secure_filename(f"staff_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+                upload_folder = os.path.join('app', 'static', 'uploads', subfolder)
+                if not os.path.exists(upload_folder):
+                    os.makedirs(upload_folder)
+                file.save(os.path.join(upload_folder, filename))
+                setattr(staff, attr, f"uploads/{subfolder}/{filename}")
+
         staff.calculate_daily_salary()  # Recalculate daily salary
         db.session.commit()
         log_activity('Salary', f'Updated Staff: {staff.name}', f'Designation: {staff.designation}, Salary: {staff.monthly_salary}')
         flash('Staff details updated!', 'success')
         return redirect(url_for('salary.staff_list'))
-    return render_template('salary/staff_form.html', form=form, title="Edit Staff")
+    return render_template('salary/staff_form.html', form=form, title="Edit Staff", staff=staff)
 
 @bp.route('/staff/delete/<int:id>', methods=['POST'])
 @login_required
@@ -209,10 +236,50 @@ def edit_staff(id):
 def delete_staff(id):
     staff = Staff.query.get_or_404(id)
     staff_name = staff.name
+
+    has_records = (
+        bool(staff.attendance_records) or
+        bool(staff.advances) or
+        bool(staff.salary_payments) or
+        bool(staff.reviews) or
+        bool(staff.expense_account and staff.expense_account.transactions)
+    )
+    if has_records:
+        flash(f'{staff_name} cannot be deleted because they already have attendance, salary, advance, expense, or review records. Use "Mark as Left" instead to preserve their history.', 'danger')
+        return redirect(url_for('salary.staff_list'))
+
     db.session.delete(staff)
     db.session.commit()
     log_activity('Salary', f'Deleted Staff: {staff_name}', '')
     flash('Staff member deleted.', 'info')
+    return redirect(url_for('salary.staff_list'))
+
+@bp.route('/staff/<int:id>/leave', methods=['POST'])
+@login_required
+@permission_required('salary', action='edit')
+def mark_staff_left(id):
+    staff = Staff.query.get_or_404(id)
+    staff.is_active = False
+    staff.left_date = datetime.utcnow().date()
+    if staff.expense_account:
+        staff.expense_account.is_active = False
+    db.session.commit()
+    log_activity('Salary', f'Marked Staff as Left: {staff.name}', f'Left on {staff.left_date}')
+    flash(f'{staff.name} has been marked as having left the company.', 'info')
+    return redirect(url_for('salary.staff_list'))
+
+@bp.route('/staff/<int:id>/reactivate', methods=['POST'])
+@login_required
+@permission_required('salary', action='edit')
+def reactivate_staff(id):
+    staff = Staff.query.get_or_404(id)
+    staff.is_active = True
+    staff.left_date = None
+    if staff.expense_account:
+        staff.expense_account.is_active = True
+    db.session.commit()
+    log_activity('Salary', f'Reactivated Staff: {staff.name}', '')
+    flash(f'{staff.name} has been reactivated.', 'success')
     return redirect(url_for('salary.staff_list'))
 
 @bp.route('/staff/payments/<int:id>')
@@ -945,7 +1012,13 @@ def get_staff_history(staff_id):
             'total_salary_remaining': staff.total_salary_remaining,
             'total_attendance_earnings': staff.total_attendance_earnings,
             'total_absents': staff.total_absents,
-            'agreement_letter': staff.agreement_letter
+            'overtime_hours': staff.get_overtime_hours(),
+            'overtime_amount': staff.get_overtime_amount(),
+            'agreement_letter': staff.agreement_letter,
+            'cnic': staff.cnic,
+            'cv': staff.cv,
+            'is_active': staff.is_active,
+            'left_date': staff.left_date.strftime('%Y-%m-%d') if staff.left_date else None
         },
         'payments': [{
             'id': p.id,
@@ -961,6 +1034,158 @@ def get_staff_history(staff_id):
             'payment_method': p.payment_method,
             'status': p.status
         } for p in payments]
+    })
+
+@bp.route('/api/staff-history/<int:staff_id>/attendance')
+@login_required
+def get_staff_history_attendance(staff_id):
+    staff = Staff.query.get_or_404(staff_id)
+    query = Attendance.query.filter_by(staff_id=staff_id)
+
+    date_from_str = request.args.get('date_from')
+    date_to_str = request.args.get('date_to')
+    date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date() if date_from_str else None
+    date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date() if date_to_str else None
+    if date_from:
+        query = query.filter(Attendance.date >= date_from)
+    if date_to:
+        query = query.filter(Attendance.date <= date_to)
+
+    records = query.order_by(Attendance.date.desc()).all()
+
+    from app.utils import get_required_hours_in_range
+    required_hours = get_required_hours_in_range(staff, date_from, date_to)
+    overtime_hours = staff.get_overtime_hours(date_from, date_to)
+    overtime_amount = staff.get_overtime_amount(date_from, date_to)
+
+    return jsonify({
+        'success': True,
+        'required_hours': required_hours,
+        'overtime_hours': overtime_hours,
+        'overtime_amount': overtime_amount,
+        'records': [{
+            'date': r.date.strftime('%Y-%m-%d') if r.date else None,
+            'clock_in': r.clock_in.strftime('%H:%M') if r.clock_in else None,
+            'clock_out': r.clock_out.strftime('%H:%M') if r.clock_out else None,
+            'hours_worked': r.hours_worked or 0,
+            'minutes_worked': r.minutes_worked or 0,
+            'earned_amount': r.earned_amount or 0,
+            'is_absent': bool(r.is_absent),
+            'is_holiday': bool(r.is_holiday),
+            'notes': r.notes
+        } for r in records]
+    })
+
+@bp.route('/api/staff-history/<int:staff_id>/advances')
+@login_required
+def get_staff_history_advances(staff_id):
+    Staff.query.get_or_404(staff_id)
+    query = SalaryAdvance.query.filter_by(staff_id=staff_id)
+
+    date_from = request.args.get('date_from')
+    date_to = request.args.get('date_to')
+    if date_from:
+        query = query.filter(SalaryAdvance.date >= datetime.strptime(date_from, '%Y-%m-%d').date())
+    if date_to:
+        query = query.filter(SalaryAdvance.date <= datetime.strptime(date_to, '%Y-%m-%d').date())
+
+    advances = query.order_by(SalaryAdvance.date.desc()).all()
+    total_pending = sum(a.amount for a in advances if not a.is_deducted)
+    total_deducted = sum(a.amount for a in advances if a.is_deducted)
+    return jsonify({
+        'success': True,
+        'total_pending': total_pending,
+        'total_deducted': total_deducted,
+        'advances': [{
+            'id': a.id,
+            'date': a.date.strftime('%Y-%m-%d') if a.date else None,
+            'amount': a.amount,
+            'description': a.description,
+            'is_deducted': bool(a.is_deducted)
+        } for a in advances]
+    })
+
+@bp.route('/api/staff-history/<int:staff_id>/expense')
+@login_required
+def get_staff_history_expense(staff_id):
+    staff = Staff.query.get_or_404(staff_id)
+    account = staff.expense_account
+    if not account:
+        return jsonify({'success': True, 'has_account': False})
+
+    transactions = ExpenseAccountTransaction.query.filter_by(account_id=account.id) \
+        .order_by(ExpenseAccountTransaction.date.desc()).limit(200).all()
+
+    return jsonify({
+        'success': True,
+        'has_account': True,
+        'account': {
+            'id': account.id,
+            'name': account.name,
+            'custodian_name': account.custodian_name,
+            'is_active': account.is_active,
+            'balance': account.balance,
+            'total_debit': account.total_debit,
+            'total_credit': account.total_credit
+        },
+        'transactions': [{
+            'id': t.id,
+            'date': t.date.strftime('%Y-%m-%d') if t.date else None,
+            'entry_type': t.entry_type,
+            'transaction_type': t.transaction_type,
+            'amount': t.amount,
+            'description': t.description,
+            'is_approved': bool(t.is_approved)
+        } for t in transactions]
+    })
+
+@bp.route('/api/staff-history/<int:staff_id>/reviews', methods=['GET'])
+@login_required
+def get_staff_history_reviews(staff_id):
+    Staff.query.get_or_404(staff_id)
+    reviews = StaffReview.query.filter_by(staff_id=staff_id).order_by(StaffReview.created_at.desc()).all()
+    average_rating = round(sum(r.rating for r in reviews) / len(reviews), 1) if reviews else 0
+    return jsonify({
+        'success': True,
+        'average_rating': average_rating,
+        'count': len(reviews),
+        'reviews': [{
+            'id': r.id,
+            'rating': r.rating,
+            'comment': r.comment,
+            'author': r.author.username if r.author else 'Unknown',
+            'created_at': r.created_at.strftime('%d %b, %Y') if r.created_at else None
+        } for r in reviews]
+    })
+
+@bp.route('/api/staff-history/<int:staff_id>/reviews', methods=['POST'])
+@login_required
+@permission_required('salary', action='edit')
+def add_staff_review(staff_id):
+    Staff.query.get_or_404(staff_id)
+    data = request.get_json(silent=True) or request.form
+
+    try:
+        rating = int(data.get('rating'))
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'A rating between 1 and 5 is required.'}), 400
+    if rating < 1 or rating > 5:
+        return jsonify({'success': False, 'message': 'Rating must be between 1 and 5.'}), 400
+
+    comment = (data.get('comment') or '').strip()
+    review = StaffReview(staff_id=staff_id, rating=rating, comment=comment, created_by=current_user.id)
+    db.session.add(review)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'review': {
+            'id': review.id,
+            'rating': review.rating,
+            'comment': review.comment,
+            'author': current_user.username,
+            'created_at': review.created_at.strftime('%d %b, %Y')
+        }
     })
 
 @bp.route('/api/get_attendance_salary/<int:staff_id>/<int:month>/<int:year>')

@@ -440,6 +440,8 @@ class StaffForm(FlaskForm):
     joining_date = DateField('Joining Date', validators=[Optional()])
     joining_advance = FloatField('Joining Advance', validators=[Optional(), NumberRange(min=0)])
     agreement_letter = FileField('Agreement Letter', validators=[Optional()])
+    cnic = FileField('CNIC', validators=[Optional()])
+    cv = FileField('CV', validators=[Optional()])
     is_active = BooleanField('Active', default=True)
 
 class SalaryAdvanceForm(FlaskForm):

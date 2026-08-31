@@ -40,15 +40,67 @@
                         <label class="form-label fw-bold small text-muted text-uppercase">Joining Advance (Optional)</label>
                         {{ form.joining_advance(class="form-control", placeholder="0.00") }}
                     </div>
+                    {% macro doc_upload(field, field_id, label, current_file, current_label) %}
                     <div class="mb-3">
-                        <label class="form-label fw-bold small text-muted text-uppercase">Agreement Letter (PDF, Image, Excel)</label>
-                        {{ form.agreement_letter(class="form-control") }}
-                        {% if staff and staff.agreement_letter %}
+                        <label for="{{ field_id }}Input" class="form-label fw-bold small text-muted text-uppercase">{{ label }}</label>
+                        <div class="input-group">
+                            <button type="button" class="btn btn-outline-info d-flex align-items-center" id="{{ field_id }}WebcamBtn">
+                                <i class="fas fa-camera me-1"></i>Camera Capture
+                            </button>
+                            {{ field(class="form-control", id=field_id ~ "Input") }}
+                        </div>
+                        <input type="file" id="{{ field_id }}HiddenCameraInput" accept="image/*" capture="environment" style="position: absolute; width: 0.1px; height: 0.1px; opacity: 0; overflow: hidden; z-index: -1;">
+                        <div class="form-text">Directly capture from camera or upload a file - Optional</div>
+                        <div id="{{ field_id }}Preview" class="mt-2"></div>
+                        {% if current_file %}
                         <div class="mt-2 text-primary small">
-                            <i class="fas fa-file-alt me-1"></i> Current Letter: <a href="{{ url_for('static', filename=staff.agreement_letter) }}" target="_blank">View File</a>
+                            <i class="fas fa-file-alt me-1"></i> {{ current_label }}: <a href="{{ url_for('static', filename=current_file) }}" target="_blank">View File</a>
                         </div>
                         {% endif %}
                     </div>
+
+                    <!-- Camera Capture Modal: {{ label }} -->
+                    <div class="modal fade" id="{{ field_id }}CameraModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+                        <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">Capture {{ label }} from Camera</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="{{ field_id }}StopBtn1"></button>
+                                </div>
+                                <div class="modal-body text-center">
+                                    <div id="{{ field_id }}StreamContainer">
+                                        <video id="{{ field_id }}WebcamVideo" autoplay playsinline class="w-100 rounded border bg-dark" style="max-height: 400px; transform: scaleX(-1);"></video>
+                                        <canvas id="{{ field_id }}CaptureCanvas" style="display:none;"></canvas>
+                                        <div class="mt-3">
+                                            <button type="button" class="btn btn-primary btn-lg" id="{{ field_id }}SnapBtn">
+                                                <i class="fas fa-camera"></i> Take Photo
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="{{ field_id }}ResultContainer" style="display:none;">
+                                        <img id="{{ field_id }}CapturePreview" class="img-fluid rounded border mb-3">
+                                        <div class="d-flex justify-content-center gap-2">
+                                            <button type="button" class="btn btn-warning" id="{{ field_id }}RetakeBtn">
+                                                <i class="fas fa-redo"></i> Retake
+                                            </button>
+                                            <button type="button" class="btn btn-success" id="{{ field_id }}ConfirmBtn">
+                                                <i class="fas fa-check"></i> Use Photo
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="{{ field_id }}StopBtn2">Cancel</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endmacro %}
+
+                    {{ doc_upload(form.cnic, "cnic", "CNIC", staff.cnic if staff else None, "Current CNIC") }}
+                    {{ doc_upload(form.cv, "cv", "CV / Resume", staff.cv if staff else None, "Current CV") }}
+                    {{ doc_upload(form.agreement_letter, "agreementLetter", "Agreement Letter (PDF, Image, Excel)", staff.agreement_letter if staff else None, "Current Letter") }}
+
                     <div class="mb-3 form-check form-switch p-3 bg-white rounded-3 border ms-0">
                         <div class="ms-4">
                             {{ form.is_active(class="form-check-input") }}
@@ -70,4 +122,158 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function initCameraUploader(cfg) {
+    const webcamBtn = document.getElementById(cfg.id + 'WebcamBtn');
+    const mainInput = document.getElementById(cfg.id + 'Input');
+    const hiddenCameraInput = document.getElementById(cfg.id + 'HiddenCameraInput');
+    const webcamVideo = document.getElementById(cfg.id + 'WebcamVideo');
+    const captureCanvas = document.getElementById(cfg.id + 'CaptureCanvas');
+    const capturePreview = document.getElementById(cfg.id + 'CapturePreview');
+    const streamContainer = document.getElementById(cfg.id + 'StreamContainer');
+    const resultContainer = document.getElementById(cfg.id + 'ResultContainer');
+    const directPreview = document.getElementById(cfg.id + 'Preview');
+    const snapBtn = document.getElementById(cfg.id + 'SnapBtn');
+    const retakeBtn = document.getElementById(cfg.id + 'RetakeBtn');
+    const confirmBtn = document.getElementById(cfg.id + 'ConfirmBtn');
+    const stopBtn1 = document.getElementById(cfg.id + 'StopBtn1');
+    const stopBtn2 = document.getElementById(cfg.id + 'StopBtn2');
+    let videoStream = null;
+    let modalInstance = null;
+
+    async function startWebcam() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert("Your browser or connection (non-HTTPS) does not support camera access.");
+            return;
+        }
+        try {
+            videoStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+            });
+            if (webcamVideo) webcamVideo.srcObject = videoStream;
+            if (streamContainer) streamContainer.style.display = 'block';
+            if (resultContainer) resultContainer.style.display = 'none';
+        } catch (err) {
+            alert("Could not access camera: " + err.message);
+            if (modalInstance) modalInstance.hide();
+        }
+    }
+
+    function stopWebcam() {
+        if (videoStream) {
+            videoStream.getTracks().forEach(track => track.stop());
+            videoStream = null;
+        }
+    }
+
+    function updateDirectPreview(file) {
+        if (!directPreview) return;
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const isImage = file.type.startsWith('image/');
+                directPreview.innerHTML = `
+                    <div class="alert alert-success p-2 mb-2 d-inline-block">
+                        <i class="fas fa-check-circle me-1"></i> New File Ready
+                    </div>
+                    <div>
+                        ${isImage ? `<img src="${e.target.result}" class="img-thumbnail shadow-sm" style="max-width:200px; max-height:200px;">` : ''}
+                        <p class="text-muted small mt-1"><i class="fas fa-file me-1"></i>${file.name}</p>
+                    </div>
+                `;
+            };
+            reader.readAsDataURL(file);
+        } else {
+            directPreview.innerHTML = '';
+        }
+    }
+
+    if (webcamBtn) {
+        webcamBtn.addEventListener('click', function() {
+            try {
+                if (!modalInstance) {
+                    const modalEl = document.getElementById(cfg.id + 'CameraModal');
+                    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                        modalInstance = new bootstrap.Modal(modalEl);
+                    } else if (window.bootstrap && window.bootstrap.Modal) {
+                        modalInstance = new window.bootstrap.Modal(modalEl);
+                    } else {
+                        modalInstance = {
+                            show: function() { $(modalEl).modal('show'); },
+                            hide: function() { $(modalEl).modal('hide'); }
+                        };
+                    }
+                }
+                modalInstance.show();
+                startWebcam();
+            } catch (e) {
+                alert("Error opening camera window: " + e.message);
+            }
+        });
+    }
+
+    if (stopBtn1) stopBtn1.addEventListener('click', stopWebcam);
+    if (stopBtn2) stopBtn2.addEventListener('click', stopWebcam);
+
+    if (snapBtn) {
+        snapBtn.addEventListener('click', function() {
+            const context = captureCanvas.getContext('2d');
+            captureCanvas.width = webcamVideo.videoWidth;
+            captureCanvas.height = webcamVideo.videoHeight;
+            context.translate(captureCanvas.width, 0);
+            context.scale(-1, 1);
+            context.drawImage(webcamVideo, 0, 0, captureCanvas.width, captureCanvas.height);
+            capturePreview.src = captureCanvas.toDataURL('image/jpeg');
+            streamContainer.style.display = 'none';
+            resultContainer.style.display = 'block';
+        });
+    }
+
+    if (retakeBtn) {
+        retakeBtn.addEventListener('click', function() {
+            streamContainer.style.display = 'block';
+            resultContainer.style.display = 'none';
+        });
+    }
+
+    if (mainInput) {
+        mainInput.addEventListener('change', function(e) {
+            updateDirectPreview(e.target.files[0]);
+        });
+    }
+
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', function() {
+            captureCanvas.toBlob((blob) => {
+                const fileName = cfg.id + '_captured_' + Date.now() + '.jpg';
+                const file = new File([blob], fileName, { type: 'image/jpeg' });
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                mainInput.files = dataTransfer.files;
+                updateDirectPreview(file);
+                stopWebcam();
+                if (modalInstance) modalInstance.hide();
+            }, 'image/jpeg', 0.9);
+        });
+    }
+
+    if (hiddenCameraInput && mainInput) {
+        hiddenCameraInput.addEventListener('change', function() {
+            if (this.files && this.files[0]) {
+                mainInput.files = this.files;
+                updateDirectPreview(this.files[0]);
+            }
+        });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    initCameraUploader({ id: 'cnic' });
+    initCameraUploader({ id: 'cv' });
+    initCameraUploader({ id: 'agreementLetter' });
+});
+</script>
 {% endblock %}

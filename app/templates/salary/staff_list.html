@@ -188,9 +188,34 @@
     </div>
 </div>
 
+<ul class="nav nav-pills mb-3" id="staffStatusTabs">
+    <li class="nav-item">
+        <a class="nav-link {% if selected_status == 'active' %}active{% endif %}"
+            href="{{ url_for('salary.staff_list', status='active', **tab_args) }}">
+            <i class="fas fa-user-check me-1"></i>Active
+            <span class="badge {% if selected_status == 'active' %}bg-white text-primary{% else %}bg-light text-dark{% endif %} ms-1">{{ active_count }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if selected_status in ('inactive', 'left') %}active{% endif %}"
+            href="{{ url_for('salary.staff_list', status='left', **tab_args) }}">
+            <i class="fas fa-user-slash me-1"></i>Left
+            <span class="badge {% if selected_status in ('inactive', 'left') %}bg-white text-primary{% else %}bg-light text-dark{% endif %} ms-1">{{ left_count }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if selected_status == 'all' %}active{% endif %}"
+            href="{{ url_for('salary.staff_list', status='all', **tab_args) }}">
+            <i class="fas fa-users me-1"></i>All
+            <span class="badge {% if selected_status == 'all' %}bg-white text-primary{% else %}bg-light text-dark{% endif %} ms-1">{{ total_count }}</span>
+        </a>
+    </li>
+</ul>
+
 <div class="card shadow-sm border-0 mb-4 rounded-3">
     <div class="card-body">
         <form method="GET" class="row g-3">
+            <input type="hidden" name="status" value="{{ selected_status }}">
             <div class="col-md-3">
                 <label for="staff_id" class="form-label small text-muted text-uppercase fw-bold">Staff member</label>
                 <select name="staff_id" id="staff_id" class="form-select searchable-select">
@@ -209,27 +234,18 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-2">
-                <label for="status" class="form-label small text-muted text-uppercase fw-bold">Status</label>
-                <select name="status" id="status" class="form-select">
-                    <option value="">All Statuses</option>
-                    <option value="active" {% if selected_status=='active' %}selected{% endif %}>Active Only</option>
-                    <option value="inactive" {% if selected_status=='inactive' %}selected{% endif %}>Inactive Only
-                    </option>
-                </select>
-            </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label for="start_date" class="form-label small text-muted text-uppercase fw-bold">Joined From</label>
                 <input type="date" name="start_date" id="start_date" class="form-control"
                     value="{{ selected_start_date or '' }}">
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label for="end_date" class="form-label small text-muted text-uppercase fw-bold">Joined To</label>
                 <input type="date" name="end_date" id="end_date" class="form-control"
                     value="{{ selected_end_date or '' }}">
             </div>
             <div class="col-12 d-flex justify-content-end align-items-center mt-3">
-                <a href="{{ url_for('salary.staff_list') }}" class="btn btn-light rounded-pill px-4 me-2">
+                <a href="{{ url_for('salary.staff_list', status=selected_status) }}" class="btn btn-light rounded-pill px-4 me-2">
                     <i class="fas fa-undo me-2"></i>Reset
                 </a>
                 <button type="submit" class="btn btn-primary rounded-pill px-4">
@@ -300,20 +316,19 @@
                         }}</td>
                     <td class="text-info fw-bold text-center">{{ "%.1f" % staff.get_total_hours(start_date_obj,
                         end_date_obj) }}h</td>
-                    {% set ot_records = staff.get_overtime_records(start_date_obj, end_date_obj) %}
-                    {% set ot_tooltip %}{% for r in ot_records %}{{ r.date.strftime('%d %b %Y') }}: {{ '%.1f' % ((r.overtime_hours or 0) + ((r.overtime_minutes or 0) / 60.0)) }}h = PKR {{ '%.2f' % (((r.overtime_hours or 0) + ((r.overtime_minutes or 0) / 60.0)) * (r.hourly_rate or 0)) }}
-{% endfor %}{% endset %}
+                    {% set ot_hours = staff.get_overtime_hours(start_date_obj, end_date_obj) %}
+                    {% set ot_tooltip = "Worked: %.1fh | Overtime kicks in once worked hours pass the required hours for this period"|format(staff.get_total_hours(start_date_obj, end_date_obj)) %}
                     <td class="text-center">
-                        {% if ot_records %}
+                        {% if ot_hours > 0 %}
                         <span class="fw-bold text-info" style="cursor: default;" title="{{ ot_tooltip }}">
-                            {{ "%.1f" % staff.get_overtime_hours(start_date_obj, end_date_obj) }}h
+                            {{ "%.1f" % ot_hours }}h
                         </span>
                         {% else %}
                         <span class="text-muted small">&mdash;</span>
                         {% endif %}
                     </td>
                     <td class="text-center">
-                        {% if ot_records %}
+                        {% if ot_hours > 0 %}
                         <span class="fw-bold text-warning" style="cursor: default;" title="{{ ot_tooltip }}">
                             PKR {{ "%.2f" % staff.get_overtime_amount(start_date_obj, end_date_obj) }}
                         </span>
@@ -351,8 +366,9 @@
                     </td>
                     <td>
                         <span
-                            class="badge {% if staff.is_active %}bg-success-soft text-success{% else %}bg-secondary-soft text-secondary{% endif %} px-2 py-1">
-                            {{ 'Active' if staff.is_active else 'Inactive' }}
+                            class="badge {% if staff.is_active %}bg-success-soft text-success{% else %}bg-secondary-soft text-secondary{% endif %} px-2 py-1"
+                            {% if not staff.is_active and staff.left_date %}title="Left on {{ staff.left_date }}"{% endif %}>
+                            {{ 'Active' if staff.is_active else 'Left' }}
                         </span>
                     </td>
                     <td class="text-end px-4 no-export">
@@ -372,13 +388,21 @@
                                 <i class="fas fa-money-bill-wave text-success"></i>
                             </a>
                             {% if current_user.has_permission('salary', 'delete') %}
+                            {% set staff_has_records = staff.attendance_records or staff.advances or staff.salary_payments or staff.reviews or (staff.expense_account and staff.expense_account.transactions) %}
+                            {% if staff_has_records %}
+                            <button type="button" class="btn btn-sm btn-light" disabled
+                                title="Cannot delete: this staff has attendance, salary, advance, expense, or review records. Use 'Mark as Left' instead.">
+                                <i class="fas fa-lock text-muted"></i>
+                            </button>
+                            {% else %}
                             <form method="POST" action="{{ url_for('salary.delete_staff', id=staff.id) }}"
                                 class="d-inline">
                                 <button type="submit" class="btn btn-sm btn-light" title="Delete Staff"
-                                    onclick="return confirm('Are you sure you want to delete this staff member? This will delete all their salary history and advances.')">
+                                    onclick="return confirm('Are you sure you want to delete this staff member? This cannot be undone.')">
                                     <i class="fas fa-trash text-danger"></i>
                                 </button>
                             </form>
+                            {% endif %}
                             {% endif %}
                         </div>
                     </td>
@@ -400,7 +424,7 @@
     aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden;">
-            <div class="modal-header border-0 pb-0"
+            <div class="modal-header border-0 pb-0 flex-column align-items-stretch"
                 style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); backdrop-filter: blur(10px);">
                 <div class="d-flex align-items-center w-100">
                     <div class="avatar-md bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3 shadow-sm"
@@ -411,47 +435,183 @@
                         <h4 class="modal-title fw-bold mb-0" id="staffHistoryModalLabel">Staff History</h4>
                         <p class="text-muted small mb-0" id="modalStaffSubtext"></p>
                     </div>
-                    <div class="ms-auto d-flex align-items-center">
-                        <div id="modalAgreementContainer" class="me-3"></div>
+                    <div class="ms-auto d-flex align-items-center gap-2">
+                        <span id="modalStatusBadge"></span>
+                        <div id="modalLeaveActionContainer"></div>
                         <button type="button" class="btn-close shadow-none" data-bs-dismiss="modal"
                             aria-label="Close"></button>
                     </div>
                 </div>
+                <ul class="nav nav-tabs border-0 mt-3" id="staffHistoryTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="tabBtnInfo" data-bs-toggle="tab" data-bs-target="#tabInfo" type="button" role="tab">
+                            <i class="fas fa-id-card me-1"></i>Info
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="tabBtnAttendance" data-bs-toggle="tab" data-bs-target="#tabAttendance" type="button" role="tab">
+                            <i class="fas fa-calendar-check me-1"></i>Attendance
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="tabBtnAdvances" data-bs-toggle="tab" data-bs-target="#tabAdvances" type="button" role="tab">
+                            <i class="fas fa-hand-holding-usd me-1"></i>Advances
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="tabBtnExpense" data-bs-toggle="tab" data-bs-target="#tabExpense" type="button" role="tab">
+                            <i class="fas fa-wallet me-1"></i>Custodian / Expense
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="tabBtnReviews" data-bs-toggle="tab" data-bs-target="#tabReviews" type="button" role="tab">
+                            <i class="fas fa-star me-1"></i>Reviews
+                        </button>
+                    </li>
+                </ul>
             </div>
-            <div class="modal-body p-4 pt-4">
-                <!-- Summary Stats in Modal -->
-                <div class="row g-3 mb-4" id="modalSummaryStats">
-                    <!-- Dynamic Summary Content -->
-                </div>
+            <div class="modal-body p-4 pt-3">
+                <div class="tab-content" id="staffHistoryTabContent">
 
-                <!-- History Table -->
-                <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-                    <div class="card-header bg-light-soft border-0 py-3">
-                        <h6 class="mb-0 fw-bold"><i class="fas fa-history me-2"></i>Payment History</h6>
+                    <!-- Info Tab -->
+                    <div class="tab-pane fade show active" id="tabInfo" role="tabpanel">
+                        <div class="card border-0 shadow-sm rounded-4 mb-4">
+                            <div class="card-header bg-light-soft border-0 py-3">
+                                <h6 class="mb-0 fw-bold"><i class="fas fa-id-card me-2"></i>Staff Details</h6>
+                            </div>
+                            <div class="card-body pt-2">
+                                <div class="row g-3" id="modalStaffDetails"></div>
+                            </div>
+                        </div>
+                        <div class="row g-3 mb-4" id="modalSummaryStats"></div>
+                        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+                            <div class="card-header bg-light-soft border-0 py-3">
+                                <h6 class="mb-0 fw-bold"><i class="fas fa-history me-2"></i>Payment History</h6>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0" id="modalHistoryTable">
+                                    <thead class="bg-light text-muted small text-uppercase">
+                                        <tr>
+                                            <th class="ps-4">Month/Year</th>
+                                            <th>Base Salary</th>
+                                            <th>Bonus</th>
+                                            <th>J.A. Initial</th>
+                                            <th>J.A. Remain</th>
+                                            <th>Reg. Adv. Rem</th>
+                                            <th>Advances</th>
+                                            <th>Other Deduct</th>
+                                            <th>Net Paid</th>
+                                            <th>Date</th>
+                                            <th>Method</th>
+                                            <th class="pe-4 text-center">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="modalHistoryBody">
+                                        <!-- Dynamic Payments Content -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0" id="modalHistoryTable">
-                            <thead class="bg-light text-muted small text-uppercase">
-                                <tr>
-                                    <th class="ps-4">Month/Year</th>
-                                    <th>Base Salary</th>
-                                    <th>Bonus</th>
-                                    <th>J.A. Initial</th>
-                                    <th>J.A. Remain</th>
-                                    <th>Reg. Adv. Rem</th>
-                                    <th>Advances</th>
-                                    <th>Other Deduct</th>
-                                    <th>Net Paid</th>
-                                    <th>Date</th>
-                                    <th>Method</th>
-                                    <th class="pe-4 text-center">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody id="modalHistoryBody">
-                                <!-- Dynamic Payments Content -->
-                            </tbody>
-                        </table>
+
+                    <!-- Attendance Tab -->
+                    <div class="tab-pane fade" id="tabAttendance" role="tabpanel">
+                        <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+                            <div>
+                                <label class="form-label small mb-1 text-muted">From</label>
+                                <input type="date" class="form-control form-control-sm" id="attendanceDateFrom">
+                            </div>
+                            <div>
+                                <label class="form-label small mb-1 text-muted">To</label>
+                                <input type="date" class="form-control form-control-sm" id="attendanceDateTo">
+                            </div>
+                            <button type="button" class="btn btn-sm btn-primary" id="attendanceFilterBtn">
+                                <i class="fas fa-filter me-1"></i>Filter
+                            </button>
+                        </div>
+                        <div id="attendanceOvertimeSummary" class="mb-3"></div>
+                        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0">
+                                    <thead class="bg-light text-muted small text-uppercase">
+                                        <tr>
+                                            <th class="ps-4">Date</th>
+                                            <th>Clock In</th>
+                                            <th>Clock Out</th>
+                                            <th>Hours</th>
+                                            <th>Earned</th>
+                                            <th class="pe-4 text-center">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="attendanceBody">
+                                        <tr><td colspan="6" class="text-center py-5 text-muted">Loading…</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
+
+                    <!-- Advances Tab -->
+                    <div class="tab-pane fade" id="tabAdvances" role="tabpanel">
+                        <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+                            <div>
+                                <label class="form-label small mb-1 text-muted">From</label>
+                                <input type="date" class="form-control form-control-sm" id="advancesDateFrom">
+                            </div>
+                            <div>
+                                <label class="form-label small mb-1 text-muted">To</label>
+                                <input type="date" class="form-control form-control-sm" id="advancesDateTo">
+                            </div>
+                            <button type="button" class="btn btn-sm btn-primary" id="advancesFilterBtn">
+                                <i class="fas fa-filter me-1"></i>Filter
+                            </button>
+                        </div>
+                        <div id="advancesSummary" class="mb-3"></div>
+                        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0">
+                                    <thead class="bg-light text-muted small text-uppercase">
+                                        <tr>
+                                            <th class="ps-4">Date</th>
+                                            <th>Amount</th>
+                                            <th>Description</th>
+                                            <th class="pe-4 text-center">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="advancesBody">
+                                        <tr><td colspan="4" class="text-center py-5 text-muted">Loading…</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Expense/Custodian Tab -->
+                    <div class="tab-pane fade" id="tabExpense" role="tabpanel">
+                        <div id="expenseContent">
+                            <div class="text-center py-5 text-muted">Loading…</div>
+                        </div>
+                    </div>
+
+                    <!-- Reviews Tab -->
+                    <div class="tab-pane fade" id="tabReviews" role="tabpanel">
+                        <div id="reviewsSummary" class="mb-3"></div>
+                        <form class="card border-0 shadow-sm rounded-4 p-3 mb-4" id="addReviewForm">
+                            <label class="form-label small fw-bold text-uppercase text-muted">Add a Review</label>
+                            <div class="mb-2" id="starPicker">
+                                {% for i in range(1, 6) %}
+                                <i class="far fa-star star-pick" data-value="{{ i }}" style="cursor:pointer; font-size:1.3rem; color:#f6ad55;"></i>
+                                {% endfor %}
+                            </div>
+                            <input type="hidden" id="reviewRatingInput" value="0">
+                            <textarea class="form-control mb-2" id="reviewCommentInput" rows="2" placeholder="Write a note about this staff member's performance..."></textarea>
+                            <button type="submit" class="btn btn-primary btn-sm align-self-start rounded-pill px-3">
+                                <i class="fas fa-paper-plane me-1"></i>Submit Review
+                            </button>
+                        </form>
+                        <div id="reviewsList"></div>
+                    </div>
+
                 </div>
             </div>
             <div class="modal-footer border-0 bg-light p-3">
@@ -508,6 +668,30 @@
             font-size: 0.9rem;
         }
     }
+
+    #staffHistoryTabs .nav-link {
+        border: none;
+        color: #718096;
+        font-weight: 600;
+        font-size: 0.85rem;
+        padding: 0.6rem 1rem;
+    }
+
+    #staffHistoryTabs .nav-link.active {
+        color: #4c51bf;
+        border-bottom: 3px solid #4c51bf;
+        background: transparent;
+    }
+
+    .star-pick.active,
+    .star-pick.hovered {
+        font-weight: 900;
+    }
+
+    .star-display i {
+        color: #f6ad55;
+        font-size: 0.9rem;
+    }
 </style>
 
 {% block extra_js %}
@@ -535,6 +719,10 @@
         const historyTriggers = document.querySelectorAll('.staff-history-trigger');
         const historyModal = new bootstrap.Modal(document.getElementById('staffHistoryModal'));
 
+        let currentStaffId = null;
+        let currentStaffName = '';
+        const tabCache = {};
+
         historyTriggers.forEach(trigger => {
             trigger.addEventListener('click', function () {
                 const staffId = this.dataset.staffId;
@@ -543,7 +731,25 @@
         });
 
         function fetchStaffHistory(staffId) {
-            // Show loading state or at least find the elements
+            if (staffId != currentStaffId) {
+                // Different staff: drop cached tab data and reset all tabs to their loading state
+                Object.keys(tabCache).forEach(k => delete tabCache[k]);
+                document.getElementById('attendanceBody').innerHTML = '<tr><td colspan="6" class="text-center py-5 text-muted">Loading…</td></tr>';
+                document.getElementById('attendanceOvertimeSummary').innerHTML = '';
+                document.getElementById('advancesBody').innerHTML = '<tr><td colspan="4" class="text-center py-5 text-muted">Loading…</td></tr>';
+                document.getElementById('advancesSummary').innerHTML = '';
+                document.getElementById('expenseContent').innerHTML = '<div class="text-center py-5 text-muted">Loading…</div>';
+                document.getElementById('reviewsList').innerHTML = '';
+                document.getElementById('reviewsSummary').innerHTML = '';
+                resetStarPicker();
+                // Reset to the Info tab whenever a different staff is opened
+                const infoTabBtn = document.getElementById('tabBtnInfo');
+                if (infoTabBtn && window.bootstrap && bootstrap.Tab) {
+                    new bootstrap.Tab(infoTabBtn).show();
+                }
+            }
+            currentStaffId = staffId;
+
             const bodyContent = document.getElementById('modalHistoryBody');
             bodyContent.innerHTML = '<tr><td colspan="9" class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></td></tr>';
 
@@ -567,29 +773,359 @@
                 });
         }
 
+        // --- Tab lazy-loading ---
+        document.querySelectorAll('#staffHistoryTabs button[data-bs-toggle="tab"]').forEach(tabBtn => {
+            tabBtn.addEventListener('shown.bs.tab', function (e) {
+                const target = e.target.getAttribute('data-bs-target');
+                if (target === '#tabAttendance') loadAttendance();
+                else if (target === '#tabAdvances') loadAdvances();
+                else if (target === '#tabExpense') loadExpense();
+                else if (target === '#tabReviews') loadReviews();
+            });
+        });
+
+        function loadAttendance(forceRefresh) {
+            if (!currentStaffId) return;
+            if (tabCache.attendance && !forceRefresh) return;
+            const tbody = document.getElementById('attendanceBody');
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></td></tr>';
+
+            const from = document.getElementById('attendanceDateFrom').value;
+            const to = document.getElementById('attendanceDateTo').value;
+            const params = new URLSearchParams();
+            if (from) params.set('date_from', from);
+            if (to) params.set('date_to', to);
+
+            fetch(`/salary/api/staff-history/${currentStaffId}/attendance?${params}`)
+                .then(r => r.json())
+                .then(data => {
+                    tabCache.attendance = true;
+                    document.getElementById('attendanceOvertimeSummary').innerHTML = `
+                        <span class="badge bg-light text-dark border me-2 px-3 py-2">Required: ${Number(data.required_hours || 0).toFixed(1)}h</span>
+                        <span class="badge ${data.overtime_hours > 0 ? 'bg-info-soft text-info' : 'bg-light text-dark border'} me-2 px-3 py-2">Overtime: ${Number(data.overtime_hours || 0).toFixed(1)}h</span>
+                        <span class="badge ${data.overtime_amount > 0 ? 'bg-warning-soft text-warning' : 'bg-light text-dark border'} px-3 py-2">Overtime Amount: ₨ ${Number(data.overtime_amount || 0).toLocaleString()}</span>
+                    `;
+                    const records = data.records || [];
+                    if (records.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No attendance records found.</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = records.map(r => `
+                        <tr>
+                            <td class="ps-4">${r.date || '-'}</td>
+                            <td>${r.clock_in || '-'}</td>
+                            <td>${r.clock_out || '-'}</td>
+                            <td>${(r.hours_worked || 0).toFixed ? r.hours_worked.toFixed(1) : r.hours_worked}h</td>
+                            <td class="text-success">₨ ${Number(r.earned_amount || 0).toLocaleString()}</td>
+                            <td class="pe-4 text-center">
+                                ${r.is_absent ? '<span class="badge bg-danger-soft text-danger">Absent</span>' :
+                                  r.is_holiday ? '<span class="badge bg-info-soft text-info">Holiday</span>' :
+                                  '<span class="badge bg-success-soft text-success">Present</span>'}
+                            </td>
+                        </tr>
+                    `).join('');
+                })
+                .catch(() => { tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-danger">Failed to load attendance.</td></tr>'; });
+        }
+
+        function loadAdvances(forceRefresh) {
+            if (!currentStaffId) return;
+            if (tabCache.advances && !forceRefresh) return;
+            const tbody = document.getElementById('advancesBody');
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></td></tr>';
+
+            const from = document.getElementById('advancesDateFrom').value;
+            const to = document.getElementById('advancesDateTo').value;
+            const params = new URLSearchParams();
+            if (from) params.set('date_from', from);
+            if (to) params.set('date_to', to);
+
+            fetch(`/salary/api/staff-history/${currentStaffId}/advances?${params}`)
+                .then(r => r.json())
+                .then(data => {
+                    tabCache.advances = true;
+                    document.getElementById('advancesSummary').innerHTML = `
+                        <span class="badge bg-warning-soft text-warning me-2 px-3 py-2">Pending: ₨ ${Number(data.total_pending || 0).toLocaleString()}</span>
+                        <span class="badge bg-success-soft text-success px-3 py-2">Deducted: ₨ ${Number(data.total_deducted || 0).toLocaleString()}</span>
+                    `;
+                    const advances = data.advances || [];
+                    if (advances.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-muted">No advances found.</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = advances.map(a => `
+                        <tr>
+                            <td class="ps-4">${a.date || '-'}</td>
+                            <td>₨ ${Number(a.amount || 0).toLocaleString()}</td>
+                            <td class="text-muted small">${a.description || '-'}</td>
+                            <td class="pe-4 text-center">
+                                ${a.is_deducted ? '<span class="badge bg-success-soft text-success">Deducted</span>' : '<span class="badge bg-warning-soft text-warning">Pending</span>'}
+                            </td>
+                        </tr>
+                    `).join('');
+                })
+                .catch(() => { tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-danger">Failed to load advances.</td></tr>'; });
+        }
+
+        function loadExpense() {
+            if (!currentStaffId) return;
+            if (tabCache.expense) return;
+            const container = document.getElementById('expenseContent');
+            container.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>';
+
+            fetch(`/salary/api/staff-history/${currentStaffId}/expense`)
+                .then(r => r.json())
+                .then(data => {
+                    tabCache.expense = true;
+                    if (!data.has_account) {
+                        container.innerHTML = '<div class="text-center py-5 text-muted"><i class="fas fa-wallet fa-2x mb-2 d-block"></i>No custodian/expense account linked to this staff member.</div>';
+                        return;
+                    }
+                    const acc = data.account;
+                    const txns = data.transactions || [];
+                    let html = `
+                        <div class="row g-3 mb-4">
+                            <div class="col-6 col-md-3">
+                                <div class="stat-card-inner border-primary">
+                                    <div class="stat-label">Custodian Account</div>
+                                    <div class="stat-value" style="font-size:0.95rem;">${acc.name}</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="stat-card-inner border-success">
+                                    <div class="stat-label">Balance</div>
+                                    <div class="stat-value text-success">₨ ${Number(acc.balance || 0).toLocaleString()}</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="stat-card-inner border-info">
+                                    <div class="stat-label">Total Debit</div>
+                                    <div class="stat-value text-info">₨ ${Number(acc.total_debit || 0).toLocaleString()}</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="stat-card-inner border-danger">
+                                    <div class="stat-label">Total Credit</div>
+                                    <div class="stat-value text-danger">₨ ${Number(acc.total_credit || 0).toLocaleString()}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <a href="/accounting/expenses/account-activity?account_id=${acc.id}" target="_blank" class="btn btn-sm btn-outline-primary rounded-pill">
+                                <i class="fas fa-external-link-alt me-1"></i>View Full Ledger
+                            </a>
+                        </div>
+                        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0">
+                                    <thead class="bg-light text-muted small text-uppercase">
+                                        <tr>
+                                            <th class="ps-4">Date</th>
+                                            <th>Type</th>
+                                            <th>Amount</th>
+                                            <th class="pe-4 text-center">Approved</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                    `;
+                    if (txns.length === 0) {
+                        html += '<tr><td colspan="4" class="text-center py-4 text-muted">No transactions found.</td></tr>';
+                    } else {
+                        txns.forEach(t => {
+                            html += `
+                                <tr>
+                                    <td class="ps-4">${t.date || '-'}</td>
+                                    <td><span class="badge bg-light text-dark border">${t.transaction_type}</span></td>
+                                    <td class="${t.entry_type === 'debit' ? 'text-success' : 'text-danger'}">${t.entry_type === 'debit' ? '+' : '-'}₨ ${Number(t.amount || 0).toLocaleString()}</td>
+                                    <td class="pe-4 text-center">${t.is_approved ? '<span class="badge bg-success-soft text-success">Yes</span>' : '<span class="badge bg-warning-soft text-warning">No</span>'}</td>
+                                </tr>
+                            `;
+                        });
+                    }
+                    html += '</tbody></table></div></div>';
+                    container.innerHTML = html;
+                })
+                .catch(() => { container.innerHTML = '<div class="text-center py-4 text-danger">Failed to load expense/custodian data.</div>'; });
+        }
+
+        // --- Reviews ---
+        function renderStars(rating) {
+            let html = '<span class="star-display">';
+            for (let i = 1; i <= 5; i++) {
+                html += `<i class="${i <= rating ? 'fas' : 'far'} fa-star"></i>`;
+            }
+            return html + '</span>';
+        }
+
+        function loadReviews() {
+            if (!currentStaffId) return;
+            if (tabCache.reviews) return;
+            const list = document.getElementById('reviewsList');
+            list.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>';
+
+            fetch(`/salary/api/staff-history/${currentStaffId}/reviews`)
+                .then(r => r.json())
+                .then(data => {
+                    tabCache.reviews = true;
+                    document.getElementById('reviewsSummary').innerHTML = `
+                        <div class="d-flex align-items-center gap-2">
+                            ${renderStars(Math.round(data.average_rating || 0))}
+                            <strong>${data.average_rating || 0}</strong>
+                            <span class="text-muted small">(${data.count || 0} review${data.count === 1 ? '' : 's'})</span>
+                        </div>
+                    `;
+                    renderReviewsList(data.reviews || []);
+                })
+                .catch(() => { list.innerHTML = '<div class="text-center py-4 text-danger">Failed to load reviews.</div>'; });
+        }
+
+        function renderReviewsList(reviews) {
+            const list = document.getElementById('reviewsList');
+            if (reviews.length === 0) {
+                list.innerHTML = '<div class="text-center py-4 text-muted">No reviews yet. Be the first to add one.</div>';
+                return;
+            }
+            list.innerHTML = reviews.map(r => `
+                <div class="card border-0 shadow-sm rounded-4 p-3 mb-2">
+                    <div class="d-flex justify-content-between align-items-start">
+                        ${renderStars(r.rating)}
+                        <small class="text-muted">${r.created_at}</small>
+                    </div>
+                    ${r.comment ? `<p class="mb-1 mt-2">${r.comment}</p>` : ''}
+                    <small class="text-muted">— ${r.author}</small>
+                </div>
+            `).join('');
+        }
+
+        function resetStarPicker() {
+            document.getElementById('reviewRatingInput').value = '0';
+            document.querySelectorAll('.star-pick').forEach(s => { s.classList.remove('fas', 'active'); s.classList.add('far'); });
+            const form = document.getElementById('addReviewForm');
+            if (form) form.reset();
+        }
+
+        document.querySelectorAll('.star-pick').forEach(star => {
+            star.addEventListener('click', function () {
+                const value = parseInt(this.dataset.value, 10);
+                document.getElementById('reviewRatingInput').value = value;
+                document.querySelectorAll('.star-pick').forEach(s => {
+                    const v = parseInt(s.dataset.value, 10);
+                    s.classList.toggle('fas', v <= value);
+                    s.classList.toggle('far', v > value);
+                    s.classList.toggle('active', v <= value);
+                });
+            });
+        });
+
+        const addReviewForm = document.getElementById('addReviewForm');
+        if (addReviewForm) {
+            addReviewForm.addEventListener('submit', function (e) {
+                e.preventDefault();
+                if (!currentStaffId) return;
+                const rating = parseInt(document.getElementById('reviewRatingInput').value, 10);
+                const comment = document.getElementById('reviewCommentInput').value.trim();
+                if (!rating) {
+                    alert('Please select a star rating before submitting.');
+                    return;
+                }
+                fetch(`/salary/api/staff-history/${currentStaffId}/reviews`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rating: rating, comment: comment })
+                })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (!data.success) {
+                            alert('Error: ' + (data.message || 'Could not submit review.'));
+                            return;
+                        }
+                        resetStarPicker();
+                        fetch(`/salary/api/staff-history/${currentStaffId}/reviews`)
+                            .then(r => r.json())
+                            .then(fresh => {
+                                document.getElementById('reviewsSummary').innerHTML = `
+                                    <div class="d-flex align-items-center gap-2">
+                                        ${renderStars(Math.round(fresh.average_rating || 0))}
+                                        <strong>${fresh.average_rating || 0}</strong>
+                                        <span class="text-muted small">(${fresh.count || 0} review${fresh.count === 1 ? '' : 's'})</span>
+                                    </div>
+                                `;
+                                renderReviewsList(fresh.reviews || []);
+                            });
+                    })
+                    .catch(() => alert('An error occurred while submitting the review.'));
+            });
+        }
+
+        document.getElementById('attendanceFilterBtn').addEventListener('click', () => loadAttendance(true));
+        document.getElementById('advancesFilterBtn').addEventListener('click', () => loadAdvances(true));
+
         function populateModal(data) {
             const staff = data.staff_info;
             const payments = data.payments;
 
             // Header
             document.getElementById('staffHistoryModalLabel').innerText = staff.name;
+            currentStaffName = staff.name;
             document.getElementById('modalStaffSubtext').innerText = `${staff.designation} | Joined: ${staff.joining_date}`;
 
-            // Agreement Button
-            const agreementContainer = document.getElementById('modalAgreementContainer');
-            if (staff.agreement_letter) {
-                agreementContainer.innerHTML = `
-                <a href="/static/${staff.agreement_letter}" target="_blank" class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm">
-                    <i class="fas fa-file-contract me-2"></i>View Agreement
-                </a>
-            `;
+            // Status badge
+            const statusBadge = document.getElementById('modalStatusBadge');
+            if (staff.is_active) {
+                statusBadge.innerHTML = '<span class="badge bg-success-soft text-success px-3 py-2">Active</span>';
             } else {
-                agreementContainer.innerHTML = `
-                <button class="btn btn-light btn-sm rounded-pill px-3 border" disabled>
-                    <i class="fas fa-file-contract me-2 text-muted"></i>No Agreement
-                </button>
-            `;
+                statusBadge.innerHTML = `<span class="badge bg-secondary-soft text-secondary px-3 py-2">Left${staff.left_date ? ' on ' + staff.left_date : ''}</span>`;
             }
+
+            // Leave / Reactivate action
+            const actionContainer = document.getElementById('modalLeaveActionContainer');
+            if (staff.is_active) {
+                actionContainer.innerHTML = `
+                    <form method="POST" action="/salary/staff/${currentStaffId}/leave"
+                        onsubmit="return confirm('Mark ${staff.name} as having left the company? They will be hidden from attendance-marking and custodian selection going forward. All historical records are preserved.')">
+                        <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill px-3">
+                            <i class="fas fa-user-slash me-1"></i>Mark as Left
+                        </button>
+                    </form>
+                `;
+            } else {
+                actionContainer.innerHTML = `
+                    <form method="POST" action="/salary/staff/${currentStaffId}/reactivate"
+                        onsubmit="return confirm('Reactivate ${staff.name}? They will reappear in attendance and custodian selection.')">
+                        <button type="submit" class="btn btn-sm btn-outline-success rounded-pill px-3">
+                            <i class="fas fa-user-check me-1"></i>Reactivate
+                        </button>
+                    </form>
+                `;
+            }
+
+            // Staff Details grid (mirrors the Add/Edit Staff form fields)
+            function detailField(colClass, label, valueHtml) {
+                return `
+                    <div class="${colClass}">
+                        <div class="small fw-bold text-muted text-uppercase mb-1">${label}</div>
+                        <div>${valueHtml}</div>
+                    </div>
+                `;
+            }
+            function docValue(label, icon, path) {
+                return path
+                    ? `<a href="/static/${path}" target="_blank" class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm"><i class="fas ${icon} me-2"></i>View ${label}</a>`
+                    : `<span class="text-muted"><i class="fas ${icon} me-2"></i>No file chosen</span>`;
+            }
+            document.getElementById('modalStaffDetails').innerHTML =
+                detailField('col-6 col-md-4', 'Full Name', staff.name) +
+                detailField('col-6 col-md-4', 'Designation', staff.designation || '&mdash;') +
+                detailField('col-6 col-md-4', 'Joining Date', staff.joining_date) +
+                detailField('col-6 col-md-4', 'Monthly Salary', `₨ ${Number(staff.monthly_salary || 0).toLocaleString()}`) +
+                detailField('col-6 col-md-4', 'Joining Advance', `₨ ${Number(staff.joining_advance || 0).toLocaleString()}`) +
+                detailField('col-6 col-md-4', 'Currently Active',
+                    staff.is_active
+                        ? '<span class="badge bg-success-soft text-success px-2 py-1">Active</span>'
+                        : `<span class="badge bg-secondary-soft text-secondary px-2 py-1">Left${staff.left_date ? ' on ' + staff.left_date : ''}</span>`) +
+                detailField('col-6 col-md-4', 'CNIC', docValue('CNIC', 'fa-id-card', staff.cnic)) +
+                detailField('col-6 col-md-4', 'CV / Resume', docValue('CV', 'fa-file-alt', staff.cv)) +
+                detailField('col-6 col-md-4', 'Agreement Letter', docValue('Agreement', 'fa-file-contract', staff.agreement_letter));
 
             // Summary Stats
             const summaryHtml = `
@@ -651,6 +1187,18 @@
                 <div class="stat-card-inner border-dark">
                     <div class="stat-label">Total Rem. Formula</div>
                     <div class="stat-value">₨ ${staff.total_salary_remaining.toLocaleString()}</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card-inner border-info">
+                    <div class="stat-label">Overtime Hours</div>
+                    <div class="stat-value text-info">${Number(staff.overtime_hours || 0).toFixed(1)}h</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card-inner border-warning">
+                    <div class="stat-label">Overtime Amount</div>
+                    <div class="stat-value text-warning">₨ ${Number(staff.overtime_amount || 0).toLocaleString()}</div>
                 </div>
             </div>
         `;

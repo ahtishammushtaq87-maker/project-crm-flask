@@ -2523,12 +2523,15 @@ class Staff(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     agreement_letter = db.Column(db.String(255))
+    cnic = db.Column(db.String(255))
+    cv = db.Column(db.String(255))
+    left_date = db.Column(db.Date, nullable=True)  # set when marked as having left the company
     joining_advance = db.Column(db.Float, default=0)
     remaining_joining_advance = db.Column(db.Float, default=0)
     def __init__(self, name, designation=None, monthly_salary=0,
                  joining_date=None, joining_advance=0,
                  remaining_joining_advance=0, is_active=True,
-                 agreement_letter=None):
+                 agreement_letter=None, cnic=None, cv=None):
         self.name = name
         self.designation = designation
         self.monthly_salary = monthly_salary
@@ -2537,6 +2540,8 @@ class Staff(db.Model):
         self.remaining_joining_advance = remaining_joining_advance
         self.is_active = is_active
         self.agreement_letter = agreement_letter
+        self.cnic = cnic
+        self.cv = cv
     
     # Monthly divided salary fields
     daily_salary = db.Column(db.Float, default=0)  # Calculated daily salary (monthly ÷ 30)
@@ -2599,36 +2604,24 @@ class Staff(db.Model):
         total_m = sum(r.minutes_worked for r in records if r.minutes_worked)
         return total_h + (total_m / 60.0)
 
-    def get_overtime_records(self, start_date=None, end_date=None):
-        """Attendance records with logged overtime within a date range, oldest first.
-        Used to show a per-date overtime breakdown alongside the total amount."""
-        records = self.attendance_records
-        if start_date:
-            records = [r for r in records if r.date >= start_date]
-        if end_date:
-            records = [r for r in records if r.date <= end_date]
-        return sorted(
-            (r for r in records if (r.overtime_hours or 0) > 0 or (r.overtime_minutes or 0) > 0),
-            key=lambda r: r.date
-        )
-
     def get_overtime_hours(self, start_date=None, end_date=None):
-        """Total overtime hours (decimal) within a date range, straight from
-        the attendance records' own overtime_hours/overtime_minutes fields."""
-        total = 0.0
-        for r in self.get_overtime_records(start_date, end_date):
-            total += (r.overtime_hours or 0) + ((r.overtime_minutes or 0) / 60.0)
-        return total
+        """Computed overtime: how far actual worked hours in this period exceed
+        the required hours for the period (working days, excluding Sundays and
+        holidays, times 8h/day). Zero if actual hours are at or below required."""
+        from app.utils import get_required_hours_in_range
+        actual = self.get_total_hours(start_date, end_date)
+        required = get_required_hours_in_range(self, start_date, end_date)
+        return max(0.0, actual - required)
 
     def get_overtime_amount(self, start_date=None, end_date=None):
-        """Total overtime pay within a date range, at each day's own recorded
-        hourly rate (reads the stored rate directly rather than recalculating
-        it, so this stays a pure read with no side effects on Staff/Attendance)."""
-        total = 0.0
-        for r in self.get_overtime_records(start_date, end_date):
-            hours = (r.overtime_hours or 0) + ((r.overtime_minutes or 0) / 60.0)
-            total += hours * (r.hourly_rate or 0)
-        return total
+        """Overtime hours priced at this staff's current hourly rate
+        (daily_salary / 8, recalculated for the relevant month)."""
+        overtime_hours = self.get_overtime_hours(start_date, end_date)
+        if overtime_hours <= 0:
+            return 0.0
+        self.calculate_daily_salary(end_date or datetime.utcnow().date())
+        hourly_rate = (self.daily_salary or 0) / 8.0
+        return overtime_hours * hourly_rate
 
     @property
     def current_month_hours(self):
@@ -2962,6 +2955,23 @@ class Attendance(db.Model):
     
     def __repr__(self):
         return f'<Attendance {self.staff_id} - {self.date}: {self.get_time_summary()}>'
+
+class StaffReview(db.Model):
+    """Performance review/note left on a staff member. Permanent log — no edit/delete."""
+    __tablename__ = 'staff_reviews'
+
+    id = db.Column(db.Integer, primary_key=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=False, index=True)
+    rating = db.Column(db.Integer, nullable=False)  # 1-5
+    comment = db.Column(db.Text)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    staff = db.relationship('Staff', backref=db.backref('reviews', lazy=True, cascade='all, delete-orphan', order_by='StaffReview.created_at.desc()'))
+    author = db.relationship('User', foreign_keys=[created_by])
+
+    def __repr__(self):
+        return f'<StaffReview {self.staff_id} - {self.rating}*>'
 
 class SalaryAdvance(db.Model):
     """Salary advance model"""

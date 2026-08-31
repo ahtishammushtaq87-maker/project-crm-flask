@@ -90,7 +90,31 @@ def index():
     # Convert minutes to hours
     total_hours += total_minutes // 60
     total_minutes = total_minutes % 60
-    
+
+    # Computed overtime: for each staff shown, how far their actual worked
+    # hours in this filtered range exceed the required hours for that range
+    # (working days - Sundays - their holidays, times 8h/day). Zero if not over.
+    from app.utils import get_required_hours_in_range
+    from collections import defaultdict
+
+    records_by_staff = defaultdict(list)
+    for record in attendance_records:
+        records_by_staff[record.staff_id].append(record)
+
+    total_overtime_hours = 0.0
+    total_overtime_amount = 0.0
+    total_required_hours = 0.0
+    for staff_id, records in records_by_staff.items():
+        staff_member = records[0].staff
+        actual_hours = sum((r.hours_worked or 0) + (r.minutes_worked or 0) / 60.0 for r in records)
+        required_hours = get_required_hours_in_range(staff_member, date_from.date(), date_to.date())
+        total_required_hours += required_hours
+        overtime_hours = max(0.0, actual_hours - required_hours)
+        total_overtime_hours += overtime_hours
+        if overtime_hours > 0:
+            hourly_rate = (staff_member.daily_salary or 0) / 8.0
+            total_overtime_amount += overtime_hours * hourly_rate
+
     # Get all staff for filter dropdown
     all_staff = Staff.query.filter_by(is_active=True).all()
     
@@ -108,6 +132,9 @@ def index():
                          total_hours=total_hours,
                          total_minutes=total_minutes,
                          total_earned=total_earned,
+                         total_overtime_hours=total_overtime_hours,
+                         total_overtime_amount=total_overtime_amount,
+                         total_required_hours=total_required_hours,
                          now=datetime.now(),
                          timedelta=timedelta,
                          active_module='attendance')
@@ -453,10 +480,6 @@ def edit_attendance(attendance_id):
             attendance.deduct_hours = float(request.form.get('deduct_hours') or 0)
             attendance.deduct_minutes = int(request.form.get('deduct_minutes') or 0)
             attendance.deduct_reason = request.form.get('deduct_reason')
-            # Overtime (stored separately; does not alter hours_worked/earned_amount)
-            attendance.overtime_hours = float(request.form.get('overtime_hours') or 0)
-            attendance.overtime_minutes = int(request.form.get('overtime_minutes') or 0)
-            attendance.overtime_reason = request.form.get('overtime_reason')
             attendance.notes = notes
             
             # Recalculate based on new state

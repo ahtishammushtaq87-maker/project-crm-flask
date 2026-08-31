@@ -228,25 +228,49 @@
     </div>
 
     <!-- Summary Cards -->
-    <div class="row mb-4">
-        <div class="col-md-4">
-            <div class="card" style="border-left: 4px solid #667eea;">
+    <div class="row mb-4 g-3">
+        <div class="col-6 col-md-4 col-xl">
+            <div class="card h-100" style="border-left: 4px solid #667eea;">
                 <div class="card-body">
                     <h6 class="text-muted">Total Hours Worked</h6>
                     <h3>{{ total_hours }}h {{ total_minutes }}m</h3>
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
-            <div class="card" style="border-left: 4px solid #f5576c;">
+        <div class="col-6 col-md-4 col-xl">
+            <div class="card h-100" style="border-left: 4px solid #f5576c;">
                 <div class="card-body">
                     <h6 class="text-muted">Total Earned</h6>
                     <h3>PKR {{ "%.2f"|format(total_earned) }}</h3>
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
-            <div class="card" style="border-left: 4px solid #6bc34a;">
+        <div class="col-6 col-md-4 col-xl">
+            <div class="card h-100" style="border-left: 4px solid #00bcd4;">
+                <div class="card-body">
+                    <h6 class="text-muted">Required Hours</h6>
+                    <h3>{{ "%.1f"|format(total_required_hours) }}h</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl">
+            <div class="card h-100" style="border-left: 4px solid #ff9800;">
+                <div class="card-body">
+                    <h6 class="text-muted">Overtime Hours</h6>
+                    <h3>{{ "%.1f"|format(total_overtime_hours) }}h</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl">
+            <div class="card h-100" style="border-left: 4px solid #9c27b0;">
+                <div class="card-body">
+                    <h6 class="text-muted">Overtime Earn</h6>
+                    <h3>PKR {{ "%.2f"|format(total_overtime_amount) }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl">
+            <div class="card h-100" style="border-left: 4px solid #6bc34a;">
                 <div class="card-body">
                     <h6 class="text-muted">Records</h6>
                     <h3>{{ attendance_records|length }}</h3>
@@ -275,7 +299,6 @@
                         <th>Duration</th>
                         <th>Break</th>
                         <th>Deduction</th>
-                        <th>Overtime</th>
                         <th>Hourly Rate</th>
                         <th>Earned</th>
                         <th>Notes</th>
@@ -329,18 +352,6 @@
                                 record.deduct_minutes }}m</span>
                             {% if record.deduct_reason %}
                             <i class="fas fa-comment-dots ms-1 text-primary" title="{{ record.deduct_reason }}"
-                                data-bs-toggle="tooltip"></i>
-                            {% endif %}
-                            {% else %}
-                            <span class="text-muted">—</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if record.overtime_total_hours > 0 %}
-                            <span class="badge bg-success text-white">{{ record.overtime_hours|int }}h {{
-                                record.overtime_minutes }}m</span>
-                            {% if record.overtime_reason %}
-                            <i class="fas fa-comment-dots ms-1 text-primary" title="{{ record.overtime_reason }}"
                                 data-bs-toggle="tooltip"></i>
                             {% endif %}
                             {% else %}
