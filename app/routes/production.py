@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from calendar import monthrange
 from sqlalchemy import func
 from app.report_utils import generate_excel, generate_csv, generate_pdf
+from app.services.production_targets import compute_target_result, finalize_overdue_targets
 
 bp = Blueprint('production', __name__)
 
@@ -14,35 +15,41 @@ bp = Blueprint('production', __name__)
 @login_required
 def index():
     """Production Target Dashboard - Main view"""
+    # Defensive fallback: the background scheduler normally finalizes overdue
+    # targets, but catch anything it hasn't gotten to yet whenever this page
+    # is loaded.
+    finalize_overdue_targets()
+
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
     selected_product_id = request.args.get('product_id', type=int, default=None)
-    
+    view = request.args.get('view', 'active')
+    if view not in ('active', 'previous'):
+        view = 'active'
+
     if start_date_str:
         month_start = datetime.strptime(start_date_str, '%Y-%m-%d')
     else:
         month_start = datetime(datetime.now().year, datetime.now().month, 1)
-        
+
     if end_date_str:
         month_end = datetime.strptime(end_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
     else:
         _, days_in_month = monthrange(month_start.year, month_start.month)
         month_end = datetime(month_start.year, month_start.month, days_in_month, 23, 59, 59)
-    
-    # Filter targets occurring in this range or with label matching the start of range
-    query = ProductionTarget.query.filter(
-        db.or_(
-            db.and_(ProductionTarget.month == month_start.month, ProductionTarget.year == month_start.year),
-            db.and_(ProductionTarget.start_date >= month_start.date(), ProductionTarget.start_date <= month_end.date()),
-            db.and_(ProductionTarget.end_date >= month_start.date(), ProductionTarget.end_date <= month_end.date())
-        )
-    )
-    if selected_product_id:
-        query = query.filter_by(sku_id=selected_product_id)
-    targets = query.all()
-    
+
     products = Product.query.filter_by(is_active=True, is_manufactured=True).order_by(Product.name).all()
-    
+
+    today = datetime.now().date()
+    if today >= month_start.date() and today <= month_end.date():
+        total_days = (month_end.date() - month_start.date()).days + 1
+        elapsed_days = (today - month_start.date()).days + 1
+        expected_progress = (elapsed_days / total_days) * 100
+    elif today > month_end.date():
+        expected_progress = 100
+    else:
+        expected_progress = 0
+
     results = []
     total_target = 0
     total_produced_all = 0
@@ -53,151 +60,60 @@ def index():
     actual_revenue_all = 0
     actual_cost_all = 0
     actual_profit_all = 0
-    
-    today = datetime.now().date()
-    if today >= month_start.date() and today <= month_end.date():
-        total_days = (month_end.date() - month_start.date()).days + 1
-        elapsed_days = (today - month_start.date()).days + 1
-        expected_progress = (elapsed_days / total_days) * 100
-    elif today > month_end.date():
-        expected_progress = 100
+
+    if view == 'active':
+        query = ProductionTarget.query.filter(
+            ProductionTarget.status == 'active',
+            db.or_(
+                db.and_(ProductionTarget.month == month_start.month, ProductionTarget.year == month_start.year),
+                db.and_(ProductionTarget.start_date >= month_start.date(), ProductionTarget.start_date <= month_end.date()),
+                db.and_(ProductionTarget.end_date >= month_start.date(), ProductionTarget.end_date <= month_end.date())
+            )
+        )
+        if selected_product_id:
+            query = query.filter_by(sku_id=selected_product_id)
+        targets = query.all()
+
+        for target in targets:
+            result = compute_target_result(target, expected_progress=expected_progress)
+            results.append(result)
+
+            total_target += result['effective_target_units']
+            total_produced_all += (result['net_produced'] + result['returned_qty'])  # Use Net Produced (pre-return) for the summary box, matching prior behavior
+            total_remaining += result['remaining']
+            total_revenue += result['target_revenue']
+            total_cost += result['estimated_cost']
+            total_profit += result['estimated_profit']
+            actual_revenue_all += result['actual_revenue']
+            actual_cost_all += result['actual_cost']
+            actual_profit_all += result['actual_profit']
     else:
-        expected_progress = 0
-    
-    for target in targets:
-        product = target.product
-        
-        # Filter logs based on target range if available, else month/year
-        log_start = target.start_date if target.start_date else month_start.date()
-        log_end = target.end_date if target.end_date else month_end.date()
+        query = ProductionTarget.query.filter(ProductionTarget.status == 'completed')
+        if selected_product_id:
+            query = query.filter_by(sku_id=selected_product_id)
+        targets = query.order_by(ProductionTarget.result_generated_at.desc()).all()
 
-        # Determine Target Units from Manufacturing Orders for this SKU in the range
-        mo_target_units = db.session.query(func.sum(ManufacturingOrder.quantity_to_produce)).join(BOM).filter(
-            BOM.product_id == target.sku_id,
-            ManufacturingOrder.start_date >= log_start,
-            ManufacturingOrder.start_date <= log_end
-        ).scalar() or 0
-        
-        # Use sum of manual target units and MO quantities
-        effective_target_units = (target.target_units or 0) + mo_target_units
+        for target in targets:
+            results.append({
+                'target': target,
+                'product': target.product,
+                'target_units': target.final_target_units or 0,
+                'produced_qty': target.final_produced_qty or 0,
+                'net_produced': target.final_net_produced or 0,
+                'completion_pct': target.final_completion_pct or 0,
+                'status': target.final_result_status or '',
+                'status_class': {'DONE': 'primary', 'ON TRACK': 'success', 'BEHIND': 'danger'}.get(target.final_result_status, 'secondary'),
+                'actual_revenue': target.final_actual_revenue or 0,
+                'actual_cost': target.final_actual_cost or 0,
+                'actual_profit': target.final_actual_profit or 0,
+            })
 
-        # Determine Produced Qty: Stateful Value vs dynamic Logs sum
-        if target.produced_qty is not None:
-            # Use stateful value (manual entry + automated additions)
-            produced_qty = target.produced_qty
-            log_produced = 0 # Not used in stateful mode
-        else:
-            # Fallback: Dynamic logs sum (only if never manually adjusted)
-            log_produced = db.session.query(func.sum(ProductionLog.qty_produced)).filter(
-                ProductionLog.sku_id == target.sku_id,
-                ProductionLog.date >= log_start,
-                ProductionLog.date <= log_end
-            ).scalar() or 0
-            produced_qty = log_produced
-            
-        # Calculate rejected qty for the range
-        rejected_qty = db.session.query(func.sum(ProductionLog.rejected_qty)).filter(
-            ProductionLog.sku_id == target.sku_id,
-            ProductionLog.date >= log_start,
-            ProductionLog.date <= log_end
-        ).scalar() or 0
-            
-        net_produced = produced_qty - rejected_qty  # Net = Produced - Rejected
-        total_produced = produced_qty + rejected_qty  # Total including rejected
-        
-        # Calculate Returns for this product in this range
-        from app.models import SaleReturn, SaleReturnItem
-        returned_qty = db.session.query(func.sum(SaleReturnItem.quantity)).join(SaleReturn).filter(
-            SaleReturnItem.product_id == target.sku_id,
-            SaleReturn.date >= log_start,
-            SaleReturn.date <= log_end
-        ).scalar() or 0
-        
-        # Truly net produced = Produced - Rejected - Returned
-        final_net_produced = net_produced - returned_qty
-        
-        selling_price = product.finished_good_price if product.finished_good_price else product.unit_price
-        bom = BOM.query.filter_by(product_id=product.id, is_active=True).first()
-        
-        # Use current product cost (which is updated after complete production)
-        # instead of relying solely on BOM estimate if production has happened
-        item_unit_cost = product.cost_price if product.cost_price > 0 else (bom.total_cost if bom else 0)
-        
-        # Breakdown still shows BOM reference if needed, but calculations use item_unit_cost
-        if bom:
-            reference_bom_cost = bom.total_cost - bom.overhead_cost - bom.labor_cost
-            reference_overhead = bom.overhead_cost + bom.labor_cost
-        else:
-            reference_bom_cost = product.cost_price
-            reference_overhead = 0
-            
-        if target.overhead_cost_per_unit > 0:
-            # If target has specific overhead, reflect it in the display
-            reference_overhead = target.overhead_cost_per_unit
-            
-        remaining = effective_target_units - total_produced
-        completion_pct = (final_net_produced / effective_target_units * 100) if effective_target_units > 0 else 0
-        
-        if completion_pct >= 100:
-            status = 'DONE'
-            status_class = 'primary'
-        elif completion_pct >= expected_progress:
-            status = 'ON TRACK'
-            status_class = 'success'
-        else:
-            status = 'BEHIND'
-            status_class = 'danger'
-        
-        target_revenue = effective_target_units * selling_price
-        estimated_cost = effective_target_units * item_unit_cost
-        estimated_profit = target_revenue - estimated_cost
-        
-        # Actual (based on net produced qty after rejecting and returns)
-        actual_revenue = final_net_produced * selling_price
-        actual_cost = final_net_produced * item_unit_cost
-        actual_profit = actual_revenue - actual_cost
-        
-        results.append({
-            'target': target,
-            'product': product,
-            'produced_qty': produced_qty,
-            'net_produced': final_net_produced,
-            'returned_qty': returned_qty,
-            'rejected_qty': rejected_qty,
-            'total_produced': total_produced,
-            'remaining': remaining,
-            'completion_pct': round(completion_pct, 1),
-            'expected_progress': round(expected_progress, 1),
-            'status': status,
-            'status_class': status_class,
-            'production_cost': item_unit_cost,
-            'overhead_cost': reference_overhead,
-            'item_cost': item_unit_cost,
-            'selling_price': selling_price,
-            'target_revenue': target_revenue,
-            'estimated_cost': estimated_cost,
-            'estimated_profit': estimated_profit,
-            'actual_revenue': actual_revenue,
-            'actual_cost': actual_cost,
-            'actual_profit': actual_profit,
-            'effective_target_units': effective_target_units
-        })
-        
-        total_target += effective_target_units
-        total_produced_all += net_produced # Use Net Produced for the summary box
-        total_remaining += remaining
-        total_revenue += target_revenue
-        total_cost += estimated_cost
-        total_profit += estimated_profit
-        actual_revenue_all += actual_revenue
-        actual_cost_all += actual_cost
-        actual_profit_all += actual_profit
-    
     overall_completion = (total_produced_all / total_target * 100) if total_target > 0 else 0
-    
+
     return render_template('production/index.html',
                          results=results,
                          products=products,
+                         view=view,
                          start_date=month_start.strftime('%Y-%m-%d'),
                          end_date=month_end.strftime('%Y-%m-%d'),
                          selected_product_id=selected_product_id,
@@ -252,10 +168,15 @@ def set_target():
             
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-        
+
+        start_time_str = request.form.get('start_time')
+        end_time_str = request.form.get('end_time')
+        start_time = datetime.strptime(start_time_str, '%H:%M').time() if start_time_str else None
+        end_time = datetime.strptime(end_time_str, '%H:%M').time() if end_time_str else None
+
         month = start_date.month
         year = start_date.year
-        
+
         sku_ids = request.form.getlist('sku_ids')
         target_units_val = request.form.get('target_units')
         target_units = float(target_units_val) if target_units_val else 0.0
@@ -272,34 +193,45 @@ def set_target():
                 # Single edit mode
                 target.start_date = start_date
                 target.end_date = end_date
+                target.start_time = start_time
+                target.end_time = end_time
                 target.month = month
                 target.year = year
                 target.target_units = target_units
                 target.overhead_cost_per_unit = overhead_cost_per_unit
+                # Editing a previously auto-completed target re-activates it,
+                # so it goes back to live tracking instead of staying frozen
+                # with numbers that no longer match the edited target.
+                target.status = 'active'
+                target.result_generated_at = None
             else:
                 # Bulk add/update mode
                 for sku_id in submitted_sku_ids:
                     # Look for existing target in this EXACT range for this SKU
                     existing = ProductionTarget.query.filter_by(
-                        start_date=start_date, 
-                        end_date=end_date, 
+                        start_date=start_date,
+                        end_date=end_date,
                         sku_id=sku_id
                     ).first()
-                    
+
                     if existing:
                         curr_target = existing
                     else:
                         curr_target = ProductionTarget(
-                            start_date=start_date, 
+                            start_date=start_date,
                             end_date=end_date,
                             month=month,
                             year=year,
                             sku_id=sku_id
                         )
                         db.session.add(curr_target)
-                    
+
+                    curr_target.start_time = start_time
+                    curr_target.end_time = end_time
                     curr_target.target_units = target_units
                     curr_target.overhead_cost_per_unit = overhead_cost_per_unit
+                    curr_target.status = 'active'
+                    curr_target.result_generated_at = None
             
             db.session.commit()
             log_activity('Production', f'Saved Production Targets', f'Month: {month}/{year}')

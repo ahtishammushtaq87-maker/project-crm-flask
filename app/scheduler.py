@@ -97,3 +97,49 @@ def start_backup_scheduler(app):
     )
     scheduler.start()
     _backup_scheduler = scheduler
+
+
+_production_target_scheduler = None
+
+
+def start_production_target_scheduler(app):
+    """Start the Production Target Tracker auto-finalization job exactly once
+    per running process. Checks for targets whose deadline has passed and
+    freezes their result (moving them from the Active tab to the Previous
+    Targets tab) — this is what actually makes a target "stop" the moment
+    its countdown reaches zero, even if nobody has the page open. Same
+    guards as start_recovery_scheduler() above (separate scheduler instance
+    so this can never interfere with the other jobs)."""
+    global _production_target_scheduler
+
+    if os.environ.get('PRODUCTION_TARGET_SCHEDULER_DISABLED') == '1':
+        return
+
+    if app.debug and os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
+        return  # this is the reloader's watcher process, not the real server
+
+    if _production_target_scheduler is not None:
+        return  # already started in this process
+
+    interval_minutes = int(os.environ.get('PRODUCTION_TARGET_SCHEDULER_INTERVAL_MINUTES', '1'))
+
+    def _run():
+        with app.app_context():
+            from app.services.production_targets import finalize_overdue_targets
+            try:
+                finalize_overdue_targets()
+            except Exception:
+                app.logger.exception('Production target auto-finalization background run failed')
+
+    scheduler = BackgroundScheduler(daemon=True)
+    scheduler.add_job(
+        _run,
+        'interval',
+        minutes=interval_minutes,
+        id='production_target_finalization',
+        next_run_time=None,
+        replace_existing=True,
+    )
+    scheduler.start()
+    scheduler.modify_job('production_target_finalization', next_run_time=datetime.now())
+    _production_target_scheduler = scheduler

@@ -66,15 +66,26 @@
             <form method="post" class="row g-3">
                 <div class="col-md-3">
                     <label class="form-label fw-bold">Start Date <span class="text-danger">*</span></label>
-                    <input type="date" name="start_date" class="form-control" 
+                    <input type="date" name="start_date" class="form-control"
                            value="{{ target.start_date.strftime('%Y-%m-%d') if target and target.start_date else '' }}" required>
                 </div>
                 <div class="col-md-3">
+                    <label class="form-label fw-bold">Start Time</label>
+                    <input type="time" name="start_time" class="form-control"
+                           value="{{ target.start_time.strftime('%H:%M') if target and target.start_time else '' }}">
+                </div>
+                <div class="col-md-3">
                     <label class="form-label fw-bold">End Date <span class="text-danger">*</span></label>
-                    <input type="date" name="end_date" class="form-control" 
+                    <input type="date" name="end_date" class="form-control"
                            value="{{ target.end_date.strftime('%Y-%m-%d') if target and target.end_date else '' }}" required>
                 </div>
-                
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">End Time (Deadline)</label>
+                    <input type="time" name="end_time" class="form-control"
+                           value="{{ target.end_time.strftime('%H:%M') if target and target.end_time else '' }}">
+                    <small class="text-muted">Optional — defaults to end of day. The countdown timer runs to this exact moment.</small>
+                </div>
+
                 <div class="col-md-4">
                     <label class="form-label fw-bold">Product (SKU) <span class="text-danger">*</span></label>
                     {% if target %}

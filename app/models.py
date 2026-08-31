@@ -1,5 +1,5 @@
 from app import db
-from datetime import datetime
+from datetime import datetime, time as dt_time
 from flask_login import UserMixin
 from sqlalchemy import Enum, func
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -3406,14 +3406,41 @@ class ProductionTarget(db.Model):
     sku_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
     start_date = db.Column(db.Date, nullable=True) # Range Start
     end_date = db.Column(db.Date, nullable=True)   # Range End
+    start_time = db.Column(db.Time, nullable=True)  # Optional time-of-day for start_date
+    end_time = db.Column(db.Time, nullable=True)    # Optional deadline time-of-day for end_date
     target_units = db.Column(db.Float, nullable=False, default=0)
     produced_qty = db.Column(db.Float, nullable=True) # Manual override for production qty (None = use logs)
     overhead_cost_per_unit = db.Column(db.Float, default=0)  # Manual overhead cost per unit
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
+    # Auto-completion: once deadline_datetime passes, a background job (or the
+    # index view as a fallback) freezes the live tracker math onto the
+    # final_* columns below and flips status to 'completed' so the target
+    # moves from the Active tab to the Previous Targets tab.
+    status = db.Column(db.String(20), nullable=False, default='active')  # 'active' | 'completed'
+    result_generated_at = db.Column(db.DateTime, nullable=True)
+    final_target_units = db.Column(db.Float, nullable=True)
+    final_produced_qty = db.Column(db.Float, nullable=True)
+    final_net_produced = db.Column(db.Float, nullable=True)
+    final_completion_pct = db.Column(db.Float, nullable=True)
+    final_result_status = db.Column(db.String(20), nullable=True)  # DONE / ON TRACK / BEHIND
+    final_actual_revenue = db.Column(db.Float, nullable=True)
+    final_actual_cost = db.Column(db.Float, nullable=True)
+    final_actual_profit = db.Column(db.Float, nullable=True)
+
     product = db.relationship('Product', backref='production_targets', lazy=True)
-    
+
+    @property
+    def deadline_datetime(self):
+        """The exact moment this target's countdown reaches zero. Falls back
+        to end-of-day when no explicit end_time was set, so targets created
+        before this feature existed keep behaving the same way."""
+        if not self.end_date:
+            return None
+        t = self.end_time or dt_time(23, 59, 59)
+        return datetime.combine(self.end_date, t)
+
     def __repr__(self):
         return f'<ProductionTarget {self.month}/{self.year} - {self.product.sku if self.product else self.sku_id}>'
 
