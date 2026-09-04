@@ -1,13 +1,14 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, send_file
-from app.utils import permission_required, log_activity
+from app.utils import permission_required, log_activity, admin_only_api
 from flask_login import login_required, current_user
 from app import db
-from app.models import Staff, SalaryAdvance, SalaryPayment, Attendance, ExpenseAccount, ExpenseAccountTransaction, StaffReview
+from app.models import Staff, SalaryAdvance, SalaryPayment, Attendance, ExpenseAccount, ExpenseAccountTransaction, StaffReview, SalaryAdjustment, SalaryRevision, StaffDocument
 from app.forms import StaffForm, SalaryAdvanceForm, SalaryPaymentForm
 from datetime import datetime
 from sqlalchemy import extract
 import io
 import os
+import re
 from werkzeug.utils import secure_filename
 
 bp = Blueprint('salary', __name__)
@@ -105,7 +106,7 @@ def recalculate_all_salaries():
         
         for record in attendance_records:
             record.calculate_hourly_rate()
-            if record.clock_out or getattr(record, 'is_holiday', False):
+            if record.clock_out or getattr(record, 'is_holiday', False) or getattr(record, 'is_paid_leave', False):
                 record.calculate_earned_amount()
         
         db.session.commit()
@@ -142,6 +143,88 @@ def _ensure_staff_expense_account(staff):
     return account
 
 
+def _default_document_name(filename):
+    """Auto-derives a readable document name from an uploaded file's own
+    filename (e.g. "cnic_scan.pdf" -> "Cnic Scan") when the user attached a
+    file but left the name field blank -- so the upload is never silently
+    dropped just because it wasn't labeled."""
+    base = os.path.splitext(filename)[0]
+    base = re.sub(r'[_\-]+', ' ', base).strip()
+    return base.title() if base else 'Document'
+
+
+def _apply_payment_method(staff, form):
+    """Sets Staff.payment_method from the Cash/Bank toggle and, only when
+    Bank is selected, the accompanying bank detail fields. Switching back
+    to Cash clears any previously-saved bank details rather than leaving
+    them dangling unused on the record."""
+    staff.payment_method = form.payment_method.data or 'cash'
+    if staff.payment_method == 'bank':
+        staff.bank_name = form.bank_name.data
+        staff.bank_account_title = form.bank_account_title.data
+        staff.bank_account_number = form.bank_account_number.data
+        staff.bank_branch = form.bank_branch.data
+    else:
+        staff.bank_name = None
+        staff.bank_account_title = None
+        staff.bank_account_number = None
+        staff.bank_branch = None
+
+
+def _save_extra_staff_documents(staff):
+    """Saves any number of named documents submitted alongside the Add/Edit
+    Staff form as parallel `doc_name[]` / `doc_file[]` arrays (one row per
+    document the user added with the "+ Add Document" button) -- lets HR
+    upload several differently-named files (Passport, Medical Certificate,
+    ...) in one go, beyond the 3 fixed CNIC/CV/Agreement Letter fields.
+    A row with no file is skipped (nothing to save). A row with a file but
+    no typed name gets an auto-generated one from the filename instead of
+    being silently dropped."""
+    names = request.form.getlist('doc_name[]')
+    files = request.files.getlist('doc_file[]')
+    upload_folder = os.path.join('app', 'static', 'uploads', 'staff_documents')
+
+    saved = 0
+    for name, file in zip(names, files):
+        if not file or not file.filename:
+            continue
+        name = (name or '').strip() or _default_document_name(file.filename)
+        if not os.path.exists(upload_folder):
+            os.makedirs(upload_folder)
+        filename = secure_filename(f"staffdoc_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+        file.save(os.path.join(upload_folder, filename))
+        db.session.add(StaffDocument(
+            staff_id=staff.id, name=name, file_path=f"uploads/staff_documents/{filename}",
+            uploaded_by=getattr(current_user, 'id', None),
+        ))
+        saved += 1
+    return saved
+
+
+def _record_salary_revision(staff, new_salary, reason=None, effective_from=None, approved_by=None):
+    """Writes one permanent SalaryRevision row (previous -> new) whenever a
+    staff member's monthly_salary actually changes. Called from both the
+    plain Edit Staff form and the dedicated HR > Salary Revisions screen, so
+    every increase/decrease is kept regardless of which screen made it. A
+    no-op if the amount hasn't actually changed (editing other staff fields
+    without touching salary shouldn't create a phantom revision row)."""
+    old_salary = staff.monthly_salary or 0
+    if new_salary is None or new_salary == old_salary:
+        return None
+    revision = SalaryRevision(
+        staff_id=staff.id,
+        previous_salary=old_salary,
+        new_salary=new_salary,
+        effective_from=effective_from or datetime.utcnow().date(),
+        reason=reason,
+        approved_by=approved_by,
+        created_by=getattr(current_user, 'id', None),
+    )
+    db.session.add(revision)
+    staff.monthly_salary = new_salary
+    return revision
+
+
 @bp.route('/staff/add', methods=['GET', 'POST'])
 @login_required
 @permission_required('salary', action='add')
@@ -158,27 +241,27 @@ def add_staff():
             is_active=form.is_active.data
         )
         
-        # Handle agreement letter / CNIC / CV uploads
-        for field, subfolder, attr in (
-            (form.agreement_letter, 'staff_agreements', 'agreement_letter'),
-            (form.cnic, 'staff_cnic', 'cnic'),
-            (form.cv, 'staff_cv', 'cv'),
-        ):
-            if field.data:
-                file = field.data
-                filename = secure_filename(f"staff_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{file.filename}")
-                upload_folder = os.path.join('app', 'static', 'uploads', subfolder)
-                if not os.path.exists(upload_folder):
-                    os.makedirs(upload_folder)
-                file.save(os.path.join(upload_folder, filename))
-                setattr(staff, attr, f"uploads/{subfolder}/{filename}")
+        # CNIC/CV/Agreement Letter used to be 3 fixed upload fields here;
+        # new uploads now go entirely through the flexible, named Documents
+        # list below (_save_extra_staff_documents) instead. Existing staff
+        # who already have one of these 3 set keep it (shown read-only as
+        # "Previously Uploaded" on the edit form and in the staff popup) --
+        # nothing here writes to those columns anymore.
 
         staff.joining_advance = form.joining_advance.data or 0
         staff.remaining_joining_advance = form.joining_advance.data or 0
+        _apply_payment_method(staff, form)
         staff.calculate_daily_salary()  # Calculate daily salary
         db.session.add(staff)
-        db.session.flush()  # assign staff.id before linking its Expense account
+        db.session.flush()  # assign staff.id before linking its Expense account / documents
         _ensure_staff_expense_account(staff)
+        _save_extra_staff_documents(staff)
+        if staff.monthly_salary:
+            db.session.add(SalaryRevision(
+                staff_id=staff.id, previous_salary=0, new_salary=staff.monthly_salary,
+                effective_from=staff.joining_date, reason='Joining salary',
+                created_by=getattr(current_user, 'id', None),
+            ))
         db.session.commit()
         log_activity('Salary', f'Added Staff: {staff.name}', f'Designation: {staff.designation}, Salary: {staff.monthly_salary}')
         flash('Staff member added successfully!', 'success')
@@ -194,7 +277,7 @@ def edit_staff(id):
     if form.validate_on_submit():
         staff.name = form.name.data
         staff.designation = form.designation.data
-        staff.monthly_salary = form.monthly_salary.data
+        _record_salary_revision(staff, form.monthly_salary.data, reason='Updated via staff profile edit')
         staff.joining_date = form.joining_date.data
         # If this is the first time joining advance is set, or if it's being increased
         old_ja = staff.joining_advance or 0
@@ -207,28 +290,36 @@ def edit_staff(id):
                 staff.remaining_joining_advance = 0
             staff.joining_advance = new_ja
         staff.is_active = form.is_active.data
-        
-        # Handle agreement letter / CNIC / CV uploads
-        for field, subfolder, attr in (
-            (form.agreement_letter, 'staff_agreements', 'agreement_letter'),
-            (form.cnic, 'staff_cnic', 'cnic'),
-            (form.cv, 'staff_cv', 'cv'),
-        ):
-            if field.data:
-                file = field.data
-                filename = secure_filename(f"staff_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{file.filename}")
-                upload_folder = os.path.join('app', 'static', 'uploads', subfolder)
-                if not os.path.exists(upload_folder):
-                    os.makedirs(upload_folder)
-                file.save(os.path.join(upload_folder, filename))
-                setattr(staff, attr, f"uploads/{subfolder}/{filename}")
+        _apply_payment_method(staff, form)
+
+        # CNIC/CV/Agreement Letter used to be 3 fixed upload fields here;
+        # new uploads now go entirely through the flexible, named Documents
+        # list below (_save_extra_staff_documents) instead.
 
         staff.calculate_daily_salary()  # Recalculate daily salary
+        _save_extra_staff_documents(staff)
         db.session.commit()
         log_activity('Salary', f'Updated Staff: {staff.name}', f'Designation: {staff.designation}, Salary: {staff.monthly_salary}')
         flash('Staff details updated!', 'success')
         return redirect(url_for('salary.staff_list'))
     return render_template('salary/staff_form.html', form=form, title="Edit Staff", staff=staff)
+
+
+@bp.route('/staff/document/<int:doc_id>/delete', methods=['POST'])
+@login_required
+@permission_required('salary', action='edit')
+def delete_staff_document(doc_id):
+    doc = StaffDocument.query.get_or_404(doc_id)
+    staff_id = doc.staff_id
+    doc_name = doc.name
+    file_path = os.path.join('app', 'static', doc.file_path)
+    db.session.delete(doc)
+    db.session.commit()
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    log_activity('Salary', f'Deleted staff document: {doc_name}', f'Staff ID {staff_id}')
+    flash('Document removed.', 'info')
+    return redirect(url_for('salary.edit_staff', id=staff_id))
 
 @bp.route('/staff/delete/<int:id>', methods=['POST'])
 @login_required
@@ -280,6 +371,12 @@ def reactivate_staff(id):
     db.session.commit()
     log_activity('Salary', f'Reactivated Staff: {staff.name}', '')
     flash(f'{staff.name} has been reactivated.', 'success')
+    # "Rejoin" can be triggered from Staff, or from HR > Final Settlements
+    # (list or detail) once a settlement is cleared -- send the user back
+    # to wherever they clicked it rather than always jumping to Staff.
+    next_url = request.form.get('next', '')
+    if next_url.startswith('/') and not next_url.startswith('//'):
+        return redirect(next_url)
     return redirect(url_for('salary.staff_list'))
 
 @bp.route('/staff/payments/<int:id>')
@@ -571,7 +668,22 @@ def pay_salary(staff_id):
     staff = Staff.query.get_or_404(staff_id)
     form = SalaryPaymentForm()
     form.staff_id.choices = [(staff.id, staff.name)]
-    
+
+    # Approved, not-yet-applied Bonuses & Adjustments (HR module) for this
+    # staff/period -- computed on every request (not just GET) so the POST
+    # handler below applies exactly what the GET page showed. Recurring
+    # allowances are included every period (never marked is_applied); a
+    # one-time adjustment targeting a specific payroll_month/year only
+    # counts toward that period.
+    this_month = form.month.data or datetime.utcnow().month
+    this_year = form.year.data or datetime.utcnow().year
+    approved_adjustments = [
+        a for a in SalaryAdjustment.query.filter_by(staff_id=staff.id, status='approved', is_applied=False).all()
+        if a.is_recurring or not a.payroll_month or (a.payroll_month == this_month and a.payroll_year == this_year)
+    ]
+    pending_bonus_adjustments = sum(a.amount for a in approved_adjustments if a.adjustment_type in ('bonus', 'allowance'))
+    pending_deduction_adjustments = sum(a.amount for a in approved_adjustments if a.adjustment_type == 'deduction')
+
     # Pre-fill data
     if request.method == 'GET':
         form.staff_id.data = staff.id
@@ -579,10 +691,19 @@ def pay_salary(staff_id):
         form.month.data = datetime.utcnow().month
         form.year.data = datetime.utcnow().year
         form.payment_date.data = datetime.utcnow().date()
-        
+
         # Calculate outstanding advances
         outstanding_advances = SalaryAdvance.query.filter_by(staff_id=staff.id, is_deducted=False).all()
         form.advance_deduction.data = sum(a.amount for a in outstanding_advances)
+
+        # Server-rendered fallback for no-JS. On a normal page load the
+        # pay_form.html script recomputes bonus/other_deductions itself
+        # (blending these same pending_bonus_adjustments /
+        # pending_deduction_adjustments values with the attendance-earned
+        # surplus/shortfall) so approved HR adjustments are never silently
+        # overwritten -- see fetchAttendanceSalary() in pay_form.html.
+        form.bonus.data = pending_bonus_adjustments
+        form.other_deductions.data = pending_deduction_adjustments
 
     if form.validate_on_submit():
         print(f"Form validated for {staff.name}")
@@ -652,13 +773,25 @@ def pay_salary(staff_id):
                     adv.is_deducted = True
                     adv.salary_payment_id = payment.id
                     deducted_so_far += remaining_to_deduct
-        
+
+        # Mark approved Bonuses & Adjustments as applied to this payment
+        # (same list shown on the GET page as pending_bonus_adjustments /
+        # pending_deduction_adjustments). Recurring allowances are left
+        # is_applied=False so they keep reappearing every payroll period;
+        # one-time bonuses/deductions are consumed once.
+        for adj in approved_adjustments:
+            adj.salary_payment_id = payment.id
+            if not adj.is_recurring:
+                adj.is_applied = True
+
         db.session.commit()
         log_activity('Salary', f'Processed Salary for: {staff.name}', f'Month: {payment.month}/{payment.year}, Net: {payment.net_salary}')
         flash(f'Salary processed for {staff.name}. Payment ID: {payment.id}', 'success')
         return redirect(url_for('salary.payment_list_with_download', paid=payment.id))
 
-    return render_template('salary/pay_form.html', form=form, staff=staff)
+    return render_template('salary/pay_form.html', form=form, staff=staff,
+                            pending_bonus_adjustments=pending_bonus_adjustments,
+                            pending_deduction_adjustments=pending_deduction_adjustments)
 
 @bp.route('/payments/delete/<int:id>', methods=['POST'])
 @login_required
@@ -669,7 +802,12 @@ def delete_payment(id):
     for advance in payment.deducted_advances:
         advance.is_deducted = False
         advance.salary_payment_id = None
-    
+
+    # Revert Bonuses & Adjustments applied to this payment
+    for adj in payment.applied_adjustments:
+        adj.is_applied = False
+        adj.salary_payment_id = None
+
     # Revert joining advance
     if payment.joining_advance_deduction > 0:
         staff = Staff.query.get(payment.staff_id)
@@ -968,6 +1106,7 @@ def get_staff_info(staff_id):
 
 @bp.route('/api/staff-history/<int:staff_id>')
 @login_required
+@admin_only_api
 def get_staff_history(staff_id):
     staff = Staff.query.get_or_404(staff_id)
     
@@ -1018,8 +1157,19 @@ def get_staff_history(staff_id):
             'cnic': staff.cnic,
             'cv': staff.cv,
             'is_active': staff.is_active,
-            'left_date': staff.left_date.strftime('%Y-%m-%d') if staff.left_date else None
+            'left_date': staff.left_date.strftime('%Y-%m-%d') if staff.left_date else None,
+            'payment_method': staff.payment_method or 'cash',
+            'bank_name': staff.bank_name,
+            'bank_account_title': staff.bank_account_title,
+            'bank_account_number': staff.bank_account_number,
+            'bank_branch': staff.bank_branch,
         },
+        'documents': [{
+            'id': d.id,
+            'name': d.name,
+            'file_path': d.file_path,
+            'uploaded_at': d.created_at.strftime('%d %b, %Y') if d.created_at else None,
+        } for d in staff.documents],
         'payments': [{
             'id': p.id,
             'month': p.month,
@@ -1038,6 +1188,7 @@ def get_staff_history(staff_id):
 
 @bp.route('/api/staff-history/<int:staff_id>/attendance')
 @login_required
+@admin_only_api
 def get_staff_history_attendance(staff_id):
     staff = Staff.query.get_or_404(staff_id)
     query = Attendance.query.filter_by(staff_id=staff_id)
@@ -1078,6 +1229,7 @@ def get_staff_history_attendance(staff_id):
 
 @bp.route('/api/staff-history/<int:staff_id>/advances')
 @login_required
+@admin_only_api
 def get_staff_history_advances(staff_id):
     Staff.query.get_or_404(staff_id)
     query = SalaryAdvance.query.filter_by(staff_id=staff_id)
@@ -1107,6 +1259,7 @@ def get_staff_history_advances(staff_id):
 
 @bp.route('/api/staff-history/<int:staff_id>/expense')
 @login_required
+@admin_only_api
 def get_staff_history_expense(staff_id):
     staff = Staff.query.get_or_404(staff_id)
     account = staff.expense_account
@@ -1141,6 +1294,7 @@ def get_staff_history_expense(staff_id):
 
 @bp.route('/api/staff-history/<int:staff_id>/reviews', methods=['GET'])
 @login_required
+@admin_only_api
 def get_staff_history_reviews(staff_id):
     Staff.query.get_or_404(staff_id)
     reviews = StaffReview.query.filter_by(staff_id=staff_id).order_by(StaffReview.created_at.desc()).all()
@@ -1160,6 +1314,7 @@ def get_staff_history_reviews(staff_id):
 
 @bp.route('/api/staff-history/<int:staff_id>/reviews', methods=['POST'])
 @login_required
+@admin_only_api
 @permission_required('salary', action='edit')
 def add_staff_review(staff_id):
     Staff.query.get_or_404(staff_id)

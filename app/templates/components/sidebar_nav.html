@@ -17,7 +17,7 @@
 {% set show_inventory = adm or u.can_view_inventory or u.can_view_warehouse or u.can_view_categories %}
 {% set show_mfg = adm or u.can_view_manufacturing or u.can_view_production %}
 {% set show_finance = adm or u.can_view_receiving or u.can_view_delivering or u.can_view_expenses or u.can_view_accounting or u.can_view_settings %}
-{% set show_hr = adm or u.can_view_salary or u.can_view_attendance %}
+{% set show_hr = adm or u.can_view_salary or u.can_view_attendance or u.can_view_hr %}
 {% set show_reports = adm or u.can_view_reports %}
 {% set show_settings = adm or u.can_view_settings or u.can_view_users or u.can_view_tasks or u.can_view_media or u.can_view_activity_logs %}
 
@@ -170,10 +170,27 @@
     </a>
     <div class="collapse" id="{{ nav_ns }}NavHr">
         {% if adm or u.can_view_salary %}
-        <a class="nav-link" href="{{ url_for('salary.staff_list') }}">Salary Module</a>
+        <a class="nav-link" href="{{ url_for('salary.staff_list') }}">Staff</a>
         {% endif %}
         {% if adm or u.can_view_attendance %}
-        <a class="nav-link" href="{{ url_for('attendance.index') }}">Attendance &amp; Time Tracking</a>
+        <a class="nav-link" href="{{ url_for('attendance.index') }}">Attendance &amp; Time</a>
+        {% endif %}
+        {% if adm or u.can_view_hr %}
+        <a class="nav-link" href="{{ url_for('hr.leave_list') }}">Leave &amp; Absence</a>
+        {% endif %}
+        {% if adm or u.can_view_salary %}
+        <a class="nav-link" href="{{ url_for('salary.payment_list') }}">Payroll Runs</a>
+        <a class="nav-link" href="{{ url_for('salary.advance_list') }}">Advances &amp; Loans</a>
+        {% endif %}
+        {% if adm or u.can_view_hr %}
+        <a class="nav-link" href="{{ url_for('hr.salary_revision_list') }}">Salary Revisions</a>
+        <a class="nav-link" href="{{ url_for('hr.adjustment_list') }}">Bonuses &amp; Adjustments</a>
+        <a class="nav-link" href="{{ url_for('hr.company_funds') }}">Company Funds</a>
+        <a class="nav-link" href="{{ url_for('hr.asset_list') }}">Assets &amp; Custody</a>
+        <a class="nav-link" href="{{ url_for('hr.settlement_list') }}">Final Settlements</a>
+        {% endif %}
+        {% if adm or u.can_view_reports %}
+        <a class="nav-link" href="{{ url_for('reports_attendance.attendance_report') }}">HR Reports &amp; Audit</a>
         {% endif %}
     </div>
     {% endif %}

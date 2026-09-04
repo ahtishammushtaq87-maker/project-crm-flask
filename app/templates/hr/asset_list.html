@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}Assets & Custody{% endblock %}
+
+{% block content %}
+{% include "components/hr_subnav.html" %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-toolbox me-2 text-primary"></i>Assets &amp; Custody</h2>
+    {% if current_user.has_permission('hr', 'add') %}
+    <a href="{{ url_for('hr.add_asset') }}" class="btn btn-primary">
+        <i class="fas fa-plus me-2"></i>Add Asset
+    </a>
+    {% endif %}
+</div>
+
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-primary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div><div class="text-uppercase small fw-bold mb-1 opacity-75">Registered Assets</div>
+                        <h3 class="mb-0 fw-bold">{{ assets|length }}</h3></div>
+                    <div class="opacity-50"><i class="fas fa-box fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-info text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div><div class="text-uppercase small fw-bold mb-1 opacity-75">Currently Assigned</div>
+                        <h3 class="mb-0 fw-bold">{{ assigned_count }}</h3></div>
+                    <div class="opacity-50"><i class="fas fa-user-tag fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-danger text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div><div class="text-uppercase small fw-bold mb-1 opacity-75">Overdue Returns</div>
+                        <h3 class="mb-0 fw-bold">{{ overdue_count }}</h3></div>
+                    <div class="opacity-50"><i class="fas fa-triangle-exclamation fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-success text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div><div class="text-uppercase small fw-bold mb-1 opacity-75">Returned (all time)</div>
+                        <h3 class="mb-0 fw-bold">{{ assignments|selectattr('status', 'equalto', 'returned')|list|length }}</h3></div>
+                    <div class="opacity-50"><i class="fas fa-rotate-left fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-4 mb-4">
+    <div class="card-header bg-white"><h5 class="mb-0"><i class="fas fa-boxes-stacked me-2"></i>Asset Register</h5></div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 datatable-export" data-export-title="Asset Register">
+                <thead class="bg-light text-muted small text-uppercase">
+                    <tr>
+                        <th class="px-4">Item</th><th>SKU</th><th>Serial / Tag</th><th>Category</th><th>Cost</th>
+                        <th class="text-end px-4 no-export">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in assets %}
+                    <tr>
+                        <td class="px-4">{{ a.name }}</td>
+                        <td>{{ a.sku or '—' }}</td>
+                        <td>{{ a.serial_tag or '—' }}</td>
+                        <td>{{ a.category or '—' }}</td>
+                        <td class="num">{{ "%.2f"|format(a.purchase_cost or 0) }}</td>
+                        <td class="text-end px-4 no-export">
+                            {% if current_user.has_permission('hr', 'edit') %}
+                            <a href="{{ url_for('hr.edit_asset', id=a.id) }}" class="btn btn-sm btn-outline-secondary">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                            {% endif %}
+                            {% if current_user.has_permission('hr', 'add') %}
+                            <a href="{{ url_for('hr.assign_asset', id=a.id) }}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-user-plus me-1"></i>Assign
+                            </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="text-center py-4 text-muted border-0">No assets registered yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+    <div class="card-header bg-white"><h5 class="mb-0"><i class="fas fa-people-carry-box me-2"></i>Employee Asset &amp; Tool Custody</h5></div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 datatable-export" data-export-title="Asset Custody">
+                <thead class="bg-light text-muted small text-uppercase">
+                    <tr>
+                        <th class="px-4">Employee</th><th>Item</th><th>Issued</th><th>Condition Out</th>
+                        <th>Return Due</th><th>Status</th><th class="text-end px-4 no-export">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for asg in assignments %}
+                    <tr>
+                        <td class="px-4">{{ asg.staff.name }}</td>
+                        <td>{{ asg.asset.name }}</td>
+                        <td>{{ asg.issued_date.strftime('%d-%b-%Y') }}</td>
+                        <td>{{ asg.condition_out or '—' }}</td>
+                        <td>{{ asg.return_due_date.strftime('%d-%b-%Y') if asg.return_due_date else 'On separation' }}</td>
+                        <td>
+                            {% if asg.status == 'in_custody' %}<span class="badge bg-success-soft text-success px-2 py-1">In Custody</span>
+                            {% elif asg.status == 'overdue' %}<span class="badge bg-danger-soft text-danger px-2 py-1">Overdue</span>
+                            {% else %}<span class="badge bg-secondary-soft text-secondary px-2 py-1">Returned {{ asg.returned_date.strftime('%d-%b-%Y') }}</span>{% endif %}
+                        </td>
+                        <td class="text-end px-4 no-export">
+                            {% if asg.status != 'returned' and current_user.has_permission('hr', 'edit') %}
+                            <button type="button" class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#returnModal{{ asg.id }}">
+                                <i class="fas fa-undo me-1"></i>Return
+                            </button>
+                            <div class="modal fade" id="returnModal{{ asg.id }}" tabindex="-1">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <form method="POST" action="{{ url_for('hr.return_asset', id=asg.id) }}">
+                                            <div class="modal-header"><h5 class="modal-title">Return {{ asg.asset.name }}</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                                            <div class="modal-body">
+                                                <label class="form-label small fw-bold text-muted">Condition In</label>
+                                                <input type="text" name="condition_in" class="form-control" placeholder="e.g. Good">
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                <button type="submit" class="btn btn-success">Confirm Return</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" class="text-center py-4 text-muted border-0">No assets have been assigned yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-success-soft { background-color: rgba(72, 187, 120, 0.25); }
+    .bg-danger-soft { background-color: rgba(245, 101, 101, 0.2); }
+    .bg-secondary-soft { background-color: rgba(160, 174, 192, 0.25); }
+    .text-success { color: #276749 !important; }
+    .text-danger { color: #9b2c2c !important; }
+</style>
+{% endblock %}

@@ -158,6 +158,16 @@ class User(UserMixin, db.Model):
     can_edit_packing = db.Column(db.Boolean, default=False)
     can_delete_packing = db.Column(db.Boolean, default=False)
 
+    # HR Module Permissions
+    # Umbrella flag for the newer HR suite (Leave & Absence, Bonuses &
+    # Adjustments, Assets & Custody, Final Settlements, Company Funds
+    # summary) added in app/routes/hr.py. Staff/Attendance/Payroll/Advances
+    # keep using can_*_salary / can_*_attendance as before.
+    can_view_hr = db.Column(db.Boolean, default=True)
+    can_add_hr = db.Column(db.Boolean, default=False)
+    can_edit_hr = db.Column(db.Boolean, default=False)
+    can_delete_hr = db.Column(db.Boolean, default=False)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -2528,6 +2538,11 @@ class Staff(db.Model):
     left_date = db.Column(db.Date, nullable=True)  # set when marked as having left the company
     joining_advance = db.Column(db.Float, default=0)
     remaining_joining_advance = db.Column(db.Float, default=0)
+    payment_method = db.Column(db.String(10), default='cash')  # 'cash' | 'bank'
+    bank_name = db.Column(db.String(150))
+    bank_account_title = db.Column(db.String(150))
+    bank_account_number = db.Column(db.String(50))
+    bank_branch = db.Column(db.String(150))
     def __init__(self, name, designation=None, monthly_salary=0,
                  joining_date=None, joining_advance=0,
                  remaining_joining_advance=0, is_active=True,
@@ -2748,6 +2763,29 @@ class Staff(db.Model):
     def __repr__(self):
         return f'<Staff {self.name}>'
 
+
+class StaffDocument(db.Model):
+    """A named document uploaded for a staff member, in addition to the
+    3 fixed CNIC/CV/Agreement Letter fields on Staff -- lets HR attach any
+    number of extra documents (Passport, Medical Certificate, Reference
+    Letter, ...), each with its own label, uploaded one or many at a time
+    from the Add/Edit Staff form."""
+    __tablename__ = 'staff_documents'
+
+    id = db.Column(db.Integer, primary_key=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=False, index=True)
+    name = db.Column(db.String(150), nullable=False)
+    file_path = db.Column(db.String(255), nullable=False)
+    uploaded_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    staff = db.relationship('Staff', backref=db.backref('documents', lazy=True, cascade='all, delete-orphan', order_by='StaffDocument.created_at.desc()'))
+    uploader = db.relationship('User', foreign_keys=[uploaded_by])
+
+    def __repr__(self):
+        return f'<StaffDocument {self.staff_id} {self.name}>'
+
+
 class Attendance(db.Model):
     """Staff Attendance/Time Tracking model - for hourly wage calculation"""
     __tablename__ = 'attendance'
@@ -2775,6 +2813,13 @@ class Attendance(db.Model):
     overtime_reason = db.Column(db.Text)
     is_holiday = db.Column(db.Boolean, default=False)
     is_absent = db.Column(db.Boolean, default=False)  # Auto-set if no clock-in by end of shift day
+    # Set when an approved LeaveRequest covers this date. Deliberately
+    # separate from is_holiday/is_absent so it stays invisible to
+    # Staff.calculate_daily_salary()'s holiday divisor (which only ever
+    # filters on is_holiday) — a paid leave day must not change anyone's
+    # daily rate the way marking a holiday does.
+    is_paid_leave = db.Column(db.Boolean, default=False)
+    leave_request_id = db.Column(db.Integer, db.ForeignKey('leave_requests.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     def __init__(self, staff_id, date, clock_in=None, clock_out=None, notes=None):
@@ -3034,6 +3079,250 @@ class SalaryPayment(db.Model):
     
     def __repr__(self):
         return f'<SalaryPayment {self.staff_id} - {self.month}/{self.year}>'
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# HR module: Leave & Absence, Bonuses & Adjustments, Assets & Custody,
+# Final Settlements. (Staff/Attendance/SalaryAdvance/SalaryPayment above
+# and ExpenseAccount/ExpenseAccountTransaction elsewhere in this file are
+# the pre-existing modules this suite builds on top of.)
+# ═══════════════════════════════════════════════════════════════════════
+
+class LeaveType(db.Model):
+    """A category of leave (Sick, Casual, Annual, Unpaid, ...)."""
+    __tablename__ = 'leave_types'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), nullable=False, unique=True, index=True)
+    is_paid = db.Column(db.Boolean, default=True)
+    default_annual_days = db.Column(db.Float, default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<LeaveType {self.name}>'
+
+
+class LeaveRequest(db.Model):
+    """A staff member's request for leave over a date range. Approving it
+    auto-credits Attendance for the covered dates — see
+    app/routes/hr.py:apply_leave_approval_to_attendance()."""
+    __tablename__ = 'leave_requests'
+
+    id = db.Column(db.Integer, primary_key=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=False, index=True)
+    leave_type_id = db.Column(db.Integer, db.ForeignKey('leave_types.id'), nullable=False, index=True)
+    start_date = db.Column(db.Date, nullable=False, index=True)
+    end_date = db.Column(db.Date, nullable=False)
+    days = db.Column(db.Float, default=0)  # non-Sunday day count, computed at submit time
+    reason = db.Column(db.Text)
+    evidence_path = db.Column(db.String(255), nullable=True)
+    status = db.Column(db.String(20), default='pending', index=True)  # pending/approved/rejected
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
+    rejection_reason = db.Column(db.Text, nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    staff = db.relationship('Staff', backref=db.backref('leave_requests', lazy=True, cascade='all, delete-orphan', order_by='LeaveRequest.start_date.desc()'))
+    leave_type = db.relationship('LeaveType')
+    approver = db.relationship('User', foreign_keys=[approved_by])
+    requester = db.relationship('User', foreign_keys=[created_by])
+    attendance_records = db.relationship('Attendance', backref='leave_request', lazy=True, foreign_keys='Attendance.leave_request_id')
+
+    def __repr__(self):
+        return f'<LeaveRequest {self.staff_id} {self.start_date}..{self.end_date} {self.status}>'
+
+
+class SalaryAdjustment(db.Model):
+    """Standalone bonus/allowance/deduction register — independent of when
+    payroll actually runs. Approved, not-yet-applied rows are pulled into
+    pay_salary() as pre-filled bonus/other_deductions amounts."""
+    __tablename__ = 'salary_adjustments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=False, index=True)
+    adjustment_type = db.Column(db.String(20), nullable=False)  # 'bonus' | 'allowance' | 'deduction'
+    amount = db.Column(db.Float, nullable=False)
+    reason = db.Column(db.String(255))
+    is_recurring = db.Column(db.Boolean, default=False)   # recurring allowance vs one-time bonus/deduction
+    effective_from = db.Column(db.Date, nullable=True)     # for recurring allowances
+    payroll_month = db.Column(db.Integer, nullable=True)   # for one-time, which period it targets
+    payroll_year = db.Column(db.Integer, nullable=True)
+    evidence_text = db.Column(db.String(255), nullable=True)  # "Approved memo", authorization note
+    status = db.Column(db.String(20), default='pending', index=True)  # pending/approved/rejected
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
+    is_applied = db.Column(db.Boolean, default=False)  # mirrors SalaryAdvance.is_deducted
+    salary_payment_id = db.Column(db.Integer, db.ForeignKey('salary_payments.id'), nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    staff = db.relationship('Staff', backref=db.backref('salary_adjustments', lazy=True, cascade='all, delete-orphan', order_by='SalaryAdjustment.created_at.desc()'))
+    salary_payment = db.relationship('SalaryPayment', backref='applied_adjustments')
+    approver = db.relationship('User', foreign_keys=[approved_by])
+    requester = db.relationship('User', foreign_keys=[created_by])
+
+    def __repr__(self):
+        return f'<SalaryAdjustment {self.staff_id} {self.adjustment_type} {self.amount}>'
+
+
+class AssetCategory(db.Model):
+    """A user-defined grouping for Assets (Tools, Electronics, Vehicles,
+    ...), managed via a quick-add on the Add/Edit Asset form so the
+    category dropdown grows with actual usage instead of being hardcoded."""
+    __tablename__ = 'asset_categories'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), nullable=False, unique=True, index=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<AssetCategory {self.name}>'
+
+
+class Asset(db.Model):
+    """A company-owned tool/equipment item that can be issued to staff."""
+    __tablename__ = 'assets'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(150), nullable=False, index=True)
+    sku = db.Column(db.String(80), nullable=True)
+    serial_tag = db.Column(db.String(120), nullable=True)
+    category = db.Column(db.String(80), nullable=True)
+    purchase_date = db.Column(db.Date, nullable=True)
+    purchase_cost = db.Column(db.Float, default=0)
+    notes = db.Column(db.Text, nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<Asset {self.name}>'
+
+
+class AssetAssignment(db.Model):
+    """One issue/return record of an Asset to a Staff member."""
+    __tablename__ = 'asset_assignments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    asset_id = db.Column(db.Integer, db.ForeignKey('assets.id'), nullable=False, index=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=False, index=True)
+    issued_date = db.Column(db.Date, nullable=False)
+    condition_out = db.Column(db.String(50), nullable=True)
+    return_due_date = db.Column(db.Date, nullable=True)
+    returned_date = db.Column(db.Date, nullable=True)
+    condition_in = db.Column(db.String(50), nullable=True)
+    linked_voucher = db.Column(db.String(120), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    asset = db.relationship('Asset', backref=db.backref('assignments', lazy=True, cascade='all, delete-orphan', order_by='AssetAssignment.issued_date.desc()'))
+    staff = db.relationship('Staff', backref=db.backref('asset_assignments', lazy=True, cascade='all, delete-orphan'))
+
+    @property
+    def status(self):
+        """Computed, not stored, so it can never drift out of sync with
+        returned_date/return_due_date and never needs a scheduled job."""
+        if self.returned_date:
+            return 'returned'
+        if self.return_due_date and self.return_due_date < datetime.utcnow().date():
+            return 'overdue'
+        return 'in_custody'
+
+    def __repr__(self):
+        return f'<AssetAssignment asset={self.asset_id} staff={self.staff_id} {self.status}>'
+
+
+class Settlement(db.Model):
+    """Final-settlement / exit-clearance record for a staff member's
+    departure. staff_id is deliberately NOT unique -- a staff member can be
+    hired, settled, and rehired more than once, so 'is there an open
+    settlement' must be checked via status, not existence."""
+    __tablename__ = 'settlements'
+
+    id = db.Column(db.Integer, primary_key=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=False, index=True)
+    last_working_date = db.Column(db.Date, nullable=False)
+    initiated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    initiated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    status = db.Column(db.String(20), default='in_progress', index=True)  # in_progress/cleared/paid
+
+    # Clearance checklist -- 5 fixed items as plain booleans (a 6th,
+    # assets_returned, is a computed property below rather than a column so
+    # it can never disagree with the actual AssetAssignment rows).
+    last_day_approved = db.Column(db.Boolean, default=False)
+    attendance_locked = db.Column(db.Boolean, default=False)
+    funds_reconciled = db.Column(db.Boolean, default=False)
+    advance_confirmed = db.Column(db.Boolean, default=False)
+    exit_docs_signed = db.Column(db.Boolean, default=False)
+
+    # Settlement calculation
+    salary_through_last_day = db.Column(db.Float, default=0)
+    leave_payout = db.Column(db.Float, default=0)
+    advance_recovery = db.Column(db.Float, default=0)
+    other_recovery = db.Column(db.Float, default=0)
+    net_settlement = db.Column(db.Float, default=0)
+
+    notes = db.Column(db.Text, nullable=True)
+    cleared_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    cleared_at = db.Column(db.DateTime, nullable=True)
+    salary_payment_id = db.Column(db.Integer, db.ForeignKey('salary_payments.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    staff = db.relationship('Staff', backref=db.backref('settlements', lazy=True, cascade='all, delete-orphan', order_by='Settlement.created_at.desc()'))
+    salary_payment = db.relationship('SalaryPayment')
+    initiator = db.relationship('User', foreign_keys=[initiated_by])
+    clearer = db.relationship('User', foreign_keys=[cleared_by])
+
+    @property
+    def assets_returned(self):
+        """True iff this staff member has zero AssetAssignment rows still
+        in_custody/overdue."""
+        return not any(a.status != 'returned' for a in self.staff.asset_assignments)
+
+    def __repr__(self):
+        return f'<Settlement {self.staff_id} {self.status}>'
+
+
+class SalaryRevision(db.Model):
+    """Permanent record of a staff member's salary change -- previous
+    amount, new amount, effective date and reason. One row is written every
+    time Staff.monthly_salary changes (see _record_salary_revision() in
+    app/routes/salary.py), whether that happens through the plain Edit
+    Staff form or the dedicated HR > Salary Revisions screen, so the full
+    increase/decrease history is never lost the way a bare column overwrite
+    would lose it."""
+    __tablename__ = 'salary_revisions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=False, index=True)
+    previous_salary = db.Column(db.Float, nullable=False)
+    new_salary = db.Column(db.Float, nullable=False)
+    effective_from = db.Column(db.Date, nullable=False, index=True)
+    reason = db.Column(db.String(255))
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    staff = db.relationship('Staff', backref=db.backref('salary_revisions', lazy=True, cascade='all, delete-orphan', order_by='SalaryRevision.effective_from.desc()'))
+    approver = db.relationship('User', foreign_keys=[approved_by])
+    author = db.relationship('User', foreign_keys=[created_by])
+
+    @property
+    def change_amount(self):
+        return (self.new_salary or 0) - (self.previous_salary or 0)
+
+    @property
+    def change_percent(self):
+        if not self.previous_salary:
+            return 0
+        return (self.change_amount / self.previous_salary) * 100
+
+    def __repr__(self):
+        return f'<SalaryRevision {self.staff_id} {self.previous_salary}->{self.new_salary}>'
+
 
 class ManufacturingOrder(db.Model):
     """Manufacturing Order"""

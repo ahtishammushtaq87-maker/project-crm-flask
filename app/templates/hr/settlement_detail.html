@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+
+{% block title %}Settlement - {{ settlement.staff.name }}{% endblock %}
+
+{% block content %}
+<div class="no-print">
+{% include "components/hr_subnav.html" %}
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2 no-print">
+    <h2><i class="fas fa-user-check me-2 text-primary"></i>Final Settlement — {{ settlement.staff.name }}</h2>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+        {% if settlement.status == 'cleared' %}
+        <span class="badge bg-success-soft text-success px-3 py-2">Cleared {{ settlement.cleared_at.strftime('%d-%b-%Y') if settlement.cleared_at else '' }}</span>
+        {% if settlement.staff.is_active %}
+        <span class="badge bg-info-soft text-info px-3 py-2"><i class="fas fa-user-check me-1"></i>Rejoined</span>
+        {% elif current_user.has_permission('salary', 'edit') %}
+        <form method="POST" action="{{ url_for('salary.reactivate_staff', id=settlement.staff.id) }}"
+            class="no-print"
+            onsubmit="return confirm('Rejoin {{ settlement.staff.name }}? They will become Active again and reappear in attendance and custodian selection. This settlement record stays as history.')">
+            <input type="hidden" name="next" value="{{ url_for('hr.settlement_detail', id=settlement.id) }}">
+            <button type="submit" class="btn btn-sm btn-outline-success rounded-pill px-3">
+                <i class="fas fa-user-plus me-1"></i>Rejoin Staff
+            </button>
+        </form>
+        {% endif %}
+        {% else %}
+        <span class="badge bg-warning-soft text-warning px-3 py-2">Clearance in progress</span>
+        {% endif %}
+        <button type="button" class="btn btn-sm btn-primary no-print" onclick="window.print()">
+            <i class="fas fa-print me-1"></i>Print
+        </button>
+    </div>
+</div>
+
+{% if prior_settlement %}
+<div class="alert alert-info static-alert small d-flex align-items-center gap-2 flex-wrap no-print">
+    <i class="fas fa-rotate"></i>
+    <span>
+        <strong>{{ settlement.staff.name }} previously left and rejoined.</strong>
+        Cleared settlement on {{ prior_settlement.cleared_at.strftime('%d-%b-%Y') if prior_settlement.cleared_at else prior_settlement.last_working_date.strftime('%d-%b-%Y') }}
+        (last working day {{ prior_settlement.last_working_date.strftime('%d-%b-%Y') }}). This is a new departure being processed separately.
+    </span>
+    <a href="{{ url_for('hr.settlement_detail', id=prior_settlement.id) }}" class="btn btn-sm btn-outline-info ms-auto">
+        <i class="fas fa-eye me-1"></i>View Previous Settlement
+    </a>
+</div>
+{% endif %}
+
+<!-- Print-only letterhead: company logo/info + settlement summary, hidden on screen -->
+<div class="print-only settlement-letterhead">
+    <div class="letterhead-top">
+        <div class="letterhead-company">
+            {% if logo_url %}<img src="{{ logo_url }}" alt="{{ company.name if company else '' }}" class="letterhead-logo">{% endif %}
+            <div>
+                <div class="letterhead-company-name">{{ company.name if company and company.name else 'Company' }}</div>
+                {% if company and company.address %}<div class="letterhead-line">{{ company.address }}</div>{% endif %}
+                <div class="letterhead-line">
+                    {% if company and company.phone %}{{ company.phone }}{% endif %}
+                    {% if company and company.email %}{% if company.phone %} &middot; {% endif %}{{ company.email }}{% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="letterhead-doc-info">
+            <div class="letterhead-doc-title">Final Settlement Statement</div>
+            <div class="letterhead-line">Settlement #{{ settlement.id }}</div>
+            <div class="letterhead-line">Printed <span id="printDate"></span></div>
+        </div>
+    </div>
+    <table class="letterhead-facts">
+        <tr>
+            <td><span>Employee</span>{{ settlement.staff.name }}</td>
+            <td><span>Designation</span>{{ settlement.staff.designation or '—' }}</td>
+        </tr>
+        <tr>
+            <td><span>Last Working Day</span>{{ settlement.last_working_date.strftime('%d-%b-%Y') }}</td>
+            <td><span>Status</span>{{ 'Cleared' if settlement.status == 'cleared' else 'Clearance in progress' }}{% if settlement.status == 'cleared' and settlement.cleared_at %} on {{ settlement.cleared_at.strftime('%d-%b-%Y') }}{% endif %}</td>
+        </tr>
+    </table>
+</div>
+
+<div class="row">
+    <div class="col-lg-6 mb-3">
+        <div class="card shadow-sm border-0 rounded-4 h-100">
+            <div class="card-header bg-white"><h5 class="mb-0">Employment Closure Checklist</h5></div>
+            <div class="card-body">
+                {% set items = [
+                    ('last_day_approved', 'Last working date approved'),
+                    ('attendance_locked', 'Attendance period locked'),
+                    ('funds_reconciled', 'Company funds reconciled'),
+                    ('advance_confirmed', 'Advance balance confirmed'),
+                    ('exit_docs_signed', 'Exit documents signed'),
+                ] %}
+                <div class="d-grid gap-2">
+                    {% for field, label in items %}
+                    <form method="POST" action="{{ url_for('hr.toggle_settlement_checklist', id=settlement.id) }}" class="d-flex align-items-center gap-2">
+                        <input type="hidden" name="field" value="{{ field }}">
+                        <button type="submit" class="btn btn-sm {{ 'btn-success' if settlement|attr(field) else 'btn-outline-secondary' }}" style="width:28px;height:28px;padding:0;" {% if settlement.status == 'cleared' %}disabled{% endif %}>
+                            {% if settlement|attr(field) %}<i class="fas fa-check"></i>{% endif %}
+                        </button>
+                        <span>{{ label }}</span>
+                    </form>
+                    {% endfor %}
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="btn btn-sm {{ 'btn-success' if settlement.assets_returned else 'btn-outline-secondary' }}" style="width:28px;height:28px;padding:0;">
+                            {% if settlement.assets_returned %}<i class="fas fa-check"></i>{% endif %}
+                        </span>
+                        <span>All assigned tools/assets returned <span class="text-muted small">(auto-tracked from Assets &amp; Custody)</span></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6 mb-3">
+        <div class="card shadow-sm border-0 rounded-4 h-100">
+            <div class="card-header bg-white"><h5 class="mb-0">Settlement Calculation</h5></div>
+            <div class="card-body p-0">
+                <table class="table mb-0">
+                    <tbody>
+                        <tr><td class="px-4">Salary through last working day</td><td class="num px-4">PKR {{ "%.2f"|format(settlement.salary_through_last_day or 0) }}</td></tr>
+                        <tr><td class="px-4">Approved paid-leave included above</td><td class="num px-4 text-muted">PKR {{ "%.2f"|format(settlement.leave_payout or 0) }}</td></tr>
+                        <tr><td class="px-4">Advance recovery</td><td class="num px-4 text-danger">- PKR {{ "%.2f"|format(settlement.advance_recovery or 0) }}</td></tr>
+                        <tr><td class="px-4">Other authorized recovery</td><td class="num px-4 text-danger">- PKR {{ "%.2f"|format(settlement.other_recovery or 0) }}</td></tr>
+                        <tr class="table-light"><td class="px-4"><strong>Net settlement</strong></td><td class="num px-4"><strong>PKR {{ "%.2f"|format(settlement.net_settlement or 0) }}</strong></td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer bg-white no-print">
+                {% if settlement.status != 'cleared' and current_user.has_permission('hr', 'edit') %}
+                <form method="POST" action="{{ url_for('hr.clear_settlement', id=settlement.id) }}" onsubmit="return confirm('Clear this settlement? All checklist items must be complete.')">
+                    <button type="submit" class="btn btn-primary w-100"><i class="fas fa-flag-checkered me-2"></i>Clear Settlement</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if settlement.notes %}
+<div class="card shadow-sm border-0 rounded-4 mt-2">
+    <div class="card-body"><strong>Notes:</strong> {{ settlement.notes }}</div>
+</div>
+{% endif %}
+
+<!-- Print-only signature block -->
+<div class="print-only settlement-signatures">
+    <div>
+        <div class="signature-line"></div>
+        <div class="signature-label">Employee Signature</div>
+    </div>
+    <div>
+        <div class="signature-line"></div>
+        <div class="signature-label">HR / Authorized Signatory</div>
+    </div>
+</div>
+
+<a href="{{ url_for('hr.settlement_list') }}" class="text-muted text-decoration-none small d-inline-block mt-3 no-print">
+    <i class="fas fa-arrow-left me-1"></i>Back to Final Settlements
+</a>
+
+<style>
+    .bg-success-soft { background-color: rgba(72, 187, 120, 0.25); }
+    .bg-warning-soft { background-color: rgba(236, 201, 75, 0.25); }
+    .bg-info-soft { background-color: rgba(66, 153, 225, 0.25); }
+    .text-success { color: #276749 !important; }
+    .text-warning { color: #975a16 !important; }
+    .text-info { color: #1e5f8a !important; }
+
+    .print-only { display: none; }
+
+    .settlement-letterhead {
+        border-bottom: 2px solid #1f2937;
+        padding-bottom: 12px;
+        margin-bottom: 18px;
+    }
+    .letterhead-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+    }
+    .letterhead-company { display: flex; align-items: center; gap: 12px; }
+    .letterhead-logo { max-height: 56px; max-width: 140px; object-fit: contain; }
+    .letterhead-company-name { font-size: 18px; font-weight: 700; color: #111827; }
+    .letterhead-line { font-size: 11px; color: #4b5563; }
+    .letterhead-doc-info { text-align: right; }
+    .letterhead-doc-title { font-size: 15px; font-weight: 700; color: #111827; margin-bottom: 2px; }
+    .letterhead-facts { width: 100%; margin-top: 12px; border-collapse: collapse; font-size: 12px; }
+    .letterhead-facts td { padding: 4px 0; width: 50%; }
+    .letterhead-facts td span { display: block; color: #6b7280; font-size: 10px; text-transform: uppercase; letter-spacing: .03em; }
+
+    .settlement-signatures {
+        display: flex;
+        justify-content: space-between;
+        gap: 60px;
+        margin-top: 60px;
+        max-width: 480px;
+    }
+    .settlement-signatures > div { flex: 1; text-align: center; }
+    .signature-line { margin-top: 45px; border-top: 1px solid #111827; margin-bottom: 4px; }
+    .signature-label { font-size: 11px; color: #4b5563; }
+
+    @media print {
+        .no-print,
+        .hamburger-btn,
+        .mobile-sidebar,
+        .mobile-sidebar-overlay,
+        .sidebar,
+        .notification-bell-wrapper,
+        #universal-filter-trigger-wrapper,
+        .global-alert-container {
+            display: none !important;
+        }
+        .print-only { display: block !important; }
+        /* .settlement-signatures is also .print-only, but needs its own
+           flex (side-by-side) layout, not the block the rule above forces
+           on every .print-only element -- without this override the two
+           signature lines were stacking full-width instead of sitting
+           side by side. */
+        .settlement-signatures { display: flex !important; }
+        .container-fluid, .row, .main-content {
+            width: 100% !important;
+            max-width: 100% !important;
+            flex: 0 0 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .card { border: 1px solid #d1d5db !important; box-shadow: none !important; break-inside: avoid; }
+        body { background: #fff !important; }
+        @page { margin: 12mm; }
+
+        /* Compact everything so a normal settlement fits on one printed page */
+        .settlement-letterhead { margin-bottom: 10px !important; padding-bottom: 8px !important; }
+        .card-header { padding: 6px 14px !important; }
+        .card-header h5 { font-size: 13px !important; margin: 0 !important; }
+        .card-body { padding: 8px 14px !important; }
+        .card-body .table td { padding: 5px 10px !important; font-size: 11.5px !important; }
+        .row.mb-3, .mb-3 { margin-bottom: 8px !important; }
+        .settlement-signatures { margin-top: 26px !important; }
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var el = document.getElementById('printDate');
+    if (el) el.textContent = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+});
+</script>
+{% endblock %}

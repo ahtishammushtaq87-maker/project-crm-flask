@@ -115,6 +115,25 @@ def index():
             hourly_rate = (staff_member.daily_salary or 0) / 8.0
             total_overtime_amount += overtime_hours * hourly_rate
 
+    # Official holidays declared for everyone at once (via "Official Holiday
+    # (All Staff)") within the filtered range -- counts distinct DATES, not
+    # the per-staff rows it creates, so declaring one holiday for 12 staff
+    # still shows as 1, matching what was actually "given".
+    official_holiday_dates = {
+        record.date for record in attendance_records
+        if record.is_holiday and record.notes == 'Official holiday'
+    }
+    total_official_holidays = len(official_holiday_dates)
+
+    # Working days in the filtered range (every day except Sunday, same
+    # convention as get_working_days_in_month), further reduced by the
+    # official holidays declared within that range.
+    working_days_in_range = sum(
+        1 for i in range((date_to.date() - date_from.date()).days + 1)
+        if (date_from.date() + timedelta(days=i)).weekday() != 6
+    )
+    working_days_after_holidays = max(0, working_days_in_range - total_official_holidays)
+
     # Get all staff for filter dropdown
     all_staff = Staff.query.filter_by(is_active=True).all()
     
@@ -135,6 +154,9 @@ def index():
                          total_overtime_hours=total_overtime_hours,
                          total_overtime_amount=total_overtime_amount,
                          total_required_hours=total_required_hours,
+                         total_official_holidays=total_official_holidays,
+                         working_days_in_range=working_days_in_range,
+                         working_days_after_holidays=working_days_after_holidays,
                          now=datetime.now(),
                          timedelta=timedelta,
                          active_module='attendance')
@@ -301,6 +323,80 @@ def mark_holiday(staff_id):
     db.session.commit()
     log_activity('Attendance', f'Marked Holiday: {staff.name}', f'Date: {holiday_date}')
     flash(f'Marked {holiday_date} as holiday for {staff.name}. Monthly working days and rates recalculated.', 'success')
+    return redirect(url_for('attendance.index'))
+
+
+@bp.route('/mark-official-holiday', methods=['POST'])
+@login_required
+@permission_required('attendance', action='add')
+def mark_official_holiday():
+    """Mark a single date as a company-wide official holiday for every
+    active staff member in one go -- same per-record logic as mark_holiday()
+    above (find/create the day's Attendance row, flag is_holiday, zero its
+    hours/earnings, then recalculate that staff's whole month since the
+    holiday count changes their daily-rate divisor), just looped over all
+    active staff instead of one."""
+    date_str = request.form.get('holiday_date')
+    if date_str:
+        try:
+            holiday_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            flash('Invalid date.', 'danger')
+            return redirect(url_for('attendance.index'))
+    else:
+        flash('Please choose a date for the official holiday.', 'warning')
+        return redirect(url_for('attendance.index'))
+
+    if holiday_date.weekday() == 6:
+        flash('That date is a Sunday, which is already excluded from working days -- marking it as a holiday too would double-count it and incorrectly reduce pay. No changes made.', 'warning')
+        return redirect(url_for('attendance.index'))
+
+    from sqlalchemy import extract
+
+    active_staff = Staff.query.filter_by(is_active=True).all()
+    marked_count = 0
+    skipped_names = []
+
+    for staff in active_staff:
+        attendance = Attendance.query.filter_by(staff_id=staff.id, date=holiday_date).first()
+
+        if attendance and attendance.clock_in:
+            # Staff already has a real clock-in for this date -- don't
+            # overwrite actual worked hours with a blanket holiday.
+            skipped_names.append(staff.name)
+            continue
+
+        if not attendance:
+            attendance = Attendance(staff_id=staff.id, date=holiday_date, notes='Official holiday')
+            db.session.add(attendance)
+
+        attendance.staff = staff
+        attendance.is_holiday = True
+        attendance.is_absent = False
+        attendance.clock_in = None
+        attendance.clock_out = None
+        attendance.calculate_hours_worked()
+        attendance.calculate_earned_amount()
+        db.session.flush()
+
+        all_month_records = Attendance.query.filter(
+            Attendance.staff_id == staff.id,
+            extract('year', Attendance.date) == holiday_date.year,
+            extract('month', Attendance.date) == holiday_date.month,
+        ).all()
+        for record in all_month_records:
+            record.calculate_hourly_rate()
+            record.calculate_earned_amount()
+
+        marked_count += 1
+
+    db.session.commit()
+    log_activity('Attendance', f'Marked official holiday for all staff', f'Date: {holiday_date}, Staff marked: {marked_count}')
+
+    message = f'{holiday_date.strftime("%d %b, %Y")} marked as an official holiday for {marked_count} staff. Monthly working days and rates recalculated.'
+    if skipped_names:
+        message += f' Skipped (already clocked in that day): {", ".join(skipped_names)}.'
+    flash(message, 'success')
     return redirect(url_for('attendance.index'))
 
 # --- Absent / No-Show Logic ---

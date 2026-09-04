@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-4">
+    <div class="col-md-6">
+        <div class="card shadow-lg border-0 rounded-4 overflow-hidden">
+            <div class="card-header bg-primary text-white py-3">
+                <h4 class="mb-0"><i class="fas fa-box me-2"></i>{{ title }}</h4>
+            </div>
+            <div class="card-body p-4 bg-light">
+                <form method="POST">
+                    {{ form.hidden_tag() }}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted text-uppercase">Asset / Item Name</label>
+                        {{ form.name(class="form-control") }}
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold small text-muted text-uppercase">SKU</label>
+                            {{ form.sku(class="form-control", readonly=true) }}
+                            <div class="form-text">Auto-generated (AST-1, AST-2, ...).</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold small text-muted text-uppercase">Serial / Asset Tag</label>
+                            {{ form.serial_tag(class="form-control") }}
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold small text-muted text-uppercase">Category</label>
+                            <div class="input-group">
+                                {{ form.category(class="form-select", id="categorySelect") }}
+                                <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#addCategoryModal" title="Add Category">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold small text-muted text-uppercase">Purchase Cost</label>
+                            {{ form.purchase_cost(class="form-control") }}
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted text-uppercase">Purchase Date</label>
+                        {{ form.purchase_date(class="form-control", type="date") }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted text-uppercase">Notes</label>
+                        {{ form.notes(class="form-control") }}
+                    </div>
+                    <div class="d-grid mt-4">
+                        <button type="submit" class="btn btn-primary btn-lg shadow-sm">
+                            <i class="fas fa-save me-2"></i>Save Asset
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div class="card-footer bg-white border-0 text-center py-3">
+                <a href="{{ url_for('hr.asset_list') }}" class="text-muted text-decoration-none small">
+                    <i class="fas fa-arrow-left me-1"></i>Back to Assets &amp; Custody
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="addCategoryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Add Category</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <label class="form-label small fw-bold text-muted">Category Name</label>
+                <input type="text" id="newCategoryName" class="form-control" placeholder="e.g. Tools, Electronics, Vehicles">
+                <div id="addCategoryError" class="text-danger small mt-1" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveCategoryBtn">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function () {
+    $('#categorySelect').select2({
+        theme: 'bootstrap-5',
+        width: '100%',
+        placeholder: 'Select or search category',
+        allowClear: true
+    });
+});
+
+document.addEventListener('DOMContentLoaded', function () {
+    const modalEl = document.getElementById('addCategoryModal');
+    const modal = new bootstrap.Modal(modalEl);
+    const nameInput = document.getElementById('newCategoryName');
+    const errorEl = document.getElementById('addCategoryError');
+    const saveBtn = document.getElementById('saveCategoryBtn');
+    const select = document.getElementById('categorySelect');
+
+    saveBtn.addEventListener('click', function () {
+        const name = nameInput.value.trim();
+        errorEl.style.display = 'none';
+        if (!name) {
+            errorEl.textContent = 'Category name is required.';
+            errorEl.style.display = 'block';
+            return;
+        }
+        fetch('{{ url_for("hr.add_asset_category") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': '{{ csrf_token() if csrf_token is defined else "" }}' },
+            body: 'name=' + encodeURIComponent(name)
+        })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) {
+                    errorEl.textContent = data.message || 'Could not add category.';
+                    errorEl.style.display = 'block';
+                    return;
+                }
+                // Insert (or reuse) the option and select it -- no page reload,
+                // so nothing else already filled in this form is lost.
+                // select2 renders its own UI on top of the <select>, so
+                // changes must go through jQuery + a 'change' trigger for
+                // the visible dropdown to pick them up, not just the DOM.
+                let opt = Array.from(select.options).find(o => o.value === data.category.name);
+                if (!opt) {
+                    opt = document.createElement('option');
+                    opt.value = data.category.name;
+                    opt.textContent = data.category.name;
+                    select.appendChild(opt);
+                }
+                $(select).val(data.category.name).trigger('change');
+                nameInput.value = '';
+                modal.hide();
+            })
+            .catch(() => {
+                errorEl.textContent = 'An error occurred while adding the category.';
+                errorEl.style.display = 'block';
+            });
+    });
+
+    nameInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); saveBtn.click(); }
+    });
+});
+</script>
+{% endblock %}

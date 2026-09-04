@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Leave Types{% endblock %}
+
+{% block content %}
+{% include "components/hr_subnav.html" %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-list me-2 text-primary"></i>Leave Types</h2>
+    {% if current_user.has_permission('hr', 'add') %}
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addLeaveTypeModal">
+        <i class="fas fa-plus me-2"></i>Add Leave Type
+    </button>
+    {% endif %}
+</div>
+
+<div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light text-muted small text-uppercase">
+                    <tr>
+                        <th class="px-4">Name</th>
+                        <th>Paid?</th>
+                        <th>Default Annual Days</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for lt in leave_types %}
+                    <tr>
+                        <td class="px-4">{{ lt.name }}</td>
+                        <td>{{ 'Yes' if lt.is_paid else 'No' }}</td>
+                        <td>{{ lt.default_annual_days }}</td>
+                        <td>
+                            {% if lt.is_active %}<span class="badge bg-success-soft text-success">Active</span>
+                            {% else %}<span class="badge bg-secondary-soft text-secondary">Inactive</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="text-center py-4 text-muted border-0">No leave types configured yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="addLeaveTypeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('hr.add_leave_type') }}">
+                {{ form.hidden_tag() }}
+                <div class="modal-header"><h5 class="modal-title">Add Leave Type</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-muted">Name</label>
+                        {{ form.name(class="form-control", placeholder="e.g. Sick Leave") }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-muted">Default Annual Days</label>
+                        {{ form.default_annual_days(class="form-control") }}
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        {{ form.is_paid(class="form-check-input") }}
+                        <label class="form-check-label">Paid</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        {{ form.is_active(class="form-check-input") }}
+                        <label class="form-check-label">Active</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-success-soft { background-color: rgba(72, 187, 120, 0.25); }
+    .text-success { color: #276749 !important; }
+    .bg-secondary-soft { background-color: rgba(160, 174, 192, 0.25); }
+</style>
+{% endblock %}

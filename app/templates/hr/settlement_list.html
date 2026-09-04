@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}Final Settlements{% endblock %}
+
+{% block content %}
+{% include "components/hr_subnav.html" %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-user-check me-2 text-primary"></i>Final Settlements</h2>
+    {% if current_user.has_permission('hr', 'add') %}
+    <a href="{{ url_for('hr.initiate_settlement') }}" class="btn btn-primary">
+        <i class="fas fa-plus me-2"></i>Initiate Settlement
+    </a>
+    {% endif %}
+</div>
+
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-warning text-dark h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div><div class="text-uppercase small fw-bold mb-1 opacity-75">Open Settlements</div>
+                        <h3 class="mb-0 fw-bold">{{ open_count }}</h3></div>
+                    <div class="opacity-50"><i class="fas fa-hourglass-half fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-danger text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div><div class="text-uppercase small fw-bold mb-1 opacity-75">Awaiting Asset Return</div>
+                        <h3 class="mb-0 fw-bold">{{ awaiting_assets }}</h3></div>
+                    <div class="opacity-50"><i class="fas fa-toolbox fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-info text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div><div class="text-uppercase small fw-bold mb-1 opacity-75">Funds Clearance Pending</div>
+                        <h3 class="mb-0 fw-bold">{{ funds_pending }}</h3></div>
+                    <div class="opacity-50"><i class="fas fa-wallet fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-success text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div><div class="text-uppercase small fw-bold mb-1 opacity-75">Ready to Clear</div>
+                        <h3 class="mb-0 fw-bold">{{ ready_count }}</h3></div>
+                    <div class="opacity-50"><i class="fas fa-check-double fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if unsettled_left_staff %}
+<div class="alert alert-warning static-alert small d-flex flex-wrap align-items-center gap-2">
+    <i class="fas fa-triangle-exclamation me-1"></i>
+    <span>Staff marked as left with no settlement started yet:</span>
+    {% for s in unsettled_left_staff %}
+    <a href="{{ url_for('hr.initiate_settlement', staff_id=s.id) }}" class="badge bg-warning-soft text-warning text-decoration-none px-2 py-1">{{ s.name }}</a>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 datatable-export" data-export-title="Final Settlements">
+                <thead class="bg-light text-muted small text-uppercase">
+                    <tr>
+                        <th class="px-4">Employee</th><th>Last Working Day</th><th>Initiated</th>
+                        <th>Net Settlement</th><th>Status</th><th class="text-end px-4 no-export">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in settlements %}
+                    <tr>
+                        <td class="px-4">
+                            {{ s.staff.name }}
+                            {% if rejoin_map.get(s.id) %}
+                            <span class="badge bg-info-soft text-info px-2 py-1 ms-1" title="Previously left, rejoined, and is being settled again">
+                                <i class="fas fa-rotate me-1"></i>Rejoined
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td>{{ s.last_working_date.strftime('%d-%b-%Y') }}</td>
+                        <td>{{ s.initiated_at.strftime('%d-%b-%Y') if s.initiated_at else '—' }}</td>
+                        <td class="num">PKR {{ "%.2f"|format(s.net_settlement or 0) }}</td>
+                        <td>
+                            {% if s.status == 'cleared' %}<span class="badge bg-success-soft text-success px-2 py-1">Cleared</span>
+                            {% elif s.status == 'paid' %}<span class="badge bg-primary-soft text-primary px-2 py-1">Paid</span>
+                            {% else %}<span class="badge bg-warning-soft text-warning px-2 py-1">Clearance in progress</span>{% endif %}
+                        </td>
+                        <td class="text-end px-4 no-export">
+                            <a href="{{ url_for('hr.settlement_detail', id=s.id) }}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-eye me-1"></i>Open
+                            </a>
+                            {% if s.status == 'cleared' and not s.staff.is_active and current_user.has_permission('salary', 'edit') %}
+                            <form method="POST" action="{{ url_for('salary.reactivate_staff', id=s.staff.id) }}" class="d-inline"
+                                onsubmit="return confirm('Rejoin {{ s.staff.name }}? They will become Active again and reappear in attendance and custodian selection.')">
+                                <input type="hidden" name="next" value="{{ url_for('hr.settlement_list') }}">
+                                <button type="submit" class="btn btn-sm btn-outline-success" title="Rejoin Staff">
+                                    <i class="fas fa-user-plus me-1"></i>Rejoin
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="text-center py-4 text-muted border-0">No settlements yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-success-soft { background-color: rgba(72, 187, 120, 0.25); }
+    .bg-warning-soft { background-color: rgba(236, 201, 75, 0.25); }
+    .bg-primary-soft { background-color: rgba(102, 126, 234, 0.18); }
+    .bg-info-soft { background-color: rgba(66, 153, 225, 0.25); }
+    .text-success { color: #276749 !important; }
+    .text-warning { color: #975a16 !important; }
+    .text-info { color: #1e5f8a !important; }
+</style>
+{% endblock %}

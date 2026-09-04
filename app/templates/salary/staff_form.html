@@ -40,66 +40,105 @@
                         <label class="form-label fw-bold small text-muted text-uppercase">Joining Advance (Optional)</label>
                         {{ form.joining_advance(class="form-control", placeholder="0.00") }}
                     </div>
-                    {% macro doc_upload(field, field_id, label, current_file, current_label) %}
-                    <div class="mb-3">
-                        <label for="{{ field_id }}Input" class="form-label fw-bold small text-muted text-uppercase">{{ label }}</label>
-                        <div class="input-group">
-                            <button type="button" class="btn btn-outline-info d-flex align-items-center" id="{{ field_id }}WebcamBtn">
-                                <i class="fas fa-camera me-1"></i>Camera Capture
-                            </button>
-                            {{ field(class="form-control", id=field_id ~ "Input") }}
-                        </div>
-                        <input type="file" id="{{ field_id }}HiddenCameraInput" accept="image/*" capture="environment" style="position: absolute; width: 0.1px; height: 0.1px; opacity: 0; overflow: hidden; z-index: -1;">
-                        <div class="form-text">Directly capture from camera or upload a file - Optional</div>
-                        <div id="{{ field_id }}Preview" class="mt-2"></div>
-                        {% if current_file %}
-                        <div class="mt-2 text-primary small">
-                            <i class="fas fa-file-alt me-1"></i> {{ current_label }}: <a href="{{ url_for('static', filename=current_file) }}" target="_blank">View File</a>
-                        </div>
-                        {% endif %}
-                    </div>
 
-                    <!-- Camera Capture Modal: {{ label }} -->
-                    <div class="modal fade" id="{{ field_id }}CameraModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
-                        <div class="modal-dialog modal-lg">
-                            <div class="modal-content">
-                                <div class="modal-header">
-                                    <h5 class="modal-title">Capture {{ label }} from Camera</h5>
-                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="{{ field_id }}StopBtn1"></button>
-                                </div>
-                                <div class="modal-body text-center">
-                                    <div id="{{ field_id }}StreamContainer">
-                                        <video id="{{ field_id }}WebcamVideo" autoplay playsinline class="w-100 rounded border bg-dark" style="max-height: 400px; transform: scaleX(-1);"></video>
-                                        <canvas id="{{ field_id }}CaptureCanvas" style="display:none;"></canvas>
-                                        <div class="mt-3">
-                                            <button type="button" class="btn btn-primary btn-lg" id="{{ field_id }}SnapBtn">
-                                                <i class="fas fa-camera"></i> Take Photo
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div id="{{ field_id }}ResultContainer" style="display:none;">
-                                        <img id="{{ field_id }}CapturePreview" class="img-fluid rounded border mb-3">
-                                        <div class="d-flex justify-content-center gap-2">
-                                            <button type="button" class="btn btn-warning" id="{{ field_id }}RetakeBtn">
-                                                <i class="fas fa-redo"></i> Retake
-                                            </button>
-                                            <button type="button" class="btn btn-success" id="{{ field_id }}ConfirmBtn">
-                                                <i class="fas fa-check"></i> Use Photo
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="modal-footer">
-                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="{{ field_id }}StopBtn2">Cancel</button>
-                                </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted text-uppercase">Payment Method</label>
+                        <div class="d-flex gap-2">
+                            <input type="radio" class="btn-check" name="payment_method" id="payCash" value="cash" autocomplete="off"
+                                {% if form.payment_method.data != 'bank' %}checked{% endif %}>
+                            <label class="btn btn-outline-secondary" for="payCash"><i class="fas fa-money-bill-wave me-1"></i>Cash</label>
+
+                            <input type="radio" class="btn-check" name="payment_method" id="payBank" value="bank" autocomplete="off"
+                                {% if form.payment_method.data == 'bank' %}checked{% endif %}>
+                            <label class="btn btn-outline-secondary" for="payBank"><i class="fas fa-university me-1"></i>Bank</label>
+                        </div>
+
+                        <div id="bankDetailsSection" class="row g-2 mt-2" style="display:{{ 'flex' if form.payment_method.data == 'bank' else 'none' }};">
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted">Bank Name</label>
+                                {{ form.bank_name(class="form-control form-control-sm") }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted">Account Title</label>
+                                {{ form.bank_account_title(class="form-control form-control-sm") }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted">Account Number / IBAN</label>
+                                {{ form.bank_account_number(class="form-control form-control-sm") }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted">Branch</label>
+                                {{ form.bank_branch(class="form-control form-control-sm") }}
                             </div>
                         </div>
                     </div>
-                    {% endmacro %}
 
-                    {{ doc_upload(form.cnic, "cnic", "CNIC", staff.cnic if staff else None, "Current CNIC") }}
-                    {{ doc_upload(form.cv, "cv", "CV / Resume", staff.cv if staff else None, "Current CV") }}
-                    {{ doc_upload(form.agreement_letter, "agreementLetter", "Agreement Letter (PDF, Image, Excel)", staff.agreement_letter if staff else None, "Current Letter") }}
+                    {% set legacy_docs = [] %}
+                    {% if staff %}
+                        {% if staff.cnic %}{% set _ = legacy_docs.append(('CNIC', staff.cnic)) %}{% endif %}
+                        {% if staff.cv %}{% set _ = legacy_docs.append(('CV / Resume', staff.cv)) %}{% endif %}
+                        {% if staff.agreement_letter %}{% set _ = legacy_docs.append(('Agreement Letter', staff.agreement_letter)) %}{% endif %}
+                    {% endif %}
+                    {% if legacy_docs %}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted text-uppercase">Previously Uploaded</label>
+                        <div class="d-flex flex-wrap gap-2">
+                            {% for label, path in legacy_docs %}
+                            <a href="{{ url_for('static', filename=path) }}" target="_blank" class="btn btn-outline-primary btn-sm rounded-pill px-3">
+                                <i class="fas fa-file-alt me-2"></i>{{ label }}
+                            </a>
+                            {% endfor %}
+                        </div>
+                        <div class="form-text">Uploaded before documents moved to the flexible list below -- still viewable here, not re-uploadable through this form.</div>
+                    </div>
+                    {% endif %}
+
+                    <div class="mt-3 mb-4">
+                        <!-- Deliberately NOT .mb-3: base.html's global file-upload
+                             enhancer (setupFileUploadEnhancement) binds a
+                             "click anywhere in input.closest('.mb-3') -> focus
+                             this file input" listener per file input. With
+                             multiple document rows sharing one .mb-3 ancestor,
+                             every row's hidden camera input would resolve to
+                             THIS SAME wrapper, so clicking anywhere in the
+                             whole section (including the Name field) got
+                             hijacked to focus the last-added row's hidden
+                             input instead -- which is exactly why typing in
+                             the Name box stopped working. Keeping this
+                             wrapper off .mb-3 lets each row's own .col-md-7
+                             be the closest ancestor instead, scoping that
+                             click-to-focus behavior to just that row's file
+                             controls. -->
+                        <label class="form-label fw-bold small text-muted text-uppercase">Documents</label>
+                        <div class="form-text mb-2">Add any number of documents -- name each one (or click a suggestion below), then attach a file by camera, file picker, or pasting an image (Ctrl+V) while a row is focused.</div>
+
+                        {% if staff and staff.documents %}
+                        <div class="list-group mb-2" id="existingDocsList">
+                            {% for doc in staff.documents %}
+                            <div class="list-group-item d-flex align-items-center justify-content-between">
+                                <div>
+                                    <i class="fas fa-file-alt me-2 text-primary"></i>
+                                    <strong>{{ doc.name }}</strong>
+                                    <span class="text-muted small ms-2">{{ doc.created_at.strftime('%d %b, %Y') if doc.created_at else '' }}</span>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <a href="{{ url_for('static', filename=doc.file_path) }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-eye"></i> View
+                                    </a>
+                                    <form method="POST" action="{{ url_for('salary.delete_staff_document', doc_id=doc.id) }}" onsubmit="return confirm('Remove document \'{{ doc.name }}\'?')">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                                    </form>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <div id="extraDocRows"></div>
+                        <button type="button" id="addDocRowBtn" class="btn btn-outline-secondary btn-sm">
+                            <i class="fas fa-plus me-1"></i>Add Document
+                        </button>
+                    </div>
 
                     <div class="mb-3 form-check form-switch p-3 bg-white rounded-3 border ms-0">
                         <div class="ms-4">
@@ -271,9 +310,151 @@ function initCameraUploader(cfg) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    initCameraUploader({ id: 'cnic' });
-    initCameraUploader({ id: 'cv' });
-    initCameraUploader({ id: 'agreementLetter' });
+    // Cash / Bank toggle -- bank detail fields only matter (and only show)
+    // when Bank is selected.
+    const bankDetailsSection = document.getElementById('bankDetailsSection');
+    document.querySelectorAll('input[name="payment_method"]').forEach(function (radio) {
+        radio.addEventListener('change', function () {
+            bankDetailsSection.style.display = (this.value === 'bank') ? 'flex' : 'none';
+        });
+    });
+
+    // "+ Add Document" -- every document (CNIC, CV, Agreement Letter,
+    // anything else) now goes through this one flexible, repeatable row:
+    // name it, then attach a file by camera capture, file picker, or
+    // pasting an image (Ctrl+V) while the row is focused. Each row gets
+    // its own camera-capture modal wired up the same way the old fixed
+    // CNIC/CV/Agreement Letter fields were, via the same initCameraUploader().
+    const extraDocRows = document.getElementById('extraDocRows');
+    const addDocRowBtn = document.getElementById('addDocRowBtn');
+    let docRowCount = 0;
+
+    function addDocRow() {
+        docRowCount++;
+        const rowId = 'docRow' + docRowCount;
+
+        const row = document.createElement('div');
+        row.className = 'card mb-2 doc-row';
+        row.dataset.rowId = rowId;
+        row.innerHTML = `
+            <div class="card-body py-2">
+                <div class="row g-2 align-items-start">
+                    <div class="col-md-4">
+                        <label class="form-label small fw-bold text-muted text-uppercase">Document Name</label>
+                        <input type="text" name="doc_name[]" class="form-control form-control-sm doc-name-input" placeholder="e.g. CNIC">
+                        <div class="d-flex flex-wrap gap-1 mt-1 doc-name-suggestions">
+                            ${['CNIC', 'CV / Resume', 'Agreement Letter', 'Passport', 'Medical Certificate', 'Reference Letter', 'Offer Letter'].map(n =>
+                                `<button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 doc-name-suggestion" style="font-size:.7rem;">${n}</button>`
+                            ).join('')}
+                        </div>
+                    </div>
+                    <div class="col-md-7">
+                        <label class="form-label small fw-bold text-muted text-uppercase">File</label>
+                        <div class="input-group input-group-sm">
+                            <button type="button" class="btn btn-outline-info" id="${rowId}WebcamBtn">
+                                <i class="fas fa-camera me-1"></i>Camera
+                            </button>
+                            <input type="file" name="doc_file[]" class="form-control" id="${rowId}Input">
+                        </div>
+                        <input type="file" id="${rowId}HiddenCameraInput" accept="image/*" capture="environment"
+                            style="position:absolute;width:0.1px;height:0.1px;opacity:0;overflow:hidden;z-index:-1;">
+                        <div class="form-text small">Camera, file picker, or click into this row and paste (Ctrl+V) an image.</div>
+                        <div id="${rowId}Preview" class="mt-1"></div>
+                    </div>
+                    <div class="col-md-1 text-end">
+                        <label class="form-label small d-block">&nbsp;</label>
+                        <button type="button" class="btn btn-sm btn-outline-danger remove-doc-row" title="Remove"><i class="fas fa-times"></i></button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal fade" id="${rowId}CameraModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Capture Document from Camera</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="${rowId}StopBtn1"></button>
+                        </div>
+                        <div class="modal-body text-center">
+                            <div id="${rowId}StreamContainer">
+                                <video id="${rowId}WebcamVideo" autoplay playsinline class="w-100 rounded border bg-dark" style="max-height:400px; transform:scaleX(-1);"></video>
+                                <canvas id="${rowId}CaptureCanvas" style="display:none;"></canvas>
+                                <div class="mt-3">
+                                    <button type="button" class="btn btn-primary btn-lg" id="${rowId}SnapBtn">
+                                        <i class="fas fa-camera"></i> Take Photo
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="${rowId}ResultContainer" style="display:none;">
+                                <img id="${rowId}CapturePreview" class="img-fluid rounded border mb-3">
+                                <div class="d-flex justify-content-center gap-2">
+                                    <button type="button" class="btn btn-warning" id="${rowId}RetakeBtn">
+                                        <i class="fas fa-redo"></i> Retake
+                                    </button>
+                                    <button type="button" class="btn btn-success" id="${rowId}ConfirmBtn">
+                                        <i class="fas fa-check"></i> Use Photo
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="${rowId}StopBtn2">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        row.querySelector('.remove-doc-row').addEventListener('click', function () {
+            row.remove();
+        });
+
+        // Suggestion chips set the name directly via JS -- more reliable
+        // than a native <datalist>, which some browsers were clearing
+        // right back out after a suggestion was clicked.
+        const nameInput = row.querySelector('.doc-name-input');
+        row.querySelectorAll('.doc-name-suggestion').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                nameInput.value = btn.textContent;
+                nameInput.focus();
+            });
+        });
+
+        extraDocRows.appendChild(row);
+        initCameraUploader({ id: rowId });
+    }
+
+    if (addDocRowBtn) {
+        addDocRowBtn.addEventListener('click', addDocRow);
+        addDocRow(); // start with one empty row so the form isn't blank
+    }
+
+    // Paste-an-image support: Ctrl+V while focused anywhere inside a
+    // document row drops the pasted image straight into that row's file
+    // input, same as picking it from the file dialog or the camera.
+    document.addEventListener('paste', function (e) {
+        const activeRow = document.activeElement && document.activeElement.closest('.doc-row');
+        if (!activeRow) return;
+
+        const items = (e.clipboardData || window.clipboardData || {}).items || [];
+        for (const item of items) {
+            if (item.type && item.type.startsWith('image/')) {
+                const blob = item.getAsFile();
+                if (!blob) continue;
+                const rowId = activeRow.dataset.rowId;
+                const fileInput = document.getElementById(rowId + 'Input');
+                if (!fileInput) continue;
+
+                const file = new File([blob], 'pasted_' + Date.now() + '.png', { type: blob.type });
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                fileInput.files = dataTransfer.files;
+                fileInput.dispatchEvent(new Event('change')); // reuses initCameraUploader's own preview logic
+                e.preventDefault();
+                break;
+            }
+        }
+    });
 });
 </script>
 {% endblock %}

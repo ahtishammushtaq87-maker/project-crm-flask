@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}Bonuses & Adjustments{% endblock %}
+
+{% block content %}
+{% include "components/hr_subnav.html" %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-sack-dollar me-2 text-primary"></i>Bonuses &amp; Adjustments</h2>
+    {% if current_user.has_permission('hr', 'add') %}
+    <a href="{{ url_for('hr.add_adjustment') }}" class="btn btn-primary">
+        <i class="fas fa-plus me-2"></i>Add Adjustment
+    </a>
+    {% endif %}
+</div>
+
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-info text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Recurring Allowances</div>
+                        <h3 class="mb-0 fw-bold">{{ recurring_count }}</h3>
+                    </div>
+                    <div class="opacity-50"><i class="fas fa-repeat fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-success text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">One-time Bonuses</div>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.0f"|format(one_time_bonus_total) }}</h3>
+                    </div>
+                    <div class="opacity-50"><i class="fas fa-gift fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-warning text-dark h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Pending Deductions</div>
+                        <h3 class="mb-0 fw-bold">{{ pending_deductions }}</h3>
+                    </div>
+                    <div class="opacity-50"><i class="fas fa-minus-circle fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-secondary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Rejected</div>
+                        <h3 class="mb-0 fw-bold">{{ rejected_count }}</h3>
+                    </div>
+                    <div class="opacity-50"><i class="fas fa-ban fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-4 mb-3">
+    <div class="card-body py-3 px-4">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-md-4 col-sm-12">
+                <label class="form-label small fw-bold text-muted mb-1">Filter by Staff</label>
+                <select name="staff_id" class="form-select form-select-sm">
+                    <option value="">— All Staff —</option>
+                    {% for sid, sname in all_staff %}
+                    <option value="{{ sid }}" {% if selected_staff_id == sid %}selected{% endif %}>{{ sname }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <label class="form-label small fw-bold text-muted mb-1">Type</label>
+                <select name="type" class="form-select form-select-sm">
+                    <option value="">All types</option>
+                    <option value="bonus" {% if selected_type == 'bonus' %}selected{% endif %}>Bonus</option>
+                    <option value="allowance" {% if selected_type == 'allowance' %}selected{% endif %}>Allowance</option>
+                    <option value="deduction" {% if selected_type == 'deduction' %}selected{% endif %}>Deduction</option>
+                </select>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <label class="form-label small fw-bold text-muted mb-1">Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All statuses</option>
+                    <option value="pending" {% if selected_status == 'pending' %}selected{% endif %}>Pending</option>
+                    <option value="approved" {% if selected_status == 'approved' %}selected{% endif %}>Approved</option>
+                    <option value="rejected" {% if selected_status == 'rejected' %}selected{% endif %}>Rejected</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-primary btn-sm flex-fill">Apply</button>
+                <a href="{{ url_for('hr.adjustment_list') }}" class="btn btn-outline-secondary btn-sm flex-fill">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 datatable-export" data-export-title="Bonuses and Adjustments">
+                <thead class="bg-light text-muted small text-uppercase">
+                    <tr>
+                        <th class="px-4">Reference</th>
+                        <th>Employee</th>
+                        <th>Type</th>
+                        <th>Payroll Period</th>
+                        <th>Reason</th>
+                        <th>Amount</th>
+                        <th>Evidence / Authorization</th>
+                        <th>Status</th>
+                        <th class="text-end px-4 no-export">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in adjustments %}
+                    <tr>
+                        <td class="px-4 fw-bold text-muted">
+                            {{ 'BNS' if a.adjustment_type == 'bonus' else ('ALW' if a.adjustment_type == 'allowance' else 'DED') }}-{{ '%06d'|format(a.id) }}
+                        </td>
+                        <td>{{ a.staff.name }}</td>
+                        <td>{{ a.adjustment_type|capitalize }}{% if a.is_recurring %} (recurring){% endif %}</td>
+                        <td>
+                            {% if a.is_recurring %}{{ a.effective_from.strftime('%b-%Y') if a.effective_from else '—' }} onward
+                            {% elif a.payroll_month and a.payroll_year %}{{ '%02d'|format(a.payroll_month) }}/{{ a.payroll_year }}
+                            {% else %}Pending{% endif %}
+                        </td>
+                        <td>{{ a.reason }}</td>
+                        <td class="num">PKR {{ "%.2f"|format(a.amount) }}</td>
+                        <td>{{ a.evidence_text or '—' }}</td>
+                        <td>
+                            {% if a.status == 'approved' %}
+                            <span class="badge bg-success-soft text-success px-2 py-1">Approved</span>
+                            {% elif a.status == 'rejected' %}
+                            <span class="badge bg-danger-soft text-danger px-2 py-1">Rejected</span>
+                            {% else %}
+                            <span class="badge bg-warning-soft text-warning px-2 py-1">Pending</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end px-4 no-export">
+                            {% if a.status == 'pending' and current_user.has_permission('hr', 'edit') %}
+                            <form method="POST" action="{{ url_for('hr.approve_adjustment', id=a.id) }}" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-success"><i class="fas fa-check"></i></button>
+                            </form>
+                            <form method="POST" action="{{ url_for('hr.reject_adjustment', id=a.id) }}" class="d-inline" onsubmit="return confirm('Reject this adjustment?')">
+                                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-times"></i></button>
+                            </form>
+                            {% elif a.is_applied %}
+                            <span class="text-muted small">Applied to Payment #{{ a.salary_payment_id }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="9" class="text-center py-4 text-muted border-0">No adjustments found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-success-soft { background-color: rgba(72, 187, 120, 0.25); }
+    .bg-warning-soft { background-color: rgba(236, 201, 75, 0.25); }
+    .bg-danger-soft { background-color: rgba(245, 101, 101, 0.2); }
+    .text-success { color: #276749 !important; }
+    .text-warning { color: #975a16 !important; }
+    .text-danger { color: #9b2c2c !important; }
+</style>
+{% endblock %}

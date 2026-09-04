@@ -15,7 +15,7 @@
                     <div style="display:none;">{{ form.staff_id() }}</div>
 
                     {% if form.errors %}
-                    <div class="alert alert-danger">
+                    <div class="alert alert-danger static-alert">
                         <ul class="mb-0">
                             {% for field, errors in form.errors.items() %}
                             {% for error in errors %}
@@ -72,6 +72,14 @@
                                     <label
                                         class="form-label fw-bold small text-muted text-uppercase text-success">Bonus</label>
                                     {{ form.bonus(class="form-control text-success", id="bonus") }}
+                                    {% if pending_bonus_adjustments %}
+                                    <div class="mt-1">
+                                        <span class="badge bg-success-soft text-success">
+                                            <i class="fas fa-badge-dollar me-1"></i>Approved HR Adjustments: {{ pending_bonus_adjustments | round(2) }}
+                                        </span>
+                                        <a href="{{ url_for('hr.adjustment_list', staff_id=staff.id) }}" target="_blank" class="badge bg-light text-muted border ms-1 text-decoration-none">View</a>
+                                    </div>
+                                    {% endif %}
                                     <div class="form-text" id="bonus_help" style="display:none;"></div>
                                 </div>
                                 <div class="col-md-6" id="attendance_salary_container" style="display:none;">
@@ -86,6 +94,14 @@
                                     <label class="form-label fw-bold small text-muted text-uppercase text-danger">Other
                                         Deductions</label>
                                     {{ form.other_deductions(class="form-control text-danger", id="other_deductions") }}
+                                    {% if pending_deduction_adjustments %}
+                                    <div class="mt-1">
+                                        <span class="badge bg-danger-soft text-danger">
+                                            <i class="fas fa-badge-dollar me-1"></i>Approved HR Adjustments: {{ pending_deduction_adjustments | round(2) }}
+                                        </span>
+                                        <a href="{{ url_for('hr.adjustment_list', staff_id=staff.id) }}" target="_blank" class="badge bg-light text-muted border ms-1 text-decoration-none">View</a>
+                                    </div>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
@@ -168,6 +184,14 @@
             }
         }
 
+        // Approved, not-yet-applied HR Bonuses & Adjustments (from HR > Bonuses
+        // & Adjustments) for this staff/period. Must be blended into — never
+        // overwritten by — the attendance-based auto-fill below, so an
+        // approved bonus/deduction always reaches this payroll the same way
+        // a pending Advance always shows up in Advance Deduction.
+        const pendingBonusAdjustments = parseFloat('{{ pending_bonus_adjustments or 0 }}');
+        const pendingDeductionAdjustments = parseFloat('{{ pending_deduction_adjustments or 0 }}');
+
         function fetchAttendanceSalary() {
             const staffId = '{{ staff.id }}';
             const month = $('#month').val();
@@ -182,21 +206,31 @@
                     $('#attendance_salary').val(att_sal.toFixed(2));
 
                     const base = parseFloat($('#base_salary').val()) || 0;
+                    let helpText;
                     if (att_sal < base) {
-                        // Worked less than the full month (absences, etc.) — deduct the shortfall.
+                        // Worked less than the full month (absences, etc.) — deduct the shortfall,
+                        // on top of any approved HR deductions. Approved HR bonuses still apply in full.
                         const diff = base - att_sal;
-                        $('#other_deductions').val(diff.toFixed(2));
-                        $('#bonus').val('0.00');
-                        $('#bonus_help').text('No extra attendance earnings this month.').show();
+                        $('#other_deductions').val((diff + pendingDeductionAdjustments).toFixed(2));
+                        $('#bonus').val(pendingBonusAdjustments.toFixed(2));
+                        helpText = 'No extra attendance earnings this month.';
                     } else {
                         // Earned at least the full base salary from attendance (e.g. overtime) —
                         // credit the surplus as Bonus so it actually reaches Net Salary, instead
-                        // of being silently discarded. Still editable if you want to add to it.
+                        // of being silently discarded, plus any approved HR bonus/allowance.
                         const surplus = att_sal - base;
-                        $('#other_deductions').val(0);
-                        $('#bonus').val(surplus.toFixed(2));
-                        $('#bonus_help').text('Auto-filled: PKR ' + surplus.toFixed(2) + ' earned above base salary this month (from attendance/overtime). Adjust if adding a separate discretionary bonus.').show();
+                        $('#other_deductions').val(pendingDeductionAdjustments.toFixed(2));
+                        $('#bonus').val((surplus + pendingBonusAdjustments).toFixed(2));
+                        helpText = 'Auto-filled: PKR ' + surplus.toFixed(2) + ' earned above base salary this month (from attendance/overtime).';
                     }
+                    if (pendingBonusAdjustments > 0) {
+                        helpText += ' Includes PKR ' + pendingBonusAdjustments.toFixed(2) + ' from approved HR bonuses/allowances.';
+                    }
+                    if (pendingDeductionAdjustments > 0) {
+                        helpText += ' Other Deductions includes PKR ' + pendingDeductionAdjustments.toFixed(2) + ' from approved HR deductions.';
+                    }
+                    helpText += ' All amounts are still editable before you process.';
+                    $('#bonus_help').text(helpText).show();
 
                     if (ot_hours > 0) {
                         $('#overtime_help').text('Includes ' + ot_hours.toFixed(1) + 'h overtime = PKR ' + ot_pay.toFixed(2) + ' (at regular hourly rate).').show();

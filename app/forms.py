@@ -442,6 +442,11 @@ class StaffForm(FlaskForm):
     agreement_letter = FileField('Agreement Letter', validators=[Optional()])
     cnic = FileField('CNIC', validators=[Optional()])
     cv = FileField('CV', validators=[Optional()])
+    payment_method = SelectField('Payment Method', choices=[('cash', 'Cash'), ('bank', 'Bank')], default='cash')
+    bank_name = StringField('Bank Name', validators=[Optional()])
+    bank_account_title = StringField('Account Title', validators=[Optional()])
+    bank_account_number = StringField('Account Number / IBAN', validators=[Optional()])
+    bank_branch = StringField('Branch', validators=[Optional()])
     is_active = BooleanField('Active', default=True)
 
 class SalaryAdvanceForm(FlaskForm):
@@ -468,6 +473,64 @@ class AttendanceForm(FlaskForm):
     staff_id = SelectField('Staff', coerce=int, validators=[DataRequired()])
     date = DateField('Date', validators=[DataRequired()])
     status = SelectField('Status', choices=[('Present', 'Present'), ('Absent', 'Absent'), ('Leave', 'Leave')], validators=[DataRequired()])
+
+# --- HR module: Leave & Absence, Bonuses & Adjustments, Assets & Custody, Final Settlements ---
+
+class LeaveTypeForm(FlaskForm):
+    name = StringField('Leave Type', validators=[DataRequired()])
+    is_paid = BooleanField('Paid', default=True)
+    default_annual_days = FloatField('Default Annual Days', default=0, validators=[Optional(), NumberRange(min=0)])
+    is_active = BooleanField('Active', default=True)
+
+class LeaveRequestForm(FlaskForm):
+    staff_id = SelectField('Staff', coerce=int, validators=[DataRequired()])
+    leave_type_id = SelectField('Leave Type', coerce=int, validators=[DataRequired()])
+    start_date = DateField('From', validators=[DataRequired()])
+    end_date = DateField('To', validators=[DataRequired()])
+    reason = TextAreaField('Reason')
+    evidence = FileField('Evidence (optional)', validators=[Optional()])
+
+class SalaryAdjustmentForm(FlaskForm):
+    staff_id = SelectField('Staff', coerce=int, validators=[DataRequired()])
+    adjustment_type = SelectField('Type', choices=[('bonus', 'One-time Bonus'), ('allowance', 'Recurring Allowance'), ('deduction', 'Deduction')], validators=[DataRequired()])
+    amount = FloatField('Amount', validators=[DataRequired(), NumberRange(min=0.01)])
+    reason = StringField('Reason', validators=[DataRequired()])
+    is_recurring = BooleanField('Recurring (applies every payroll period)', default=False)
+    effective_from = DateField('Effective From (recurring only)', validators=[Optional()])
+    payroll_month = SelectField('Target Payroll Month (one-time only)', coerce=int, choices=[(0, '-- Not period-specific --')] + [(i, datetime(2000, i, 1).strftime('%B')) for i in range(1, 13)], validators=[Optional()])
+    payroll_year = IntegerField('Target Payroll Year', validators=[Optional()])
+    evidence_text = StringField('Evidence / Authorization', validators=[Optional()])
+
+class AssetForm(FlaskForm):
+    name = StringField('Asset / Item Name', validators=[DataRequired()])
+    sku = StringField('SKU', validators=[Optional()])
+    serial_tag = StringField('Serial / Asset Tag', validators=[Optional()])
+    category = SelectField('Category', validators=[Optional()])
+    purchase_date = DateField('Purchase Date', validators=[Optional()])
+    purchase_cost = FloatField('Purchase Cost', default=0, validators=[Optional(), NumberRange(min=0)])
+    notes = TextAreaField('Notes')
+
+class AssetCategoryForm(FlaskForm):
+    name = StringField('Category Name', validators=[DataRequired()])
+
+class AssetAssignmentForm(FlaskForm):
+    staff_id = SelectField('Assign To', coerce=int, validators=[DataRequired()])
+    issued_date = DateField('Issued Date', validators=[DataRequired()])
+    condition_out = StringField('Condition Out', default='Good')
+    return_due_date = DateField('Return Due', validators=[Optional()])
+    linked_voucher = StringField('Linked Voucher (optional)', validators=[Optional()])
+    notes = TextAreaField('Notes')
+
+class SettlementInitiateForm(FlaskForm):
+    staff_id = SelectField('Staff', coerce=int, validators=[DataRequired()])
+    last_working_date = DateField('Last Working Date', validators=[DataRequired()])
+    notes = TextAreaField('Notes')
+
+class SalaryRevisionForm(FlaskForm):
+    staff_id = SelectField('Staff', coerce=int, validators=[DataRequired()])
+    new_salary = FloatField('New Monthly Salary', validators=[DataRequired(), NumberRange(min=0)])
+    effective_from = DateField('Effective From', validators=[DataRequired()])
+    reason = StringField('Reason', validators=[Optional()], render_kw={'placeholder': 'e.g. Annual increment, Promotion'})
 
 class ExpenseForm(FlaskForm):
     reference = StringField('Reference')

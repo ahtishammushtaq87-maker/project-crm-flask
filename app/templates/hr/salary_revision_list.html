@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}Salary Revisions{% endblock %}
+
+{% block content %}
+{% include "components/hr_subnav.html" %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-arrow-trend-up me-2 text-primary"></i>Salary Revisions</h2>
+    {% if current_user.has_permission('hr', 'add') %}
+    <a href="{{ url_for('hr.add_salary_revision') }}" class="btn btn-primary">
+        <i class="fas fa-plus me-2"></i>Record Salary Increase / Change
+    </a>
+    {% endif %}
+</div>
+
+<div class="row mb-4">
+    <div class="col-lg-4 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-success text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Increases This Year</div>
+                        <h3 class="mb-0 fw-bold">{{ increases_this_year_count }}</h3>
+                    </div>
+                    <div class="opacity-50"><i class="fas fa-chart-line fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-primary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Total Increase (PKR, this year)</div>
+                        <h3 class="mb-0 fw-bold">{{ "%.0f"|format(total_increase_this_year) }}</h3>
+                    </div>
+                    <div class="opacity-50"><i class="fas fa-sack-dollar fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-info text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Staff Revised This Year</div>
+                        <h3 class="mb-0 fw-bold">{{ staff_revised_this_year }}</h3>
+                    </div>
+                    <div class="opacity-50"><i class="fas fa-users fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-4 mb-3">
+    <div class="card-body py-3 px-4">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-md-5 col-sm-12">
+                <label class="form-label small fw-bold text-muted mb-1">Filter by Staff</label>
+                <select name="staff_id" class="form-select form-select-sm">
+                    <option value="">— All Staff —</option>
+                    {% for sid, sname in all_staff %}
+                    <option value="{{ sid }}" {% if selected_staff_id == sid %}selected{% endif %}>{{ sname }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-primary btn-sm flex-fill">Apply</button>
+                <a href="{{ url_for('hr.salary_revision_list') }}" class="btn btn-outline-secondary btn-sm flex-fill">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 datatable-export" data-export-title="Salary Revisions">
+                <thead class="bg-light text-muted small text-uppercase">
+                    <tr>
+                        <th class="px-4">Effective From</th>
+                        <th>Employee</th>
+                        <th>Previous Salary</th>
+                        <th>New Salary</th>
+                        <th>Change</th>
+                        <th>Reason</th>
+                        <th>Recorded By</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in revisions %}
+                    <tr>
+                        <td class="px-4 fw-bold text-muted">{{ r.effective_from.strftime('%d-%b-%Y') }}</td>
+                        <td>{{ r.staff.name }}</td>
+                        <td class="num">PKR {{ "%.2f"|format(r.previous_salary) }}</td>
+                        <td class="num">PKR {{ "%.2f"|format(r.new_salary) }}</td>
+                        <td class="num {{ 'text-success' if r.change_amount > 0 else ('text-danger' if r.change_amount < 0 else 'text-muted') }}">
+                            {{ '+' if r.change_amount > 0 else '' }}{{ "%.2f"|format(r.change_amount) }}
+                            <span class="small">({{ '+' if r.change_percent > 0 else '' }}{{ "%.1f"|format(r.change_percent) }}%)</span>
+                        </td>
+                        <td>{{ r.reason or '—' }}</td>
+                        <td>{{ r.author.username if r.author else '—' }}</td>
+                        <td>
+                            {% if latest_id_per_staff.get(r.staff_id) == r.id %}
+                            <span class="badge bg-success-soft text-success px-2 py-1">Current</span>
+                            {% else %}
+                            <span class="badge bg-secondary-soft text-secondary px-2 py-1">Superseded</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="8" class="text-center py-4 text-muted border-0">No salary revisions recorded yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-success-soft { background-color: rgba(72, 187, 120, 0.25); }
+    .bg-secondary-soft { background-color: rgba(160, 174, 192, 0.25); }
+    .text-success { color: #276749 !important; }
+</style>
+{% endblock %}

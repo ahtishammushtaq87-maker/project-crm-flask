@@ -633,6 +633,44 @@ def permission_required(module, action='view'):
     return decorator
 
 
+def admin_only(f):
+    """
+    Decorator for routes/APIs that should be visible to admins only,
+    regardless of any granular can_*_<module> permission a non-admin user
+    might otherwise hold (e.g. the staff profile popup and its history
+    APIs, which surface CNIC/salary/advance/company-funds detail that
+    shouldn't be reachable just from can_view_salary).
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for('auth.login', next=request.url))
+        if getattr(current_user, 'role', '') != 'admin':
+            flash('This is only available to administrators.', 'danger')
+            return redirect(request.referrer or url_for('dashboard.index'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def admin_only_api(f):
+    """
+    Same admin-only gate as admin_only, but for JSON endpoints called via
+    fetch()/AJAX -- returns a JSON 403 instead of redirecting, since a
+    redirected HTML login/dashboard page would otherwise reach the caller's
+    `.then(r => r.json())` and fail confusingly.
+    """
+    from flask import jsonify
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return jsonify({'success': False, 'message': 'Please log in.'}), 401
+        if getattr(current_user, 'role', '') != 'admin':
+            return jsonify({'success': False, 'message': 'This is only available to administrators.'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 def format_qty(value, unit=''):
     """
     Format quantity values. 

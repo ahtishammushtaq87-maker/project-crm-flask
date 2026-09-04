@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block title %}Leave & Absence{% endblock %}
+
+{% block content %}
+<div id="module-context" data-module="hr_leave" style="display:none;"></div>
+{% include "components/hr_subnav.html" %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-calendar-days me-2 text-primary"></i>Leave &amp; Absence</h2>
+    <div class="btn-group">
+        <a href="{{ url_for('hr.leave_types_list') }}" class="btn btn-outline-secondary">
+            <i class="fas fa-list me-2"></i>Leave Types
+        </a>
+        {% if current_user.has_permission('hr', 'add') %}
+        <a href="{{ url_for('hr.add_leave_request') }}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Request Leave / Absence
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-warning text-dark h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Pending Requests</div>
+                        <h3 class="mb-0 fw-bold">{{ pending_count }}</h3>
+                    </div>
+                    <div class="opacity-50"><i class="fas fa-hourglass-half fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-success text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Approved This Month</div>
+                        <h3 class="mb-0 fw-bold">{{ approved_this_month }}</h3>
+                    </div>
+                    <div class="opacity-50"><i class="fas fa-check-circle fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-danger text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Unplanned Absences (mo.)</div>
+                        <h3 class="mb-0 fw-bold">{{ unplanned_absences }}</h3>
+                    </div>
+                    <div class="opacity-50"><i class="fas fa-user-slash fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-info text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Total Requests</div>
+                        <h3 class="mb-0 fw-bold">{{ requests|length }}</h3>
+                    </div>
+                    <div class="opacity-50"><i class="fas fa-inbox fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-4 mb-3">
+    <div class="card-body py-3 px-4">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-md-5 col-sm-12">
+                <label class="form-label small fw-bold text-muted mb-1">Filter by Staff</label>
+                <select name="staff_id" class="form-select form-select-sm">
+                    <option value="">— All Staff —</option>
+                    {% for sid, sname in all_staff %}
+                    <option value="{{ sid }}" {% if selected_staff_id == sid %}selected{% endif %}>{{ sname }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4 col-sm-8">
+                <label class="form-label small fw-bold text-muted mb-1">Approval Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All statuses</option>
+                    <option value="pending" {% if selected_status == 'pending' %}selected{% endif %}>Pending</option>
+                    <option value="approved" {% if selected_status == 'approved' %}selected{% endif %}>Approved</option>
+                    <option value="rejected" {% if selected_status == 'rejected' %}selected{% endif %}>Rejected</option>
+                </select>
+            </div>
+            <div class="col-md-3 col-sm-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary btn-sm flex-fill"><i class="fas fa-filter me-1"></i>Apply</button>
+                <a href="{{ url_for('hr.leave_list') }}" class="btn btn-outline-secondary btn-sm flex-fill">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 datatable-export" data-export-title="Leave and Absence Register">
+                <thead class="bg-light text-muted small text-uppercase">
+                    <tr>
+                        <th class="px-4">Request #</th>
+                        <th>Employee</th>
+                        <th>Type</th>
+                        <th>From</th>
+                        <th>To</th>
+                        <th>Days</th>
+                        <th>Paid?</th>
+                        <th>Evidence</th>
+                        <th>Approval</th>
+                        <th class="text-end px-4 no-export">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in requests %}
+                    <tr>
+                        <td class="px-4 fw-bold text-muted">LEV-{{ '%04d'|format(r.id) }}</td>
+                        <td>{{ r.staff.name }}</td>
+                        <td>{{ r.leave_type.name }}</td>
+                        <td>{{ r.start_date.strftime('%d-%b-%Y') }}</td>
+                        <td>{{ r.end_date.strftime('%d-%b-%Y') }}</td>
+                        <td>{{ r.days }}</td>
+                        <td>{{ 'Yes' if r.leave_type.is_paid else 'No' }}</td>
+                        <td>
+                            {% if r.evidence_path %}
+                            <a href="{{ url_for('static', filename=r.evidence_path) }}" target="_blank">View</a>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if r.status == 'approved' %}
+                            <span class="badge bg-success-soft text-success px-2 py-1"><i class="fas fa-check-circle me-1"></i>Approved</span>
+                            {% elif r.status == 'rejected' %}
+                            <span class="badge bg-danger-soft text-danger px-2 py-1"><i class="fas fa-times-circle me-1"></i>Rejected</span>
+                            {% else %}
+                            <span class="badge bg-warning-soft text-warning px-2 py-1"><i class="fas fa-clock me-1"></i>Pending</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end px-4 no-export">
+                            {% if r.status == 'pending' and current_user.has_permission('hr', 'edit') %}
+                            <form method="POST" action="{{ url_for('hr.approve_leave_request', id=r.id) }}" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Approve this leave? Attendance will be auto-marked Present (paid) for the covered dates.')">
+                                    <i class="fas fa-check"></i> Approve
+                                </button>
+                            </form>
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#rejectModal{{ r.id }}">
+                                <i class="fas fa-times"></i> Reject
+                            </button>
+                            <div class="modal fade" id="rejectModal{{ r.id }}" tabindex="-1">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <form method="POST" action="{{ url_for('hr.reject_leave_request', id=r.id) }}">
+                                            <div class="modal-header"><h5 class="modal-title">Reject Leave Request</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                                            <div class="modal-body">
+                                                <label class="form-label small fw-bold text-muted">Reason</label>
+                                                <textarea name="rejection_reason" class="form-control" rows="3"></textarea>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                <button type="submit" class="btn btn-danger">Reject Request</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            {% else %}
+                            <span class="text-muted small">
+                                {% if r.status != 'pending' %}by {{ r.approver.username if r.approver else '—' }}{% endif %}
+                            </span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="10" class="text-center py-4 text-muted border-0">No leave requests found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-success-soft { background-color: rgba(72, 187, 120, 0.25); }
+    .bg-warning-soft { background-color: rgba(236, 201, 75, 0.25); }
+    .bg-danger-soft { background-color: rgba(245, 101, 101, 0.2); }
+    .text-success { color: #276749 !important; }
+    .text-warning { color: #975a16 !important; }
+    .text-danger { color: #9b2c2c !important; }
+</style>
+{% endblock %}

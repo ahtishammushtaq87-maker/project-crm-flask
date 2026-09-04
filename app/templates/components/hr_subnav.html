@@ -1,0 +1,87 @@
+{#
+  Shared HR / Payroll sub-navigation — the pill bar shown at the top of every
+  page in the HR module (Staff, Attendance, Leave, Payroll, Advances,
+  Adjustments, Company Funds, Assets, Settlements, Reports) so the module
+  reads as one cohesive app, mirroring hrsample.html's page-switcher IA
+  while staying real, server-rendered Flask pages.
+
+  Caller must set `hr_module` before including, one of:
+  staff | attendance | hr_leave | payroll | advances | hr_salary_revisions |
+  hr_adjustments | hr_funds | hr_assets | hr_settlements | hr_reports
+
+  Deliberately a SEPARATE variable from `active_module` (used elsewhere by
+  the Advanced Filter system, components/filter_modal.html) so including
+  this partial never changes which saved-filter set a page's filter modal
+  is keyed to.
+#}
+<div class="hr-subnav mb-4">
+    <a class="hr-subnav-link {{ 'active' if hr_module == 'staff' }}" href="{{ url_for('salary.staff_list') }}">
+        <i class="fas fa-users"></i> Staff
+    </a>
+    <a class="hr-subnav-link {{ 'active' if hr_module == 'attendance' }}" href="{{ url_for('attendance.index') }}">
+        <i class="fas fa-clock"></i> Attendance &amp; Time
+    </a>
+    <a class="hr-subnav-link {{ 'active' if hr_module == 'hr_leave' }}" href="{{ url_for('hr.leave_list') }}">
+        <i class="fas fa-calendar-days"></i> Leave &amp; Absence
+    </a>
+    <a class="hr-subnav-link {{ 'active' if hr_module == 'payroll' }}" href="{{ url_for('salary.payment_list') }}">
+        <i class="fas fa-money-bill-wave"></i> Payroll Runs
+    </a>
+    <a class="hr-subnav-link {{ 'active' if hr_module == 'advances' }}" href="{{ url_for('salary.advance_list') }}">
+        <i class="fas fa-hand-holding-usd"></i> Advances &amp; Loans
+    </a>
+    <a class="hr-subnav-link {{ 'active' if hr_module == 'hr_salary_revisions' }}" href="{{ url_for('hr.salary_revision_list') }}">
+        <i class="fas fa-arrow-trend-up"></i> Salary Revisions
+    </a>
+    <a class="hr-subnav-link {{ 'active' if hr_module == 'hr_adjustments' }}" href="{{ url_for('hr.adjustment_list') }}">
+        <i class="fas fa-badge-dollar"></i> Bonuses &amp; Adjustments
+    </a>
+    <a class="hr-subnav-link {{ 'active' if hr_module == 'hr_funds' }}" href="{{ url_for('hr.company_funds') }}">
+        <i class="fas fa-wallet"></i> Company Funds
+    </a>
+    <a class="hr-subnav-link {{ 'active' if hr_module == 'hr_assets' }}" href="{{ url_for('hr.asset_list') }}">
+        <i class="fas fa-toolbox"></i> Assets &amp; Custody
+    </a>
+    <a class="hr-subnav-link {{ 'active' if hr_module == 'hr_settlements' }}" href="{{ url_for('hr.settlement_list') }}">
+        <i class="fas fa-user-check"></i> Final Settlements
+    </a>
+    <a class="hr-subnav-link {{ 'active' if hr_module == 'hr_reports' }}" href="{{ url_for('reports_attendance.attendance_report') }}">
+        <i class="fas fa-chart-column"></i> Reports &amp; Audit
+    </a>
+</div>
+<style>
+    .hr-subnav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 8px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    .hr-subnav-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 12px;
+        border-radius: 8px;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: #4a5568;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: background .15s ease, color .15s ease;
+    }
+    .hr-subnav-link i { font-size: 11px; opacity: .8; }
+    .hr-subnav-link:hover { background: #f3f4f6; color: #2d3748; }
+    .hr-subnav-link.active {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #fff;
+    }
+    .hr-subnav-link.active i { opacity: 1; }
+    @media (max-width: 767px) {
+        .hr-subnav { gap: 4px; }
+        .hr-subnav-link { font-size: 11.5px; padding: 6px 9px; }
+    }
+</style>

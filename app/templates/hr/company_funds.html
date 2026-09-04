@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Company Funds{% endblock %}
+
+{% block content %}
+{% include "components/hr_subnav.html" %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-wallet me-2 text-primary"></i>Company Funds</h2>
+    <a href="{{ url_for('accounting.account_activity') }}" class="btn btn-outline-secondary">
+        <i class="fas fa-book me-2"></i>Full Ledger (All Accounts)
+    </a>
+</div>
+
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-secondary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Opening Balance</div>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.0f"|format(opening_total) }}</h3>
+                    </div>
+                    <div class="opacity-50"><i class="fas fa-vault fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-success text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Funds Given (all time)</div>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.0f"|format(debit_total) }}</h3>
+                    </div>
+                    <div class="opacity-50"><i class="fas fa-hand-holding-dollar fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-warning text-dark h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Spent by Staff (all time)</div>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.0f"|format(credit_total) }}</h3>
+                    </div>
+                    <div class="opacity-50"><i class="fas fa-receipt fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card shadow-sm border-0 bg-primary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-uppercase small fw-bold mb-1 opacity-75">Held Today (all staff)</div>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.0f"|format(balance_total) }}</h3>
+                    </div>
+                    <div class="opacity-50"><i class="fas fa-coins fa-3x"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-info static-alert small">
+    <i class="fas fa-info-circle me-1"></i>
+    This is the same money-tracking engine used by the Expense module: giving a staff member funds (a Transfer, or
+    the "Add Money" step on an Expense) increases their balance here; an Expense they submit against their own
+    account reduces it. Nothing on this page moves money on its own — use "View Ledger" to add a transaction or
+    reconcile.
+</div>
+
+<div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 datatable-export" data-export-title="Company Funds by Staff">
+                <thead class="bg-light text-muted small text-uppercase">
+                    <tr>
+                        <th class="px-4">Custodian</th>
+                        <th>Opening</th>
+                        <th>Funds Given</th>
+                        <th>Spent by Staff</th>
+                        <th>Balance Held</th>
+                        <th>Status</th>
+                        <th class="text-end px-4 no-export">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in accounts %}
+                    <tr>
+                        <td class="px-4">
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="rounded-circle bg-primary-soft text-primary d-flex align-items-center justify-content-center fw-bold" style="width:32px;height:32px;font-size:12px;">
+                                    {{ a.staff.name[:2]|upper if a.staff else '--' }}
+                                </div>
+                                <div>
+                                    <strong>{{ a.staff.name if a.staff else a.name }}</strong>
+                                    <div class="text-muted small">{{ a.name }}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="num">{{ "%.2f"|format(a.opening_balance or 0) }}</td>
+                        <td class="num text-success">{{ "%.2f"|format(a.total_debit or 0) }}</td>
+                        <td class="num text-warning">{{ "%.2f"|format(a.total_credit or 0) }}</td>
+                        <td class="num fw-bold">{{ "%.2f"|format(a.balance or 0) }}</td>
+                        <td>
+                            {% if a.is_active %}<span class="badge bg-success-soft text-success px-2 py-1">Active</span>
+                            {% else %}<span class="badge bg-secondary-soft text-secondary px-2 py-1">Inactive</span>{% endif %}
+                        </td>
+                        <td class="text-end px-4 no-export">
+                            <a href="{{ url_for('accounting.account_activity', account_id=a.id) }}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-book-open me-1"></i>View Ledger
+                            </a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" class="text-center py-4 text-muted border-0">No staff company-fund accounts yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .bg-success-soft { background-color: rgba(72, 187, 120, 0.25); }
+    .bg-secondary-soft { background-color: rgba(160, 174, 192, 0.25); }
+    .bg-primary-soft { background-color: rgba(102, 126, 234, 0.18); }
+    .text-success { color: #276749 !important; }
+    .text-warning { color: #975a16 !important; }
+</style>
+{% endblock %}

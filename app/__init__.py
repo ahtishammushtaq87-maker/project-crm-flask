@@ -261,6 +261,7 @@ def create_app(config_class=Config):
     from app.routes.manufacturing import bp as manufacturing_bp
     from app.routes.salary import bp as salary_bp
     from app.routes.attendance import bp as attendance_bp
+    from app.routes.hr import bp as hr_bp
     from app.routes.reports_attendance import bp as reports_attendance_bp
     from app.routes.targets import bp as targets_bp
     from app.routes.production import bp as production_bp
@@ -291,6 +292,7 @@ def create_app(config_class=Config):
     app.register_blueprint(manufacturing_bp, url_prefix='/manufacturing')
     app.register_blueprint(salary_bp, url_prefix='/salary')
     app.register_blueprint(attendance_bp)
+    app.register_blueprint(hr_bp)
     app.register_blueprint(targets_bp, url_prefix='/targets')
     app.register_blueprint(production_bp, url_prefix='/production')
     app.register_blueprint(pd_bp, url_prefix='/product-development')
