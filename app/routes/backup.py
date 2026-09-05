@@ -238,6 +238,15 @@ def _perform_restore(backup, user_id):
             note=f'Automatic safety snapshot taken immediately before restoring backup #{backup.id} ({backup.filename}).'
         )
 
+        # Capture the plain strings we still need below BEFORE the session
+        # teardown that follows — db.session.remove() detaches `backup` and
+        # `safety` from their session, and SQLAlchemy expires an object's
+        # attributes by default, so touching backup.filename/safety.filename
+        # afterwards raises "Instance is not bound to a Session" instead of
+        # just re-reading the value.
+        backup_filename = backup.filename
+        safety_filename = safety.filename
+
         # Release pooled connections/locks before touching the file on disk.
         db.session.remove()
         db.engine.dispose()
@@ -258,10 +267,10 @@ def _perform_restore(backup, user_id):
         # fails, the safety snapshot just taken is the way back.
         ok, reason = _verify_sqlite_file(db_path)
         if not ok:
-            _log(f'Restore from {backup.filename} left the live database in a bad state — see safety snapshot {safety.filename}',
+            _log(f'Restore from {backup_filename} left the live database in a bad state — see safety snapshot {safety_filename}',
                  user_id=user_id)
             return False, (f'CRITICAL: the live database failed verification after restoring ({reason}). '
-                           f'Restore it immediately from the safety snapshot {safety.filename} (or an earlier backup) '
+                           f'Restore it immediately from the safety snapshot {safety_filename} (or an earlier backup) '
                            f'via this same page, then investigate before using the app further.')
 
         # The DB file we just wrote back is a snapshot from BEFORE this
@@ -269,15 +278,15 @@ def _perform_restore(backup, user_id):
         # rows for either — reconcile from disk so nothing looks lost.
         _reconcile_backup_index()
 
-        restored_row = DatabaseBackup.query.filter_by(filename=backup.filename).first()
+        restored_row = DatabaseBackup.query.filter_by(filename=backup_filename).first()
         if restored_row:
             restored_row.last_restored_at = datetime.utcnow()
             db.session.commit()
 
-        _log(f'Restored database from backup {backup.filename}',
-             f'Safety snapshot taken first: {safety.filename}', user_id=user_id)
-        return True, (f'Database restored from {backup.filename}. A safety snapshot of the previous state was saved as '
-                      f'{safety.filename}. For a fully clean state (all connections/sessions refreshed), restart the '
+        _log(f'Restored database from backup {backup_filename}',
+             f'Safety snapshot taken first: {safety_filename}', user_id=user_id)
+        return True, (f'Database restored from {backup_filename}. A safety snapshot of the previous state was saved as '
+                      f'{safety_filename}. For a fully clean state (all connections/sessions refreshed), restart the '
                       f'application now.')
     except Exception as e:
         current_app.logger.exception('Restore failed')
