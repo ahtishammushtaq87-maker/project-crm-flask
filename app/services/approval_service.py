@@ -757,12 +757,26 @@ class ApprovalService:
         sale._sync_recovery_task()
         db.session.commit()
 
+    # Expense.status is a separate legacy string field ('pending' / 'confirmed'
+    # / 'rejected') that pre-dates is_approved/is_rejected — Sales/Profit
+    # reports, the Dashboard, Manufacturing overhead costing, and several
+    # other modules all gate on `Expense.status == 'confirmed'` rather than
+    # is_approved, since that's what the original Add/Confirm Expense flow
+    # set. The universal approval widget only ever flipped is_approved/
+    # is_rejected, never this string, so a staff-created expense approved
+    # through it would show "Approved" in the Expenses list yet stay
+    # permanently invisible to every one of those reports. Map every
+    # universal status onto the equivalent legacy string so they stay in
+    # sync no matter which action path changed the expense.
+    _STATUS_STRING_MAP = {'reject': 'rejected', 'cancel': 'rejected', 'draft': 'pending', 'pending': 'pending'}
+
     @classmethod
     def _post_status_change_expense(cls, expense, universal_status):
-        """Keep the linked ExpenseAccountTransaction (Account Activity) in
-        sync for every non-approve transition — reject, cancel, draft, and
-        pending. See _sync_linked_expense_txn / _post_approve_expense, which
-        covers the approve case."""
+        """Keep Expense.status and the linked ExpenseAccountTransaction
+        (Account Activity) in sync for every non-approve transition —
+        reject, cancel, draft, and pending. See _sync_linked_expense_txn /
+        _post_approve_expense, which covers the approve case."""
+        expense.status = cls._STATUS_STRING_MAP.get(universal_status, expense.status)
         cls._sync_linked_expense_txn(expense)
 
     # ── Post-approve hooks ──────────────────────────────────────────────────────
@@ -863,6 +877,10 @@ class ApprovalService:
         from app.models import ManufacturingOrder, BOM
         from app.services.bom_versioning import BOMVersioningService
 
+        # See _STATUS_STRING_MAP above — this is the field Sales/Profit
+        # reports, the Dashboard, and Manufacturing overhead actually filter
+        # on, so it must flip to 'confirmed' here too, not just is_approved.
+        expense.status = 'confirmed'
         cls._sync_linked_expense_txn(expense)
 
         if expense.is_bom_overhead and expense.mo_id:

@@ -267,6 +267,40 @@ def create_app(config_class=Config):
             db.session.rollback()
             print(f"Expense/account-activity reconciliation error: {e}")
 
+        # Same kind of drift, different field: Sales/Profit reports, the
+        # Dashboard, and Manufacturing overhead costing all filter on the
+        # legacy Expense.status string ('confirmed'), not is_approved — that
+        # string is what the original Add/Confirm Expense flow set, before
+        # the universal approval widget existed. A staff-created expense
+        # (status='pending') approved through that widget only ever flipped
+        # is_approved/is_rejected, leaving status stuck on 'pending' forever
+        # — so it shows Approved in the Expenses list but never appears in
+        # any of those reports. ApprovalService now keeps status in sync
+        # going forward; this repairs already-approved/rejected expenses
+        # left mismatched by the old behavior, live database included. Only
+        # writes rows that are actually out of sync.
+        try:
+            mismatched_expenses = Expense.query.filter(
+                db.or_(
+                    db.and_(Expense.is_approved.is_(True), Expense.status != 'confirmed'),
+                    db.and_(Expense.is_rejected.is_(True), Expense.status != 'rejected'),
+                )
+            ).all()
+            fixed_expenses = 0
+            for exp in mismatched_expenses:
+                if exp.is_approved:
+                    exp.status = 'confirmed'
+                    fixed_expenses += 1
+                elif exp.is_rejected:
+                    exp.status = 'rejected'
+                    fixed_expenses += 1
+            if fixed_expenses:
+                db.session.commit()
+                print(f"Reconciled {fixed_expenses} expense(s) whose status string didn't match their approval flags.")
+        except Exception as e:
+            db.session.rollback()
+            print(f"Expense status reconciliation error: {e}")
+
     # Enable SQLite foreign key constraints
     if app.config.get('SQLALCHEMY_DATABASE_URI', '').startswith('sqlite'):
         with app.app_context():
