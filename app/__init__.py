@@ -226,7 +226,47 @@ def create_app(config_class=Config):
                                 print(f"Error adding {col_name} to {table_name}: {col_err}")
         except Exception as e:
             print(f"Auto-migration error: {e}")
-    
+
+        # One-time (per-startup, idempotent) data reconciliation: an expense
+        # approved/rejected through the universal approval widget used to only
+        # flip Expense.is_approved/is_rejected — it never touched the mirrored
+        # ExpenseAccountTransaction row that Account Activity reads its status
+        # from, so older actions can leave a transaction stuck on "Pending"
+        # for an expense that the Expenses list already shows as Approved/
+        # Rejected. ApprovalService now keeps the two in sync going forward
+        # (see _post_approve_expense / _post_status_change_expense); this
+        # backfill repairs any rows left mismatched by the old behavior,
+        # including on a live database. It only writes rows that are actually
+        # out of sync, so it's safe to run on every startup.
+        try:
+            linked_txns = ExpenseAccountTransaction.query.filter(
+                ExpenseAccountTransaction.expense_id.isnot(None)).all()
+            if linked_txns:
+                expense_ids = [t.expense_id for t in linked_txns]
+                expenses_by_id = {e.id: e for e in Expense.query.filter(Expense.id.in_(expense_ids)).all()}
+                fixed = 0
+                for t in linked_txns:
+                    exp = expenses_by_id.get(t.expense_id)
+                    if not exp:
+                        continue
+                    exp_is_approved = bool(exp.is_approved)
+                    exp_is_rejected = bool(exp.is_rejected)
+                    if (bool(t.is_approved) != exp_is_approved
+                            or bool(t.is_rejected) != exp_is_rejected
+                            or t.rejection_reason != exp.rejection_reason):
+                        t.is_approved = exp_is_approved
+                        t.is_rejected = exp_is_rejected
+                        t.rejection_reason = exp.rejection_reason
+                        t.approved_by = exp.approved_by if exp_is_approved else None
+                        t.approved_at = exp.approved_at if exp_is_approved else None
+                        fixed += 1
+                if fixed:
+                    db.session.commit()
+                    print(f"Reconciled {fixed} expense account transaction(s) with their linked expense's approval status.")
+        except Exception as e:
+            db.session.rollback()
+            print(f"Expense/account-activity reconciliation error: {e}")
+
     # Enable SQLite foreign key constraints
     if app.config.get('SQLALCHEMY_DATABASE_URI', '').startswith('sqlite'):
         with app.app_context():
@@ -481,7 +521,7 @@ def create_app(config_class=Config):
             total = 0
             module_labels = {
                 'sale': 'Invoices', 'payment': 'Payments', 'advance': 'Advances',
-                'expense': 'Expenses', 'sale_return': 'Sale Returns',
+                'expense': 'Expenses', 'expense_debit': 'Debit Entries', 'sale_return': 'Sale Returns',
                 'purchase_return': 'Purchase Returns', 'purchase_bill': 'Purchase Bills',
                 'purchase_order': 'Purchase Orders', 'bill_payment': 'Bill Payments',
                 'product': 'Products', 'tool_receiving': 'Receiving', 'tool_delivering': 'Delivering',

@@ -1955,7 +1955,24 @@ def list_expense_accounts_json():
         'is_active': bool(a.is_active),
         'has_lines': bool(a.transactions),
         'image_url': (url_for('static', filename=a.image_path.replace('app/static/', '')) if a.image_path else None),
+        'staff_id': a.staff_id,
+        'staff_name': a.staff.name if a.staff else None,
     } for a in accounts]})
+
+
+@bp.route('/expense-accounts/staff-list-json')
+@login_required
+def list_staff_for_account_link_json():
+    """Staff options for the "Manage Accounts" staff dropdown — flags which
+    staff are already linked to a (different) account, since ExpenseAccount.
+    staff_id is one-to-one (ExpenseAccount.staff_id is unique)."""
+    staff_members = Staff.query.filter_by(is_active=True).order_by(Staff.name).all()
+    return jsonify({'success': True, 'staff': [{
+        'id': s.id,
+        'name': s.name,
+        'linked_account_id': s.expense_account.id if s.expense_account else None,
+        'linked_account_name': s.expense_account.name if s.expense_account else None,
+    } for s in staff_members]})
 
 
 @bp.route('/expense-accounts/create-quick', methods=['POST'])
@@ -1970,6 +1987,17 @@ def create_expense_account_quick():
         return jsonify({'success': False, 'message': 'Account name is required.'})
     if ExpenseAccount.query.filter(db.func.lower(ExpenseAccount.name) == name.lower()).first():
         return jsonify({'success': False, 'message': f'An account named "{name}" already exists.'})
+
+    staff_id = request.form.get('staff_id', type=int) or None
+    if staff_id:
+        staff = Staff.query.get(staff_id)
+        if not staff:
+            return jsonify({'success': False, 'message': 'Selected staff member was not found.'})
+        already_linked = ExpenseAccount.query.filter_by(staff_id=staff_id).first()
+        if already_linked:
+            return jsonify({'success': False,
+                            'message': f'"{staff.name}" is already linked to account "{already_linked.name}". '
+                                       f'Unlink it there first.'})
 
     try:
         opening_balance = float(request.form.get('opening_balance') or 0)
@@ -1986,6 +2014,7 @@ def create_expense_account_quick():
         custodian_name=(request.form.get('custodian_name') or '').strip() or None,
         location=(request.form.get('location') or '').strip() or None,
         linked_funding_account_id=request.form.get('linked_funding_account_id', type=int) or None,
+        staff_id=staff_id,
         image_path=image_path,
         created_by=current_user.id,
     )
@@ -1994,6 +2023,7 @@ def create_expense_account_quick():
     return jsonify({'success': True, 'account': {
         'id': acct.id, 'name': acct.name, 'account_type': acct.account_type or '',
         'custodian_name': acct.custodian_name or '', 'location': acct.location or '',
+        'staff_id': acct.staff_id, 'staff_name': acct.staff.name if acct.staff else None,
         'image_url': (url_for('static', filename=image_path.replace('app/static/', '')) if image_path else None),
     }})
 
@@ -2016,6 +2046,18 @@ def edit_expense_account_quick(account_id):
     if dupe:
         return jsonify({'success': False, 'message': f'Another account named "{name}" already exists.'})
 
+    staff_id = request.form.get('staff_id', type=int) or None
+    if staff_id:
+        staff = Staff.query.get(staff_id)
+        if not staff:
+            return jsonify({'success': False, 'message': 'Selected staff member was not found.'})
+        already_linked = ExpenseAccount.query.filter(
+            ExpenseAccount.staff_id == staff_id, ExpenseAccount.id != acct.id).first()
+        if already_linked:
+            return jsonify({'success': False,
+                            'message': f'"{staff.name}" is already linked to account "{already_linked.name}". '
+                                       f'Unlink it there first.'})
+
     try:
         opening_balance = float(request.form.get('opening_balance') or 0)
     except (TypeError, ValueError):
@@ -2027,6 +2069,7 @@ def edit_expense_account_quick(account_id):
     acct.custodian_name = (request.form.get('custodian_name') or '').strip() or None
     acct.location = (request.form.get('location') or '').strip() or None
     acct.linked_funding_account_id = request.form.get('linked_funding_account_id', type=int) or None
+    acct.staff_id = staff_id
     if 'is_active' in request.form:
         acct.is_active = str(request.form.get('is_active')).lower() in ('1', 'true', 'on', 'yes')
     db.session.commit()
@@ -2037,6 +2080,7 @@ def edit_expense_account_quick(account_id):
         'balance': round(acct.balance, 2),
         'is_active': bool(acct.is_active),
         'has_lines': bool(acct.transactions),
+        'staff_id': acct.staff_id, 'staff_name': acct.staff.name if acct.staff else None,
     }})
 
 

@@ -85,6 +85,20 @@ class ApprovalService:
             'default_is_approved': True,
             'actions': ['approve', 'reject', 'cancel', 'draft'],
         },
+        'expense_debit': {
+            'model': 'ExpenseAccountTransaction',
+            'label': 'Debit Entry',
+            'label_field': 'id',
+            'use_boolean_flags': True,
+            'approve_field': 'is_approved',
+            'reject_field': 'is_rejected',
+            'reason_field': 'rejection_reason',
+            'approved_by_field': 'approved_by',
+            'approved_at_field': 'approved_at',
+            'draft_field': 'is_draft',
+            'default_is_approved': False,
+            'actions': ['approve', 'reject', 'cancel', 'draft'],
+        },
         'sale_return': {
             'model': 'SaleReturn',
             'label': 'Sale Return',
@@ -688,7 +702,7 @@ class ApprovalService:
                 'sale_return': 'Returns', 'purchase_return': 'Returns',
                 'purchase_order': 'Purchase', 'purchase_bill': 'Purchase',
                 'bill_payment': 'Purchase', 'vendor_advance': 'Purchase',
-                'expense': 'Expenses', 'tool_receiving': 'Tools',
+                'expense': 'Expenses', 'expense_debit': 'Expenses', 'tool_receiving': 'Tools',
                 'tool_delivering': 'Tools', 'manufacturing_order': 'Manufacturing',
                 'bom': 'Manufacturing', 'product': 'Inventory',
                 'customer': 'Customers', 'vendor': 'Vendors',
@@ -742,6 +756,14 @@ class ApprovalService:
         # Ensure linked RecoveryTask and alarm reminders are cancelled or updated immediately
         sale._sync_recovery_task()
         db.session.commit()
+
+    @classmethod
+    def _post_status_change_expense(cls, expense, universal_status):
+        """Keep the linked ExpenseAccountTransaction (Account Activity) in
+        sync for every non-approve transition — reject, cancel, draft, and
+        pending. See _sync_linked_expense_txn / _post_approve_expense, which
+        covers the approve case."""
+        cls._sync_linked_expense_txn(expense)
 
     # ── Post-approve hooks ──────────────────────────────────────────────────────
 
@@ -813,11 +835,35 @@ class ApprovalService:
         db.session.commit()
 
     @classmethod
+    def _sync_linked_expense_txn(cls, expense):
+        """Mirror this expense's current approval flags onto its linked
+        ExpenseAccountTransaction — the row Account Activity reads its status
+        and money-in/out totals from (see accounting._sync_expense_account_
+        transaction, which creates it). Without this, an expense approved/
+        rejected/cancelled/drafted via the universal approval widget would
+        update the Expenses list but leave Account Activity showing the old
+        ("Pending") status for the very same entry."""
+        from app.models import ExpenseAccountTransaction
+        linked_txn = ExpenseAccountTransaction.query.filter_by(expense_id=expense.id).first()
+        if not linked_txn:
+            return
+        is_approved = bool(expense.is_approved)
+        linked_txn.is_approved = is_approved
+        linked_txn.is_rejected = bool(expense.is_rejected)
+        linked_txn.rejection_reason = expense.rejection_reason
+        if hasattr(expense, 'is_draft') and hasattr(linked_txn, 'is_draft'):
+            linked_txn.is_draft = bool(expense.is_draft)
+        linked_txn.approved_by = expense.approved_by if is_approved else None
+        linked_txn.approved_at = expense.approved_at if is_approved else None
+
+    @classmethod
     def _post_approve_expense(cls, expense):
         """Mirrors accounting.py confirm_expense logic."""
         from app import db
         from app.models import ManufacturingOrder, BOM
         from app.services.bom_versioning import BOMVersioningService
+
+        cls._sync_linked_expense_txn(expense)
 
         if expense.is_bom_overhead and expense.mo_id:
             mo = ManufacturingOrder.query.get(expense.mo_id)

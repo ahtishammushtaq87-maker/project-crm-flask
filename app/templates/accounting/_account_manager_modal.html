@@ -29,16 +29,22 @@
                             <label class="form-label small mb-1">Name <span class="text-danger">*</span></label>
                             <input type="text" id="acctMgrNewName" class="form-control form-control-sm" placeholder="e.g., Cash, Bank">
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-2">
                             <label class="form-label small mb-1">Type</label>
                             <input type="text" id="acctMgrNewType" class="form-control form-control-sm" placeholder="Bank / Custodian Funds">
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-2">
                             <label class="form-label small mb-1">Location</label>
                             <input type="text" id="acctMgrNewLocation" class="form-control form-control-sm" placeholder="e.g., Lahore Factory">
                         </div>
-                        <div class="col-md-2">
-                            <label class="form-label small mb-1">Opening Balance</label>
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Connect to Staff</label>
+                            <select id="acctMgrNewStaff" class="form-select form-select-sm acct-staff-searchable">
+                                <option value="">— Company Fund (Unassigned) —</option>
+                            </select>
+                        </div>
+                        <div class="col-md-1">
+                            <label class="form-label small mb-1">Opening</label>
                             <input type="number" step="0.01" id="acctMgrNewOpening" class="form-control form-control-sm" value="0">
                         </div>
                         <div class="col-md-1">
@@ -47,6 +53,8 @@
                             </button>
                         </div>
                     </div>
+                    <div class="form-text mt-1">Connecting an account to a staff member lets its expenses show up under that
+                        staff's own history — leave it as "Company Fund" for accounts that aren't a specific person's.</div>
                     <div class="row g-2 align-items-end mt-1">
                         <div class="col-md-8 mb-3">
                             <label class="form-label small mb-1">Account Image / Logo</label>
@@ -72,6 +80,7 @@
                                 <th>Name</th>
                                 <th>Type</th>
                                 <th>Location</th>
+                                <th style="min-width:160px;">Staff</th>
                                 <th class="text-end">Opening</th>
                                 <th class="text-end">Balance</th>
                                 <th class="text-center">Active</th>
@@ -79,7 +88,7 @@
                             </tr>
                         </thead>
                         <tbody id="acctMgrTableBody">
-                            <tr><td colspan="8" class="text-center text-muted py-3">Loading…</td></tr>
+                            <tr><td colspan="9" class="text-center text-muted py-3">Loading…</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -129,6 +138,7 @@
 (function () {
     var URLS = {
         list:   '{{ url_for("accounting.list_expense_accounts_json") }}',
+        staffList: '{{ url_for("accounting.list_staff_for_account_link_json") }}',
         create: '{{ url_for("accounting.create_expense_account_quick") }}',
         editFor: function (id) { return '{{ url_for("accounting.edit_expense_account_quick", account_id=0) }}'.replace('/0/', '/' + id + '/'); },
         deleteFor: function (id) { return '{{ url_for("accounting.delete_expense_account_quick", account_id=0) }}'.replace('/0/', '/' + id + '/'); }
@@ -139,6 +149,11 @@
     var tbody = document.getElementById('acctMgrTableBody');
     var errorBox = document.getElementById('acctMgrError');
     var accounts = [];
+    // Staff available to connect an account to — {id, name, linked_account_id,
+    // linked_account_name}. An account <-> staff link is one-to-one
+    // (ExpenseAccount.staff_id is unique), so a staff already linked
+    // elsewhere shows disabled in the picker rather than allowed to double up.
+    var staffList = [];
 
     function esc(s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -196,6 +211,60 @@
             : '<span class="text-muted"><i class="fas fa-image"></i></span>';
     }
 
+    function staffBadge(a) {
+        return a.staff_name
+            ? '<span class="badge bg-info text-dark">' + esc(a.staff_name) + '</span>'
+            : '<span class="text-muted small">Company Fund</span>';
+    }
+
+    // Builds the <option> list for a staff picker. currentAccountId is the
+    // account being created (null) or edited (its id) — a staff linked to
+    // THAT account isn't "linked elsewhere" and stays selectable; a staff
+    // linked to any other account is shown disabled with a note.
+    function staffOptionsHtml(currentAccountId, selectedStaffId) {
+        var html = '<option value="">— Company Fund (Unassigned) —</option>';
+        staffList.forEach(function (s) {
+            var linkedElsewhere = s.linked_account_id && String(s.linked_account_id) !== String(currentAccountId);
+            var label = esc(s.name) + (linkedElsewhere ? ' (linked to ' + esc(s.linked_account_name) + ')' : '');
+            var selected = String(s.id) === String(selectedStaffId) ? ' selected' : '';
+            var disabled = linkedElsewhere ? ' disabled' : '';
+            html += '<option value="' + s.id + '"' + selected + disabled + '>' + label + '</option>';
+        });
+        return html;
+    }
+
+    // Records a just-created/edited account's staff link in the local
+    // staffList cache (clearing any stale link that pointed here from a
+    // different staff), so the "Create New Account" picker and any
+    // subsequent edit-row picker immediately reflect it without a reload.
+    function applyAccountStaffLink(acct) {
+        staffList.forEach(function (s) {
+            if (s.linked_account_id && String(s.linked_account_id) === String(acct.id)
+                    && String(s.id) !== String(acct.staff_id)) {
+                s.linked_account_id = null;
+                s.linked_account_name = null;
+            }
+        });
+        if (acct.staff_id) {
+            var s = staffList.filter(function (x) { return String(x.id) === String(acct.staff_id); })[0];
+            if (s) { s.linked_account_id = acct.id; s.linked_account_name = acct.name; }
+        }
+    }
+
+    function refreshNewStaffSelect() {
+        var el = document.getElementById('acctMgrNewStaff');
+        if (!el) return;
+        el.innerHTML = staffOptionsHtml(null, '');
+        if (window.jQuery) {
+            var $sel = $(el);
+            if ($sel.data('select2')) {
+                $sel.val('').trigger('change');
+            } else if ($.fn.select2) {
+                $sel.select2({ theme: 'bootstrap-5', width: '100%', dropdownParent: $('#accountManagerModal') });
+            }
+        }
+    }
+
     function renderRow(a) {
         var badge = a.is_active
             ? '<span class="badge bg-success">Yes</span>'
@@ -205,6 +274,7 @@
             '<td class="acct-name">' + esc(a.name) + '</td>' +
             '<td class="acct-type">' + (a.account_type ? esc(a.account_type) : '<span class="text-muted">—</span>') + '</td>' +
             '<td class="acct-location">' + (a.location ? esc(a.location) : '<span class="text-muted">—</span>') + '</td>' +
+            '<td class="acct-staff">' + staffBadge(a) + '</td>' +
             '<td class="acct-opening text-end">' + money(a.opening_balance) + '</td>' +
             '<td class="text-end fw-semibold ' + (a.balance >= 0 ? 'text-success' : 'text-danger') + '">' + money(a.balance) + '</td>' +
             '<td class="acct-active text-center">' + badge + '</td>' +
@@ -225,6 +295,7 @@
             '<td><input type="text" class="form-control form-control-sm acct-edit-name" value="' + esc(a.name) + '"></td>' +
             '<td><input type="text" class="form-control form-control-sm acct-edit-type" value="' + esc(a.account_type || '') + '"></td>' +
             '<td><input type="text" class="form-control form-control-sm acct-edit-location" value="' + esc(a.location || '') + '"></td>' +
+            '<td><select class="form-select form-select-sm acct-edit-staff">' + staffOptionsHtml(a.id, a.staff_id) + '</select></td>' +
             '<td><input type="number" step="0.01" class="form-control form-control-sm acct-edit-opening" value="' + (a.opening_balance || 0) + '"></td>' +
             '<td class="text-end text-muted small">(unchanged)</td>' +
             '<td class="text-center">' +
@@ -241,23 +312,28 @@
 
     function render() {
         if (!accounts.length) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No accounts yet — create one above.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-3">No accounts yet — create one above.</td></tr>';
             return;
         }
         tbody.innerHTML = accounts.map(renderRow).join('');
     }
 
     function load() {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">Loading…</td></tr>';
-        fetch(URLS.list, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (!data.success) { showError(data.message || 'Could not load accounts.'); return; }
-                accounts = data.accounts;
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-3">Loading…</td></tr>';
+        Promise.all([
+            fetch(URLS.list, { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(function (r) { return r.json(); }),
+            fetch(URLS.staffList, { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(function (r) { return r.json(); })
+        ])
+            .then(function (results) {
+                var acctData = results[0], staffData = results[1];
+                if (!acctData.success) { showError(acctData.message || 'Could not load accounts.'); return; }
+                accounts = acctData.accounts;
+                staffList = (staffData && staffData.success) ? staffData.staff : [];
+                refreshNewStaffSelect();
                 render();
             })
             .catch(function () {
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger py-3">Could not load accounts.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger py-3">Could not load accounts.</td></tr>';
             });
     }
 
@@ -280,6 +356,7 @@
         document.getElementById('acctMgrNewName').value = '';
         document.getElementById('acctMgrNewType').value = '';
         document.getElementById('acctMgrNewLocation').value = '';
+        document.getElementById('acctMgrNewStaff').value = '';
         document.getElementById('acctMgrNewOpening').value = 0;
         newImageInput.value = '';
         newImagePreview.innerHTML = '';
@@ -294,6 +371,7 @@
         fd.append('name', name);
         fd.append('account_type', document.getElementById('acctMgrNewType').value.trim());
         fd.append('location', document.getElementById('acctMgrNewLocation').value.trim());
+        fd.append('staff_id', document.getElementById('acctMgrNewStaff').value || '');
         fd.append('opening_balance', document.getElementById('acctMgrNewOpening').value || 0);
         if (newImageInput.files && newImageInput.files[0]) {
             fd.append('image', newImageInput.files[0]);
@@ -314,8 +392,11 @@
                     id: acct.id, name: acct.name, account_type: acct.account_type,
                     location: acct.location || '',
                     image_url: acct.image_url || null,
+                    staff_id: acct.staff_id || null, staff_name: acct.staff_name || null,
                     opening_balance: 0, balance: 0, is_active: true, has_lines: false
                 });
+                applyAccountStaffLink(acct);
+                refreshNewStaffSelect();
                 render();
                 syncSelectOption(acct, true);
             })
@@ -397,6 +478,11 @@
 
         if (e.target.closest('.acct-edit-btn')) {
             tr.outerHTML = renderEditRow(acct);
+            var newRow = tbody.querySelector('tr[data-id="' + id + '"]');
+            var staffSel = newRow && newRow.querySelector('.acct-edit-staff');
+            if (staffSel && window.jQuery && $.fn.select2) {
+                $(staffSel).select2({ theme: 'bootstrap-5', width: '100%', dropdownParent: $('#accountManagerModal') });
+            }
             return;
         }
         if (e.target.closest('.acct-cancel-btn')) {
@@ -410,6 +496,13 @@
                 .then(function (data) {
                     if (!data.success) { showError(data.message || 'Could not delete account.'); return; }
                     accounts = accounts.filter(function (a) { return String(a.id) !== String(id); });
+                    staffList.forEach(function (s) {
+                        if (s.linked_account_id && String(s.linked_account_id) === String(id)) {
+                            s.linked_account_id = null;
+                            s.linked_account_name = null;
+                        }
+                    });
+                    refreshNewStaffSelect();
                     render();
                     removeSelectOption(id);
                 })
@@ -425,6 +518,7 @@
             fd.append('name', name);
             fd.append('account_type', newTr.querySelector('.acct-edit-type').value.trim());
             fd.append('location', newTr.querySelector('.acct-edit-location').value.trim());
+            fd.append('staff_id', newTr.querySelector('.acct-edit-staff').value || '');
             fd.append('opening_balance', newTr.querySelector('.acct-edit-opening').value || 0);
             fd.append('is_active', newTr.querySelector('.acct-edit-active').checked ? '1' : '0');
 
@@ -433,6 +527,8 @@
                 .then(function (data) {
                     if (!data.success) { showError(data.message || 'Could not update account.'); return; }
                     accounts = accounts.map(function (a) { return String(a.id) === String(id) ? data.account : a; });
+                    applyAccountStaffLink(data.account);
+                    refreshNewStaffSelect();
                     render();
                     syncSelectOption(data.account, false);
                 })

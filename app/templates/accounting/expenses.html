@@ -42,6 +42,30 @@
             entityName: 'expenses'
         });
 
+        // Debit (Add Money) tab — "select all" toggles every debit-checkbox.
+        // The universal bulk-approval dropdown (base.html) auto-detects the
+        // "debit-checkbox" class from the table body and refreshes its own
+        // state whenever one of those checkboxes fires a change event, so
+        // dispatching one here after toggling is enough to keep it in sync.
+        const selectAllDebit = document.getElementById('selectAllDebit');
+        if (selectAllDebit) {
+            selectAllDebit.addEventListener('change', function () {
+                const boxes = document.querySelectorAll('.debit-checkbox');
+                boxes.forEach(cb => { cb.checked = selectAllDebit.checked; });
+                if (boxes.length) {
+                    boxes[boxes.length - 1].dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+            document.addEventListener('change', function (e) {
+                if (e.target && e.target.classList.contains('debit-checkbox')) {
+                    const allBoxes = document.querySelectorAll('.debit-checkbox');
+                    const checkedBoxes = document.querySelectorAll('.debit-checkbox:checked');
+                    selectAllDebit.checked = allBoxes.length > 0 && allBoxes.length === checkedBoxes.length;
+                    selectAllDebit.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < allBoxes.length;
+                }
+            });
+        }
+
         // Clickable date filtering: clicking a date filters to that month
         const dateCells = document.querySelectorAll('.clickable-date');
         const startDateInput = document.getElementById('start_date');
@@ -329,6 +353,9 @@
                 <table class="table table-striped datatable-export" data-export-title="Debit Entries">
                     <thead>
                         <tr>
+                            <th style="width: 40px;" class="text-center no-export">
+                                <input type="checkbox" id="selectAllDebit" class="form-check-input">
+                            </th>
                             <th>Entry #</th>
                             <th>Date</th>
                             <th>Account</th>
@@ -345,6 +372,9 @@
                     <tbody>
                         {% for t in debit_entries %}
                         <tr>
+                            <td class="text-center no-export">
+                                <input type="checkbox" class="form-check-input debit-checkbox" value="{{ t.id }}">
+                            </td>
                             <td class="text-nowrap">
                                 ADD-{{ '%04d'|format(t.id) }}
                                 {% if t.linked_payment %}
@@ -384,13 +414,7 @@
                             </td>
                             <td class="text-end text-success fw-semibold">{{ '%.2f'|format(t.amount) }}</td>
                             <td class="text-center">
-                                {% if t.is_rejected %}
-                                <span class="badge bg-secondary">Rejected</span>
-                                {% elif t.is_approved %}
-                                <span class="badge bg-success">Approved</span>
-                                {% else %}
-                                <span class="badge bg-warning text-dark">Pending</span>
-                                {% endif %}
+                                {{ approval_widget(module='expense_debit', entity=t) }}
                             </td>
                             <td class="text-center no-export">
                                 <div class="btn-group btn-group-sm">
@@ -417,7 +441,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="11" class="text-center text-muted py-4">
+                            <td colspan="12" class="text-center text-muted py-4">
                                 <i class="fas fa-inbox fa-2x d-block mb-2 opacity-50"></i>
                                 No debit (Add Money) entries yet.
                             </td>
