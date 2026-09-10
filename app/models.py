@@ -1714,12 +1714,24 @@ class RecurringExpense(db.Model):
         return f'<RecurringExpense {self.id} {self.amount}>'
 
 class ExpenseCategory(db.Model):
-    """Expense category model"""
+    """Expense category model - supports one level of sub-categories (a
+    category with parent_id set is a sub-category of that parent) and, per
+    category, which special expense-entry options are allowed when it's
+    selected on Add/Edit Expense: linking to an Invoice or Purchase payment,
+    shifting straight to Inventory Cost, or counting as BOM Overhead. Each
+    flag is independent - a category can allow any combination, or none."""
     __tablename__ = 'expense_categories'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False, unique=True, index=True)
     description = db.Column(db.Text)
+    parent_id = db.Column(db.Integer, db.ForeignKey('expense_categories.id'), nullable=True, index=True)
+    # Which special options this category allows on Add/Edit Expense.
+    allow_invoice_payment = db.Column(db.Boolean, default=False)   # "Add to Invoice Payment" (sale transfer)
+    allow_purchase_payment = db.Column(db.Boolean, default=False)  # "Add to Purchase Payment" (bill transfer)
+    allow_inventory_shift = db.Column(db.Boolean, default=False)   # "Shift Directly to Inventory Cost"
+    allow_bom_overhead = db.Column(db.Boolean, default=False)      # "BOM Overhead Expense"
+    allow_monthly_divided = db.Column(db.Boolean, default=False)   # "Divide Expense Across Entire Month"
     is_active = db.Column(db.Boolean, default=True)
     # Universal approval fields
     is_approved = db.Column(db.Boolean, default=False)
@@ -1728,10 +1740,27 @@ class ExpenseCategory(db.Model):
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+
     # Relationships
     expenses = db.relationship('Expense', backref='expense_category', lazy=True)
-    
+    parent = db.relationship('ExpenseCategory', remote_side=[id],
+                             backref=db.backref('subcategories', order_by='ExpenseCategory.name'))
+
+    @property
+    def option_flags(self):
+        """{'invoice':, 'purchase':, 'shift':, 'overhead':, 'monthly':} for
+        the Add/Edit Expense category-restriction script (see
+        CATEGORY_OPTIONS in those templates). Nothing selected (or a
+        category with every flag off) means a plain expense with none of
+        these special options shown."""
+        return {
+            'invoice': bool(self.allow_invoice_payment),
+            'purchase': bool(self.allow_purchase_payment),
+            'shift': bool(self.allow_inventory_shift),
+            'overhead': bool(self.allow_bom_overhead),
+            'monthly': bool(self.allow_monthly_divided),
+        }
+
     def __repr__(self):
         return f'<ExpenseCategory {self.name}>'
 

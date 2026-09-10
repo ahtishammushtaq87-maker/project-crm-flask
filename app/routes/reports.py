@@ -2,12 +2,12 @@ from flask import Blueprint, render_template, request, send_file, jsonify, flash
 from app.utils import permission_required
 from flask_login import login_required
 from app import db
-from app.models import Sale, SaleItem, PurchaseBill, PurchaseItem, Product, Vendor, Customer, Company, Expense, ExpenseCategory, SaleReturn, SaleReturnItem, BOM, BOMItem, BOMVersion, ManufacturingOrder, Staff, SalaryPayment, SalaryAdvance, Warehouse, Attendance, ProductCategory
-from datetime import datetime, timedelta
+from app.models import Sale, SaleItem, PurchaseBill, PurchaseItem, Product, Vendor, Customer, Company, Expense, ExpenseCategory, SaleReturn, SaleReturnItem, BOM, BOMItem, BOMVersion, ManufacturingOrder, Staff, SalaryPayment, SalaryAdvance, Warehouse, Attendance, ProductCategory, ProductionTarget
+from datetime import datetime, timedelta, date
 from sqlalchemy import func, and_, or_
 import pandas as pd
 from io import BytesIO
-from app.report_utils import generate_excel, generate_csv, generate_pdf, generate_profit_loss_pdf
+from app.report_utils import generate_excel, generate_csv, generate_pdf, generate_profit_loss_pdf, generate_manufacturing_fact_sheet_pdf, generate_manufacturing_fact_sheet_excel
 from app.routes.filters import apply_saved_filter_to_query
 
 bp = Blueprint('reports', __name__)
@@ -575,49 +575,23 @@ def customer_report():
 @bp.route('/manufacturing-report')
 @login_required
 def manufacturing_report():
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
-    status = request.args.get('status', 'all')
-    product_id = request.args.get('product_id')
-    
-    query = ManufacturingOrder.query.join(BOM)
-    
-    if start_date:
-        query = query.filter(ManufacturingOrder.start_date >= datetime.strptime(start_date, '%Y-%m-%d'))
-    if end_date:
-        query = query.filter(ManufacturingOrder.start_date <= datetime.strptime(end_date, '%Y-%m-%d'))
-    if status != 'all':
-        query = query.filter(ManufacturingOrder.status == status)
-    if product_id and product_id != 'all':
-        query = query.filter(BOM.product_id == int(product_id))
-        
-    query = apply_saved_filter_to_query(query, 'manufacturing_report', request.args)
-    
-    orders = query.order_by(ManufacturingOrder.start_date.desc()).all()
-    
-    # Calculate stats
-    total_qty = sum(o.quantity_to_produce for o in orders)
-    total_cost = sum(o.total_cost for o in orders)
-    total_material = sum(o.actual_material_cost or 0 for o in orders)
-    total_labor = sum(o.actual_labor_cost or 0 for o in orders)
-    total_count = len(orders)
-    
-    products = Product.query.filter(Product.id.in_(db.session.query(BOM.product_id).distinct())).all()
-    
+    now = datetime.now()
+    month = request.args.get('month', type=int) or now.month
+    year = request.args.get('year', type=int) or now.year
+
+    overhead_param = request.args.get('expected_overhead')
+    margin_param = request.args.get('target_margin')
+    overhead_override = float(overhead_param) if overhead_param not in (None, '') else None
+    margin_override = (float(margin_param) / 100) if margin_param not in (None, '') else None
+
+    fs = compute_manufacturing_fact_sheet(month, year, overhead_override, margin_override)
+
     return render_template('reports/manufacturing_report.html',
-                         orders=orders,
-                         total_qty=total_qty,
-                         total_cost=total_cost,
-                         total_material=total_material,
-                         total_labor=total_labor,
-                         total_count=total_count,
-                         start_date=start_date,
-                         end_date=end_date,
-                         status=status,
-                         products=products,
-                         current_product_id=product_id,
-                         active_module='manufacturing_report',
-                         filter_id=request.args.get('filter_id'))
+                         fs=fs,
+                         month=month,
+                         year=year,
+                         company=get_company_info(),
+                         active_module='manufacturing_report')
 
 @bp.route('/bom-report')
 @login_required
@@ -906,6 +880,175 @@ def compute_profit_loss(start_date, end_date):
         'total_bom_costs': total_bom_costs,
         'total_bom_overhead': total_bom_overhead,
         'total_informational_outflow': total_informational_outflow,
+    }
+
+
+def compute_manufacturing_fact_sheet(month, year, overhead_override=None, margin_override=None):
+    """SKU-level manufacturing/sales fact sheet for one month.
+
+    Mirrors the manual "Fact Sheet" workbook the business already builds each
+    month: Planned Units come from the Production Target Tracker
+    (ProductionTarget), BOM cost/unit comes from each product's active BOM
+    (material only - labor/overhead stripped out, since overhead is
+    re-allocated below), and the overhead pool is spread across SKUs in
+    proportion to their share of total planned BOM cost (overhead loading
+    rate = expected overhead / total planned BOM cost), exactly like the
+    workbook's OVERHEAD/UNIT column.
+    """
+    from calendar import monthrange, month_name as month_names
+
+    month_start = date(year, month, 1)
+    _, last_day = monthrange(year, month)
+    month_end = date(year, month, last_day)
+
+    targets = ProductionTarget.query.filter(
+        db.or_(
+            db.and_(ProductionTarget.month == month, ProductionTarget.year == year),
+            db.and_(ProductionTarget.start_date >= month_start, ProductionTarget.start_date <= month_end),
+            db.and_(ProductionTarget.end_date >= month_start, ProductionTarget.end_date <= month_end)
+        )
+    ).all()
+
+    by_sku = {}
+    for t in targets:
+        product = t.product
+        if not product or not t.target_units:
+            continue
+        entry = by_sku.get(product.id)
+        if not entry:
+            bom = BOM.query.filter_by(product_id=product.id, is_active=True).first()
+            bom_cost_unit = max((bom.total_cost or 0) - (bom.overhead_cost or 0) - (bom.labor_cost or 0), 0) if bom else (product.cost_price or 0)
+            selling_price = product.finished_good_price if product.finished_good_price else (product.unit_price or 0)
+            entry = by_sku[product.id] = {
+                'product': product,
+                'qty': 0,
+                'bom_cost_unit': bom_cost_unit,
+                'selling_price': selling_price,
+            }
+        entry['qty'] += t.target_units
+
+    planned_rows = sorted(by_sku.values(), key=lambda r: r['product'].sku or '')
+    total_planned_bom_cost = sum(r['bom_cost_unit'] * r['qty'] for r in planned_rows)
+
+    # Default overhead pool: this month's confirmed factory-overhead expenses
+    # plus payroll of staff active during the month - editable on the report.
+    month_start_dt = datetime.combine(month_start, datetime.min.time())
+    month_end_dt = datetime.combine(month_end, datetime.max.time())
+    factory_overhead_expenses = Expense.query.filter(
+        Expense.date >= month_start_dt,
+        Expense.date <= month_end_dt,
+        Expense.is_bom_overhead == True,
+        Expense.is_payment_transfer == False,
+        Expense.status == 'confirmed'
+    ).all()
+    total_factory_overhead_expenses = sum(e.amount for e in factory_overhead_expenses)
+
+    active_staff = Staff.query.filter(Staff.is_active == True).all()
+    total_payroll = sum(
+        s.monthly_salary or 0 for s in active_staff
+        if (s.joining_date is None or s.joining_date <= month_end)
+        and (s.left_date is None or s.left_date >= month_start)
+    )
+    default_expected_overhead = total_factory_overhead_expenses + total_payroll
+
+    expected_overhead = overhead_override if overhead_override is not None else default_expected_overhead
+    target_margin = margin_override if margin_override is not None else 0.30
+
+    overhead_loading_rate = (expected_overhead / total_planned_bom_cost) if total_planned_bom_cost > 0 else 0
+
+    def margin_status(margin_pct):
+        low_cut = max(target_margin - 0.05, 0)
+        if margin_pct >= target_margin:
+            return 'ABOVE {:.0f}% TARGET'.format(target_margin * 100), 'success'
+        if margin_pct >= low_cut:
+            return 'BELOW {:.0f}% TARGET'.format(target_margin * 100), 'warning'
+        return 'PRICE ACTION', 'danger'
+
+    rows = []
+    total_qty = 0
+    total_overhead = 0
+    total_mfg_cost = 0
+    total_sales_value = 0
+    total_margin_amt = 0
+
+    for r in planned_rows:
+        product = r['product']
+        qty = r['qty']
+        bom_cost_unit = r['bom_cost_unit']
+        overhead_unit = bom_cost_unit * overhead_loading_rate
+        mfg_cost_unit = bom_cost_unit + overhead_unit
+        selling_price = r['selling_price']
+        margin_unit = selling_price - mfg_cost_unit
+        margin_pct = (margin_unit / selling_price) if selling_price > 0 else 0
+        status, status_class = margin_status(margin_pct)
+
+        row_total_bom = bom_cost_unit * qty
+        row_total_overhead = overhead_unit * qty
+        row_total_mfg_cost = mfg_cost_unit * qty
+        row_total_sales = selling_price * qty
+        row_total_margin = row_total_sales - row_total_mfg_cost
+
+        rows.append({
+            'product': product,
+            'sku': product.sku,
+            'name': product.name,
+            'qty': qty,
+            'bom_cost_unit': bom_cost_unit,
+            'overhead_unit': overhead_unit,
+            'mfg_cost_unit': mfg_cost_unit,
+            'selling_price': selling_price,
+            'margin_unit': margin_unit,
+            'margin_pct': margin_pct,
+            'total_bom': row_total_bom,
+            'total_overhead': row_total_overhead,
+            'total_mfg_cost': row_total_mfg_cost,
+            'total_sales': row_total_sales,
+            'total_margin': row_total_margin,
+            'status': status,
+            'status_class': status_class,
+        })
+
+        total_qty += qty
+        total_overhead += row_total_overhead
+        total_mfg_cost += row_total_mfg_cost
+        total_sales_value += row_total_sales
+        total_margin_amt += row_total_margin
+
+    overall_margin_pct = (total_margin_amt / total_sales_value) if total_sales_value else 0
+    total_status, total_status_class = margin_status(overall_margin_pct)
+
+    totals = {
+        'qty': total_qty,
+        'bom_cost_unit': (total_planned_bom_cost / total_qty) if total_qty else 0,
+        'overhead_unit': (total_overhead / total_qty) if total_qty else 0,
+        'mfg_cost_unit': (total_mfg_cost / total_qty) if total_qty else 0,
+        'selling_price': (total_sales_value / total_qty) if total_qty else 0,
+        'margin_unit': (total_margin_amt / total_qty) if total_qty else 0,
+        'margin_pct': overall_margin_pct,
+        'total_bom': total_planned_bom_cost,
+        'total_overhead': total_overhead,
+        'total_mfg_cost': total_mfg_cost,
+        'total_sales': total_sales_value,
+        'total_margin': total_margin_amt,
+        'status': total_status,
+        'status_class': total_status_class,
+    }
+
+    return {
+        'month': month,
+        'year': year,
+        'month_label': f"{month_names[month].upper()} {year}",
+        'rows': rows,
+        'totals': totals,
+        'expected_overhead': expected_overhead,
+        'default_expected_overhead': default_expected_overhead,
+        'target_margin': target_margin,
+        'total_planned_bom_cost': total_planned_bom_cost,
+        'overhead_loading_rate': overhead_loading_rate,
+        'total_mfg_cost': total_mfg_cost,
+        'total_sales_value': total_sales_value,
+        'overall_margin_pct': overall_margin_pct,
+        'total_margin_amt': total_margin_amt,
     }
 
 
@@ -1231,27 +1374,43 @@ def download_report(format, report_type):
         } for r in returns]
 
     elif report_type == 'manufacturing':
-        product_id = request.args.get('product_id')
-        query = ManufacturingOrder.query.join(BOM)
-        if start_date: query = query.filter(ManufacturingOrder.start_date >= datetime.strptime(start_date, '%Y-%m-%d'))
-        if end_date: query = query.filter(ManufacturingOrder.start_date <= datetime.strptime(start_date, '%Y-%m-%d'))
-        if status != 'all': query = query.filter(ManufacturingOrder.status == status)
-        if product_id and product_id != 'all': query = query.filter(BOM.product_id == int(product_id))
-        
-        orders = query.order_by(ManufacturingOrder.start_date.desc()).all()
-        title = "Manufacturing Report"
-        headers = ['Order Number', 'Date', 'Product', 'Quantity', 'Material Cost', 'Labor Cost', 'Overhead', 'Total Cost', 'Status']
-        data = [{
-            'Order Number': o.order_number,
-            'Date': o.start_date.strftime('%Y-%m-%d') if o.start_date else 'N/A',
-            'Product': o.bom.product.name,
-            'Quantity': o.quantity_to_produce,
-            'Material Cost': f"{o.actual_material_cost or 0:.2f}",
-            'Labor Cost': f"{o.actual_labor_cost or 0:.2f}",
-            'Overhead': f"{o.total_cost - (o.actual_material_cost or 0) - (o.actual_labor_cost or 0):.2f}" if o.total_cost else "0.00",
-            'Total Cost': f"{o.total_cost or 0:.2f}",
-            'Status': o.status
-        } for o in orders]
+        now = datetime.now()
+        month = request.args.get('month', type=int) or now.month
+        year = request.args.get('year', type=int) or now.year
+        overhead_param = request.args.get('expected_overhead')
+        margin_param = request.args.get('target_margin')
+        overhead_override = float(overhead_param) if overhead_param not in (None, '') else None
+        margin_override = (float(margin_param) / 100) if margin_param not in (None, '') else None
+
+        fs = compute_manufacturing_fact_sheet(month, year, overhead_override, margin_override)
+
+        title = f"Manufacturing / Sales Fact Sheet - {fs['month_label']}"
+        headers = ['SKU', 'Item Name', 'Qty', 'BOM Cost/Unit', 'Overhead/Unit', 'Total Mfg Cost/Unit',
+                   'Selling Price/Unit', 'Margin/Unit', 'Margin %', 'Total BOM', 'Total Overhead',
+                   'Total Mfg Cost', 'Total Sales Value', 'Total Margin', 'Margin Status']
+
+        def fs_row(label, r):
+            return {
+                'SKU': label,
+                'Item Name': r.get('name', ''),
+                'Qty': r['qty'],
+                'BOM Cost/Unit': f"{r['bom_cost_unit']:.2f}",
+                'Overhead/Unit': f"{r['overhead_unit']:.2f}",
+                'Total Mfg Cost/Unit': f"{r['mfg_cost_unit']:.2f}",
+                'Selling Price/Unit': f"{r['selling_price']:.2f}",
+                'Margin/Unit': f"{r['margin_unit']:.2f}",
+                'Margin %': f"{r['margin_pct'] * 100:.2f}%",
+                'Total BOM': f"{r['total_bom']:.2f}",
+                'Total Overhead': f"{r['total_overhead']:.2f}",
+                'Total Mfg Cost': f"{r['total_mfg_cost']:.2f}",
+                'Total Sales Value': f"{r['total_sales']:.2f}",
+                'Total Margin': f"{r['total_margin']:.2f}",
+                'Margin Status': r['status'],
+            }
+
+        data = [fs_row(r['sku'], r) for r in fs['rows']]
+        if fs['rows']:
+            data.append(fs_row('TOTAL / WEIGHTED', fs['totals']))
 
     elif report_type == 'bom':
         product_id = request.args.get('product_id')
@@ -1435,12 +1594,17 @@ def download_report(format, report_type):
             output = generate_profit_loss_pdf(
                 pl, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), company_info
             )
+        elif report_type == 'manufacturing':
+            output = generate_manufacturing_fact_sheet_pdf(fs, company_info)
         else:
             output = generate_pdf(data, title, headers, company_info)
         filename = f"{report_type}_report.pdf"
         mimetype = 'application/pdf'
     elif format == 'excel':
-        output = generate_excel(data, report_type.title())
+        if report_type == 'manufacturing':
+            output = generate_manufacturing_fact_sheet_excel(fs, company_info.get('name'))
+        else:
+            output = generate_excel(data, report_type.title())
         filename = f"{report_type}_report.xlsx"
         mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     elif format == 'csv':

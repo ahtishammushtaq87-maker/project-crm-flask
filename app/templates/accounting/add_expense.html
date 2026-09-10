@@ -90,6 +90,18 @@
                     <h4>Add New Expense</h4>
                 </div>
                 <div class="card-body">
+                    <script>
+                        // {category_id: {invoice, purchase, shift, overhead, monthly}} — which
+                        // special options each category allows, set on Expense Categories.
+                        window.CATEGORY_OPTIONS = {{ category_options | tojson }};
+                        // Flat [{id, name, parent_id}] for every active category — builds the
+                        // Category / Sub-Category dropdown pair in extra_js below.
+                        window.CATEGORY_TREE = {{ category_tree | tojson }};
+                        // Category already selected on page load (Edit Expense, or Add Expense
+                        // re-rendering after a validation error) — resolved into the right
+                        // Category + Sub-Category dropdown selections on load.
+                        window.INITIAL_CATEGORY_ID = {{ (initial_category_id or 0) | tojson }};
+                    </script>
                     <form method="POST" enctype="multipart/form-data" id="expenseForm">
                         {{ form.hidden_tag() }}
 
@@ -163,12 +175,19 @@
                             </div>
                             <div class="col-md-6 mb-3 expense-only-field">
                                 <label class="form-label">Category</label>
-                                {{ form.category_id(class="form-control") }}
+                                <select id="category_main_select" class="form-control"></select>
                                 <small class="text-muted">
                                     <a href="{{ url_for('accounting.expense_categories') }}" target="_blank">Manage Categories</a>
                                 </small>
                             </div>
                         </div>
+                        <div class="row expense-only-field" id="category_sub_row" style="display:none;">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Sub-Category</label>
+                                <select id="category_sub_select" class="form-control"></select>
+                            </div>
+                        </div>
+                        <input type="hidden" name="category_id" id="category_id_hidden" value="{{ initial_category_id or '' }}">
                         <div class="mb-3 expense-only-field">
                             <label class="form-label">Vendor (Optional)</label>
                             {{ form.vendor_id(class="form-control") }}
@@ -258,7 +277,8 @@
 
                         <!-- Monthly Division + BOM Overhead: only relevant when this is really an Expense (Credit) -->
                         <div class="expense-only-field">
-                        <!-- Monthly Division Section -->
+                        <!-- Monthly Division Section - hidden until a category that allows it is picked -->
+                        <div id="monthlyDivisionSection" style="display:none;">
                         <hr class="my-4">
                         <h5 class="mb-3">Monthly Division Options</h5>
                         <div class="mb-3">
@@ -282,13 +302,16 @@
                                 </div>
                             </div>
                             <div class="alert alert-info mb-0">
-                                <strong>Example:</strong> If you set an expense of PKR 3000 from Jan 1 to Jan 31 (31 days), 
+                                <strong>Example:</strong> If you set an expense of PKR 3000 from Jan 1 to Jan 31 (31 days),
                                 it will show as PKR 96.77 daily expense on the dashboard.
                             </div>
                         </div>
+                        </div>
+                        <!-- /monthlyDivisionSection -->
 
+                        <div id="bomOverheadSection" style="display:none;">
                         <hr class="my-4">
-                        
+
                         <div class="mb-3">
                             <div class="form-check form-switch px-4 py-2 border rounded bg-light">
                                 {{ form.is_bom_overhead(class="form-check-input ms-0 me-3", id="is_bom_overhead") }}
@@ -349,8 +372,61 @@
                                 </div>
                             </div>
                         </div>
+
                         </div>
-                        <!-- /expense-only-field: Monthly Division + BOM Overhead -->
+                        <!-- /bomOverheadSection -->
+
+                        {% if current_user.is_admin %}
+                        <div id="shiftToInventorySection" style="display:none;">
+                        <hr class="my-4">
+                        <div class="mb-3">
+                            <div class="form-check form-switch px-4 py-2 border rounded bg-light">
+                                <input class="form-check-input ms-0 me-3" type="checkbox" name="shift_to_inventory" id="shift_to_inventory" value="1">
+                                <label class="form-check-label fw-bold" for="shift_to_inventory">Shift Directly to Inventory Cost</label>
+                                <div class="form-text mt-0 ms-4">Skip the extra step — apply this expense straight onto one or more inventory items' cost/quantity when it's saved, instead of shifting it later from the Expenses list.</div>
+                            </div>
+                        </div>
+                        <div id="inline_shift_container" style="display:none;">
+                            <div class="p-3 border rounded mb-3" style="background:#f0fbfc;">
+                                <div class="mb-3">
+                                    <label for="inline_product_ids" class="form-label fw-semibold">Select Inventory Item(s) <span class="text-danger">*</span></label>
+                                    <select name="product_ids" id="inline_product_ids" class="form-select" multiple>
+                                        {% for item in inventory_items %}
+                                        <option value="{{ item.id }}" data-cost="{{ item.cost_price or 0 }}" data-qty="{{ item.quantity or 0 }}" data-name="{{ item.sku }} - {{ item.name }}">{{ item.sku }} - {{ item.name }} (cost: PKR {{ '%.2f'|format(item.cost_price or 0) }}, qty: {{ '%.2f'|format(item.quantity or 0) }})</option>
+                                        {% endfor %}
+                                    </select>
+                                    <small class="text-muted">Select one item to apply the full amount, or several (bulk) to split it across them — each item's <strong>amount</strong> and <strong>quantity received</strong> are editable below (amounts must add up to the Amount field above). Cost/unit = amount ÷ quantity, which <strong>replaces</strong> the item's current cost; quantity is <strong>added</strong> to its current stock.</small>
+                                </div>
+                                <div id="inline_inv_cost_rows" style="display:none;">
+                                    <div class="table-responsive">
+                                        <table class="table table-sm align-middle mb-1">
+                                            <colgroup>
+                                                <col style="width:26%;"><col style="width:13%;"><col style="width:13%;"><col style="width:16%;"><col style="width:13%;"><col style="width:19%;">
+                                            </colgroup>
+                                            <thead>
+                                                <tr>
+                                                    <th>Item</th>
+                                                    <th class="text-end">Current Cost</th>
+                                                    <th class="text-end">Current Qty</th>
+                                                    <th class="text-end">Amount</th>
+                                                    <th class="text-end">Quantity</th>
+                                                    <th class="text-end">New Cost/Unit</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="inline_inv_cost_rows_body"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div class="alert alert-secondary py-2 mb-0" id="inline_inv_split_preview" style="display:none;">
+                                    <small><i class="bi bi-calculator me-1"></i> <span id="inline_inv_split_text"></span></small>
+                                </div>
+                            </div>
+                        </div>
+                        </div>
+                        <!-- /shiftToInventorySection -->
+                        {% endif %}
+                        </div>
+                        <!-- /expense-only-field: Monthly Division + BOM Overhead + Shift to Inventory -->
 
                         <div class="mb-3 d-flex gap-2">
                             <button type="submit" class="btn btn-success" id="submitBtn">Save Expense</button>
@@ -372,7 +448,6 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Single-select
-    $('select[name="category_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Category —', allowClear: true, width: '100%' });
     $('select[name="payment_method"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Payment Method —', allowClear: true, width: '100%' });
     $('select[name="vendor_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Vendor (Optional) —', allowClear: true, width: '100%' });
     $('select[name="customer_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Customer (Optional) —', allowClear: true, width: '100%' });
@@ -553,6 +628,396 @@ document.addEventListener('DOMContentLoaded', function() {
 
     toggleOverheadSection();
     applyModeSwitch();
+
+    // ── Category / Sub-Category dropdown pair + category-restricted options ──
+    // Pick a main Category first; if it has any sub-categories a second
+    // "Sub-Category" dropdown appears right under it. Whichever is the most
+    // specific pick (sub-category if one's chosen, else the main category)
+    // is the expense's real category_id, and drives which special options
+    // show: Monthly Division, BOM Overhead, Shift to Inventory, and Add to
+    // Invoice/Purchase Payment all start hidden, and only the ones that
+    // category is configured to allow (on Expense Categories) appear. A
+    // category left with everything unchecked stays a plain expense with
+    // none of these options; nothing picked yet behaves the same way.
+    (function () {
+        const mainSelect = document.getElementById('category_main_select');
+        const subSelect = document.getElementById('category_sub_select');
+        const subRow = document.getElementById('category_sub_row');
+        const hiddenInput = document.getElementById('category_id_hidden');
+        const monthlySection = document.getElementById('monthlyDivisionSection');
+        const bomSection = document.getElementById('bomOverheadSection');
+        const shiftSection = document.getElementById('shiftToInventorySection');
+        const monthlyCheckbox = document.getElementById('is_monthly_divided');
+        const shiftCheckbox = document.getElementById('shift_to_inventory');
+        if (!mainSelect) return;
+
+        const tree = window.CATEGORY_TREE || [];
+        const mains = tree.filter(function (c) { return !c.parent_id; });
+        const subsByParent = {};
+        tree.forEach(function (c) {
+            if (c.parent_id) {
+                (subsByParent[c.parent_id] = subsByParent[c.parent_id] || []).push(c);
+            }
+        });
+
+        // Searchable dropdowns - select2 wraps the native <select>, so any
+        // time its options are rebuilt programmatically (repopulateSub runs
+        // on every main-category change) it has to be destroyed and
+        // reinitialized or its own rendered list goes stale.
+        function refreshSelect2(el, placeholder) {
+            const $el = $(el);
+            if ($el.hasClass('select2-hidden-accessible')) {
+                $el.select2('destroy');
+            }
+            $el.select2({ theme: 'bootstrap-5', width: '100%', placeholder: placeholder, allowClear: true });
+        }
+
+        function populateMain(selectedId) {
+            mainSelect.innerHTML = '';
+            const placeholder = new Option('— Select Category —', '');
+            mainSelect.appendChild(placeholder);
+            mains.forEach(function (c) {
+                const opt = new Option(c.name, c.id);
+                if (selectedId && String(c.id) === String(selectedId)) opt.selected = true;
+                mainSelect.appendChild(opt);
+            });
+            refreshSelect2(mainSelect, '— Select Category —');
+        }
+
+        function populateSub(parentId, selectedId) {
+            const subs = subsByParent[parentId] || [];
+            subSelect.innerHTML = '';
+            if (!subs.length) {
+                subRow.style.display = 'none';
+                refreshSelect2(subSelect, '— No Sub-Category —');
+                return;
+            }
+            subSelect.appendChild(new Option('— No Sub-Category —', ''));
+            subs.forEach(function (c) {
+                const opt = new Option(c.name, c.id);
+                if (selectedId && String(c.id) === String(selectedId)) opt.selected = true;
+                subSelect.appendChild(opt);
+            });
+            subRow.style.display = '';
+            refreshSelect2(subSelect, '— Select Sub-Category —');
+        }
+
+        // On the very first pass (page load) only section visibility is
+        // set - an already-checked box stays checked-but-hidden rather than
+        // being silently unchecked, so re-rendering the form after a
+        // validation error never drops what the user actually filled in.
+        // Any category change the user makes afterward DOES uncheck a
+        // now-disallowed option, since that's a deliberate action.
+        let isFirstPass = true;
+
+        function applyCategoryRestrictions() {
+            const catId = hiddenInput.value;
+            const opts = (window.CATEGORY_OPTIONS && window.CATEGORY_OPTIONS[catId]) ||
+                { invoice: false, purchase: false, shift: false, overhead: false, monthly: false };
+
+            if (monthlySection) {
+                monthlySection.style.display = opts.monthly ? '' : 'none';
+                if (!isFirstPass && !opts.monthly && monthlyCheckbox && monthlyCheckbox.checked) {
+                    monthlyCheckbox.checked = false;
+                    toggleMonthlyDivision();
+                }
+            }
+            if (bomSection) {
+                bomSection.style.display = opts.overhead ? '' : 'none';
+                if (!isFirstPass && !opts.overhead && isBomOverheadCheckbox && isBomOverheadCheckbox.checked) {
+                    isBomOverheadCheckbox.checked = false;
+                    toggleOverheadSection();
+                }
+            }
+            if (shiftSection) {
+                shiftSection.style.display = opts.shift ? '' : 'none';
+                if (!isFirstPass && !opts.shift && shiftCheckbox && shiftCheckbox.checked) {
+                    shiftCheckbox.checked = false;
+                    shiftCheckbox.dispatchEvent(new Event('change'));
+                }
+            }
+            // "Add to Invoice Payment" only ever applies in Debit mode (it's
+            // money coming IN against a Sale Invoice) — a category set up
+            // to allow it is inherently an Add Money / Debit category, so
+            // picking one switches the Transaction Type over automatically
+            // instead of leaving the user to find the toggle themselves.
+            if (opts.invoice && txnDebit && !txnDebit.checked) {
+                txnDebit.checked = true;
+                applyTxnType();
+            }
+
+            window.__categoryTransferAllowed = { sale: opts.invoice, bill: opts.purchase };
+            if (window.__applyTransferGating) window.__applyTransferGating();
+            isFirstPass = false;
+        }
+
+        // Assign options only ever show for a category that's actually been
+        // picked all the way: a main category with no sub-categories
+        // resolves immediately (there's nothing else to wait for), but a
+        // main category that DOES have sub-categories shows nothing until
+        // the user also makes a choice in Sub-Category — either a real
+        // sub-category, or explicitly "— No Sub-Category —" to assign the
+        // expense to the main category itself.
+        // select2 drives selection through jQuery's event system, not a
+        // plain native 'change' — use $(...).on('change', ...) here (same
+        // pattern as the other select2 dropdowns on this form), or a pick
+        // made through the select2 UI never reaches this listener.
+        $(mainSelect).on('change', function () {
+            const hasSubs = (subsByParent[mainSelect.value] || []).length > 0;
+            populateSub(mainSelect.value, null);
+            hiddenInput.value = hasSubs ? '' : (mainSelect.value || '');
+            applyCategoryRestrictions();
+        });
+        $(subSelect).on('change', function () {
+            hiddenInput.value = subSelect.value || mainSelect.value || '';
+            applyCategoryRestrictions();
+        });
+
+        // Initial resolution: which main/sub does INITIAL_CATEGORY_ID belong to?
+        const initId = window.INITIAL_CATEGORY_ID;
+        let initMainId = '', initSubId = '';
+        if (initId) {
+            const found = tree.find(function (c) { return String(c.id) === String(initId); });
+            if (found) {
+                if (found.parent_id) { initMainId = found.parent_id; initSubId = found.id; }
+                else { initMainId = found.id; }
+            }
+        }
+        populateMain(initMainId);
+        populateSub(initMainId, initSubId);
+        hiddenInput.value = initSubId || initMainId || '';
+        // Deferred so the payment-transfer partial's own script (included
+        // earlier in the page) has already set window.__applyTransferGating.
+        setTimeout(applyCategoryRestrictions, 0);
+
+        // If the picked category reveals any of these options, at least one
+        // of them must actually be used — an expense can't go through as
+        // fully plain once a category with special options is selected.
+        // Checked at submit time, reading whatever's visible right now.
+        const paymentTransferBlock = document.getElementById('paymentTransferBlock');
+        const paymentTransferEnabled = document.getElementById('paymentTransferEnabled');
+        document.getElementById('expenseForm').addEventListener('submit', function (e) {
+            const groups = [
+                { section: monthlySection, checkbox: monthlyCheckbox, label: 'Divide Expense Across Entire Month' },
+                { section: bomSection, checkbox: isBomOverheadCheckbox, label: 'BOM Overhead Expense' },
+                { section: shiftSection, checkbox: shiftCheckbox, label: 'Shift Directly to Inventory Cost' },
+                { section: paymentTransferBlock, checkbox: paymentTransferEnabled, label: 'Add to Invoice/Purchase Payment' },
+            ];
+            const visible = groups.filter(function (g) { return g.section && g.section.style.display !== 'none'; });
+            if (visible.length && !visible.some(function (g) { return g.checkbox && g.checkbox.checked; })) {
+                e.preventDefault();
+                alert('This category requires selecting one of: ' + visible.map(function (g) { return g.label; }).join(', ') + '.');
+                visible[0].section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        });
+    })();
+
+    // ── Shift Directly to Inventory Cost (inline) ───────────────────────
+    // Same item-picker + per-item amount/quantity split UI as the standalone
+    // "Shift to Inventory Cost" modal on the Expenses list (see
+    // shiftToInventoryModal in expenses.html) — except these fields submit
+    // as part of this same form instead of a separate AJAX call, and the
+    // expense amount is read live off the Amount field instead of a fixed
+    // value (the expense doesn't exist yet).
+    (function () {
+        const shiftCheckbox = document.getElementById('shift_to_inventory');
+        if (!shiftCheckbox) return; // non-admin: section not rendered
+
+        const shiftContainer = document.getElementById('inline_shift_container');
+        const $shiftSelect = $('#inline_product_ids');
+        const rowsWrap = document.getElementById('inline_inv_cost_rows');
+        const rowsBody = document.getElementById('inline_inv_cost_rows_body');
+        const amountInput = document.querySelector('input[name="amount"]');
+        let dirtyItemIds = new Set();
+
+        function currentAmount() {
+            return parseFloat(amountInput ? amountInput.value : 0) || 0;
+        }
+        function fmtMoney(n) {
+            return (n || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        }
+
+        function updateUnitCostDisplays() {
+            rowsBody.querySelectorAll('tr').forEach(function (row) {
+                const costInput = row.querySelector('.inv-cost-input');
+                const qtyInput = row.querySelector('.inv-qty-input');
+                const display = row.querySelector('.inv-unit-cost-display');
+                if (!costInput || !qtyInput || !display) return;
+                const cost = parseFloat(costInput.value) || 0;
+                const qty = parseFloat(qtyInput.value) || 0;
+                display.textContent = qty > 0 ? ('PKR ' + fmtMoney(cost / qty)) : '—';
+            });
+        }
+
+        function updateSplitPreview() {
+            const preview = document.getElementById('inline_inv_split_preview');
+            const text = document.getElementById('inline_inv_split_text');
+            const inputs = rowsBody.querySelectorAll('.inv-cost-input');
+            if (!inputs.length) { preview.style.display = 'none'; return; }
+            let total = 0;
+            inputs.forEach(function (inp) { total += parseFloat(inp.value) || 0; });
+            const amount = currentAmount();
+            const diff = Math.round((total - amount) * 100) / 100;
+            if (Math.abs(diff) < 0.01) {
+                text.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Total PKR ' +
+                    fmtMoney(total) + ' matches the expense amount.</span>';
+            } else {
+                text.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Total PKR ' +
+                    fmtMoney(total) + ' — must equal the Amount field (PKR ' + fmtMoney(amount) +
+                    '). Difference: PKR ' + fmtMoney(Math.abs(diff)) + '.</span>';
+            }
+            preview.style.display = '';
+        }
+
+        function redistributeRows(editedInput) {
+            const inputs = Array.from(rowsBody.querySelectorAll('.inv-cost-input'));
+            let dirtySum = 0;
+            const autoInputs = [];
+            inputs.forEach(function (inp) {
+                const pid = inp.name.replace('item_cost_', '');
+                if (inp === editedInput || dirtyItemIds.has(pid)) {
+                    dirtySum += parseFloat(inp.value) || 0;
+                } else {
+                    autoInputs.push(inp);
+                }
+            });
+            if (autoInputs.length) {
+                const remaining = Math.max(0, currentAmount() - dirtySum);
+                const per = remaining / autoInputs.length;
+                autoInputs.forEach(function (inp) { inp.value = per.toFixed(2); });
+            }
+            updateSplitPreview();
+            updateUnitCostDisplays();
+        }
+
+        function rebuildRows() {
+            const ids = $shiftSelect.val() || [];
+            const preview = document.getElementById('inline_inv_split_preview');
+            dirtyItemIds = new Set();
+
+            if (!ids.length) {
+                rowsWrap.style.display = 'none';
+                rowsBody.innerHTML = '';
+                preview.style.display = 'none';
+                return;
+            }
+
+            const per = ids.length ? (currentAmount() / ids.length) : 0;
+            rowsBody.innerHTML = '';
+            ids.forEach(function (id) {
+                const opt = $shiftSelect.find('option[value="' + id + '"]');
+                const name = opt.data('name') || ('Item #' + id);
+                const currentCost = parseFloat(opt.data('cost')) || 0;
+                const currentQty = parseFloat(opt.data('qty')) || 0;
+                const row = document.createElement('tr');
+                row.innerHTML =
+                    '<td>' + name + '</td>' +
+                    '<td class="text-end text-muted">PKR ' + fmtMoney(currentCost) + '</td>' +
+                    '<td class="text-end text-muted">' + currentQty.toFixed(2) + '</td>' +
+                    '<td class="text-end">' +
+                        '<input type="number" step="0.01" min="0" class="form-control form-control-sm text-end inv-cost-input" ' +
+                        'style="min-width:100px;" name="item_cost_' + id + '" value="' + per.toFixed(2) + '">' +
+                    '</td>' +
+                    '<td class="text-end">' +
+                        '<input type="number" step="0.01" min="0.01" class="form-control form-control-sm text-end inv-qty-input" ' +
+                        'style="min-width:90px;" name="item_qty_' + id + '" value="1">' +
+                    '</td>' +
+                    '<td class="text-end fw-semibold inv-unit-cost-display">PKR ' + fmtMoney(per) + '</td>';
+                rowsBody.appendChild(row);
+            });
+            rowsWrap.style.display = '';
+            updateSplitPreview();
+            updateUnitCostDisplays();
+        }
+
+        $shiftSelect.select2({
+            theme: 'bootstrap-5', width: '100%',
+            placeholder: 'Search inventory items...',
+            closeOnSelect: false
+        });
+        $shiftSelect.on('change', rebuildRows);
+        rowsBody.addEventListener('input', function (e) {
+            if (e.target.classList.contains('inv-cost-input')) {
+                const pid = e.target.name.replace('item_cost_', '');
+                dirtyItemIds.add(pid);
+                redistributeRows(e.target);
+                return;
+            }
+            if (e.target.classList.contains('inv-qty-input')) {
+                updateUnitCostDisplays();
+            }
+        });
+        if (amountInput) amountInput.addEventListener('input', function () {
+            dirtyItemIds = new Set();
+            const inputs = rowsBody.querySelectorAll('.inv-cost-input');
+            if (inputs.length) {
+                const per = currentAmount() / inputs.length;
+                inputs.forEach(function (inp) { inp.value = per.toFixed(2); });
+            }
+            updateSplitPreview();
+            updateUnitCostDisplays();
+        });
+
+        // Mutual exclusion — a shifted expense can't also be BOM overhead,
+        // monthly divided, or a payment transfer (matches the backend's own
+        // shift-eligibility rules).
+        function toggleShiftSection() {
+            const checked = shiftCheckbox.checked;
+            shiftContainer.style.display = checked ? 'block' : 'none';
+            if (!checked) {
+                $shiftSelect.val(null).trigger('change');
+                return;
+            }
+            if (isBomOverheadCheckbox.checked) { isBomOverheadCheckbox.checked = false; toggleOverheadSection(); }
+            if (isMonthlyDividedCheckbox.checked) { isMonthlyDividedCheckbox.checked = false; toggleMonthlyDivision(); }
+            const transferCb = document.getElementById('paymentTransferEnabled');
+            if (transferCb && transferCb.checked) { transferCb.checked = false; transferCb.dispatchEvent(new Event('change')); }
+        }
+        shiftCheckbox.addEventListener('change', toggleShiftSection);
+        isBomOverheadCheckbox.addEventListener('change', function () {
+            if (isBomOverheadCheckbox.checked && shiftCheckbox.checked) { shiftCheckbox.checked = false; toggleShiftSection(); }
+        });
+        isMonthlyDividedCheckbox.addEventListener('change', function () {
+            if (isMonthlyDividedCheckbox.checked && shiftCheckbox.checked) { shiftCheckbox.checked = false; toggleShiftSection(); }
+        });
+        const transferCb = document.getElementById('paymentTransferEnabled');
+        if (transferCb) {
+            transferCb.addEventListener('change', function () {
+                if (transferCb.checked && shiftCheckbox.checked) { shiftCheckbox.checked = false; toggleShiftSection(); }
+            });
+        }
+
+        document.getElementById('expenseForm').addEventListener('submit', function (e) {
+            if (!shiftCheckbox.checked) return;
+            const ids = $shiftSelect.val() || [];
+            if (!ids.length) {
+                e.preventDefault();
+                alert('Select at least one inventory item to shift this expense to, or uncheck "Shift Directly to Inventory Cost".');
+                shiftContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+            const inputs = rowsBody.querySelectorAll('.inv-cost-input');
+            let total = 0;
+            inputs.forEach(function (inp) { total += parseFloat(inp.value) || 0; });
+            const amount = currentAmount();
+            if (Math.abs(total - amount) > 0.01) {
+                e.preventDefault();
+                alert('The item costs must add up to the expense amount (PKR ' + fmtMoney(amount) +
+                      '). They currently total PKR ' + fmtMoney(total) + '.');
+                shiftContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+            const qtyInputs = rowsBody.querySelectorAll('.inv-qty-input');
+            for (const inp of qtyInputs) {
+                if (!(parseFloat(inp.value) > 0)) {
+                    e.preventDefault();
+                    alert('Enter a quantity greater than 0 for every selected item.');
+                    shiftContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    return;
+                }
+            }
+        });
+    })();
 
     // Camera Capture Logic (Webcam API)
     const webcamBtn = document.getElementById('webcamBtn');

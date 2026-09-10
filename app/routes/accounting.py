@@ -2469,46 +2469,47 @@ def _parse_shifted_product_quantities(raw):
     return result
 
 
-@bp.route('/expense/shift-to-inventory', methods=['POST'])
-@login_required
-def shift_expense_to_inventory():
-    """Shift an operating expense onto one or more inventory items' cost —
-    and, when a quantity is given, treat it as receiving that many units at
-    that total cost (e.g. PKR 1,000 across a quantity of 2 -> PKR 500/unit),
-    the same way a landed-cost purchase receipt would.
+def _inventory_shift_blockers(expense):
+    """Returns a user-facing message if `expense` can't be shifted to
+    inventory cost right now, else None. Shared by the standalone
+    shift-to-inventory action and by shifting inline from Add/Edit Expense."""
+    if getattr(expense, 'is_inventory_shifted', False):
+        return 'This expense is already shifted to inventory.'
+    if getattr(expense, 'is_shifted', False):
+        return 'This expense is already shifted to a PD project.'
+    if getattr(expense, 'is_bom_overhead', False):
+        return 'Overhead expenses cannot be shifted to inventory.'
+    if getattr(expense, 'is_monthly_divided', False):
+        return 'Monthly divided expenses cannot be shifted to inventory.'
+    if getattr(expense, 'is_payment_transfer', False):
+        return 'This expense was transferred to a Sale/Purchase payment and cannot be shifted to inventory.'
+    return None
 
-    Each selected item's amount defaults to an equal split of the expense
-    amount but is editable in the popup, so the amounts actually applied may
-    differ per item — they must still add up to the expense's full amount.
-    Each item's cost_price is REPLACED with amount/quantity (not added on top
-    of whatever it already was), and quantity (default 1 if left blank) is
-    ADDED onto the item's existing stock quantity.
+
+def _apply_inventory_shift(expense):
+    """Core logic for shifting an expense's amount onto one or more
+    inventory items' cost — and, when a quantity is given, treating it as
+    receiving that many units at that total cost (e.g. PKR 1,000 across a
+    quantity of 2 -> PKR 500/unit), the same way a landed-cost purchase
+    receipt would.
+
+    Reads `product_ids`/`product_ids[]`, `item_cost_<id>` and `item_qty_<id>`
+    straight off `request.form` — shared by the standalone AJAX
+    shift-to-inventory action and by shifting inline while creating/editing
+    an expense. Each selected item's amount must add up to the expense's
+    full amount; each item's cost_price is REPLACED with amount/quantity
+    (not added on top of whatever it already was), and quantity (default 1
+    if left blank) is ADDED onto the item's existing stock quantity.
+
+    Mutates `expense` and the affected Product rows in the current session
+    but does not commit. Raises ValueError with a user-facing message on any
+    validation failure. Returns (message, applied_names) on success.
     """
-    if not getattr(current_user, 'is_admin', False):
-        return jsonify({'success': False, 'message': 'Admin access required.'}), 403
-
-    expense_id = request.form.get('expense_id', type=int)
-    # Accept both `product_ids` and `product_ids[]` from the multi-select
-    raw_ids = request.form.getlist('product_ids') or request.form.getlist('product_ids[]')
-
-    if not expense_id or not raw_ids:
-        return jsonify({'success': False, 'message': 'Please select at least one inventory item.'}), 400
-
     from app.models import Product
 
-    expense = Expense.query.get_or_404(expense_id)
-
-    # Only plain operating expenses can be shifted to inventory cost.
-    if getattr(expense, 'is_inventory_shifted', False):
-        return jsonify({'success': False, 'message': 'This expense is already shifted to inventory.'}), 400
-    if getattr(expense, 'is_shifted', False):
-        return jsonify({'success': False, 'message': 'This expense is already shifted to a PD project.'}), 400
-    if getattr(expense, 'is_bom_overhead', False):
-        return jsonify({'success': False, 'message': 'Overhead expenses cannot be shifted to inventory.'}), 400
-    if getattr(expense, 'is_monthly_divided', False):
-        return jsonify({'success': False, 'message': 'Monthly divided expenses cannot be shifted to inventory.'}), 400
-    if getattr(expense, 'is_payment_transfer', False):
-        return jsonify({'success': False, 'message': 'This expense was transferred to a Sale/Purchase payment and cannot be shifted to inventory.'}), 400
+    raw_ids = request.form.getlist('product_ids') or request.form.getlist('product_ids[]')
+    if not raw_ids:
+        raise ValueError('Please select at least one inventory item.')
 
     # Resolve unique, valid product ids
     seen = set()
@@ -2524,9 +2525,9 @@ def shift_expense_to_inventory():
 
     products = Product.query.filter(Product.id.in_(product_ids)).all()
     if not products:
-        return jsonify({'success': False, 'message': 'No valid inventory items found.'}), 400
+        raise ValueError('No valid inventory items found.')
 
-    # Per-item new cost — the "Shift to Inventory Cost" popup pre-fills each
+    # Per-item new cost — the "Shift to Inventory Cost" UI pre-fills each
     # item's share as an equal split of the expense amount but leaves it
     # editable, so the values actually submitted may differ per item. They
     # must still add up to the expense's full amount. Each value REPLACES
@@ -2541,7 +2542,7 @@ def shift_expense_to_inventory():
         except (TypeError, ValueError):
             cost = None
         if cost is None or cost < 0:
-            return jsonify({'success': False, 'message': f'Enter a valid cost amount for {product.name}.'}), 400
+            raise ValueError(f'Enter a valid cost amount for {product.name}.')
         item_costs[product.id] = cost
         total_entered += cost
 
@@ -2551,45 +2552,72 @@ def shift_expense_to_inventory():
         except (TypeError, ValueError):
             qty = None
         if qty is None or qty <= 0:
-            return jsonify({'success': False, 'message': f'Enter a valid quantity (greater than 0) for {product.name}.'}), 400
+            raise ValueError(f'Enter a valid quantity (greater than 0) for {product.name}.')
         item_qtys[product.id] = qty
 
     if abs(round(total_entered - expense.amount, 2)) > 0.01:
-        return jsonify({'success': False,
-                        'message': f'The item costs must add up to the expense amount (PKR {expense.amount:,.2f}). '
-                                   f'They currently total PKR {total_entered:,.2f}.'}), 400
+        raise ValueError(f'The item costs must add up to the expense amount (PKR {expense.amount:,.2f}). '
+                          f'They currently total PKR {total_entered:,.2f}.')
+
+    applied_names = []
+    shifted_tokens = []
+    qty_tokens = []
+    for product in products:
+        old_cost = product.cost_price or 0
+        qty = item_qtys[product.id]
+        unit_cost = round(item_costs[product.id] / qty, 2)
+        product.cost_price = unit_cost
+        product.quantity = (product.quantity or 0) + qty
+        applied_names.append(
+            f'{product.name} (PKR {old_cost:,.2f} -> PKR {unit_cost:,.2f}/unit, +{qty:g} qty)')
+        shifted_tokens.append(f'{product.id}:{unit_cost}:{old_cost}')
+        qty_tokens.append(f'{product.id}:{qty}')
+
+    expense.is_inventory_shifted = True
+    expense.shifted_to_product_ids = ','.join(shifted_tokens)
+    expense.shifted_product_quantities = ','.join(qty_tokens)
+
+    if len(products) == 1:
+        p = products[0]
+        msg = (f'{p.name} cost set to PKR {item_costs[p.id] / item_qtys[p.id]:,.2f}/unit '
+               f'and quantity increased by {item_qtys[p.id]:g}.')
+    else:
+        msg = f'Cost and quantity updated on {len(products)} items (PKR {expense.amount:,.2f} total).'
+    return msg, applied_names
+
+
+@bp.route('/expense/shift-to-inventory', methods=['POST'])
+@login_required
+def shift_expense_to_inventory():
+    """Shift an already-created operating expense onto one or more
+    inventory items' cost — see _apply_inventory_shift for the mechanics.
+    (An expense can also be shifted inline while it's first created or
+    edited on Add/Edit Expense — this route stays for shifting one after
+    the fact from the Expenses list.)
+    """
+    if not getattr(current_user, 'is_admin', False):
+        return jsonify({'success': False, 'message': 'Admin access required.'}), 403
+
+    expense_id = request.form.get('expense_id', type=int)
+    if not expense_id:
+        return jsonify({'success': False, 'message': 'Please select at least one inventory item.'}), 400
+
+    expense = Expense.query.get_or_404(expense_id)
+
+    blocker = _inventory_shift_blockers(expense)
+    if blocker:
+        return jsonify({'success': False, 'message': blocker}), 400
 
     try:
-        applied_names = []
-        shifted_tokens = []
-        qty_tokens = []
-        for product in products:
-            old_cost = product.cost_price or 0
-            qty = item_qtys[product.id]
-            unit_cost = round(item_costs[product.id] / qty, 2)
-            product.cost_price = unit_cost
-            product.quantity = (product.quantity or 0) + qty
-            applied_names.append(
-                f'{product.name} (PKR {old_cost:,.2f} -> PKR {unit_cost:,.2f}/unit, +{qty:g} qty)')
-            shifted_tokens.append(f'{product.id}:{unit_cost}:{old_cost}')
-            qty_tokens.append(f'{product.id}:{qty}')
+        msg, applied_names = _apply_inventory_shift(expense)
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
 
-        expense.is_inventory_shifted = True
-        expense.shifted_to_product_ids = ','.join(shifted_tokens)
-        expense.shifted_product_quantities = ','.join(qty_tokens)
-
+    try:
         db.session.commit()
-
         log_activity('Accounting',
                      f'Shifted expense {expense.expense_number} to inventory cost',
-                     f'PKR {expense.amount} applied across {len(products)} item(s): {", ".join(applied_names)}')
-
-        if len(products) == 1:
-            p = products[0]
-            msg = (f'{p.name} cost set to PKR {item_costs[p.id] / item_qtys[p.id]:,.2f}/unit '
-                   f'and quantity increased by {item_qtys[p.id]:g}.')
-        else:
-            msg = f'Cost and quantity updated on {len(products)} items (PKR {expense.amount:,.2f} total).'
+                     f'PKR {expense.amount} applied across {len(applied_names)} item(s): {", ".join(applied_names)}')
         return jsonify({'success': True, 'message': msg})
     except Exception as e:
         db.session.rollback()
@@ -2655,9 +2683,11 @@ def add_expense():
 
     form = ExpenseForm()
     
-    # Populate category choices
-    categories = ExpenseCategory.query.filter_by(is_active=True).order_by(ExpenseCategory.name).all()
-    form.category_id.choices = [(cat.id, cat.name) for cat in categories]
+    # Populate category choices - main categories each immediately followed
+    # by their own sub-categories, indented, so the hierarchy set up on
+    # Expense Categories is visible here too.
+    form.category_id.choices = _expense_category_choices()
+    category_options = _expense_category_options_map()
     
     # Populate vendor choices
     vendors = Vendor.query.filter_by(is_active=True).order_by(Vendor.name).all()
@@ -2682,11 +2712,16 @@ def add_expense():
     else:
         manufactured_products = []
     form.product_id.choices = [(0, 'Select Finished Product (Optional)')] + [(p.id, p.name) for p in manufactured_products]
-    
+
+    # All active inventory items, for the inline "Shift Directly to Inventory
+    # Cost" picker (same source as the standalone shift-to-inventory modal
+    # on the Expenses list).
+    inventory_items = Product.query.filter_by(is_active=True).order_by(Product.name).all()
+
     # Populate BOM choices
     boms = BOM.query.filter_by(is_active=True).order_by(BOM.name).all()
     form.bom_id.choices = [(0, 'Select BOM (Optional)')] + [(b.id, b.name) for b in boms]
-    
+
     # Populate In Progress Manufacturing Order choices (no placeholder; Select2 shows placeholder text)
     from app.models import ManufacturingOrder
     in_progress_mos = (
@@ -2702,7 +2737,10 @@ def add_expense():
             flash('Please select an account for this expense.', 'warning')
             return render_template('accounting/add_expense.html', form=form,
                                     expense_accounts=ExpenseAccount.query.filter_by(is_active=True).order_by(ExpenseAccount.name).all(),
-                                    expense_sources=ExpenseSource.query.filter_by(is_active=True).order_by(ExpenseSource.name).all())
+                                    expense_sources=ExpenseSource.query.filter_by(is_active=True).order_by(ExpenseSource.name).all(),
+                                    inventory_items=inventory_items, category_options=category_options,
+                                    category_tree=_expense_category_tree(),
+                                    initial_category_id=request.form.get('category_id', type=int))
 
         # Get selected targets
         base_amount = form.amount.data
@@ -2713,7 +2751,52 @@ def add_expense():
         mode = request.form.get('overhead_mode', 'bulk')
         is_admin = getattr(current_user, 'is_admin', False)
         target_status = 'confirmed' if is_admin else 'pending'
-        
+
+        # Server-side backstop for the category restriction (the form's own
+        # script already hides/unchecks these client-side) - a category with
+        # no option_flags entry (shouldn't happen once migrated) is treated
+        # as allowing everything, matching the JS fallback.
+        picked_category = ExpenseCategory.query.get(form.category_id.data)
+        category_opts = picked_category.option_flags if picked_category else \
+            {'invoice': True, 'purchase': True, 'shift': True, 'overhead': True, 'monthly': True}
+        if is_overhead and not category_opts['overhead']:
+            flash(f'The "{picked_category.name}" category does not allow BOM Overhead expenses. '
+                  f'Pick a different category, or enable it on Expense Categories.', 'danger')
+            return redirect(url_for('accounting.add_expense'))
+        if form.is_monthly_divided.data and not category_opts['monthly']:
+            flash(f'The "{picked_category.name}" category does not allow dividing an expense across the month. '
+                  f'Pick a different category, or enable it on Expense Categories.', 'danger')
+            return redirect(url_for('accounting.add_expense'))
+        if request.form.get('shift_to_inventory') == '1' and not category_opts['shift']:
+            flash(f'The "{picked_category.name}" category does not allow shifting to inventory cost. '
+                  f'Pick a different category, or enable it on Expense Categories.', 'danger')
+            return redirect(url_for('accounting.add_expense'))
+        if (request.form.get('payment_transfer_type') == 'bill' and request.form.get('payment_transfer_target_id')
+                and not category_opts['purchase']):
+            flash(f'The "{picked_category.name}" category does not allow Add to Purchase Payment. '
+                  f'Pick a different category, or enable it on Expense Categories.', 'danger')
+            return redirect(url_for('accounting.add_expense'))
+
+        # If the category allows any of these, one of them must actually be
+        # used — matches the form's own submit-time check. ("invoice"/sale
+        # is deliberately left out: this Credit path never processes it, see
+        # the comment further down by payment_transfer_type.)
+        option_labels = []
+        if category_opts['purchase']: option_labels.append('Add to Purchase Payment')
+        if category_opts['shift']: option_labels.append('Shift Directly to Inventory Cost')
+        if category_opts['overhead']: option_labels.append('BOM Overhead Expense')
+        if category_opts['monthly']: option_labels.append('Divide Expense Across Entire Month')
+        if option_labels:
+            used_transfer = (request.form.get('payment_transfer_type') == 'bill'
+                              and request.form.get('payment_transfer_target_id') and category_opts['purchase'])
+            used_shift = request.form.get('shift_to_inventory') == '1' and category_opts['shift']
+            used_overhead = is_overhead and category_opts['overhead']
+            used_monthly = form.is_monthly_divided.data and category_opts['monthly']
+            if not (used_transfer or used_shift or used_overhead or used_monthly):
+                flash(f'The "{picked_category.name}" category requires selecting one of: '
+                      f'{", ".join(option_labels)}.', 'danger')
+                return redirect(url_for('accounting.add_expense'))
+
         # Handle bill image upload
         bill_path = None
         if 'bill_image' in request.files:
@@ -2915,7 +2998,30 @@ def add_expense():
             else:
                 flash_msg = f'Expense(s) created and waiting for admin confirmation. PKR {base_amount} divided into {max(1, num_targets)} record(s).'
         # ─────────────────────────────────────────────────────────────────
-        
+
+        # ── Shift Directly to Inventory Cost (inline) ──────────────────────
+        # Lets the user skip the extra "create it, then shift it" round trip:
+        # ticking this on Add Expense applies the expense straight onto one
+        # or more inventory items' cost/quantity in the same request. Same
+        # eligibility rules as the standalone shift-to-inventory action
+        # (admin only, single plain non-overhead expense, not a payment
+        # transfer) — enforced here too since nothing has been committed yet.
+        shift_note = None
+        if (is_admin and not is_overhead and len(created_expenses) == 1
+                and request.form.get('shift_to_inventory') == '1'):
+            if request.form.get('payment_transfer_type') in ('sale', 'bill'):
+                db.session.rollback()
+                flash('Expense not created — it cannot both be shifted to inventory and linked to an '
+                      'invoice/purchase payment. Choose one.', 'danger')
+                return redirect(url_for('accounting.add_expense'))
+            try:
+                shift_note, _shift_applied = _apply_inventory_shift(created_expenses[0])
+            except ValueError as e:
+                db.session.rollback()
+                flash(f'Expense not created — {e}', 'danger')
+                return redirect(url_for('accounting.add_expense'))
+        # ─────────────────────────────────────────────────────────────────
+
         # Update expense settings next number
         settings.next_number = next_expense_num
 
@@ -2949,7 +3055,9 @@ def add_expense():
 
             log_activity('Accounting', f'Added Expense: {flash_msg}',
                         f'Total: {base_amount}, Mode: {mode}, Status: {target_status}')
-            
+
+            if shift_note:
+                flash_msg = f'{flash_msg} Shifted to inventory: {shift_note}'
             flash(flash_msg, 'success')
             return redirect(url_for('accounting.expenses'))
         except Exception as e:
@@ -2962,7 +3070,10 @@ def add_expense():
 
     expense_accounts = ExpenseAccount.query.filter_by(is_active=True).order_by(ExpenseAccount.name).all()
     expense_sources = ExpenseSource.query.filter_by(is_active=True).order_by(ExpenseSource.name).all()
-    return render_template('accounting/add_expense.html', form=form, expense_accounts=expense_accounts, expense_sources=expense_sources)
+    return render_template('accounting/add_expense.html', form=form, expense_accounts=expense_accounts,
+                           expense_sources=expense_sources, inventory_items=inventory_items,
+                           category_options=category_options, category_tree=_expense_category_tree(),
+                           initial_category_id=None)
 
 
 @bp.route('/expense/bulk-upload', methods=['GET', 'POST'])
@@ -3581,9 +3692,11 @@ def edit_expense(id):
     expense = Expense.query.get_or_404(id)
     form = ExpenseForm(obj=expense)
     
-    # Populate category choices
-    categories = ExpenseCategory.query.filter_by(is_active=True).order_by(ExpenseCategory.name).all()
-    form.category_id.choices = [(cat.id, cat.name) for cat in categories]
+    # Populate category choices - main categories each immediately followed
+    # by their own sub-categories, indented, so the hierarchy set up on
+    # Expense Categories is visible here too.
+    form.category_id.choices = _expense_category_choices()
+    category_options = _expense_category_options_map()
     
     # Populate vendor choices
     vendors = Vendor.query.filter_by(is_active=True).order_by(Vendor.name).all()
@@ -3603,11 +3716,16 @@ def edit_expense(id):
     else:
         manufactured_products = []
     form.product_id.choices = [(0, 'Select Finished Product (Optional)')] + [(p.id, p.name) for p in manufactured_products]
-    
+
+    # All active inventory items, for the inline "Shift Directly to Inventory
+    # Cost" picker (same source as the standalone shift-to-inventory modal
+    # on the Expenses list).
+    inventory_items = Product.query.filter_by(is_active=True).order_by(Product.name).all()
+
     # Populate BOM choices
     boms = BOM.query.filter_by(is_active=True).order_by(BOM.name).all()
     form.bom_id.choices = [(0, 'Select BOM (Optional)')] + [(b.id, b.name) for b in boms]
-    
+
     # Populate MO choices (only in-progress orders; no placeholder needed for multi-select)
     from app.models import ManufacturingOrder
     in_progress_mos = ManufacturingOrder.query.filter_by(status='In Progress').order_by(ManufacturingOrder.order_number).all()
@@ -3683,6 +3801,67 @@ def edit_expense(id):
             expense.is_bom_overhead = form.is_bom_overhead.data
             
         new_is_overhead = expense.is_bom_overhead if has_column('expenses', 'is_bom_overhead') else False
+
+        # Server-side backstop for the category restriction (the form's own
+        # script already hides/unchecks these client-side).
+        picked_category = ExpenseCategory.query.get(expense.category_id)
+        category_opts = picked_category.option_flags if picked_category else \
+            {'invoice': True, 'purchase': True, 'shift': True, 'overhead': True, 'monthly': True}
+        if new_is_overhead and not category_opts['overhead']:
+            db.session.rollback()
+            flash(f'The "{picked_category.name}" category does not allow BOM Overhead expenses. '
+                  f'Pick a different category, or enable it on Expense Categories.', 'danger')
+            return redirect(url_for('accounting.edit_expense', id=id))
+        if form.is_monthly_divided.data and not category_opts['monthly']:
+            db.session.rollback()
+            flash(f'The "{picked_category.name}" category does not allow dividing an expense across the month. '
+                  f'Pick a different category, or enable it on Expense Categories.', 'danger')
+            return redirect(url_for('accounting.edit_expense', id=id))
+        if request.form.get('shift_to_inventory') == '1' and not category_opts['shift']:
+            db.session.rollback()
+            flash(f'The "{picked_category.name}" category does not allow shifting to inventory cost. '
+                  f'Pick a different category, or enable it on Expense Categories.', 'danger')
+            return redirect(url_for('accounting.edit_expense', id=id))
+        if (request.form.get('payment_transfer_type') == 'bill' and request.form.get('payment_transfer_target_id')
+                and not category_opts['purchase']):
+            db.session.rollback()
+            flash(f'The "{picked_category.name}" category does not allow Add to Purchase Payment. '
+                  f'Pick a different category, or enable it on Expense Categories.', 'danger')
+            return redirect(url_for('accounting.edit_expense', id=id))
+        if (request.form.get('payment_transfer_type') == 'sale' and request.form.get('payment_transfer_target_id')
+                and not category_opts['invoice']
+                and not (expense.linked_sale_id and expense.linked_sale_id == request.form.get('payment_transfer_target_id', type=int))):
+            db.session.rollback()
+            flash(f'The "{picked_category.name}" category does not allow Add to Invoice Payment. '
+                  f'Pick a different category, or enable it on Expense Categories.', 'danger')
+            return redirect(url_for('accounting.edit_expense', id=id))
+
+        # If the category allows any of these (and, for Shift, it isn't
+        # already used up), one of them must actually be used - matches the
+        # form's own submit-time check.
+        already_shifted = getattr(expense, 'is_inventory_shifted', False)
+        option_labels = []
+        if category_opts['purchase']: option_labels.append('Add to Purchase Payment')
+        if category_opts['invoice']: option_labels.append('Add to Invoice Payment')
+        if category_opts['shift'] and not already_shifted: option_labels.append('Shift Directly to Inventory Cost')
+        if category_opts['overhead']: option_labels.append('BOM Overhead Expense')
+        if category_opts['monthly']: option_labels.append('Divide Expense Across Entire Month')
+        if option_labels:
+            transfer_target_id = request.form.get('payment_transfer_target_id', type=int)
+            used_purchase = (request.form.get('payment_transfer_type') == 'bill'
+                              and transfer_target_id and category_opts['purchase'])
+            used_invoice = (request.form.get('payment_transfer_type') == 'sale' and transfer_target_id
+                             and (category_opts['invoice']
+                                  or (expense.linked_sale_id and expense.linked_sale_id == transfer_target_id)))
+            used_shift = request.form.get('shift_to_inventory') == '1' and category_opts['shift'] and not already_shifted
+            used_overhead = new_is_overhead and category_opts['overhead']
+            used_monthly = form.is_monthly_divided.data and category_opts['monthly']
+            if not (used_purchase or used_invoice or used_shift or used_overhead or used_monthly):
+                db.session.rollback()
+                flash(f'The "{picked_category.name}" category requires selecting one of: '
+                      f'{", ".join(option_labels)}.', 'danger')
+                return redirect(url_for('accounting.edit_expense', id=id))
+
         pid_list = [p for p in (form.product_id.data or []) if p and p != 0]
         bid_list = [b for b in (form.bom_id.data or []) if b and b != 0]
         mo_list = [m for m in (form.mo_id.data or []) if m and m != 0]
@@ -3812,6 +3991,28 @@ def edit_expense(id):
                 else:
                     expense.daily_amount = 0
 
+        # ── Shift Directly to Inventory Cost (inline) ──────────────────────
+        # Same idea as on Add Expense: skip the extra "save it, then shift it"
+        # round trip. Only offered for a plain non-overhead expense that
+        # isn't already shifted (the standalone shift/unshift actions on the
+        # Expenses list still own the shift once it exists).
+        shift_note = None
+        if (not new_is_overhead and getattr(current_user, 'is_admin', False)
+                and not getattr(expense, 'is_inventory_shifted', False)
+                and request.form.get('shift_to_inventory') == '1'):
+            if request.form.get('payment_transfer_type') in ('sale', 'bill'):
+                db.session.rollback()
+                flash('Expense not updated — it cannot both be shifted to inventory and linked to an '
+                      'invoice/purchase payment. Choose one.', 'danger')
+                return redirect(url_for('accounting.edit_expense', id=expense.id))
+            try:
+                shift_note, _shift_applied = _apply_inventory_shift(expense)
+            except ValueError as e:
+                db.session.rollback()
+                flash(f'Expense not updated — {e}', 'danger')
+                return redirect(url_for('accounting.edit_expense', id=expense.id))
+        # ─────────────────────────────────────────────────────────────────
+
         # Update Manufacturing Order costs if MO association or amount changed
         from app.models import ManufacturingOrder
         
@@ -3923,7 +4124,10 @@ def edit_expense(id):
             except Exception as e:
                 print(f"Error creating BOM version: {e}")
         
-        flash('Expense updated successfully', 'success')
+        if shift_note:
+            flash(f'Expense updated successfully. Shifted to inventory: {shift_note}', 'success')
+        else:
+            flash('Expense updated successfully', 'success')
         return redirect(url_for('accounting.expenses'))
 
     from app.models import ExpenseAccount, ExpenseAccountTransaction
@@ -3944,13 +4148,63 @@ def edit_expense(id):
 
     return render_template('accounting/edit_expense.html', form=form, expense=expense,
                            expense_accounts=expense_accounts, existing_account_id=existing_account_id,
-                           existing_payment_transfer=existing_payment_transfer)
+                           existing_payment_transfer=existing_payment_transfer, inventory_items=inventory_items,
+                           category_options=category_options, category_tree=_expense_category_tree(),
+                           initial_category_id=expense.category_id)
+
+def _ordered_expense_categories():
+    """Main categories (parent_id is None), each immediately followed by its
+    own subcategories - both sorted by name. The order Add/Edit Expense's
+    category dropdown and the category list page use, so a sub-category
+    always renders right under its parent."""
+    from app.models import ExpenseCategory
+    mains = ExpenseCategory.query.filter_by(parent_id=None).order_by(ExpenseCategory.name).all()
+    ordered = []
+    for m in mains:
+        ordered.append(m)
+        ordered.extend(sorted(m.subcategories, key=lambda c: c.name))
+    return ordered
+
+
+def _expense_category_choices(active_only=True):
+    """(id, label) pairs for Add/Edit Expense's category SelectField, in
+    main-then-its-subcategories order, with subcategories indented so the
+    hierarchy is visible in a plain dropdown. Starts with a real placeholder
+    (id 0) - DataRequired() rejects it if actually submitted, and having it
+    means a fresh Add Expense form starts with nothing picked, so the
+    category-restriction script starts from "nothing allowed" instead of
+    whatever category happens to sort first."""
+    choices = [(0, '— Select Category —')]
+    for cat in _ordered_expense_categories():
+        if active_only and not cat.is_active:
+            continue
+        label = f'— {cat.name}' if cat.parent_id else cat.name
+        choices.append((cat.id, label))
+    return choices
+
+
+def _expense_category_options_map():
+    """{category_id: {'invoice':, 'purchase':, 'shift':, 'overhead':}} for
+    every category - embedded as JSON on Add/Edit Expense so the page can
+    show only the special options that category is configured to allow."""
+    from app.models import ExpenseCategory
+    return {cat.id: cat.option_flags for cat in ExpenseCategory.query.all()}
+
+
+def _expense_category_tree():
+    """Flat [{'id':, 'name':, 'parent_id':}, ...] for every active category -
+    embedded as JSON on Add/Edit Expense so its Category/Sub-Category
+    dropdown pair can be built and resolved client-side: pick a main
+    category first, then (only if it has any) its sub-categories populate a
+    second dropdown right under it."""
+    return [{'id': cat.id, 'name': cat.name, 'parent_id': cat.parent_id}
+            for cat in _ordered_expense_categories() if cat.is_active]
+
 
 @bp.route('/expense-categories')
 @login_required
 def expense_categories():
-    from app.models import ExpenseCategory
-    categories = ExpenseCategory.query.order_by(ExpenseCategory.name).all()
+    categories = _ordered_expense_categories()
     return render_template('accounting/expense_categories.html', categories=categories)
 
 @bp.route('/expense-category/add', methods=['GET', 'POST'])
@@ -3959,20 +4213,51 @@ def expense_categories():
 def add_expense_category():
     from app.models import ExpenseCategory
     from app.forms import ExpenseCategoryForm
-    
+
+    # Two dedicated entry points from the Expense Categories list - "Add
+    # Parent Category" (?type=main, the default) skips the parent picker
+    # entirely, "Add Sub Category" (?type=sub) requires picking one of the
+    # existing main categories to attach it to.
+    category_type = request.values.get('type', 'main')
+    if category_type not in ('main', 'sub'):
+        category_type = 'main'
+
     form = ExpenseCategoryForm()
+    main_categories = ExpenseCategory.query.filter_by(parent_id=None).order_by(ExpenseCategory.name).all()
+    if category_type == 'sub':
+        form.parent_id.choices = [(c.id, c.name) for c in main_categories] or [(0, '')]
+    else:
+        form.parent_id.choices = [(0, '— No Parent (Main Category) —')] + [(c.id, c.name) for c in main_categories]
+
     if form.validate_on_submit():
+        if category_type == 'sub' and not form.parent_id.data:
+            flash('Please select a parent category for this sub-category.', 'warning')
+            return render_template('accounting/add_expense_category.html', form=form,
+                                   category_type=category_type, main_categories=main_categories)
+
         category = ExpenseCategory(
             name=form.name.data,
-            description=form.description.data
+            description=form.description.data,
+            parent_id=form.parent_id.data if (category_type == 'sub' and form.parent_id.data) else None,
+            allow_invoice_payment=form.allow_invoice_payment.data,
+            allow_purchase_payment=form.allow_purchase_payment.data,
+            allow_inventory_shift=form.allow_inventory_shift.data,
+            allow_bom_overhead=form.allow_bom_overhead.data,
+            allow_monthly_divided=form.allow_monthly_divided.data,
         )
         db.session.add(category)
         db.session.commit()
-        log_activity('Accounting', f'Created Expense Category: {category.name}', f'ID: {category.id}')
+        log_activity('Accounting', f'Created Expense {"Sub-" if category.parent_id else ""}Category: {category.name}',
+                    f'ID: {category.id}')
         flash('Expense category added successfully', 'success')
         return redirect(url_for('accounting.expense_categories'))
-    
-    return render_template('accounting/add_expense_category.html', form=form)
+
+    parent_id = request.args.get('parent_id', type=int)
+    if request.method == 'GET' and parent_id:
+        form.parent_id.data = parent_id
+
+    return render_template('accounting/add_expense_category.html', form=form,
+                           category_type=category_type, main_categories=main_categories)
 
 @bp.route('/expense/<int:id>/confirm', methods=['POST'])
 @login_required
@@ -4074,18 +4359,40 @@ def reject_expense(id):
 def edit_expense_category(id):
     from app.models import ExpenseCategory
     from app.forms import ExpenseCategoryForm
-    
+
     category = ExpenseCategory.query.get_or_404(id)
     form = ExpenseCategoryForm(obj=category)
-    
+
+    # Only two levels deep: a category with subcategories of its own can't
+    # also become a sub-category, and it can't become its own parent.
+    main_categories = ExpenseCategory.query.filter(
+        ExpenseCategory.parent_id.is_(None), ExpenseCategory.id != category.id
+    ).order_by(ExpenseCategory.name).all()
+    form.parent_id.choices = [(0, '— No Parent (Main Category) —')] + [(c.id, c.name) for c in main_categories]
+
+    if request.method == 'GET':
+        form.parent_id.data = category.parent_id or 0
+
     if form.validate_on_submit():
+        new_parent_id = form.parent_id.data if form.parent_id.data else None
+        if new_parent_id and category.subcategories:
+            flash('This category already has sub-categories of its own, so it can\'t also become a '
+                  'sub-category. Move or remove its sub-categories first.', 'danger')
+            return render_template('accounting/edit_expense_category.html', form=form, category=category)
+
         category.name = form.name.data
         category.description = form.description.data
+        category.parent_id = new_parent_id
+        category.allow_invoice_payment = form.allow_invoice_payment.data
+        category.allow_purchase_payment = form.allow_purchase_payment.data
+        category.allow_inventory_shift = form.allow_inventory_shift.data
+        category.allow_bom_overhead = form.allow_bom_overhead.data
+        category.allow_monthly_divided = form.allow_monthly_divided.data
         db.session.commit()
         log_activity('Accounting', f'Updated Expense Category: {category.name}', f'ID: {category.id}')
         flash('Expense category updated successfully', 'success')
         return redirect(url_for('accounting.expense_categories'))
-    
+
     return render_template('accounting/edit_expense_category.html', form=form, category=category)
 
 @bp.route('/expense-category/<int:id>/delete', methods=['POST'])
@@ -4093,13 +4400,16 @@ def edit_expense_category(id):
 @permission_required('accounting', action='delete')
 def delete_expense_category(id):
     from app.models import ExpenseCategory
-    
+
     category = ExpenseCategory.query.get_or_404(id)
     # Check if category is being used
     if category.expenses:
         flash('Cannot delete category that has expenses associated with it', 'error')
         return redirect(url_for('accounting.expense_categories'))
-    
+    if category.subcategories:
+        flash('Cannot delete a category that still has sub-categories. Delete or reassign them first.', 'error')
+        return redirect(url_for('accounting.expense_categories'))
+
     cat_name = category.name
     db.session.delete(category)
     db.session.commit()

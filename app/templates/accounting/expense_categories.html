@@ -4,36 +4,74 @@
 
 {% from 'components/approval_notification.html' import pending_approval_alert with context %}
 
+{% block extra_css %}
+<style>
+    tr.subcategory-row td:first-child { padding-left: 2.5rem; position: relative; }
+    tr.subcategory-row td:first-child::before {
+        content: "\2514"; /* └ */
+        position: absolute;
+        left: 1.1rem;
+        color: #adb5bd;
+    }
+    .option-badge { font-size: .7rem; padding: .3em .55em; }
+    .option-badge.on { background: #0b8793; color: #fff; }
+    .option-badge.off { background: #e9ecef; color: #adb5bd; text-decoration: line-through; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     {{ pending_approval_alert('expense_category') }}
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Expense Categories</h2>
-                {% if current_user.has_permission('accounting', 'add') %}
-<a href="{{ url_for('accounting.add_expense_category') }}" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Add Category
-        </a>
-{% endif %}        
+        <div>
+            <h2 class="mb-1">Expense Categories</h2>
+            <p class="text-muted mb-0 small">Main categories can have one level of sub-categories. Each category
+                independently controls which special options (Invoice/Purchase payment selection, Inventory Shift,
+                BOM Overhead) are offered on Add/Edit Expense when it's selected.</p>
+        </div>
+        {% if current_user.has_permission('accounting', 'add') %}
+        <div class="btn-group text-nowrap">
+            <a href="{{ url_for('accounting.add_expense_category', type='main') }}" class="btn btn-primary" title="Add a new top-level category">
+                <i class="bi bi-folder-plus me-1"></i> Add Parent Category
+            </a>
+            <a href="{{ url_for('accounting.add_expense_category', type='sub') }}" class="btn btn-outline-primary" title="Add a category nested under an existing parent">
+                <i class="bi bi-code-branch me-1"></i> Add Sub Category
+            </a>
+        </div>
+        {% endif %}
     </div>
 
     <div class="card">
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-hover">
+                <table class="table table-hover align-middle">
                     <thead>
                         <tr>
                             <th>Name</th>
                             <th>Description</th>
-                            <th>Expenses Count</th>
+                            <th>Allowed Options</th>
+                            <th>Expenses</th>
                             <th class="no-export">Approval</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for category in categories %}
-                        <tr>
-                            <td><strong>{{ category.name }}</strong></td>
+                        <tr class="{{ 'subcategory-row' if category.parent_id else '' }}">
+                            <td>
+                                <strong>{{ category.name }}</strong>
+                                {% if not category.parent_id %}
+                                <span class="badge bg-light text-dark border ms-1">Main</span>
+                                {% endif %}
+                            </td>
                             <td>{{ category.description or '-' }}</td>
+                            <td>
+                                <span class="badge option-badge {{ 'on' if category.allow_invoice_payment else 'off' }}" title="Add to Invoice Payment">Invoice</span>
+                                <span class="badge option-badge {{ 'on' if category.allow_purchase_payment else 'off' }}" title="Add to Purchase Payment">Purchase</span>
+                                <span class="badge option-badge {{ 'on' if category.allow_inventory_shift else 'off' }}" title="Shift Directly to Inventory Cost">Inventory Shift</span>
+                                <span class="badge option-badge {{ 'on' if category.allow_bom_overhead else 'off' }}" title="BOM Overhead Expense">BOM Overhead</span>
+                                <span class="badge option-badge {{ 'on' if category.allow_monthly_divided else 'off' }}" title="Divide Expense Across Entire Month">Monthly Division</span>
+                            </td>
                             <td>
                                 <span class="badge bg-info">{{ category.expenses|length }}</span>
                             </td>
@@ -41,15 +79,22 @@
                                 {% from 'components/approval_widget.html' import approval_widget with context %}
                                 {{ approval_widget('expense_category', category) }}
                             </td>
-                            <td>
-                                                                {% if current_user.has_permission('accounting', 'edit') %}
-<a href="{{ url_for('accounting.edit_expense_category', id=category.id) }}" 
+                            <td class="text-nowrap">
+                                {% if not category.parent_id and current_user.has_permission('accounting', 'add') %}
+                                <a href="{{ url_for('accounting.add_expense_category', type='sub', parent_id=category.id) }}"
+                                   class="btn btn-sm btn-outline-secondary" title="Add Sub-Category">
+                                    <i class="fas fa-code-branch"></i>
+                                </a>
+                                {% endif %}
+                                {% if current_user.has_permission('accounting', 'edit') %}
+                                <a href="{{ url_for('accounting.edit_expense_category', id=category.id) }}"
                                    class="btn btn-sm btn-warning" title="Edit">
                                     <i class="fas fa-edit"></i>
                                 </a>
-{% endif %}                                
-                                {% if category.expenses %}
-                                <button class="btn btn-sm btn-secondary" disabled title="Cannot delete - has expenses">
+                                {% endif %}
+                                {% if category.expenses or category.subcategories %}
+                                <button class="btn btn-sm btn-secondary" disabled
+                                        title="{{ 'Cannot delete - has expenses' if category.expenses else 'Cannot delete - has sub-categories' }}">
                                     <i class="fas fa-trash"></i>
                                 </button>
                                 {% else %}
@@ -60,6 +105,11 @@
                             </td>
                         </tr>
                         {% endfor %}
+                        {% if not categories %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">No expense categories yet.</td>
+                        </tr>
+                        {% endif %}
                     </tbody>
                 </table>
             </div>

@@ -1,29 +1,99 @@
 {% extends "base.html" %}
 
-{% block title %}Add Expense Category{% endblock %}
+{% block title %}{{ 'Add Sub-Category' if category_type == 'sub' else 'Add Parent Category' }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
     <div class="row justify-content-center">
-        <div class="col-md-6">
+        <div class="col-md-7">
             <div class="card">
                 <div class="card-header">
-                    <h4>Add New Expense Category</h4>
+                    <h4>
+                        {% if category_type == 'sub' %}
+                        <i class="bi bi-code-branch me-1"></i> Add Sub-Category
+                        {% else %}
+                        <i class="bi bi-folder-plus me-1"></i> Add Parent Category
+                        {% endif %}
+                    </h4>
                 </div>
                 <div class="card-body">
+                    {% if category_type == 'sub' and not main_categories %}
+                    <div class="alert alert-warning mb-0">
+                        <i class="bi bi-exclamation-triangle me-1"></i> There are no parent categories yet.
+                        <a href="{{ url_for('accounting.add_expense_category', type='main') }}" class="alert-link">Add a Parent Category first</a>,
+                        then come back to add a sub-category under it.
+                    </div>
+                    {% else %}
                     <form method="POST">
                         {{ form.hidden_tag() }}
+                        <input type="hidden" name="type" value="{{ category_type }}">
                         <div class="mb-3">
                             <label class="form-label">Category Name</label>
                             {{ form.name(class="form-control", placeholder="e.g. Office Supplies, Travel, Utilities") }}
+                            {% for error in form.name.errors %}
+                            <div class="text-danger small mt-1">{{ error }}</div>
+                            {% endfor %}
                         </div>
+                        {% if category_type == 'sub' %}
+                        <div class="mb-3">
+                            <label class="form-label">Parent Category <span class="text-danger">*</span></label>
+                            {{ form.parent_id(class="form-control") }}
+                            <div class="form-text">This sub-category is created under the parent you pick here.</div>
+                            {% for error in form.parent_id.errors %}
+                            <div class="text-danger small mt-1">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
                         <div class="mb-3">
                             <label class="form-label">Description</label>
                             {{ form.description(class="form-control", rows=3, placeholder="Optional description for this category") }}
                         </div>
+
+                        <hr class="my-4">
+                        <h6 class="fw-bold mb-2"><i class="bi bi-toggles me-1"></i> Allowed Options on Add/Edit Expense</h6>
+                        <p class="text-muted small mb-3">When this category is picked on an expense, only the options checked here are offered. Leave all unchecked for a plain expense with no special options.</p>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <div class="form-check border rounded p-2">
+                                    {{ form.allow_invoice_payment(class="form-check-input") }}
+                                    <label class="form-check-label" for="allow_invoice_payment">Add to Invoice Payment</label>
+                                    <div class="form-text mt-0">Apply the expense as a real payment against a Sale Invoice.</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check border rounded p-2">
+                                    {{ form.allow_purchase_payment(class="form-check-input") }}
+                                    <label class="form-check-label" for="allow_purchase_payment">Add to Purchase Payment</label>
+                                    <div class="form-text mt-0">Apply the expense as a real payment against a Purchase Bill.</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check border rounded p-2">
+                                    {{ form.allow_inventory_shift(class="form-check-input") }}
+                                    <label class="form-check-label" for="allow_inventory_shift">Shift Directly to Inventory Cost</label>
+                                    <div class="form-text mt-0">Apply the expense onto one or more inventory items' cost/quantity.</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check border rounded p-2">
+                                    {{ form.allow_bom_overhead(class="form-check-input") }}
+                                    <label class="form-check-label" for="allow_bom_overhead">BOM Overhead Expense</label>
+                                    <div class="form-text mt-0">Check this if this expense should be counted towards manufacturing/BOM overhead costs.</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check border rounded p-2">
+                                    {{ form.allow_monthly_divided(class="form-check-input") }}
+                                    <label class="form-check-label" for="allow_monthly_divided">Divide Expense Across Entire Month</label>
+                                    <div class="form-text mt-0">Check this to divide this expense equally across a date range and display it as daily expense.</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <button type="submit" class="btn btn-success">Save Category</button>
                         <a href="{{ url_for('accounting.expense_categories') }}" class="btn btn-secondary">Cancel</a>
                     </form>
+                    {% endif %}
                 </div>
             </div>
         </div>

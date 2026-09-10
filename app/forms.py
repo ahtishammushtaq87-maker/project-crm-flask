@@ -564,6 +564,12 @@ class ExpenseCategoryForm(FlaskForm):
     name = StringField('Category Name', validators=[DataRequired()])
     description = TextAreaField('Description')
     expense_type = SelectField('Type', choices=[('operational', 'Operational'), ('capital', 'Capital'), ('maintenance', 'Maintenance')], default='operational')
+    parent_id = SelectField('Parent Category (optional)', coerce=int, validators=[Optional()])
+    allow_invoice_payment = BooleanField('Allow "Add to Invoice Payment" selection', default=False)
+    allow_purchase_payment = BooleanField('Allow "Add to Purchase Payment" selection', default=False)
+    allow_inventory_shift = BooleanField('Allow "Shift Directly to Inventory Cost"', default=False)
+    allow_bom_overhead = BooleanField('Allow "BOM Overhead Expense"', default=False)
+    allow_monthly_divided = BooleanField('Allow "Divide Expense Across Entire Month"', default=False)
 
 class AccountForm(FlaskForm):
     name = StringField('Account Name', validators=[DataRequired()])

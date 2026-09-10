@@ -1,174 +1,240 @@
 {% extends "base.html" %}
 
-{% block title %}Manufacturing Report{% endblock %}
+{% block title %}Manufacturing Fact Sheet{% endblock %}
 
 {% block extra_css %}
 <style>
-    .table>:not(caption)>*>* {
-        padding: .5rem 1.5rem;
+    .fact-sheet-box {
+        border: 1px solid #dee2e6;
+        border-radius: .5rem;
+        overflow: hidden;
+        height: 100%;
+    }
+    .fact-sheet-box .box-header {
+        background: #3f51b5;
+        color: #fff;
+        font-weight: 600;
+        font-size: .85rem;
+        letter-spacing: .03em;
+        padding: .5rem .9rem;
+    }
+    .fact-sheet-box .box-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: .5rem .9rem;
+        border-top: 1px solid #eef0f3;
+        font-size: .88rem;
+    }
+    .fact-sheet-box .box-row:nth-child(even) {
+        background: #f8f9fb;
+    }
+    .fact-sheet-box .box-row label {
+        color: #6c757d;
+        margin-bottom: 0;
+    }
+    .fact-sheet-box .box-row .form-control,
+    .fact-sheet-box .box-row .form-select {
+        max-width: 160px;
+        text-align: right;
+        font-weight: 600;
+    }
+    .fact-sheet-box .box-row .value {
+        font-weight: 700;
+    }
+    .fact-table th, .fact-table td {
+        white-space: nowrap;
+        font-size: .82rem;
+        vertical-align: middle;
+    }
+    .fact-table thead th {
+        background: #212529;
+        color: #fff;
+        text-align: center;
+    }
+    .fact-table td.num { text-align: right; }
+    .fact-table td.center { text-align: center; }
+    .fact-table tr.total-row td {
+        font-weight: 700;
+        background: #eef0f3;
+        border-top: 2px solid #495057;
+    }
+    .margin-status {
+        font-weight: 700;
+        font-size: .72rem;
+        letter-spacing: .02em;
+        padding: .2rem .5rem;
+        border-radius: .3rem;
+        white-space: nowrap;
+    }
+    .margin-status.success { background: #d1e7dd; color: #0f5132; }
+    .margin-status.warning { background: #fff3cd; color: #664d03; }
+    .margin-status.danger { background: #f8d7da; color: #842029; }
+
+    @media print {
+        .no-print { display: none !important; }
+        .fact-sheet-box { border: 1px solid #333; }
+    }
+
+    .drag-scroll {
+        cursor: grab;
+        user-select: none;
+    }
+    .drag-scroll.dragging {
+        cursor: grabbing;
     }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="fas fa-industry text-primary me-2"></i>Manufacturing Report</h2>
+    <div class="d-flex justify-content-between align-items-center mb-4 no-print">
+        <h2><i class="fas fa-industry text-primary me-2"></i>Manufacturing Fact Sheet</h2>
         <div class="btn-group">
             <button type="button" class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">
                 <i class="fas fa-download me-1"></i> Export Report
             </button>
             <ul class="dropdown-menu">
-                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='pdf', report_type='manufacturing', start_date=start_date, end_date=end_date, status=status, product_id=current_product_id) }}">PDF Document</a></li>
-                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='csv', report_type='manufacturing', start_date=start_date, end_date=end_date, status=status, product_id=current_product_id) }}">CSV File</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='pdf', report_type='manufacturing', month=month, year=year, expected_overhead=fs.expected_overhead, target_margin=(fs.target_margin*100)) }}">PDF Document</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='excel', report_type='manufacturing', month=month, year=year, expected_overhead=fs.expected_overhead, target_margin=(fs.target_margin*100)) }}">Excel File</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('reports.download_report', format='csv', report_type='manufacturing', month=month, year=year, expected_overhead=fs.expected_overhead, target_margin=(fs.target_margin*100)) }}">CSV File</a></li>
                 <li><a class="dropdown-item" href="javascript:void(0)" onclick="window.print()">Print Report</a></li>
             </ul>
         </div>
     </div>
 
-    <!-- Filters -->
-    <div class="card shadow-sm mb-4">
+    <!-- Month / Assumptions Form -->
+    <form method="GET" class="card shadow-sm mb-4 no-print">
         <div class="card-body">
-            <form method="GET" class="row g-3 align-items-end">
-                <div class="col-md-3">
-                    <label class="form-label small fw-bold">From Date</label>
-                    <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label small fw-bold">To Date</label>
-                    <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
-                </div>
+            <div class="row g-3 align-items-end">
                 <div class="col-md-2">
-                    <label class="form-label small fw-bold">Product</label>
-                    <select name="product_id" class="form-select">
-                        <option value="all">All Products</option>
-                        {% for p in products %}
-                        <option value="{{ p.id }}" {% if current_product_id == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+                    <label class="form-label small fw-bold">Month</label>
+                    <select name="month" class="form-select">
+                        {% for m in range(1, 13) %}
+                        <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ ['', 'January','February','March','April','May','June','July','August','September','October','November','December'][m] }}</option>
                         {% endfor %}
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label small fw-bold">Status</label>
-                    <select name="status" class="form-select">
-                        <option value="all" {% if status == 'all' %}selected{% endif %}>All Status</option>
-                        <option value="Draft" {% if status == 'Draft' %}selected{% endif %}>Draft</option>
-                        <option value="In Progress" {% if status == 'In Progress' %}selected{% endif %}>In Progress</option>
-                        <option value="Completed" {% if status == 'Completed' %}selected{% endif %}>Completed</option>
-                    </select>
+                    <label class="form-label small fw-bold">Year</label>
+                    <input type="number" name="year" class="form-control" value="{{ year }}">
                 </div>
-                <div class="col-md-2 d-flex gap-2">
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">Expected Labour + Factory Overhead (PKR)</label>
+                    <input type="number" step="0.01" name="expected_overhead" class="form-control" value="{{ '%.2f'|format(fs.expected_overhead) }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">Target Manufacturing Margin (%)</label>
+                    <input type="number" step="0.1" name="target_margin" class="form-control" value="{{ '%.1f'|format(fs.target_margin * 100) }}">
+                </div>
+                <div class="col-md-3 d-flex gap-2">
                     <button type="submit" class="btn btn-primary w-100">
-                        <i class="fas fa-filter me-1"></i> Filter
-                    </button>
-                    <button type="button" class="btn btn-info w-100" data-bs-toggle="modal" data-bs-target="#advancedFilterModal">
-                        <i class="fas fa-filter"></i>
+                        <i class="fas fa-sync me-1"></i> Recalculate
                     </button>
                 </div>
-            </form>
+            </div>
+            <div class="form-text mt-2">
+                Overhead defaults to this month's confirmed factory-overhead expenses + active staff payroll (PKR {{ '{:,.2f}'.format(fs.default_expected_overhead) }}). Override it above and Recalculate, same as the assumptions cell in the Excel fact sheet.
+            </div>
         </div>
+    </form>
+
+    <div class="text-center mb-4">
+        <h4 class="fw-bold mb-0">{{ company.name|upper }} - {{ fs.month_label }} MANUFACTURING / SALES FACT SHEET</h4>
     </div>
 
-    <!-- Summary Cards -->
+    <!-- Assumptions + Summary boxes -->
     <div class="row g-3 mb-4">
-        <div class="col-md-3">
-            <div class="card shadow-sm border-start border-primary border-4">
-                <div class="card-body">
-                    <h6 class="text-muted mb-1">Total Orders</h6>
-                    <h3 class="mb-0">{{ total_count }}</h3>
-                </div>
+        <div class="col-lg-6">
+            <div class="fact-sheet-box">
+                <div class="box-header">FACT SHEET ASSUMPTIONS</div>
+                <div class="box-row"><label>Expected Labour + Factory Overhead</label><span class="value">PKR {{ '{:,.2f}'.format(fs.expected_overhead) }}</span></div>
+                <div class="box-row"><label>Target Manufacturing Margin</label><span class="value">{{ '%.1f'|format(fs.target_margin * 100) }}%</span></div>
+                <div class="box-row"><label>Total Planned BOM / Material Cost</label><span class="value">PKR {{ '{:,.2f}'.format(fs.total_planned_bom_cost) }}</span></div>
+                <div class="box-row"><label>Overhead Loading Rate on BOM</label><span class="value">{{ '%.1f'|format(fs.overhead_loading_rate * 100) }}%</span></div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card shadow-sm border-start border-success border-4">
-                <div class="card-body">
-                    <h6 class="text-muted mb-1">Qty Produced</h6>
-                    <h3 class="mb-0">{{ total_qty }}</h3>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card shadow-sm border-start border-info border-4">
-                <div class="card-body">
-                    <h6 class="text-muted mb-1">Material Cost</h6>
-                    <h3 class="mb-0">PKR {{ "%.2f"|format(total_material) }}</h3>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card shadow-sm border-start border-warning border-4">
-                <div class="card-body">
-                    <h6 class="text-muted mb-1">Total Manufacturing Cost</h6>
-                    <h3 class="mb-0">PKR {{ "%.2f"|format(total_cost) }}</h3>
-                </div>
+        <div class="col-lg-6">
+            <div class="fact-sheet-box">
+                <div class="box-header">{{ fs.month_label }} SUMMARY</div>
+                <div class="box-row"><label>Planned Units</label><span class="value">{{ '{:,.0f}'.format(fs.totals.qty) }}</span></div>
+                <div class="box-row"><label>Total Manufacturing Cost</label><span class="value">PKR {{ '{:,.2f}'.format(fs.total_mfg_cost) }}</span></div>
+                <div class="box-row"><label>Total Sales Value</label><span class="value">PKR {{ '{:,.2f}'.format(fs.total_sales_value) }}</span></div>
+                <div class="box-row"><label>Overall Margin</label><span class="value">{{ '%.1f'|format(fs.overall_margin_pct * 100) }}%</span></div>
+                <div class="box-row"><label>Total Margin (PKR)</label><span class="value">PKR {{ '{:,.2f}'.format(fs.total_margin_amt) }}</span></div>
+                <div class="box-row"><label>Target Margin</label><span class="value">{{ '%.1f'|format(fs.target_margin * 100) }}%</span></div>
             </div>
         </div>
     </div>
 
-    <!-- Orders Table -->
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            if (typeof initBulkActions === 'function') {
-                initBulkActions('manufacturing');
-            }
-        });
-    </script>
+    <!-- SKU Table -->
     <div class="card shadow-sm">
         <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover mb-0 datatable-export" data-export-title="Manufacturing Report">
-                    <thead class="table-light">
+            <div class="table-responsive drag-scroll" id="factTableScroll">
+                <table class="table table-bordered table-hover mb-0 fact-table datatable-export" data-export-title="Manufacturing Fact Sheet">
+                    <thead>
                         <tr>
-                            <th class="text-center no-export" style="width: 40px;">
-                                <input type="checkbox" id="selectAll" class="form-check-input">
-                            </th>
-                            <th>Order #</th>
-                            <th>Date</th>
-                            <th>Product</th>
-                            <th class="text-center">Qty</th>
-                            <th>Material</th>
-                            <th>Labor</th>
-                            <th>Overhead</th>
-                            <th>Total Cost</th>
-                            <th class="text-center">Status</th>
+                            <th>SKU</th>
+                            <th>ITEM NAME</th>
+                            <th class="center">QTY</th>
+                            <th>BOM COST / UNIT</th>
+                            <th>OVERHEAD / UNIT</th>
+                            <th>TOTAL MFG COST / UNIT</th>
+                            <th>SELLING PRICE / UNIT</th>
+                            <th>MARGIN / UNIT</th>
+                            <th>MARGIN %</th>
+                            <th>TOTAL BOM</th>
+                            <th>TOTAL OVERHEAD</th>
+                            <th>TOTAL MFG COST</th>
+                            <th>TOTAL SALES VALUE</th>
+                            <th>TOTAL MARGIN</th>
+                            <th>MARGIN STATUS</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for o in orders %}
+                        {% for r in fs.rows %}
                         <tr>
-                            <td class="text-center no-export">
-                                <input type="checkbox" class="form-check-input manufacturing-checkbox" value="{{ o.id }}">
-                            </td>
-                            <td><span class="fw-bold">{{ o.order_number }}</span></td>
-                            <td>{{ o.start_date.strftime('%Y-%m-%d') if o.start_date else 'N/A' }}</td>
-                            <td class="{% if o.bom.product.margin_color %}text-{{ o.bom.product.margin_color }} fw-bold{% endif %}">{{ o.bom.product.name }}</td>
-                            <td class="text-center">{{ o.quantity_to_produce }}</td>
-                            <td>PKR {{ "%.2f"|format(o.actual_material_cost or 0) }}</td>
-                            <td>PKR {{ "%.2f"|format(o.actual_labor_cost or 0) }}</td>
-                            <td>
-                                {% if o.total_cost %}
-                                PKR {{ "%.2f"|format(o.total_cost - (o.actual_material_cost or 0) - (o.actual_labor_cost or 0)) }}
-                                {% else %}
-                                PKR 0.00
-                                {% endif %}
-                            </td>
-                            <td><span class="text-primary fw-bold">PKR {{ "%.2f"|format(o.total_cost or 0) }}</span></td>
-                            <td class="text-center">
-                                {% if o.status == 'Completed' %}
-                                <span class="badge bg-success">Completed</span>
-                                {% elif o.status == 'In Progress' %}
-                                <span class="badge bg-warning text-dark">In Progress</span>
-                                {% else %}
-                                <span class="badge bg-secondary">{{ o.status }}</span>
-                                {% endif %}
-                            </td>
+                            <td>{{ r.sku }}</td>
+                            <td class="text-wrap" style="white-space: normal; min-width: 260px;">{{ r.name }}</td>
+                            <td class="center">{{ '{:,.0f}'.format(r.qty) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(r.bom_cost_unit) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(r.overhead_unit) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(r.mfg_cost_unit) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(r.selling_price) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(r.margin_unit) }}</td>
+                            <td class="num">{{ '%.1f'|format(r.margin_pct * 100) }}%</td>
+                            <td class="num">{{ '{:,.2f}'.format(r.total_bom) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(r.total_overhead) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(r.total_mfg_cost) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(r.total_sales) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(r.total_margin) }}</td>
+                            <td class="center"><span class="margin-status {{ r.status_class }}">{{ r.status }}</span></td>
                         </tr>
                         {% endfor %}
-                        {% if not orders %}
+                        {% if not fs.rows %}
                         <tr>
-                            <td colspan="9" class="text-center py-5 text-muted">
+                            <td colspan="15" class="text-center py-5 text-muted">
                                 <i class="fas fa-search mb-3 d-block fa-2x"></i>
-                                No manufacturing records found for the selected criteria.
+                                No production targets (Planned Units) found for {{ fs.month_label }}.
+                                <a href="{{ url_for('production.index') }}">Set targets in the Production Target Tracker</a> to populate this fact sheet.
                             </td>
+                        </tr>
+                        {% else %}
+                        <tr class="total-row">
+                            <td colspan="2">TOTAL / WEIGHTED</td>
+                            <td class="center">{{ '{:,.0f}'.format(fs.totals.qty) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(fs.totals.bom_cost_unit) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(fs.totals.overhead_unit) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(fs.totals.mfg_cost_unit) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(fs.totals.selling_price) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(fs.totals.margin_unit) }}</td>
+                            <td class="num">{{ '%.1f'|format(fs.totals.margin_pct * 100) }}%</td>
+                            <td class="num">{{ '{:,.2f}'.format(fs.totals.total_bom) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(fs.totals.total_overhead) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(fs.totals.total_mfg_cost) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(fs.totals.total_sales) }}</td>
+                            <td class="num">{{ '{:,.2f}'.format(fs.totals.total_margin) }}</td>
+                            <td class="center"><span class="margin-status {{ fs.totals.status_class }}">{{ fs.totals.status }}</span></td>
                         </tr>
                         {% endif %}
                     </tbody>
@@ -176,5 +242,46 @@
             </div>
         </div>
     </div>
+
+    {% if fs.rows %}
+    <p class="text-muted small fst-italic mt-3 mb-0">
+        NOTE: Overhead is allocated proportionally to BOM/material cost using the expected labour + factory overhead of
+        PKR {{ '{:,.2f}'.format(fs.expected_overhead) }} for {{ fs.month_label }}. Margin shown is manufacturing margin
+        before sales/admin expenses, discounts, freight, warranty, bad debt, taxes, and financing costs.
+    </p>
+    {% endif %}
 </div>
+
+<script>
+    (function() {
+        var el = document.getElementById('factTableScroll');
+        if (!el) return;
+        var isDown = false, startX = 0, startScroll = 0, moved = false;
+
+        el.addEventListener('mousedown', function(e) {
+            isDown = true;
+            moved = false;
+            el.classList.add('dragging');
+            startX = e.pageX;
+            startScroll = el.scrollLeft;
+        });
+        window.addEventListener('mouseup', function() {
+            isDown = false;
+            el.classList.remove('dragging');
+        });
+        window.addEventListener('mousemove', function(e) {
+            if (!isDown) return;
+            var delta = e.pageX - startX;
+            if (Math.abs(delta) > 3) moved = true;
+            el.scrollLeft = startScroll - delta;
+        });
+        // Prevent text-selection clicks from being treated as a drag once released.
+        el.addEventListener('click', function(e) {
+            if (moved) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }, true);
+    })();
+</script>
 {% endblock %}

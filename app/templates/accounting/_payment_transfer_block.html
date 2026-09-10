@@ -14,7 +14,7 @@
     <div class="form-check form-switch">
         <input class="form-check-input" type="checkbox" id="paymentTransferEnabled">
         <label class="form-check-label fw-semibold" for="paymentTransferEnabled">
-            <i class="bi bi-arrow-left-right me-1"></i> Add this to Invoice / Purchase Payment
+            <i class="bi bi-arrow-left-right me-1"></i> <span id="paymentTransferLabelText">Add this to Invoice / Purchase Payment</span>
         </label>
     </div>
     <div class="text-muted small mt-1 mb-2">
@@ -96,10 +96,18 @@ document.addEventListener('DOMContentLoaded', function () {
         return txnDebitRadio ? (txnDebitRadio.checked ? 'debit' : 'credit') : 'credit';
     }
 
+    // The category picked on the expense can further restrict which of
+    // Sale/Bill (or neither) is offered here, on top of the Debit/Credit
+    // gating above — set by add_expense.html/edit_expense.html's own
+    // category-options script via window.__categoryTransferAllowed =
+    // {sale: bool, bill: bool} and a call to window.__applyTransferGating().
+    // Defaults to "neither allowed" (this block starts hidden) until the
+    // category script resolves the real category and corrects it.
     function applyTransferGating() {
         const mode = currentTxnMode();
-        const saleAllowed = mode === 'debit' || allowLegacySale;
-        const billAllowed = mode === 'credit';
+        const catAllowed = window.__categoryTransferAllowed || {sale: false, bill: false};
+        const saleAllowed = (mode === 'debit' || allowLegacySale) && catAllowed.sale;
+        const billAllowed = mode === 'credit' && catAllowed.bill;
 
         typeSaleWrap.style.display = saleAllowed ? '' : 'none';
         typeBillWrap.style.display = billAllowed ? '' : 'none';
@@ -110,7 +118,31 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!saleAllowed && typeSale.checked) { typeBill.checked = true; changed = true; }
         if (!billAllowed && typeBill.checked) { typeSale.checked = true; changed = true; }
         if (changed) initSelect2();
+
+        // Hides the whole switch when neither is allowed, but never forces
+        // enabledCb off itself - if it's already checked (e.g. restoring an
+        // existing linked Sale/Bill on Edit Expense), that value still
+        // submits with the form even while invisible, rather than silently
+        // dropping an existing link just because the category was
+        // restricted after the fact.
+        const paymentTransferBlock = document.getElementById('paymentTransferBlock');
+        if (paymentTransferBlock) {
+            const anyAllowed = saleAllowed || billAllowed;
+            paymentTransferBlock.style.display = anyAllowed ? '' : 'none';
+        }
+
+        // Top toggle's own label names whichever one is actually on offer,
+        // instead of always saying both - "Add this to Purchase Payment"
+        // when only Bill is allowed, "Add this to Invoice Payment" when
+        // only Sale is, and the combined wording when both are.
+        const labelText = document.getElementById('paymentTransferLabelText');
+        if (labelText) {
+            if (saleAllowed && billAllowed) labelText.textContent = 'Add this to Invoice / Purchase Payment';
+            else if (saleAllowed) labelText.textContent = 'Add this to Invoice Payment';
+            else if (billAllowed) labelText.textContent = 'Add this to Purchase Payment';
+        }
     }
+    window.__applyTransferGating = applyTransferGating;
     applyTransferGating();
     if (txnDebitRadio) {
         const txnCreditRadio = document.getElementById('txnCredit');

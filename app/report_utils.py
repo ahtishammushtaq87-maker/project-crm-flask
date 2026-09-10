@@ -1,7 +1,7 @@
 import pandas as pd
 from io import BytesIO
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter, landscape
+from reportlab.lib.pagesizes import letter, legal, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -18,6 +18,149 @@ def generate_excel(data, sheet_name="Report"):
         df.to_excel(writer, sheet_name=sheet_name, index=False)
     output.seek(0)
     return output
+
+def generate_manufacturing_fact_sheet_excel(fs, company_name=None):
+    """Manufacturing/Sales Fact Sheet workbook - replicates the layout of the
+    manually-built monthly fact sheet: a merged title row, a two-box
+    assumptions/summary header (matching app/templates/reports/manufacturing_report.html),
+    then the per-SKU pricing/margin table with a weighted TOTAL row and
+    colour-coded margin status, and a footnote.
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    NAVY = 'FF3F51B5'
+    LIGHT_GRAY = 'FFF1F3F5'
+    WHITE = 'FFFFFFFF'
+    GREEN = 'FF198754'
+    AMBER = 'FFB8860B'
+    RED = 'FFDC3545'
+    DARK = 'FF212529'
+    status_color = {'success': GREEN, 'warning': AMBER, 'danger': RED}
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Fact Sheet'
+
+    NCOLS = 15
+    thin = Side(style='thin', color='FFDDDDDD')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def set_cell(row, col, value, *, bold=False, fill=None, font_color=None, fmt=None,
+                 align='left', size=11, italic=False):
+        c = ws.cell(row=row, column=col, value=value)
+        c.font = Font(bold=bold, italic=italic, size=size,
+                       color=font_color or ('FFFFFFFF' if fill else 'FF212529'))
+        if fill:
+            c.fill = PatternFill('solid', fgColor=fill)
+        if fmt:
+            c.number_format = fmt
+        c.alignment = Alignment(horizontal=align, vertical='center', wrap_text=(align == 'wrap'))
+        c.border = border
+        return c
+
+    # Title
+    title = f"{(company_name or 'COMPANY').upper()} - {fs['month_label']} MANUFACTURING / SALES FACT SHEET"
+    set_cell(1, 1, title, bold=True, size=14, align='center')
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=NCOLS)
+    ws.row_dimensions[1].height = 26
+
+    money_fmt = '#,##0.00'
+    pct_fmt = '0.0%'
+    int_fmt = '#,##0'
+
+    # Assumptions box (A3:E7) and Summary box (G3:O7)
+    set_cell(3, 1, 'FACT SHEET ASSUMPTIONS', bold=True, fill=NAVY, align='center')
+    ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=2)
+    set_cell(3, 7, f"{fs['month_label']} SUMMARY", bold=True, fill=NAVY, align='center')
+    ws.merge_cells(start_row=3, start_column=7, end_row=3, end_column=8)
+
+    assumption_rows = [
+        ('Expected Labour + Factory Overhead', fs['expected_overhead'], money_fmt),
+        ('Target Manufacturing Margin', fs['target_margin'], pct_fmt),
+        ('Total Planned BOM / Material Cost', fs['total_planned_bom_cost'], money_fmt),
+        ('Overhead Loading Rate on BOM', fs['overhead_loading_rate'], pct_fmt),
+    ]
+    for i, (label, value, fmt) in enumerate(assumption_rows):
+        r = 4 + i
+        fill = LIGHT_GRAY if i % 2 == 1 else None
+        set_cell(r, 1, label, fill=fill, font_color='FF6C757D')
+        set_cell(r, 2, value, bold=True, fmt=fmt, fill=fill, align='right')
+
+    summary_rows = [
+        ('Planned Units', fs['totals']['qty'], int_fmt),
+        ('Total Manufacturing Cost', fs['total_mfg_cost'], money_fmt),
+        ('Total Sales Value', fs['total_sales_value'], money_fmt),
+        ('Overall Margin', fs['overall_margin_pct'], pct_fmt),
+        ('Total Margin (PKR)', fs['total_margin_amt'], money_fmt),
+        ('Target Margin', fs['target_margin'], pct_fmt),
+    ]
+    for i, (label, value, fmt) in enumerate(summary_rows):
+        r = 4 + i
+        fill = LIGHT_GRAY if i % 2 == 1 else None
+        set_cell(r, 7, label, fill=fill, font_color='FF6C757D')
+        set_cell(r, 8, value, bold=True, fmt=fmt, fill=fill, align='right')
+
+    # Header row
+    header_row = 10
+    headers = ['SKU', 'ITEM NAME', 'QTY', 'BOM COST / UNIT', 'OVERHEAD / UNIT',
+               'TOTAL MFG COST / UNIT', 'SELLING PRICE / UNIT', 'MARGIN / UNIT',
+               'MARGIN %', 'TOTAL BOM', 'TOTAL OVERHEAD', 'TOTAL MFG COST',
+               'TOTAL SALES VALUE', 'TOTAL MARGIN', 'MARGIN STATUS']
+    for col, h in enumerate(headers, start=1):
+        set_cell(header_row, col, h, bold=True, fill=DARK, align='center')
+
+    def data_row(r, row, bold=False):
+        fill = LIGHT_GRAY if bold else None
+        set_cell(r, 1, row['sku'] if 'sku' in row else 'TOTAL', bold=bold, fill=fill)
+        set_cell(r, 2, row.get('name', 'WEIGHTED AVERAGE'), bold=bold, fill=fill)
+        set_cell(r, 3, row['qty'], bold=bold, fmt=int_fmt, fill=fill, align='right')
+        set_cell(r, 4, row['bom_cost_unit'], bold=bold, fmt=money_fmt, fill=fill, align='right')
+        set_cell(r, 5, row['overhead_unit'], bold=bold, fmt=money_fmt, fill=fill, align='right')
+        set_cell(r, 6, row['mfg_cost_unit'], bold=bold, fmt=money_fmt, fill=fill, align='right')
+        set_cell(r, 7, row['selling_price'], bold=bold, fmt=money_fmt, fill=fill, align='right')
+        set_cell(r, 8, row['margin_unit'], bold=bold, fmt=money_fmt, fill=fill, align='right')
+        set_cell(r, 9, row['margin_pct'], bold=bold, fmt=pct_fmt, fill=fill, align='right')
+        set_cell(r, 10, row['total_bom'], bold=bold, fmt=money_fmt, fill=fill, align='right')
+        set_cell(r, 11, row['total_overhead'], bold=bold, fmt=money_fmt, fill=fill, align='right')
+        set_cell(r, 12, row['total_mfg_cost'], bold=bold, fmt=money_fmt, fill=fill, align='right')
+        set_cell(r, 13, row['total_sales'], bold=bold, fmt=money_fmt, fill=fill, align='right')
+        set_cell(r, 14, row['total_margin'], bold=bold, fmt=money_fmt, fill=fill, align='right')
+        set_cell(r, 15, row['status'], bold=True, fill=fill,
+                 font_color=status_color.get(row['status_class'], 'FF6C757D'), align='center')
+
+    r = header_row + 1
+    for row in fs['rows']:
+        data_row(r, row)
+        r += 1
+    total_row_num = r
+    data_row(total_row_num, dict(fs['totals'], sku='TOTAL', name='WEIGHTED AVERAGE'), bold=True)
+
+    # Footnote
+    note_row = total_row_num + 2
+    note = (f"NOTE: Overhead is allocated proportionally to BOM/material cost using the expected labour + "
+            f"factory overhead of PKR {fs['expected_overhead']:,.2f} for {fs['month_label']}. Margin shown is "
+            "manufacturing margin before sales/admin expenses, discounts, freight, warranty, bad debt, taxes, "
+            "and financing costs.")
+    c = ws.cell(row=note_row, column=1, value=note)
+    c.font = Font(italic=True, size=9, color='FF6C757D')
+    c.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+    ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=NCOLS)
+    ws.row_dimensions[note_row].height = 30
+
+    # Column widths
+    widths = [12, 42, 8, 14, 13, 16, 15, 13, 10, 14, 14, 15, 16, 14, 16]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
 
 def generate_csv(data):
     """
@@ -86,6 +229,164 @@ def generate_pdf(data, title, headers, company_info=None):
     elements.append(Spacer(1, 0.5 * inch))
     elements.append(Paragraph(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
     
+    doc.build(elements)
+    output.seek(0)
+    return output
+
+
+def generate_manufacturing_fact_sheet_pdf(fs, company_info=None):
+    """Manufacturing/Sales Fact Sheet PDF - mirrors the on-screen page
+    (app/templates/reports/manufacturing_report.html): an assumptions box
+    and a summary box side by side, followed by the per-SKU pricing/margin
+    table with a weighted TOTAL row and colour-coded margin status.
+    """
+    GREEN = colors.HexColor('#198754')
+    RED = colors.HexColor('#dc3545')
+    AMBER = colors.HexColor('#b8860b')
+    MUTED = colors.HexColor('#6c757d')
+    HEAD_BG = colors.HexColor('#3f51b5')
+    GRAY_BG = colors.HexColor('#f1f3f5')
+    LINE = colors.HexColor('#e0e0e0')
+
+    status_color = {'success': GREEN, 'warning': AMBER, 'danger': RED}
+
+    output = BytesIO()
+    doc = SimpleDocTemplate(output, pagesize=landscape(legal),
+                            rightMargin=24, leftMargin=24,
+                            topMargin=24, bottomMargin=24)
+    elements = []
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle('FSTitle', parent=styles['Heading1'], alignment=1, fontSize=15)
+    sub_style = ParagraphStyle('FSSub', parent=styles['Normal'], alignment=1, textColor=MUTED)
+
+    if company_info:
+        elements.append(Paragraph(f"<b>{company_info.get('name', 'Company Report')}</b>",
+                                   ParagraphStyle('co', parent=styles['Heading2'], alignment=1)))
+        elements.append(Spacer(1, 0.05 * inch))
+
+    elements.append(Paragraph(f"MANUFACTURING / SALES FACT SHEET &mdash; {fs['month_label']}", title_style))
+    elements.append(Spacer(1, 0.15 * inch))
+
+    def money(n):
+        return f"{n:,.2f}"
+
+    label_style = ParagraphStyle('lbl', parent=styles['Normal'], fontSize=9, textColor=MUTED)
+    value_style = ParagraphStyle('val', parent=styles['Normal'], fontSize=10.5, fontName='Helvetica-Bold')
+    box_title_style = ParagraphStyle('boxTitle', parent=styles['Normal'], fontSize=10,
+                                      fontName='Helvetica-Bold', textColor=colors.white)
+
+    def info_box(title, rows):
+        data = [[Paragraph(title, box_title_style), '']]
+        cmds = [
+            ('SPAN', (0, 0), (-1, 0)),
+            ('BACKGROUND', (0, 0), (-1, 0), HEAD_BG),
+            ('GRID', (0, 0), (-1, -1), 0.4, LINE),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ]
+        for r, (label, value) in enumerate(rows, start=1):
+            data.append([Paragraph(label, label_style), Paragraph(value, value_style)])
+            if r % 2 == 0:
+                cmds.append(('BACKGROUND', (0, r), (-1, r), GRAY_BG))
+        t = Table(data, colWidths=[doc.width * 0.47 * 0.62, doc.width * 0.47 * 0.38])
+        t.setStyle(TableStyle(cmds))
+        return t
+
+    assumptions = info_box('FACT SHEET ASSUMPTIONS', [
+        ('Expected Labour + Factory Overhead', money(fs['expected_overhead'])),
+        ('Target Manufacturing Margin', f"{fs['target_margin'] * 100:.1f}%"),
+        ('Total Planned BOM / Material Cost', money(fs['total_planned_bom_cost'])),
+        ('Overhead Loading Rate on BOM', f"{fs['overhead_loading_rate'] * 100:.1f}%"),
+    ])
+    summary = info_box(f"{fs['month_label']} SUMMARY", [
+        ('Planned Units', f"{fs['totals']['qty']:,.0f}"),
+        ('Total Manufacturing Cost', money(fs['total_mfg_cost'])),
+        ('Total Sales Value', money(fs['total_sales_value'])),
+        ('Overall Margin', f"{fs['overall_margin_pct'] * 100:.1f}%"),
+        ('Total Margin (PKR)', money(fs['total_margin_amt'])),
+        ('Target Margin', f"{fs['target_margin'] * 100:.1f}%"),
+    ])
+
+    boxes = Table([[assumptions, '', summary]],
+                   colWidths=[doc.width * 0.47, doc.width * 0.06, doc.width * 0.47])
+    boxes.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP')]))
+    elements.append(boxes)
+    elements.append(Spacer(1, 0.25 * inch))
+
+    # SKU table
+    headers = ['SKU', 'Item Name', 'Qty', 'BOM/Unit', 'OH/Unit', 'Mfg Cost/Unit',
+               'Sell Price/Unit', 'Margin/Unit', 'Margin %', 'Total Mfg Cost',
+               'Total Sales', 'Total Margin', 'Status']
+    hdr_style = ParagraphStyle('hdr', parent=styles['Normal'], fontSize=8, fontName='Helvetica-Bold',
+                                alignment=1, textColor=colors.whitesmoke)
+    cell_style = ParagraphStyle('cell', parent=styles['Normal'], fontSize=7.5, alignment=1)
+    name_style = ParagraphStyle('name', parent=styles['Normal'], fontSize=7, alignment=0)
+
+    rows = [[Paragraph(h, hdr_style) for h in headers]]
+    row_cmds = []
+
+    def add_data_row(r, bold=False):
+        idx = len(rows)
+        status_style = ParagraphStyle(f'status{idx}', parent=cell_style,
+                                       textColor=status_color.get(r['status_class'], MUTED),
+                                       fontName='Helvetica-Bold' if bold else 'Helvetica')
+        base = ParagraphStyle(f'c{idx}', parent=cell_style,
+                               fontName='Helvetica-Bold' if bold else 'Helvetica')
+        nm_style = ParagraphStyle(f'n{idx}', parent=name_style,
+                                   fontName='Helvetica-Bold' if bold else 'Helvetica')
+        rows.append([
+            Paragraph(str(r.get('sku', 'TOTAL')), base),
+            Paragraph(str(r.get('name', 'WEIGHTED AVERAGE')), nm_style),
+            Paragraph(f"{r['qty']:,.0f}", base),
+            Paragraph(money(r['bom_cost_unit']), base),
+            Paragraph(money(r['overhead_unit']), base),
+            Paragraph(money(r['mfg_cost_unit']), base),
+            Paragraph(money(r['selling_price']), base),
+            Paragraph(money(r['margin_unit']), base),
+            Paragraph(f"{r['margin_pct'] * 100:.1f}%", base),
+            Paragraph(money(r['total_mfg_cost']), base),
+            Paragraph(money(r['total_sales']), base),
+            Paragraph(money(r['total_margin']), base),
+            Paragraph(r['status'], status_style),
+        ])
+        if bold:
+            row_cmds.append(('BACKGROUND', (0, idx), (-1, idx), GRAY_BG))
+
+    for r in fs['rows']:
+        add_data_row(r)
+    add_data_row(fs['totals'], bold=True)
+
+    # Normalize so the fractions always sum to exactly 1 - a raw sum > 1 here
+    # previously made the table wider than the page and pushed the rightmost
+    # columns (Total Sales / Total Margin / Status) off the printable area.
+    col_weights = [0.07, 0.20, 0.05, 0.075, 0.075, 0.08, 0.08, 0.08, 0.06, 0.09, 0.09, 0.09, 0.07]
+    weight_total = sum(col_weights)
+    col_widths = [doc.width * w / weight_total for w in col_weights]
+    t = Table(rows, colWidths=col_widths, repeatRows=1)
+    style_cmds = [
+        ('BACKGROUND', (0, 0), (-1, 0), HEAD_BG),
+        ('GRID', (0, 0), (-1, -1), 0.4, LINE),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ] + row_cmds
+    t.setStyle(TableStyle(style_cmds))
+    elements.append(t)
+    elements.append(Spacer(1, 0.2 * inch))
+
+    note = ("NOTE: Overhead is allocated proportionally to BOM/material cost using the expected "
+            f"labour + factory overhead of PKR {money(fs['expected_overhead'])} for {fs['month_label']}. "
+            "Margin shown is manufacturing margin before sales/admin expenses, discounts, freight, "
+            "warranty, bad debt, taxes, and financing costs.")
+    elements.append(Paragraph(note, ParagraphStyle('note', parent=styles['Normal'], fontSize=7.5,
+                                                     textColor=MUTED, fontName='Helvetica-Oblique')))
+    elements.append(Spacer(1, 0.15 * inch))
+    elements.append(Paragraph(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                               ParagraphStyle('gen', parent=styles['Normal'], fontSize=8, textColor=MUTED)))
+
     doc.build(elements)
     output.seek(0)
     return output
