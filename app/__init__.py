@@ -32,7 +32,7 @@ def create_app(config_class=Config):
             StockMovement, Company, InvoiceSettings, PurchaseSettings, ExpenseSettings,
             SaleReturn, SaleReturnItem, Task, BOM, BOMItem, Staff,
             Attendance, SalaryAdvance, SalaryPayment, ManufacturingOrder,
-            ManufacturingOrderItem, MonthlyTarget, VendorAdvance, CustomerAdvance,
+            ManufacturingOrderItem, ManufacturingOrderStaff, MonthlyTarget, VendorAdvance, CustomerAdvance,
             PurchaseOrder, PurchaseOrderItem, CostPriceHistory, BOMVersion,
             BOMVersionItem, ProductionTarget, ProductionLog, PDProject,
             PDProjectBOM, PDComponent, PDTooling, PDTesting, PDApproval, PDAsset,
@@ -85,6 +85,7 @@ def create_app(config_class=Config):
             'salary_payments': SalaryPayment,
             'manufacturing_orders': ManufacturingOrder,
             'manufacturing_order_items': ManufacturingOrderItem,
+            'manufacturing_order_staff': ManufacturingOrderStaff,
             'monthly_targets': MonthlyTarget,
             'vendor_advances': VendorAdvance,
             'customer_advances': CustomerAdvance,
@@ -635,9 +636,10 @@ def create_app(config_class=Config):
         except Exception:
             return dict(recovery_escalation_alerts=[])
 
-    from app.scheduler import start_recovery_scheduler, start_backup_scheduler, start_production_target_scheduler
+    from app.scheduler import start_recovery_scheduler, start_backup_scheduler, start_production_target_scheduler, start_mo_timer_scheduler
     start_recovery_scheduler(app)
     start_backup_scheduler(app)
     start_production_target_scheduler(app)
+    start_mo_timer_scheduler(app)
 
     return app

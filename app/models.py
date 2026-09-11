@@ -3368,6 +3368,15 @@ class ManufacturingOrder(db.Model):
     produced_qty = db.Column(db.Float, default=0)
     start_date = db.Column(db.Date, nullable=True)
     end_date = db.Column(db.Date, nullable=True)
+    start_time = db.Column(db.Time, nullable=True)  # Optional time-of-day for start_date
+    end_time = db.Column(db.Time, nullable=True)    # Optional deadline time-of-day for end_date
+    # Auto-stop timer: once deadline_datetime passes, a background job (or the
+    # orders list view as a fallback) flips this flag so the order moves from
+    # the Active tab to the Previous tab - purely a label/organizational move,
+    # it does NOT touch status, stock, or any completion math (see
+    # finalize_overdue_manufacturing_orders in app/services/manufacturing_timer.py).
+    timer_stopped = db.Column(db.Boolean, default=False, index=True)
+    timer_stopped_at = db.Column(db.DateTime, nullable=True)
     actual_labor_cost = db.Column(db.Float, default=0)
     actual_material_cost = db.Column(db.Float, default=0)
     actual_overhead_cost = db.Column(db.Float, default=0)
@@ -3389,6 +3398,16 @@ class ManufacturingOrder(db.Model):
     @property
     def remaining_qty(self):
         return max(0, self.quantity_to_produce - (self.produced_qty or 0))
+
+    @property
+    def deadline_datetime(self):
+        """The exact moment this order's timer reaches zero. Falls back to
+        end-of-day when no explicit end_time was set, so orders created
+        before this feature existed keep behaving the same way."""
+        if not self.end_date:
+            return None
+        t = self.end_time or dt_time(23, 59, 59)
+        return datetime.combine(self.end_date, t)
 
 class ManufacturingOrderHistory(db.Model):
     """Tracks partial completions of a Manufacturing Order"""
@@ -3422,6 +3441,30 @@ class ManufacturingOrderItem(db.Model):
     warehouse = db.relationship('Warehouse', foreign_keys=[warehouse_id])
     
     component = db.relationship('Product', foreign_keys=[component_id])
+
+class ManufacturingOrderStaff(db.Model):
+    """Staff working on a Manufacturing Order - assigning staff here makes
+    the order's labor cost auto-compute from HR salaries instead of the
+    older BOM.labor_cost x quantity estimate: each staff member's daily
+    rate (Staff.daily_salary, falling back to monthly_salary / 30) is
+    multiplied by the number of days in the order's start/end date range.
+    Leaving an order with no staff assigned keeps the original BOM-based
+    calculation untouched, so existing orders are unaffected."""
+    __tablename__ = 'manufacturing_order_staff'
+
+    id = db.Column(db.Integer, primary_key=True)
+    mo_id = db.Column(db.Integer, db.ForeignKey('manufacturing_orders.id'), nullable=False, index=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=False, index=True)
+    daily_rate = db.Column(db.Float, default=0)   # snapshot of the rate used at assignment/recalculation time
+    days = db.Column(db.Float, default=0)          # days in the order's start/end date range
+    labor_cost = db.Column(db.Float, default=0)    # daily_rate * days - this staff member's share
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    staff = db.relationship('Staff')
+    order = db.relationship('ManufacturingOrder',
+                            backref=db.backref('staff_assignments', lazy=True, cascade='all, delete-orphan'))
+
+    __table_args__ = (db.UniqueConstraint('mo_id', 'staff_id', name='uq_mo_staff_once'),)
 
 class MonthlyTarget(db.Model):
     """Monthly target model for KPIs"""

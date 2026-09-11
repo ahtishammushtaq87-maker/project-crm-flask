@@ -61,6 +61,12 @@
         {% if adm or u.can_view_salesmen %}
         <a class="nav-link" href="{{ url_for('sales.salesmen_list') }}">Salesmen</a>
         {% endif %}
+        {% if adm or u.can_view_profit_loss %}
+        <a class="nav-link fw-bold text-warning" href="{{ url_for('reports.profit_loss_report') }}">Profit &amp; Loss</a>
+        {% endif %}
+        {% if adm or u.can_view_reports %}
+        <a class="nav-link" href="{{ url_for('reports.sales_report') }}">Sales Report</a>
+        {% endif %}
     </div>
     {% endif %}
 
@@ -116,6 +122,9 @@
         {% endif %}
         {% if adm or u.can_view_production %}
         <a class="nav-link" href="{{ url_for('production.index') }}">Target Tracker</a>
+        {% endif %}
+        {% if adm or u.can_view_reports %}
+        <a class="nav-link" href="{{ url_for('reports.manufacturing_report') }}">Manufacturing Fact Sheet</a>
         {% endif %}
     </div>
     {% endif %}

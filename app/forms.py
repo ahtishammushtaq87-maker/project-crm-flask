@@ -1,7 +1,7 @@
 from flask_wtf import FlaskForm
 from wtforms import StringField, FloatField, IntegerField, SelectField, TextAreaField, DateField, FileField, BooleanField, DecimalField, SelectMultipleField, SubmitField
 from wtforms.validators import DataRequired, Email, Optional, NumberRange, EqualTo, InputRequired
-from wtforms.fields import DateTimeField
+from wtforms.fields import DateTimeField, TimeField
 from datetime import datetime
 from decimal import Decimal
 from datetime import datetime
@@ -431,7 +431,10 @@ class ManufacturingOrderForm(FlaskForm):
     quantity_to_produce = FloatField('Quantity to Produce', validators=[DataRequired(), NumberRange(min=0.1)])
     start_date = DateField('Start Date', validators=[Optional()])
     end_date = DateField('End Date', validators=[Optional()])
+    start_time = TimeField('Start Time', validators=[Optional()], format='%H:%M')
+    end_time = TimeField('End Time (Timer Deadline)', validators=[Optional()], format='%H:%M')
     finished_warehouse_id = SelectField('Finished Warehouse', coerce=int, validators=[Optional()])
+    staff_ids = SelectMultipleField('Staff Used in this Order (Optional)', coerce=int, validators=[Optional()])
 
 class StaffForm(FlaskForm):
     name = StringField('Staff Name', validators=[DataRequired()])

@@ -148,10 +148,18 @@ def set_target():
     ).all()
     # Build dict: product_id -> list of order_numbers
     mo_by_product = {}
+    # Flat choice list for the "Manufacturing Order" dropdown - picking one
+    # auto-selects the product it was created for in the SKU picker below.
+    mo_choices = []
     for mo in inprogress_mos:
         try:
             prod_id = mo.bom.product_id
             mo_by_product.setdefault(prod_id, []).append(mo.order_number)
+            mo_choices.append({
+                'id': mo.id,
+                'product_id': prod_id,
+                'label': f"{mo.order_number} — {mo.bom.product.name} ({mo.bom.product.sku})"
+            })
         except Exception:
             pass
     
@@ -245,6 +253,7 @@ def set_target():
                          target=target,
                          products=products,
                          mo_by_product=mo_by_product,
+                         mo_choices=mo_choices,
                          selected_month=selected_month,
                          selected_year=selected_year)
 
@@ -595,10 +604,16 @@ def export_report(format):
         
         net_produced = produced_qty - rejected_qty - returned_qty
         
+        from app.services.production_targets import get_hr_labor_cost_per_unit, get_mo_expense_per_unit
         bom = BOM.query.filter_by(product_id=product.id, is_active=True).first()
         bom_cost = (bom.total_cost - bom.overhead_cost - bom.labor_cost) if bom else product.cost_price
-        overhead_cost = target.overhead_cost_per_unit if target.overhead_cost_per_unit > 0 else (bom.overhead_cost + bom.labor_cost if bom else 0)
-        
+        if target.overhead_cost_per_unit > 0:
+            labor_overhead = target.overhead_cost_per_unit
+        else:
+            hr_labor_unit = get_hr_labor_cost_per_unit(product.id, target.start_date, target.end_date)
+            labor_overhead = hr_labor_unit if hr_labor_unit is not None else ((bom.labor_cost or 0) if bom else 0)
+        mo_expense = get_mo_expense_per_unit(target.sku_id, target.start_date, target.end_date)
+
         # Calculate expected progress for status
         today = datetime.now().date()
         if today >= month_start.date() and today <= month_end.date():
@@ -630,7 +645,8 @@ def export_report(format):
             'Remaining': effective_target_units - net_produced,
             'Completion %': f"{completion_pct:.1f}%",
             'BOM Cost': bom_cost,
-            'OH Cost (Labor+Overhead)': overhead_cost,
+            'Labor Overhead': labor_overhead,
+            'MO Expense': mo_expense,
             'Item Cost': bom_cost,
             'Selling Price': product.finished_good_price if product.finished_good_price else product.unit_price,
             'Target Revenue': effective_target_units * (product.finished_good_price if product.finished_good_price else product.unit_price),
@@ -639,8 +655,8 @@ def export_report(format):
             'Status': status
         })
     
-    headers = ['SKU', 'Product Name', 'Target Units', 'Produced Units', 'Remaining', 
-               'Completion %', 'BOM Cost', 'OH Cost (Labor+Overhead)', 'Item Cost', 
+    headers = ['SKU', 'Product Name', 'Target Units', 'Produced Units', 'Remaining',
+               'Completion %', 'BOM Cost', 'Labor Overhead', 'MO Expense', 'Item Cost',
                'Selling Price', 'Target Revenue', 'Est. Cost', 'Est. Profit', 'Status']
     
     title = f"Production Target Report ({month_start.strftime('%d-%m-%Y')} to {month_end.strftime('%d-%m-%Y')})"

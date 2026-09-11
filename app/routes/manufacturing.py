@@ -19,6 +19,65 @@ def has_column(table_name, column_name):
     except:
         return False
 
+
+def _compute_staff_labor_cost(staff_ids, start_date, end_date):
+    """Sum each selected staff member's daily rate x their WORKING days in
+    [start_date, end_date] (inclusive) - the HR-driven labor cost estimate
+    for a Manufacturing Order.
+
+    Staff.daily_salary is already a rate for a working day (monthly_salary
+    divided by that month's working days, i.e. every day except Sunday -
+    see Staff.calculate_daily_salary / get_working_days_in_month), so the
+    day count here has to use that same "exclude Sundays (and this staff's
+    holiday-marked days)" definition too - reused directly from
+    get_required_hours_in_range(hours_per_day=1), which returns exactly the
+    working-day count for the range. Multiplying that rate by every
+    calendar day instead (Sundays included) would overshoot the staff
+    member's actual monthly salary for a full-month order, which is what
+    this is guarding against.
+
+    Returns (total, breakdown) where breakdown is a list of
+    {'staff': Staff, 'daily_rate': float, 'days': float, 'labor_cost': float}.
+    Returns (None, []) when no staff are selected - callers treat None as
+    "fall back to the BOM.labor_cost x quantity estimate", so a Manufacturing
+    Order with nobody assigned behaves exactly as it always has.
+    """
+    if not staff_ids:
+        return None, []
+    from app.models import Staff
+    from app.utils import get_required_hours_in_range
+    has_range = bool(start_date and end_date and end_date >= start_date)
+    staff_members = Staff.query.filter(Staff.id.in_(staff_ids)).all()
+    breakdown = []
+    total = 0.0
+    for s in staff_members:
+        if s.daily_salary and s.daily_salary > 0:
+            daily_rate = s.daily_salary
+        else:
+            s.calculate_daily_salary(reference_date=start_date)
+            daily_rate = s.daily_salary
+        days = get_required_hours_in_range(s, start_date, end_date, hours_per_day=1) if has_range else 1
+        cost = daily_rate * days
+        breakdown.append({'staff': s, 'daily_rate': daily_rate, 'days': days, 'labor_cost': cost})
+        total += cost
+    return total, breakdown
+
+
+def _apply_staff_assignments(order, staff_ids, start_date, end_date):
+    """Replaces `order`'s ManufacturingOrderStaff rows with one per id in
+    `staff_ids`, each carrying a fresh cost snapshot for the given date
+    range. Returns the computed total labor cost, or None if `staff_ids` is
+    empty (nothing assigned - see _compute_staff_labor_cost)."""
+    from app.models import ManufacturingOrderStaff
+    ManufacturingOrderStaff.query.filter_by(mo_id=order.id).delete()
+    total, breakdown = _compute_staff_labor_cost(staff_ids, start_date, end_date)
+    for row in breakdown:
+        db.session.add(ManufacturingOrderStaff(
+            mo_id=order.id, staff_id=row['staff'].id,
+            daily_rate=row['daily_rate'], days=row['days'], labor_cost=row['labor_cost']
+        ))
+    return total
+
 @bp.route('/boms')
 @login_required
 def boms():
@@ -345,10 +404,22 @@ def delete_bom(id):
 @bp.route('/orders')
 @login_required
 def orders():
+    from app.services.manufacturing_timer import finalize_overdue_manufacturing_orders
+    try:
+        finalize_overdue_manufacturing_orders()
+    except Exception:
+        pass  # background scheduler will pick it up if this fallback fails
+
+    view = request.args.get('view', 'active')
+
     query = ManufacturingOrder.query
     query = apply_saved_filter_to_query(query, 'manufacturing_order', request.args)
+    if view == 'previous':
+        query = query.filter(ManufacturingOrder.timer_stopped == True)
+    else:
+        query = query.filter(ManufacturingOrder.timer_stopped == False)
     orders = query.order_by(ManufacturingOrder.created_at.desc()).all()
-    return render_template('manufacturing/orders.html', orders=orders, active_module='manufacturing_order')
+    return render_template('manufacturing/orders.html', orders=orders, active_module='manufacturing_order', view=view)
 
 @bp.route('/orders/components-summary')
 @login_required
@@ -451,13 +522,17 @@ def orders_components_summary():
 @login_required
 @permission_required('manufacturing', action='add')
 def add_order():
+    from app.models import Staff
     form = ManufacturingOrderForm()
     boms = BOM.query.all()
     form.bom_id.choices = [(b.id, f"{b.name} ({b.product.sku} - {b.product.name})") for b in boms]
     # Finished warehouse choices
     warehouses = Warehouse.query.filter_by(is_active=True).all()
     form.finished_warehouse_id.choices = [(0, '— None —')] + [(w.id, f"{w.code} - {w.name}") for w in warehouses]
-    
+    # Staff choices - used to auto-compute labor cost from HR salaries
+    active_staff = Staff.query.filter_by(is_active=True).order_by(Staff.name).all()
+    form.staff_ids.choices = [(s.id, f"{s.name} ({s.designation})" if s.designation else s.name) for s in active_staff]
+
     if form.validate_on_submit():
         # Generate Unique Order Number using company settings
         company = Company.query.first()
@@ -492,8 +567,17 @@ def add_order():
         mo.quantity_to_produce = form.quantity_to_produce.data
         mo.start_date = form.start_date.data
         mo.end_date = form.end_date.data
+        mo.start_time = form.start_time.data
+        mo.end_time = form.end_time.data
         mo.status = 'In Progress'
         mo.created_by = current_user.id
+        # Auto-approve when an admin creates the order, same convention as
+        # Sales/Tool Delivering (see tools.py add_delivering) - avoids making
+        # an admin approve their own order a second time.
+        if current_user.role == 'admin':
+            mo.is_approved = True
+            mo.approved_by = current_user.id
+            mo.approved_at = datetime.utcnow()
         db.session.add(mo)
         db.session.flush()
         
@@ -528,11 +612,19 @@ def add_order():
             exp.mo_id = mo.id
             total_mo_overhead += exp.amount
             
+        # Labor cost: auto-computed from the selected staff's HR salaries
+        # (daily rate x days spanned by start/end date) when any are picked;
+        # falls back to the original BOM.labor_cost x quantity estimate
+        # when nobody's assigned, so orders created without staff behave
+        # exactly as before.
+        staff_ids = form.staff_ids.data or []
+        staff_labor_total = _apply_staff_assignments(mo, staff_ids, mo.start_date, mo.end_date)
+
         mo.actual_overhead_cost = total_mo_overhead
-        mo.actual_labor_cost = bom.labor_cost * multiplier
+        mo.actual_labor_cost = staff_labor_total if staff_labor_total is not None else (bom.labor_cost * multiplier)
         mo.actual_material_cost = sum(item.component.cost_price * (item.quantity * multiplier) for item in bom.items)
         mo.total_cost = mo.actual_labor_cost + mo.actual_material_cost + mo.actual_overhead_cost
-        
+
         db.session.commit()
         log_activity('Manufacturing', f'Created Manufacturing Order: {order_number}', f'BOM: {bom.name}, Qty: {mo.quantity_to_produce}')
 
@@ -562,15 +654,16 @@ def add_order():
         flash('Manufacturing Order created successfully.', 'success')
         return redirect(url_for('manufacturing.orders'))
         
-    return render_template('manufacturing/add_order.html', form=form, warehouses=warehouses)
+    return render_template('manufacturing/add_order.html', form=form, warehouses=warehouses, staff_list=active_staff)
 
 @bp.route('/order/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
 @permission_required('manufacturing', action='edit')
 def edit_order(id):
+    from app.models import Staff
     order = ManufacturingOrder.query.get_or_404(id)
     form = ManufacturingOrderForm(obj=order)
-    
+
     boms = BOM.query.all()
     form.bom_id.choices = [(b.id, f"{b.name} ({b.product.sku} - {b.product.name})") for b in boms]
     warehouses = Warehouse.query.filter_by(is_active=True).all()
@@ -580,15 +673,38 @@ def edit_order(id):
         form.finished_warehouse_id.data = order.finished_warehouse_id or 0
     except Exception:
         pass
-    
+
+    # Staff choices - include anyone already assigned even if since made
+    # inactive, so editing this order doesn't silently drop them.
+    active_staff = Staff.query.filter_by(is_active=True).order_by(Staff.name).all()
+    assigned_staff_ids = [a.staff_id for a in order.staff_assignments]
+    staff_choice_list = list(active_staff)
+    for a in order.staff_assignments:
+        if a.staff and not a.staff.is_active:
+            staff_choice_list.append(a.staff)
+    form.staff_ids.choices = [(s.id, f"{s.name} ({s.designation})" if s.designation else s.name) for s in staff_choice_list]
+    if request.method == 'GET':
+        form.staff_ids.data = assigned_staff_ids
+
     if form.validate_on_submit():
         old_bom_id = order.bom_id
         old_quantity = order.quantity_to_produce
-        
+        had_staff_before = bool(order.staff_assignments)
+
         order.bom_id = form.bom_id.data
         order.quantity_to_produce = form.quantity_to_produce.data
         order.start_date = form.start_date.data
         order.end_date = form.end_date.data
+        order.start_time = form.start_time.data
+        order.end_time = form.end_time.data
+        # Editing the date/time window re-arms the timer, so a previously
+        # auto-stopped order (deadline had passed) goes back to the Active
+        # tab if the new window hasn't expired yet - mirrors how editing a
+        # Production Target re-activates it (see production.py set_target).
+        deadline = order.deadline_datetime
+        order.timer_stopped = bool(deadline and deadline <= datetime.now())
+        if not order.timer_stopped:
+            order.timer_stopped_at = None
         # update finished warehouse
         try:
             order.finished_warehouse_id = int(form.finished_warehouse_id.data) if form.finished_warehouse_id.data else None
@@ -596,19 +712,23 @@ def edit_order(id):
                 order.finished_warehouse_id = None
         except (ValueError, TypeError):
             order.finished_warehouse_id = None
-        
-        if old_bom_id != order.bom_id or old_quantity != order.quantity_to_produce:
+
+        items_changed = old_bom_id != order.bom_id or old_quantity != order.quantity_to_produce
+        bom_labor_estimate = None
+        recompute_total = False
+
+        if items_changed:
             multiplier = order.quantity_to_produce
-            
+
             for item in order.items:
                 db.session.delete(item)
             db.session.flush()
-            
+
             new_bom = BOM.query.get(order.bom_id)
             for bom_item in new_bom.items:
                 req_qty = bom_item.quantity * multiplier
                 comp_cost = bom_item.component.cost_price * req_qty
-                
+
                 mo_item = ManufacturingOrderItem()
                 mo_item.mo_id = order.id
                 mo_item.component_id = bom_item.component_id
@@ -618,11 +738,36 @@ def edit_order(id):
                 mo_item.quantity_consumed = 0
                 mo_item.cost = comp_cost
                 db.session.add(mo_item)
-            
-            order.actual_labor_cost = new_bom.labor_cost * multiplier
+
+            bom_labor_estimate = new_bom.labor_cost * multiplier
             order.actual_material_cost = sum(item.component.cost_price * (item.quantity * multiplier) for item in new_bom.items)
+            recompute_total = True
+
+        # Labor cost: staff assignments always sync to whatever's checked
+        # now (auto-recomputed for the order's current date range), and
+        # take priority whenever anyone's assigned. Falls back to the
+        # BOM-based estimate if the BOM/quantity changed, or if staff were
+        # just removed - otherwise the order's existing labor cost is left
+        # exactly as it was, matching the original behavior. Skipped
+        # entirely once Completed - the form disables this field then (edit
+        # is dates-only for a finished order), so an empty submission here
+        # must never be read as "staff removed".
+        if order.status != 'Completed':
+            staff_ids = form.staff_ids.data or []
+            staff_labor_total = _apply_staff_assignments(order, staff_ids, order.start_date, order.end_date)
+
+            if staff_labor_total is not None:
+                order.actual_labor_cost = staff_labor_total
+                recompute_total = True
+            elif items_changed:
+                order.actual_labor_cost = bom_labor_estimate
+            elif had_staff_before and not staff_ids:
+                order.actual_labor_cost = (order.bom.labor_cost or 0) * order.quantity_to_produce
+                recompute_total = True
+
+        if recompute_total:
             order.total_cost = order.actual_labor_cost + order.actual_material_cost + (order.actual_overhead_cost or 0)
-        
+
         db.session.commit()
         log_activity('Manufacturing', f'Updated Manufacturing Order: {order.order_number}', f'BOM: {order.bom.name}, Qty: {order.quantity_to_produce}')
         # Ensure Production Target exists for this product/month after edit
@@ -651,7 +796,8 @@ def edit_order(id):
         flash('Manufacturing Order updated successfully.', 'success')
         return redirect(url_for('manufacturing.order_details', id=order.id))
     
-    return render_template('manufacturing/edit_order.html', form=form, order=order, warehouses=warehouses)
+    return render_template('manufacturing/edit_order.html', form=form, order=order, warehouses=warehouses,
+                           staff_list=staff_choice_list, assigned_staff_ids=assigned_staff_ids)
 
 @bp.route('/order/<int:id>')
 @login_required
@@ -1059,10 +1205,20 @@ def delete_history_batch(id):
         pass
         
     try:
-        # 1. Reverse Finished Good Quantity
+        # 1. Reverse Finished Good Quantity - both the global figure AND the
+        # specific warehouse this order's finished goods were received into
+        # (complete_order/partial_complete_order add to both; undo has to
+        # mirror that or the warehouse-level stock stays permanently
+        # inflated after a reversal).
         finished_good = order.bom.product
         finished_good.quantity -= batch.quantity_produced
-        
+
+        finished_wh_id = order.finished_warehouse_id or (finished_good.warehouse_id if hasattr(finished_good, 'warehouse_id') else None)
+        if finished_wh_id:
+            wh_stock = ProductWarehouseStock.query.filter_by(product_id=finished_good.id, warehouse_id=finished_wh_id).first()
+            if wh_stock:
+                wh_stock.quantity = max(0, (wh_stock.quantity or 0) - batch.quantity_produced)
+
         movement_out = StockMovement()
         movement_out.product_id = finished_good.id
         movement_out.movement_type = 'out'
@@ -1074,16 +1230,27 @@ def delete_history_batch(id):
         movement_out.reason = f'Reversal of Batch {batch.id} from MO {order.order_number}'
         movement_out.created_by = current_user.id
         db.session.add(movement_out)
-        
-        # 2. Reverse Component Consumption
+
+        # 2. Reverse Component Consumption - same warehouse-level mirroring
+        # as above, matching whichever warehouse each component was actually
+        # consumed from (item.warehouse_id, falling back to the component's
+        # own default warehouse) during complete/partial_complete.
         for item in order.items:
             # Re-calculate how much was consumed for this batch
             ratio = item.quantity_required / order.quantity_to_produce
             batch_consume_qty = ratio * batch.quantity_produced
-            
+
             item.component.quantity += batch_consume_qty
             item.quantity_consumed -= batch_consume_qty
-            
+
+            wh_id = getattr(item, 'warehouse_id', None) or (item.component.warehouse_id if hasattr(item.component, 'warehouse_id') else None)
+            if wh_id:
+                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.component_id, warehouse_id=wh_id).first()
+                if wh_stock:
+                    wh_stock.quantity = (wh_stock.quantity or 0) + batch_consume_qty
+                else:
+                    db.session.add(ProductWarehouseStock(product_id=item.component_id, warehouse_id=wh_id, quantity=batch_consume_qty))
+
             movement_in = StockMovement()
             movement_in.product_id = item.component_id
             movement_in.movement_type = 'in'
@@ -1095,7 +1262,7 @@ def delete_history_batch(id):
             movement_in.reason = f'Reversal of component usage for Batch {batch.id} MO {order.order_number}'
             movement_in.created_by = current_user.id
             db.session.add(movement_in)
-            
+
         # 3. Reverse Overhead to MO Bucket (ONLY if it was NOT a manual per-unit entry)
         if not batch.is_manual_overhead:
             # We put it back into actual_overhead_cost so it can be re-allocated
@@ -1170,20 +1337,42 @@ def get_actual_overhead(id):
 @login_required
 @permission_required('manufacturing', action='delete')
 def delete_order(id):
-    from app.models import ManufacturingOrder, StockMovement, Product
+    from app.models import ManufacturingOrder, StockMovement, Product, ProductWarehouseStock
     order = ManufacturingOrder.query.get_or_404(id)
-    
-    # If order is completed, we MUST reverse the stock and cost changes
-    if order.status == 'Completed':
-        # 1. Substract the produced quantity from the finished product
+
+    # Any quantity already produced/consumed - whether the order finished
+    # ('Completed') or was only partially done ('In Progress' with some
+    # produced_qty > 0) - has to be reversed the same way; gating this on
+    # status == 'Completed' alone skipped it entirely for a partially
+    # completed order, permanently leaving its stock, ProductionLog rows,
+    # and the Production Target's produced_qty inflated after deletion.
+    if (order.produced_qty or 0) > 0:
+        # 1. Substract the produced quantity from the finished product -
+        # both the global figure and the specific warehouse it was received
+        # into (complete_order/partial_complete_order add to both).
         finished_product = order.bom.product
-        finished_product.quantity -= order.quantity_to_produce
-        
-        # 2. Add back the consumed quantities to all components
+        finished_product.quantity -= order.produced_qty
+
+        finished_wh_id = order.finished_warehouse_id or (finished_product.warehouse_id if hasattr(finished_product, 'warehouse_id') else None)
+        if finished_wh_id:
+            wh_stock = ProductWarehouseStock.query.filter_by(product_id=finished_product.id, warehouse_id=finished_wh_id).first()
+            if wh_stock:
+                wh_stock.quantity = max(0, (wh_stock.quantity or 0) - order.produced_qty)
+
+        # 2. Add back the consumed quantities to all components - same
+        # warehouse-level mirroring, matching whichever warehouse each
+        # component was actually consumed from.
         for item in order.items:
-            if item.component:
+            if item.component and item.quantity_consumed:
                 item.component.quantity += item.quantity_consumed
-        
+                wh_id = getattr(item, 'warehouse_id', None) or (item.component.warehouse_id if hasattr(item.component, 'warehouse_id') else None)
+                if wh_id:
+                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.component_id, warehouse_id=wh_id).first()
+                    if wh_stock:
+                        wh_stock.quantity = (wh_stock.quantity or 0) + item.quantity_consumed
+                    else:
+                        db.session.add(ProductWarehouseStock(product_id=item.component_id, warehouse_id=wh_id, quantity=item.quantity_consumed))
+
         # 3. Revert the finished_product.cost_price
         # Find the most recent 'Completed' order for the SAME product (excluding this one)
         previous_completed_order = ManufacturingOrder.query.filter(
@@ -1199,10 +1388,15 @@ def delete_order(id):
             order.bom.calculate_total_cost()
             finished_product.cost_price = order.bom.total_cost
 
-        # 4. Remove associated StockMovements
+        # 4. Remove associated StockMovements - reference_type values here
+        # must match what complete_order/partial_complete_order actually
+        # write ('manufacturing_usage' for component consumption,
+        # 'manufacturing_finish' for finished-good receipt); the previous
+        # 'manufacturing_consumption' never matched anything, so these rows
+        # were never actually being cleaned up.
         StockMovement.query.filter(
             StockMovement.reference_id == order.id,
-            StockMovement.reference_type.in_(['manufacturing_consumption', 'manufacturing_finish'])
+            StockMovement.reference_type.in_(['manufacturing_usage', 'manufacturing_finish'])
         ).delete(synchronize_session=False)
 
         # 5. Remove associated ProductionLog and decrease target counts
@@ -1210,7 +1404,7 @@ def delete_order(id):
         logs_to_delete = ProductionLog.query.filter(
             ProductionLog.operator == f'MO: {order.order_number}'
         ).all()
-        
+
         for l in logs_to_delete:
             # Subtract from target if target is stateful
             target = ProductionTarget.query.filter(
@@ -1221,7 +1415,7 @@ def delete_order(id):
             if target and target.produced_qty is not None:
                 target.produced_qty -= l.qty_produced
             db.session.delete(l)
-    
+
     # Delete any associated overhead expenses linked to this MO
     from app.models import Expense
     linked_expenses = Expense.query.filter_by(mo_id=order.id).all()

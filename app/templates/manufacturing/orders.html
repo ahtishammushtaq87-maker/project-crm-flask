@@ -22,10 +22,25 @@
         </div>
     </div>
 
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link {% if view == 'active' %}active{% endif %}"
+                href="{{ url_for('manufacturing.orders', view='active') }}">
+                <i class="fas fa-stopwatch"></i> Active Orders
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if view == 'previous' %}active{% endif %}"
+                href="{{ url_for('manufacturing.orders', view='previous') }}">
+                <i class="fas fa-history"></i> Previous Orders
+            </a>
+        </li>
+    </ul>
+
     <!-- DataTales Example -->
     <div class="card shadow mb-4">
         <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">All Production Orders</h6>
+            <h6 class="m-0 font-weight-bold text-primary">{% if view == 'previous' %}Previous (Timer Stopped) Orders{% else %}Active Production Orders{% endif %}</h6>
         </div>
         <div class="card-body">
             <div class="table-responsive">
@@ -55,7 +70,14 @@
                             <td class="text-center no-export">
                                 <input type="checkbox" class="form-check-input order-checkbox" value="{{ ord.id }}">
                             </td>
-                            <td><strong>{{ ord.order_number }}</strong></td>
+                            <td>
+                                <strong>{{ ord.order_number }}</strong>
+                                {% if not ord.timer_stopped and ord.end_date %}
+                                <br><small class="text-danger fw-bold mo-countdown" data-deadline="{{ ord.deadline_datetime.isoformat() }}">
+                                    <i class="fas fa-hourglass-half"></i> <span class="mo-countdown-text">--</span>
+                                </small>
+                                {% endif %}
+                            </td>
                             <td>
                                 <span class="{% if ord.bom.product.margin_color %}text-{{ ord.bom.product.margin_color }} fw-bold{% endif %}">{{ ord.bom.product.name }}</span><br>
                                 <a href="{{ url_for('manufacturing.bom_details', id=ord.bom.id) }}"
@@ -64,7 +86,11 @@
                                 </a>
                             </td>
                             <td>
-                                {% if ord.status == 'Completed' %}
+                                {% if ord.timer_stopped %}
+                                <span class="badge bg-dark" title="Timer deadline reached{% if ord.timer_stopped_at %} on {{ ord.timer_stopped_at.strftime('%d-%b-%Y %H:%M') }}{% endif %}">
+                                    <i class="fas fa-stop-circle"></i> Stop
+                                </span>
+                                {% elif ord.status == 'Completed' %}
                                 <span class="badge bg-success">Completed</span>
                                 {% elif ord.status == 'In Progress' %}
                                 <span class="badge bg-warning text-dark">In Progress</span>
@@ -320,6 +346,41 @@
 
         <script>
             document.addEventListener('DOMContentLoaded', function () {
+                // ── Live countdown to each order's timer deadline ──────────
+                (function () {
+                    const cells = document.querySelectorAll('.mo-countdown');
+                    if (!cells.length) return;
+
+                    function render() {
+                        const now = new Date();
+                        cells.forEach(function (cell) {
+                            const deadline = new Date(cell.dataset.deadline);
+                            const textEl = cell.querySelector('.mo-countdown-text');
+                            let diff = deadline - now;
+
+                            if (isNaN(diff)) { textEl.textContent = '--'; return; }
+
+                            if (diff <= 0) {
+                                textEl.textContent = 'Time up — stopping…';
+                                return;
+                            }
+
+                            const totalSeconds = Math.floor(diff / 1000);
+                            const days = Math.floor(totalSeconds / 86400);
+                            const hours = Math.floor((totalSeconds % 86400) / 3600);
+                            const minutes = Math.floor((totalSeconds % 3600) / 60);
+                            const seconds = totalSeconds % 60;
+                            const pad = (n) => String(n).padStart(2, '0');
+
+                            textEl.textContent = (days > 0 ? days + 'd ' : '') +
+                                pad(hours) + ':' + pad(minutes) + ':' + pad(seconds) + ' left';
+                        });
+                    }
+
+                    render();
+                    setInterval(render, 1000);
+                })();
+
                 // ── Components Usage Summary ──────────────────────────────
                 (function () {
                     const btn = document.getElementById('componentsSummaryBtn');

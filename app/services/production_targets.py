@@ -15,6 +15,72 @@ from app.models import ProductionTarget, ProductionLog, BOM, ManufacturingOrder,
 from sqlalchemy import func
 
 
+def get_hr_labor_cost_per_unit(product_id, start_date=None, end_date=None):
+    """Actual labor cost/unit for `product_id`, derived from Manufacturing
+    Orders that have HR staff assigned (app.models.ManufacturingOrderStaff -
+    see Manufacturing Order Add/Edit's "Staff Used" picker) whose
+    start_date falls in [start_date, end_date] (either bound may be
+    omitted to leave that side open).
+
+    Returns None when no such orders exist for this product/period,
+    signalling "fall back to BOM.labor_cost" to callers - so a product with
+    no HR-staffed orders yet behaves exactly as it always has (Target
+    Tracker's OH Cost column, the Manufacturing Fact Sheet's Labor column).
+    """
+    from app.models import ManufacturingOrder, ManufacturingOrderStaff, BOM
+    query = ManufacturingOrder.query.join(BOM, ManufacturingOrder.bom_id == BOM.id).filter(
+        BOM.product_id == product_id,
+        ManufacturingOrder.id.in_(db.session.query(ManufacturingOrderStaff.mo_id).distinct())
+    )
+    if start_date:
+        query = query.filter(ManufacturingOrder.start_date >= start_date)
+    if end_date:
+        query = query.filter(ManufacturingOrder.start_date <= end_date)
+    orders = query.all()
+    if not orders:
+        return None
+    total_labor = sum(o.actual_labor_cost or 0 for o in orders)
+    total_qty = sum(o.quantity_to_produce or 0 for o in orders)
+    if total_qty <= 0:
+        return None
+    return total_labor / total_qty
+
+
+def get_mo_expense_per_unit(product_id, start_date, end_date):
+    """Real overhead expense/unit actually applied to completed batches of
+    `product_id` (ManufacturingOrderHistory.overhead_cost, written whenever
+    a Manufacturing Order is Batch Completed / Final Completed) within
+    [start_date, end_date]. This is the ACTUAL overhead expense the
+    business incurred on real production, as opposed to the BOM's own
+    overhead_cost (a planned/estimated rate recalculated from linked
+    Expense records - see BOMVersioningService.create_bom_version).
+
+    Returns 0 when no batches completed in the window, so a target with no
+    production yet just shows PKR 0.00 rather than raising.
+    """
+    from app.models import ManufacturingOrderHistory
+    from datetime import time as dtime
+    if not start_date or not end_date:
+        return 0
+    window_start = datetime.combine(start_date, dtime.min)
+    window_end = datetime.combine(end_date, dtime.max)
+
+    totals = db.session.query(
+        func.sum(ManufacturingOrderHistory.overhead_cost),
+        func.sum(ManufacturingOrderHistory.quantity_produced)
+    ).join(ManufacturingOrder, ManufacturingOrderHistory.mo_id == ManufacturingOrder.id).join(
+        BOM, ManufacturingOrder.bom_id == BOM.id
+    ).filter(
+        BOM.product_id == product_id,
+        ManufacturingOrderHistory.completion_date >= window_start,
+        ManufacturingOrderHistory.completion_date <= window_end
+    ).first()
+
+    total_overhead = (totals[0] or 0) if totals else 0
+    total_qty = (totals[1] or 0) if totals else 0
+    return (total_overhead / total_qty) if total_qty > 0 else 0
+
+
 def compute_target_result(target, expected_progress=100):
     """Compute the full tracker result dict for one ProductionTarget.
 
@@ -69,13 +135,26 @@ def compute_target_result(target, expected_progress=100):
 
     if bom:
         reference_bom_cost = bom.total_cost - bom.overhead_cost - bom.labor_cost
-        reference_overhead = bom.overhead_cost + bom.labor_cost
+        # Real HR-staffed labor cost for this SKU in this target's window,
+        # when any exists, is more accurate than the BOM's flat per-unit
+        # estimate - falls back to that estimate otherwise. This IS the
+        # "Labor Overhead" column - it used to also have bom.overhead_cost
+        # folded in, but that's a planned/estimated rate recalculated from
+        # linked Expense records, not labor, so it's split out into its own
+        # MO Expense column below instead of being mixed in here.
+        hr_labor_unit = get_hr_labor_cost_per_unit(product.id, target.start_date, target.end_date)
+        reference_overhead = hr_labor_unit if hr_labor_unit is not None else bom.labor_cost
     else:
         reference_bom_cost = product.cost_price
         reference_overhead = 0
 
     if target.overhead_cost_per_unit > 0:
         reference_overhead = target.overhead_cost_per_unit
+
+    # MO Expense - the ACTUAL overhead cost applied to this SKU's completed
+    # batches (filled in as each Batch Complete / Final Complete runs), as
+    # opposed to the BOM's own planned overhead_cost rate above.
+    mo_expense = get_mo_expense_per_unit(target.sku_id, target.start_date, target.end_date)
 
     remaining = effective_target_units - total_produced
     completion_pct = (final_net_produced / effective_target_units * 100) if effective_target_units > 0 else 0
@@ -113,6 +192,7 @@ def compute_target_result(target, expected_progress=100):
         'status_class': status_class,
         'production_cost': item_unit_cost,
         'overhead_cost': reference_overhead,
+        'mo_expense': mo_expense,
         'item_cost': item_unit_cost,
         'selling_price': selling_price,
         'target_revenue': target_revenue,

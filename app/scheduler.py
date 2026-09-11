@@ -143,3 +143,49 @@ def start_production_target_scheduler(app):
     scheduler.start()
     scheduler.modify_job('production_target_finalization', next_run_time=datetime.now())
     _production_target_scheduler = scheduler
+
+
+_mo_timer_scheduler = None
+
+
+def start_mo_timer_scheduler(app):
+    """Start the Manufacturing Order auto-stop timer job exactly once per
+    running process. Checks for orders whose From/To date+time window has
+    passed and flips timer_stopped (moving them from the Active tab to the
+    Previous tab on the Manufacturing Orders list) — this is what actually
+    makes an order's timer "stop" the moment it reaches zero, even if nobody
+    has the page open. Same guards as the other schedulers above (separate
+    scheduler instance so this can never interfere with the other jobs)."""
+    global _mo_timer_scheduler
+
+    if os.environ.get('MO_TIMER_SCHEDULER_DISABLED') == '1':
+        return
+
+    if app.debug and os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
+        return  # this is the reloader's watcher process, not the real server
+
+    if _mo_timer_scheduler is not None:
+        return  # already started in this process
+
+    interval_minutes = int(os.environ.get('MO_TIMER_SCHEDULER_INTERVAL_MINUTES', '1'))
+
+    def _run():
+        with app.app_context():
+            from app.services.manufacturing_timer import finalize_overdue_manufacturing_orders
+            try:
+                finalize_overdue_manufacturing_orders()
+            except Exception:
+                app.logger.exception('Manufacturing order timer auto-stop background run failed')
+
+    scheduler = BackgroundScheduler(daemon=True)
+    scheduler.add_job(
+        _run,
+        'interval',
+        minutes=interval_minutes,
+        id='mo_timer_finalization',
+        next_run_time=None,
+        replace_existing=True,
+    )
+    scheduler.start()
+    scheduler.modify_job('mo_timer_finalization', next_run_time=datetime.now())
+    _mo_timer_scheduler = scheduler

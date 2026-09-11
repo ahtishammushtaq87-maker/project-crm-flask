@@ -583,13 +583,18 @@ def manufacturing_report():
     margin_param = request.args.get('target_margin')
     overhead_override = float(overhead_param) if overhead_param not in (None, '') else None
     margin_override = (float(margin_param) / 100) if margin_param not in (None, '') else None
+    product_id = request.args.get('product_id', type=int)
 
-    fs = compute_manufacturing_fact_sheet(month, year, overhead_override, margin_override)
+    fs = compute_manufacturing_fact_sheet(month, year, overhead_override, margin_override, product_id)
+
+    finished_good_products = Product.query.filter_by(is_active=True, is_manufactured=True).order_by(Product.name).all()
 
     return render_template('reports/manufacturing_report.html',
                          fs=fs,
                          month=month,
                          year=year,
+                         product_id=product_id,
+                         finished_good_products=finished_good_products,
                          company=get_company_info(),
                          active_module='manufacturing_report')
 
@@ -883,7 +888,7 @@ def compute_profit_loss(start_date, end_date):
     }
 
 
-def compute_manufacturing_fact_sheet(month, year, overhead_override=None, margin_override=None):
+def compute_manufacturing_fact_sheet(month, year, overhead_override=None, margin_override=None, product_id=None):
     """SKU-level manufacturing/sales fact sheet for one month.
 
     Mirrors the manual "Fact Sheet" workbook the business already builds each
@@ -901,13 +906,138 @@ def compute_manufacturing_fact_sheet(month, year, overhead_override=None, margin
     _, last_day = monthrange(year, month)
     month_end = date(year, month, last_day)
 
-    targets = ProductionTarget.query.filter(
+    targets_query = ProductionTarget.query.filter(
         db.or_(
             db.and_(ProductionTarget.month == month, ProductionTarget.year == year),
             db.and_(ProductionTarget.start_date >= month_start, ProductionTarget.start_date <= month_end),
             db.and_(ProductionTarget.end_date >= month_start, ProductionTarget.end_date <= month_end)
         )
-    ).all()
+    )
+    if product_id:
+        targets_query = targets_query.filter(ProductionTarget.sku_id == product_id)
+    targets = targets_query.all()
+
+    from app.services.production_targets import get_hr_labor_cost_per_unit, compute_target_result
+
+    # Target vs Actual performance for the month - reuses the exact same math
+    # the live Production Target Tracker uses (compute_target_result), so
+    # "achieved this month" here always agrees with the Tracker's own DONE/
+    # ON TRACK/BEHIND status instead of a second, possibly-drifting formula.
+    performance_by_sku = {}
+    for t in targets:
+        product = t.product
+        if not product:
+            continue
+        result = compute_target_result(t)
+        entry = performance_by_sku.get(product.id)
+        if not entry:
+            entry = performance_by_sku[product.id] = {
+                'product': product,
+                'target_units': 0,
+                'produced_units': 0,
+                'target_revenue': 0,
+                'estimated_cost': 0,
+                'estimated_profit': 0,
+                'actual_revenue': 0,
+                'actual_cost': 0,
+                'actual_profit': 0,
+            }
+        entry['target_units'] += result['effective_target_units']
+        entry['produced_units'] += result['net_produced']
+        entry['target_revenue'] += result['target_revenue']
+        entry['estimated_cost'] += result['estimated_cost']
+        entry['estimated_profit'] += result['estimated_profit']
+        entry['actual_revenue'] += result['actual_revenue']
+        entry['actual_cost'] += result['actual_cost']
+        entry['actual_profit'] += result['actual_profit']
+
+    performance_rows = []
+    for entry in performance_by_sku.values():
+        target_units = entry['target_units']
+        produced_units = entry['produced_units']
+        completion_pct = (produced_units / target_units * 100) if target_units > 0 else 0
+        performance_rows.append({
+            **entry,
+            'completion_pct': completion_pct,
+            'achieved': completion_pct >= 100,
+            'remaining': max(0, target_units - produced_units),
+        })
+    performance_rows.sort(key=lambda r: r['product'].sku or '')
+
+    performance_totals = {
+        'target_units': sum(r['target_units'] for r in performance_rows),
+        'produced_units': sum(r['produced_units'] for r in performance_rows),
+        'target_revenue': sum(r['target_revenue'] for r in performance_rows),
+        'estimated_cost': sum(r['estimated_cost'] for r in performance_rows),
+        'estimated_profit': sum(r['estimated_profit'] for r in performance_rows),
+        'actual_revenue': sum(r['actual_revenue'] for r in performance_rows),
+        'actual_cost': sum(r['actual_cost'] for r in performance_rows),
+        'actual_profit': sum(r['actual_profit'] for r in performance_rows),
+        'achieved_count': sum(1 for r in performance_rows if r['achieved']),
+        'not_achieved_count': sum(1 for r in performance_rows if not r['achieved']),
+    }
+    performance_totals['completion_pct'] = (
+        performance_totals['produced_units'] / performance_totals['target_units'] * 100
+    ) if performance_totals['target_units'] > 0 else 0
+    performance_totals['remaining'] = max(0, performance_totals['target_units'] - performance_totals['produced_units'])
+
+    # Labor cost by staff - splits each HR-staffed Manufacturing Order's own
+    # labor cost (ManufacturingOrderStaff.labor_cost, see the order's "Staff
+    # Used" picker) between the portion earned on units already produced vs
+    # the portion still tied up in the unproduced/remaining quantity, then
+    # groups that by (product, staff) so the same person's work across
+    # several orders for one SKU this month shows as a single row.
+    staff_labor_by_key = {}
+    for t in targets:
+        product = t.product
+        if not product:
+            continue
+        t_start = t.start_date or month_start
+        t_end = t.end_date or month_end
+        mos = ManufacturingOrder.query.join(BOM, ManufacturingOrder.bom_id == BOM.id).filter(
+            BOM.product_id == product.id,
+            ManufacturingOrder.start_date >= t_start,
+            ManufacturingOrder.start_date <= t_end
+        ).all()
+        for mo in mos:
+            qty_total = mo.quantity_to_produce or 0
+            produced_qty = mo.produced_qty or 0
+            remaining_qty = max(0, qty_total - produced_qty)
+            ratio_produced = (produced_qty / qty_total) if qty_total > 0 else 0
+            for assign in mo.staff_assignments:
+                staff = assign.staff
+                if not staff:
+                    continue
+                key = (product.id, staff.id)
+                row = staff_labor_by_key.get(key)
+                if not row:
+                    row = staff_labor_by_key[key] = {
+                        'product': product,
+                        'staff': staff,
+                        'produced_qty': 0,
+                        'remaining_qty': 0,
+                        'labor_cost_produced': 0,
+                        'labor_cost_remaining': 0,
+                    }
+                labor_cost_produced = (assign.labor_cost or 0) * ratio_produced
+                labor_cost_remaining = (assign.labor_cost or 0) - labor_cost_produced
+                row['produced_qty'] += produced_qty
+                row['remaining_qty'] += remaining_qty
+                row['labor_cost_produced'] += labor_cost_produced
+                row['labor_cost_remaining'] += labor_cost_remaining
+
+    staff_labor_rows = sorted(
+        staff_labor_by_key.values(),
+        key=lambda r: (r['product'].sku or '', r['staff'].name or '')
+    )
+    for r in staff_labor_rows:
+        r['labor_cost_total'] = r['labor_cost_produced'] + r['labor_cost_remaining']
+
+    staff_labor_totals = {
+        'labor_cost_produced': sum(r['labor_cost_produced'] for r in staff_labor_rows),
+        'labor_cost_remaining': sum(r['labor_cost_remaining'] for r in staff_labor_rows),
+        'labor_cost_total': sum(r['labor_cost_total'] for r in staff_labor_rows),
+    }
 
     by_sku = {}
     for t in targets:
@@ -918,11 +1048,17 @@ def compute_manufacturing_fact_sheet(month, year, overhead_override=None, margin
         if not entry:
             bom = BOM.query.filter_by(product_id=product.id, is_active=True).first()
             bom_cost_unit = max((bom.total_cost or 0) - (bom.overhead_cost or 0) - (bom.labor_cost or 0), 0) if bom else (product.cost_price or 0)
+            # Real HR-staffed labor cost for this SKU this month, when any
+            # exists (see Manufacturing Order's "Staff Used" picker), is more
+            # accurate than the BOM's flat per-unit labor estimate.
+            hr_labor_unit = get_hr_labor_cost_per_unit(product.id, month_start, month_end)
+            labor_cost_unit = hr_labor_unit if hr_labor_unit is not None else ((bom.labor_cost or 0) if bom else 0)
             selling_price = product.finished_good_price if product.finished_good_price else (product.unit_price or 0)
             entry = by_sku[product.id] = {
                 'product': product,
                 'qty': 0,
                 'bom_cost_unit': bom_cost_unit,
+                'labor_cost_unit': labor_cost_unit,
                 'selling_price': selling_price,
             }
         entry['qty'] += t.target_units
@@ -966,6 +1102,7 @@ def compute_manufacturing_fact_sheet(month, year, overhead_override=None, margin
 
     rows = []
     total_qty = 0
+    total_labor = 0
     total_overhead = 0
     total_mfg_cost = 0
     total_sales_value = 0
@@ -975,14 +1112,16 @@ def compute_manufacturing_fact_sheet(month, year, overhead_override=None, margin
         product = r['product']
         qty = r['qty']
         bom_cost_unit = r['bom_cost_unit']
+        labor_cost_unit = r['labor_cost_unit']
         overhead_unit = bom_cost_unit * overhead_loading_rate
-        mfg_cost_unit = bom_cost_unit + overhead_unit
+        mfg_cost_unit = bom_cost_unit + labor_cost_unit + overhead_unit
         selling_price = r['selling_price']
         margin_unit = selling_price - mfg_cost_unit
         margin_pct = (margin_unit / selling_price) if selling_price > 0 else 0
         status, status_class = margin_status(margin_pct)
 
         row_total_bom = bom_cost_unit * qty
+        row_total_labor = labor_cost_unit * qty
         row_total_overhead = overhead_unit * qty
         row_total_mfg_cost = mfg_cost_unit * qty
         row_total_sales = selling_price * qty
@@ -994,12 +1133,14 @@ def compute_manufacturing_fact_sheet(month, year, overhead_override=None, margin
             'name': product.name,
             'qty': qty,
             'bom_cost_unit': bom_cost_unit,
+            'labor_cost_unit': labor_cost_unit,
             'overhead_unit': overhead_unit,
             'mfg_cost_unit': mfg_cost_unit,
             'selling_price': selling_price,
             'margin_unit': margin_unit,
             'margin_pct': margin_pct,
             'total_bom': row_total_bom,
+            'total_labor': row_total_labor,
             'total_overhead': row_total_overhead,
             'total_mfg_cost': row_total_mfg_cost,
             'total_sales': row_total_sales,
@@ -1009,6 +1150,7 @@ def compute_manufacturing_fact_sheet(month, year, overhead_override=None, margin
         })
 
         total_qty += qty
+        total_labor += row_total_labor
         total_overhead += row_total_overhead
         total_mfg_cost += row_total_mfg_cost
         total_sales_value += row_total_sales
@@ -1020,12 +1162,14 @@ def compute_manufacturing_fact_sheet(month, year, overhead_override=None, margin
     totals = {
         'qty': total_qty,
         'bom_cost_unit': (total_planned_bom_cost / total_qty) if total_qty else 0,
+        'labor_cost_unit': (total_labor / total_qty) if total_qty else 0,
         'overhead_unit': (total_overhead / total_qty) if total_qty else 0,
         'mfg_cost_unit': (total_mfg_cost / total_qty) if total_qty else 0,
         'selling_price': (total_sales_value / total_qty) if total_qty else 0,
         'margin_unit': (total_margin_amt / total_qty) if total_qty else 0,
         'margin_pct': overall_margin_pct,
         'total_bom': total_planned_bom_cost,
+        'total_labor': total_labor,
         'total_overhead': total_overhead,
         'total_mfg_cost': total_mfg_cost,
         'total_sales': total_sales_value,
@@ -1046,9 +1190,14 @@ def compute_manufacturing_fact_sheet(month, year, overhead_override=None, margin
         'total_planned_bom_cost': total_planned_bom_cost,
         'overhead_loading_rate': overhead_loading_rate,
         'total_mfg_cost': total_mfg_cost,
+        'total_labor_cost': total_labor,
         'total_sales_value': total_sales_value,
         'overall_margin_pct': overall_margin_pct,
         'total_margin_amt': total_margin_amt,
+        'performance_rows': performance_rows,
+        'performance_totals': performance_totals,
+        'staff_labor_rows': staff_labor_rows,
+        'staff_labor_totals': staff_labor_totals,
     }
 
 
@@ -1381,36 +1530,37 @@ def download_report(format, report_type):
         margin_param = request.args.get('target_margin')
         overhead_override = float(overhead_param) if overhead_param not in (None, '') else None
         margin_override = (float(margin_param) / 100) if margin_param not in (None, '') else None
+        mfg_product_id = request.args.get('product_id', type=int)
 
-        fs = compute_manufacturing_fact_sheet(month, year, overhead_override, margin_override)
+        fs = compute_manufacturing_fact_sheet(month, year, overhead_override, margin_override, mfg_product_id)
 
-        title = f"Manufacturing / Sales Fact Sheet - {fs['month_label']}"
-        headers = ['SKU', 'Item Name', 'Qty', 'BOM Cost/Unit', 'Overhead/Unit', 'Total Mfg Cost/Unit',
-                   'Selling Price/Unit', 'Margin/Unit', 'Margin %', 'Total BOM', 'Total Overhead',
-                   'Total Mfg Cost', 'Total Sales Value', 'Total Margin', 'Margin Status']
+        title = f"Manufacturing Performance Report - {fs['month_label']}"
+        # Flat export mirrors the on-screen Target vs Achieved table. The old
+        # planned-cost columns were dropped along with that table, and were
+        # empty whenever a target's manual Target Units was 0 - which also
+        # tripped the "No data available" guard below and blocked the PDF.
+        staff_audience = request.args.get('audience') == 'staff'
+        if staff_audience:
+            headers = ['SKU', 'Item Name', 'Target', 'Produced', 'Remaining', 'Completion %', 'Result']
+        else:
+            headers = ['SKU', 'Item Name', 'Target', 'Produced', 'Remaining', 'Completion %',
+                       'Expected Profit', 'Actual Profit', 'Result']
 
-        def fs_row(label, r):
-            return {
-                'SKU': label,
-                'Item Name': r.get('name', ''),
-                'Qty': r['qty'],
-                'BOM Cost/Unit': f"{r['bom_cost_unit']:.2f}",
-                'Overhead/Unit': f"{r['overhead_unit']:.2f}",
-                'Total Mfg Cost/Unit': f"{r['mfg_cost_unit']:.2f}",
-                'Selling Price/Unit': f"{r['selling_price']:.2f}",
-                'Margin/Unit': f"{r['margin_unit']:.2f}",
-                'Margin %': f"{r['margin_pct'] * 100:.2f}%",
-                'Total BOM': f"{r['total_bom']:.2f}",
-                'Total Overhead': f"{r['total_overhead']:.2f}",
-                'Total Mfg Cost': f"{r['total_mfg_cost']:.2f}",
-                'Total Sales Value': f"{r['total_sales']:.2f}",
-                'Total Margin': f"{r['total_margin']:.2f}",
-                'Margin Status': r['status'],
+        data = []
+        for r in fs['performance_rows']:
+            row = {
+                'SKU': r['product'].sku or '',
+                'Item Name': r['product'].name or '',
+                'Target': f"{r['target_units']:,.0f}",
+                'Produced': f"{r['produced_units']:,.0f}",
+                'Remaining': f"{r['remaining']:,.0f}",
+                'Completion %': f"{r['completion_pct']:.1f}%",
             }
-
-        data = [fs_row(r['sku'], r) for r in fs['rows']]
-        if fs['rows']:
-            data.append(fs_row('TOTAL / WEIGHTED', fs['totals']))
+            if not staff_audience:
+                row['Expected Profit'] = f"{r['estimated_profit']:.2f}"
+                row['Actual Profit'] = f"{r['actual_profit']:.2f}"
+            row['Result'] = 'ACHIEVED' if r['achieved'] else 'NOT ACHIEVED'
+            data.append(row)
 
     elif report_type == 'bom':
         product_id = request.args.get('product_id')
@@ -1582,7 +1732,10 @@ def download_report(format, report_type):
             {'Account Description': 'TOTAL SECONDARY OUTFLOW', 'Amount (PKR)': '', 'Subtotal (PKR)': money(pl['total_informational_outflow'])},
         ])
 
-    if not data:
+    # The manufacturing PDF/Excel build straight from `fs`, not `data`, and
+    # render their own "no targets this month" state - so an empty month
+    # should still produce a valid document instead of bouncing back.
+    if not data and report_type != 'manufacturing':
         flash('No data available for the selected filters.', 'warning')
         return redirect(url_for(f'reports.{report_type}_report'))
 
@@ -1595,10 +1748,14 @@ def download_report(format, report_type):
                 pl, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), company_info
             )
         elif report_type == 'manufacturing':
-            output = generate_manufacturing_fact_sheet_pdf(fs, company_info)
+            # 'staff' produces the production copy - no revenue, cost, profit
+            # or labour-cost figures anywhere in the document.
+            audience = 'staff' if request.args.get('audience') == 'staff' else 'admin'
+            output = generate_manufacturing_fact_sheet_pdf(fs, company_info, audience=audience)
+            pdf_filename = f"manufacturing_report_{audience}.pdf"
         else:
             output = generate_pdf(data, title, headers, company_info)
-        filename = f"{report_type}_report.pdf"
+        filename = pdf_filename if report_type == 'manufacturing' else f"{report_type}_report.pdf"
         mimetype = 'application/pdf'
     elif format == 'excel':
         if report_type == 'manufacturing':

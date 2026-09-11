@@ -61,14 +61,45 @@
                             <small class="text-muted">Select the warehouse where finished goods will be stored after production.</small>
                         </div>
 
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Start Date</label>
-                                {{ form.start_date(class="form-control", type="date") }}
+                        <div class="row g-3 mb-2">
+                            <div class="col-md-6">
+                                <label class="form-label">Start Date &amp; Time</label>
+                                <div class="row g-2">
+                                    <div class="col-7">
+                                        {{ form.start_date(class="form-control", type="date", id="start_date") }}
+                                    </div>
+                                    <div class="col-5">
+                                        {{ form.start_time(class="form-control", type="time", id="start_time") }}
+                                    </div>
+                                </div>
                             </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">End Date (Estimated)</label>
-                                {{ form.end_date(class="form-control", type="date") }}
+                            <div class="col-md-6">
+                                <label class="form-label">End Date &amp; Time <span class="text-muted small fw-normal">(Timer Deadline)</span></label>
+                                <div class="row g-2">
+                                    <div class="col-7">
+                                        {{ form.end_date(class="form-control", type="date", id="end_date") }}
+                                    </div>
+                                    <div class="col-5">
+                                        {{ form.end_time(class="form-control", type="time", id="end_time") }}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <small class="text-muted"><i class="fas fa-info-circle me-1"></i>End Time is optional — defaults to end of day. Once it passes, the order auto-moves to the Previous Orders tab.{% if order.timer_stopped %} <strong>Already stopped</strong> — editing the window will re-activate it if the new deadline is in the future.{% endif %}</small>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Staff Used in this Order <span class="text-muted small fw-normal">(optional)</span></label>
+                            <select name="staff_ids" id="staff_ids" class="form-select" multiple {{ 'disabled' if order.status == 'Completed' }}>
+                                {% for s in staff_list %}
+                                {% set rate = s.daily_salary if s.daily_salary and s.daily_salary > 0 else ((s.monthly_salary or 0) / 30.0) %}
+                                <option value="{{ s.id }}" data-daily-rate="{{ rate }}" {% if s.id in assigned_staff_ids %}selected{% endif %}>{{ s.name }}{% if s.designation %} ({{ s.designation }}){% endif %}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">Labor cost = each selected staff member's daily salary rate &times; the number of days between Start and End Date. Leave empty to use the BOM's estimated labor cost instead.</small>
+                            <div class="alert alert-info py-2 mt-2 mb-0" id="staffCostPreview" style="display:none;">
+                                <small><i class="fas fa-calculator me-1"></i> <span id="staffCostPreviewText"></span></small>
                             </div>
                         </div>
 
@@ -96,6 +127,58 @@ $(document).ready(function() {
         allowClear: true,
         width: '100%'
     });
+
+    // Staff -> labor cost live preview. Purely informational (the real
+    // figure is computed server-side on submit the same way).
+    $('#staff_ids').select2({
+        theme: 'bootstrap-5',
+        placeholder: '— Search or Select Staff —',
+        allowClear: true,
+        closeOnSelect: false,
+        width: '100%'
+    });
+
+    function updateStaffCostPreview() {
+        const preview = document.getElementById('staffCostPreview');
+        const text = document.getElementById('staffCostPreviewText');
+        const selected = $('#staff_ids').val() || [];
+        if (!selected.length) { preview.style.display = 'none'; return; }
+
+        const startVal = document.getElementById('start_date').value;
+        const endVal = document.getElementById('end_date').value;
+        // Working days only (every day except Sunday) - matches the server's
+        // own calculation, since each staff member's daily rate already
+        // assumes a Sunday-off week.
+        let days = 1;
+        if (startVal && endVal) {
+            const start = new Date(startVal), end = new Date(endVal);
+            if (end >= start) {
+                let count = 0;
+                const cur = new Date(start);
+                while (cur <= end) {
+                    if (cur.getDay() !== 0) count++;
+                    cur.setDate(cur.getDate() + 1);
+                }
+                days = count > 0 ? count : 1;
+            }
+        }
+
+        let total = 0;
+        selected.forEach(function (id) {
+            const opt = $('#staff_ids').find('option[value="' + id + '"]');
+            total += (parseFloat(opt.data('daily-rate')) || 0) * days;
+        });
+
+        text.textContent = selected.length + ' staff × ' + days + ' working day(s) (Sundays excluded) = estimated labor cost PKR ' +
+            total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) +
+            (startVal && endVal ? '' : ' (set both dates for an accurate day count)');
+        preview.style.display = '';
+    }
+
+    $('#staff_ids').on('change', updateStaffCostPreview);
+    document.getElementById('start_date').addEventListener('input', updateStaffCostPreview);
+    document.getElementById('end_date').addEventListener('input', updateStaffCostPreview);
+    updateStaffCostPreview();
 });
 </script>
 {% endblock %}
