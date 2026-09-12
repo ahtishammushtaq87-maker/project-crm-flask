@@ -96,6 +96,9 @@
                         {% endfor %}
                     </select>
                     <small class="text-muted">Picking an order auto-selects the product it was created for below.</small>
+                    <button type="button" id="exploreItemBtn" class="btn btn-outline-primary btn-sm w-100 mt-2 d-none">
+                        <i class="bi bi-arrow-down-circle"></i> Explore This Item
+                    </button>
                 </div>
                 {% endif %}
                 <div class="col-md-4">
@@ -159,6 +162,67 @@
             </form>
         </div>
     </div>
+
+    {% if not target %}
+    <!-- Details for the Manufacturing Order picked above -->
+    <div id="moDetailsPanel" class="mt-4 d-none">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 text-primary fw-bold">
+                    <i class="bi bi-box-seam"></i> Manufacturing Order Details &mdash; <span id="moDetailNumber"></span>
+                </h6>
+                <span id="moDetailStatus" class="badge bg-secondary"></span>
+            </div>
+            <div class="card-body">
+                <!-- Order quantities -->
+                <div class="row g-3 mb-4" id="moQtyCards"></div>
+
+                <!-- Finished good + sales -->
+                <div class="row g-3 mb-4">
+                    <div class="col-lg-6">
+                        <div class="border rounded h-100">
+                            <div class="px-3 py-2 border-bottom bg-light fw-bold small text-uppercase">
+                                Finished Good &mdash; Price &amp; Profit
+                            </div>
+                            <div id="moFinishedGood" class="p-3"></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="border rounded h-100">
+                            <div class="px-3 py-2 border-bottom bg-light fw-bold small text-uppercase">
+                                Total Sales Done &mdash; This Finished Good
+                            </div>
+                            <div id="moSales" class="p-3"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Components -->
+                <div class="border rounded">
+                    <div class="px-3 py-2 border-bottom bg-light fw-bold small text-uppercase">
+                        Components Required For This Order
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle mb-0" id="moComponentsTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>SKU</th>
+                                    <th>Component Name</th>
+                                    <th class="text-end">Qty Required</th>
+                                    <th class="text-end">Qty Consumed</th>
+                                    <th class="text-end">In Stock</th>
+                                    <th class="text-end">Unit Cost</th>
+                                    <th class="text-end">Total Cost</th>
+                                </tr>
+                            </thead>
+                            <tbody id="moComponentsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
 
@@ -204,14 +268,126 @@ $(document).ready(function() {
         allowClear: true
     });
     moSelect.on('change', function() {
+        const moId = $(this).val();
         const productId = $(this).find(':selected').data('product-id');
-        if (!productId) return;
-        const current = productSelect.val() || [];
-        const productIdStr = String(productId);
-        if (!current.includes(productIdStr)) {
-            productSelect.val(current.concat([productIdStr])).trigger('change');
+
+        if (productId) {
+            const current = productSelect.val() || [];
+            const productIdStr = String(productId);
+            if (!current.includes(productIdStr)) {
+                productSelect.val(current.concat([productIdStr])).trigger('change');
+            }
         }
+
+        loadMoDetails(moId);
     });
+
+    // ── Manufacturing Order detail panel ────────────────────────────────
+    const panel = $('#moDetailsPanel');
+    const exploreBtn = $('#exploreItemBtn');
+
+    // "Explore This Item" scrolls down to the detail panel on this same page.
+    exploreBtn.on('click', function() {
+        const el = document.getElementById('moDetailsPanel');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    const money = (n) => 'PKR ' + (parseFloat(n) || 0).toLocaleString(undefined, {
+        minimumFractionDigits: 2, maximumFractionDigits: 2
+    });
+    const qty = (n) => (parseFloat(n) || 0).toLocaleString(undefined, {
+        minimumFractionDigits: 0, maximumFractionDigits: 2
+    });
+
+    function statCard(label, value, cls) {
+        return `
+            <div class="col-6 col-lg-3">
+                <div class="border rounded text-center py-3 h-100">
+                    <div class="text-muted small fw-bold text-uppercase">${label}</div>
+                    <div class="h5 fw-bold mb-0 ${cls || ''}">${value}</div>
+                </div>
+            </div>`;
+    }
+
+    function infoRow(label, value, cls) {
+        return `
+            <div class="d-flex justify-content-between py-1 border-bottom">
+                <span class="text-muted small">${label}</span>
+                <span class="fw-bold ${cls || ''}">${value}</span>
+            </div>`;
+    }
+
+    function loadMoDetails(moId) {
+        if (!panel.length) return;
+        if (!moId) { panel.addClass('d-none'); exploreBtn.addClass('d-none'); return; }
+
+        fetch(`/production/api/mo-details/${moId}`)
+            .then(r => r.json())
+            .then(d => {
+                if (d.error) { panel.addClass('d-none'); exploreBtn.addClass('d-none'); return; }
+
+                $('#moDetailNumber').text(d.order_number);
+                $('#moDetailStatus')
+                    .text(d.status)
+                    .attr('class', 'badge ' + (d.status === 'Completed' ? 'bg-success' : 'bg-warning text-dark'));
+
+                $('#moQtyCards').html(
+                    statCard('Qty To Produce', qty(d.quantity_to_produce), '') +
+                    statCard('Produced', qty(d.produced_qty), 'text-primary') +
+                    statCard('Remaining', qty(d.remaining_qty), d.remaining_qty > 0 ? 'text-danger' : 'text-success') +
+                    statCard('Finished Good In Stock', qty(d.finished_good.in_stock), '')
+                );
+
+                const fg = d.finished_good;
+                $('#moFinishedGood').html(
+                    `<div class="fw-bold mb-2">${fg.name} <span class="text-muted small">(${fg.sku})</span></div>` +
+                    infoRow('Cost Price / Unit', money(fg.cost_price)) +
+                    infoRow('Selling Price / Unit', money(fg.selling_price)) +
+                    infoRow('Profit / Unit', money(fg.profit), fg.profit >= 0 ? 'text-success' : 'text-danger') +
+                    infoRow('Profit %', (parseFloat(fg.profit_pct) || 0).toFixed(2) + '%',
+                            fg.profit_pct >= 0 ? 'text-success' : 'text-danger')
+                );
+
+                const s = d.sales;
+                $('#moSales').html(
+                    infoRow('Quantity Sold', qty(s.qty_sold) + ' ' + fg.unit) +
+                    infoRow('Total Sales Amount', money(s.amount), 'text-primary') +
+                    infoRow('Returned Quantity', qty(s.returned_qty) + ' ' + fg.unit,
+                            s.returned_qty > 0 ? 'text-danger' : '') +
+                    infoRow('Net Quantity Sold', qty(s.net_qty) + ' ' + fg.unit, 'text-success')
+                );
+
+                let rows = '';
+                d.components.forEach(c => {
+                    const short = c.in_stock < c.quantity_required;
+                    rows += `
+                        <tr>
+                            <td>${c.sku}</td>
+                            <td>${c.name}</td>
+                            <td class="text-end fw-bold">${qty(c.quantity_required)} <span class="text-muted small">${c.unit}</span></td>
+                            <td class="text-end">${qty(c.quantity_consumed)}</td>
+                            <td class="text-end ${short ? 'text-danger fw-bold' : ''}">${qty(c.in_stock)}</td>
+                            <td class="text-end">${money(c.unit_cost)}</td>
+                            <td class="text-end">${money(c.total_cost)}</td>
+                        </tr>`;
+                });
+                if (!d.components.length) {
+                    rows = '<tr><td colspan="7" class="text-center text-muted py-3">No components on this order.</td></tr>';
+                } else {
+                    rows += `
+                        <tr class="table-light fw-bold">
+                            <td colspan="6" class="text-end">TOTAL COMPONENT COST</td>
+                            <td class="text-end">${money(d.total_component_cost)}</td>
+                        </tr>`;
+                }
+                $('#moComponentsBody').html(rows);
+
+                panel.removeClass('d-none');
+                exploreBtn.removeClass('d-none')
+                          .html(`<i class="bi bi-arrow-down-circle"></i> Explore This Item (${fg.sku})`);
+            })
+            .catch(() => { panel.addClass('d-none'); exploreBtn.addClass('d-none'); });
+    }
 
     function updatePriceInfo() {
         const selectedData = productSelect.select2('data');

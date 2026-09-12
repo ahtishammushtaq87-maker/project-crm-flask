@@ -492,6 +492,91 @@ def api_bom_cost(sku_id):
     })
 
 
+@bp.route('/api/mo-details/<int:mo_id>')
+@login_required
+def api_mo_details(mo_id):
+    """API: everything the Set Target page shows once a Manufacturing Order is
+    picked - the order's finished good with its cost/sell price and margin,
+    each component with the quantity this order requires, and how much of that
+    finished good has actually been sold to date.
+    """
+    from app.models import SaleReturn, SaleReturnItem
+
+    order = ManufacturingOrder.query.get_or_404(mo_id)
+    bom = order.bom
+    product = bom.product if bom else None
+    if not product:
+        return jsonify({'error': 'This order has no linked BOM/product.'}), 400
+
+    cost_price = product.cost_price or 0
+    selling_price = product.finished_good_price or product.unit_price or 0
+    profit = selling_price - cost_price
+    profit_pct = (profit / selling_price * 100) if selling_price else 0
+
+    components = []
+    for item in order.items:
+        comp = item.component
+        if not comp:
+            continue
+        unit_cost = comp.cost_price or 0
+        required = item.quantity_required or 0
+        components.append({
+            'sku': comp.sku,
+            'name': comp.name,
+            'unit': comp.unit or 'pcs',
+            'quantity_required': required,
+            'quantity_consumed': item.quantity_consumed or 0,
+            'in_stock': comp.quantity or 0,
+            'unit_cost': unit_cost,
+            'total_cost': unit_cost * required,
+        })
+    components.sort(key=lambda c: c['sku'] or '')
+
+    # Sales of this finished good to date - approved, non-draft, non-rejected
+    # invoices only, matching what the sales reports count as a real sale.
+    sold = db.session.query(
+        func.sum(SaleItem.quantity), func.sum(SaleItem.total)
+    ).join(Sale, SaleItem.sale_id == Sale.id).filter(
+        SaleItem.product_id == product.id,
+        Sale.is_approved == True,
+        Sale.is_rejected == False,
+        Sale.is_draft == False
+    ).first()
+    sold_qty = (sold[0] or 0) if sold else 0
+    sold_amount = (sold[1] or 0) if sold else 0
+
+    returned_qty = db.session.query(func.sum(SaleReturnItem.quantity)).join(
+        SaleReturn, SaleReturnItem.return_id == SaleReturn.id
+    ).filter(SaleReturnItem.product_id == product.id).scalar() or 0
+
+    return jsonify({
+        'order_number': order.order_number,
+        'status': order.status,
+        'quantity_to_produce': order.quantity_to_produce or 0,
+        'produced_qty': order.produced_qty or 0,
+        'remaining_qty': order.remaining_qty,
+        'finished_good': {
+            'id': product.id,
+            'sku': product.sku,
+            'name': product.name,
+            'unit': product.unit or 'pcs',
+            'cost_price': cost_price,
+            'selling_price': selling_price,
+            'profit': profit,
+            'profit_pct': profit_pct,
+            'in_stock': product.quantity or 0,
+        },
+        'components': components,
+        'total_component_cost': sum(c['total_cost'] for c in components),
+        'sales': {
+            'qty_sold': sold_qty,
+            'amount': sold_amount,
+            'returned_qty': returned_qty,
+            'net_qty': sold_qty - returned_qty,
+        },
+    })
+
+
 @bp.route('/api/update-target', methods=['POST'])
 @login_required
 @permission_required('production', action='edit')
