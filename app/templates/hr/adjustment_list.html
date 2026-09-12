@@ -137,7 +137,15 @@
                             {% elif a.payroll_month and a.payroll_year %}{{ '%02d'|format(a.payroll_month) }}/{{ a.payroll_year }}
                             {% else %}Pending{% endif %}
                         </td>
-                        <td>{{ a.reason }}</td>
+                        <td>
+                            {{ a.reason }}
+                            {% if a.is_auto_attendance_bonus %}
+                            <span class="badge bg-success-subtle text-success border border-success-subtle ms-1"
+                                  title="Awarded automatically: this month's hours worked matched the required hours exactly, with no overtime.">
+                                <i class="bi bi-robot"></i> Auto
+                            </span>
+                            {% endif %}
+                        </td>
                         <td class="num">PKR {{ "%.2f"|format(a.amount) }}</td>
                         <td>{{ a.evidence_text or '—' }}</td>
                         <td>

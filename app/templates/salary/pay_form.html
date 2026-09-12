@@ -189,8 +189,13 @@
         // overwritten by — the attendance-based auto-fill below, so an
         // approved bonus/deduction always reaches this payroll the same way
         // a pending Advance always shows up in Advance Deduction.
-        const pendingBonusAdjustments = parseFloat('{{ pending_bonus_adjustments or 0 }}');
-        const pendingDeductionAdjustments = parseFloat('{{ pending_deduction_adjustments or 0 }}');
+        // Server-rendered values are only the no-JS fallback / initial hint.
+        // The live figures come per-month from the API below, so switching the
+        // Month or Year picks up adjustments awarded for THAT month (the
+        // automatic perfect-attendance bonus targets the completed month, not
+        // whichever month this page happened to default to).
+        let pendingBonusAdjustments = parseFloat('{{ pending_bonus_adjustments or 0 }}');
+        let pendingDeductionAdjustments = parseFloat('{{ pending_deduction_adjustments or 0 }}');
 
         function fetchAttendanceSalary() {
             const staffId = '{{ staff.id }}';
@@ -204,6 +209,10 @@
                     const ot_hours = data.overtime_hours || 0;
                     const ot_pay = data.overtime_pay || 0;
                     $('#attendance_salary').val(att_sal.toFixed(2));
+
+                    // Refresh to the selected month's approved adjustments.
+                    pendingBonusAdjustments = parseFloat(data.pending_bonus_adjustments) || 0;
+                    pendingDeductionAdjustments = parseFloat(data.pending_deduction_adjustments) || 0;
 
                     const base = parseFloat($('#base_salary').val()) || 0;
                     let helpText;
@@ -228,6 +237,15 @@
                     }
                     if (pendingDeductionAdjustments > 0) {
                         helpText += ' Other Deductions includes PKR ' + pendingDeductionAdjustments.toFixed(2) + ' from approved HR deductions.';
+                    }
+                    // Approved bonuses sitting on another month (this page opens
+                    // on the current month; the perfect-attendance bonus targets
+                    // the completed one) - say so instead of just showing 0.
+                    const otherMonths = data.pending_bonus_other_months || [];
+                    if (otherMonths.length) {
+                        const parts = otherMonths.map(o => 'PKR ' + parseFloat(o.amount).toFixed(2) + ' on ' + o.period);
+                        helpText += ' NOTE: approved bonuses are also waiting on another period (' +
+                                    parts.join(', ') + ') - switch Month/Year to that period to include them.';
                     }
                     helpText += ' All amounts are still editable before you process.';
                     $('#bonus_help').text(helpText).show();

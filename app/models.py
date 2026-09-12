@@ -1868,6 +1868,10 @@ class ExpenseAccountTransaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     account_id = db.Column(db.Integer, db.ForeignKey('expense_accounts.id'), nullable=False, index=True)
     expense_id = db.Column(db.Integer, db.ForeignKey('expenses.id'), nullable=True, index=True)
+    # Set instead of expense_id when this credit row is a Salary Advance paid
+    # out of the account (transaction_type='salary_advance'), so deleting the
+    # advance can find and reverse exactly its own movement.
+    salary_advance_id = db.Column(db.Integer, db.ForeignKey('salary_advances.id'), nullable=True, index=True)
     # Only ever set directly on a debit ("Add Money") row — a credit row
     # linked to an Expense shows its customer/warehouse via expense.customer/
     # expense.warehouse instead, same as Expense's own fields.
@@ -3058,6 +3062,13 @@ class SalaryAdvance(db.Model):
     description = db.Column(db.String(255))
     is_deducted = db.Column(db.Boolean, default=False)
     salary_payment_id = db.Column(db.Integer, db.ForeignKey('salary_payments.id'), nullable=True)
+    # Custodian account the cash was actually paid out of. Set here and the
+    # advance posts a 'credit' (money out) row against that account, exactly
+    # like an Expense does - see _sync_advance_account_transaction in
+    # app/routes/salary.py. Left empty, the advance behaves as it always has
+    # and touches no account.
+    expense_account_id = db.Column(db.Integer, db.ForeignKey('expense_accounts.id'), nullable=True, index=True)
+    expense_account = db.relationship('ExpenseAccount', foreign_keys=[expense_account_id])
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     def __init__(self,staff_id,amount,date,description ):
      self.staff_id=staff_id
@@ -3184,6 +3195,11 @@ class SalaryAdjustment(db.Model):
     approved_at = db.Column(db.DateTime, nullable=True)
     is_applied = db.Column(db.Boolean, default=False)  # mirrors SalaryAdvance.is_deducted
     salary_payment_id = db.Column(db.Integer, db.ForeignKey('salary_payments.id'), nullable=True)
+    # Set on rows created automatically by the perfect-attendance bonus job
+    # (app/services/attendance_bonus.py). Also the idempotency key: one such
+    # row per staff per payroll month, in ANY status - so rejecting one
+    # permanently suppresses it instead of it being re-created next run.
+    is_auto_attendance_bonus = db.Column(db.Boolean, default=False, index=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

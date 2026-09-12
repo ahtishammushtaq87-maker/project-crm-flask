@@ -14,7 +14,7 @@
                     {{ form.hidden_tag() }}
                     <div class="mb-3">
                         <label class="form-label fw-bold small text-muted text-uppercase">Staff Member</label>
-                        {{ form.staff_id(class="form-select form-select-lg") }}
+                        {{ form.staff_id(class="form-select", id="advanceStaffSelect") }}
                         {% if form.staff_id.errors %}
                         <div class="text-danger small mt-1">{% for error in form.staff_id.errors %}{{ error }}{% endfor %}</div>
                         {% endif %}
@@ -31,6 +31,19 @@
                         {{ form.date(class="form-control", type="date") }}
                         {% if form.date.errors %}
                         <div class="text-danger small mt-1">{% for error in form.date.errors %}{{ error }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted text-uppercase">
+                            Custodian Account <span class="text-danger">*</span>
+                        </label>
+                        {{ form.expense_account_id(class="form-select", id="advanceAccountSelect") }}
+                        <div class="form-text">
+                            <i class="fas fa-info-circle me-1"></i>The account this advance is paid out of &mdash; the
+                            amount is deducted from its balance as a credit entry, the same way an expense does.
+                        </div>
+                        {% if form.expense_account_id.errors %}
+                        <div class="text-danger small mt-1">{% for error in form.expense_account_id.errors %}{{ error }}{% endfor %}</div>
                         {% endif %}
                     </div>
                     <div class="mb-3">
@@ -52,4 +65,23 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // select2 itself is already loaded globally by base.html.
+    $(document).ready(function () {
+        $('#advanceStaffSelect').select2({
+            theme: 'bootstrap-5',
+            placeholder: '— Search or select staff member —',
+            width: '100%'
+        });
+        $('#advanceAccountSelect').select2({
+            theme: 'bootstrap-5',
+            placeholder: '— Search or select custodian account —',
+            allowClear: true,
+            width: '100%'
+        });
+    });
+</script>
 {% endblock %}

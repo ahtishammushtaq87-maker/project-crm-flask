@@ -189,3 +189,49 @@ def start_mo_timer_scheduler(app):
     scheduler.start()
     scheduler.modify_job('mo_timer_finalization', next_run_time=datetime.now())
     _mo_timer_scheduler = scheduler
+
+
+_attendance_bonus_scheduler = None
+
+
+def start_attendance_bonus_scheduler(app):
+    """Start the perfect-attendance bonus job exactly once per running
+    process. Awards one day's pay to any staff member whose month was worked
+    exactly to the required hours with no overtime, as an approved
+    Bonuses & Adjustments row that payroll then picks up for that month.
+    Runs hourly rather than every minute - attendance is entered by hand, so
+    there is nothing to react to second-by-second. Same guards as the other
+    schedulers above (separate instance so it can never interfere)."""
+    global _attendance_bonus_scheduler
+
+    if os.environ.get('ATTENDANCE_BONUS_SCHEDULER_DISABLED') == '1':
+        return
+
+    if app.debug and os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
+        return  # this is the reloader's watcher process, not the real server
+
+    if _attendance_bonus_scheduler is not None:
+        return  # already started in this process
+
+    interval_minutes = int(os.environ.get('ATTENDANCE_BONUS_SCHEDULER_INTERVAL_MINUTES', '60'))
+
+    def _run():
+        with app.app_context():
+            from app.services.attendance_bonus import run_for_recent_months
+            try:
+                run_for_recent_months()
+            except Exception:
+                app.logger.exception('Perfect-attendance bonus background run failed')
+
+    scheduler = BackgroundScheduler(daemon=True)
+    scheduler.add_job(
+        _run,
+        'interval',
+        minutes=interval_minutes,
+        id='attendance_bonus_award',
+        next_run_time=None,
+        replace_existing=True,
+    )
+    scheduler.start()
+    scheduler.modify_job('attendance_bonus_award', next_run_time=datetime.now())
+    _attendance_bonus_scheduler = scheduler

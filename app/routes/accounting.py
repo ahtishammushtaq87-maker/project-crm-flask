@@ -3436,6 +3436,10 @@ def delete_expense_account_debit_entry(id):
     if txn.transaction_type == 'transfer':
         flash('This is part of a fund transfer and cannot be deleted on its own.', 'warning')
         return redirect(url_for('accounting.expenses', entry_view='debit'))
+    if txn.salary_advance_id is not None:
+        flash('This entry belongs to a salary advance — delete the advance instead '
+              '(HR/Salary > Advances), which releases this account movement too.', 'warning')
+        return redirect(url_for('accounting.expenses', entry_view='debit'))
 
     if txn.linked_payment_id:
         payment = Payment.query.get(txn.linked_payment_id)
@@ -3470,6 +3474,10 @@ def edit_expense_account_debit_entry(id):
         return jsonify({'success': False, 'message': 'This entry belongs to an expense — edit the expense instead.'})
     if txn.transaction_type == 'transfer':
         return jsonify({'success': False, 'message': 'This is part of a fund transfer and cannot be edited on its own.'})
+    if txn.salary_advance_id is not None:
+        return jsonify({'success': False, 'message': 'This entry belongs to a salary advance — edit it from '
+                                                     'HR/Salary > Advances instead. (This form is for Add Money '
+                                                     'entries, which require a funding Source a salary advance has no.)'})
 
     account_id = request.form.get('account_id', type=int)
     acct = ExpenseAccount.query.get(account_id) if account_id else None

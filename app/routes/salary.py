@@ -560,12 +560,76 @@ def bulk_delete_advances():
     return jsonify({'success': True, 'message': msg})
 
 
+def _advance_account_choices():
+    """Custodian accounts an advance can be paid from, labelled with their
+    current balance so the payer can see what's available."""
+    accounts = ExpenseAccount.query.filter_by(is_active=True).order_by(ExpenseAccount.name).all()
+    # The 0 entry is only a prompt - DataRequired on the field rejects it.
+    choices = [(0, '— Select Custodian Account —')]
+    for acct in accounts:
+        label = acct.name
+        if acct.account_type:
+            label += f' ({acct.account_type})'
+        label += f' — Balance: PKR {acct.balance:,.2f}'
+        choices.append((acct.id, label))
+    return choices
+
+
+def _sync_advance_account_transaction(advance, account_id, is_confirmed):
+    """Create/refresh/remove the ExpenseAccountTransaction mirroring this
+    advance's effect on a custodian account - a 'credit' (money out) row, the
+    same direction an Expense posts. Mirrors
+    _sync_expense_account_transaction in app/routes/accounting.py; `advance`
+    must already have a flushed id."""
+    existing = ExpenseAccountTransaction.query.filter_by(salary_advance_id=advance.id).first()
+    account = ExpenseAccount.query.get(account_id) if account_id else None
+
+    if not account:
+        if existing:
+            db.session.delete(existing)
+        advance.expense_account_id = None
+        return
+
+    # Every read has to happen BEFORE a new row joins the session. Touching
+    # advance.staff afterwards lazy-loads it, and that query triggers an
+    # autoflush which would try to INSERT a row whose NOT NULL account_id
+    # hasn't been assigned yet.
+    staff_name = advance.staff.name.strip() if advance.staff and advance.staff.name else 'Staff'
+
+    if existing:
+        txn = existing
+    else:
+        # Constructed with account_id already set, so the row is valid from
+        # the moment it becomes pending - an autoflush can never catch it
+        # half-built.
+        txn = ExpenseAccountTransaction(salary_advance_id=advance.id, entry_type='credit',
+                                        account_id=account.id, date=advance.date,
+                                        amount=advance.amount, transaction_type='salary_advance',
+                                        created_by=current_user.id)
+        db.session.add(txn)
+
+    txn.account_id = account.id
+    txn.transaction_type = 'salary_advance'
+    txn.date = advance.date
+    txn.amount = advance.amount
+    txn.description = f'Salary advance - {staff_name}' + (f': {advance.description}' if advance.description else '')
+    txn.reference = f'ADV-{advance.id:06d}'
+    txn.payee = staff_name
+    txn.is_approved = is_confirmed
+    txn.is_rejected = False
+    txn.approved_by = current_user.id if is_confirmed else None
+    txn.approved_at = datetime.utcnow() if is_confirmed else None
+
+    advance.expense_account_id = account_id
+
+
 @bp.route('/advances/add', methods=['GET', 'POST'])
 @login_required
 @permission_required('salary', action='add')
 def add_advance():
     form = SalaryAdvanceForm()
     form.staff_id.choices = [(s.id, s.name) for s in Staff.query.filter_by(is_active=True).all()]
+    form.expense_account_id.choices = _advance_account_choices()
     if form.validate_on_submit():
         advance = SalaryAdvance(
             staff_id=form.staff_id.data,
@@ -574,9 +638,20 @@ def add_advance():
             description=form.description.data
         )
         db.session.add(advance)
+        db.session.flush()  # need advance.id for the account transaction
+
+        account_id = form.expense_account_id.data or 0
+        # Admin-created movements post approved (so the balance moves now);
+        # anyone else's wait for approval, same rule as an Add Money debit.
+        _sync_advance_account_transaction(advance, account_id, is_confirmed=current_user.role == 'admin')
+
         db.session.commit()
         log_activity('Salary', f'Added Advance for: {advance.staff.name}', f'Amount: {advance.amount}')
-        flash('Salary advance recorded!', 'success')
+        if advance.expense_account_id:
+            acct = ExpenseAccount.query.get(advance.expense_account_id)
+            flash(f'Salary advance recorded and PKR {advance.amount:,.2f} credited from {acct.name}.', 'success')
+        else:
+            flash('Salary advance recorded!', 'success')
         return redirect(url_for('salary.advance_list'))
     return render_template('salary/advance_form.html', form=form, title="Record Advance")
 
@@ -590,6 +665,11 @@ def delete_advance(id):
         return redirect(url_for('salary.advance_list'))
     advance_staff_name = advance.staff.name if advance.staff else 'Unknown'
     advance_amount = advance.amount
+    # Release the custodian account movement too, so deleting the advance
+    # gives the money back to the account instead of leaving it deducted.
+    linked_txn = ExpenseAccountTransaction.query.filter_by(salary_advance_id=advance.id).first()
+    if linked_txn:
+        db.session.delete(linked_txn)
     db.session.delete(advance)
     db.session.commit()
     log_activity('Salary', f'Deleted Advance for: {advance_staff_name}', f'Amount: {advance_amount}')
@@ -1356,9 +1436,45 @@ def get_attendance_salary(staff_id, month, year):
     earnings = staff.get_attendance_earnings(start_date, end_date)
     overtime_hours = staff.get_overtime_hours(start_date, end_date)
     overtime_pay = staff.get_overtime_amount(start_date, end_date)
+
+    # Approved, not-yet-applied HR Bonuses & Adjustments for THIS month -
+    # same filter pay_salary() uses. Returned per-month so the pay form can
+    # refresh them when the Month/Year selection changes; a value baked into
+    # the page at render time only ever matched the month it defaulted to,
+    # which silently dropped a bonus awarded for any other month (e.g. the
+    # automatic perfect-attendance bonus, which targets the completed month).
+    approved_adjustments = [
+        a for a in SalaryAdjustment.query.filter_by(
+            staff_id=staff.id, status='approved', is_applied=False).all()
+        if a.is_recurring or not a.payroll_month
+        or (a.payroll_month == month and a.payroll_year == year)
+    ]
+    pending_bonus = sum(a.amount for a in approved_adjustments
+                        if a.adjustment_type in ('bonus', 'allowance'))
+    pending_deduction = sum(a.amount for a in approved_adjustments
+                            if a.adjustment_type == 'deduction')
+
+    # Approved bonuses still waiting on a DIFFERENT month, so the form can say
+    # so rather than just showing 0 - this page defaults to the current month,
+    # while the perfect-attendance bonus targets the completed one.
+    other_months = {}
+    for a in SalaryAdjustment.query.filter_by(
+            staff_id=staff.id, status='approved', is_applied=False).all():
+        if a.adjustment_type not in ('bonus', 'allowance') or a.is_recurring:
+            continue
+        if not a.payroll_month or (a.payroll_month == month and a.payroll_year == year):
+            continue
+        key = f"{a.payroll_month:02d}/{a.payroll_year}"
+        other_months[key] = other_months.get(key, 0) + a.amount
+
     return jsonify({
         'attendance_salary': earnings,
         'base_salary': staff.monthly_salary,
         'overtime_hours': overtime_hours,
-        'overtime_pay': overtime_pay
+        'overtime_pay': overtime_pay,
+        'pending_bonus_adjustments': pending_bonus,
+        'pending_deduction_adjustments': pending_deduction,
+        'pending_bonus_other_months': [
+            {'period': k, 'amount': v} for k, v in sorted(other_months.items())
+        ],
     })

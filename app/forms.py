@@ -457,6 +457,9 @@ class SalaryAdvanceForm(FlaskForm):
     amount = FloatField('Advance Amount', validators=[DataRequired(), NumberRange(min=1)])
     date = DateField('Date', validators=[DataRequired()])
     description = TextAreaField('Description')
+    # DataRequired rejects the 0 placeholder choice, so a real account must be
+    # picked before an advance can be recorded.
+    expense_account_id = SelectField('Custodian Account', coerce=int, validators=[DataRequired()])
 
 class SalaryPaymentForm(FlaskForm):
     staff_id = SelectField('Staff', coerce=int, validators=[DataRequired()])

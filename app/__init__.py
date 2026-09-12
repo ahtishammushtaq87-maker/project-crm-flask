@@ -1,3 +1,5 @@
+import re
+
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
@@ -31,7 +33,7 @@ def create_app(config_class=Config):
             Currency, Payment, RecurringExpense, ExpenseCategory, Expense,
             StockMovement, Company, InvoiceSettings, PurchaseSettings, ExpenseSettings,
             SaleReturn, SaleReturnItem, Task, BOM, BOMItem, Staff,
-            Attendance, SalaryAdvance, SalaryPayment, ManufacturingOrder,
+            Attendance, SalaryAdvance, SalaryPayment, SalaryAdjustment, ManufacturingOrder,
             ManufacturingOrderItem, ManufacturingOrderStaff, MonthlyTarget, VendorAdvance, CustomerAdvance,
             PurchaseOrder, PurchaseOrderItem, CostPriceHistory, BOMVersion,
             BOMVersionItem, ProductionTarget, ProductionLog, PDProject,
@@ -83,6 +85,7 @@ def create_app(config_class=Config):
             'attendance': Attendance,
             'salary_advances': SalaryAdvance,
             'salary_payments': SalaryPayment,
+            'salary_adjustments': SalaryAdjustment,
             'manufacturing_orders': ManufacturingOrder,
             'manufacturing_order_items': ManufacturingOrderItem,
             'manufacturing_order_staff': ManufacturingOrderStaff,
@@ -418,22 +421,46 @@ def create_app(config_class=Config):
             message = kwargs.get('error_message', 'An error occurred.')
             return f"<h1>{code} - {title}</h1><p>{message}</p>", code
     
+    # Friendly names for the columns worth translating; anything else is
+    # reported by its own column name rather than guessed at.
+    _FRIENDLY_COLUMNS = {
+        'sale_id': 'Sale reference',
+        'product_id': 'Product',
+        'vendor_id': 'Vendor',
+        'customer_id': 'Customer',
+        'bill_id': 'Bill reference',
+        'account_id': 'Account',
+        'staff_id': 'Staff member',
+        'source_id': 'Source',
+        'warehouse_id': 'Warehouse',
+        'category_id': 'Category',
+        'amount': 'Amount',
+        'date': 'Date',
+    }
+
     def get_user_friendly_message(error):
         """Convert technical errors into one-line simple, understandable messages."""
         error_str = str(error).lower()
-        
-        # Database integrity errors
+
+        # Database integrity errors. SQLite names the exact offending column
+        # ("NOT NULL constraint failed: expense_account_transactions.date"), so
+        # read that rather than searching the whole statement for column names —
+        # an INSERT lists every column, so substring matching would happily
+        # blame e.g. customer_id for a failure on a completely different field.
+        not_null = re.search(r'not null constraint failed:\s*([\w]+)\.([\w]+)', error_str)
+        if not_null:
+            table, column = not_null.group(1), not_null.group(2)
+            label = _FRIENDLY_COLUMNS.get(column, column.replace('_', ' '))
+            return f'Cannot process: {label} is required (missing {table}.{column}).'
+
+        unique = re.search(r'unique constraint failed:\s*([\w]+)\.([\w]+)', error_str)
+        if unique:
+            table, column = unique.group(1), unique.group(2)
+            label = _FRIENDLY_COLUMNS.get(column, column.replace('_', ' '))
+            return f'Duplicate entry: this {label} already exists ({table}.{column}).'
+
         if 'not null constraint' in error_str or 'integrityerror' in error_str:
-            if 'sale_id' in error_str:
-                return 'Cannot process: Sale ID is required but missing.'
-            elif 'product_id' in error_str:
-                return 'Cannot process: Product is required. Please select a product.'
-            elif 'vendor_id' in error_str or 'customer_id' in error_str:
-                return 'Cannot process: Vendor/Customer is required.'
-            elif 'bill_id' in error_str:
-                return 'Cannot process: Bill reference is missing.'
-            else:
-                return 'Required field missing or duplicate entry exists. Please check your data.'
+            return 'Required field missing or duplicate entry exists. Please check your data.'
         
         # Foreign key constraints
         if 'foreign key constraint' in error_str:
@@ -636,10 +663,13 @@ def create_app(config_class=Config):
         except Exception:
             return dict(recovery_escalation_alerts=[])
 
-    from app.scheduler import start_recovery_scheduler, start_backup_scheduler, start_production_target_scheduler, start_mo_timer_scheduler
+    from app.scheduler import (start_recovery_scheduler, start_backup_scheduler,
+                               start_production_target_scheduler, start_mo_timer_scheduler,
+                               start_attendance_bonus_scheduler)
     start_recovery_scheduler(app)
     start_backup_scheduler(app)
     start_production_target_scheduler(app)
     start_mo_timer_scheduler(app)
+    start_attendance_bonus_scheduler(app)
 
     return app

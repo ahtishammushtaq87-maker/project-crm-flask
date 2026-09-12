@@ -254,6 +254,14 @@ def add_leave_type():
 @bp.route('/adjustments')
 @login_required
 def adjustment_list():
+    # Fallback for the hourly background job, so perfect-attendance bonuses
+    # show up the moment this page is opened rather than on the next tick.
+    from app.services.attendance_bonus import run_for_recent_months
+    try:
+        run_for_recent_months()
+    except Exception:
+        pass  # the scheduler will retry; never block the page on this
+
     query = SalaryAdjustment.query
     staff_id = request.args.get('staff_id', type=int)
     status = request.args.get('status', '')
