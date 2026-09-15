@@ -543,6 +543,17 @@ class Product(db.Model):
     image_path = db.Column(db.String(255))  # Path to product image
     is_active = db.Column(db.Boolean, default=True)
     is_manufactured = db.Column(db.Boolean, default=False)
+    # Obsolete: an admin-only lifecycle flag, deliberately separate from
+    # is_active (which is currently unused/always True everywhere in the
+    # app). Marking a product obsolete hides it from "pick a product" dropdowns
+    # used to create NEW records across Sales, Purchase, BOM, Manufacturing,
+    # Production Targets, Expenses, Tools and Product Development - but never
+    # hides it from the Products list itself, nor from any EXISTING record
+    # that already references it (those defensively re-include the linked
+    # product so editing old data never silently breaks).
+    is_obsolete = db.Column(db.Boolean, default=False, index=True)
+    obsoleted_at = db.Column(db.DateTime, nullable=True)
+    obsoleted_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     finished_good_price = db.Column(db.Float, nullable=True)
     warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
     # Universal approval fields

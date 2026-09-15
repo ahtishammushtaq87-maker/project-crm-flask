@@ -342,7 +342,7 @@
                                                 <option value="">Select Product</option>
                                                 {% for product in products %}
                                                 <option value="{{ product.id }}" data-price="{{ product.unit_price }}" data-cost="{{ product.cost_price }}">
-                                                    {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity }})
+                                                    {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity }}){% if product.is_obsolete %} (Obsolete){% endif %}
                                                 </option>
                                                 {% endfor %}
                                             </select>

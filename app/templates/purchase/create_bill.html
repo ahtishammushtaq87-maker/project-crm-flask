@@ -323,7 +323,7 @@
                                                 <option value="">— Select Product —</option>
                                                 {% for p in products %}
                                                 <option value="{{ p.id }}" data-cost="{{ p.cost_price }}">{{ p.sku }} -
-                                                    {{ p.name }}
+                                                    {{ p.name }}{% if p.is_obsolete %} (Obsolete){% endif %}
                                                 </option>
                                                 {% endfor %}
                                             </select>

@@ -91,15 +91,15 @@ def boms():
 @permission_required('manufacturing', action='add')
 def add_bom():
     form = BOMForm()
-    # Only show manufactured products in the "Finished Product" dropdown (if column exists)
+    # Only show manufactured, non-obsolete products in the "Finished Product" dropdown (if column exists)
     if has_column('products', 'is_manufactured'):
-        manufactured_products = Product.query.filter_by(is_manufactured=True).all()
+        manufactured_products = Product.query.filter_by(is_manufactured=True, is_obsolete=False).all()
     else:
         manufactured_products = []
     form.product_id.choices = [(p.id, f"{p.sku} - {p.name}") for p in manufactured_products]
-    
-    # All products can be components (except maybe the finished product itself)
-    all_products = Product.query.all()
+
+    # All non-obsolete products can be components (except maybe the finished product itself)
+    all_products = Product.query.filter_by(is_obsolete=False).all()
 
     if form.validate_on_submit():
         bom = BOM()
@@ -210,21 +210,32 @@ def edit_bom(id):
     bom = BOM.query.get_or_404(id)
     form = BOMForm(obj=bom)
     
-    # Only show manufactured products in the "Finished Product" dropdown (if column exists)
+    # Only show manufactured, non-obsolete products in the "Finished Product" dropdown (if column exists)
     if has_column('products', 'is_manufactured'):
-        manufactured_products = Product.query.filter_by(is_manufactured=True).all()
+        manufactured_products = Product.query.filter_by(is_manufactured=True, is_obsolete=False).all()
     else:
         manufactured_products = []
-        
+
     form.product_id.choices = [(p.id, f"{p.sku} - {p.name}") for p in manufactured_products]
-    
-    # Ensure current product is in choices even if not strictly 'manufactured' historically
+
+    # Ensure current product is in choices even if not strictly 'manufactured'
+    # historically, or since marked Obsolete - editing this BOM must never
+    # silently lose its own finished-good link.
     if bom.product_id and bom.product_id not in [p.id for p in manufactured_products]:
         p = Product.query.get(bom.product_id)
         if p:
-            form.product_id.choices.append((p.id, f"{p.sku} - {p.name} (Current)"))
-            
-    all_products = Product.query.all()
+            suffix = ' (Obsolete)' if p.is_obsolete else ' (Current)'
+            form.product_id.choices.append((p.id, f"{p.sku} - {p.name}{suffix}"))
+
+    # Non-obsolete products can be components, plus any component already on
+    # this BOM so an old line referencing a now-obsolete item still displays
+    # and can be saved.
+    all_products = Product.query.filter_by(is_obsolete=False).all()
+    existing_component_ids = {item.component_id for item in bom.items}
+    have_ids = {p.id for p in all_products}
+    missing_ids = existing_component_ids - have_ids
+    if missing_ids:
+        all_products += Product.query.filter(Product.id.in_(missing_ids)).all()
 
     if form.validate_on_submit():
         bom.name = form.name.data
@@ -524,7 +535,9 @@ def orders_components_summary():
 def add_order():
     from app.models import Staff
     form = ManufacturingOrderForm()
-    boms = BOM.query.all()
+    # Exclude BOMs whose finished product is marked Obsolete - a new order
+    # shouldn't be started for a discontinued item.
+    boms = BOM.query.join(Product, BOM.product_id == Product.id).filter(Product.is_obsolete == False).all()
     form.bom_id.choices = [(b.id, f"{b.name} ({b.product.sku} - {b.product.name})") for b in boms]
     # Finished warehouse choices
     warehouses = Warehouse.query.filter_by(is_active=True).all()
@@ -664,8 +677,14 @@ def edit_order(id):
     order = ManufacturingOrder.query.get_or_404(id)
     form = ManufacturingOrderForm(obj=order)
 
-    boms = BOM.query.all()
+    boms = BOM.query.join(Product, BOM.product_id == Product.id).filter(Product.is_obsolete == False).all()
     form.bom_id.choices = [(b.id, f"{b.name} ({b.product.sku} - {b.product.name})") for b in boms]
+    # Ensure the order's own BOM stays selectable even if its product has
+    # since been marked Obsolete - editing must never silently drop it.
+    if order.bom_id and order.bom_id not in [b.id for b in boms]:
+        current_bom = BOM.query.get(order.bom_id)
+        if current_bom:
+            form.bom_id.choices.append((current_bom.id, f"{current_bom.name} ({current_bom.product.sku} - {current_bom.product.name}) (Obsolete)"))
     warehouses = Warehouse.query.filter_by(is_active=True).all()
     # ensure choices present and set current value
     form.finished_warehouse_id.choices = [(0, '— None —')] + [(w.id, f"{w.code} - {w.name}") for w in warehouses]

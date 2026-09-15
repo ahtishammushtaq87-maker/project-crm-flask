@@ -1465,9 +1465,9 @@ def expenses():
     from app.models import PDProject
     active_pd_projects = PDProject.query.filter(PDProject.status.in_(['Draft', 'Active'])).all()
 
-    # Get active inventory items for the "shift to inventory cost" modal
+    # Get active, non-obsolete inventory items for the "shift to inventory cost" modal
     from app.models import Product
-    inventory_items = Product.query.filter_by(is_active=True).order_by(Product.name).all()
+    inventory_items = Product.query.filter_by(is_active=True, is_obsolete=False).order_by(Product.name).all()
     
     # Get PD expense categories for the shift modal
     pd_expense_categories = [
@@ -2708,18 +2708,18 @@ def add_expense():
     # Populate manufactured product choices (if column exists)
     from app.models import Product
     if has_column('products', 'is_manufactured'):
-        manufactured_products = Product.query.filter_by(is_manufactured=True, is_active=True).order_by(Product.name).all()
+        manufactured_products = Product.query.filter_by(is_manufactured=True, is_active=True, is_obsolete=False).order_by(Product.name).all()
     else:
         manufactured_products = []
     form.product_id.choices = [(0, 'Select Finished Product (Optional)')] + [(p.id, p.name) for p in manufactured_products]
 
-    # All active inventory items, for the inline "Shift Directly to Inventory
-    # Cost" picker (same source as the standalone shift-to-inventory modal
-    # on the Expenses list).
-    inventory_items = Product.query.filter_by(is_active=True).order_by(Product.name).all()
+    # All active, non-obsolete inventory items, for the inline "Shift
+    # Directly to Inventory Cost" picker (same source as the standalone
+    # shift-to-inventory modal on the Expenses list).
+    inventory_items = Product.query.filter_by(is_active=True, is_obsolete=False).order_by(Product.name).all()
 
-    # Populate BOM choices
-    boms = BOM.query.filter_by(is_active=True).order_by(BOM.name).all()
+    # Populate BOM choices (exclude BOMs whose finished product is Obsolete)
+    boms = BOM.query.filter_by(is_active=True).join(Product, BOM.product_id == Product.id).filter(Product.is_obsolete == False).order_by(BOM.name).all()
     form.bom_id.choices = [(0, 'Select BOM (Optional)')] + [(b.id, b.name) for b in boms]
 
     # Populate In Progress Manufacturing Order choices (no placeholder; Select2 shows placeholder text)
@@ -3720,18 +3720,30 @@ def edit_expense(id):
     # Populate manufactured product choices (if column exists)
     from app.models import Product
     if has_column('products', 'is_manufactured'):
-        manufactured_products = Product.query.filter_by(is_manufactured=True, is_active=True).order_by(Product.name).all()
+        manufactured_products = Product.query.filter_by(is_manufactured=True, is_active=True, is_obsolete=False).order_by(Product.name).all()
     else:
         manufactured_products = []
     form.product_id.choices = [(0, 'Select Finished Product (Optional)')] + [(p.id, p.name) for p in manufactured_products]
 
-    # All active inventory items, for the inline "Shift Directly to Inventory
-    # Cost" picker (same source as the standalone shift-to-inventory modal
-    # on the Expenses list).
-    inventory_items = Product.query.filter_by(is_active=True).order_by(Product.name).all()
+    # Keep the expense's own linked product selectable even if it's since
+    # been marked Obsolete or is no longer a manufactured item - same
+    # defensive pattern as the MO/payment-method choices just below.
+    original_product_id = expense.product_id if has_column('expenses', 'product_id') else None
+    if original_product_id:
+        existing_product_choice_ids = [c[0] for c in form.product_id.choices]
+        if original_product_id not in existing_product_choice_ids:
+            linked_product = Product.query.get(original_product_id)
+            if linked_product:
+                suffix = ' (Obsolete)' if linked_product.is_obsolete else ' (Current)'
+                form.product_id.choices.append((linked_product.id, f"{linked_product.name}{suffix}"))
 
-    # Populate BOM choices
-    boms = BOM.query.filter_by(is_active=True).order_by(BOM.name).all()
+    # All active, non-obsolete inventory items, for the inline "Shift
+    # Directly to Inventory Cost" picker (same source as the standalone
+    # shift-to-inventory modal on the Expenses list).
+    inventory_items = Product.query.filter_by(is_active=True, is_obsolete=False).order_by(Product.name).all()
+
+    # Populate BOM choices (exclude BOMs whose finished product is Obsolete)
+    boms = BOM.query.filter_by(is_active=True).join(Product, BOM.product_id == Product.id).filter(Product.is_obsolete == False).order_by(BOM.name).all()
     form.bom_id.choices = [(0, 'Select BOM (Optional)')] + [(b.id, b.name) for b in boms]
 
     # Populate MO choices (only in-progress orders; no placeholder needed for multi-select)

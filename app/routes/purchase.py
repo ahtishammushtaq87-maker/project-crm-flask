@@ -113,7 +113,7 @@ def bills():
 def create_bill():
     form = PurchaseForm()
     vendors = Vendor.query.filter_by(is_active=True).all()
-    products = Product.query.filter_by(is_active=True).all()
+    products = Product.query.filter_by(is_active=True, is_obsolete=False).all()
     currencies = Currency.query.filter_by(is_active=True).all()
     warehouses = Warehouse.query.all()
     
@@ -296,7 +296,14 @@ def edit_bill(id):
     bill = PurchaseBill.query.get_or_404(id)
     form = PurchaseForm(obj=bill)
     vendors = Vendor.query.filter_by(is_active=True).all()
-    products = Product.query.filter_by(is_active=True).all()
+    # Non-obsolete products, plus any product already on this bill so an old
+    # line referencing a now-obsolete item still displays and can be saved.
+    products = Product.query.filter_by(is_active=True, is_obsolete=False).all()
+    existing_product_ids = {item.product_id for item in bill.items}
+    have_ids = {p.id for p in products}
+    missing_ids = existing_product_ids - have_ids
+    if missing_ids:
+        products += Product.query.filter(Product.id.in_(missing_ids)).all()
     currencies = Currency.query.filter_by(is_active=True).all()
     warehouses = Warehouse.query.all()
 
@@ -2634,7 +2641,7 @@ def _parse_delivery_time(dt_str):
 @permission_required('purchases', action='add')
 def create_po():
     vendors = Vendor.query.filter_by(is_active=True).all()
-    products = Product.query.filter_by(is_active=True).all()
+    products = Product.query.filter_by(is_active=True, is_obsolete=False).all()
     warehouses = Warehouse.query.all()
 
     if request.method == 'POST':

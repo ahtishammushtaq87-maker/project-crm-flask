@@ -100,10 +100,11 @@ def parse_installment_schedule(raw_json):
 def sellable_products(existing_product_ids=None):
     """Products offered on invoice create/edit: restricted to items marked
     "This is a Finished Good / Produced Item" (Product.is_manufactured) on
-    the product form, plus any products already used on the invoice being
-    edited so an old line referencing a non-finished-good item still
-    displays and can be saved."""
-    products = Product.query.filter_by(is_manufactured=True).all()
+    the product form, excluding anything marked Obsolete (see Inventory ->
+    Products), plus any products already used on the invoice being edited
+    so an old line referencing a non-finished-good or now-obsolete item
+    still displays and can be saved."""
+    products = Product.query.filter_by(is_manufactured=True, is_obsolete=False).all()
     if existing_product_ids:
         have_ids = {p.id for p in products}
         missing_ids = set(existing_product_ids) - have_ids

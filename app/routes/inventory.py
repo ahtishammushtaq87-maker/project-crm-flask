@@ -388,7 +388,46 @@ def delete_product(id):
     except Exception as e:
         db.session.rollback()
         flash(f'Error deleting product: {str(e)}', 'error')
-        
+
+    return redirect(url_for('inventory.products'))
+
+@bp.route('/product/<int:id>/toggle-obsolete', methods=['POST'])
+@login_required
+def toggle_obsolete_product(id):
+    """Admin-only: flip Product.is_obsolete. Marking a product obsolete
+    hides it from "pick a product" dropdowns used to create new records
+    elsewhere in the app (Sales, Purchase, BOM, Manufacturing, Production
+    Targets, Expenses, Tools, Product Development) - it never removes the
+    product itself, never touches stock/cost, and every existing record
+    that already references it keeps displaying and editing normally."""
+    if current_user.role != 'admin':
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': 'Only an admin can obsolete or un-obsolete a product.'}), 403
+        flash('Only an admin can obsolete or un-obsolete a product.', 'danger')
+        return redirect(url_for('inventory.products'))
+
+    product = Product.query.get_or_404(id)
+
+    if product.is_obsolete:
+        product.is_obsolete = False
+        product.obsoleted_at = None
+        product.obsoleted_by = None
+        state = 'active'
+        message = f'"{product.name}" is no longer obsolete - it is available again in item pickers.'
+    else:
+        product.is_obsolete = True
+        product.obsoleted_at = datetime.utcnow()
+        product.obsoleted_by = current_user.id
+        state = 'obsolete'
+        message = f'"{product.name}" is now marked Obsolete - it will no longer appear in item pickers for new records.'
+
+    db.session.commit()
+    log_activity('Inventory', f'Product set {state}: {product.name}', f'SKU: {product.sku}')
+
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({'success': True, 'message': message, 'is_obsolete': product.is_obsolete})
+
+    flash(message, 'success')
     return redirect(url_for('inventory.products'))
 
 @bp.route('/products/bulk-delete', methods=['POST'])

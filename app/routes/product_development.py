@@ -199,7 +199,7 @@ def update_settings():
 @permission_required('product_dev', action='add')
 def create():
     """Create new product development project"""
-    finished_goods = Product.query.filter(Product.is_manufactured == True, Product.is_active == True).all()
+    finished_goods = Product.query.filter(Product.is_manufactured == True, Product.is_active == True, Product.is_obsolete == False).all()
     categories = ProductCategory.query.order_by(ProductCategory.name).all()
     users = User.query.filter_by(is_active=True).all()
     today = datetime.now().date().strftime('%Y-%m-%d')
@@ -250,9 +250,9 @@ def view(project_id):
     project = PDProject.query.get_or_404(project_id)
     
     # All products for Phase 1 modals (BOM/Components)
-    all_products = Product.query.filter_by(is_active=True).all()
+    all_products = Product.query.filter_by(is_active=True, is_obsolete=False).all()
     # Only finished goods for project linking (create/edit)
-    finished_goods = Product.query.filter(Product.is_manufactured == True, Product.is_active == True).all()
+    finished_goods = Product.query.filter(Product.is_manufactured == True, Product.is_active == True, Product.is_obsolete == False).all()
     vendors = Vendor.query.filter_by(is_active=True).all()
     users = User.query.filter_by(is_active=True).all()
     today = datetime.now().date().strftime('%Y-%m-%d')
@@ -266,7 +266,13 @@ def view(project_id):
 def edit(project_id):
     """Edit project details"""
     project = PDProject.query.get_or_404(project_id)
-    finished_goods = Product.query.filter(Product.is_manufactured == True, Product.is_active == True).all()
+    finished_goods = Product.query.filter(Product.is_manufactured == True, Product.is_active == True, Product.is_obsolete == False).all()
+    # Keep the project's own linked SKU selectable even if it's since been
+    # marked Obsolete - editing must never silently drop it.
+    if project.sku_id and project.sku_id not in [p.id for p in finished_goods]:
+        current_sku = Product.query.get(project.sku_id)
+        if current_sku:
+            finished_goods.append(current_sku)
     categories = ProductCategory.query.order_by(ProductCategory.name).all()
     users = User.query.filter_by(is_active=True).all()
     

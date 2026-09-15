@@ -54,7 +54,7 @@ def receiving_list():
 @login_required
 @permission_required('receiving', action='add')
 def create_receiving():
-    products = Product.query.filter_by(is_active=True).all()
+    products = Product.query.filter_by(is_active=True, is_obsolete=False).all()
     warehouses = Warehouse.query.filter_by(is_active=True).all()
     settings = get_tool_settings()
     
@@ -295,7 +295,7 @@ def create_receiving():
     
     # BOM Overhead Allocation data
     in_progress_mos = ManufacturingOrder.query.filter_by(status='In Progress').order_by(ManufacturingOrder.order_number).all()
-    manufactured_products = Product.query.filter_by(is_active=True).order_by(Product.name).all() # Could filter by is_manufactured
+    manufactured_products = Product.query.filter_by(is_active=True, is_obsolete=False).order_by(Product.name).all() # Could filter by is_manufactured
     boms = BOM.query.filter_by(is_active=True).order_by(BOM.name).all()
     
     return render_template('tools/create_receiving.html', 
@@ -345,7 +345,7 @@ def delivering_list():
 @login_required
 @permission_required('delivering', action='add')
 def create_delivering():
-    products = Product.query.filter_by(is_active=True).all()
+    products = Product.query.filter_by(is_active=True, is_obsolete=False).all()
     warehouses = Warehouse.query.filter_by(is_active=True).all()
     settings = get_tool_settings()
     
@@ -558,7 +558,14 @@ def receiving_detail(id):
 @permission_required('receiving', action='edit')
 def edit_receiving(id):
     receiving = ToolReceiving.query.get_or_404(id)
-    products = Product.query.filter_by(is_active=True).all()
+    # Non-obsolete products, plus any product already on this voucher so an
+    # old line referencing a now-obsolete item still displays and can be saved.
+    products = Product.query.filter_by(is_active=True, is_obsolete=False).all()
+    existing_ids = {item.product_id for item in receiving.items}
+    have_ids = {p.id for p in products}
+    missing_ids = existing_ids - have_ids
+    if missing_ids:
+        products += Product.query.filter(Product.id.in_(missing_ids)).all()
     
     if request.method == 'POST':
         # Revert old inventory ONLY if stock was previously added (voucher was approved)
@@ -780,7 +787,7 @@ def edit_receiving(id):
     
     # BOM Overhead Allocation data
     in_progress_mos = ManufacturingOrder.query.filter_by(status='In Progress').order_by(ManufacturingOrder.order_number).all()
-    manufactured_products = Product.query.filter_by(is_active=True).order_by(Product.name).all()
+    manufactured_products = Product.query.filter_by(is_active=True, is_obsolete=False).order_by(Product.name).all()
     boms = BOM.query.filter_by(is_active=True).order_by(BOM.name).all()
     warehouses = Warehouse.query.filter_by(is_active=True).all()
     
@@ -812,7 +819,14 @@ def delivering_detail(id):
 @permission_required('delivering', action='edit')
 def edit_delivering(id):
     delivering = ToolDelivering.query.get_or_404(id)
-    products = Product.query.filter_by(is_active=True).all()
+    # Non-obsolete products, plus any product already on this voucher so an
+    # old line referencing a now-obsolete item still displays and can be saved.
+    products = Product.query.filter_by(is_active=True, is_obsolete=False).all()
+    existing_ids = {item.product_id for item in delivering.items}
+    have_ids = {p.id for p in products}
+    missing_ids = existing_ids - have_ids
+    if missing_ids:
+        products += Product.query.filter(Product.id.in_(missing_ids)).all()
     warehouses = Warehouse.query.filter_by(is_active=True).all()
     
     if request.method == 'POST':

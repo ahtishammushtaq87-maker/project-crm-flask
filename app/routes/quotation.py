@@ -19,9 +19,9 @@ def _format_quotation_number(settings, number):
 
 
 def sellable_products(existing_product_ids=None):
-    """Same restriction as the Sales module: only finished-good products,
-    plus any product already used on the quotation being edited."""
-    products = Product.query.filter_by(is_manufactured=True).all()
+    """Same restriction as the Sales module: only finished-good, non-obsolete
+    products, plus any product already used on the quotation being edited."""
+    products = Product.query.filter_by(is_manufactured=True, is_obsolete=False).all()
     if existing_product_ids:
         have_ids = {p.id for p in products}
         missing_ids = set(existing_product_ids) - have_ids

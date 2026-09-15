@@ -139,8 +139,14 @@ def set_target():
     target = None
     if target_id:
         target = ProductionTarget.query.get_or_404(target_id)
-    
-    products = Product.query.filter_by(is_active=True, is_manufactured=True).order_by(Product.name).all()
+
+    products = Product.query.filter_by(is_active=True, is_manufactured=True, is_obsolete=False).order_by(Product.name).all()
+    # Editing a target whose SKU has since been marked Obsolete must not
+    # silently lose that product from the dropdown.
+    if target and target.sku_id not in [p.id for p in products]:
+        current_sku = Product.query.get(target.sku_id)
+        if current_sku:
+            products.append(current_sku)
 
     # Gather in-progress MO numbers per product (via BOM relationship)
     inprogress_mos = ManufacturingOrder.query.filter(
@@ -315,8 +321,14 @@ def add_log():
     log = None
     if log_id:
         log = ProductionLog.query.get_or_404(log_id)
-    
-    products = Product.query.filter_by(is_active=True).order_by(Product.name).all()
+
+    products = Product.query.filter_by(is_active=True, is_obsolete=False).order_by(Product.name).all()
+    # Editing a log whose SKU has since been marked Obsolete must not
+    # silently lose that product from the dropdown.
+    if log and log.sku_id not in [p.id for p in products]:
+        current_sku = Product.query.get(log.sku_id)
+        if current_sku:
+            products.append(current_sku)
     
     if request.method == 'POST':
         date_str = request.form.get('date')

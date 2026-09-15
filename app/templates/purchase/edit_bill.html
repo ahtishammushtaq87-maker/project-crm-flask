@@ -211,7 +211,7 @@
                                                 {% for p in products %}
                                                 <option value="{{ p.id }}" data-cost="{{ p.cost_price }}" {% if
                                                     item.product_id==p.id %}selected{% endif %}>
-                                                    {{ p.sku }} - {{ p.name }}
+                                                    {{ p.sku }} - {{ p.name }}{% if p.is_obsolete %} (Obsolete){% endif %}
                                                 </option>
                                                 {% endfor %}
                                             </select>

@@ -232,6 +232,28 @@
             }
         }
 
+        /* Site-wide page scrollbar: hidden everywhere (long tables like
+           Products included) - the page and any scrollable panel remain
+           fully scrollable by wheel/trackpad/touch/drag, just with no
+           visible bar. The sidebar is deliberately excluded below (kept
+           visible - it's a nav rail people need to see is scrollable), and
+           wins there via selector specificity regardless of rule order. */
+        html {
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        ::-webkit-scrollbar {
+            width: 0;
+            height: 0;
+            display: none;
+        }
+
+        .sidebar {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+        }
+
         /* Narrow laptops / tablets: tighten the rail so labels still fit */
         @media (min-width: 768px) and (max-width: 1199.98px) {
             .sidebar-nav .nav-link {
