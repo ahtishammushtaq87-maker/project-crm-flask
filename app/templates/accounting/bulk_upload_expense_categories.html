@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Upload Expense Categories{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-sm-flex align-items-center justify-content-between mb-4">
+        <h1 class="h3 mb-0 text-gray-800">Bulk Upload Expense Categories</h1>
+        <a href="{{ url_for('accounting.expense_categories') }}" class="btn btn-sm btn-secondary shadow-sm">
+            <i class="fas fa-arrow-left fa-sm text-white-50"></i> Back to Expense Categories
+        </a>
+    </div>
+
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">Upload Excel File</h6>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info">
+                <h5><i class="fas fa-info-circle"></i> Instructions</h5>
+                <ul class="mb-0">
+                    <li>Download the sample sheet below first - it already shows exactly how to fill it in, with a
+                        second tab ("Read Me First") explaining every column.</li>
+                    <li>Only <strong>name</strong> is required. Every other column is optional.</li>
+                    <li>Leave <strong>parent_name</strong> blank to create a main category. To create a
+                        sub-category, put the exact name of an existing main category in
+                        <strong>parent_name</strong> - add that main category as its own row too (it doesn't
+                        matter which row comes first).</li>
+                    <li>The five <code>allow_*</code> columns just take <strong>Yes</strong> or <strong>No</strong> -
+                        they control which special options (Invoice/Purchase Payment, Inventory Shift, BOM
+                        Overhead, Monthly Division) are offered on Add/Edit Expense when that category is picked.</li>
+                    <li>Category names must be unique - a name that already exists will be skipped and reported
+                        as an error, the rest of the file still gets processed.</li>
+                </ul>
+            </div>
+
+            <form method="POST" enctype="multipart/form-data" class="mb-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+                <div class="mb-3">
+                    <label for="file" class="form-label">Select Excel File</label>
+                    <input type="file" name="file" class="form-control" accept=".xlsx,.xls" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-upload me-1"></i> Upload Categories
+                </button>
+                <a href="{{ url_for('accounting.download_expense_category_sample') }}" class="btn btn-success">
+                    <i class="fas fa-download me-1"></i> Download Sample Sheet
+                </a>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

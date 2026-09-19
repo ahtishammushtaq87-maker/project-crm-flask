@@ -4415,6 +4415,201 @@ def edit_expense_category(id):
 
     return render_template('accounting/edit_expense_category.html', form=form, category=category)
 
+@bp.route('/expense-categories/bulk-upload', methods=['GET', 'POST'])
+@login_required
+@permission_required('accounting', action='add')
+def bulk_upload_expense_categories():
+    from app.models import ExpenseCategory
+
+    def parse_yes_no(val):
+        return str(val).strip().lower() in ('yes', 'y', 'true', '1')
+
+    if request.method == 'POST':
+        if 'file' not in request.files or request.files['file'].filename == '':
+            flash('No file selected', 'error')
+            return redirect(url_for('accounting.bulk_upload_expense_categories'))
+
+        file = request.files['file']
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            flash('Please upload an Excel file (.xlsx or .xls)', 'error')
+            return redirect(url_for('accounting.bulk_upload_expense_categories'))
+
+        try:
+            from openpyxl import load_workbook
+            from io import BytesIO
+            wb = load_workbook(filename=BytesIO(file.read()), read_only=True)
+            ws = wb.active
+            rows = list(ws.values)
+            if not rows:
+                flash('File is empty', 'error')
+                return redirect(url_for('accounting.bulk_upload_expense_categories'))
+
+            headers = [str(h).strip() if h else '' for h in rows[0]]
+            if 'name' not in headers:
+                flash('Missing required column: name', 'error')
+                return redirect(url_for('accounting.bulk_upload_expense_categories'))
+
+            data_rows = [
+                {headers[i]: val for i, val in enumerate(row) if i < len(headers)}
+                for row in rows[1:]
+                if any(v not in (None, '') for v in row)
+            ]
+
+            # Existing names (case-insensitive) so duplicates - already in the
+            # database OR repeated within this same sheet - are caught.
+            existing_names = {c.name.strip().lower(): c for c in ExpenseCategory.query.all()}
+            added = 0
+            errors = []
+
+            # Pass 1: main categories (blank parent_name) - created first so
+            # pass 2 can resolve a sub-category's parent regardless of which
+            # order the two rows happen to appear in on the sheet.
+            for idx, row_dict in enumerate(data_rows, start=2):
+                parent_name = str(row_dict.get('parent_name') or '').strip()
+                if parent_name:
+                    continue
+                name = str(row_dict.get('name') or '').strip()
+                if not name:
+                    errors.append(f'Row {idx}: Missing name')
+                    continue
+                if name.lower() in existing_names:
+                    errors.append(f'Row {idx}: Category "{name}" already exists')
+                    continue
+                category = ExpenseCategory(
+                    name=name,
+                    description=str(row_dict.get('description') or '').strip() or None,
+                    parent_id=None,
+                    allow_invoice_payment=parse_yes_no(row_dict.get('allow_invoice_payment')),
+                    allow_purchase_payment=parse_yes_no(row_dict.get('allow_purchase_payment')),
+                    allow_inventory_shift=parse_yes_no(row_dict.get('allow_inventory_shift')),
+                    allow_bom_overhead=parse_yes_no(row_dict.get('allow_bom_overhead')),
+                    allow_monthly_divided=parse_yes_no(row_dict.get('allow_monthly_divided')),
+                )
+                db.session.add(category)
+                db.session.flush()
+                existing_names[name.lower()] = category
+                added += 1
+
+            # Pass 2: sub-categories (parent_name set) - resolved against
+            # both pre-existing categories and the ones pass 1 just added.
+            for idx, row_dict in enumerate(data_rows, start=2):
+                parent_name = str(row_dict.get('parent_name') or '').strip()
+                if not parent_name:
+                    continue
+                name = str(row_dict.get('name') or '').strip()
+                if not name:
+                    errors.append(f'Row {idx}: Missing name')
+                    continue
+                if name.lower() in existing_names:
+                    errors.append(f'Row {idx}: Category "{name}" already exists')
+                    continue
+                parent = existing_names.get(parent_name.lower())
+                if not parent:
+                    errors.append(f'Row {idx}: Parent category "{parent_name}" not found - add it as its own row first (leave its parent_name blank)')
+                    continue
+                if parent.parent_id:
+                    errors.append(f'Row {idx}: "{parent_name}" is itself a sub-category - only one level of sub-categories is supported')
+                    continue
+                category = ExpenseCategory(
+                    name=name,
+                    description=str(row_dict.get('description') or '').strip() or None,
+                    parent_id=parent.id,
+                    allow_invoice_payment=parse_yes_no(row_dict.get('allow_invoice_payment')),
+                    allow_purchase_payment=parse_yes_no(row_dict.get('allow_purchase_payment')),
+                    allow_inventory_shift=parse_yes_no(row_dict.get('allow_inventory_shift')),
+                    allow_bom_overhead=parse_yes_no(row_dict.get('allow_bom_overhead')),
+                    allow_monthly_divided=parse_yes_no(row_dict.get('allow_monthly_divided')),
+                )
+                db.session.add(category)
+                db.session.flush()
+                existing_names[name.lower()] = category
+                added += 1
+
+            db.session.commit()
+            log_activity('Accounting', f'Bulk uploaded {added} expense categories', '')
+
+            if added > 0:
+                flash(f'Successfully added {added} expense categories!', 'success')
+            if errors:
+                flash(f'Errors: {"; ".join(errors[:10])}', 'warning')
+            return redirect(url_for('accounting.expense_categories'))
+
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error reading file: {str(e)}', 'error')
+            return redirect(url_for('accounting.bulk_upload_expense_categories'))
+
+    return render_template('accounting/bulk_upload_expense_categories.html')
+
+
+@bp.route('/expense-categories/download-sample')
+@login_required
+def download_expense_category_sample():
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from io import BytesIO
+    from flask import send_file
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Expense Categories'
+
+    headers = ['name', 'parent_name', 'description', 'allow_invoice_payment',
+               'allow_purchase_payment', 'allow_inventory_shift', 'allow_bom_overhead',
+               'allow_monthly_divided']
+    ws.append(headers)
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='0B8793', end_color='0B8793', fill_type='solid')
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+
+    # Sample rows show the exact pattern: a main category first, then its
+    # sub-category on the next row pointing back at it by name - and one
+    # standalone main category with no sub-categories at all.
+    sample_rows = [
+        ['Utilities', '', 'Electricity, gas, water etc.', 'No', 'No', 'No', 'No', 'Yes'],
+        ['Electricity Bill', 'Utilities', 'Monthly electricity bill', 'No', 'No', 'No', 'No', 'Yes'],
+        ['Raw Material', '', 'Materials bought for manufacturing', 'No', 'Yes', 'No', 'Yes', 'No'],
+        ['Steel Purchase', 'Raw Material', 'Steel sheets and rods', 'No', 'Yes', 'Yes', 'Yes', 'No'],
+        ['Office Rent', '', 'Monthly office/factory rent', 'No', 'No', 'No', 'No', 'Yes'],
+    ]
+    for row in sample_rows:
+        ws.append(row)
+
+    # Reasonable column widths so the sample opens readable, not squeezed.
+    widths = [22, 18, 34, 20, 21, 20, 18, 20]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+
+    notes_ws = wb.create_sheet('Read Me First')
+    notes_ws.append(['Column', 'Meaning'])
+    for cell in notes_ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+    notes = [
+        ('name', 'Required. The category name - must be unique.'),
+        ('parent_name', 'Optional. Leave BLANK to create a main (parent) category. '
+                         'To create a sub-category, put the exact name of an existing '
+                         'main category here (add the main category as its own row first).'),
+        ('description', 'Optional. Free text.'),
+        ('allow_invoice_payment', 'Yes or No - allow "Add to Invoice Payment" on Add/Edit Expense.'),
+        ('allow_purchase_payment', 'Yes or No - allow "Add to Purchase Payment" on Add/Edit Expense.'),
+        ('allow_inventory_shift', 'Yes or No - allow "Shift Directly to Inventory Cost".'),
+        ('allow_bom_overhead', 'Yes or No - allow "BOM Overhead Expense".'),
+        ('allow_monthly_divided', 'Yes or No - allow "Divide Expense Across Entire Month".'),
+    ]
+    for col, meaning in notes:
+        notes_ws.append([col, meaning])
+    notes_ws.column_dimensions['A'].width = 24
+    notes_ws.column_dimensions['B'].width = 90
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return send_file(output, download_name='sample_expense_categories.xlsx', as_attachment=True)
+
+
 @bp.route('/expense-category/<int:id>/delete', methods=['POST'])
 @login_required
 @permission_required('accounting', action='delete')

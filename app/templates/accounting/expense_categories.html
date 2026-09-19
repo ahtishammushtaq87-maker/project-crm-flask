@@ -37,6 +37,9 @@
             <a href="{{ url_for('accounting.add_expense_category', type='sub') }}" class="btn btn-outline-primary" title="Add a category nested under an existing parent">
                 <i class="bi bi-code-branch me-1"></i> Add Sub Category
             </a>
+            <a href="{{ url_for('accounting.bulk_upload_expense_categories') }}" class="btn btn-outline-success" title="Upload many categories at once from an Excel sheet">
+                <i class="bi bi-file-earmark-arrow-up me-1"></i> Bulk Upload
+            </a>
         </div>
         {% endif %}
     </div>

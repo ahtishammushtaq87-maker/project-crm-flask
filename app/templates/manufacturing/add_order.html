@@ -15,6 +15,97 @@
     border-radius: 0.375rem;
     height: calc(1.5em + 0.75rem + 2px);
 }
+
+/* Bulk Staff Selection widget */
+.staff-picker-label {
+    font-size: .8rem;
+    font-weight: 700;
+    letter-spacing: .03em;
+    color: #3a3b45;
+}
+.staff-picker-links a {
+    font-size: .82rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+.staff-picker-links .divider {
+    color: #c7c9d4;
+    margin: 0 .35rem;
+}
+.staff-picker-search {
+    position: relative;
+}
+.staff-picker-search i {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9aa0ac;
+}
+.staff-picker-search input {
+    border-radius: 999px;
+    padding-left: 2.4rem;
+    border: 1px solid #dfe1e8;
+}
+.staff-picker-search input:focus {
+    border-color: #4e73df;
+    box-shadow: 0 0 0 .2rem rgba(78, 115, 223, .12);
+}
+.staff-picker-list {
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid #eaecf4;
+    border-radius: .75rem;
+    margin-top: .75rem;
+}
+.staff-picker-row {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .65rem 1rem;
+    border-bottom: 1px solid #f0f1f6;
+    cursor: pointer;
+}
+.staff-picker-row:last-child {
+    border-bottom: none;
+}
+.staff-picker-row:hover {
+    background: #f8f9fc;
+}
+.staff-picker-row.checked,
+.staff-picker-row:has(input:checked) {
+    background: #f1f4fd;
+}
+.staff-picker-row input[type="checkbox"] {
+    width: 1.05rem;
+    height: 1.05rem;
+    flex-shrink: 0;
+}
+.staff-picker-row .staff-name {
+    font-weight: 600;
+    font-size: .9rem;
+    color: #212529;
+}
+.staff-picker-row .staff-role {
+    font-size: .76rem;
+    color: #8891a5;
+}
+.staff-picker-row .staff-badge {
+    margin-left: auto;
+    background: #f1e9fb;
+    color: #7e3ff2;
+    font-size: .72rem;
+    font-weight: 700;
+    padding: .25rem .6rem;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+.staff-picker-empty {
+    padding: 1rem;
+    text-align: center;
+    color: #9aa0ac;
+    font-size: .85rem;
+}
 </style>
 {% endblock %}
 
@@ -92,17 +183,9 @@
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label">Staff Used in this Order <span class="text-muted small fw-normal">(optional)</span></label>
-                            <select name="staff_ids" id="staff_ids" class="form-select" multiple>
-                                {% for s in staff_list %}
-                                {% set rate = s.daily_salary if s.daily_salary and s.daily_salary > 0 else ((s.monthly_salary or 0) / 30.0) %}
-                                <option value="{{ s.id }}" data-daily-rate="{{ rate }}">{{ s.name }}{% if s.designation %} ({{ s.designation }}){% endif %}</option>
-                                {% endfor %}
-                            </select>
-                            <small class="text-muted">Labor cost = each selected staff member's daily salary rate &times; the number of days between Start and End Date. Leave empty to use the BOM's estimated labor cost instead.</small>
-                            <div class="alert alert-info py-2 mt-2 mb-0" id="staffCostPreview" style="display:none;">
-                                <small><i class="fas fa-calculator me-1"></i> <span id="staffCostPreviewText"></span></small>
-                            </div>
+                            {% set assigned_staff_ids = [] %}
+                            {% set picker_disabled = false %}
+                            {% include "manufacturing/_staff_picker.html" %}
                         </div>
 
                         <hr>
@@ -130,21 +213,55 @@ $(document).ready(function() {
         width: '100%'
     });
 
+    // ── Bulk Staff Selection widget ─────────────────────────────────────
+    // Search + checkbox list, submitted as plain "staff_ids" checkboxes -
+    // no select2 involved here, so jQuery .on('change', ...) below is just
+    // the app's normal event-binding convention, not a select2 workaround.
+    const staffList = document.getElementById('staffPickerList');
+    const staffSearch = document.getElementById('staffPickerSearch');
+    const staffNoMatch = document.getElementById('staffPickerNoMatch');
+    const staffCheckboxes = () => staffList ? staffList.querySelectorAll('input[type="checkbox"][name="staff_ids"]') : [];
+
+    if (staffSearch) {
+        staffSearch.addEventListener('input', function () {
+            const term = this.value.trim().toLowerCase();
+            let visibleCount = 0;
+            staffList.querySelectorAll('.staff-picker-row').forEach(function (row) {
+                const match = !term || row.dataset.search.includes(term);
+                row.classList.toggle('d-none', !match);
+                if (match) visibleCount++;
+            });
+            staffNoMatch.classList.toggle('d-none', visibleCount !== 0);
+        });
+    }
+
+    const selectAllLink = document.getElementById('staffSelectAll');
+    if (selectAllLink) {
+        selectAllLink.addEventListener('click', function () {
+            if (this.classList.contains('disabled')) return;
+            staffList.querySelectorAll('.staff-picker-row:not(.d-none) input[type="checkbox"]').forEach(function (cb) {
+                cb.checked = true;
+            });
+            updateStaffCostPreview();
+        });
+    }
+
+    const clearAllLink = document.getElementById('staffClearAll');
+    if (clearAllLink) {
+        clearAllLink.addEventListener('click', function () {
+            if (this.classList.contains('disabled')) return;
+            staffCheckboxes().forEach(function (cb) { cb.checked = false; });
+            updateStaffCostPreview();
+        });
+    }
+
     // Staff -> labor cost live preview. Purely informational (the real
     // figure is computed server-side on submit the same way); helps the
     // user see roughly what they're about to commit to before saving.
-    $('#staff_ids').select2({
-        theme: 'bootstrap-5',
-        placeholder: '— Search or Select Staff —',
-        allowClear: true,
-        closeOnSelect: false,
-        width: '100%'
-    });
-
     function updateStaffCostPreview() {
         const preview = document.getElementById('staffCostPreview');
         const text = document.getElementById('staffCostPreviewText');
-        const selected = $('#staff_ids').val() || [];
+        const selected = Array.from(staffCheckboxes()).filter(cb => cb.checked);
         if (!selected.length) { preview.style.display = 'none'; return; }
 
         const startVal = document.getElementById('start_date').value;
@@ -168,9 +285,8 @@ $(document).ready(function() {
         }
 
         let total = 0;
-        selected.forEach(function (id) {
-            const opt = $('#staff_ids').find('option[value="' + id + '"]');
-            total += (parseFloat(opt.data('daily-rate')) || 0) * days;
+        selected.forEach(function (cb) {
+            total += (parseFloat(cb.dataset.dailyRate) || 0) * days;
         });
 
         text.textContent = selected.length + ' staff × ' + days + ' working day(s) (Sundays excluded) = estimated labor cost PKR ' +
@@ -179,9 +295,17 @@ $(document).ready(function() {
         preview.style.display = '';
     }
 
-    $('#staff_ids').on('change', updateStaffCostPreview);
+    if (staffList) {
+        staffList.addEventListener('change', function (e) {
+            if (e.target.matches('input[type="checkbox"][name="staff_ids"]')) {
+                e.target.closest('.staff-picker-row').classList.toggle('checked', e.target.checked);
+                updateStaffCostPreview();
+            }
+        });
+    }
     document.getElementById('start_date').addEventListener('input', updateStaffCostPreview);
     document.getElementById('end_date').addEventListener('input', updateStaffCostPreview);
+    updateStaffCostPreview();
 });
 </script>
 {% endblock %}

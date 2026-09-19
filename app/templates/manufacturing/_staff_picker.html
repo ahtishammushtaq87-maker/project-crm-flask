@@ -1,0 +1,52 @@
+{# Bulk Staff Selection widget - search + checkbox list, replacing the old
+   select2 multi-select. Submits as plain checkboxes named "staff_ids", so
+   WTForms' SelectMultipleField reads it exactly the same way it read the
+   old <select multiple> - no route changes needed.
+
+   Expects in context:
+     staff_list         - iterable of Staff to list
+     assigned_staff_ids - list of Staff ids that should render pre-checked
+     picker_disabled     - bool, true disables every checkbox + the controls
+                           (used on edit_order.html once status=='Completed')
+#}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-1 mb-2">
+    <span class="staff-picker-label text-uppercase">Search &amp; Select Staff Used in this Order</span>
+    <span class="staff-picker-links">
+        <a href="javascript:void(0)" id="staffSelectAll" class="text-primary {% if picker_disabled %}disabled{% endif %}">Select All</a>
+        <span class="divider">&middot;</span>
+        <a href="javascript:void(0)" id="staffClearAll" class="text-danger {% if picker_disabled %}disabled{% endif %}">Clear Staff</a>
+    </span>
+</div>
+
+<div class="staff-picker-search">
+    <i class="fas fa-search"></i>
+    <input type="text" class="form-control" id="staffPickerSearch" placeholder="Search staff by name or designation..." {% if picker_disabled %}disabled{% endif %}>
+</div>
+
+<div class="staff-picker-list" id="staffPickerList">
+    {% for s in staff_list %}
+    {% set rate = s.daily_salary if s.daily_salary and s.daily_salary > 0 else ((s.monthly_salary or 0) / 30.0) %}
+    <label class="staff-picker-row {% if s.id in assigned_staff_ids %}checked{% endif %}"
+           data-search="{{ (s.name ~ ' ' ~ (s.designation or ''))|lower }}">
+        <input type="checkbox" name="staff_ids" value="{{ s.id }}" data-daily-rate="{{ rate }}"
+               {% if s.id in assigned_staff_ids %}checked{% endif %}
+               {% if picker_disabled %}disabled{% endif %}>
+        <span>
+            <span class="staff-name d-block">{{ s.name }}</span>
+            <span class="staff-role">Staff</span>
+        </span>
+        {% if s.designation %}
+        <span class="staff-badge">{{ s.designation }}</span>
+        {% endif %}
+    </label>
+    {% endfor %}
+    {% if not staff_list %}
+    <div class="staff-picker-empty">No active staff found.</div>
+    {% endif %}
+</div>
+<div class="staff-picker-empty d-none" id="staffPickerNoMatch">No staff match your search.</div>
+
+<small class="text-muted d-block mt-2">Labor cost = each selected staff member's daily salary rate &times; the number of days between Start and End Date. Leave empty to use the BOM's estimated labor cost instead.</small>
+<div class="alert alert-info py-2 mt-2 mb-0" id="staffCostPreview" style="display:none;">
+    <small><i class="fas fa-calculator me-1"></i> <span id="staffCostPreviewText"></span></small>
+</div>
