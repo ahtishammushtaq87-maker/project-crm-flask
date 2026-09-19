@@ -360,8 +360,17 @@ def edit_bill(id):
             BillReceive.query.filter_by(bill_id=bill.id).delete()
             bill.inventory_received = False
 
-        # Delete old items
+        # Delete old items. This is a bulk DELETE, which does not refresh
+        # SQLAlchemy's in-memory `bill.items` collection - if that collection
+        # was already loaded earlier in this request (it was, above, to
+        # compute existing_product_ids), it keeps holding the now-deleted
+        # rows. Appending the rebuilt items below would then add to that
+        # stale list instead of a clean one, and calculate_totals() would sum
+        # the deleted items' totals together with the new ones - doubling
+        # subtotal/total on every edit even when nothing actually changed.
+        # Expiring the collection forces a fresh reload from the database.
         PurchaseItem.query.filter_by(bill_id=bill.id).delete()
+        db.session.expire(bill, ['items'])
 
         # Rebuild from form
         bill.vendor_id = int(request.form.get('vendor_id', bill.vendor_id))
