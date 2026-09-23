@@ -6,13 +6,24 @@
 
 {% block extra_css %}
 <style>
-    tr.subcategory-row td:first-child { padding-left: 2.5rem; position: relative; }
+    tr.parent-row td:first-child { border-left: 3px solid #4e73df; }
+    tr.subcategory-row { background: #fbfbfe; }
+    tr.subcategory-row td:first-child {
+        padding-left: 2.75rem;
+        position: relative;
+        border-left: 3px solid #dfe3f5;
+    }
     tr.subcategory-row td:first-child::before {
         content: "\2514"; /* └ */
         position: absolute;
-        left: 1.1rem;
-        color: #adb5bd;
+        left: 1.35rem;
+        color: #9aa0ac;
+        font-weight: 700;
     }
+    .category-type-badge { font-size: .68rem; font-weight: 700; letter-spacing: .02em; padding: .3em .6em; }
+    .category-type-badge.parent-badge { background: #e7ecfd; color: #2e3f9e; }
+    .category-type-badge.child-badge { background: #f1f3f5; color: #6c757d; }
+    .parent-of-text { font-size: .74rem; color: #9aa0ac; }
     .option-badge { font-size: .7rem; padding: .3em .55em; }
     .option-badge.on { background: #0b8793; color: #fff; }
     .option-badge.off { background: #e9ecef; color: #adb5bd; text-decoration: line-through; }
@@ -86,7 +97,7 @@
                     </thead>
                     <tbody>
                         {% for category in categories %}
-                        <tr class="{{ 'subcategory-row' if category.parent_id else '' }}">
+                        <tr class="{{ 'subcategory-row' if category.parent_id else 'parent-row' }}">
                             {% if current_user.has_permission('accounting', 'delete') %}
                             <td class="text-center no-export">
                                 {% if not category.expenses and not category.subcategories %}
@@ -96,8 +107,14 @@
                             {% endif %}
                             <td>
                                 <strong>{{ category.name }}</strong>
-                                {% if not category.parent_id %}
-                                <span class="badge bg-light text-dark border ms-1">Main</span>
+                                {% if category.parent_id %}
+                                <span class="badge category-type-badge child-badge ms-1"><i class="fas fa-level-up-alt fa-rotate-90 me-1"></i>Sub-Category</span>
+                                <span class="parent-of-text d-block">of {{ category.parent.name if category.parent else '—' }}</span>
+                                {% else %}
+                                <span class="badge category-type-badge parent-badge ms-1"><i class="fas fa-folder me-1"></i>Parent</span>
+                                {% if category.subcategories %}
+                                <span class="parent-of-text d-block">{{ category.subcategories|length }} sub-categor{{ 'y' if category.subcategories|length == 1 else 'ies' }}</span>
+                                {% endif %}
                                 {% endif %}
                             </td>
                             <td>{{ category.description or '-' }}</td>
