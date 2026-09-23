@@ -183,9 +183,7 @@
                         </div>
 
                         <div class="mb-3">
-                            {% set assigned_staff_ids = [] %}
-                            {% set picker_disabled = false %}
-                            {% include "manufacturing/_staff_picker.html" %}
+                            {% include "manufacturing/_staff_auto_salary.html" %}
                         </div>
 
                         <hr>
@@ -213,99 +211,10 @@ $(document).ready(function() {
         width: '100%'
     });
 
-    // ── Bulk Staff Selection widget ─────────────────────────────────────
-    // Search + checkbox list, submitted as plain "staff_ids" checkboxes -
-    // no select2 involved here, so jQuery .on('change', ...) below is just
-    // the app's normal event-binding convention, not a select2 workaround.
-    const staffList = document.getElementById('staffPickerList');
-    const staffSearch = document.getElementById('staffPickerSearch');
-    const staffNoMatch = document.getElementById('staffPickerNoMatch');
-    const staffCheckboxes = () => staffList ? staffList.querySelectorAll('input[type="checkbox"][name="staff_ids"]') : [];
-
-    if (staffSearch) {
-        staffSearch.addEventListener('input', function () {
-            const term = this.value.trim().toLowerCase();
-            let visibleCount = 0;
-            staffList.querySelectorAll('.staff-picker-row').forEach(function (row) {
-                const match = !term || row.dataset.search.includes(term);
-                row.classList.toggle('d-none', !match);
-                if (match) visibleCount++;
-            });
-            staffNoMatch.classList.toggle('d-none', visibleCount !== 0);
-        });
-    }
-
-    const selectAllLink = document.getElementById('staffSelectAll');
-    if (selectAllLink) {
-        selectAllLink.addEventListener('click', function () {
-            if (this.classList.contains('disabled')) return;
-            staffList.querySelectorAll('.staff-picker-row:not(.d-none) input[type="checkbox"]').forEach(function (cb) {
-                cb.checked = true;
-            });
-            updateStaffCostPreview();
-        });
-    }
-
-    const clearAllLink = document.getElementById('staffClearAll');
-    if (clearAllLink) {
-        clearAllLink.addEventListener('click', function () {
-            if (this.classList.contains('disabled')) return;
-            staffCheckboxes().forEach(function (cb) { cb.checked = false; });
-            updateStaffCostPreview();
-        });
-    }
-
-    // Staff -> labor cost live preview. Purely informational (the real
-    // figure is computed server-side on submit the same way); helps the
-    // user see roughly what they're about to commit to before saving.
-    function updateStaffCostPreview() {
-        const preview = document.getElementById('staffCostPreview');
-        const text = document.getElementById('staffCostPreviewText');
-        const selected = Array.from(staffCheckboxes()).filter(cb => cb.checked);
-        if (!selected.length) { preview.style.display = 'none'; return; }
-
-        const startVal = document.getElementById('start_date').value;
-        const endVal = document.getElementById('end_date').value;
-        // Working days only (every day except Sunday) - matches the server's
-        // own calculation, since each staff member's daily rate already
-        // assumes a Sunday-off week. Counting Sundays here would overstate
-        // the estimate versus what actually gets saved.
-        let days = 1;
-        if (startVal && endVal) {
-            const start = new Date(startVal), end = new Date(endVal);
-            if (end >= start) {
-                let count = 0;
-                const cur = new Date(start);
-                while (cur <= end) {
-                    if (cur.getDay() !== 0) count++;
-                    cur.setDate(cur.getDate() + 1);
-                }
-                days = count > 0 ? count : 1;
-            }
-        }
-
-        let total = 0;
-        selected.forEach(function (cb) {
-            total += (parseFloat(cb.dataset.dailyRate) || 0) * days;
-        });
-
-        text.textContent = selected.length + ' staff × ' + days + ' working day(s) (Sundays excluded) = estimated labor cost PKR ' +
-            total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) +
-            (startVal && endVal ? '' : ' (set both dates for an accurate day count)');
-        preview.style.display = '';
-    }
-
-    if (staffList) {
-        staffList.addEventListener('change', function (e) {
-            if (e.target.matches('input[type="checkbox"][name="staff_ids"]')) {
-                e.target.closest('.staff-picker-row').classList.toggle('checked', e.target.checked);
-                updateStaffCostPreview();
-            }
-        });
-    }
-    document.getElementById('start_date').addEventListener('input', updateStaffCostPreview);
-    document.getElementById('end_date').addEventListener('input', updateStaffCostPreview);
-    updateStaffCostPreview();
+    // Salary is auto-assigned from HR using the cost-share formula (see
+    // _staff_auto_salary.html) - nothing to wire up here, it's a static
+    // read-only panel; the exact PKR amount for this order depends on
+    // every other active order too, so it's only known after saving.
 });
 </script>
 {% endblock %}

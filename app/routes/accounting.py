@@ -28,6 +28,45 @@ def get_unique_expense_number(settings, next_num):
             return expense_number, next_num + 1
 
 
+def _split_expense_by_mo_cost_share(total_amount, mos):
+    """Divide `total_amount` across `mos` by each order's current
+    total_cost share - NOT an equal split. Same "Manufacturing Cost
+    Percentage" formula used for Manufacturing Order salary allocation:
+
+        Allocated = total_amount x (MO.total_cost / sum of all MOs' total_cost)
+
+    Returns a list of (mo, allocated_amount) pairs in the same order as
+    `mos`, with allocated_amount rounded to 2dp and any leftover cent
+    (from rounding) folded into the last MO so the parts always sum back
+    to exactly total_amount. Falls back to an even split only when every
+    MO's total_cost is 0 (nothing to weight by).
+    """
+    combined_cost = sum((mo.total_cost or 0) for mo in mos)
+    n = len(mos)
+    if n == 0:
+        return []
+    if n == 1:
+        return [(mos[0], round(total_amount, 2))]
+
+    if combined_cost <= 0:
+        # Nothing to weight by - fall back to an even split rather than
+        # dividing by zero.
+        shares = [total_amount / n for _ in mos]
+    else:
+        shares = [total_amount * ((mo.total_cost or 0) / combined_cost) for mo in mos]
+
+    rounded = [round(s, 2) for s in shares]
+    # Rounding every share to 2dp can leave the parts a cent or two off the
+    # original total - fold that remainder into the last MO so the sum is
+    # always exact (matches the "New Total Cost" reconciliation in the
+    # cost-share reference table).
+    remainder = round(total_amount - sum(rounded), 2)
+    if remainder:
+        rounded[-1] = round(rounded[-1] + remainder, 2)
+
+    return list(zip(mos, rounded))
+
+
 # ─── Expense's own accounts (ExpenseAccount / ExpenseAccountTransaction) ────
 # Fully independent of the Journal module — Expense owns and manages these
 # accounts end to end (create/edit/delete, debit/credit, balance) rather than
@@ -2723,10 +2762,15 @@ def add_expense():
     form.bom_id.choices = [(0, 'Select BOM (Optional)')] + [(b.id, b.name) for b in boms]
 
     # Populate In Progress Manufacturing Order choices (no placeholder; Select2 shows placeholder text)
+    # status == 'In Progress' alone isn't enough - an order whose deadline
+    # timer has expired stays 'In Progress' in the DB (timer_stopped is a
+    # separate, purely cosmetic flag - see app/services/manufacturing_timer.py)
+    # but has already moved to the Previous Orders tab, so it must not show
+    # up here as something overhead can still be charged to.
     from app.models import ManufacturingOrder
     in_progress_mos = (
         ManufacturingOrder.query
-        .filter_by(status='In Progress')
+        .filter_by(status='In Progress', timer_stopped=False)
         .order_by(ManufacturingOrder.order_number)
         .all()
     )
@@ -2866,11 +2910,14 @@ def add_expense():
             for mo_id in selected_mo_ids:
                 if mo_id != 0:
                     target_mo = ManufacturingOrder.query.get(mo_id)
-                    if target_mo and target_mo.status == 'In Progress':
+                    # Same rule as the dropdown itself - status alone isn't
+                    # enough, a timer-stopped order has already moved to
+                    # Previous Orders and shouldn't accept new overhead.
+                    if target_mo and target_mo.status == 'In Progress' and not target_mo.timer_stopped:
                         valid_mos.append(target_mo)
-            
+
             if not valid_mos and any(m != 0 for m in selected_mo_ids):
-                flash('Invalid or completed Manufacturing Order(s) selected.', 'danger')
+                flash('Invalid, completed, or timer-stopped Manufacturing Order(s) selected.', 'danger')
                 return redirect(url_for('accounting.add_expense'))
 
             num_mos = len(valid_mos)
@@ -2917,12 +2964,16 @@ def add_expense():
                 else:
                     flash_msg = f'Overhead expense PKR {base_amount} created for {target_mo.order_number} and is waiting for admin confirmation.'
             else:
-                amount_per_mo = base_amount / num_mos
-                for i, target_mo in enumerate(valid_mos):
+                # Split by each MO's current cost share (Manufacturing Cost
+                # Percentage formula), not an even split - an MO carrying
+                # more cost already takes a proportionally larger slice of
+                # this shared overhead. See _split_expense_by_mo_cost_share.
+                mo_allocations = _split_expense_by_mo_cost_share(base_amount, valid_mos)
+                for i, (target_mo, amount_for_mo) in enumerate(mo_allocations):
                     kwargs = dict(common_kwargs)
                     kwargs['expense_number'], next_expense_num = get_unique_expense_number(settings, next_expense_num)
                     kwargs['description'] = f"{form.description.data} (Allocation {i+1}/{num_mos})"
-                    kwargs['amount'] = amount_per_mo
+                    kwargs['amount'] = amount_for_mo
                     kwargs['mo_id'] = target_mo.id
 
                     exp = Expense(
@@ -2936,13 +2987,13 @@ def add_expense():
                     created_expenses.append(exp)
 
                     if target_status == 'confirmed':
-                        target_mo.actual_overhead_cost = (target_mo.actual_overhead_cost or 0) + amount_per_mo
+                        target_mo.actual_overhead_cost = (target_mo.actual_overhead_cost or 0) + amount_for_mo
                         target_mo.total_cost = (target_mo.actual_material_cost or 0) + (target_mo.actual_labor_cost or 0) + target_mo.actual_overhead_cost
-                
+
                 if target_status == 'confirmed':
-                    flash_msg = f'Expense(s) added. PKR {base_amount} divided into {num_mos} Manufacturing Orders.'
+                    flash_msg = f'Expense(s) added. PKR {base_amount} divided into {num_mos} Manufacturing Orders by cost share.'
                 else:
-                    flash_msg = f'Expense(s) created and waiting for admin confirmation. PKR {base_amount} allocated to {num_mos} Manufacturing Orders.'
+                    flash_msg = f'Expense(s) created and waiting for admin confirmation. PKR {base_amount} allocated to {num_mos} Manufacturing Orders by cost share.'
         
         # ── MODE 2: Bulk Product/BOM allocation ───────────────────────────
         else:
@@ -3747,20 +3798,26 @@ def edit_expense(id):
     form.bom_id.choices = [(0, 'Select BOM (Optional)')] + [(b.id, b.name) for b in boms]
 
     # Populate MO choices (only in-progress orders; no placeholder needed for multi-select)
+    # status == 'In Progress' alone isn't enough - an order whose deadline
+    # timer has expired stays 'In Progress' in the DB (timer_stopped is a
+    # separate, purely cosmetic flag - see app/services/manufacturing_timer.py)
+    # but has already moved to the Previous Orders tab, so it must not show
+    # up here as something overhead can still be charged to.
     from app.models import ManufacturingOrder
-    in_progress_mos = ManufacturingOrder.query.filter_by(status='In Progress').order_by(ManufacturingOrder.order_number).all()
+    in_progress_mos = ManufacturingOrder.query.filter_by(status='In Progress', timer_stopped=False).order_by(ManufacturingOrder.order_number).all()
     form.mo_id.choices = [(mo.id, f"{mo.order_number} — {mo.bom.product.name}") for mo in in_progress_mos]
-    
+
     # Handle case where MO was deleted - store original mo_id before potential overwrite
     original_mo_id = expense.mo_id if has_column('expenses', 'mo_id') else None
-    
-    # Add any previously linked MO (deleted, completed, or in-progress) to choices
+
+    # Add any previously linked MO (deleted, completed, timer-stopped, or
+    # still genuinely in-progress) to choices
     if original_mo_id:
         existing_choice_ids = [c[0] for c in form.mo_id.choices]
         if original_mo_id not in existing_choice_ids:
             linked_mo = ManufacturingOrder.query.get(original_mo_id)
             if linked_mo:
-                if linked_mo.status == 'In Progress':
+                if linked_mo.status == 'In Progress' and not linked_mo.timer_stopped:
                     form.mo_id.choices.append((linked_mo.id, f"{linked_mo.order_number} — {linked_mo.bom.product.name} (Current)"))
                 else:
                     form.mo_id.choices.append((linked_mo.id, f"{linked_mo.order_number} — {linked_mo.bom.product.name} (Not In Progress)"))
@@ -3896,10 +3953,27 @@ def edit_expense(id):
         created_expenses = []
 
         if new_is_overhead and num_targets > 1:
-            divided_amount = form.amount.data / num_targets
+            # MO-linked overhead (overhead_mode == 'mo') splits by each MO's
+            # current cost share, not evenly - same "Manufacturing Cost
+            # Percentage" formula as add_expense. Bulk product/BOM
+            # allocation (overhead_mode == 'bulk') has no comparable
+            # "current cost" per target to weight by, so it stays an even
+            # split. target_amounts is in the same order as `targets`.
+            if overhead_mode == 'mo':
+                mo_targets = [ManufacturingOrder.query.get(t_id) for _, t_id in targets]
+                mo_allocations = _split_expense_by_mo_cost_share(form.amount.data, mo_targets)
+                target_amounts = [amt for _, amt in mo_allocations]
+            else:
+                even_amount = round(form.amount.data / num_targets, 2)
+                target_amounts = [even_amount] * num_targets
+                remainder = round(form.amount.data - sum(target_amounts), 2)
+                if remainder:
+                    target_amounts[-1] = round(target_amounts[-1] + remainder, 2)
+
+            divided_amount = target_amounts[0]
             expense.amount = divided_amount
             new_amount = divided_amount
-            
+
             # Apply first target to original expense
             first_type, first_id = targets[0]
             if has_column('expenses', 'product_id'): expense.product_id = first_id if first_type == 'product' else None
@@ -3946,10 +4020,10 @@ def edit_expense(id):
             for i in range(1, num_targets):
                 t_type, t_id = targets[i]
                 exp_num, next_expense_num = get_unique_expense_number(acc_settings, next_expense_num)
-                
+
                 exp_kwargs = {
                     'expense_number': exp_num,
-                    'amount': divided_amount,
+                    'amount': target_amounts[i],
                     'is_bom_overhead': True,
                     'status': expense.status,
                     'created_by': current_user.id,

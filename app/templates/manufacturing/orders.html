@@ -59,13 +59,20 @@
                             <th>Produced</th>
                             <th>Remaining</th>
                             <th>Start Date</th>
-                            <th>Total Cost</th>
+                            <th title="Material + Overhead cost only, before HR salary is added">MO Cost (Without Salary)</th>
+                            {% if view != 'previous' %}
+                            <th title="This order's share of the combined Material+Overhead cost of all active orders">Cost Share</th>
+                            <th title="Monthly Manufacturing Salaries (active HR staff) × Cost Share">Salary Allocated</th>
+                            <th title="Salary Allocated ÷ Quantity to Produce">Salary per Unit</th>
+                            <th title="MO Cost (Without Salary) + Salary Allocated">New MO Cost (With Salary)</th>
+                            {% endif %}
                             <th class="no-export">Approval</th>
                             <th class="no-export">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for ord in orders %}
+                        {% set sb = salary_breakdown.get(ord.id) %}
                         <tr>
                             <td class="text-center no-export">
                                 <input type="checkbox" class="form-check-input order-checkbox" value="{{ ord.id }}">
@@ -102,7 +109,13 @@
                             <td><span class="badge bg-info text-dark">{{ ord.produced_qty or 0 }}</span></td>
                             <td><span class="badge bg-light text-dark border">{{ ord.remaining_qty }}</span></td>
                             <td>{{ ord.start_date.strftime('%d-%b-%Y') if ord.start_date else '-' }}</td>
-                            <td>PKR {{ "%.2f"|format(ord.total_cost) }}</td>
+                            <td>PKR {{ "%.2f"|format((ord.actual_material_cost or 0) + (ord.actual_overhead_cost or 0)) }}</td>
+                            {% if view != 'previous' %}
+                            <td>{{ "%.2f"|format(sb.cost_share_pct) }}%</td>
+                            <td>PKR {{ "%.2f"|format(sb.salary_allocated) }}</td>
+                            <td>PKR {{ "%.2f"|format(sb.salary_per_unit) }}</td>
+                            <td>PKR {{ "%.2f"|format(sb.new_mo_cost) }}</td>
+                            {% endif %}
                             <td class="no-export">
                                 {% from 'components/approval_widget.html' import approval_widget with context %}
                                 {{ approval_widget('manufacturing_order', ord) }}

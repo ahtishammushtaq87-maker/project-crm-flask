@@ -434,7 +434,9 @@ class ManufacturingOrderForm(FlaskForm):
     start_time = TimeField('Start Time', validators=[Optional()], format='%H:%M')
     end_time = TimeField('End Time (Timer Deadline)', validators=[Optional()], format='%H:%M')
     finished_warehouse_id = SelectField('Finished Warehouse', coerce=int, validators=[Optional()])
-    staff_ids = SelectMultipleField('Staff Used in this Order (Optional)', coerce=int, validators=[Optional()])
+    # Staff/labor cost is auto-assigned from every active HR staff member
+    # server-side (see _apply_staff_assignments in app/routes/manufacturing.py)
+    # - there is no manual staff picker on the form anymore.
 
 class StaffForm(FlaskForm):
     name = StringField('Staff Name', validators=[DataRequired()])

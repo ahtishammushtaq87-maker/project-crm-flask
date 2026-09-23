@@ -328,7 +328,7 @@
                                 <div class="mb-3">
                                     <label class="form-label fw-semibold">Manufacturing Order <span class="badge bg-secondary">Multi-select</span></label>
                                     {{ form.mo_id(class="form-select", id="mo_id_select", multiple="multiple") }}
-                                    <div class="form-text">Only <strong>In Progress</strong> orders are shown by default. Previously linked (or deleted) orders appear as "(Current)" or "(Deleted)" and remain selectable.</div>
+                                    <div class="form-text">Only <strong>In Progress</strong> orders are shown by default. Previously linked (or deleted) orders appear as "(Current)" or "(Deleted)" and remain selectable. Selecting several orders splits this expense by each order's current cost share (Manufacturing Cost Percentage) — not equally.</div>
                                 </div>
                             </div>
 

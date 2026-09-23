@@ -20,63 +20,76 @@ def has_column(table_name, column_name):
         return False
 
 
-def _compute_staff_labor_cost(staff_ids, start_date, end_date):
-    """Sum each selected staff member's daily rate x their WORKING days in
-    [start_date, end_date] (inclusive) - the HR-driven labor cost estimate
-    for a Manufacturing Order.
-
-    Staff.daily_salary is already a rate for a working day (monthly_salary
-    divided by that month's working days, i.e. every day except Sunday -
-    see Staff.calculate_daily_salary / get_working_days_in_month), so the
-    day count here has to use that same "exclude Sundays (and this staff's
-    holiday-marked days)" definition too - reused directly from
-    get_required_hours_in_range(hours_per_day=1), which returns exactly the
-    working-day count for the range. Multiplying that rate by every
-    calendar day instead (Sundays included) would overshoot the staff
-    member's actual monthly salary for a full-month order, which is what
-    this is guarding against.
-
-    Returns (total, breakdown) where breakdown is a list of
-    {'staff': Staff, 'daily_rate': float, 'days': float, 'labor_cost': float}.
-    Returns (None, []) when no staff are selected - callers treat None as
-    "fall back to the BOM.labor_cost x quantity estimate", so a Manufacturing
-    Order with nobody assigned behaves exactly as it always has.
-    """
-    if not staff_ids:
-        return None, []
+def _active_manufacturing_staff():
+    """Every currently active HR staff member - the pool of people whose
+    combined monthly_salary makes up 'Monthly Manufacturing Salaries'."""
     from app.models import Staff
-    from app.utils import get_required_hours_in_range
-    has_range = bool(start_date and end_date and end_date >= start_date)
-    staff_members = Staff.query.filter(Staff.id.in_(staff_ids)).all()
-    breakdown = []
-    total = 0.0
-    for s in staff_members:
-        if s.daily_salary and s.daily_salary > 0:
-            daily_rate = s.daily_salary
-        else:
-            s.calculate_daily_salary(reference_date=start_date)
-            daily_rate = s.daily_salary
-        days = get_required_hours_in_range(s, start_date, end_date, hours_per_day=1) if has_range else 1
-        cost = daily_rate * days
-        breakdown.append({'staff': s, 'daily_rate': daily_rate, 'days': days, 'labor_cost': cost})
-        total += cost
-    return total, breakdown
+    return Staff.query.filter_by(is_active=True).order_by(Staff.name).all()
 
 
-def _apply_staff_assignments(order, staff_ids, start_date, end_date):
-    """Replaces `order`'s ManufacturingOrderStaff rows with one per id in
-    `staff_ids`, each carrying a fresh cost snapshot for the given date
-    range. Returns the computed total labor cost, or None if `staff_ids` is
-    empty (nothing assigned - see _compute_staff_labor_cost)."""
+def _recompute_active_order_salaries(exclude_order_id=None):
+    """Redistributes the monthly manufacturing salary pool (sum of every
+    active HR staff member's monthly_salary) across every currently active
+    (not timer_stopped, not Completed) Manufacturing Order, using exactly
+    the cost-share formula from the ERP reference table:
+
+        MO Salary Allocation = Monthly Manufacturing Salaries x
+                                (MO Cost / Total Cost of Eligible Monthly MOs)
+
+    where "MO Cost" is each order's pre-salary cost (material + overhead)
+    and "Total Cost of Eligible Monthly MOs" is the sum of that same
+    pre-salary cost across all active orders. This replaces the old
+    per-staff daily-rate x days estimate, and is recomputed for ALL active
+    orders together every time one of them is created/edited/completed/
+    deleted, since every order's share depends on every other active
+    order's cost too.
+
+    `exclude_order_id` lets a caller recompute the pool as it will look
+    right after removing/completing one order (pass that order's id) before
+    that order's own status/timer_stopped change has been committed yet.
+
+    Each order's total allocation is then split across active staff
+    (ManufacturingOrderStaff rows, staff_id NOT NULL) proportionally to
+    each staff member's own share of the monthly salary pool, purely so
+    the existing per-staff breakdown on the order details page stays
+    populated and sums back to the order's allocation exactly; the
+    breakdown is informational, the order-level allocation is what's
+    authoritative and matches the formula above. Updates actual_labor_cost
+    + total_cost on each order. Callers must still db.session.commit().
+    """
     from app.models import ManufacturingOrderStaff
-    ManufacturingOrderStaff.query.filter_by(mo_id=order.id).delete()
-    total, breakdown = _compute_staff_labor_cost(staff_ids, start_date, end_date)
-    for row in breakdown:
-        db.session.add(ManufacturingOrderStaff(
-            mo_id=order.id, staff_id=row['staff'].id,
-            daily_rate=row['daily_rate'], days=row['days'], labor_cost=row['labor_cost']
-        ))
-    return total
+
+    staff_list = _active_manufacturing_staff()
+    salary_pool = sum((s.monthly_salary or 0) for s in staff_list)
+
+    active_orders = ManufacturingOrder.query.filter(
+        ManufacturingOrder.timer_stopped == False,
+        ManufacturingOrder.status != 'Completed'
+    ).all()
+    if exclude_order_id is not None:
+        active_orders = [o for o in active_orders if o.id != exclude_order_id]
+
+    pre_salary_costs = {o.id: (o.actual_material_cost or 0) + (o.actual_overhead_cost or 0) for o in active_orders}
+    total_pool_cost = sum(pre_salary_costs.values())
+
+    for o in active_orders:
+        mo_cost = pre_salary_costs[o.id]
+        allocation = (salary_pool * (mo_cost / total_pool_cost)) if total_pool_cost > 0 else 0
+
+        ManufacturingOrderStaff.query.filter_by(mo_id=o.id).delete()
+        for s in staff_list:
+            staff_share = (s.monthly_salary or 0) / salary_pool if salary_pool > 0 else 0
+            staff_cost = allocation * staff_share
+            if staff_cost <= 0:
+                continue
+            db.session.add(ManufacturingOrderStaff(
+                mo_id=o.id, staff_id=s.id, daily_rate=s.daily_salary or 0, days=0, labor_cost=staff_cost
+            ))
+
+        o.actual_labor_cost = allocation
+        o.total_cost = mo_cost + allocation
+
+    return salary_pool, total_pool_cost
 
 @bp.route('/boms')
 @login_required
@@ -429,8 +442,42 @@ def orders():
         query = query.filter(ManufacturingOrder.timer_stopped == True)
     else:
         query = query.filter(ManufacturingOrder.timer_stopped == False)
+    # Keep every active order's salary allocation fresh (HR salaries or
+    # each other's material/overhead cost may have changed since the last
+    # write) before reading actual_labor_cost/total_cost back out below -
+    # self-healing fallback on top of the recompute already triggered by
+    # create/edit/complete/delete.
+    if view != 'previous':
+        _recompute_active_order_salaries()
+        db.session.commit()
+
     orders = query.order_by(ManufacturingOrder.created_at.desc()).all()
-    return render_template('manufacturing/orders.html', orders=orders, active_module='manufacturing_order', view=view)
+
+    # Salary breakdown columns (Active Orders tab only): exactly the ERP
+    # cost-share formula -
+    #   MO Salary Allocation = Monthly Manufacturing Salaries x
+    #                          (MO Cost / Total Cost of Eligible Monthly MOs)
+    # where MO Cost is each order's pre-salary (material+overhead) cost.
+    # Salary Allocated/New MO Cost below are read straight off
+    # actual_labor_cost/total_cost, which _recompute_active_order_salaries
+    # just set using this exact formula.
+    salary_breakdown = {}
+    if view != 'previous':
+        pre_salary_costs = {o.id: (o.actual_material_cost or 0) + (o.actual_overhead_cost or 0) for o in orders}
+        total_pool_cost = sum(pre_salary_costs.values())
+        for o in orders:
+            mo_cost = pre_salary_costs[o.id]
+            share_pct = (mo_cost / total_pool_cost * 100) if total_pool_cost > 0 else 0
+            qty = o.quantity_to_produce or 0
+            salary_breakdown[o.id] = {
+                'cost_share_pct': share_pct,
+                'salary_allocated': o.actual_labor_cost or 0,
+                'salary_per_unit': (o.actual_labor_cost or 0) / qty if qty > 0 else 0,
+                'new_mo_cost': o.total_cost or 0,
+            }
+
+    return render_template('manufacturing/orders.html', orders=orders, active_module='manufacturing_order',
+                           view=view, salary_breakdown=salary_breakdown)
 
 @bp.route('/orders/components-summary')
 @login_required
@@ -542,9 +589,10 @@ def add_order():
     # Finished warehouse choices
     warehouses = Warehouse.query.filter_by(is_active=True).all()
     form.finished_warehouse_id.choices = [(0, '— None —')] + [(w.id, f"{w.code} - {w.name}") for w in warehouses]
-    # Staff choices - used to auto-compute labor cost from HR salaries
+    # Labor cost is auto-computed from HR using the cost-share formula (see
+    # _recompute_active_order_salaries) - no manual staff picking. Kept here
+    # only to show the "who's included" read-only panel on the form.
     active_staff = Staff.query.filter_by(is_active=True).order_by(Staff.name).all()
-    form.staff_ids.choices = [(s.id, f"{s.name} ({s.designation})" if s.designation else s.name) for s in active_staff]
 
     if form.validate_on_submit():
         # Generate Unique Order Number using company settings
@@ -625,18 +673,13 @@ def add_order():
             exp.mo_id = mo.id
             total_mo_overhead += exp.amount
             
-        # Labor cost: auto-computed from the selected staff's HR salaries
-        # (daily rate x days spanned by start/end date) when any are picked;
-        # falls back to the original BOM.labor_cost x quantity estimate
-        # when nobody's assigned, so orders created without staff behave
-        # exactly as before.
-        staff_ids = form.staff_ids.data or []
-        staff_labor_total = _apply_staff_assignments(mo, staff_ids, mo.start_date, mo.end_date)
-
         mo.actual_overhead_cost = total_mo_overhead
-        mo.actual_labor_cost = staff_labor_total if staff_labor_total is not None else (bom.labor_cost * multiplier)
         mo.actual_material_cost = sum(item.component.cost_price * (item.quantity * multiplier) for item in bom.items)
-        mo.total_cost = mo.actual_labor_cost + mo.actual_material_cost + mo.actual_overhead_cost
+        # Labor cost: auto-computed from HR using the cost-share formula -
+        # every active order (including this new one) gets a slice of the
+        # active staff's combined monthly salary, proportional to its own
+        # pre-salary (material+overhead) cost. See _recompute_active_order_salaries.
+        _recompute_active_order_salaries()
 
         db.session.commit()
         log_activity('Manufacturing', f'Created Manufacturing Order: {order_number}', f'BOM: {bom.name}, Qty: {mo.quantity_to_produce}')
@@ -693,22 +736,19 @@ def edit_order(id):
     except Exception:
         pass
 
-    # Staff choices - include anyone already assigned even if since made
-    # inactive, so editing this order doesn't silently drop them.
+    # Staff is auto-assigned from HR, not picked manually - see add_order.
+    # assigned_staff_ids/staff_choice_list are kept only for the read-only
+    # "who's included" display in the template.
     active_staff = Staff.query.filter_by(is_active=True).order_by(Staff.name).all()
     assigned_staff_ids = [a.staff_id for a in order.staff_assignments]
     staff_choice_list = list(active_staff)
     for a in order.staff_assignments:
         if a.staff and not a.staff.is_active:
             staff_choice_list.append(a.staff)
-    form.staff_ids.choices = [(s.id, f"{s.name} ({s.designation})" if s.designation else s.name) for s in staff_choice_list]
-    if request.method == 'GET':
-        form.staff_ids.data = assigned_staff_ids
 
     if form.validate_on_submit():
         old_bom_id = order.bom_id
         old_quantity = order.quantity_to_produce
-        had_staff_before = bool(order.staff_assignments)
 
         order.bom_id = form.bom_id.data
         order.quantity_to_produce = form.quantity_to_produce.data
@@ -733,8 +773,6 @@ def edit_order(id):
             order.finished_warehouse_id = None
 
         items_changed = old_bom_id != order.bom_id or old_quantity != order.quantity_to_produce
-        bom_labor_estimate = None
-        recompute_total = False
 
         if items_changed:
             multiplier = order.quantity_to_produce
@@ -758,34 +796,17 @@ def edit_order(id):
                 mo_item.cost = comp_cost
                 db.session.add(mo_item)
 
-            bom_labor_estimate = new_bom.labor_cost * multiplier
             order.actual_material_cost = sum(item.component.cost_price * (item.quantity * multiplier) for item in new_bom.items)
-            recompute_total = True
 
-        # Labor cost: staff assignments always sync to whatever's checked
-        # now (auto-recomputed for the order's current date range), and
-        # take priority whenever anyone's assigned. Falls back to the
-        # BOM-based estimate if the BOM/quantity changed, or if staff were
-        # just removed - otherwise the order's existing labor cost is left
-        # exactly as it was, matching the original behavior. Skipped
-        # entirely once Completed - the form disables this field then (edit
-        # is dates-only for a finished order), so an empty submission here
-        # must never be read as "staff removed".
+        # Labor cost: re-run the cost-share formula across every active
+        # order (this one's material/overhead cost may have just changed,
+        # which shifts everyone's share) - skipped once Completed, since
+        # edit is dates-only for a finished order and labor cost must stay
+        # frozen at whatever it was when completed.
         if order.status != 'Completed':
-            staff_ids = form.staff_ids.data or []
-            staff_labor_total = _apply_staff_assignments(order, staff_ids, order.start_date, order.end_date)
-
-            if staff_labor_total is not None:
-                order.actual_labor_cost = staff_labor_total
-                recompute_total = True
-            elif items_changed:
-                order.actual_labor_cost = bom_labor_estimate
-            elif had_staff_before and not staff_ids:
-                order.actual_labor_cost = (order.bom.labor_cost or 0) * order.quantity_to_produce
-                recompute_total = True
-
-        if recompute_total:
-            order.total_cost = order.actual_labor_cost + order.actual_material_cost + (order.actual_overhead_cost or 0)
+            _recompute_active_order_salaries()
+        elif items_changed:
+            order.total_cost = order.actual_material_cost + (order.actual_labor_cost or 0) + (order.actual_overhead_cost or 0)
 
         db.session.commit()
         log_activity('Manufacturing', f'Updated Manufacturing Order: {order.order_number}', f'BOM: {order.bom.name}, Qty: {order.quantity_to_produce}')
@@ -844,6 +865,7 @@ def complete_order(id):
         order.status = 'Completed'
         order.produced_qty = order.quantity_to_produce
         order.end_date = datetime.now().date()
+        _recompute_active_order_salaries(exclude_order_id=order.id)
         db.session.commit()
         log_activity('Manufacturing', f'Completed Manufacturing Order: {order.order_number}', f'Status: Completed')
         flash('Order marked as completed.', 'success')
@@ -964,7 +986,7 @@ def complete_order(id):
     order.status = 'Completed'
     order.produced_qty = order.quantity_to_produce
     order.end_date = datetime.now().date()
-    
+
     # Auto-create production log entry
     from app.models import ProductionLog
     production_log = ProductionLog()
@@ -977,7 +999,7 @@ def complete_order(id):
     production_log.notes = f'Auto-created from Manufacturing Order {order.order_number}'
     production_log.created_by = current_user.id
     db.session.add(production_log)
-    
+
     # Update Production Target Produced Qty if exists (Stateful Running Total)
     from app.models import ProductionTarget
     # Find target covering the production date
@@ -986,7 +1008,7 @@ def complete_order(id):
         ProductionTarget.start_date <= order.end_date,
         ProductionTarget.end_date >= order.end_date
     ).first()
-    
+
     if target:
         if target.produced_qty is None:
             # First time sync: initialize with current logs sum
@@ -999,7 +1021,13 @@ def complete_order(id):
             target.produced_qty = log_sum
         else:
             target.produced_qty += qty_to_process
-    
+
+    # This order just left the active pool (status is now Completed) - its
+    # own actual_labor_cost/total_cost stay frozen at what was last
+    # allocated to it, but the salary it was taking now needs to go to the
+    # remaining active orders, so recompute the pool without it.
+    _recompute_active_order_salaries(exclude_order_id=order.id)
+
     db.session.commit()
     log_activity('Manufacturing', f'Completed Manufacturing Order: {order.order_number}', f'Qty Produced: {qty_to_process}, Status: Completed')
     flash('Manufacturing Order completed successfully. Stock adjusted and product cost updated.', 'success')
@@ -1150,9 +1178,11 @@ def partial_complete_order(id):
         order.actual_overhead_cost = 0
     
     # If completed
+    just_completed = False
     if order.produced_qty >= order.quantity_to_produce:
         order.status = 'Completed'
         order.end_date = datetime.now().date()
+        just_completed = True
     else:
         order.status = 'In Progress'
 
@@ -1186,7 +1216,15 @@ def partial_complete_order(id):
             target.produced_qty = log_sum
         else:
             target.produced_qty += qty_produced
-            
+
+    # This batch's labor_cost was already taken from the pool share this
+    # order had going into the batch (order.actual_labor_cost, set by the
+    # last _recompute_active_order_salaries run) - nothing to redo there.
+    # But if this batch just finished the order, it leaves the active pool,
+    # so the remaining active orders need to pick up its freed-up share.
+    if just_completed:
+        _recompute_active_order_salaries(exclude_order_id=order.id)
+
     db.session.commit()
     log_activity('Manufacturing', f'Partial Completion of MO: {order.order_number}', f'Qty Produced: {qty_produced}, Status: {order.status}')
     flash(f'Successfully produced {qty_produced} units. Overhead applied and reset for remaining.', 'success')
@@ -1442,7 +1480,13 @@ def delete_order(id):
         db.session.delete(exp)
     
     order_number = order.order_number
+    was_active = (not order.timer_stopped) and order.status != 'Completed'
     db.session.delete(order)
+    db.session.flush()
+    # If this order was still active, its salary pool share needs to be
+    # picked up by whatever active orders remain.
+    if was_active:
+        _recompute_active_order_salaries()
     db.session.commit()
     log_activity('Manufacturing', f'Deleted Manufacturing Order: {order_number}', '')
 

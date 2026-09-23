@@ -163,7 +163,7 @@
             <div class="card shadow mb-4">
                 <div class="card-header py-3">
                     <h6 class="m-0 font-weight-bold text-primary">
-                        <i class="fas fa-users me-1"></i> Staff / Labor Allocation
+                        <i class="fas fa-users me-1"></i> Staff / Salary Allocation
                     </h6>
                 </div>
                 <div class="card-body p-0">
@@ -172,31 +172,31 @@
                             <thead class="bg-light">
                                 <tr>
                                     <th>Staff</th>
-                                    <th class="text-end">Daily Rate</th>
-                                    <th class="text-end">Working Days</th>
-                                    <th class="text-end">Staff Total</th>
+                                    <th class="text-end">Monthly Salary</th>
+                                    <th class="text-end">Share of Salary Pool</th>
+                                    <th class="text-end">Staff Allocation</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for a in order.staff_assignments %}
                                 <tr>
                                     <td>{{ a.staff.name if a.staff else 'Deleted Staff' }}{% if a.staff and a.staff.designation %} <span class="text-muted small">({{ a.staff.designation }})</span>{% endif %}</td>
-                                    <td class="text-end">PKR {{ "%.2f"|format(a.daily_rate or 0) }}</td>
-                                    <td class="text-end">{{ "%.0f"|format(a.days or 0) }}</td>
+                                    <td class="text-end">PKR {{ "%.2f"|format(a.staff.monthly_salary or 0) if a.staff else '-' }}</td>
+                                    <td class="text-end">{{ "%.2f"|format(a.labor_cost / order.actual_labor_cost * 100) if order.actual_labor_cost else '0.00' }}%</td>
                                     <td class="text-end fw-bold">PKR {{ "%.2f"|format(a.labor_cost or 0) }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                             <tfoot>
                                 <tr class="table-light fw-bold">
-                                    <td colspan="3">Total Labor Cost (from HR)</td>
+                                    <td colspan="3">Total Salary Allocated (from HR)</td>
                                     <td class="text-end">PKR {{ "%.2f"|format(order.actual_labor_cost or 0) }}</td>
                                 </tr>
                             </tfoot>
                         </table>
                     </div>
                     <div class="p-2 text-muted small border-top">
-                        This order's Labor Cost is auto-computed from these staff members' HR salaries — daily rate &times; working days (Sundays, and that staff member's marked holidays, excluded) between the order's Start/End Date. Edit the order to change who's assigned.
+                        This order's Salary Allocated = Monthly Manufacturing Salaries (sum of every active HR staff member's monthly salary) &times; (this order's Material+Overhead cost &divide; the combined Material+Overhead cost of every active order). It's recalculated automatically whenever any active order or HR salary changes; each staff member's row above is their proportional share of that total.
                     </div>
                 </div>
             </div>

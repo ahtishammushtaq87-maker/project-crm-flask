@@ -1,0 +1,44 @@
+{# Read-only "auto-included staff" panel - replaces the old manual
+   checkbox picker (_staff_picker.html). Labor cost is no longer picked by
+   hand: every currently ACTIVE HR staff member's monthly_salary makes up
+   a shared "Monthly Manufacturing Salaries" pool, which gets divided
+   across every active Manufacturing Order by cost share -
+
+       MO Salary Allocation = Monthly Manufacturing Salaries x
+                              (MO Cost / Total Cost of Eligible Monthly MOs)
+
+   (server-side, see _recompute_active_order_salaries in
+   app/routes/manufacturing.py). Because this order's own share depends on
+   every OTHER active order's cost too, the exact PKR amount can only be
+   known after saving (it's shown on the Manufacturing Orders list and
+   this order's details page) - this panel just lists who's in the pool
+   and its combined size, not a per-order estimate.
+
+   Expects in context:
+     staff_list - iterable of active Staff (plus any inactive staff already
+                  assigned to this order, on the edit page, shown as such)
+#}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-1 mb-2">
+    <span class="staff-picker-label text-uppercase">Manufacturing Salary (Auto from HR)</span>
+    <span class="badge bg-light text-dark border">{{ staff_list|selectattr('is_active')|list|length }} active staff</span>
+</div>
+
+<div class="staff-picker-list" id="staffAutoList">
+    {% for s in staff_list %}
+    <div class="staff-picker-row">
+        <span>
+            <span class="staff-name d-block">{{ s.name }}</span>
+            <span class="staff-role">PKR {{ '%.2f'|format(s.monthly_salary or 0) }} / month{% if not s.is_active %} &middot; inactive (kept from before){% endif %}</span>
+        </span>
+        {% if s.designation %}
+        <span class="staff-badge">{{ s.designation }}</span>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% if not staff_list %}
+    <div class="staff-picker-empty">No active staff in HR yet — labor cost will use the BOM's estimated labor cost instead.</div>
+    {% endif %}
+</div>
+
+{% set pool_total = staff_list|selectattr('is_active')|map(attribute='monthly_salary')|sum %}
+<small class="text-muted d-block mt-2"><i class="fas fa-info-circle me-1"></i>Salary is added automatically — you don't need to add it manually. Monthly Manufacturing Salaries pool (PKR {{ '%.2f'|format(pool_total) }}) is split across every active order by cost share: <code>Salary Allocated = Pool &times; (this order's Material+Overhead cost &divide; combined cost of all active orders)</code>. The exact amount for this order is finalized after saving and shown on the Manufacturing Orders list and this order's details page.</small>
