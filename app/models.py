@@ -1423,6 +1423,7 @@ class PurchaseBill(db.Model):
     discount_type = db.Column(db.String(10), default='fixed')
     discount = db.Column(db.Float, default=0)
     shipping_charge = db.Column(db.Float, default=0)
+    shipping_image_path = db.Column(db.String(255))  # Path to uploaded shipping receipt/proof image
     advance_applied = db.Column(db.Float, default=0)  # Advance from vendor profile applied to this bill
     total = db.Column(db.Float, default=0)
     status = db.Column(Enum('paid', 'unpaid', 'partial', 'return', 'partial_return', 'cancelled', name='payment_status'), default='unpaid', index=True)

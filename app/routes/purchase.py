@@ -289,6 +289,75 @@ def bill_detail(id):
                            received_qty_map=received_qty_map, warehouses=warehouses,
                            other_bills=other_bills, payment_methods=payment_methods)
 
+
+@bp.route('/bill/<int:id>/recalculate-paid', methods=['POST'])
+@login_required
+def recalculate_bill_paid_amount(id):
+    """Admin-only: recomputes bill.paid_amount from its actual documented
+    records - approved BillPayment rows plus any VendorAdvance currently
+    applied to it - instead of trusting whatever the running total field
+    happens to hold.
+
+    Why this exists: paid_amount is a running total that every payment
+    action (Pay Bill, Apply Advance, Expense "Add to Purchase Payment")
+    keeps in sync incrementally. If it ever drifts out of sync with the
+    documented payments - e.g. from data older than this app's current
+    payment-tracking code, a direct database edit, or a restored backup -
+    nothing today can self-heal it, so "Paid Amount" on the summary card
+    can silently disagree with "Total Paid" in Payment History below it.
+    This button recomputes the field from source records on demand rather
+    than silently rewriting anyone's data automatically.
+
+    ground_truth = sum(approved BillPayment.amount for this bill)
+                  + sum(VendorAdvance.applied_amount currently pointed at
+                        this bill via adjusted_bill_id)
+    capped at bill.total, matching the same bounds every other paid_amount
+    writer in this codebase respects.
+    """
+    if not getattr(current_user, 'is_admin', False):
+        flash('Only an admin can recalculate a bill\'s paid amount.', 'danger')
+        return redirect(url_for('purchase.bill_detail', id=id))
+
+    # Same "type the word to confirm" pattern as Database Restore - the
+    # button-side modal already requires typing RECALCULATE before this
+    # form can submit, but that's only enforced in the browser; checking it
+    # again here means a raw POST (e.g. from a replayed/forged request)
+    # can't skip the confirmation just because it skipped the modal.
+    if request.form.get('confirm_text', '').strip().upper() != 'RECALCULATE':
+        flash('Recalculate cancelled — confirmation text did not match.', 'warning')
+        return redirect(url_for('purchase.bill_detail', id=id))
+
+    bill = PurchaseBill.query.get_or_404(id)
+
+    payments_total = sum(bp.amount for bp in bill.bill_payments if bp.is_approved)
+    advances_total = sum(adv.applied_amount or 0 for adv in bill.adjusted_advances)
+    ground_truth = round(payments_total + advances_total, 2)
+    vendor_payable = bill.total - bill.shipping_charge
+    ground_truth = min(ground_truth, max(vendor_payable, 0))
+
+    old_paid = bill.paid_amount or 0
+    difference = round(ground_truth - old_paid, 2)
+
+    if abs(difference) < 0.01:
+        flash(f'No change needed — Paid Amount (PKR {old_paid:,.2f}) already matches '
+              f'{len([bp for bp in bill.bill_payments if bp.is_approved])} approved payment(s) '
+              f'and applied advance(s).', 'info')
+        return redirect(url_for('purchase.bill_detail', id=bill.id))
+
+    bill.paid_amount = ground_truth
+    bill.update_status()
+    db.session.commit()
+
+    log_activity('Purchase', f'Recalculated Paid Amount on Bill #{bill.bill_number}',
+                f'Was PKR {old_paid:,.2f}, corrected to PKR {ground_truth:,.2f} '
+                f'(from {len([bp for bp in bill.bill_payments if bp.is_approved])} approved payment(s) '
+                f'+ PKR {advances_total:,.2f} applied advance(s)). Difference: PKR {difference:+,.2f}')
+    flash(f'Paid Amount recalculated: PKR {old_paid:,.2f} → PKR {ground_truth:,.2f} '
+          f'(difference PKR {difference:+,.2f}), based on {len([bp for bp in bill.bill_payments if bp.is_approved])} '
+          f'approved payment(s) and PKR {advances_total:,.2f} in applied vendor advance(s).', 'success')
+    return redirect(url_for('purchase.bill_detail', id=bill.id))
+
+
 @bp.route('/bill/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
 @permission_required('purchases', action='edit')
@@ -345,20 +414,49 @@ def edit_bill(id):
                                 if wh_stock.quantity < 0:
                                     wh_stock.quantity = 0
 
-        # Safely remove old cost price history entries if not referenced by BOM items
-        old_history_entries = CostPriceHistory.query.filter_by(purchase_bill_id=bill.id).all()
+        # Safely remove old cost price history entries if not referenced by BOM items.
+        # CostPriceHistory can be linked to this bill two ways - directly via
+        # purchase_bill_id, or indirectly via bill_receive_item_id (a row
+        # tied to one of this bill's BillReceiveItem records) - both have to
+        # be handled here, since the BillReceive deletion below cascades to
+        # BillReceiveItem, and CostPriceHistory.price_history's own cascade
+        # would try to delete those rows too, colliding with the BOM-item
+        # check below if they weren't already resolved first.
+        from app.models import BOMItem
+        old_history_entries = CostPriceHistory.query.filter(
+            or_(
+                CostPriceHistory.purchase_bill_id == bill.id,
+                CostPriceHistory.bill_receive_item_id.in_(
+                    db.session.query(BillReceiveItem.id).join(BillReceive).filter(BillReceive.bill_id == bill.id)
+                )
+            )
+        ).all()
         for h in old_history_entries:
-            from app.models import BOMItem
             referenced = BOMItem.query.filter_by(cost_price_history_id=h.id).first()
             if referenced:
                 h.is_active = False
+                # Detach so the BillReceive delete below can't also try to
+                # cascade-delete a row a BOM item still points to.
+                h.bill_receive_item_id = None
+                h.purchase_bill_id = None
             else:
                 db.session.delete(h)
+        db.session.flush()
 
-        # Delete old receive records (since we are resetting the bill)
+        # Delete old receive records (since we are resetting the bill).
+        # Goes through the ORM (session.delete on each object) rather than a
+        # bulk Query.delete(), because a bulk delete issues a raw SQL DELETE
+        # straight at the database and skips the model's own cascade
+        # entirely - BillReceive.receive_items (cascade='all, delete-orphan')
+        # never fires, so its BillReceiveItem rows (and BillReceiveItem's own
+        # cascaded CostPriceHistory rows) are left behind, and SQLite then
+        # rejects the DELETE with "FOREIGN KEY constraint failed" once those
+        # orphaned children still reference the row being removed.
         if bill.inventory_received:
-            BillReceive.query.filter_by(bill_id=bill.id).delete()
+            for receive in BillReceive.query.filter_by(bill_id=bill.id).all():
+                db.session.delete(receive)
             bill.inventory_received = False
+            db.session.flush()
 
         # Delete old items. This is a bulk DELETE, which does not refresh
         # SQLAlchemy's in-memory `bill.items` collection - if that collection
@@ -402,48 +500,116 @@ def edit_bill(id):
         prices = request.form.getlist('price[]')
         warehouse_ids = request.form.getlist('warehouse_id[]')
 
+        # Validate every row BEFORE appending new items/flushing - a
+        # malformed row (blank price, a product_id that doesn't exist, a
+        # warehouse_id that doesn't exist) used to only surface as a
+        # generic IntegrityError at commit time, with no indication of
+        # which row or field caused it. The inventory-reversal and old
+        # item/receive deletion above have already happened in this
+        # session by this point (in memory, not yet committed) - if
+        # validation fails here, db.session.rollback() below discards all
+        # of that along with everything else, so nothing is actually
+        # persisted until every row is confirmed valid.
+        valid_product_ids = {p.id for p in products}
+        valid_warehouse_ids = {w.id for w in warehouses}
+        row_errors = []
+        parsed_items = []
         for i in range(len(product_ids)):
-            if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
-                prod_id = int(product_ids[i])
+            if not (product_ids[i] and quantities[i]):
+                continue
+            row_num = i + 1
+            try:
                 qty = float(quantities[i])
-                price = float(prices[i])
-                wh_id = int(warehouse_ids[i]) if i < len(warehouse_ids) and warehouse_ids[i] else None
-                item_total = qty * price
-                item = PurchaseItem(
-                    product_id=prod_id,
-                    quantity=qty,
-                    unit_price=price,
-                    warehouse_id=wh_id,
-                    total=item_total
-                )
-                bill.items.append(item)
-                # NOTE: inventory NOT updated on edit — user must re-receive
+            except (TypeError, ValueError):
+                row_errors.append(f'Row {row_num}: quantity "{quantities[i]}" is not a valid number.')
+                continue
+            if qty <= 0:
+                continue
+            try:
+                prod_id = int(product_ids[i])
+            except (TypeError, ValueError):
+                row_errors.append(f'Row {row_num}: invalid product selected.')
+                continue
+            if prod_id not in valid_product_ids:
+                row_errors.append(f'Row {row_num}: selected product no longer exists or is inactive/obsolete.')
+                continue
+            price_raw = prices[i] if i < len(prices) else ''
+            try:
+                price = float(price_raw) if price_raw not in (None, '') else 0.0
+            except (TypeError, ValueError):
+                row_errors.append(f'Row {row_num}: price "{price_raw}" is not a valid number.')
+                continue
+            wh_raw = warehouse_ids[i] if i < len(warehouse_ids) else ''
+            wh_id = None
+            if wh_raw:
+                try:
+                    wh_id = int(wh_raw)
+                except (TypeError, ValueError):
+                    row_errors.append(f'Row {row_num}: invalid warehouse selected.')
+                    continue
+                if wh_id not in valid_warehouse_ids:
+                    row_errors.append(f'Row {row_num}: selected warehouse no longer exists.')
+                    continue
+            parsed_items.append({'product_id': prod_id, 'quantity': qty, 'unit_price': price,
+                                 'warehouse_id': wh_id, 'total': qty * price})
 
-        # IMPORTANT: Flush to session so items are linked before calculation
-        db.session.flush()
-        bill.calculate_totals()
-        
-        # Cap paid amount if it now exceeds total
-        if bill.paid_amount > bill.total:
-            bill.paid_amount = bill.total
-        bill.update_status()
+        if row_errors:
+            db.session.rollback()
+            flash('Bill not updated — ' + ' '.join(row_errors), 'danger')
+            return render_template('purchase/edit_bill.html', form=form, bill=bill,
+                                   products=products, vendors=vendors, currencies=currencies, warehouses=warehouses)
+        if not parsed_items:
+            db.session.rollback()
+            flash('Bill not updated — at least one item with a quantity greater than zero is required.', 'danger')
+            return render_template('purchase/edit_bill.html', form=form, bill=bill,
+                                   products=products, vendors=vendors, currencies=currencies, warehouses=warehouses)
 
-        # Handle bill image upload on edit
-        if 'bill_image' in request.files:
-            file = request.files['bill_image']
-            if file and file.filename:
-                allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'webp'}
-                ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
-                if ext in allowed_extensions:
-                    upload_dir = os.path.join(current_app.root_path, 'static', 'uploads', 'bills')
-                    os.makedirs(upload_dir, exist_ok=True)
-                    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-                    filename = secure_filename(f"{bill.bill_number}_{timestamp}.{ext}")
-                    filepath = os.path.join(upload_dir, filename)
-                    file.save(filepath)
-                    bill.bill_image_path = os.path.join('uploads', 'bills', filename).replace('\\', '/')
+        for parsed in parsed_items:
+            bill.items.append(PurchaseItem(**parsed))
+            # NOTE: inventory NOT updated on edit — user must re-receive
 
-        db.session.commit()
+        try:
+            # IMPORTANT: Flush to session so items are linked before calculation
+            db.session.flush()
+            bill.calculate_totals()
+
+            # Cap paid amount if it now exceeds total
+            if bill.paid_amount > bill.total:
+                bill.paid_amount = bill.total
+            bill.update_status()
+
+            # Handle bill image upload on edit
+            if 'bill_image' in request.files:
+                file = request.files['bill_image']
+                if file and file.filename:
+                    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'webp'}
+                    ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+                    if ext in allowed_extensions:
+                        upload_dir = os.path.join(current_app.root_path, 'static', 'uploads', 'bills')
+                        os.makedirs(upload_dir, exist_ok=True)
+                        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                        filename = secure_filename(f"{bill.bill_number}_{timestamp}.{ext}")
+                        filepath = os.path.join(upload_dir, filename)
+                        file.save(filepath)
+                        bill.bill_image_path = os.path.join('uploads', 'bills', filename).replace('\\', '/')
+
+            db.session.commit()
+        except Exception as e:
+            # Surface the real cause instead of letting it bubble up to the
+            # generic "Required field missing or duplicate entry exists"
+            # 500-error message, which gave no hint of what actually failed.
+            db.session.rollback()
+            from sqlalchemy.exc import IntegrityError
+            if isinstance(e, IntegrityError):
+                current_app.logger.error(f'IntegrityError editing bill #{bill.bill_number}: {e}', exc_info=True)
+                flash(f'Bill not updated — a database constraint was violated: {e.orig if hasattr(e, "orig") else e}. '
+                      f'Nothing was changed; the bill\'s previous items and receive records are unaffected.', 'danger')
+            else:
+                current_app.logger.error(f'Error editing bill #{bill.bill_number}: {e}', exc_info=True)
+                flash(f'Bill not updated — {e}. Nothing was changed.', 'danger')
+            return render_template('purchase/edit_bill.html', form=form, bill=bill,
+                                   products=products, vendors=vendors, currencies=currencies, warehouses=warehouses)
+
         log_activity('Purchase', f'Updated Bill #{bill.bill_number}',
                     f'Vendor: {bill.vendor.name}, Total: {bill.total}')
         flash('Purchase bill updated successfully! Inventory and cost prices have been updated.', 'success')
@@ -469,6 +635,42 @@ def update_shipping(id):
         
         # Update shipping
         bill.shipping_charge = new_shipping
+
+        # Handle optional shipping receipt/proof image upload - same
+        # unique-filename convention as bill/payment image uploads, so two
+        # bills' uploads can never collide on disk (see inventory.py for
+        # the same fix applied to product images).
+        if 'shipping_image' in request.files:
+            ship_file = request.files['shipping_image']
+            if ship_file and ship_file.filename:
+                allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'webp'}
+                ext = ship_file.filename.rsplit('.', 1)[1].lower() if '.' in ship_file.filename else ''
+                if ext in allowed_extensions:
+                    old_shipping_image = bill.shipping_image_path
+                    upload_dir = os.path.join(current_app.root_path, 'static', 'uploads', 'bills')
+                    os.makedirs(upload_dir, exist_ok=True)
+                    import time, uuid
+                    unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                    filename = secure_filename(f"{bill.bill_number}_shipping_{unique_prefix}.{ext}")
+                    filepath = os.path.join(upload_dir, filename)
+                    ship_file.save(filepath)
+                    bill.shipping_image_path = os.path.join('uploads', 'bills', filename).replace('\\', '/')
+                    # Remove the old shipping image now that the new one is
+                    # safely saved, same "check no one else needs it first"
+                    # caution as product images - nothing else references
+                    # this bill's own shipping_image_path, so no shared-file
+                    # risk here, but the file is only removed after the
+                    # replacement is confirmed on disk either way.
+                    if old_shipping_image:
+                        try:
+                            old_full_path = os.path.join(current_app.root_path, 'static', old_shipping_image)
+                            if os.path.exists(old_full_path):
+                                os.remove(old_full_path)
+                        except OSError:
+                            pass
+                else:
+                    flash('Shipping image not saved — unsupported file type. Allowed: PNG, JPG, JPEG, GIF, PDF, WEBP.', 'warning')
+
         bill.calculate_totals()
         
         # Recalculate product costs to include new shipping
@@ -1998,11 +2200,21 @@ def build_vendor_ledger(vendor, date_from=None, date_to=None):
         total_weight = sum(item.quantity for item in b.items)
         avg_rate = (sum(item.total for item in b.items) / total_weight) if total_weight else None
 
+        # bill.total (the debit below) already includes shipping_charge -
+        # see PurchaseBill.calculate_totals() - so the vendor's balance is
+        # already correctly charged for it. This note just makes that
+        # visible in the ledger row itself, since otherwise shipping is
+        # invisibly folded into the debit with nothing showing it was
+        # ever applied.
+        bill_detail = item_names
+        if b.shipping_charge and b.shipping_charge > 0:
+            bill_detail += f" (incl. shipping PKR {b.shipping_charge:,.2f})"
+
         events.append({
             'date': b.date,
             'type': 'bill',
             'item_pass': b.bill_number,
-            'detail': item_names,
+            'detail': bill_detail,
             'weight': total_weight or None,
             'rate': avg_rate,
             'debit': float(b.total or 0),
