@@ -337,6 +337,7 @@ class ApprovalService:
             'reason_field': 'rejection_reason',
             'approved_by_field': 'approved_by',
             'approved_at_field': 'approved_at',
+            'draft_field': 'is_draft',
             'default_is_approved': False,
             'actions': ['approve', 'reject', 'cancel', 'draft'],
         },

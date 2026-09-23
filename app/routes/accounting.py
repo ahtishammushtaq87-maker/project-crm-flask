@@ -4267,9 +4267,17 @@ def _expense_category_choices(active_only=True):
     (id 0) - DataRequired() rejects it if actually submitted, and having it
     means a fresh Add Expense form starts with nothing picked, so the
     category-restriction script starts from "nothing allowed" instead of
-    whatever category happens to sort first."""
+    whatever category happens to sort first.
+
+    A category marked Draft (via the approval widget's "Set to Draft") is
+    always excluded here, active_only or not - a draft category isn't meant
+    to be usable anywhere in the Expense module until it's taken out of
+    Draft (Approve/Reject/Pending), only shown on its own Draft tab on the
+    Expense Categories page."""
     choices = [(0, '— Select Category —')]
     for cat in _ordered_expense_categories():
+        if cat.is_draft:
+            continue
         if active_only and not cat.is_active:
             continue
         label = f'— {cat.name}' if cat.parent_id else cat.name
@@ -4290,16 +4298,24 @@ def _expense_category_tree():
     embedded as JSON on Add/Edit Expense so its Category/Sub-Category
     dropdown pair can be built and resolved client-side: pick a main
     category first, then (only if it has any) its sub-categories populate a
-    second dropdown right under it."""
+    second dropdown right under it. Draft categories are excluded, same
+    reasoning as _expense_category_choices."""
     return [{'id': cat.id, 'name': cat.name, 'parent_id': cat.parent_id}
-            for cat in _ordered_expense_categories() if cat.is_active]
+            for cat in _ordered_expense_categories() if cat.is_active and not cat.is_draft]
 
 
 @bp.route('/expense-categories')
 @login_required
 def expense_categories():
-    categories = _ordered_expense_categories()
-    return render_template('accounting/expense_categories.html', categories=categories)
+    view = request.args.get('view', 'active')
+    all_categories = _ordered_expense_categories()
+    if view == 'draft':
+        categories = [c for c in all_categories if c.is_draft]
+    else:
+        categories = [c for c in all_categories if not c.is_draft]
+    draft_count = sum(1 for c in all_categories if c.is_draft)
+    return render_template('accounting/expense_categories.html', categories=categories,
+                           view=view, draft_count=draft_count)
 
 @bp.route('/expense-category/add', methods=['GET', 'POST'])
 @login_required
@@ -4705,6 +4721,65 @@ def delete_expense_category(id):
     log_activity('Accounting', f'Deleted Expense Category: {cat_name}', f'ID: {id}')
     flash('Expense category deleted successfully', 'success')
     return redirect(url_for('accounting.expense_categories'))
+
+
+@bp.route('/expense-categories/bulk-delete', methods=['POST'])
+@login_required
+@permission_required('accounting', action='delete')
+def bulk_delete_expense_categories():
+    """Delete several expense categories at once, same JSON {ids: [...]}
+    contract and initBulkActions() front-end helper as bulk_delete_expenses.
+    Each category is checked with the exact same two guards as the single
+    delete_expense_category route (has expenses / has sub-categories) -
+    a category failing either guard is skipped, not force-deleted, and
+    reported back by name so the user knows why it's still there.
+
+    Deleting a whole batch of sub-categories together (all children of one
+    parent) works fine here since each is checked independently and a
+    sub-category never itself blocks on "has sub-categories". Deleting a
+    parent in the same batch as its own sub-categories also works as long
+    as the sub-categories are removed first within the loop - ids are
+    processed in the order the client sent them, so selecting a parent
+    together with all its children (as the "select all" checkbox does)
+    still requires the children to be deleted before the parent for the
+    parent to pass its own guard; any parent whose children are NOT also
+    in this batch is correctly skipped instead of silently orphaning them.
+    """
+    from app.models import ExpenseCategory
+
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'message': 'No categories selected'}), 400
+
+    deleted_count = 0
+    errors = []
+
+    for cat_id in ids:
+        category = ExpenseCategory.query.get(cat_id)
+        if not category:
+            continue
+
+        if category.expenses:
+            errors.append(f'"{category.name}" — has expenses linked to it')
+            continue
+        if category.subcategories:
+            errors.append(f'"{category.name}" — still has sub-categories')
+            continue
+
+        cat_name = category.name
+        db.session.delete(category)
+        deleted_count += 1
+        log_activity('Accounting', f'Deleted Expense Category: {cat_name}', f'ID: {cat_id} (bulk)')
+
+    db.session.commit()
+
+    if deleted_count and not errors:
+        return jsonify({'success': True, 'message': f'Deleted {deleted_count} categor{"y" if deleted_count == 1 else "ies"}.'})
+    elif deleted_count and errors:
+        return jsonify({'success': True, 'message': f'Deleted {deleted_count} categor{"y" if deleted_count == 1 else "ies"}. '
+                                                      f'Skipped {len(errors)}: ' + '; '.join(errors)})
+    else:
+        return jsonify({'success': False, 'message': 'Nothing deleted. ' + '; '.join(errors)})
 
 # --- Expense Number Settings ---
 

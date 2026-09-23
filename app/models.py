@@ -1747,6 +1747,16 @@ class ExpenseCategory(db.Model):
     # Universal approval fields
     is_approved = db.Column(db.Boolean, default=False)
     is_rejected = db.Column(db.Boolean, default=False)
+    # Draft: a category the admin has explicitly parked via the approval
+    # widget's "Set to Draft" action (ApprovalService.MODULE_CONFIG
+    # ['expense_category']['draft_field']). Needs its own column - without
+    # one, "draft" and "pending" were indistinguishable, since both just
+    # meant is_approved=False, is_rejected=False. A draft category is
+    # excluded everywhere a category can be picked (Add/Edit Expense's
+    # dropdown and Category/Sub-Category tree - see _expense_category_choices
+    # / _expense_category_tree in app/routes/accounting.py) and instead
+    # only shows up under the Draft tab on the Expense Categories page.
+    is_draft = db.Column(db.Boolean, default=False)
     rejection_reason = db.Column(db.Text)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)

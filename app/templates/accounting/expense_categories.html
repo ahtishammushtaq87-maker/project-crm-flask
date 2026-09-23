@@ -29,8 +29,8 @@
                 independently controls which special options (Invoice/Purchase payment selection, Inventory Shift,
                 BOM Overhead) are offered on Add/Edit Expense when it's selected.</p>
         </div>
-        {% if current_user.has_permission('accounting', 'add') %}
         <div class="btn-group text-nowrap">
+            {% if current_user.has_permission('accounting', 'add') %}
             <a href="{{ url_for('accounting.add_expense_category', type='main') }}" class="btn btn-primary" title="Add a new top-level category">
                 <i class="bi bi-folder-plus me-1"></i> Add Parent Category
             </a>
@@ -40,9 +40,30 @@
             <a href="{{ url_for('accounting.bulk_upload_expense_categories') }}" class="btn btn-outline-success" title="Upload many categories at once from an Excel sheet">
                 <i class="bi bi-file-earmark-arrow-up me-1"></i> Bulk Upload
             </a>
+            {% endif %}
+            {% if current_user.has_permission('accounting', 'delete') %}
+            <button type="button" id="bulkDeleteBtn" class="btn btn-danger d-none" title="Delete selected categories">
+                <i class="fas fa-trash me-1"></i> Delete Selected
+            </button>
+            {% endif %}
         </div>
-        {% endif %}
     </div>
+
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link {% if view != 'draft' %}active{% endif %}"
+                href="{{ url_for('accounting.expense_categories', view='active') }}">
+                <i class="fas fa-folder"></i> Categories
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if view == 'draft' %}active{% endif %}"
+                href="{{ url_for('accounting.expense_categories', view='draft') }}">
+                <i class="fas fa-file"></i> Draft
+                {% if draft_count %}<span class="badge bg-info ms-1">{{ draft_count }}</span>{% endif %}
+            </a>
+        </li>
+    </ul>
 
     <div class="card">
         <div class="card-body">
@@ -50,6 +71,11 @@
                 <table class="table table-hover align-middle">
                     <thead>
                         <tr>
+                            {% if current_user.has_permission('accounting', 'delete') %}
+                            <th style="width: 40px;" class="text-center no-export">
+                                <input type="checkbox" id="selectAll" class="form-check-input">
+                            </th>
+                            {% endif %}
                             <th>Name</th>
                             <th>Description</th>
                             <th>Allowed Options</th>
@@ -61,6 +87,13 @@
                     <tbody>
                         {% for category in categories %}
                         <tr class="{{ 'subcategory-row' if category.parent_id else '' }}">
+                            {% if current_user.has_permission('accounting', 'delete') %}
+                            <td class="text-center no-export">
+                                {% if not category.expenses and not category.subcategories %}
+                                <input type="checkbox" class="form-check-input category-checkbox" value="{{ category.id }}">
+                                {% endif %}
+                            </td>
+                            {% endif %}
                             <td>
                                 <strong>{{ category.name }}</strong>
                                 {% if not category.parent_id %}
@@ -110,7 +143,9 @@
                         {% endfor %}
                         {% if not categories %}
                         <tr>
-                            <td colspan="6" class="text-center text-muted py-4">No expense categories yet.</td>
+                            <td colspan="{{ 7 if current_user.has_permission('accounting', 'delete') else 6 }}" class="text-center text-muted py-4">
+                                {% if view == 'draft' %}No draft categories. Use "Set to Draft" from a category's Approval menu to park it here.{% else %}No expense categories yet.{% endif %}
+                            </td>
                         </tr>
                         {% endif %}
                     </tbody>
@@ -130,5 +165,17 @@ function deleteCategory(id, name) {
         form.submit();
     }
 }
+
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof initBulkActions === 'function') {
+        initBulkActions({
+            selectAllId: 'selectAll',
+            checkboxClass: 'category-checkbox',
+            bulkDeleteBtnId: 'bulkDeleteBtn',
+            deleteUrl: "{{ url_for('accounting.bulk_delete_expense_categories') }}",
+            entityName: 'expense categories'
+        });
+    }
+});
 </script>
 {% endblock %}
