@@ -27,6 +27,26 @@ def has_column(table_name, column_name):
     except:
         return False
 
+
+def _delete_product_image_file_if_unshared(product):
+    """Removes product.image_path's file from disk, UNLESS some other
+    Product row still points at that same path - which can only happen
+    for a product whose image collided with another's before uploads were
+    given unique filenames (see edit_product/add_product). Deleting a
+    still-shared file would silently break the other product's image too,
+    so this checks first rather than ever assuming a path is exclusively
+    owned by the product row it's being deleted from."""
+    path = product.image_path
+    if not path or not os.path.exists(path):
+        return
+    other_owner = Product.query.filter(Product.image_path == path, Product.id != product.id).first()
+    if other_owner:
+        return
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
 @bp.route('/products')
 @login_required
 def products():
@@ -157,7 +177,17 @@ def add_product():
             if 'image' in request.files:
                 image_file = request.files['image']
                 if image_file and image_file.filename:
-                    filename = secure_filename(image_file.filename)
+                    # Prefix with a timestamp+uuid so two products whose
+                    # uploaded files happen to share the same original name
+                    # (e.g. "IMG_20240501.jpg" from a phone) never collide on
+                    # disk - a plain secure_filename() would silently
+                    # overwrite the earlier product's file and make both
+                    # products show whichever image was uploaded last. Same
+                    # convention as bill image uploads (see add_expense).
+                    import time, uuid
+                    original_filename = secure_filename(image_file.filename)
+                    unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                    filename = f"{unique_prefix}_{original_filename}"
                     image_path = os.path.join('app', 'static', 'uploads', 'products', filename)
                     os.makedirs(os.path.dirname(image_path), exist_ok=True)
                     image_file.save(image_path)
@@ -256,33 +286,38 @@ def edit_product(id):
         if 'image' in request.files:
             image_file = request.files['image']
             if image_file and image_file.filename:
-                # If new image uploaded, delete old one if exists
-                if product.image_path and os.path.exists(product.image_path):
-                    try:
-                        os.remove(product.image_path)
-                    except:
-                        pass
-                
-                filename = secure_filename(image_file.filename)
+                # Prefix with a timestamp+uuid so two products whose
+                # uploaded files happen to share the same original name
+                # (e.g. "IMG_20240501.jpg" from a phone) never collide on
+                # disk - a plain secure_filename() would silently save the
+                # new upload over the OLD file, which is exactly what made
+                # unrelated products' images change together before: if two
+                # products' image_path had ever pointed at the same
+                # filename, editing either one's image overwrote the file
+                # both were reading from. Same convention as bill image
+                # uploads (see add_expense).
+                import time, uuid
+                original_filename = secure_filename(image_file.filename)
+                unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                filename = f"{unique_prefix}_{original_filename}"
                 image_path = os.path.join('app', 'static', 'uploads', 'products', filename)
                 os.makedirs(os.path.dirname(image_path), exist_ok=True)
                 image_file.save(image_path)
+
+                # Only NOW that the new file is safely saved under its own
+                # unique name, remove the old one - _delete_product_image_
+                # file_if_unshared() skips it if another product still
+                # points at that same path (an older collision left shared).
+                _delete_product_image_file_if_unshared(product)
+
                 product.image_path = image_path.replace('\\', '/')
             elif remove_image and product.image_path:
                 # No new image but remove_image requested
-                if os.path.exists(product.image_path):
-                    try:
-                        os.remove(product.image_path)
-                    except:
-                        pass
+                _delete_product_image_file_if_unshared(product)
                 product.image_path = None
         elif remove_image and product.image_path:
             # remove_image requested and image existed
-            if os.path.exists(product.image_path):
-                try:
-                    os.remove(product.image_path)
-                except:
-                    pass
+            _delete_product_image_file_if_unshared(product)
             product.image_path = None
         
         try:
