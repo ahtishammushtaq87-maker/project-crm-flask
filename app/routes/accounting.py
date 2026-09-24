@@ -4550,6 +4550,12 @@ def bulk_upload_expense_categories():
             existing_names = {c.name.strip().lower(): c for c in ExpenseCategory.query.all()}
             added = 0
             errors = []
+            # Rows skipped specifically because that name already exists
+            # (in the DB, or an earlier row in this same sheet) - tracked
+            # separately from other validation errors so the summary can
+            # say plainly "these already existed, everything else new was
+            # still uploaded" instead of one vague truncated error blob.
+            skipped_duplicates = []
 
             # Pass 1: main categories (blank parent_name) - created first so
             # pass 2 can resolve a sub-category's parent regardless of which
@@ -4563,7 +4569,7 @@ def bulk_upload_expense_categories():
                     errors.append(f'Row {idx}: Missing name')
                     continue
                 if name.lower() in existing_names:
-                    errors.append(f'Row {idx}: Category "{name}" already exists')
+                    skipped_duplicates.append(f'Row {idx}: "{name}"')
                     continue
                 category = ExpenseCategory(
                     name=name,
@@ -4591,7 +4597,7 @@ def bulk_upload_expense_categories():
                     errors.append(f'Row {idx}: Missing name')
                     continue
                 if name.lower() in existing_names:
-                    errors.append(f'Row {idx}: Category "{name}" already exists')
+                    skipped_duplicates.append(f'Row {idx}: "{name}"')
                     continue
                 parent = existing_names.get(parent_name.lower())
                 if not parent:
@@ -4616,12 +4622,25 @@ def bulk_upload_expense_categories():
                 added += 1
 
             db.session.commit()
-            log_activity('Accounting', f'Bulk uploaded {added} expense categories', '')
+            log_activity('Accounting', f'Bulk uploaded {added} expense categories '
+                        f'({len(skipped_duplicates)} duplicate(s) skipped, {len(errors)} error(s))', '')
 
+            # Three-part summary so it's unambiguous what actually happened:
+            # what got added, what was quietly left alone because it's
+            # already there (not a failure - the whole point of this
+            # skip-don't-duplicate behavior), and what genuinely failed
+            # validation. Skip list isn't truncated - every skipped row is
+            # named, since silently dropping some from the message would
+            # defeat the purpose of showing which ones were left untouched.
             if added > 0:
-                flash(f'Successfully added {added} expense categories!', 'success')
+                flash(f'Added {added} new expense categor{"y" if added == 1 else "ies"}.', 'success')
+            else:
+                flash('No new expense categories were added - every row in the sheet either already existed or had an error.', 'info')
+            if skipped_duplicates:
+                flash(f'Skipped {len(skipped_duplicates)} row(s) already in the system (left unchanged, not duplicated): '
+                      + '; '.join(skipped_duplicates), 'info')
             if errors:
-                flash(f'Errors: {"; ".join(errors[:10])}', 'warning')
+                flash(f'{len(errors)} row(s) had errors and were not added: ' + '; '.join(errors), 'warning')
             return redirect(url_for('accounting.expense_categories'))
 
         except Exception as e:

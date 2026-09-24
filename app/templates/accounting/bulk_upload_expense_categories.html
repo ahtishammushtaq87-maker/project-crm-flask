@@ -29,8 +29,11 @@
                     <li>The five <code>allow_*</code> columns just take <strong>Yes</strong> or <strong>No</strong> -
                         they control which special options (Invoice/Purchase Payment, Inventory Shift, BOM
                         Overhead, Monthly Division) are offered on Add/Edit Expense when that category is picked.</li>
-                    <li>Category names must be unique - a name that already exists will be skipped and reported
-                        as an error, the rest of the file still gets processed.</li>
+                    <li>Category names must be unique. A row whose name already exists (in the system, or repeated
+                        earlier in the same sheet) is simply <strong>left as-is and skipped</strong> - it is never
+                        duplicated or overwritten. Every other new row in the file is still uploaded, and the result
+                        page lists exactly which rows were added, which were skipped as already existing, and which
+                        had an error.</li>
                 </ul>
             </div>
 
