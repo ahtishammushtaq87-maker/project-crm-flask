@@ -4545,17 +4545,30 @@ def bulk_upload_expense_categories():
                 if any(v not in (None, '') for v in row)
             ]
 
-            # Existing names (case-insensitive) so duplicates - already in the
-            # database OR repeated within this same sheet - are caught.
+            # Existing names (case-insensitive) so a duplicate row updates
+            # the SAME category object instead of creating a second one.
+            # unique=True on ExpenseCategory.name means there is only ever
+            # one row per name anyway - this dict just finds it fast.
             existing_names = {c.name.strip().lower(): c for c in ExpenseCategory.query.all()}
             added = 0
+            updated_names = []
+            auto_created_parents = []
             errors = []
-            # Rows skipped specifically because that name already exists
-            # (in the DB, or an earlier row in this same sheet) - tracked
-            # separately from other validation errors so the summary can
-            # say plainly "these already existed, everything else new was
-            # still uploaded" instead of one vague truncated error blob.
-            skipped_duplicates = []
+
+            def _apply_option_fields(category, row_dict):
+                """Fields a duplicate-name row is allowed to refresh on the
+                existing category: description + the five allow_* options.
+                Deliberately does NOT touch parent_id/hierarchy on update -
+                reparenting a category via a name match is a structural
+                change with knock-on effects (see the parent/sub-category
+                guards below) that a bulk re-upload shouldn't silently
+                trigger; use Edit Category for that instead."""
+                category.description = str(row_dict.get('description') or '').strip() or None
+                category.allow_invoice_payment = parse_yes_no(row_dict.get('allow_invoice_payment'))
+                category.allow_purchase_payment = parse_yes_no(row_dict.get('allow_purchase_payment'))
+                category.allow_inventory_shift = parse_yes_no(row_dict.get('allow_inventory_shift'))
+                category.allow_bom_overhead = parse_yes_no(row_dict.get('allow_bom_overhead'))
+                category.allow_monthly_divided = parse_yes_no(row_dict.get('allow_monthly_divided'))
 
             # Pass 1: main categories (blank parent_name) - created first so
             # pass 2 can resolve a sub-category's parent regardless of which
@@ -4568,19 +4581,24 @@ def bulk_upload_expense_categories():
                 if not name:
                     errors.append(f'Row {idx}: Missing name')
                     continue
-                if name.lower() in existing_names:
-                    skipped_duplicates.append(f'Row {idx}: "{name}"')
+                existing = existing_names.get(name.lower())
+                if existing:
+                    # Row names an existing category - update it in place
+                    # rather than skipping or creating a duplicate. Its
+                    # parent_id is left untouched even if this row's
+                    # parent_name differs from what the category currently
+                    # has (see _apply_option_fields) - only reported so the
+                    # user notices, never silently applied.
+                    if existing.parent_id is not None:
+                        errors.append(f'Row {idx}: "{name}" already exists as a SUB-category - its hierarchy was left unchanged, only description/options were updated')
+                    _apply_option_fields(existing, row_dict)
+                    updated_names.append(f'Row {idx}: "{name}"')
                     continue
                 category = ExpenseCategory(
                     name=name,
-                    description=str(row_dict.get('description') or '').strip() or None,
                     parent_id=None,
-                    allow_invoice_payment=parse_yes_no(row_dict.get('allow_invoice_payment')),
-                    allow_purchase_payment=parse_yes_no(row_dict.get('allow_purchase_payment')),
-                    allow_inventory_shift=parse_yes_no(row_dict.get('allow_inventory_shift')),
-                    allow_bom_overhead=parse_yes_no(row_dict.get('allow_bom_overhead')),
-                    allow_monthly_divided=parse_yes_no(row_dict.get('allow_monthly_divided')),
                 )
+                _apply_option_fields(category, row_dict)
                 db.session.add(category)
                 db.session.flush()
                 existing_names[name.lower()] = category
@@ -4596,51 +4614,74 @@ def bulk_upload_expense_categories():
                 if not name:
                     errors.append(f'Row {idx}: Missing name')
                     continue
-                if name.lower() in existing_names:
-                    skipped_duplicates.append(f'Row {idx}: "{name}"')
+                existing = existing_names.get(name.lower())
+                if existing:
+                    if existing.parent_id is None:
+                        errors.append(f'Row {idx}: "{name}" already exists as a MAIN category - its hierarchy was left unchanged, only description/options were updated')
+                    _apply_option_fields(existing, row_dict)
+                    updated_names.append(f'Row {idx}: "{name}"')
                     continue
                 parent = existing_names.get(parent_name.lower())
                 if not parent:
-                    errors.append(f'Row {idx}: Parent category "{parent_name}" not found - add it as its own row first (leave its parent_name blank)')
-                    continue
+                    # Referenced as a parent but never defined as its own
+                    # row anywhere in the sheet (nor already in the
+                    # database) - a common sheet-building mistake (every
+                    # child row filled in, the one parent-defining row
+                    # forgotten). Auto-create it as a bare main category
+                    # (name only) so its children aren't left orphaned or
+                    # rejected; the result page lists every auto-created
+                    # parent so it's obvious which ones need their own
+                    # description/options filled in afterward via Edit
+                    # Category.
+                    parent = ExpenseCategory(name=parent_name, parent_id=None)
+                    db.session.add(parent)
+                    db.session.flush()
+                    existing_names[parent_name.lower()] = parent
+                    auto_created_parents.append(parent_name)
+                    added += 1
                 if parent.parent_id:
                     errors.append(f'Row {idx}: "{parent_name}" is itself a sub-category - only one level of sub-categories is supported')
                     continue
                 category = ExpenseCategory(
                     name=name,
-                    description=str(row_dict.get('description') or '').strip() or None,
                     parent_id=parent.id,
-                    allow_invoice_payment=parse_yes_no(row_dict.get('allow_invoice_payment')),
-                    allow_purchase_payment=parse_yes_no(row_dict.get('allow_purchase_payment')),
-                    allow_inventory_shift=parse_yes_no(row_dict.get('allow_inventory_shift')),
-                    allow_bom_overhead=parse_yes_no(row_dict.get('allow_bom_overhead')),
-                    allow_monthly_divided=parse_yes_no(row_dict.get('allow_monthly_divided')),
                 )
+                _apply_option_fields(category, row_dict)
                 db.session.add(category)
                 db.session.flush()
                 existing_names[name.lower()] = category
                 added += 1
 
             db.session.commit()
-            log_activity('Accounting', f'Bulk uploaded {added} expense categories '
-                        f'({len(skipped_duplicates)} duplicate(s) skipped, {len(errors)} error(s))', '')
+            log_activity('Accounting', f'Bulk uploaded expense categories: {added} added '
+                        f'({len(auto_created_parents)} auto-created as parents), '
+                        f'{len(updated_names)} updated ({len(errors)} error(s))', '')
 
-            # Three-part summary so it's unambiguous what actually happened:
-            # what got added, what was quietly left alone because it's
-            # already there (not a failure - the whole point of this
-            # skip-don't-duplicate behavior), and what genuinely failed
-            # validation. Skip list isn't truncated - every skipped row is
-            # named, since silently dropping some from the message would
-            # defeat the purpose of showing which ones were left untouched.
+            # Four-part summary so it's unambiguous what actually happened:
+            # brand-new categories added, parent categories that had to be
+            # auto-created because a sub-category row referenced a parent
+            # name the sheet never defined on its own row, existing
+            # categories refreshed in place (never duplicated - a name
+            # match always updates the one row that already owns that
+            # name), and rows that genuinely failed validation. No list is
+            # truncated - every row is named, since silently dropping some
+            # from the message would defeat the purpose of showing exactly
+            # what changed.
             if added > 0:
                 flash(f'Added {added} new expense categor{"y" if added == 1 else "ies"}.', 'success')
-            else:
-                flash('No new expense categories were added - every row in the sheet either already existed or had an error.', 'info')
-            if skipped_duplicates:
-                flash(f'Skipped {len(skipped_duplicates)} row(s) already in the system (left unchanged, not duplicated): '
-                      + '; '.join(skipped_duplicates), 'info')
+            elif not updated_names:
+                flash('No categories were added or updated - every row in the sheet had an error.', 'info')
+            if auto_created_parents:
+                flash(f'{len(auto_created_parents)} parent categor{"y was" if len(auto_created_parents) == 1 else "ies were"} '
+                      f'auto-created because sub-category rows referenced them but the sheet never defined them as their own row: '
+                      + ', '.join(f'"{p}"' for p in auto_created_parents)
+                      + '. Add a description/options for them via Edit Category if needed.', 'info')
+            if updated_names:
+                flash(f'Updated {len(updated_names)} existing categor{"y" if len(updated_names) == 1 else "ies"} '
+                      f'(description/options refreshed, name matched an existing row so nothing was duplicated): '
+                      + '; '.join(updated_names), 'info')
             if errors:
-                flash(f'{len(errors)} row(s) had errors and were not added: ' + '; '.join(errors), 'warning')
+                flash(f'{len(errors)} row(s) had errors: ' + '; '.join(errors), 'warning')
             return redirect(url_for('accounting.expense_categories'))
 
         except Exception as e:

@@ -25,15 +25,22 @@
                     <li>Leave <strong>parent_name</strong> blank to create a main category. To create a
                         sub-category, put the exact name of an existing main category in
                         <strong>parent_name</strong> - add that main category as its own row too (it doesn't
-                        matter which row comes first).</li>
+                        matter which row comes first). If you forget to add the parent as its own row, it's
+                        automatically created for you (name only) so the sub-categories still attach correctly -
+                        the result page lists any parent that had to be auto-created this way, so you can go back
+                        and fill in its description/options afterward.</li>
                     <li>The five <code>allow_*</code> columns just take <strong>Yes</strong> or <strong>No</strong> -
                         they control which special options (Invoice/Purchase Payment, Inventory Shift, BOM
                         Overhead, Monthly Division) are offered on Add/Edit Expense when that category is picked.</li>
                     <li>Category names must be unique. A row whose name already exists (in the system, or repeated
-                        earlier in the same sheet) is simply <strong>left as-is and skipped</strong> - it is never
-                        duplicated or overwritten. Every other new row in the file is still uploaded, and the result
-                        page lists exactly which rows were added, which were skipped as already existing, and which
-                        had an error.</li>
+                        earlier in the same sheet) <strong>updates that existing category's description and
+                        allow_* options</strong> instead of creating a duplicate - it is never added twice. A brand
+                        new name creates a new category as usual. The result page lists exactly which rows were
+                        added, which were updated, and which had an error.</li>
+                    <li>A duplicate row's <strong>parent_name is not applied</strong> on update - moving a category
+                        between main/sub-category is a structural change this upload deliberately doesn't make
+                        silently; use Edit Category for that instead. If a duplicate row's parent_name doesn't match
+                        where the category already lives, the result page flags it so you know to fix it by hand.</li>
                 </ul>
             </div>
 
