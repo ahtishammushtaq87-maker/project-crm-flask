@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}Warehouse Transfers{% endblock %}
+
+{% block extra_css %}
+<style>
+    .wt-stat {
+        border: 1px solid #e9ecef; border-radius: 12px; background: #fff;
+        padding: 16px 18px; display: flex; align-items: center; gap: 14px; height: 100%;
+    }
+    .wt-stat .ico {
+        width: 46px; height: 46px; border-radius: 10px; display: flex;
+        align-items: center; justify-content: center; font-size: 1.15rem; flex-shrink: 0;
+    }
+    .wt-stat .val { font-size: 1.35rem; font-weight: 700; line-height: 1.1; }
+    .wt-stat .lbl { font-size: .8rem; color: #6c757d; text-transform: uppercase; letter-spacing: .03em; }
+    .wt-route { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .wt-wh { background: #f1f3f5; border-radius: 6px; padding: 2px 8px; font-weight: 500; white-space: nowrap; }
+    .wt-wh.from { background: #fff1f0; color: #b02a37; }
+    .wt-wh.to { background: #ebfbee; color: #2b8a3e; }
+    .wt-table td, .wt-table th { vertical-align: middle; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <div>
+            <h2 class="mb-0"><i class="fas fa-dolly me-2 text-primary"></i>Warehouse Transfers</h2>
+            <small class="text-muted">Move item stock between warehouses. Editing or deleting a transfer automatically adjusts both warehouses.</small>
+        </div>
+        {% if current_user.has_permission('warehouse', 'add') %}
+        <a href="{{ url_for('warehouse_transfer.create_transfer') }}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>New Transfer
+        </a>
+        {% endif %}
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3">
+            <div class="wt-stat">
+                <div class="ico bg-primary bg-opacity-10 text-primary"><i class="fas fa-exchange-alt"></i></div>
+                <div><div class="val">{{ stats.count }}</div><div class="lbl">Transfers</div></div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="wt-stat">
+                <div class="ico bg-info bg-opacity-10 text-info"><i class="fas fa-calendar-alt"></i></div>
+                <div><div class="val">{{ stats.this_month }}</div><div class="lbl">This Month</div></div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="wt-stat">
+                <div class="ico bg-success bg-opacity-10 text-success"><i class="fas fa-cubes"></i></div>
+                <div><div class="val">{{ "{:,.2f}".format(stats.total_qty).rstrip('0').rstrip('.') }}</div><div class="lbl">Total Qty Moved</div></div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="wt-stat">
+                <div class="ico bg-warning bg-opacity-10 text-warning"><i class="fas fa-coins"></i></div>
+                <div><div class="val">PKR {{ "{:,.0f}".format(stats.total_value) }}</div><div class="lbl">Stock Value Moved</div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <form method="GET" class="row g-2 align-items-end mb-3">
+                <div class="col-md-3">
+                    <label class="form-label small text-muted mb-1">Search</label>
+                    <input type="text" name="search" class="form-control" placeholder="Transfer #, reference, item…" value="{{ filters.search }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-1">From Warehouse</label>
+                    <select name="from_warehouse_id" class="form-select">
+                        <option value="">All</option>
+                        {% for w in warehouses %}
+                        <option value="{{ w.id }}" {% if filters.from_warehouse_id == w.id %}selected{% endif %}>{{ w.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-1">To Warehouse</label>
+                    <select name="to_warehouse_id" class="form-select">
+                        <option value="">All</option>
+                        {% for w in warehouses %}
+                        <option value="{{ w.id }}" {% if filters.to_warehouse_id == w.id %}selected{% endif %}>{{ w.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-1">Date From</label>
+                    <input type="date" name="date_from" class="form-control" value="{{ filters.date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small text-muted mb-1">Date To</label>
+                    <input type="date" name="date_to" class="form-control" value="{{ filters.date_to }}">
+                </div>
+                <div class="col-md-1 d-flex gap-1">
+                    <button type="submit" class="btn btn-secondary w-100" title="Filter"><i class="fas fa-filter"></i></button>
+                    <a href="{{ url_for('warehouse_transfer.transfers') }}" class="btn btn-outline-secondary" title="Clear"><i class="fas fa-times"></i></a>
+                </div>
+            </form>
+
+            <div class="table-responsive">
+                <table class="table table-hover wt-table{% if transfers %} datatable-export{% endif %}" data-export-title="Warehouse Transfers">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Transfer #</th>
+                            <th>Date</th>
+                            <th>Route</th>
+                            <th class="text-center">Items</th>
+                            <th class="text-end">Total Qty</th>
+                            <th class="text-end">Value (PKR)</th>
+                            <th>Reference</th>
+                            <th>Created By</th>
+                            <th class="text-end no-export">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in transfers %}
+                        <tr>
+                            <td><a href="{{ url_for('warehouse_transfer.transfer_detail', id=t.id) }}" class="fw-semibold">{{ t.transfer_number }}</a></td>
+                            <td>{{ t.date.strftime(date_format) if t.date else '-' }}</td>
+                            <td>
+                                <span class="wt-route">
+                                    <span class="wt-wh from">{{ t.from_warehouse.name if t.from_warehouse else '—' }}</span>
+                                    <i class="fas fa-long-arrow-alt-right text-muted"></i>
+                                    <span class="wt-wh to">{{ t.to_warehouse.name if t.to_warehouse else '—' }}</span>
+                                </span>
+                            </td>
+                            <td class="text-center"><span class="badge bg-secondary">{{ t.items|length }}</span></td>
+                            <td class="text-end fw-semibold">{{ "%g"|format(t.total_quantity) }}</td>
+                            <td class="text-end">{{ "{:,.2f}".format(t.total_value) }}</td>
+                            <td>{{ t.reference or '-' }}</td>
+                            <td>{{ t.creator.username if t.creator and t.creator.username else '-' }}</td>
+                            <td class="text-end no-export text-nowrap">
+                                <a href="{{ url_for('warehouse_transfer.transfer_detail', id=t.id) }}" class="btn btn-sm btn-outline-info" title="View"><i class="fas fa-eye"></i></a>
+                                {% if current_user.has_permission('warehouse', 'edit') %}
+                                <a href="{{ url_for('warehouse_transfer.edit_transfer', id=t.id) }}" class="btn btn-sm btn-outline-warning" title="Edit"><i class="fas fa-edit"></i></a>
+                                {% endif %}
+                                {% if current_user.has_permission('warehouse', 'delete') %}
+                                <button type="button" class="btn btn-sm btn-outline-danger wt-delete-btn" title="Delete"
+                                        data-url="{{ url_for('warehouse_transfer.delete_transfer', id=t.id) }}"
+                                        data-number="{{ t.transfer_number }}"
+                                        data-from="{{ t.from_warehouse.name if t.from_warehouse else '' }}"
+                                        data-to="{{ t.to_warehouse.name if t.to_warehouse else '' }}">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="9" class="text-center text-muted py-5">
+                                <i class="fas fa-dolly fa-2x mb-2 d-block opacity-50"></i>
+                                No warehouse transfers found.
+                                {% if current_user.has_permission('warehouse', 'add') %}
+                                <div class="mt-2"><a href="{{ url_for('warehouse_transfer.create_transfer') }}" class="btn btn-sm btn-primary"><i class="fas fa-plus me-1"></i>Create the first transfer</a></div>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% include 'inventory/_warehouse_transfer_delete_modal.html' %}
+{% endblock %}

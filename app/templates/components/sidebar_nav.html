@@ -101,6 +101,7 @@
         {% endif %}
         {% if adm or u.can_view_warehouse %}
         <a class="nav-link" href="{{ url_for('warehouse.warehouses') }}">Warehouses</a>
+        <a class="nav-link" href="{{ url_for('warehouse_transfer.transfers') }}">Warehouse Transfers</a>
         {% endif %}
         {% if adm or u.can_view_categories %}
         <a class="nav-link" href="{{ url_for('categories.categories') }}">Product Categories</a>

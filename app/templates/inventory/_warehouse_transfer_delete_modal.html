@@ -1,0 +1,74 @@
+<!-- Shared delete confirmation for Warehouse Transfers (list + detail pages).
+     Any button with class "wt-delete-btn" and data-url/number/from/to opens it.
+     The modal is moved to <body> before opening so no parent layout
+     (overflow/transform/z-index on the content area) can put it behind its
+     own backdrop and make it unclickable; if Bootstrap's JS isn't available
+     for any reason it falls back to a plain confirm() + POST. -->
+<div class="modal fade" id="wtDeleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" id="wtDeleteForm">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title text-danger"><i class="fas fa-trash-alt me-2"></i>Delete Transfer <span id="wtDeleteNumber"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">Deleting this transfer <strong>reverses the stock movement</strong>:</p>
+                    <div class="alert alert-warning d-flex align-items-center gap-2 mb-2">
+                        <i class="fas fa-undo"></i>
+                        <span>All quantities go back from <strong id="wtDeleteTo"></strong> to <strong id="wtDeleteFrom"></strong>.</span>
+                    </div>
+                    <p class="small text-muted mb-0">If the destination warehouse has already used or sold some of that stock, the delete is blocked and you'll see which item is short.</p>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger"><i class="fas fa-trash me-1"></i>Delete &amp; Reverse Stock</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    function postDelete(url) {
+        const f = document.createElement('form');
+        f.method = 'POST';
+        f.action = url;
+        document.body.appendChild(f);
+        f.submit();
+    }
+
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('.wt-delete-btn');
+        if (!btn) return;
+        e.preventDefault();
+        const url = btn.getAttribute('data-url');
+        if (!url) return;
+
+        const modalEl = document.getElementById('wtDeleteModal');
+        if (!modalEl || typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+            if (confirm('Delete transfer ' + (btn.dataset.number || '') + '? The stock will be moved back from ' +
+                        (btn.dataset.to || 'the destination') + ' to ' + (btn.dataset.from || 'the source') + '.')) {
+                postDelete(url);
+            }
+            return;
+        }
+        if (modalEl.parentElement !== document.body) document.body.appendChild(modalEl);
+        modalEl.querySelector('#wtDeleteForm').setAttribute('action', url);
+        modalEl.querySelector('#wtDeleteNumber').textContent = btn.dataset.number || '';
+        modalEl.querySelector('#wtDeleteFrom').textContent = btn.dataset.from || '';
+        modalEl.querySelector('#wtDeleteTo').textContent = btn.dataset.to || '';
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    });
+
+    // Belt and braces: submit through a fresh form so nothing else on the
+    // page (global submit handlers, DataTables wrappers) can swallow it.
+    document.addEventListener('submit', function (e) {
+        if (e.target && e.target.id === 'wtDeleteForm') {
+            e.preventDefault();
+            const url = e.target.getAttribute('action');
+            if (url) postDelete(url);
+        }
+    }, true);
+})();
+</script>

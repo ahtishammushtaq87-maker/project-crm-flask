@@ -646,6 +646,63 @@ class ProductWarehouseStock(db.Model):
         return f'<ProductWarehouseStock product={self.product_id} warehouse={self.warehouse_id} qty={self.quantity}>'
 
 
+class WarehouseTransfer(db.Model):
+    """Moves item quantities from one warehouse to another.
+
+    Saving a transfer immediately takes each line's quantity out of the
+    source warehouse's ProductWarehouseStock and adds it to the
+    destination's. Editing reverses the old lines first and re-applies the
+    new ones; deleting just reverses. Product.quantity (the item's total
+    across all warehouses) never changes - stock only changes location.
+    """
+    __tablename__ = 'warehouse_transfers'
+
+    id = db.Column(db.Integer, primary_key=True)
+    transfer_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    date = db.Column(db.Date, nullable=False, default=lambda: datetime.utcnow().date())
+    from_warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=False, index=True)
+    to_warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=False, index=True)
+    reference = db.Column(db.String(100))
+    notes = db.Column(db.Text)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    from_warehouse = db.relationship('Warehouse', foreign_keys=[from_warehouse_id])
+    to_warehouse = db.relationship('Warehouse', foreign_keys=[to_warehouse_id])
+    creator = db.relationship('User', foreign_keys=[created_by])
+    updater = db.relationship('User', foreign_keys=[updated_by])
+    items = db.relationship('WarehouseTransferItem', backref='transfer', lazy=True,
+                            cascade='all, delete-orphan')
+
+    @property
+    def total_quantity(self):
+        return sum(i.quantity or 0 for i in self.items)
+
+    @property
+    def total_value(self):
+        return sum((i.quantity or 0) * ((i.product.cost_price or 0) if i.product else 0) for i in self.items)
+
+    def __repr__(self):
+        return f'<WarehouseTransfer {self.transfer_number}>'
+
+
+class WarehouseTransferItem(db.Model):
+    """One item line on a WarehouseTransfer."""
+    __tablename__ = 'warehouse_transfer_items'
+
+    id = db.Column(db.Integer, primary_key=True)
+    transfer_id = db.Column(db.Integer, db.ForeignKey('warehouse_transfers.id'), nullable=False, index=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    quantity = db.Column(db.Float, nullable=False, default=0)
+
+    product = db.relationship('Product')
+
+    def __repr__(self):
+        return f'<WarehouseTransferItem transfer={self.transfer_id} product={self.product_id} qty={self.quantity}>'
+
+
 class ProductCategory(db.Model):
     """Product Category model"""
     __tablename__ = 'product_categories'

@@ -1,0 +1,440 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if is_edit else 'New' }} Warehouse Transfer{% endblock %}
+
+{% block extra_css %}
+<style>
+    .wt-route-card { border-radius: 12px; border: 1px solid #e9ecef; background: linear-gradient(135deg, #f8f9fa, #fff); }
+    .wt-wh-box { border-radius: 10px; padding: 14px; height: 100%; }
+    .wt-wh-box.from { background: #fff5f5; border: 1px solid #ffd8d8; }
+    .wt-wh-box.to { background: #f0fbf3; border: 1px solid #c9ecd2; }
+    .wt-wh-box label { font-weight: 600; font-size: .85rem; text-transform: uppercase; letter-spacing: .03em; }
+    .wt-arrow { width: 46px; height: 46px; border-radius: 50%; background: #0d6efd; color: #fff;
+                display: flex; align-items: center; justify-content: center; margin: auto; box-shadow: 0 4px 10px rgba(13,110,253,.25); }
+    #wtItems th { font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; color: #6c757d; white-space: nowrap; }
+    #wtItems td { vertical-align: top; padding-top: .85rem; padding-bottom: .85rem; }
+    #wtItems tbody tr + tr { border-top: 1px dashed #dee2e6; }
+    .wt-info { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .wt-chip { font-size: .75rem; border-radius: 20px; padding: 2px 10px; background: #f1f3f5; color: #495057; white-space: nowrap; }
+    .wt-chip strong { color: #212529; }
+    .wt-chip.cost { background: #fff4e6; color: #a35200; }
+    .wt-chip.sell { background: #e7f5ff; color: #1864ab; }
+    .wt-dist { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: #fafbfc; border: 1px solid #eef0f2; }
+    .wt-dist .ttl { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: #868e96; font-weight: 600; margin-bottom: 5px; }
+    .wt-dist .list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .wt-wh-pill { font-size: .75rem; border-radius: 6px; padding: 3px 9px; background: #fff; border: 1px solid #dee2e6;
+                  color: #343a40; cursor: pointer; white-space: nowrap; transition: all .15s; }
+    .wt-wh-pill:hover { border-color: #0d6efd; color: #0d6efd; }
+    .wt-wh-pill strong { margin-left: 4px; }
+    .wt-wh-pill.is-src { background: #fff5f5; border-color: #ff8787; color: #c92a2a; }
+    .wt-wh-pill.is-dst { background: #ebfbee; border-color: #69db7c; color: #2b8a3e; }
+    .wt-wh-pill .tag { font-size: .65rem; font-weight: 700; text-transform: uppercase; margin-left: 5px; opacity: .8; }
+    .wt-avail-box { text-align: center; border-radius: 10px; padding: 6px 8px; background: #f8f9fa; border: 1px solid #e9ecef; min-width: 110px; }
+    .wt-avail-box .num { font-size: 1.05rem; font-weight: 700; line-height: 1.2; }
+    .wt-avail-box .unit { font-size: .75rem; color: #6c757d; }
+    .wt-avail-box.ok { background: #ebfbee; border-color: #b2f2bb; color: #2b8a3e; }
+    .wt-avail-box.none { background: #fff5f5; border-color: #ffc9c9; color: #c92a2a; }
+    .wt-qty-wrap { display: flex; align-items: stretch; min-width: 150px; }
+    .wt-qty-wrap .wt-qty { min-width: 90px; font-size: 1rem; font-weight: 600; text-align: right; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+    .wt-qty-wrap .wt-unit { display: flex; align-items: center; padding: 0 10px; font-size: .8rem; color: #495057; background: #f1f3f5;
+                            border: 1px solid #ced4da; border-left: 0; border-radius: 0 .375rem .375rem 0; white-space: nowrap; }
+    .wt-qty.is-invalid { background-image: none; border-color: #dc3545; }
+    .wt-after { font-size: .75rem; margin-top: 6px; }
+    .wt-value .num { font-weight: 600; }
+    .wt-value small { display: block; color: #6c757d; font-size: .72rem; }
+    .wt-summary { position: sticky; top: 80px; }
+    @media (max-width: 767.98px) { .wt-arrow { transform: rotate(90deg); margin: 6px auto; } }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set fv = form_values %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <div>
+            <h2 class="mb-0">
+                <i class="fas fa-dolly me-2 text-primary"></i>{{ 'Edit Transfer' if is_edit else 'New Warehouse Transfer' }}
+                <span class="badge bg-light text-dark border ms-2 fs-6">{{ next_number }}</span>
+            </h2>
+            <small class="text-muted">
+                {% if is_edit %}Saving reverses the original movement and applies the new one — both warehouses are updated automatically.
+                {% else %}Stock is taken out of the source warehouse and added to the destination as soon as you save.{% endif %}
+            </small>
+        </div>
+        <a href="{{ url_for('warehouse_transfer.transfer_detail', id=transfer.id) if is_edit else url_for('warehouse_transfer.transfers') }}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left me-2"></i>Back
+        </a>
+    </div>
+
+    <form method="POST" id="wtForm" autocomplete="off">
+        <div class="row g-4">
+            <div class="col-lg-9">
+                <!-- Route -->
+                <div class="card wt-route-card shadow-sm mb-4">
+                    <div class="card-body">
+                        <div class="row g-3 align-items-center">
+                            <div class="col-md-5">
+                                <div class="wt-wh-box from">
+                                    <label class="text-danger mb-1"><i class="fas fa-sign-out-alt me-1"></i>From Warehouse <span class="text-danger">*</span></label>
+                                    <select name="from_warehouse_id" id="fromWh" class="form-select" required>
+                                        <option value="">— Select source —</option>
+                                        {% for w in warehouses %}
+                                        <option value="{{ w.id }}" {% if (fv and fv.from_warehouse_id == w.id) or (not fv and is_edit and transfer.from_warehouse_id == w.id) %}selected{% endif %}>{{ w.name }} ({{ w.code }})</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-2 text-center">
+                                <div class="wt-arrow"><i class="fas fa-arrow-right"></i></div>
+                                <button type="button" id="swapWh" class="btn btn-link btn-sm mt-1 text-decoration-none" title="Swap warehouses"><i class="fas fa-exchange-alt me-1"></i>Swap</button>
+                            </div>
+                            <div class="col-md-5">
+                                <div class="wt-wh-box to">
+                                    <label class="text-success mb-1"><i class="fas fa-sign-in-alt me-1"></i>To Warehouse <span class="text-danger">*</span></label>
+                                    <select name="to_warehouse_id" id="toWh" class="form-select" required>
+                                        <option value="">— Select destination —</option>
+                                        {% for w in warehouses %}
+                                        <option value="{{ w.id }}" {% if (fv and fv.to_warehouse_id == w.id) or (not fv and is_edit and transfer.to_warehouse_id == w.id) %}selected{% endif %}>{{ w.name }} ({{ w.code }})</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="sameWhWarn" class="alert alert-danger py-2 mt-3 mb-0 d-none"><i class="fas fa-exclamation-triangle me-1"></i>Source and destination must be different warehouses.</div>
+                    </div>
+                </div>
+
+                <!-- Items -->
+                <div class="card shadow-sm">
+                    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0"><i class="fas fa-boxes me-2 text-primary"></i>Items to Transfer</h6>
+                        <button type="button" id="addRow" class="btn btn-sm btn-primary"><i class="fas fa-plus me-1"></i>Add Item</button>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="pickSourceHint" class="text-center text-muted small py-2 border-bottom bg-light">
+                            <i class="fas fa-info-circle me-1"></i>Select the source warehouse to see how much of each item is available.
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table mb-0 no-datatable" id="wtItems">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width:36px">#</th>
+                                        <th style="min-width:300px">Item</th>
+                                        <th class="text-center" style="width:130px">In Source</th>
+                                        <th style="width:190px">Transfer Qty</th>
+                                        <th class="text-end" style="width:140px">Value</th>
+                                        <th style="width:44px"></th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="col-lg-3">
+                <div class="wt-summary">
+                    <div class="card shadow-sm mb-3">
+                        <div class="card-header bg-white"><h6 class="mb-0"><i class="fas fa-info-circle me-2 text-primary"></i>Details</h6></div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Transfer Date <span class="text-danger">*</span></label>
+                                <input type="date" name="date" class="form-control" required
+                                       value="{{ fv.date if fv else (transfer.date.strftime('%Y-%m-%d') if is_edit and transfer.date else today) }}">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Reference</label>
+                                <input type="text" name="reference" class="form-control" maxlength="100" placeholder="e.g. Gate pass #, driver"
+                                       value="{{ fv.reference if fv else ((transfer.reference or '') if is_edit else '') }}">
+                            </div>
+                            <div>
+                                <label class="form-label">Notes</label>
+                                <textarea name="notes" class="form-control" rows="3" placeholder="Reason / remarks">{{ fv.notes if fv else ((transfer.notes or '') if is_edit else '') }}</textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card shadow-sm border-primary">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between mb-1"><span class="text-muted">Items</span><strong id="sumItems">0</strong></div>
+                            <div class="d-flex justify-content-between mb-1"><span class="text-muted">Total Qty</span><strong id="sumQty">0</strong></div>
+                            <div class="d-flex justify-content-between mb-1"><span class="text-muted">Value at Cost</span><strong id="sumValue">PKR 0.00</strong></div>
+                            <div class="d-flex justify-content-between mb-3"><span class="text-muted">Value at Selling</span><strong id="sumSell" class="text-primary">PKR 0.00</strong></div>
+                            <button type="submit" class="btn btn-primary w-100" id="submitBtn">
+                                <i class="fas fa-check me-2"></i>{{ 'Update Transfer' if is_edit else 'Save Transfer' }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+{% set fv = form_values %}
+{# Initial rows: re-posted values after an error, else the transfer's own lines on edit #}
+{% set initial_items = [] %}
+{% if fv %}
+    {% for r in fv['items'] %}{% set _ = initial_items.append({'product_id': r.product_id, 'label': r.label, 'quantity': r.quantity, 'unit': r.unit}) %}{% endfor %}
+{% elif is_edit %}
+    {% for i in transfer.items %}{% if i.product %}{% set _ = initial_items.append({'product_id': i.product_id, 'label': i.product.name ~ ' (' ~ i.product.sku ~ ')', 'quantity': i.quantity, 'unit': i.product.unit or ''}) %}{% endif %}{% endfor %}
+{% endif %}
+<script>
+(function () {
+    const STOCK_URL = "{{ url_for('warehouse_transfer.warehouse_stock_json') }}";
+    const EXCLUDE_ID = {{ transfer.id if is_edit else 'null' }};
+    const INITIAL = {{ initial_items|tojson }};
+
+    const fromWh = document.getElementById('fromWh');
+    const toWh = document.getElementById('toWh');
+    const tbody = document.querySelector('#wtItems tbody');
+    const hint = document.getElementById('pickSourceHint');
+    const addBtn = document.getElementById('addRow');
+    let stock = {};        // product_id -> {text, available, unit, cost_price}
+    let stockList = [];
+
+    const fmt = n => (n || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const fmtQty = n => (Math.round((n || 0) * 10000) / 10000).toLocaleString();
+
+    function loadStock() {
+        const wh = fromWh.value;
+        let url = STOCK_URL + '?warehouse_id=' + encodeURIComponent(wh || '');
+        if (EXCLUDE_ID) url += '&exclude_transfer_id=' + EXCLUDE_ID;
+        return fetch(url, {credentials: 'same-origin'}).then(r => r.json()).then(data => {
+            stockList = data.results || [];
+            stock = {};
+            stockList.forEach(p => { stock[p.id] = p; });
+            refreshAll();
+        });
+    }
+
+    function usedIds(exceptRow) {
+        const ids = new Set();
+        tbody.querySelectorAll('tr').forEach(tr => {
+            if (tr === exceptRow) return;
+            const v = $(tr).find('.wt-product').val();
+            if (v) ids.add(String(v));
+        });
+        return ids;
+    }
+
+    function buildSelect(tr, selectedId, selectedLabel) {
+        const $sel = $(tr).find('.wt-product');
+        if ($sel.hasClass('select2-hidden-accessible')) $sel.select2('destroy');
+        $sel.empty().append(new Option('', ''));
+        const used = usedIds(tr);
+        stockList.forEach(p => {
+            if (used.has(String(p.id)) && String(p.id) !== String(selectedId)) return;
+            const whCount = (p.warehouses || []).length;
+            const label = p.available === null
+                ? p.text + '  —  ' + (whCount ? fmtQty(p.warehouses.reduce((a, w) => a + w.qty, 0)) + ' ' + (p.unit || '') + ' in ' + whCount + ' warehouse' + (whCount > 1 ? 's' : '') : 'no stock')
+                : p.available > 0
+                ? p.text + '  —  ' + fmtQty(p.available) + ' ' + (p.unit || '') + ' available'
+                : p.text + '  —  out of stock here';
+            const opt = new Option(label, p.id, false, String(p.id) === String(selectedId));
+            $sel.append(opt);
+        });
+        // Keep a previously chosen item visible even if the warehouse now has none of it
+        if (selectedId && !stock[selectedId]) {
+            $sel.append(new Option((selectedLabel || 'Item #' + selectedId) + '  —  0 available', selectedId, true, true));
+        }
+        $sel.select2({theme: 'bootstrap-5', width: '100%', placeholder: 'Search item by name or SKU…', allowClear: true});
+    }
+
+    function addRow(item) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="text-muted wt-idx"></td>
+            <td>
+                <select name="product_id[]" class="form-select wt-product"></select>
+                <div class="wt-info"></div>
+                <div class="wt-dist d-none"><div class="ttl"><i class="fas fa-warehouse me-1"></i>Stock by warehouse <span class="fw-normal text-lowercase">(click to transfer from it)</span></div><div class="list"></div></div>
+            </td>
+            <td><div class="wt-avail-box"><div class="num wt-avail">—</div><div class="unit wt-avail-unit"></div></div></td>
+            <td>
+                <div class="wt-qty-wrap">
+                    <input type="number" name="quantity[]" class="form-control wt-qty" min="0" step="any" placeholder="0">
+                    <span class="wt-unit">qty</span>
+                </div>
+                <div class="wt-after text-muted"></div>
+            </td>
+            <td class="text-end wt-value"><span class="num">0.00</span><small>at cost</small></td>
+            <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger wt-remove" title="Remove"><i class="fas fa-times"></i></button></td>`;
+        tbody.appendChild(tr);
+        if (item && item.quantity !== undefined) tr.querySelector('.wt-qty').value = item.quantity;
+        buildSelect(tr, item ? item.product_id : null, item ? item.label : null);
+        $(tr).find('.wt-product').on('change', () => { refreshRow(tr); rebuildOtherSelects(tr); });
+        tr.querySelector('.wt-qty').addEventListener('input', () => refreshRow(tr));
+        tr.querySelector('.wt-remove').addEventListener('click', () => { $(tr).find('.wt-product').select2('destroy'); tr.remove(); rebuildOtherSelects(null); renumber(); updateSummary(); });
+        refreshRow(tr);
+        renumber();
+        return tr;
+    }
+
+    function rebuildOtherSelects(changedRow) {
+        tbody.querySelectorAll('tr').forEach(tr => {
+            if (tr === changedRow) return;
+            const $sel = $(tr).find('.wt-product');
+            const val = $sel.val();
+            const label = $sel.find('option:selected').text().split('  —  ')[0];
+            buildSelect(tr, val, label);
+        });
+    }
+
+    function refreshRow(tr) {
+        const pid = $(tr).find('.wt-product').val();
+        const p = pid ? stock[pid] : null;
+        const qtyInput = tr.querySelector('.wt-qty');
+        const qty = parseFloat(qtyInput.value) || 0;
+        const unit = p ? (p.unit || 'qty') : 'qty';
+        const availEl = tr.querySelector('.wt-avail');
+        const availUnitEl = tr.querySelector('.wt-avail-unit');
+        const availBox = tr.querySelector('.wt-avail-box');
+        const afterEl = tr.querySelector('.wt-after');
+        const infoEl = tr.querySelector('.wt-info');
+        tr.querySelector('.wt-unit').textContent = unit;
+
+        // Item info chips: total stock across all warehouses + cost + selling price
+        infoEl.innerHTML = p
+            ? '<span class="wt-chip"><i class="fas fa-layer-group me-1"></i>Total stock: <strong>' + fmtQty(p.total_qty) + ' ' + unit + '</strong></span>' +
+              '<span class="wt-chip cost"><i class="fas fa-tag me-1"></i>Cost: <strong>PKR ' + fmt(p.cost_price) + '</strong></span>' +
+              '<span class="wt-chip sell"><i class="fas fa-store me-1"></i>Selling: <strong>PKR ' + fmt(p.unit_price) + '</strong></span>'
+            : '';
+
+        // Where this item is stocked, and how much in each warehouse
+        const distEl = tr.querySelector('.wt-dist');
+        const distList = distEl.querySelector('.list');
+        const whs = p ? (p.warehouses || []) : [];
+        distEl.classList.toggle('d-none', !p);
+        distList.innerHTML = whs.length
+            ? whs.map(w => {
+                const cls = String(w.id) === fromWh.value ? ' is-src' : (String(w.id) === toWh.value ? ' is-dst' : '');
+                const tag = cls === ' is-src' ? '<span class="tag">source</span>' : (cls === ' is-dst' ? '<span class="tag">destination</span>' : '');
+                return '<span class="wt-wh-pill' + cls + '" data-wh="' + w.id + '" title="Transfer from ' + $('<div>').text(w.name).html() + '">' +
+                       $('<div>').text(w.name).html() + ':<strong>' + fmtQty(w.qty) + ' ' + unit + '</strong>' + tag + '</span>';
+              }).join('')
+            : '<span class="text-danger small"><i class="fas fa-exclamation-circle me-1"></i>Not in stock in any warehouse</span>';
+
+        availBox.classList.remove('ok', 'none');
+        qtyInput.classList.remove('is-invalid');
+        if (!p || p.available === null) {
+            availEl.textContent = '—';
+            availUnitEl.textContent = p ? 'pick source' : '';
+            afterEl.textContent = '';
+        } else {
+            const avail = p.available;
+            availEl.textContent = fmtQty(avail);
+            availUnitEl.textContent = unit;
+            availBox.classList.add(avail > 0 ? 'ok' : 'none');
+            const over = qty > avail + 1e-9;
+            qtyInput.classList.toggle('is-invalid', over);
+            afterEl.innerHTML = over
+                ? '<span class="text-danger"><i class="fas fa-exclamation-circle me-1"></i>Only ' + fmtQty(avail) + ' ' + unit + ' available</span>'
+                : (qty > 0 ? 'Source after transfer: <strong>' + fmtQty(avail - qty) + ' ' + unit + '</strong>' : '');
+        }
+        const cost = qty * (p ? p.cost_price : 0);
+        const sell = qty * (p ? p.unit_price : 0);
+        tr.querySelector('.wt-value').innerHTML = '<span class="num">PKR ' + fmt(cost) + '</span><small>at cost</small>' +
+            (p && sell ? '<small>Sell: PKR ' + fmt(sell) + '</small>' : '');
+        updateSummary();
+    }
+
+    function renumber() {
+        tbody.querySelectorAll('tr').forEach((tr, i) => { tr.querySelector('.wt-idx').textContent = i + 1; });
+    }
+
+    function refreshAll() {
+        const hasSource = !!fromWh.value;
+        hint.style.display = hasSource ? 'none' : '';
+        tbody.querySelectorAll('tr').forEach(tr => {
+            const $sel = $(tr).find('.wt-product');
+            buildSelect(tr, $sel.val(), $sel.find('option:selected').text().split('  —  ')[0]);
+            refreshRow(tr);
+        });
+        if (!tbody.querySelector('tr')) addRow();
+        updateSummary();
+    }
+
+    function updateSummary() {
+        let items = 0, qty = 0, value = 0, sell = 0;
+        tbody.querySelectorAll('tr').forEach(tr => {
+            const pid = $(tr).find('.wt-product').val();
+            const q = parseFloat(tr.querySelector('.wt-qty').value) || 0;
+            if (pid && q > 0) {
+                items++; qty += q;
+                if (stock[pid]) { value += q * stock[pid].cost_price; sell += q * (stock[pid].unit_price || 0); }
+            }
+        });
+        document.getElementById('sumItems').textContent = items;
+        document.getElementById('sumQty').textContent = fmtQty(qty);
+        document.getElementById('sumValue').textContent = 'PKR ' + fmt(value);
+        document.getElementById('sumSell').textContent = 'PKR ' + fmt(sell);
+    }
+
+    function checkSame() {
+        const same = fromWh.value && fromWh.value === toWh.value;
+        document.getElementById('sameWhWarn').classList.toggle('d-none', !same);
+        return same;
+    }
+
+    // Searchable warehouse dropdowns. select2 fires jQuery 'change', not a
+    // native one, so the listeners below go through $(...).on('change').
+    $(fromWh).select2({theme: 'bootstrap-5', width: '100%', placeholder: '— Select source —', allowClear: true});
+    $(toWh).select2({theme: 'bootstrap-5', width: '100%', placeholder: '— Select destination —', allowClear: true});
+    $(fromWh).on('change', () => { checkSame(); loadStock(); });
+    $(toWh).on('change', checkSame);
+    addBtn.addEventListener('click', () => addRow());
+    tbody.addEventListener('click', e => {
+        const pill = e.target.closest('.wt-wh-pill');
+        if (!pill || pill.dataset.wh === fromWh.value) return;
+        if (pill.dataset.wh === toWh.value) $(toWh).val(null).trigger('change.select2');
+        $(fromWh).val(pill.dataset.wh).trigger('change');
+    });
+    $(toWh).on('change', () => tbody.querySelectorAll('tr').forEach(refreshRow));
+    document.getElementById('swapWh').addEventListener('click', () => {
+        const a = $(fromWh).val(), b = $(toWh).val();
+        $(toWh).val(a).trigger('change.select2');
+        $(fromWh).val(b).trigger('change');  // reloads source stock
+    });
+
+    document.getElementById('wtForm').addEventListener('submit', function (e) {
+        const problems = [];
+        if (!fromWh.value || !toWh.value) problems.push('Select both warehouses.');
+        if (checkSame()) problems.push('Source and destination must be different.');
+        let lines = 0;
+        tbody.querySelectorAll('tr').forEach(tr => {
+            const pid = $(tr).find('.wt-product').val();
+            const q = parseFloat(tr.querySelector('.wt-qty').value) || 0;
+            if (!pid) return;
+            if (q <= 0) problems.push('Enter a quantity greater than 0 for every selected item.');
+            else if (stock[pid] && q > stock[pid].available + 1e-9) problems.push('"' + stock[pid].text + '" exceeds available stock (' + fmtQty(stock[pid].available) + ').');
+            else if (!stock[pid]) problems.push('An item has no stock in the source warehouse.');
+            lines++;
+        });
+        if (!lines) problems.push('Add at least one item to transfer.');
+        if (problems.length) {
+            e.preventDefault();
+            alert([...new Set(problems)].join('\n'));
+            return;
+        }
+        document.getElementById('submitBtn').disabled = true;
+        document.getElementById('submitBtn').innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving…';
+    });
+
+    // Initial load
+    loadStock().then(() => {
+        if (INITIAL.length) {
+            tbody.innerHTML = '';
+            INITIAL.forEach(it => addRow(it));
+            rebuildOtherSelects(null);
+            tbody.querySelectorAll('tr').forEach(refreshRow);
+        }
+        checkSame();
+    });
+})();
+</script>
+{% endblock %}
