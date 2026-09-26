@@ -79,6 +79,21 @@ document.addEventListener('DOMContentLoaded', function () {
     enabledCb.addEventListener('change', applyEnabled);
     applyEnabled();
 
+    // One of the Sale/Bill radios is always pre-checked, so without this the
+    // transfer type (and any stale Invoice/Bill pick) would submit even with
+    // the toggle off - the server would then treat the expense as linked to
+    // a payment and reject e.g. "Shift Directly to Inventory Cost" alongside
+    // it. Only send these fields when the toggle is actually on.
+    const parentForm = enabledCb.closest('form');
+    if (parentForm) {
+        parentForm.addEventListener('formdata', function (e) {
+            if (!enabledCb.checked) {
+                e.formData.delete('payment_transfer_type');
+                e.formData.delete('payment_transfer_target_id');
+            }
+        });
+    }
+
     // Which of Sale / Bill is even offered depends on Debit vs Credit:
     // "Add to Invoice Payment" (sale) is money coming IN, so it only makes
     // sense alongside Debit; "Add to Purchase Payment" (bill) is money going

@@ -3060,7 +3060,11 @@ def add_expense():
         shift_note = None
         if (is_admin and not is_overhead and len(created_expenses) == 1
                 and request.form.get('shift_to_inventory') == '1'):
-            if request.form.get('payment_transfer_type') in ('sale', 'bill'):
+            # Only a real conflict when a Sale/Bill was actually picked -
+            # the transfer-type radio always submits a value (one of them is
+            # pre-checked), so the type alone doesn't mean the user chose it.
+            if (request.form.get('payment_transfer_type') in ('sale', 'bill')
+                    and request.form.get('payment_transfer_target_id')):
                 db.session.rollback()
                 flash('Expense not created — it cannot both be shifted to inventory and linked to an '
                       'invoice/purchase payment. Choose one.', 'danger')
@@ -4094,7 +4098,8 @@ def edit_expense(id):
         if (not new_is_overhead and getattr(current_user, 'is_admin', False)
                 and not getattr(expense, 'is_inventory_shifted', False)
                 and request.form.get('shift_to_inventory') == '1'):
-            if request.form.get('payment_transfer_type') in ('sale', 'bill'):
+            if (request.form.get('payment_transfer_type') in ('sale', 'bill')
+                    and request.form.get('payment_transfer_target_id')):
                 db.session.rollback()
                 flash('Expense not updated — it cannot both be shifted to inventory and linked to an '
                       'invoice/purchase payment. Choose one.', 'danger')
