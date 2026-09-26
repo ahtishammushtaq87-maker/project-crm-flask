@@ -571,6 +571,108 @@ def reverse_bill_advance_applied(bill):
     return reverse_amount
 
 
+def reverse_vendor_advance_from_bills(advance):
+    """
+    Undo everywhere a VendorAdvance has been used, BEFORE it is deleted.
+
+    An advance can reach a bill two ways, and each leaves different traces:
+      1. "Pay → Use Advance" on the bill: a BillPayment row (advance_id set)
+         + bill.paid_amount. Those payment rows are removed here too,
+         otherwise Recalculate would keep counting them.
+      2. Auto-apply on bill creation / "Advance Paid" field / "Adjust" on
+         the vendor profile: bill.paid_amount and (for 1 & 2) the bill's
+         advance_applied - the "Advance Applied" line on the Payment
+         Summary. Only adjusted_bill_id (the LAST bill) is stored on the
+         advance, so any rest is taken back from the vendor's other bills
+         still showing advance_applied, the adjusted bill first.
+
+    Does NOT commit and does NOT delete the advance - the caller does.
+
+    Returns:
+        list[PurchaseBill]: bills whose amounts were changed.
+    """
+    from app.models import BillPayment
+
+    touched = {}
+    remaining = round(float(advance.applied_amount or 0), 2)
+
+    # 1. Payments recorded straight from this advance
+    for bp in BillPayment.query.filter_by(advance_id=advance.id).all():
+        bill = PurchaseBill.query.get(bp.bill_id)
+        if (bp.payment_method or '').lower() == 'advance':
+            if bill and bp.is_approved and remaining > 0:
+                give_back = min(float(bp.amount or 0), remaining)
+                bill.paid_amount = max(0.0, (bill.paid_amount or 0) - give_back)
+                remaining = round(remaining - give_back, 2)
+                touched[bill.id] = bill
+            db.session.delete(bp)
+        else:
+            # Mixed advance+cash payment: the cash part is real, so keep
+            # the record, just drop the link to the deleted advance.
+            bp.advance_id = None
+
+    # 2. Amounts applied through bill.advance_applied
+    if remaining > 0 and advance.vendor_id:
+        candidates = PurchaseBill.query.filter(
+            PurchaseBill.vendor_id == advance.vendor_id,
+            PurchaseBill.advance_applied > 0
+        ).order_by(PurchaseBill.date.desc(), PurchaseBill.id.desc()).all()
+        candidates.sort(key=lambda b: 0 if b.id == advance.adjusted_bill_id else 1)
+        for bill in candidates:
+            if remaining <= 0:
+                break
+            give_back = min(float(bill.advance_applied or 0), remaining)
+            bill.advance_applied = round((bill.advance_applied or 0) - give_back, 2)
+            bill.paid_amount = max(0.0, (bill.paid_amount or 0) - give_back)
+            remaining = round(remaining - give_back, 2)
+            touched[bill.id] = bill
+
+    # 3. Anything left was applied without advance_applied tracking (older
+    #    "Adjust" on the vendor profile) - take it off the adjusted bill.
+    if remaining > 0 and advance.adjusted_bill_id:
+        bill = touched.get(advance.adjusted_bill_id) or PurchaseBill.query.get(advance.adjusted_bill_id)
+        if bill:
+            bill.paid_amount = max(0.0, (bill.paid_amount or 0) - remaining)
+            touched[bill.id] = bill
+
+    for bill in touched.values():
+        bill.update_status()
+    return list(touched.values())
+
+
+def sync_bill_advance_applied(bill):
+    """
+    Heal a bill whose "Advance Applied" still shows money from a vendor
+    advance that no longer exists (e.g. deleted before
+    reverse_vendor_advance_from_bills existed). A vendor's bills can't
+    together hold more advance than the vendor's existing advances have
+    actually had applied, so this bill's advance_applied is capped at what
+    is left after the vendor's other bills. Does NOT commit.
+
+    Returns:
+        float: the amount removed from bill.advance_applied (0 if none).
+    """
+    current = float(bill.advance_applied or 0)
+    if current <= 0:
+        return 0.0
+    if not bill.vendor_id:
+        bill.advance_applied = 0
+        return current
+
+    applied_on_record = sum(float(a.applied_amount or 0)
+                            for a in VendorAdvance.query.filter_by(vendor_id=bill.vendor_id).all())
+    other_bills = sum(float(b.advance_applied or 0) for b in PurchaseBill.query.filter(
+        PurchaseBill.vendor_id == bill.vendor_id,
+        PurchaseBill.id != bill.id,
+        PurchaseBill.advance_applied > 0
+    ).all())
+    allowed = max(0.0, round(applied_on_record - other_bills, 2))
+    if current > allowed + 0.009:
+        bill.advance_applied = allowed
+        return round(current - allowed, 2)
+    return 0.0
+
+
 def cleanup_linked_transactions(payment_instance):
     """
     Cleanup accounting Transactions linked to this payment.

@@ -329,6 +329,12 @@ def recalculate_bill_paid_amount(id):
 
     bill = PurchaseBill.query.get_or_404(id)
 
+    # Drop any "Advance Applied" left behind by a vendor advance that has
+    # since been deleted, before paid_amount is rebuilt below.
+    from app.utils import sync_bill_advance_applied
+    old_advance_applied = float(bill.advance_applied or 0)
+    advance_removed = sync_bill_advance_applied(bill)
+
     payments_total = sum(bp.amount for bp in bill.bill_payments if bp.is_approved)
     advances_total = sum(adv.applied_amount or 0 for adv in bill.adjusted_advances)
     ground_truth = round(payments_total + advances_total, 2)
@@ -338,7 +344,18 @@ def recalculate_bill_paid_amount(id):
     old_paid = bill.paid_amount or 0
     difference = round(ground_truth - old_paid, 2)
 
+    if advance_removed > 0:
+        log_activity('Purchase', f'Recalculated Advance Applied on Bill #{bill.bill_number}',
+                    f'Was PKR {old_advance_applied:,.2f}, corrected to PKR {bill.advance_applied:,.2f} '
+                    f'(advance no longer exists on the vendor)')
+
     if abs(difference) < 0.01:
+        if advance_removed > 0:
+            bill.update_status()
+            db.session.commit()
+            flash(f'Advance Applied corrected: PKR {old_advance_applied:,.2f} → PKR {bill.advance_applied:,.2f} '
+                  f'(that vendor advance no longer exists). Paid Amount already correct.', 'success')
+            return redirect(url_for('purchase.bill_detail', id=bill.id))
         flash(f'No change needed — Paid Amount (PKR {old_paid:,.2f}) already matches '
               f'{len([bp for bp in bill.bill_payments if bp.is_approved])} approved payment(s) '
               f'and applied advance(s).', 'info')
@@ -2609,6 +2626,9 @@ def vendor_adjust_advance(id, adv_id):
                 # Deduct the applied amount from the advance and bill
                 advance.applied_amount += apply_amount
                 bill.paid_amount += apply_amount
+                # Shows on the bill's Payment Summary and lets deleting
+                # the advance later reverse it cleanly.
+                bill.advance_applied = (bill.advance_applied or 0) + apply_amount
                 bill.update_status()
                 
                 # Mark as fully adjusted only if the entire advance amount is applied
@@ -2638,19 +2658,23 @@ def vendor_delete_advance(id, adv_id):
         flash('Invalid advance.', 'danger')
         return redirect(url_for('purchase.vendor_profile', id=id))
     
-    # Reverse the applied amount from the adjusted bill
-    if advance.applied_amount > 0 and advance.adjusted_bill_id:
-        bill = PurchaseBill.query.get(advance.adjusted_bill_id)
-        if bill:
-            bill.paid_amount = max(0, bill.paid_amount - advance.applied_amount)
-            bill.update_status()
-    
+    # Take back everything this advance paid on any bill - paid_amount,
+    # the bill's "Advance Applied" figure and any "Use Advance" payment rows.
+    from app.utils import reverse_vendor_advance_from_bills
+    applied_amount = float(advance.applied_amount or 0)
+    touched_bills = reverse_vendor_advance_from_bills(advance)
+
     advance_amount = advance.amount
     db.session.delete(advance)
     db.session.commit()
+    bill_numbers = ', '.join(b.bill_number for b in touched_bills)
     log_activity('Vendors', f'Deleted Vendor Advance',
-                f'Amount: PKR {advance_amount:,.2f}')
-    flash('Advance deleted and any applied amount has been reversed.', 'success')
+                f'Amount: PKR {advance_amount:,.2f}, Reversed: PKR {applied_amount:,.2f}'
+                + (f' from Bill(s) {bill_numbers}' if bill_numbers else ''))
+    if bill_numbers:
+        flash(f'Advance deleted. PKR {applied_amount:,.2f} applied from it was reversed from Bill(s) {bill_numbers}.', 'success')
+    else:
+        flash('Advance deleted.', 'success')
     return redirect(url_for('purchase.vendor_profile', id=id))
 
 @bp.route('/vendor/<int:id>/edit', methods=['GET', 'POST'])
