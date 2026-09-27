@@ -7,19 +7,45 @@
 {% block extra_css %}
 <style>
     tr.parent-row td:first-child { border-left: 3px solid #4e73df; }
+    tr.parent-row { background: #fff; }
+    tr.parent-row.has-children { cursor: pointer; }
+    tr.parent-row.expanded { background: #f4f6fd; }
     tr.subcategory-row { background: #fbfbfe; }
     tr.subcategory-row td:first-child {
-        padding-left: 2.75rem;
         position: relative;
         border-left: 3px solid #dfe3f5;
     }
-    tr.subcategory-row td:first-child::before {
+    tr.subcategory-row .category-name-cell {
+        padding-left: 2.75rem;
+        position: relative;
+    }
+    tr.subcategory-row .category-name-cell::before {
         content: "\2514"; /* └ */
         position: absolute;
-        left: 1.35rem;
+        left: 1.1rem;
+        top: 50%;
+        transform: translateY(-50%);
         color: #9aa0ac;
         font-weight: 700;
     }
+    /* Collapsed sub-categories are hidden; when shown they slide down in */
+    tr.subcategory-row.collapsed-child { display: none; }
+    tr.subcategory-row.slide-in > td { animation: catSlideDown .25s ease-out; }
+    @keyframes catSlideDown {
+        from { opacity: 0; transform: translateY(-8px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    .cat-toggle {
+        width: 26px; height: 26px; padding: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        border-radius: 50%; border: 1px solid #d5dbf3; background: #fff; color: #4e73df;
+        margin-right: .5rem; flex-shrink: 0;
+    }
+    .cat-toggle i { transition: transform .2s ease; }
+    tr.parent-row.expanded .cat-toggle { background: #4e73df; color: #fff; border-color: #4e73df; }
+    tr.parent-row.expanded .cat-toggle i { transform: rotate(90deg); }
+    .cat-toggle-spacer { width: 26px; margin-right: .5rem; flex-shrink: 0; display: inline-block; }
+    .sub-count-pill { font-size: .7rem; background: #e7ecfd; color: #2e3f9e; border-radius: 1rem; padding: .15em .6em; }
     .category-type-badge { font-size: .68rem; font-weight: 700; letter-spacing: .02em; padding: .3em .6em; }
     .category-type-badge.parent-badge { background: #e7ecfd; color: #2e3f9e; }
     .category-type-badge.child-badge { background: #f1f3f5; color: #6c757d; }
@@ -76,8 +102,33 @@
         </li>
     </ul>
 
+    {# Which parents have sub-categories in the current list (draft view may
+       contain a sub-category without its parent - that one renders standalone). #}
+    {% set ns = namespace(ids=[], parents_with_children=[]) %}
+    {% for c in categories %}{% set ns.ids = ns.ids + [c.id] %}{% endfor %}
+    {% for c in categories %}
+        {% if c.parent_id and c.parent_id in ns.ids and c.parent_id not in ns.parents_with_children %}
+            {% set ns.parents_with_children = ns.parents_with_children + [c.parent_id] %}
+        {% endif %}
+    {% endfor %}
+
     <div class="card">
         <div class="card-body">
+            {% if categories %}
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+                <div class="input-group input-group-sm" style="max-width: 320px;">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" id="categorySearch" class="form-control" placeholder="Search categories...">
+                </div>
+                <button type="button" id="expandAllBtn" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-angle-double-down me-1"></i> Expand All
+                </button>
+                <button type="button" id="collapseAllBtn" class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-angle-double-up me-1"></i> Collapse All
+                </button>
+                <span class="text-muted small ms-auto">Click a parent category (or its arrow) to show its sub-categories.</span>
+            </div>
+            {% endif %}
             <div class="table-responsive">
                 <table class="table table-hover align-middle">
                     <thead>
@@ -97,7 +148,12 @@
                     </thead>
                     <tbody>
                         {% for category in categories %}
-                        <tr class="{{ 'subcategory-row' if category.parent_id else 'parent-row' }}">
+                        {% set is_nested_child = category.parent_id and category.parent_id in ns.parents_with_children %}
+                        {% set has_children = category.id in ns.parents_with_children %}
+                        <tr class="{{ 'subcategory-row' if category.parent_id else 'parent-row' }}{{ ' has-children' if has_children }}{{ ' collapsed-child' if is_nested_child }}"
+                            data-id="{{ category.id }}"
+                            {% if is_nested_child %}data-parent="{{ category.parent_id }}"{% endif %}
+                            data-name="{{ category.name|lower }}">
                             {% if current_user.has_permission('accounting', 'delete') %}
                             <td class="text-center no-export">
                                 {% if not category.expenses and not category.subcategories %}
@@ -105,17 +161,30 @@
                                 {% endif %}
                             </td>
                             {% endif %}
-                            <td>
-                                <strong>{{ category.name }}</strong>
-                                {% if category.parent_id %}
-                                <span class="badge category-type-badge child-badge ms-1"><i class="fas fa-level-up-alt fa-rotate-90 me-1"></i>Sub-Category</span>
-                                <span class="parent-of-text d-block">of {{ category.parent.name if category.parent else '—' }}</span>
-                                {% else %}
-                                <span class="badge category-type-badge parent-badge ms-1"><i class="fas fa-folder me-1"></i>Parent</span>
-                                {% if category.subcategories %}
-                                <span class="parent-of-text d-block">{{ category.subcategories|length }} sub-categor{{ 'y' if category.subcategories|length == 1 else 'ies' }}</span>
-                                {% endif %}
-                                {% endif %}
+                            <td class="category-name-cell">
+                                <div class="d-flex align-items-center">
+                                    {% if has_children %}
+                                    <button type="button" class="cat-toggle" title="Show / hide sub-categories" aria-expanded="false">
+                                        <i class="fas fa-chevron-right"></i>
+                                    </button>
+                                    {% elif not category.parent_id %}
+                                    <span class="cat-toggle-spacer"></span>
+                                    {% endif %}
+                                    <div>
+                                        <strong>{{ category.name }}</strong>
+                                        {% if category.parent_id %}
+                                        <span class="badge category-type-badge child-badge ms-1"><i class="fas fa-level-up-alt fa-rotate-90 me-1"></i>Sub-Category</span>
+                                        {% if not is_nested_child %}
+                                        <span class="parent-of-text d-block">of {{ category.parent.name if category.parent else '—' }}</span>
+                                        {% endif %}
+                                        {% else %}
+                                        <span class="badge category-type-badge parent-badge ms-1"><i class="fas fa-folder me-1"></i>Parent</span>
+                                        {% if category.subcategories %}
+                                        <span class="sub-count-pill ms-1">{{ category.subcategories|length }} sub-categor{{ 'y' if category.subcategories|length == 1 else 'ies' }}</span>
+                                        {% endif %}
+                                        {% endif %}
+                                    </div>
+                                </div>
                             </td>
                             <td>{{ category.description or '-' }}</td>
                             <td>
@@ -184,6 +253,88 @@ function deleteCategory(id, name) {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
+    // ---- Collapsible parent -> sub-category groups ----
+    const STORAGE_KEY = 'expenseCategories.expanded';
+    const parentRows = Array.from(document.querySelectorAll('tr.parent-row.has-children'));
+    const childRowsOf = id => document.querySelectorAll(`tr.subcategory-row[data-parent="${id}"]`);
+
+    function loadExpanded() {
+        try { return new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')); }
+        catch (e) { return new Set(); }
+    }
+    function saveExpanded() {
+        try {
+            const ids = parentRows.filter(r => r.classList.contains('expanded')).map(r => r.dataset.id);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+        } catch (e) { /* storage unavailable - state just isn't remembered */ }
+    }
+
+    function setExpanded(row, expanded, animate = true) {
+        row.classList.toggle('expanded', expanded);
+        const btn = row.querySelector('.cat-toggle');
+        if (btn) btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        childRowsOf(row.dataset.id).forEach(child => {
+            child.classList.toggle('collapsed-child', !expanded);
+            child.classList.remove('slide-in');
+            if (expanded && animate) {
+                void child.offsetWidth; // restart the animation
+                child.classList.add('slide-in');
+            }
+        });
+    }
+
+    parentRows.forEach(row => {
+        row.addEventListener('click', function (e) {
+            // Let the row's own controls (actions, checkbox, approval widget) work normally
+            if (!e.target.closest('.cat-toggle') &&
+                e.target.closest('a, button, input, select, label, form, .dropdown-menu')) return;
+            setExpanded(row, !row.classList.contains('expanded'));
+            saveExpanded();
+        });
+    });
+
+    const remembered = loadExpanded();
+    parentRows.forEach(row => { if (remembered.has(row.dataset.id)) setExpanded(row, true, false); });
+
+    const expandAllBtn = document.getElementById('expandAllBtn');
+    const collapseAllBtn = document.getElementById('collapseAllBtn');
+    if (expandAllBtn) expandAllBtn.addEventListener('click', () => {
+        parentRows.forEach(r => setExpanded(r, true)); saveExpanded();
+    });
+    if (collapseAllBtn) collapseAllBtn.addEventListener('click', () => {
+        parentRows.forEach(r => setExpanded(r, false)); saveExpanded();
+    });
+
+    // Search: show matching categories; a matching sub-category opens its parent
+    const searchInput = document.getElementById('categorySearch');
+    if (searchInput) searchInput.addEventListener('input', function () {
+        const q = this.value.trim().toLowerCase();
+        const allRows = document.querySelectorAll('tr[data-id]');
+        if (!q) {
+            allRows.forEach(r => r.style.display = '');
+            const keep = loadExpanded();
+            parentRows.forEach(r => setExpanded(r, keep.has(r.dataset.id), false));
+            return;
+        }
+        allRows.forEach(r => r.style.display = 'none');
+        allRows.forEach(r => {
+            if (!r.dataset.name.includes(q)) return;
+            r.style.display = '';
+            if (r.dataset.parent) {
+                const parent = document.querySelector(`tr.parent-row[data-id="${r.dataset.parent}"]`);
+                if (parent) {
+                    parent.style.display = '';
+                    parent.classList.add('expanded');
+                    r.classList.remove('collapsed-child');
+                }
+            } else if (r.classList.contains('has-children')) {
+                // Parent matched - show it with all of its sub-categories
+                setExpanded(r, true, false);
+                childRowsOf(r.dataset.id).forEach(c => c.style.display = '');
+            }
+        });
+    });
+
     if (typeof initBulkActions === 'function') {
         initBulkActions({
             selectAllId: 'selectAll',
