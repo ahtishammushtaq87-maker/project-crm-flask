@@ -5,7 +5,7 @@
 DOCUMENT_TYPE = 'purchase'
 TITLE = 'PURCHASE'
 
-# Table columns configuration
+# Tablessss columns configuration
 # Format: (header_key, width_multiplier, align)
 TABLE_COLUMNS = [
     ('description', 3.2, 'LEFT'),
