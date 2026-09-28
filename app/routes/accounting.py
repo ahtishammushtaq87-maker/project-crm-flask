@@ -1509,14 +1509,7 @@ def expenses():
     inventory_items = Product.query.filter_by(is_active=True, is_obsolete=False).order_by(Product.name).all()
     
     # Get PD expense categories for the shift modal
-    pd_expense_categories = [
-        'Sample Purchase', 'Reverse Engineering', 'Measurement', 'CAD', 'Prototype', 'Testing',
-        'Mold', 'Die', 'Fixture', 'Pattern', 'Jig', 'Gauge',
-        'Raw Material', 'Purchased Components', 'Machining', 'Casting',
-        'Electricity', 'Maintenance', 'Factory Wages',
-        'Office Rent', 'Salaries', 'Marketing', 'Travel',
-        'Scrap', 'Prototype Failure', 'Warranty'
-    ]
+    pd_expense_categories = PD_EXPENSE_CATEGORIES
 
     # Get date format from company settings
     from app.models import Company
@@ -2784,6 +2777,8 @@ def add_expense():
                                     expense_sources=ExpenseSource.query.filter_by(is_active=True).order_by(ExpenseSource.name).all(),
                                     inventory_items=inventory_items, category_options=category_options,
                                     category_tree=_expense_category_tree(),
+                                    active_pd_projects=_active_pd_projects(),
+                                    pd_expense_categories=PD_EXPENSE_CATEGORIES,
                                     initial_category_id=request.form.get('category_id', type=int))
 
         # Get selected targets
@@ -2802,7 +2797,7 @@ def add_expense():
         # as allowing everything, matching the JS fallback.
         picked_category = ExpenseCategory.query.get(form.category_id.data)
         category_opts = picked_category.option_flags if picked_category else \
-            {'invoice': True, 'purchase': True, 'shift': True, 'overhead': True, 'monthly': True}
+            {'invoice': True, 'purchase': True, 'shift': True, 'overhead': True, 'monthly': True, 'pd': True}
         if is_overhead and not category_opts['overhead']:
             flash(f'The "{picked_category.name}" category does not allow BOM Overhead expenses. '
                   f'Pick a different category, or enable it on Expense Categories.', 'danger')
@@ -2813,6 +2808,10 @@ def add_expense():
             return redirect(url_for('accounting.add_expense'))
         if request.form.get('shift_to_inventory') == '1' and not category_opts['shift']:
             flash(f'The "{picked_category.name}" category does not allow shifting to inventory cost. '
+                  f'Pick a different category, or enable it on Expense Categories.', 'danger')
+            return redirect(url_for('accounting.add_expense'))
+        if request.form.get('shift_to_pd') == '1' and not category_opts['pd']:
+            flash(f'The "{picked_category.name}" category does not allow Shift Expense to PD Project. '
                   f'Pick a different category, or enable it on Expense Categories.', 'danger')
             return redirect(url_for('accounting.add_expense'))
         if (request.form.get('payment_transfer_type') == 'bill' and request.form.get('payment_transfer_target_id')
@@ -2830,13 +2829,17 @@ def add_expense():
         if category_opts['shift']: option_labels.append('Shift Directly to Inventory Cost')
         if category_opts['overhead']: option_labels.append('BOM Overhead Expense')
         if category_opts['monthly']: option_labels.append('Divide Expense Across Entire Month')
+        # PD shift is admin-only (same as the Expenses list action), so it
+        # only counts as an available option for admins.
+        if category_opts['pd'] and is_admin: option_labels.append('Shift Expense to PD Project')
         if option_labels:
             used_transfer = (request.form.get('payment_transfer_type') == 'bill'
                               and request.form.get('payment_transfer_target_id') and category_opts['purchase'])
             used_shift = request.form.get('shift_to_inventory') == '1' and category_opts['shift']
             used_overhead = is_overhead and category_opts['overhead']
             used_monthly = form.is_monthly_divided.data and category_opts['monthly']
-            if not (used_transfer or used_shift or used_overhead or used_monthly):
+            used_pd = request.form.get('shift_to_pd') == '1' and category_opts['pd'] and is_admin
+            if not (used_transfer or used_shift or used_overhead or used_monthly or used_pd):
                 flash(f'The "{picked_category.name}" category requires selecting one of: '
                       f'{", ".join(option_labels)}.', 'danger')
                 return redirect(url_for('accounting.add_expense'))
@@ -3077,6 +3080,27 @@ def add_expense():
                 return redirect(url_for('accounting.add_expense'))
         # ─────────────────────────────────────────────────────────────────
 
+        # ── Shift Expense to PD Project (inline) ───────────────────────────
+        # Same as the "Shift to PD Project" action on the Expenses list, done
+        # in the same save. Admin only, single expense row, and not together
+        # with Shift to Inventory (the list page never allows both either).
+        pd_note = None
+        if (is_admin and len(created_expenses) == 1 and category_opts['pd']
+                and request.form.get('shift_to_pd') == '1'):
+            if request.form.get('shift_to_inventory') == '1':
+                db.session.rollback()
+                flash('Expense not created — it cannot be shifted to both inventory cost and a PD Project. '
+                      'Choose one.', 'danger')
+                return redirect(url_for('accounting.add_expense'))
+            try:
+                pd_note = _apply_pd_shift(created_expenses[0], request.form.get('pd_project_id', type=int),
+                                          request.form.get('pd_expense_category'))
+            except ValueError as e:
+                db.session.rollback()
+                flash(f'Expense not created — {e}', 'danger')
+                return redirect(url_for('accounting.add_expense'))
+        # ─────────────────────────────────────────────────────────────────
+
         # Update expense settings next number
         settings.next_number = next_expense_num
 
@@ -3113,6 +3137,8 @@ def add_expense():
 
             if shift_note:
                 flash_msg = f'{flash_msg} Shifted to inventory: {shift_note}'
+            if pd_note:
+                flash_msg = f'{flash_msg} Shifted to PD Project {pd_note}.'
             flash(flash_msg, 'success')
             return redirect(url_for('accounting.expenses'))
         except Exception as e:
@@ -3128,6 +3154,7 @@ def add_expense():
     return render_template('accounting/add_expense.html', form=form, expense_accounts=expense_accounts,
                            expense_sources=expense_sources, inventory_items=inventory_items,
                            category_options=category_options, category_tree=_expense_category_tree(),
+                           active_pd_projects=_active_pd_projects(), pd_expense_categories=PD_EXPENSE_CATEGORIES,
                            initial_category_id=None)
 
 
@@ -3887,7 +3914,7 @@ def edit_expense(id):
         # script already hides/unchecks these client-side).
         picked_category = ExpenseCategory.query.get(expense.category_id)
         category_opts = picked_category.option_flags if picked_category else \
-            {'invoice': True, 'purchase': True, 'shift': True, 'overhead': True, 'monthly': True}
+            {'invoice': True, 'purchase': True, 'shift': True, 'overhead': True, 'monthly': True, 'pd': True}
         if new_is_overhead and not category_opts['overhead']:
             db.session.rollback()
             flash(f'The "{picked_category.name}" category does not allow BOM Overhead expenses. '
@@ -3901,6 +3928,11 @@ def edit_expense(id):
         if request.form.get('shift_to_inventory') == '1' and not category_opts['shift']:
             db.session.rollback()
             flash(f'The "{picked_category.name}" category does not allow shifting to inventory cost. '
+                  f'Pick a different category, or enable it on Expense Categories.', 'danger')
+            return redirect(url_for('accounting.edit_expense', id=id))
+        if request.form.get('shift_to_pd') == '1' and not category_opts['pd']:
+            db.session.rollback()
+            flash(f'The "{picked_category.name}" category does not allow Shift Expense to PD Project. '
                   f'Pick a different category, or enable it on Expense Categories.', 'danger')
             return redirect(url_for('accounting.edit_expense', id=id))
         if (request.form.get('payment_transfer_type') == 'bill' and request.form.get('payment_transfer_target_id')
@@ -3921,12 +3953,16 @@ def edit_expense(id):
         # already used up), one of them must actually be used - matches the
         # form's own submit-time check.
         already_shifted = getattr(expense, 'is_inventory_shifted', False)
+        already_pd_shifted = bool(getattr(expense, 'is_shifted', False))
+        edit_is_admin = getattr(current_user, 'is_admin', False)
         option_labels = []
         if category_opts['purchase']: option_labels.append('Add to Purchase Payment')
         if category_opts['invoice']: option_labels.append('Add to Invoice Payment')
         if category_opts['shift'] and not already_shifted: option_labels.append('Shift Directly to Inventory Cost')
         if category_opts['overhead']: option_labels.append('BOM Overhead Expense')
         if category_opts['monthly']: option_labels.append('Divide Expense Across Entire Month')
+        if category_opts['pd'] and edit_is_admin and not already_pd_shifted:
+            option_labels.append('Shift Expense to PD Project')
         if option_labels:
             transfer_target_id = request.form.get('payment_transfer_target_id', type=int)
             used_purchase = (request.form.get('payment_transfer_type') == 'bill'
@@ -3937,7 +3973,9 @@ def edit_expense(id):
             used_shift = request.form.get('shift_to_inventory') == '1' and category_opts['shift'] and not already_shifted
             used_overhead = new_is_overhead and category_opts['overhead']
             used_monthly = form.is_monthly_divided.data and category_opts['monthly']
-            if not (used_purchase or used_invoice or used_shift or used_overhead or used_monthly):
+            used_pd = (request.form.get('shift_to_pd') == '1' and category_opts['pd']
+                       and edit_is_admin and not already_pd_shifted)
+            if not (used_purchase or used_invoice or used_shift or used_overhead or used_monthly or used_pd):
                 db.session.rollback()
                 flash(f'The "{picked_category.name}" category requires selecting one of: '
                       f'{", ".join(option_labels)}.', 'danger')
@@ -4112,6 +4150,26 @@ def edit_expense(id):
                 return redirect(url_for('accounting.edit_expense', id=expense.id))
         # ─────────────────────────────────────────────────────────────────
 
+        # ── Shift Expense to PD Project (inline) ───────────────────────────
+        # Same as on Add Expense - only for an expense not already shifted
+        # to a PD Project or to inventory, and not split into several rows.
+        pd_note = None
+        if (edit_is_admin and not already_pd_shifted and category_opts['pd'] and not created_expenses
+                and request.form.get('shift_to_pd') == '1'):
+            if request.form.get('shift_to_inventory') == '1' or getattr(expense, 'is_inventory_shifted', False):
+                db.session.rollback()
+                flash('Expense not updated — it cannot be shifted to both inventory cost and a PD Project. '
+                      'Choose one.', 'danger')
+                return redirect(url_for('accounting.edit_expense', id=expense.id))
+            try:
+                pd_note = _apply_pd_shift(expense, request.form.get('pd_project_id', type=int),
+                                          request.form.get('pd_expense_category'))
+            except ValueError as e:
+                db.session.rollback()
+                flash(f'Expense not updated — {e}', 'danger')
+                return redirect(url_for('accounting.edit_expense', id=expense.id))
+        # ─────────────────────────────────────────────────────────────────
+
         # Update Manufacturing Order costs if MO association or amount changed
         from app.models import ManufacturingOrder
         
@@ -4249,6 +4307,7 @@ def edit_expense(id):
                            expense_accounts=expense_accounts, existing_account_id=existing_account_id,
                            existing_payment_transfer=existing_payment_transfer, inventory_items=inventory_items,
                            category_options=category_options, category_tree=_expense_category_tree(),
+                           active_pd_projects=_active_pd_projects(), pd_expense_categories=PD_EXPENSE_CATEGORIES,
                            initial_category_id=expense.category_id)
 
 def _ordered_expense_categories():
@@ -4290,6 +4349,55 @@ def _expense_category_choices(active_only=True):
     return choices
 
 
+# Project Expense Categories offered when shifting an expense to a PD
+# Project (Expenses list modal and the inline option on Add/Edit Expense).
+PD_EXPENSE_CATEGORIES = [
+    'Sample Purchase', 'Reverse Engineering', 'Measurement', 'CAD', 'Prototype', 'Testing',
+    'Mold', 'Die', 'Fixture', 'Pattern', 'Jig', 'Gauge',
+    'Raw Material', 'Purchased Components', 'Machining', 'Casting',
+    'Electricity', 'Maintenance', 'Factory Wages',
+    'Office Rent', 'Salaries', 'Marketing', 'Travel',
+    'Scrap', 'Prototype Failure', 'Warranty'
+]
+
+
+def _active_pd_projects():
+    """Draft/Active PD Projects an expense can be shifted to."""
+    from app.models import PDProject
+    return PDProject.query.filter(PDProject.status.in_(['Draft', 'Active'])).all()
+
+
+def _apply_pd_shift(expense, project_id, pd_category):
+    """Shift `expense` to a PD Project - same effect as
+    product_development.shift_expense (the Expenses list "Shift to PD
+    Project" action): creates the ProductDevelopmentExpense and marks the
+    expense as shifted. Does not commit. Returns the project's PDV code;
+    raises ValueError with a user-facing message on bad input."""
+    from app.models import PDProject, ProductDevelopmentExpense
+    if not project_id:
+        raise ValueError('select a PD Project to shift this expense to.')
+    if not pd_category or pd_category not in PD_EXPENSE_CATEGORIES:
+        raise ValueError('select a Project Expense Category for the PD shift.')
+    project = PDProject.query.get(project_id)
+    if not project:
+        raise ValueError('the selected PD Project was not found.')
+
+    pd_expense = ProductDevelopmentExpense(
+        project_id=project.id,
+        expense_category=pd_category,
+        amount=expense.amount,
+        description=f"[Shifted] {expense.description or ''}",
+        cost_center='Project',
+        item_code=project.sku.sku if project.sku else None
+    )
+    db.session.add(pd_expense)
+    db.session.flush()
+    expense.is_shifted = True
+    expense.shifted_to_pd_id = project.id
+    expense.pd_expense_id = pd_expense.id
+    return project.pdv_code
+
+
 def _expense_category_options_map():
     """{category_id: {'invoice':, 'purchase':, 'shift':, 'overhead':}} for
     every category - embedded as JSON on Add/Edit Expense so the page can
@@ -4307,6 +4415,91 @@ def _expense_category_tree():
     reasoning as _expense_category_choices."""
     return [{'id': cat.id, 'name': cat.name, 'parent_id': cat.parent_id}
             for cat in _ordered_expense_categories() if cat.is_active and not cat.is_draft]
+
+
+@bp.route('/expense-categories/create-quick', methods=['POST'])
+@login_required
+@permission_required('accounting', action='add')
+def create_expense_category_quick():
+    """AJAX endpoint behind the "+" (Quick Add Category) popup on Add/Edit
+    Expense. Body is JSON:
+        {parent_id: <existing parent id> | null,
+         parent_name, parent_description, options: {invoice, purchase,
+         shift, overhead, monthly}   - only used when creating a new parent,
+         subs: [{name, description}, ...]   - optional}
+    Either picks an existing parent or creates a new one, then creates any
+    sub-categories under it. Returns the tree rows + option flags so the
+    page can add them to its Category/Sub-Category dropdowns without a
+    reload."""
+    from app.models import ExpenseCategory
+
+    data = request.get_json(silent=True) or {}
+    parent_id = data.get('parent_id')
+    parent_name = (data.get('parent_name') or '').strip()
+    parent_description = (data.get('parent_description') or '').strip()
+    options = data.get('options') or {}
+    subs = [{'name': (s.get('name') or '').strip(),
+             'description': (s.get('description') or '').strip()}
+            for s in (data.get('subs') or []) if isinstance(s, dict)]
+    subs = [s for s in subs if s['name']]
+
+    def name_taken(name):
+        return ExpenseCategory.query.filter(db.func.lower(ExpenseCategory.name) == name.lower()).first()
+
+    # Validate everything up front so nothing is half-created.
+    parent = None
+    if parent_id:
+        parent = ExpenseCategory.query.get(int(parent_id))
+        if not parent or parent.parent_id:
+            return jsonify({'success': False, 'message': 'Selected parent category was not found.'})
+    else:
+        if not parent_name:
+            return jsonify({'success': False, 'message': 'Select or enter a parent category.'})
+        if name_taken(parent_name):
+            return jsonify({'success': False, 'message': f'A category named "{parent_name}" already exists.'})
+    if parent and not subs:
+        return jsonify({'success': False, 'message': 'Add at least one sub-category under the existing parent.'})
+
+    seen = {parent_name.lower()} if not parent else set()
+    for s in subs:
+        key = s['name'].lower()
+        if key in seen or name_taken(s['name']):
+            return jsonify({'success': False, 'message': f'A category named "{s["name"]}" already exists.'})
+        seen.add(key)
+
+    created_parent = False
+    if not parent:
+        parent = ExpenseCategory(
+            name=parent_name,
+            description=parent_description or None,
+            allow_invoice_payment=bool(options.get('invoice')),
+            allow_purchase_payment=bool(options.get('purchase')),
+            allow_inventory_shift=bool(options.get('shift')),
+            allow_bom_overhead=bool(options.get('overhead')),
+            allow_monthly_divided=bool(options.get('monthly')),
+            allow_pd_shift=bool(options.get('pd')),
+        )
+        db.session.add(parent)
+        db.session.flush()
+        created_parent = True
+
+    new_subs = []
+    for s in subs:
+        sub = ExpenseCategory(name=s['name'], description=s['description'] or None, parent_id=parent.id)
+        db.session.add(sub)
+        new_subs.append(sub)
+    db.session.commit()
+
+    if created_parent:
+        log_activity('Accounting', f'Created Expense Category: {parent.name}', f'ID: {parent.id} (quick add from expense form)')
+    for sub in new_subs:
+        log_activity('Accounting', f'Created Expense Sub-Category: {sub.name}', f'ID: {sub.id}, Parent: {parent.name}')
+
+    def row(cat):
+        return {'id': cat.id, 'name': cat.name, 'parent_id': cat.parent_id, 'options': cat.option_flags}
+
+    return jsonify({'success': True, 'created_parent': created_parent,
+                    'parent': row(parent), 'subs': [row(s) for s in new_subs]})
 
 
 @bp.route('/expense-categories')
@@ -4350,15 +4543,20 @@ def add_expense_category():
             return render_template('accounting/add_expense_category.html', form=form,
                                    category_type=category_type, main_categories=main_categories)
 
+        # Allowed options are set on parent categories only - a sub-category
+        # inherits its parent's (see ExpenseCategory.option_flags), so its
+        # own flags are always stored off.
+        is_sub = category_type == 'sub'
         category = ExpenseCategory(
             name=form.name.data,
             description=form.description.data,
-            parent_id=form.parent_id.data if (category_type == 'sub' and form.parent_id.data) else None,
-            allow_invoice_payment=form.allow_invoice_payment.data,
-            allow_purchase_payment=form.allow_purchase_payment.data,
-            allow_inventory_shift=form.allow_inventory_shift.data,
-            allow_bom_overhead=form.allow_bom_overhead.data,
-            allow_monthly_divided=form.allow_monthly_divided.data,
+            parent_id=form.parent_id.data if (is_sub and form.parent_id.data) else None,
+            allow_invoice_payment=form.allow_invoice_payment.data and not is_sub,
+            allow_purchase_payment=form.allow_purchase_payment.data and not is_sub,
+            allow_inventory_shift=form.allow_inventory_shift.data and not is_sub,
+            allow_bom_overhead=form.allow_bom_overhead.data and not is_sub,
+            allow_monthly_divided=form.allow_monthly_divided.data and not is_sub,
+            allow_pd_shift=form.allow_pd_shift.data and not is_sub,
         )
         db.session.add(category)
         db.session.commit()
@@ -4498,11 +4696,14 @@ def edit_expense_category(id):
         category.name = form.name.data
         category.description = form.description.data
         category.parent_id = new_parent_id
-        category.allow_invoice_payment = form.allow_invoice_payment.data
-        category.allow_purchase_payment = form.allow_purchase_payment.data
-        category.allow_inventory_shift = form.allow_inventory_shift.data
-        category.allow_bom_overhead = form.allow_bom_overhead.data
-        category.allow_monthly_divided = form.allow_monthly_divided.data
+        # Sub-categories inherit their parent's allowed options.
+        is_sub = bool(new_parent_id)
+        category.allow_invoice_payment = form.allow_invoice_payment.data and not is_sub
+        category.allow_purchase_payment = form.allow_purchase_payment.data and not is_sub
+        category.allow_inventory_shift = form.allow_inventory_shift.data and not is_sub
+        category.allow_bom_overhead = form.allow_bom_overhead.data and not is_sub
+        category.allow_monthly_divided = form.allow_monthly_divided.data and not is_sub
+        category.allow_pd_shift = form.allow_pd_shift.data and not is_sub
         db.session.commit()
         log_activity('Accounting', f'Updated Expense Category: {category.name}', f'ID: {category.id}')
         flash('Expense category updated successfully', 'success')
@@ -4574,6 +4775,7 @@ def bulk_upload_expense_categories():
                 category.allow_inventory_shift = parse_yes_no(row_dict.get('allow_inventory_shift'))
                 category.allow_bom_overhead = parse_yes_no(row_dict.get('allow_bom_overhead'))
                 category.allow_monthly_divided = parse_yes_no(row_dict.get('allow_monthly_divided'))
+                category.allow_pd_shift = parse_yes_no(row_dict.get('allow_pd_shift'))
 
             # Pass 1: main categories (blank parent_name) - created first so
             # pass 2 can resolve a sub-category's parent regardless of which
@@ -4711,7 +4913,7 @@ def download_expense_category_sample():
 
     headers = ['name', 'parent_name', 'description', 'allow_invoice_payment',
                'allow_purchase_payment', 'allow_inventory_shift', 'allow_bom_overhead',
-               'allow_monthly_divided']
+               'allow_monthly_divided', 'allow_pd_shift']
     ws.append(headers)
     header_font = Font(bold=True, color='FFFFFF')
     header_fill = PatternFill(start_color='0B8793', end_color='0B8793', fill_type='solid')
@@ -4723,11 +4925,11 @@ def download_expense_category_sample():
     # sub-category on the next row pointing back at it by name - and one
     # standalone main category with no sub-categories at all.
     sample_rows = [
-        ['Utilities', '', 'Electricity, gas, water etc.', 'No', 'No', 'No', 'No', 'Yes'],
-        ['Electricity Bill', 'Utilities', 'Monthly electricity bill', 'No', 'No', 'No', 'No', 'Yes'],
-        ['Raw Material', '', 'Materials bought for manufacturing', 'No', 'Yes', 'No', 'Yes', 'No'],
-        ['Steel Purchase', 'Raw Material', 'Steel sheets and rods', 'No', 'Yes', 'Yes', 'Yes', 'No'],
-        ['Office Rent', '', 'Monthly office/factory rent', 'No', 'No', 'No', 'No', 'Yes'],
+        ['Utilities', '', 'Electricity, gas, water etc.', 'No', 'No', 'No', 'No', 'Yes', 'No'],
+        ['Electricity Bill', 'Utilities', 'Monthly electricity bill', 'No', 'No', 'No', 'No', 'Yes', 'No'],
+        ['Raw Material', '', 'Materials bought for manufacturing', 'No', 'Yes', 'No', 'Yes', 'No', 'No'],
+        ['Steel Purchase', 'Raw Material', 'Steel sheets and rods', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No'],
+        ['Office Rent', '', 'Monthly office/factory rent', 'No', 'No', 'No', 'No', 'Yes', 'No'],
     ]
     for row in sample_rows:
         ws.append(row)
@@ -4748,11 +4950,12 @@ def download_expense_category_sample():
                          'To create a sub-category, put the exact name of an existing '
                          'main category here (add the main category as its own row first).'),
         ('description', 'Optional. Free text.'),
-        ('allow_invoice_payment', 'Yes or No - allow "Add to Invoice Payment" on Add/Edit Expense.'),
-        ('allow_purchase_payment', 'Yes or No - allow "Add to Purchase Payment" on Add/Edit Expense.'),
-        ('allow_inventory_shift', 'Yes or No - allow "Shift Directly to Inventory Cost".'),
-        ('allow_bom_overhead', 'Yes or No - allow "BOM Overhead Expense".'),
-        ('allow_monthly_divided', 'Yes or No - allow "Divide Expense Across Entire Month".'),
+        ('allow_invoice_payment', 'Yes or No - allow "Add to Invoice Payment" on Add/Edit Expense. Parent categories only - sub-categories inherit the parent category options.'),
+        ('allow_purchase_payment', 'Yes or No - allow "Add to Purchase Payment" on Add/Edit Expense. Parent categories only - sub-categories inherit the parent category options.'),
+        ('allow_inventory_shift', 'Yes or No - allow "Shift Directly to Inventory Cost". Parent categories only - sub-categories inherit the parent category options.'),
+        ('allow_bom_overhead', 'Yes or No - allow "BOM Overhead Expense". Parent categories only - sub-categories inherit the parent category options.'),
+        ('allow_monthly_divided', 'Yes or No - allow "Divide Expense Across Entire Month". Parent categories only - sub-categories inherit the parent category options.'),
+        ('allow_pd_shift', 'Yes or No - allow "Shift Expense to PD Project". Parent categories only - sub-categories inherit the parent category options.'),
     ]
     for col, meaning in notes:
         notes_ws.append([col, meaning])

@@ -33,8 +33,13 @@
                         </div>
 
                         <hr class="my-4">
+                        <div class="alert alert-info small mb-3" id="optionsInheritedNote" style="display:none;">
+                            <i class="bi bi-info-circle me-1"></i> Allowed Options on Add/Edit Expense are set on the
+                            <strong>Parent Category</strong>. As a sub-category, this one automatically uses the same options as its parent.
+                        </div>
+                        <div id="optionsSection">
                         <h6 class="fw-bold mb-2"><i class="bi bi-toggles me-1"></i> Allowed Options on Add/Edit Expense</h6>
-                        <p class="text-muted small mb-3">When this category is picked on an expense, only the options checked here are offered. Leave all unchecked for a plain expense with no special options.</p>
+                        <p class="text-muted small mb-3">When this parent category is picked on an expense, only the options checked here are offered. All of its sub-categories use the same options. Leave all unchecked for a plain expense with no special options.</p>
                         <div class="row g-2 mb-3">
                             <div class="col-md-6">
                                 <div class="form-check border rounded p-2">
@@ -71,6 +76,14 @@
                                     <div class="form-text mt-0">Check this to divide this expense equally across a date range and display it as daily expense.</div>
                                 </div>
                             </div>
+                            <div class="col-md-6">
+                                <div class="form-check border rounded p-2">
+                                    {{ form.allow_pd_shift(class="form-check-input") }}
+                                    <label class="form-check-label" for="allow_pd_shift">Shift Expense to PD Project</label>
+                                    <div class="form-text mt-0">Move the expense into a Product Development project's expenses (pick the PD Project and Project Expense Category).</div>
+                                </div>
+                            </div>
+                        </div>
                         </div>
 
                         <button type="submit" class="btn btn-success">Update Category</button>
@@ -81,4 +94,23 @@
         </div>
     </div>
 </div>
+<script>
+    // Options are only configured on parent categories - hide them while
+    // this category is set to be a sub-category (it inherits its parent's).
+    (function () {
+        const parentSelect = document.getElementById('parent_id');
+        const section = document.getElementById('optionsSection');
+        const note = document.getElementById('optionsInheritedNote');
+        if (!parentSelect) return;
+        function toggle() {
+            const isSub = !!parentSelect.value && parentSelect.value !== '0';
+            section.style.display = isSub ? 'none' : '';
+            note.style.display = isSub ? '' : 'none';
+        }
+        // jQuery's .on also catches select2-triggered changes.
+        if (window.jQuery) $(parentSelect).on('change', toggle);
+        else parentSelect.addEventListener('change', toggle);
+        toggle();
+    })();
+</script>
 {% endblock %}

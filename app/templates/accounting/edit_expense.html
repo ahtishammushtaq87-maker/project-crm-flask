@@ -148,10 +148,17 @@
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Category</label>
-                                <select id="category_main_select" class="form-control"></select>
-                                <small class="text-muted">
-                                    <a href="{{ url_for('accounting.expense_categories') }}" target="_blank">Manage Categories</a>
-                                </small>
+                                <div class="d-flex gap-2">
+                                    <div class="flex-grow-1" style="min-width:0;">
+                                        <select id="category_main_select" class="form-control"></select>
+                                    </div>
+                                    {% if current_user.has_permission('accounting', 'add') %}
+                                    <button type="button" class="btn btn-primary text-nowrap d-inline-flex align-items-center gap-1 px-3 shadow-sm"
+                                            data-bs-toggle="modal" data-bs-target="#categoryQuickAddModal" title="Add a new category or sub-category">
+                                        <i class="bi bi-plus-circle"></i><span class="d-none d-sm-inline">New Category</span>
+                                    </button>
+                                    {% endif %}
+                                </div>
                             </div>
                         </div>
                         <div class="row" id="category_sub_row" style="display:none;">
@@ -411,6 +418,51 @@
                         {% endif %}
                         {% endif %}
 
+                        {% if current_user.is_admin %}
+                        {% if expense is defined and expense.is_shifted %}
+                        <hr class="my-4">
+                        <div class="alert alert-info mb-0">
+                            <i class="fas fa-share-square me-1"></i> This expense is already shifted to a PD Project.
+                        </div>
+                        {% else %}
+                        <div id="shiftToPdSection" style="display:none;">
+                        <hr class="my-4">
+                        <div class="mb-3">
+                            <div class="form-check form-switch px-4 py-2 border rounded bg-light">
+                                <input class="form-check-input ms-0 me-3" type="checkbox" name="shift_to_pd" id="shift_to_pd" value="1">
+                                <label class="form-check-label fw-bold" for="shift_to_pd">Shift Expense to PD Project</label>
+                                <div class="form-text mt-0 ms-4">Move this expense's amount into a Product Development project's expenses when it's saved, instead of shifting it later from the Expenses list.</div>
+                            </div>
+                        </div>
+                        <div id="inline_pd_container" style="display:none;">
+                            <div class="p-3 border rounded mb-3" style="background:#f3f6ff;">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label for="inline_pd_project" class="form-label fw-semibold">Select PD Project <span class="text-danger">*</span></label>
+                                        <select name="pd_project_id" id="inline_pd_project" class="form-select">
+                                            <option value="">-- Select Active Project --</option>
+                                            {% for project in active_pd_projects %}
+                                            <option value="{{ project.id }}">{{ project.pdv_code }} - {{ project.product_name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="inline_pd_category" class="form-label fw-semibold">Project Expense Category <span class="text-danger">*</span></label>
+                                        <select name="pd_expense_category" id="inline_pd_category" class="form-select">
+                                            <option value="">-- Select Category --</option>
+                                            {% for cat in pd_expense_categories %}
+                                            <option value="{{ cat }}">{{ cat }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        </div>
+                        <!-- /shiftToPdSection -->
+                        {% endif %}
+                        {% endif %}
+
                         <div class="mb-3 d-flex gap-2">
                             <button type="submit" class="btn btn-success">Update Expense</button>
                             <a href="{{ url_for('accounting.expenses') }}" class="btn btn-secondary">Cancel</a>
@@ -424,6 +476,7 @@
 </div>
 
 {% include 'accounting/_account_manager_modal.html' %}
+{% include 'accounting/_category_quick_add_modal.html' %}
 {% endblock %}
 
 {% block extra_js %}
@@ -667,6 +720,50 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // ── Shift Expense to PD Project (inline) ────────────────────────────
+    // Toggle shows the PD Project + Project Expense Category pickers; both
+    // are required while it's ticked. Can't be combined with Shift to
+    // Inventory (the Expenses list never allows both either).
+    (function () {
+        const pdCheckbox = document.getElementById('shift_to_pd');
+        const pdContainer = document.getElementById('inline_pd_container');
+        if (!pdCheckbox || !pdContainer) return;
+        const projectSel = document.getElementById('inline_pd_project');
+        const catSel = document.getElementById('inline_pd_category');
+        const invCheckbox = document.getElementById('shift_to_inventory');
+
+        $(projectSel).select2({ theme: 'bootstrap-5', width: '100%', placeholder: '-- Select Active Project --', allowClear: true });
+        $(catSel).select2({ theme: 'bootstrap-5', width: '100%', placeholder: '-- Select Category --', allowClear: true });
+
+        function togglePd() {
+            pdContainer.style.display = pdCheckbox.checked ? '' : 'none';
+            if (pdCheckbox.checked && invCheckbox && invCheckbox.checked) {
+                invCheckbox.checked = false;
+                invCheckbox.dispatchEvent(new Event('change'));
+            }
+        }
+        pdCheckbox.addEventListener('change', togglePd);
+        if (invCheckbox) {
+            invCheckbox.addEventListener('change', function () {
+                if (invCheckbox.checked && pdCheckbox.checked) {
+                    pdCheckbox.checked = false;
+                    togglePd();
+                }
+            });
+        }
+        togglePd();
+
+        document.getElementById('expenseForm').addEventListener('submit', function (e) {
+            const section = document.getElementById('shiftToPdSection');
+            if (!pdCheckbox.checked || (section && section.style.display === 'none')) return;
+            if (!projectSel.value || !catSel.value) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                alert('Select a PD Project and a Project Expense Category, or untick "Shift Expense to PD Project".');
+            }
+        });
+    })();
+
     // ── Category / Sub-Category dropdown pair + category-restricted options ──
     // Pick a main Category first; if it has any sub-categories a second
     // "Sub-Category" dropdown appears right under it. Whichever is the most
@@ -685,6 +782,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const shiftSection = document.getElementById('shiftToInventorySection');
         const monthlyCheckbox = document.getElementById('is_monthly_divided');
         const shiftCheckbox = document.getElementById('shift_to_inventory');
+        const pdSection = document.getElementById('shiftToPdSection');
+        const pdCheckbox = document.getElementById('shift_to_pd');
         if (!mainSelect) return;
 
         const tree = window.CATEGORY_TREE || [];
@@ -748,7 +847,7 @@ document.addEventListener('DOMContentLoaded', function() {
         function applyCategoryRestrictions() {
             const catId = hiddenInput.value;
             const opts = (window.CATEGORY_OPTIONS && window.CATEGORY_OPTIONS[catId]) ||
-                { invoice: false, purchase: false, shift: false, overhead: false, monthly: false };
+                { invoice: false, purchase: false, shift: false, overhead: false, monthly: false, pd: false };
 
             if (monthlySection) {
                 monthlySection.style.display = opts.monthly ? '' : 'none';
@@ -771,26 +870,29 @@ document.addEventListener('DOMContentLoaded', function() {
                     shiftCheckbox.dispatchEvent(new Event('change'));
                 }
             }
+            if (pdSection) {
+                pdSection.style.display = opts.pd ? '' : 'none';
+                if (!isFirstPass && !opts.pd && pdCheckbox && pdCheckbox.checked) {
+                    pdCheckbox.checked = false;
+                    pdCheckbox.dispatchEvent(new Event('change'));
+                }
+            }
             window.__categoryTransferAllowed = { sale: opts.invoice, bill: opts.purchase };
             if (window.__applyTransferGating) window.__applyTransferGating();
             isFirstPass = false;
         }
 
-        // Assign options only ever show for a category that's actually been
-        // picked all the way: a main category with no sub-categories
-        // resolves immediately (there's nothing else to wait for), but a
-        // main category that DOES have sub-categories shows nothing until
-        // the user also makes a choice in Sub-Category — either a real
-        // sub-category, or explicitly "— No Sub-Category —" to assign the
-        // expense to the main category itself.
+        // Allowed options are configured on the parent (main) category and
+        // every sub-category inherits them, so they open as soon as the
+        // parent is picked - the Sub-Category dropdown is optional and
+        // doesn't change which options show.
         // select2 drives selection through jQuery's event system, not a
         // plain native 'change' — use $(...).on('change', ...) here (same
         // pattern as the other select2 dropdowns on this form), or a pick
         // made through the select2 UI never reaches this listener.
         $(mainSelect).on('change', function () {
-            const hasSubs = (subsByParent[mainSelect.value] || []).length > 0;
             populateSub(mainSelect.value, null);
-            hiddenInput.value = hasSubs ? '' : (mainSelect.value || '');
+            hiddenInput.value = mainSelect.value || '';
             applyCategoryRestrictions();
         });
         $(subSelect).on('change', function () {
@@ -812,6 +914,32 @@ document.addEventListener('DOMContentLoaded', function() {
         hiddenInput.value = initSubId || initMainId || '';
         setTimeout(applyCategoryRestrictions, 0);
 
+        // Called by the Quick Add Category popup (_category_quick_add_modal.html)
+        // after it creates a parent and/or sub-categories: merge them into
+        // this page's tree + options map, then select the parent (and the
+        // new sub-category too, when exactly one was added).
+        window.__addCategoriesToPicker = function (parent, subs) {
+            [parent].concat(subs || []).forEach(function (c) {
+                window.CATEGORY_OPTIONS = window.CATEGORY_OPTIONS || {};
+                window.CATEGORY_OPTIONS[c.id] = c.options;
+                if (tree.some(function (t) { return String(t.id) === String(c.id); })) return;
+                const node = { id: c.id, name: c.name, parent_id: c.parent_id };
+                tree.push(node);
+                if (node.parent_id) {
+                    (subsByParent[node.parent_id] = subsByParent[node.parent_id] || []).push(node);
+                    subsByParent[node.parent_id].sort(function (a, b) { return a.name.localeCompare(b.name); });
+                } else {
+                    mains.push(node);
+                    mains.sort(function (a, b) { return a.name.localeCompare(b.name); });
+                }
+            });
+            const subId = (subs && subs.length === 1) ? subs[0].id : '';
+            populateMain(parent.id);
+            populateSub(parent.id, subId);
+            hiddenInput.value = subId || parent.id;
+            applyCategoryRestrictions();
+        };
+
         // If the picked category reveals any of these options, at least one
         // of them must actually be used — an expense can't go through as
         // fully plain once a category with special options is selected.
@@ -823,6 +951,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 { section: monthlySection, checkbox: monthlyCheckbox, label: 'Divide Expense Across Entire Month' },
                 { section: bomSection, checkbox: isBomOverheadCheckbox, label: 'BOM Overhead Expense' },
                 { section: shiftSection, checkbox: shiftCheckbox, label: 'Shift Directly to Inventory Cost' },
+                { section: pdSection, checkbox: pdCheckbox, label: 'Shift Expense to PD Project' },
                 { section: paymentTransferBlock, checkbox: paymentTransferEnabled, label: 'Add to Invoice/Purchase Payment' },
             ];
             const visible = groups.filter(function (g) { return g.section && g.section.style.display !== 'none'; });

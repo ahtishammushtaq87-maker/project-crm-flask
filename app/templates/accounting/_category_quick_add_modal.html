@@ -1,0 +1,215 @@
+{# Quick Add Category popup for Add/Edit Expense - opened by the "+" button
+   next to the Category dropdown. Pick an existing parent category from the
+   searchable dropdown, or type a new name to create one (with description
+   and its Allowed Options), then optionally add sub-categories (name +
+   description) under it. Saves through accounting.create_expense_category_quick
+   and hands the result to window.__addCategoriesToPicker (defined by the
+   including page's Category/Sub-Category script) so the new categories show
+   up and get selected without a page reload. #}
+<div class="modal fade" id="categoryQuickAddModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-folder-plus me-2"></i>Add Category</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="cqaError" class="alert alert-danger py-2 d-none"></div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Parent Category <span class="text-danger">*</span></label>
+                    <select id="cqaParent" class="form-control"></select>
+                    <div class="form-text">Search an existing parent category, or type a new name and pick "Add new parent" to create it.</div>
+                </div>
+
+                <div id="cqaNewParentFields" style="display:none;">
+                    <div class="mb-3">
+                        <label class="form-label">Parent Description</label>
+                        <textarea id="cqaParentDesc" class="form-control" rows="2" placeholder="Optional description for this parent category"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold mb-1"><i class="bi bi-toggles me-1"></i>Allowed Options on Add/Edit Expense</label>
+                        <div class="form-text mt-0 mb-2">Sub-categories under this parent use the same options. Leave all unchecked for a plain expense.</div>
+                        <div class="row g-2">
+                            <div class="col-md-6"><div class="form-check border rounded p-2 ps-4">
+                                <input class="form-check-input cqa-opt" type="checkbox" id="cqaOptInvoice" data-opt="invoice">
+                                <label class="form-check-label" for="cqaOptInvoice">Add to Invoice Payment</label>
+                            </div></div>
+                            <div class="col-md-6"><div class="form-check border rounded p-2 ps-4">
+                                <input class="form-check-input cqa-opt" type="checkbox" id="cqaOptPurchase" data-opt="purchase">
+                                <label class="form-check-label" for="cqaOptPurchase">Add to Purchase Payment</label>
+                            </div></div>
+                            <div class="col-md-6"><div class="form-check border rounded p-2 ps-4">
+                                <input class="form-check-input cqa-opt" type="checkbox" id="cqaOptShift" data-opt="shift">
+                                <label class="form-check-label" for="cqaOptShift">Shift Directly to Inventory Cost</label>
+                            </div></div>
+                            <div class="col-md-6"><div class="form-check border rounded p-2 ps-4">
+                                <input class="form-check-input cqa-opt" type="checkbox" id="cqaOptOverhead" data-opt="overhead">
+                                <label class="form-check-label" for="cqaOptOverhead">BOM Overhead Expense</label>
+                            </div></div>
+                            <div class="col-md-6"><div class="form-check border rounded p-2 ps-4">
+                                <input class="form-check-input cqa-opt" type="checkbox" id="cqaOptMonthly" data-opt="monthly">
+                                <label class="form-check-label" for="cqaOptMonthly">Divide Expense Across Entire Month</label>
+                            </div></div>
+                            <div class="col-md-6"><div class="form-check border rounded p-2 ps-4">
+                                <input class="form-check-input cqa-opt" type="checkbox" id="cqaOptPd" data-opt="pd">
+                                <label class="form-check-label" for="cqaOptPd">Shift Expense to PD Project</label>
+                            </div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <hr>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0"><i class="fas fa-code-branch me-1"></i>Sub-Categories <span class="text-muted fw-normal small">(optional)</span></h6>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="cqaAddSubBtn">
+                        <i class="bi bi-plus-lg me-1"></i>Add Sub-Category
+                    </button>
+                </div>
+                <div id="cqaSubRows"></div>
+                <div id="cqaNoSubs" class="text-muted small">No sub-categories added.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" id="cqaSaveBtn"><i class="bi bi-check-lg me-1"></i>Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// jQuery/select2 load at the end of base.html, after this include - defer setup.
+document.addEventListener('DOMContentLoaded', function () {
+    var CREATE_URL = '{{ url_for("accounting.create_expense_category_quick") }}';
+    var NEW_PREFIX = '__new__:';
+
+    var modalEl = document.getElementById('categoryQuickAddModal');
+    if (!modalEl) return;
+    var errorBox = document.getElementById('cqaError');
+    var parentSelect = document.getElementById('cqaParent');
+    var newParentFields = document.getElementById('cqaNewParentFields');
+    var subRows = document.getElementById('cqaSubRows');
+    var noSubs = document.getElementById('cqaNoSubs');
+    var saveBtn = document.getElementById('cqaSaveBtn');
+
+    function showError(msg) { errorBox.textContent = msg; errorBox.classList.remove('d-none'); }
+    function clearError() { errorBox.classList.add('d-none'); }
+
+    function isNewParent() { return String(parentSelect.value || '').indexOf(NEW_PREFIX) === 0; }
+
+    function toggleNewParentFields() {
+        newParentFields.style.display = isNewParent() ? '' : 'none';
+    }
+
+    // Searchable parent dropdown - existing parents from the page's
+    // CATEGORY_TREE, and select2 "tags" so typing a name that doesn't exist
+    // offers it as a new parent.
+    function buildParentSelect() {
+        var $sel = $(parentSelect);
+        if ($sel.hasClass('select2-hidden-accessible')) $sel.select2('destroy');
+        parentSelect.innerHTML = '';
+        parentSelect.appendChild(new Option('', ''));
+        (window.CATEGORY_TREE || []).filter(function (c) { return !c.parent_id; })
+            .forEach(function (c) { parentSelect.appendChild(new Option(c.name, c.id)); });
+        $sel.select2({
+            theme: 'bootstrap-5', width: '100%', dropdownParent: $(modalEl),
+            placeholder: '— Search or type a new parent category —', allowClear: true,
+            tags: true,
+            createTag: function (params) {
+                var term = $.trim(params.term);
+                if (!term) return null;
+                var exists = (window.CATEGORY_TREE || []).some(function (c) {
+                    return c.name.toLowerCase() === term.toLowerCase();
+                });
+                if (exists) return null;
+                return { id: NEW_PREFIX + term, text: term, newTag: true };
+            },
+            templateResult: function (item) {
+                if (item.newTag) return $('<span><i class="bi bi-plus-circle text-success me-1"></i>Add new parent: <strong></strong></span>')
+                    .find('strong').text(item.text).end();
+                return item.text;
+            }
+        });
+        $sel.val('').trigger('change');
+    }
+
+    function refreshNoSubs() {
+        noSubs.style.display = subRows.children.length ? 'none' : '';
+    }
+
+    function addSubRow() {
+        var row = document.createElement('div');
+        row.className = 'row g-2 align-items-start mb-2 cqa-sub-row';
+        row.innerHTML =
+            '<div class="col-md-5"><input type="text" class="form-control form-control-sm cqa-sub-name" placeholder="Sub-category name"></div>' +
+            '<div class="col-md-6"><input type="text" class="form-control form-control-sm cqa-sub-desc" placeholder="Description (optional)"></div>' +
+            '<div class="col-md-1 text-end"><button type="button" class="btn btn-sm btn-outline-danger cqa-sub-remove" title="Remove"><i class="fas fa-trash"></i></button></div>';
+        subRows.appendChild(row);
+        refreshNoSubs();
+        row.querySelector('.cqa-sub-name').focus();
+    }
+
+    function resetForm() {
+        clearError();
+        document.getElementById('cqaParentDesc').value = '';
+        modalEl.querySelectorAll('.cqa-opt').forEach(function (cb) { cb.checked = false; });
+        subRows.innerHTML = '';
+        refreshNoSubs();
+        buildParentSelect();
+        toggleNewParentFields();
+        saveBtn.disabled = false;
+    }
+
+    modalEl.addEventListener('show.bs.modal', resetForm);
+    $(parentSelect).on('change', toggleNewParentFields);
+    document.getElementById('cqaAddSubBtn').addEventListener('click', addSubRow);
+    subRows.addEventListener('click', function (e) {
+        var btn = e.target.closest('.cqa-sub-remove');
+        if (!btn) return;
+        btn.closest('.cqa-sub-row').remove();
+        refreshNoSubs();
+    });
+
+    saveBtn.addEventListener('click', function () {
+        clearError();
+        var val = parentSelect.value || '';
+        if (!val) { showError('Select an existing parent category or type a new one.'); return; }
+
+        var subs = [];
+        subRows.querySelectorAll('.cqa-sub-row').forEach(function (r) {
+            var name = r.querySelector('.cqa-sub-name').value.trim();
+            var desc = r.querySelector('.cqa-sub-desc').value.trim();
+            if (name) subs.push({ name: name, description: desc });
+        });
+
+        var payload = { subs: subs };
+        if (isNewParent()) {
+            payload.parent_name = val.substring(NEW_PREFIX.length);
+            payload.parent_description = document.getElementById('cqaParentDesc').value.trim();
+            payload.options = {};
+            modalEl.querySelectorAll('.cqa-opt').forEach(function (cb) { payload.options[cb.dataset.opt] = cb.checked; });
+        } else {
+            if (!subs.length) { showError('This parent already exists — add at least one sub-category, or type a new parent name.'); return; }
+            payload.parent_id = parseInt(val, 10);
+        }
+
+        saveBtn.disabled = true;
+        fetch(CREATE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            body: JSON.stringify(payload)
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                saveBtn.disabled = false;
+                if (!data.success) { showError(data.message || 'Could not save category.'); return; }
+                if (window.__addCategoriesToPicker) window.__addCategoriesToPicker(data.parent, data.subs);
+                bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+            })
+            .catch(function () {
+                saveBtn.disabled = false;
+                showError('Network error — could not save category.');
+            });
+    });
+});
+</script>

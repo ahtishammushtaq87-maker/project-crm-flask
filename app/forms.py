@@ -578,6 +578,7 @@ class ExpenseCategoryForm(FlaskForm):
     allow_inventory_shift = BooleanField('Allow "Shift Directly to Inventory Cost"', default=False)
     allow_bom_overhead = BooleanField('Allow "BOM Overhead Expense"', default=False)
     allow_monthly_divided = BooleanField('Allow "Divide Expense Across Entire Month"', default=False)
+    allow_pd_shift = BooleanField('Allow "Shift Expense to PD Project"', default=False)
 
 class AccountForm(FlaskForm):
     name = StringField('Account Name', validators=[DataRequired()])

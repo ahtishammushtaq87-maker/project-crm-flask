@@ -1801,6 +1801,7 @@ class ExpenseCategory(db.Model):
     allow_inventory_shift = db.Column(db.Boolean, default=False)   # "Shift Directly to Inventory Cost"
     allow_bom_overhead = db.Column(db.Boolean, default=False)      # "BOM Overhead Expense"
     allow_monthly_divided = db.Column(db.Boolean, default=False)   # "Divide Expense Across Entire Month"
+    allow_pd_shift = db.Column(db.Boolean, default=False)          # "Shift Expense to PD Project"
     is_active = db.Column(db.Boolean, default=True)
     # Universal approval fields
     is_approved = db.Column(db.Boolean, default=False)
@@ -1831,13 +1832,21 @@ class ExpenseCategory(db.Model):
         the Add/Edit Expense category-restriction script (see
         CATEGORY_OPTIONS in those templates). Nothing selected (or a
         category with every flag off) means a plain expense with none of
-        these special options shown."""
+        these special options shown.
+
+        Options are configured on parent (main) categories only - a
+        sub-category always inherits its parent's flags, so picking the
+        parent on Add/Edit Expense is enough to open the allowed options,
+        and any sub-category under it gets exactly the same ones."""
+        if self.parent_id and self.parent is not None:
+            return self.parent.option_flags
         return {
             'invoice': bool(self.allow_invoice_payment),
             'purchase': bool(self.allow_purchase_payment),
             'shift': bool(self.allow_inventory_shift),
             'overhead': bool(self.allow_bom_overhead),
             'monthly': bool(self.allow_monthly_divided),
+            'pd': bool(self.allow_pd_shift),
         }
 
     def __repr__(self):

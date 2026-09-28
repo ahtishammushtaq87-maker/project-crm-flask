@@ -188,11 +188,16 @@
                             </td>
                             <td>{{ category.description or '-' }}</td>
                             <td>
-                                <span class="badge option-badge {{ 'on' if category.allow_invoice_payment else 'off' }}" title="Add to Invoice Payment">Invoice</span>
-                                <span class="badge option-badge {{ 'on' if category.allow_purchase_payment else 'off' }}" title="Add to Purchase Payment">Purchase</span>
-                                <span class="badge option-badge {{ 'on' if category.allow_inventory_shift else 'off' }}" title="Shift Directly to Inventory Cost">Inventory Shift</span>
-                                <span class="badge option-badge {{ 'on' if category.allow_bom_overhead else 'off' }}" title="BOM Overhead Expense">BOM Overhead</span>
-                                <span class="badge option-badge {{ 'on' if category.allow_monthly_divided else 'off' }}" title="Divide Expense Across Entire Month">Monthly Division</span>
+                                {% set opts = category.option_flags %}
+                                {% if category.parent_id %}
+                                <span class="d-block text-muted small mb-1"><i class="fas fa-level-up-alt me-1"></i>Inherited from parent</span>
+                                {% endif %}
+                                <span class="badge option-badge {{ 'on' if opts.invoice else 'off' }}" title="Add to Invoice Payment">Invoice</span>
+                                <span class="badge option-badge {{ 'on' if opts.purchase else 'off' }}" title="Add to Purchase Payment">Purchase</span>
+                                <span class="badge option-badge {{ 'on' if opts.shift else 'off' }}" title="Shift Directly to Inventory Cost">Inventory Shift</span>
+                                <span class="badge option-badge {{ 'on' if opts.overhead else 'off' }}" title="BOM Overhead Expense">BOM Overhead</span>
+                                <span class="badge option-badge {{ 'on' if opts.monthly else 'off' }}" title="Divide Expense Across Entire Month">Monthly Division</span>
+                                <span class="badge option-badge {{ 'on' if opts.pd else 'off' }}" title="Shift Expense to PD Project">PD Project</span>
                             </td>
                             <td>
                                 <span class="badge bg-info">{{ category.expenses|length }}</span>
