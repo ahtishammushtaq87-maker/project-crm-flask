@@ -159,47 +159,114 @@
                 </div>
             </div>
 
-            {% if order.staff_assignments %}
-            <div class="card shadow mb-4">
-                <div class="card-header py-3">
+            {% if salary_rows %}
+            <div class="card shadow mb-4" id="salaryStaffCard">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <h6 class="m-0 font-weight-bold text-primary">
                         <i class="fas fa-users me-1"></i> Staff / Salary Allocation
                     </h6>
+                    <span class="badge bg-light text-dark border" id="salaryStaffCount">{{ included_count }} of {{ salary_rows|length }} included</span>
                 </div>
                 <div class="card-body p-0">
+                    {% set can_edit_salary = salary_editable and current_user.has_permission('manufacturing', 'edit') %}
                     <div class="table-responsive">
-                        <table class="table table-sm mb-0 no-datatable">
+                        <table class="table table-sm mb-0 no-datatable align-middle">
                             <thead class="bg-light">
                                 <tr>
+                                    {% if can_edit_salary %}
+                                    <th style="width:36px;" class="text-center">
+                                        <input type="checkbox" class="form-check-input" id="salaryStaffAll" title="Include / exclude all staff"
+                                               {% if included_count == salary_rows|length %}checked{% endif %}>
+                                    </th>
+                                    {% endif %}
                                     <th>Staff</th>
                                     <th class="text-end">Monthly Salary</th>
-                                    <th class="text-end">Share of Salary Pool</th>
+                                    <th class="text-end">Share</th>
                                     <th class="text-end">Staff Allocation</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for a in order.staff_assignments %}
-                                <tr>
-                                    <td>{{ a.staff.name if a.staff else 'Deleted Staff' }}{% if a.staff and a.staff.designation %} <span class="text-muted small">({{ a.staff.designation }})</span>{% endif %}</td>
-                                    <td class="text-end">PKR {{ "%.2f"|format(a.staff.monthly_salary or 0) if a.staff else '-' }}</td>
-                                    <td class="text-end">{{ "%.2f"|format(a.labor_cost / order.actual_labor_cost * 100) if order.actual_labor_cost else '0.00' }}%</td>
-                                    <td class="text-end fw-bold">PKR {{ "%.2f"|format(a.labor_cost or 0) }}</td>
+                                {% for r in salary_rows %}
+                                {% set st = r.staff %}
+                                <tr class="{{ '' if r.included else 'text-muted' }}" {% if not r.included %}style="background:#fafafa;"{% endif %}>
+                                    {% if can_edit_salary %}
+                                    <td class="text-center">
+                                        <input type="checkbox" class="form-check-input salary-staff-cb" value="{{ st.id }}"
+                                               {% if r.included %}checked{% endif %} {% if not st.is_active %}disabled title="Inactive staff"{% endif %}>
+                                    </td>
+                                    {% endif %}
+                                    <td>
+                                        {% if r.included %}{{ st.name }}{% else %}<s>{{ st.name }}</s>{% endif %}
+                                        {% if st.designation %} <span class="text-muted small">({{ st.designation }})</span>{% endif %}
+                                        {% if not r.included %}<span class="badge bg-secondary ms-1">Excluded</span>{% endif %}
+                                    </td>
+                                    <td class="text-end">PKR {{ "%.2f"|format(st.monthly_salary or 0) }}</td>
+                                    <td class="text-end">{{ "%.2f"|format(r.labor_cost / order.actual_labor_cost * 100) if (order.actual_labor_cost and r.included) else '0.00' }}%</td>
+                                    <td class="text-end fw-bold">{% if r.included %}PKR {{ "%.2f"|format(r.labor_cost) }}{% else %}<span class="fw-normal">—</span>{% endif %}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                             <tfoot>
                                 <tr class="table-light fw-bold">
-                                    <td colspan="3">Total Salary Allocated (from HR)</td>
+                                    <td colspan="{{ 4 if can_edit_salary else 3 }}">Total Salary Allocated (from HR)</td>
                                     <td class="text-end">PKR {{ "%.2f"|format(order.actual_labor_cost or 0) }}</td>
                                 </tr>
                             </tfoot>
                         </table>
                     </div>
                     <div class="p-2 text-muted small border-top">
-                        This order's Salary Allocated = Monthly Manufacturing Salaries (sum of every active HR staff member's monthly salary) &times; (this order's Material+Overhead cost &divide; the combined Material+Overhead cost of every active order). It's recalculated automatically whenever any active order or HR salary changes; each staff member's row above is their proportional share of that total.
+                        {% if can_edit_salary %}
+                        <div class="mb-1"><i class="fas fa-info-circle me-1"></i>Untick a staff member to leave their salary out of this order's labor cost. Changes save automatically and update the MO list, MO report and Target Tracker.</div>
+                        {% elif not salary_editable %}
+                        <div class="mb-1"><i class="fas fa-lock me-1"></i>This order is completed or stopped, so its salary allocation is frozen.</div>
+                        {% endif %}
+                        Each included staff member's salary is shared across the active orders they're included on, by cost share: Staff salary &times; (this order's Material+Overhead cost &divide; combined Material+Overhead cost of the active orders that include that staff member). An excluded staff member's salary moves to the other orders they're still included on.
                     </div>
                 </div>
             </div>
+            {% if can_edit_salary %}
+            <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                const card = document.getElementById('salaryStaffCard');
+                if (!card) return;
+                const boxes = Array.from(card.querySelectorAll('.salary-staff-cb'));
+                const allBox = document.getElementById('salaryStaffAll');
+                const URL = '{{ url_for("manufacturing.update_order_salary_staff", id=order.id) }}';
+                let saving = false;
+
+                function save() {
+                    if (saving) return;
+                    saving = true;
+                    card.style.opacity = '0.6';
+                    boxes.concat(allBox ? [allBox] : []).forEach(function (b) { b.disabled = true; });
+                    const ids = boxes.filter(function (b) { return b.checked; }).map(function (b) { return parseInt(b.value, 10); });
+                    fetch(URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                        body: JSON.stringify({ included_staff_ids: ids })
+                    })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            if (!data.success) { alert(data.message || 'Could not update staff.'); }
+                            // Labor cost feeds several numbers on this page - reload them all.
+                            window.location.reload();
+                        })
+                        .catch(function () {
+                            alert('Network error - staff selection not saved.');
+                            window.location.reload();
+                        });
+                }
+
+                boxes.forEach(function (b) { b.addEventListener('change', save); });
+                if (allBox) {
+                    allBox.addEventListener('change', function () {
+                        boxes.forEach(function (b) { if (!b.disabled) b.checked = allBox.checked; });
+                        save();
+                    });
+                }
+            });
+            </script>
+            {% endif %}
             {% endif %}
         </div>
 
@@ -214,6 +281,7 @@
                         <table class="table table-striped table-bordered mb-0">
                             <thead class="bg-light">
                                 <tr>
+                                    <th class="no-export text-center" data-orderable="false" style="width:72px;">Image</th>
                                     <th>Component</th>
                                     <th class="text-end">Required Qty</th>
                                     <th class="text-end">Consumed Qty</th>
@@ -225,6 +293,23 @@
                             <tbody>
                                 {% for item in order.items %}
                                 <tr>
+                                    {# data-order keeps the table's default sort (first column) in BOM order #}
+                                    <td class="no-export text-center align-middle" data-order="{{ loop.index }}">
+                                        {% if item.component.image_path %}
+                                        {% set comp_img = item.component.image_path.replace('\\', '/').replace('app/static/', '') %}
+                                        <a href="{{ url_for('static', filename=comp_img) }}" target="_blank" title="Open full size">
+                                            <img src="{{ url_for('static', filename=comp_img) }}" alt="{{ item.component.name }}"
+                                                 class="img-thumbnail" loading="lazy"
+                                                 style="width:56px; height:56px; object-fit:contain; background:#fff; cursor:zoom-in;"
+                                                 onerror="this.closest('a').outerHTML='<div class=&quot;text-muted d-inline-flex align-items-center justify-content-center border rounded&quot; style=&quot;width:56px;height:56px;&quot;><i class=&quot;fas fa-image&quot;></i></div>'">
+                                        </a>
+                                        {% else %}
+                                        <div class="text-muted d-inline-flex align-items-center justify-content-center border rounded"
+                                             style="width:56px; height:56px;" title="No image">
+                                            <i class="fas fa-image"></i>
+                                        </div>
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         <strong>{{ item.component.name }}</strong><br>
                                         <small class="text-muted">{{ sku_link(item.component.sku, item.component.id) }}</small>

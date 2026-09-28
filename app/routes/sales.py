@@ -1757,8 +1757,10 @@ def delete_payment(id, pay_id):
     from app.utils import cleanup_linked_transactions
     cleanup_linked_transactions(payment)
     
-    # Delete old image if exists
-    if payment.image_path:
+    # Delete old image if exists - unless it's shared with an Expense /
+    # another record (payments transferred from an Expense reuse its file).
+    from app.utils import image_file_in_use
+    if payment.image_path and not image_file_in_use(payment.image_path, ignore_payment_id=payment.id):
         try:
             image_path = os.path.join(current_app.root_path, 'static', payment.image_path)
             if os.path.exists(image_path):

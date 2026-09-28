@@ -1,31 +1,50 @@
-{# Read-only "auto-included staff" panel - replaces the old manual
-   checkbox picker (_staff_picker.html). Labor cost is no longer picked by
-   hand: every currently ACTIVE HR staff member's monthly_salary makes up
-   a shared "Monthly Manufacturing Salaries" pool, which gets divided
-   across every active Manufacturing Order by cost share -
+{# Salary staff picker for Create/Edit Manufacturing Order. Every ACTIVE HR
+   staff member's monthly_salary makes up the "Monthly Manufacturing
+   Salaries" pool, shared across active orders by cost share (server-side,
+   see _recompute_active_order_salaries in app/routes/manufacturing.py).
+   Unticking a staff member here excludes their salary from THIS order
+   (ManufacturingOrderStaffExclusion) - same as unticking them on the
+   order details page's "Staff / Salary Allocation" card.
 
-       MO Salary Allocation = Monthly Manufacturing Salaries x
-                              (MO Cost / Total Cost of Eligible Monthly MOs)
-
-   (server-side, see _recompute_active_order_salaries in
-   app/routes/manufacturing.py). Because this order's own share depends on
-   every OTHER active order's cost too, the exact PKR amount can only be
-   known after saving (it's shown on the Manufacturing Orders list and
-   this order's details page) - this panel just lists who's in the pool
-   and its combined size, not a per-order estimate.
+   Posts salary_staff_ids (the ticked ones) plus salary_staff_submitted=1.
 
    Expects in context:
-     staff_list - iterable of active Staff (plus any inactive staff already
-                  assigned to this order, on the edit page, shown as such)
+     staff_list             - active Staff (plus inactive staff still on this
+                              order, on the edit page, shown read-only)
+     excluded_staff_ids     - set of Staff ids to render unticked
+     salary_picker_disabled - true once the order is Completed (frozen)
 #}
+{% set excluded_ids = excluded_staff_ids or [] %}
+<input type="hidden" name="salary_staff_submitted" value="{{ '0' if salary_picker_disabled else '1' }}">
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-1 mb-2">
     <span class="staff-picker-label text-uppercase">Manufacturing Salary (Auto from HR)</span>
-    <span class="badge bg-light text-dark border">{{ staff_list|selectattr('is_active')|list|length }} active staff</span>
+    <span class="d-flex align-items-center gap-2">
+        {% if not salary_picker_disabled and staff_list %}
+        <span class="staff-picker-links small">
+            <a href="javascript:void(0)" id="salaryStaffSelectAll" class="text-primary">Select All</a>
+            <span class="divider">&middot;</span>
+            <a href="javascript:void(0)" id="salaryStaffClearAll" class="text-danger">Clear</a>
+        </span>
+        {% endif %}
+        <span class="badge bg-light text-dark border" id="salaryStaffFormCount"></span>
+    </span>
 </div>
+
+{% if staff_list|length > 6 and not salary_picker_disabled %}
+<div class="staff-picker-search">
+    <i class="fas fa-search"></i>
+    <input type="text" class="form-control" id="salaryStaffSearch" placeholder="Search staff by name or designation...">
+</div>
+{% endif %}
 
 <div class="staff-picker-list" id="staffAutoList">
     {% for s in staff_list %}
-    <div class="staff-picker-row">
+    {% set is_included = s.id not in excluded_ids %}
+    <label class="staff-picker-row {% if is_included and s.is_active %}checked{% endif %}"
+           data-search="{{ (s.name ~ ' ' ~ (s.designation or ''))|lower }}" style="cursor:pointer;">
+        <input type="checkbox" class="salary-staff-form-cb" name="salary_staff_ids" value="{{ s.id }}"
+               {% if is_included and s.is_active %}checked{% endif %}
+               {% if salary_picker_disabled or not s.is_active %}disabled{% endif %}>
         <span>
             <span class="staff-name d-block">{{ s.name }}</span>
             <span class="staff-role">PKR {{ '%.2f'|format(s.monthly_salary or 0) }} / month{% if not s.is_active %} &middot; inactive (kept from before){% endif %}</span>
@@ -33,12 +52,61 @@
         {% if s.designation %}
         <span class="staff-badge">{{ s.designation }}</span>
         {% endif %}
-    </div>
+    </label>
     {% endfor %}
     {% if not staff_list %}
     <div class="staff-picker-empty">No active staff in HR yet — labor cost will use the BOM's estimated labor cost instead.</div>
     {% endif %}
 </div>
+<div class="staff-picker-empty d-none" id="salaryStaffNoMatch">No staff match your search.</div>
 
 {% set pool_total = staff_list|selectattr('is_active')|map(attribute='monthly_salary')|sum %}
-<small class="text-muted d-block mt-2"><i class="fas fa-info-circle me-1"></i>Salary is added automatically — you don't need to add it manually. Monthly Manufacturing Salaries pool (PKR {{ '%.2f'|format(pool_total) }}) is split across every active order by cost share: <code>Salary Allocated = Pool &times; (this order's Material+Overhead cost &divide; combined cost of all active orders)</code>. The exact amount for this order is finalized after saving and shown on the Manufacturing Orders list and this order's details page.</small>
+<small class="text-muted d-block mt-2"><i class="fas fa-info-circle me-1"></i>
+    {% if salary_picker_disabled %}This order is completed, so its salary allocation is frozen.
+    {% else %}Untick anyone whose salary should <strong>not</strong> be charged to this order.{% endif %}
+    Salary is added automatically — the Monthly Manufacturing Salaries pool (PKR {{ '%.2f'|format(pool_total) }}) is split across active orders by cost share, and each ticked staff member's salary is shared across the active orders they're included on. The exact amount is finalized after saving and shown on the Manufacturing Orders list and the order's details page.</small>
+
+<script>
+(function () {
+    const list = document.getElementById('staffAutoList');
+    if (!list) return;
+    const boxes = Array.from(list.querySelectorAll('.salary-staff-form-cb'));
+    const countEl = document.getElementById('salaryStaffFormCount');
+
+    function refresh() {
+        const usable = boxes.filter(function (b) { return !b.disabled; });
+        const ticked = usable.filter(function (b) { return b.checked; }).length;
+        boxes.forEach(function (b) { b.closest('label').classList.toggle('checked', b.checked); });
+        if (countEl) countEl.textContent = usable.length ? (ticked + ' of ' + usable.length + ' included') : (boxes.length + ' staff');
+    }
+    boxes.forEach(function (b) { b.addEventListener('change', refresh); });
+
+    function setAll(val) {
+        boxes.forEach(function (b) {
+            if (!b.disabled && b.closest('label').style.display !== 'none') b.checked = val;
+        });
+        refresh();
+    }
+    const allLink = document.getElementById('salaryStaffSelectAll');
+    const clearLink = document.getElementById('salaryStaffClearAll');
+    if (allLink) allLink.addEventListener('click', function () { setAll(true); });
+    if (clearLink) clearLink.addEventListener('click', function () { setAll(false); });
+
+    const search = document.getElementById('salaryStaffSearch');
+    const noMatch = document.getElementById('salaryStaffNoMatch');
+    if (search) {
+        search.addEventListener('input', function () {
+            const q = search.value.trim().toLowerCase();
+            let shown = 0;
+            boxes.forEach(function (b) {
+                const row = b.closest('label');
+                const hit = !q || (row.dataset.search || '').indexOf(q) !== -1;
+                row.style.display = hit ? '' : 'none';
+                if (hit) shown++;
+            });
+            if (noMatch) noMatch.classList.toggle('d-none', shown > 0);
+        });
+    }
+    refresh();
+})();
+</script>

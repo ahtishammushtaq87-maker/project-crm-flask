@@ -378,6 +378,21 @@
                             </div>
                         </div>
                         <div id="inline_shift_container" style="display:none;">
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold mb-2">Cost Update Method</label>
+                                <div class="d-flex gap-2 flex-wrap">
+                                    <label class="form-check flex-fill border rounded p-2 ps-5 mb-0" style="cursor:pointer; min-width:240px;">
+                                        <input class="form-check-input inv-cost-mode" type="radio" name="inventory_cost_mode" value="replace" checked>
+                                        <span class="fw-semibold">Replace Current Cost</span>
+                                        <div class="form-text mt-0">New cost/unit = amount ÷ quantity. It replaces the item's current cost; quantity is added to stock.</div>
+                                    </label>
+                                    <label class="form-check flex-fill border rounded p-2 ps-5 mb-0" style="cursor:pointer; min-width:240px;">
+                                        <input class="form-check-input inv-cost-mode" type="radio" name="inventory_cost_mode" value="average">
+                                        <span class="fw-semibold">Add to Current Stock (Average Cost)</span>
+                                        <div class="form-text mt-0">Amount is added to the current stock value. New cost/unit = (current cost × current qty + amount) ÷ (current qty + quantity).</div>
+                                    </label>
+                                </div>
+                            </div>
                             <div class="p-3 border rounded mb-3" style="background:#f0fbfc;">
                                 <div class="mb-3">
                                     <label for="inline_product_ids" class="form-label fw-semibold">Select Inventory Item(s) <span class="text-danger">*</span></label>
@@ -386,7 +401,7 @@
                                         <option value="{{ item.id }}" data-cost="{{ item.cost_price or 0 }}" data-qty="{{ item.quantity or 0 }}" data-name="{{ item.sku }} - {{ item.name }}">{{ item.sku }} - {{ item.name }} (cost: PKR {{ '%.2f'|format(item.cost_price or 0) }}, qty: {{ '%.2f'|format(item.quantity or 0) }})</option>
                                         {% endfor %}
                                     </select>
-                                    <small class="text-muted">Select one item to apply the full amount, or several (bulk) to split it across them — each item's <strong>amount</strong> and <strong>quantity received</strong> are editable below (amounts must add up to the Amount field above). Cost/unit = amount ÷ quantity, which <strong>replaces</strong> the item's current cost; quantity is <strong>added</strong> to its current stock.</small>
+                                    <small class="text-muted">Select one item to apply the full amount, or several (bulk) to split it across them — each item's <strong>amount</strong> and <strong>quantity received</strong> are editable below (amounts must add up to the Amount field above). New cost/unit follows the <strong>Cost Update Method</strong> above; quantity is always <strong>added</strong> to the item's current stock.</small>
                                 </div>
                                 <div id="inline_inv_cost_rows" style="display:none;">
                                     <div class="table-responsive">
@@ -995,7 +1010,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (!costInput || !qtyInput || !display) return;
                 const cost = parseFloat(costInput.value) || 0;
                 const qty = parseFloat(qtyInput.value) || 0;
-                display.textContent = qty > 0 ? ('PKR ' + fmtMoney(cost / qty)) : '—';
+                // Same formulas as _apply_inventory_shift: replace, or
+                // weighted average over current stock (negative stock = 0).
+                const modeInput = document.querySelector('input[name="inventory_cost_mode"]:checked');
+                const isAverage = modeInput && modeInput.value === 'average';
+                const curCost = parseFloat(row.dataset.curCost) || 0;
+                const curQty = Math.max(0, parseFloat(row.dataset.curQty) || 0);
+                let unit = null;
+                if (isAverage) {
+                    if (curQty + qty > 0) unit = (curCost * curQty + cost) / (curQty + qty);
+                } else if (qty > 0) {
+                    unit = cost / qty;
+                }
+                display.textContent = unit !== null ? ('PKR ' + fmtMoney(unit)) : '—';
             });
         }
 
@@ -1060,6 +1087,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 const currentCost = parseFloat(opt.data('cost')) || 0;
                 const currentQty = parseFloat(opt.data('qty')) || 0;
                 const row = document.createElement('tr');
+                row.dataset.curCost = currentCost;
+                row.dataset.curQty = currentQty;
                 row.innerHTML =
                     '<td>' + name + '</td>' +
                     '<td class="text-end text-muted">PKR ' + fmtMoney(currentCost) + '</td>' +
@@ -1086,6 +1115,9 @@ document.addEventListener('DOMContentLoaded', function() {
             closeOnSelect: false
         });
         $shiftSelect.on('change', rebuildRows);
+        document.querySelectorAll('.inv-cost-mode').forEach(function (r) {
+            r.addEventListener('change', updateUnitCostDisplays);
+        });
         rowsBody.addEventListener('input', function (e) {
             if (e.target.classList.contains('inv-cost-input')) {
                 const pid = e.target.name.replace('item_cost_', '');

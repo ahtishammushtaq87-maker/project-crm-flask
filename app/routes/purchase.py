@@ -635,6 +635,72 @@ def edit_bill(id):
     return render_template('purchase/edit_bill.html', form=form, bill=bill,
                            products=products, vendors=vendors, currencies=currencies, warehouses=warehouses)
 
+def recalculate_bill_costs_for_shipping(bill, old_shipping, new_shipping):
+    """Recalculate bill totals and each item's product cost_price after the
+    bill's shipping_charge changed from old_shipping to new_shipping
+    (shipping + tax allocated by item cost share). Shared by the bill's own
+    "Update Shipping Charge" modal and by Add/Edit Expense's "Add this to PO
+    Shipping" transfer. Does not commit."""
+    bill.calculate_totals()
+
+    total_items_cost = sum(item.total for item in bill.items)
+    if total_items_cost > 0:
+        for item in bill.items:
+            product = Product.query.get(item.product_id)
+            if product:
+                # Calculate new cost including proportional shipping (based on item cost, not qty)
+                # Also include tax in allocation
+                taxable_amount = total_items_cost + new_shipping
+                tax_amount = (taxable_amount * bill.tax_rate) / 100 if bill.tax_rate > 0 else 0
+                total_additional = new_shipping + tax_amount
+                
+                # Allocate based on item cost ratio
+                allocation_ratio = item.total / total_items_cost if total_items_cost > 0 else 0
+                allocated_additional = total_additional * allocation_ratio
+                
+                new_cost_price = item.unit_price + (allocated_additional / item.quantity)
+                
+                if product.cost_price != new_cost_price:
+                    old_price = product.cost_price
+                    
+                    # Create cost price history entry
+                    cost_history = CostPriceHistory(
+                        product_id=item.product_id,
+                        purchase_bill_id=bill.id,
+                        old_price=old_price if old_price > 0 else None,
+                        new_price=new_cost_price,
+                        quantity_at_old_price=product.quantity - item.quantity,
+                        used_quantity=0,
+                        reason=f"Shipping update - Old Shipping: PKR {old_shipping}, New Shipping: PKR {new_shipping}",
+                        is_active=True,
+                        created_by=current_user.id
+                    )
+                    db.session.add(cost_history)
+                    
+                    # Update product cost price
+                    product.cost_price = new_cost_price
+                    
+                    # Trigger BOM versioning
+                    try:
+                        user_id = None
+                        try:
+                            if current_user and current_user.is_authenticated:
+                                user_id = current_user.id
+                        except (AttributeError, TypeError):
+                            pass
+                        if user_id is None:
+                            from app.models import User
+                            admin_user = User.query.filter_by(username='admin').first()
+                            user_id = admin_user.id if admin_user else 1
+                        
+                        BOMVersioningService.check_and_update_bom_for_cost_changes(
+                            product_id=item.product_id,
+                            created_by_id=user_id
+                        )
+                    except Exception as e:
+                        print(f"Error updating BOM for shipping change: {e}")
+
+
 @bp.route('/bill/<int:id>/update-shipping', methods=['POST'])
 @login_required
 @permission_required('purchases', action='edit')
@@ -678,7 +744,10 @@ def update_shipping(id):
                     # this bill's own shipping_image_path, so no shared-file
                     # risk here, but the file is only removed after the
                     # replacement is confirmed on disk either way.
-                    if old_shipping_image:
+                    from app.utils import image_file_in_use
+                    # The old receipt may be an Expense's image (Add this to
+                    # PO Shipping) - keep the file if anything else uses it.
+                    if old_shipping_image and not image_file_in_use(old_shipping_image, ignore_shipping_bill_id=bill.id):
                         try:
                             old_full_path = os.path.join(current_app.root_path, 'static', old_shipping_image)
                             if os.path.exists(old_full_path):
@@ -688,65 +757,7 @@ def update_shipping(id):
                 else:
                     flash('Shipping image not saved — unsupported file type. Allowed: PNG, JPG, JPEG, GIF, PDF, WEBP.', 'warning')
 
-        bill.calculate_totals()
-        
-        # Recalculate product costs to include new shipping
-        total_items_cost = sum(item.total for item in bill.items)
-        if total_items_cost > 0:
-            for item in bill.items:
-                product = Product.query.get(item.product_id)
-                if product:
-                    # Calculate new cost including proportional shipping (based on item cost, not qty)
-                    # Also include tax in allocation
-                    taxable_amount = total_items_cost + new_shipping
-                    tax_amount = (taxable_amount * bill.tax_rate) / 100 if bill.tax_rate > 0 else 0
-                    total_additional = new_shipping + tax_amount
-                    
-                    # Allocate based on item cost ratio
-                    allocation_ratio = item.total / total_items_cost if total_items_cost > 0 else 0
-                    allocated_additional = total_additional * allocation_ratio
-                    
-                    new_cost_price = item.unit_price + (allocated_additional / item.quantity)
-                    
-                    if product.cost_price != new_cost_price:
-                        old_price = product.cost_price
-                        
-                        # Create cost price history entry
-                        cost_history = CostPriceHistory(
-                            product_id=item.product_id,
-                            purchase_bill_id=bill.id,
-                            old_price=old_price if old_price > 0 else None,
-                            new_price=new_cost_price,
-                            quantity_at_old_price=product.quantity - item.quantity,
-                            used_quantity=0,
-                            reason=f"Shipping update - Old Shipping: PKR {old_shipping}, New Shipping: PKR {new_shipping}",
-                            is_active=True,
-                            created_by=current_user.id
-                        )
-                        db.session.add(cost_history)
-                        
-                        # Update product cost price
-                        product.cost_price = new_cost_price
-                        
-                        # Trigger BOM versioning
-                        try:
-                            user_id = None
-                            try:
-                                if current_user and current_user.is_authenticated:
-                                    user_id = current_user.id
-                            except (AttributeError, TypeError):
-                                pass
-                            if user_id is None:
-                                from app.models import User
-                                admin_user = User.query.filter_by(username='admin').first()
-                                user_id = admin_user.id if admin_user else 1
-                            
-                            BOMVersioningService.check_and_update_bom_for_cost_changes(
-                                product_id=item.product_id,
-                                created_by_id=user_id
-                            )
-                        except Exception as e:
-                            print(f"Error updating BOM for shipping change: {e}")
+        recalculate_bill_costs_for_shipping(bill, old_shipping, new_shipping)
         
         bill.update_status()
         db.session.commit()
@@ -1490,8 +1501,10 @@ def delete_bill_payment(id, pay_id):
         )
     ).delete()
     
-    # Delete old image if exists
-    if payment.image_path:
+    # Delete old image if exists - unless it's shared with an Expense /
+    # another record (payments transferred from an Expense reuse its file).
+    from app.utils import image_file_in_use
+    if payment.image_path and not image_file_in_use(payment.image_path, ignore_bill_payment_id=payment.id):
         try:
             image_path = os.path.join(current_app.root_path, 'static', payment.image_path)
             if os.path.exists(image_path):

@@ -548,7 +548,7 @@
                                 <a href="{% if exp.linked_sale_id %}{{ url_for('sales.invoice_detail', id=exp.linked_sale_id) }}{% elif exp.linked_bill_id %}{{ url_for('purchase.bill_detail', id=exp.linked_bill_id) }}{% endif %}"
                                    class="badge bg-warning text-dark ms-1 text-decoration-none" style="font-size: 0.7rem;"
                                    title="This amount was applied as a real payment and is excluded from expense totals">
-                                    <i class="fas fa-exchange-alt me-1"></i>Transferred to {{ 'Sale' if exp.linked_sale_id else 'Purchase' }}{% if exp.linked_sale %} #{{ exp.linked_sale.invoice_number }}{% elif exp.linked_bill %} #{{ exp.linked_bill.bill_number }}{% endif %}
+                                    <i class="fas fa-exchange-alt me-1"></i>Transferred to {{ 'Sale' if exp.linked_sale_id else ('PO Shipping' if (exp.shipping_transfer_amount or 0) > 0 else 'Purchase') }}{% if exp.linked_sale %} #{{ exp.linked_sale.invoice_number }}{% elif exp.linked_bill %} #{{ exp.linked_bill.bill_number }}{% endif %}
                                 </a>
                                 {% endif %}
                             </td>

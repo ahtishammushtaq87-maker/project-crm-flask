@@ -27,6 +27,42 @@ def _active_manufacturing_staff():
     return Staff.query.filter_by(is_active=True).order_by(Staff.name).all()
 
 
+def _save_order_staff_exclusions(order, included_staff_ids):
+    """Store which active HR staff are included in `order`'s salary
+    allocation - every active staff member NOT in included_staff_ids gets a
+    ManufacturingOrderStaffExclusion row, and any exclusion for a staff
+    member now included is removed. Returns the excluded staff names.
+    Caller runs _recompute_active_order_salaries() and commits."""
+    from app.models import ManufacturingOrderStaffExclusion
+    included = set(included_staff_ids)
+    active_staff = _active_manufacturing_staff()
+    new_excluded = {s.id for s in active_staff if s.id not in included}
+    old_excluded = {e.staff_id: e for e in ManufacturingOrderStaffExclusion.query.filter_by(mo_id=order.id).all()}
+    for staff_id, row in old_excluded.items():
+        if staff_id not in new_excluded:
+            db.session.delete(row)
+    for staff_id in new_excluded - set(old_excluded):
+        db.session.add(ManufacturingOrderStaffExclusion(
+            mo_id=order.id, staff_id=staff_id,
+            created_by=current_user.id if current_user.is_authenticated else None))
+    db.session.flush()
+    return sorted(s.name for s in active_staff if s.id in new_excluded)
+
+
+def _included_staff_ids_from_form():
+    """Included staff ids posted by the Create/Edit MO staff picker
+    (_staff_auto_salary.html), or None when the picker wasn't on the form."""
+    if request.form.get('salary_staff_submitted') != '1':
+        return None
+    ids = []
+    for raw in request.form.getlist('salary_staff_ids'):
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
 def _recompute_active_order_salaries(exclude_order_id=None):
     """Redistributes the monthly manufacturing salary pool (sum of every
     active HR staff member's monthly_salary) across every currently active
@@ -56,8 +92,20 @@ def _recompute_active_order_salaries(exclude_order_id=None):
     breakdown is informational, the order-level allocation is what's
     authoritative and matches the formula above. Updates actual_labor_cost
     + total_cost on each order. Callers must still db.session.commit().
+
+    Per-order staff exclusions (ManufacturingOrderStaffExclusion - staff
+    unticked on the order's "Staff / Salary Allocation" card) are applied
+    per staff member: each staff member's salary is shared only across the
+    active orders they're included on, by those orders' cost share:
+
+        Staff allocation on MO = Staff salary x
+                                 (MO Cost / Total Cost of active MOs that include this staff)
+
+    With no exclusions this is exactly the formula above. An excluded
+    staff member adds nothing to that order's labor cost; if they're
+    excluded from every active order their salary isn't charged anywhere.
     """
-    from app.models import ManufacturingOrderStaff
+    from app.models import ManufacturingOrderStaff, ManufacturingOrderStaffExclusion
 
     staff_list = _active_manufacturing_staff()
     salary_pool = sum((s.monthly_salary or 0) for s in staff_list)
@@ -72,22 +120,37 @@ def _recompute_active_order_salaries(exclude_order_id=None):
     pre_salary_costs = {o.id: (o.actual_material_cost or 0) + (o.actual_overhead_cost or 0) for o in active_orders}
     total_pool_cost = sum(pre_salary_costs.values())
 
-    for o in active_orders:
-        mo_cost = pre_salary_costs[o.id]
-        allocation = (salary_pool * (mo_cost / total_pool_cost)) if total_pool_cost > 0 else 0
+    active_ids = [o.id for o in active_orders]
+    excluded_pairs = set()
+    if active_ids:
+        excluded_pairs = {(e.mo_id, e.staff_id) for e in ManufacturingOrderStaffExclusion.query.filter(
+            ManufacturingOrderStaffExclusion.mo_id.in_(active_ids)).all()}
 
-        ManufacturingOrderStaff.query.filter_by(mo_id=o.id).delete()
-        for s in staff_list:
-            staff_share = (s.monthly_salary or 0) / salary_pool if salary_pool > 0 else 0
-            staff_cost = allocation * staff_share
+    allocations = {o.id: 0.0 for o in active_orders}
+    staff_costs = {o.id: [] for o in active_orders}
+    for s in staff_list:
+        salary = s.monthly_salary or 0
+        if salary <= 0:
+            continue
+        included_orders = [o for o in active_orders if (o.id, s.id) not in excluded_pairs]
+        staff_pool_cost = sum(pre_salary_costs[o.id] for o in included_orders)
+        if staff_pool_cost <= 0:
+            continue
+        for o in included_orders:
+            staff_cost = salary * (pre_salary_costs[o.id] / staff_pool_cost)
             if staff_cost <= 0:
                 continue
+            allocations[o.id] += staff_cost
+            staff_costs[o.id].append((s, staff_cost))
+
+    for o in active_orders:
+        ManufacturingOrderStaff.query.filter_by(mo_id=o.id).delete()
+        for s, staff_cost in staff_costs[o.id]:
             db.session.add(ManufacturingOrderStaff(
                 mo_id=o.id, staff_id=s.id, daily_rate=s.daily_salary or 0, days=0, labor_cost=staff_cost
             ))
-
-        o.actual_labor_cost = allocation
-        o.total_cost = mo_cost + allocation
+        o.actual_labor_cost = allocations[o.id]
+        o.total_cost = pre_salary_costs[o.id] + allocations[o.id]
 
     return salary_pool, total_pool_cost
 
@@ -461,16 +524,28 @@ def orders():
     # Salary Allocated/New MO Cost below are read straight off
     # actual_labor_cost/total_cost, which _recompute_active_order_salaries
     # just set using this exact formula.
+    # Share is this order's slice of the salary actually allocated across
+    # the listed active orders - the same as its cost share when no staff
+    # are excluded, and it follows the per-order staff exclusions
+    # (Staff / Salary Allocation checkboxes) when some are.
     salary_breakdown = {}
     if view != 'previous':
-        pre_salary_costs = {o.id: (o.actual_material_cost or 0) + (o.actual_overhead_cost or 0) for o in orders}
-        total_pool_cost = sum(pre_salary_costs.values())
+        from app.models import ManufacturingOrderStaffExclusion
+        order_ids = [o.id for o in orders]
+        excluded_counts = {}
+        if order_ids:
+            for mo_id, cnt in db.session.query(
+                    ManufacturingOrderStaffExclusion.mo_id, db.func.count(ManufacturingOrderStaffExclusion.id)
+            ).filter(ManufacturingOrderStaffExclusion.mo_id.in_(order_ids)).group_by(
+                    ManufacturingOrderStaffExclusion.mo_id).all():
+                excluded_counts[mo_id] = cnt
+        total_allocated = sum((o.actual_labor_cost or 0) for o in orders)
         for o in orders:
-            mo_cost = pre_salary_costs[o.id]
-            share_pct = (mo_cost / total_pool_cost * 100) if total_pool_cost > 0 else 0
+            share_pct = ((o.actual_labor_cost or 0) / total_allocated * 100) if total_allocated > 0 else 0
             qty = o.quantity_to_produce or 0
             salary_breakdown[o.id] = {
                 'cost_share_pct': share_pct,
+                'excluded_staff': excluded_counts.get(o.id, 0),
                 'salary_allocated': o.actual_labor_cost or 0,
                 'salary_per_unit': (o.actual_labor_cost or 0) / qty if qty > 0 else 0,
                 'new_mo_cost': o.total_cost or 0,
@@ -675,6 +750,11 @@ def add_order():
             
         mo.actual_overhead_cost = total_mo_overhead
         mo.actual_material_cost = sum(item.component.cost_price * (item.quantity * multiplier) for item in bom.items)
+        # Staff unticked in the form's salary picker are excluded from this
+        # order's salary allocation.
+        included_ids = _included_staff_ids_from_form()
+        if included_ids is not None:
+            _save_order_staff_exclusions(mo, included_ids)
         # Labor cost: auto-computed from HR using the cost-share formula -
         # every active order (including this new one) gets a slice of the
         # active staff's combined monthly salary, proportional to its own
@@ -710,7 +790,13 @@ def add_order():
         flash('Manufacturing Order created successfully.', 'success')
         return redirect(url_for('manufacturing.orders'))
         
-    return render_template('manufacturing/add_order.html', form=form, warehouses=warehouses, staff_list=active_staff)
+    excluded_staff_ids = set()
+    if request.method == 'POST':
+        posted = _included_staff_ids_from_form()
+        if posted is not None:
+            excluded_staff_ids = {s.id for s in active_staff if s.id not in set(posted)}
+    return render_template('manufacturing/add_order.html', form=form, warehouses=warehouses, staff_list=active_staff,
+                           excluded_staff_ids=excluded_staff_ids, salary_picker_disabled=False)
 
 @bp.route('/order/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -804,6 +890,9 @@ def edit_order(id):
         # edit is dates-only for a finished order and labor cost must stay
         # frozen at whatever it was when completed.
         if order.status != 'Completed':
+            included_ids = _included_staff_ids_from_form()
+            if included_ids is not None:
+                _save_order_staff_exclusions(order, included_ids)
             _recompute_active_order_salaries()
         elif items_changed:
             order.total_cost = order.actual_material_cost + (order.actual_labor_cost or 0) + (order.actual_overhead_cost or 0)
@@ -836,8 +925,11 @@ def edit_order(id):
         flash('Manufacturing Order updated successfully.', 'success')
         return redirect(url_for('manufacturing.order_details', id=order.id))
     
+    excluded_staff_ids = {e.staff_id for e in order.staff_exclusions}
     return render_template('manufacturing/edit_order.html', form=form, order=order, warehouses=warehouses,
-                           staff_list=staff_choice_list, assigned_staff_ids=assigned_staff_ids)
+                           staff_list=staff_choice_list, assigned_staff_ids=assigned_staff_ids,
+                           excluded_staff_ids=excluded_staff_ids,
+                           salary_picker_disabled=order.status == 'Completed')
 
 @bp.route('/order/<int:id>')
 @login_required
@@ -846,7 +938,73 @@ def order_details(id):
     progress = 0
     if order.quantity_to_produce and order.quantity_to_produce > 0:
         progress = ((order.produced_qty or 0) / order.quantity_to_produce) * 100.0
-    return render_template('manufacturing/order_details.html', order=order, progress=progress)
+
+    # Staff / Salary Allocation card: every active HR staff member with an
+    # Include checkbox (editable while the order is still active), plus any
+    # inactive staff still carrying an allocation from before.
+    salary_editable = _order_salary_editable(order)
+    excluded_ids = {e.staff_id for e in order.staff_exclusions}
+    assigned = {a.staff_id: a for a in order.staff_assignments}
+    staff_pool = list(_active_manufacturing_staff()) if salary_editable else []
+    seen = {s.id for s in staff_pool}
+    for a in order.staff_assignments:
+        if a.staff and a.staff.id not in seen:
+            staff_pool.append(a.staff)
+            seen.add(a.staff.id)
+    salary_rows = []
+    for s in staff_pool:
+        a = assigned.get(s.id)
+        salary_rows.append({
+            'staff': s,
+            'included': s.id not in excluded_ids,
+            'labor_cost': (a.labor_cost or 0) if a else 0,
+        })
+    salary_rows.sort(key=lambda r: (not r['included'], (r['staff'].name or '').lower()))
+    included_count = sum(1 for r in salary_rows if r['included'])
+
+    return render_template('manufacturing/order_details.html', order=order, progress=progress,
+                           salary_rows=salary_rows, salary_editable=salary_editable,
+                           included_count=included_count)
+
+
+def _order_salary_editable(order):
+    """Staff can only be included/excluded while the order is still in the
+    active salary pool - a completed or timer-stopped order's labor cost is
+    frozen."""
+    return not order.timer_stopped and order.status != 'Completed'
+
+
+@bp.route('/order/<int:id>/salary-staff', methods=['POST'])
+@login_required
+@permission_required('manufacturing', action='edit')
+def update_order_salary_staff(id):
+    """Save which staff are included in this order's salary allocation
+    (JSON: {"included_staff_ids": [...]}; every other active staff member
+    is excluded), then recompute every active order's labor cost - an
+    excluded staff member's salary moves onto the other orders they're
+    still included on."""
+    from app.models import ManufacturingOrderStaffExclusion
+    order = ManufacturingOrder.query.get_or_404(id)
+    if not _order_salary_editable(order):
+        return jsonify({'success': False,
+                        'message': 'This order is completed or stopped - its labor cost is frozen.'}), 400
+
+    data = request.get_json(silent=True) or {}
+    try:
+        included = {int(x) for x in (data.get('included_staff_ids') or [])}
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'Invalid staff selection.'}), 400
+
+    excluded_names = _save_order_staff_exclusions(order, included)
+    _recompute_active_order_salaries()
+    db.session.commit()
+
+    log_activity('Manufacturing', f'Updated salary staff on {order.order_number}',
+                 f'Excluded: {", ".join(excluded_names) or "none"}; '
+                 f'Labor cost now PKR {order.actual_labor_cost or 0:,.2f}')
+    return jsonify({'success': True,
+                    'labor_cost': order.actual_labor_cost or 0,
+                    'total_cost': order.total_cost or 0})
 
 @bp.route('/order/<int:id>/complete', methods=['POST'])
 @login_required

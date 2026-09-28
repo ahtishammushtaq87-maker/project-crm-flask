@@ -407,6 +407,39 @@ def _withdraw_sale_amount(sale, amount):
     sale.update_status()
 
 
+def image_file_in_use(path, ignore_bill_payment_id=None, ignore_payment_id=None, ignore_shipping_bill_id=None):
+    """True if an uploaded image file is still referenced by another record.
+    Expense images are shared as-is with transferred payments and with a
+    bill's shipping receipt ("Add this to Purchase/Invoice Payment", "Add
+    this to PO Shipping"), so deleting one record must not delete a file the
+    others still show. Paths are stored both static-relative ("uploads/...")
+    and project-root-relative ("app/static/uploads/..."); both are matched.
+    The ignore_* ids exclude the record being deleted/replaced itself."""
+    from app.models import Expense, BillPayment, Payment
+    if not path:
+        return False
+    rel = path.replace('\\', '/').replace('app/static/', '')
+    variants = [rel, 'app/static/' + rel]
+    if Expense.query.filter(Expense.bill_image_path.in_(variants)).first():
+        return True
+    q = BillPayment.query.filter(BillPayment.image_path.in_(variants))
+    if ignore_bill_payment_id:
+        q = q.filter(BillPayment.id != ignore_bill_payment_id)
+    if q.first():
+        return True
+    q = Payment.query.filter(Payment.image_path.in_(variants))
+    if ignore_payment_id:
+        q = q.filter(Payment.id != ignore_payment_id)
+    if q.first():
+        return True
+    q = PurchaseBill.query.filter(PurchaseBill.shipping_image_path.in_(variants))
+    if ignore_shipping_bill_id:
+        q = q.filter(PurchaseBill.id != ignore_shipping_bill_id)
+    if q.first():
+        return True
+    return False
+
+
 def adjust_sale_payment(sale, delta, user_id):
     """Reconcile a sale after one of its payments is edited or deleted by `delta`.
 

@@ -61,7 +61,7 @@
                             <th>Start Date</th>
                             <th title="Material + Overhead cost only, before HR salary is added">MO Cost (Without Salary)</th>
                             {% if view != 'previous' %}
-                            <th title="This order's share of the combined Material+Overhead cost of all active orders">Cost Share</th>
+                            <th title="This order's share of the total salary allocated across active orders (its Material+Overhead cost share, adjusted for any staff excluded on the order)">Cost Share</th>
                             <th title="Monthly Manufacturing Salaries (active HR staff) × Cost Share">Salary Allocated</th>
                             <th title="Salary Allocated ÷ Quantity to Produce">Salary per Unit</th>
                             <th title="MO Cost (Without Salary) + Salary Allocated">New MO Cost (With Salary)</th>
@@ -112,7 +112,7 @@
                             <td>PKR {{ "%.2f"|format((ord.actual_material_cost or 0) + (ord.actual_overhead_cost or 0)) }}</td>
                             {% if view != 'previous' %}
                             <td>{{ "%.2f"|format(sb.cost_share_pct) }}%</td>
-                            <td>PKR {{ "%.2f"|format(sb.salary_allocated) }}</td>
+                            <td>PKR {{ "%.2f"|format(sb.salary_allocated) }}{% if sb.excluded_staff %}<br><a href="{{ url_for('manufacturing.order_details', id=ord.id) }}" class="badge bg-secondary text-decoration-none fw-normal" title="Staff excluded from this order's salary allocation">{{ sb.excluded_staff }} staff excluded</a>{% endif %}</td>
                             <td>PKR {{ "%.2f"|format(sb.salary_per_unit) }}</td>
                             <td>PKR {{ "%.2f"|format(sb.new_mo_cost) }}</td>
                             {% endif %}

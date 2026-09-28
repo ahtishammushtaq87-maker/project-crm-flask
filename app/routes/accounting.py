@@ -155,16 +155,83 @@ def _reverse_expense_payment_transfer(expense, user_id):
     """Reverse and remove any Payment/BillPayment linked to this expense, and
     clear its transfer flags. Used when the expense is deleted, or when the
     checkbox is unchecked / target changed on edit. `expense` must already
-    have a flushed id."""
+    have a flushed id. Also takes back a "PO Shipping" transfer's amount off
+    the bill's shipping charge."""
+    shipping_bill_id = expense.linked_bill_id if (expense.shipping_transfer_amount or 0) > 0 else None
+    shipping_amount = expense.shipping_transfer_amount or 0
     existing_payment = Payment.query.filter_by(expense_id=expense.id).first()
     if existing_payment:
         _reverse_and_delete_sale_payment(existing_payment, user_id)
     existing_bill_payment = BillPayment.query.filter_by(expense_id=expense.id).first()
     if existing_bill_payment:
         _reverse_and_delete_bill_payment(existing_bill_payment)
+    if shipping_bill_id:
+        bill = PurchaseBill.query.get(shipping_bill_id)
+        if bill:
+            _change_bill_shipping(bill, -shipping_amount)
+            if bill.shipping_image_path and bill.shipping_image_path == _static_relative(expense.bill_image_path):
+                bill.shipping_image_path = None
     expense.linked_sale_id = None
     expense.linked_bill_id = None
     expense.is_payment_transfer = False
+    expense.shipping_transfer_amount = 0
+
+
+def _static_relative(path):
+    """Expense.bill_image_path is project-root-relative ("app/static/uploads/
+    ..."); BillPayment.image_path and PurchaseBill.shipping_image_path are
+    static-folder-relative ("uploads/..."). Convert the former to the latter."""
+    if not path:
+        return None
+    return path.replace('\\', '/').replace('app/static/', '')
+
+
+def _change_bill_shipping(bill, delta):
+    """Add `delta` (may be negative) to the bill's shipping charge and
+    recalculate totals + product costs the same way the bill's own "Update
+    Shipping Charge" modal does. Does not commit."""
+    from app.routes.purchase import recalculate_bill_costs_for_shipping
+    old_shipping = bill.shipping_charge or 0
+    new_shipping = max(0.0, round(old_shipping + delta, 2))
+    bill.shipping_charge = new_shipping
+    recalculate_bill_costs_for_shipping(bill, old_shipping, new_shipping)
+    bill.update_status()
+
+
+def _sync_expense_shipping_transfer(expense, bill_id, amount, user_id, is_admin):
+    """"Add this to PO Shipping": add the expense's amount to a Purchase
+    Bill's shipping charge only (product costs recalculated, expense image
+    used as the shipping receipt). No BillPayment is recorded - the bill's
+    Payment History is untouched. Idempotent like
+    _sync_expense_payment_transfer."""
+    bill = PurchaseBill.query.get(bill_id)
+    if not bill:
+        _reverse_expense_payment_transfer(expense, user_id)
+        return
+    receipt_path = _static_relative(expense.bill_image_path)
+
+    # Same bill, same amount: only refresh the receipt.
+    if (expense.linked_bill_id == bill.id
+            and abs((expense.shipping_transfer_amount or 0) - amount) < 0.01):
+        # Shipping transfers made before this fix also recorded a
+        # BillPayment - remove it (and its paid amount) on re-save.
+        existing_bp = BillPayment.query.filter_by(expense_id=expense.id).first()
+        if existing_bp:
+            _reverse_and_delete_bill_payment(existing_bp)
+        if receipt_path:
+            bill.shipping_image_path = receipt_path
+        return
+
+    _reverse_expense_payment_transfer(expense, user_id)
+    db.session.flush()
+
+    _change_bill_shipping(bill, amount)
+    if receipt_path:
+        bill.shipping_image_path = receipt_path
+    expense.linked_bill_id = bill.id
+    expense.linked_sale_id = None
+    expense.is_payment_transfer = True
+    expense.shipping_transfer_amount = amount
 
 
 def _sync_expense_payment_transfer(expense, target_type, target_id, amount, user_id, is_admin):
@@ -172,10 +239,12 @@ def _sync_expense_payment_transfer(expense, target_type, target_id, amount, user
     "Add this to Invoice/Purchase Payment" checkbox + dropdown + amount.
     Idempotent: finds-or-creates-or-reverses by expense_id, same convention as
     _sync_expense_account_transaction. `expense` must already have a flushed
-    id. `target_type` is 'sale', 'bill', or falsy (box unchecked/no target)."""
+    id. `target_type` is 'sale', 'bill', 'shipping' (Add this to PO
+    Shipping - see _sync_expense_shipping_transfer), or falsy (box
+    unchecked/no target)."""
     from app.utils import adjust_sale_payment, apply_sale_payment_with_credit, apply_bill_payment_with_credit
 
-    if target_type not in ('sale', 'bill') or not target_id:
+    if target_type not in ('sale', 'bill', 'shipping') or not target_id:
         _reverse_expense_payment_transfer(expense, user_id)
         return
 
@@ -183,6 +252,14 @@ def _sync_expense_payment_transfer(expense, target_type, target_id, amount, user
     if amount <= 0:
         _reverse_expense_payment_transfer(expense, user_id)
         return
+
+    if target_type == 'shipping':
+        _sync_expense_shipping_transfer(expense, target_id, amount, user_id, is_admin)
+        return
+    if (expense.shipping_transfer_amount or 0) > 0:
+        # Switching from a PO Shipping transfer to a plain Sale/Bill payment.
+        _reverse_expense_payment_transfer(expense, user_id)
+        db.session.flush()
 
     existing_payment = Payment.query.filter_by(expense_id=expense.id).first()
     existing_bill_payment = BillPayment.query.filter_by(expense_id=expense.id).first()
@@ -1580,9 +1657,13 @@ def search_sales_json():
 def search_bills_json():
     """Searchable dropdown source for "Add this to Purchase Payment" on
     Add/Edit Expense — Purchase bills with a balance still due, matched by
-    bill number or vendor name."""
+    bill number or vendor name. With ?for=shipping (Add this to PO
+    Shipping) every non-cancelled bill is listed, paid or not, since shipping
+    can be added to any of them."""
     q = request.args.get('q', '').strip()
-    query = PurchaseBill.query.filter(PurchaseBill.status.notin_(['paid', 'cancelled']))
+    for_shipping = request.args.get('for') == 'shipping'
+    excluded = ['cancelled'] if for_shipping else ['paid', 'cancelled']
+    query = PurchaseBill.query.filter(PurchaseBill.status.notin_(excluded))
     if q:
         like = f"%{q}%"
         query = query.join(PurchaseBill.vendor, isouter=True).filter(
@@ -1592,6 +1673,11 @@ def search_bills_json():
     results = []
     for b in bills:
         balance = max(0.0, b.total - b.paid_amount - (b.cancelled_amount or 0))
+        if for_shipping:
+            label = (f"{b.bill_number} — {b.vendor.name if b.vendor else 'No Vendor'} "
+                     f"(Shipping: PKR {(b.shipping_charge or 0):,.2f})")
+            results.append({'id': b.id, 'text': label})
+            continue
         if balance <= 0.009:
             continue
         label = f"{b.bill_number} — {b.vendor.name if b.vendor else 'No Vendor'} (Due: PKR {balance:,.2f})"
@@ -2529,9 +2615,14 @@ def _apply_inventory_shift(expense):
     straight off `request.form` — shared by the standalone AJAX
     shift-to-inventory action and by shifting inline while creating/editing
     an expense. Each selected item's amount must add up to the expense's
-    full amount; each item's cost_price is REPLACED with amount/quantity
-    (not added on top of whatever it already was), and quantity (default 1
-    if left blank) is ADDED onto the item's existing stock quantity.
+    full amount, and quantity (default 1 if left blank) is ADDED onto the
+    item's existing stock quantity. How cost_price changes depends on
+    `inventory_cost_mode` on the form:
+      - 'replace' (default): cost_price is REPLACED with amount / quantity.
+      - 'average': the amount is added to the stock's total value and
+        cost_price becomes the weighted average over the new total quantity:
+        (old_cost * old_qty + amount) / (old_qty + quantity).
+    Either way the old cost is recorded, so Undo shift restores it exactly.
 
     Mutates `expense` and the affected Product rows in the current session
     but does not commit. Raises ValueError with a user-facing message on any
@@ -2591,13 +2682,22 @@ def _apply_inventory_shift(expense):
         raise ValueError(f'The item costs must add up to the expense amount (PKR {expense.amount:,.2f}). '
                           f'They currently total PKR {total_entered:,.2f}.')
 
+    cost_mode = request.form.get('inventory_cost_mode', 'replace')
+    if cost_mode not in ('replace', 'average'):
+        cost_mode = 'replace'
+
     applied_names = []
     shifted_tokens = []
     qty_tokens = []
     for product in products:
         old_cost = product.cost_price or 0
         qty = item_qtys[product.id]
-        unit_cost = round(item_costs[product.id] / qty, 2)
+        if cost_mode == 'average':
+            # Negative stock (oversold) counts as zero for the average.
+            old_qty = max(0.0, product.quantity or 0)
+            unit_cost = round((old_cost * old_qty + item_costs[product.id]) / (old_qty + qty), 2)
+        else:
+            unit_cost = round(item_costs[product.id] / qty, 2)
         product.cost_price = unit_cost
         product.quantity = (product.quantity or 0) + qty
         applied_names.append(
@@ -2611,7 +2711,8 @@ def _apply_inventory_shift(expense):
 
     if len(products) == 1:
         p = products[0]
-        msg = (f'{p.name} cost set to PKR {item_costs[p.id] / item_qtys[p.id]:,.2f}/unit '
+        verb = 'averaged to' if cost_mode == 'average' else 'set to'
+        msg = (f'{p.name} cost {verb} PKR {p.cost_price:,.2f}/unit '
                f'and quantity increased by {item_qtys[p.id]:g}.')
     else:
         msg = f'Cost and quantity updated on {len(products)} items (PKR {expense.amount:,.2f} total).'
@@ -2814,7 +2915,7 @@ def add_expense():
             flash(f'The "{picked_category.name}" category does not allow Shift Expense to PD Project. '
                   f'Pick a different category, or enable it on Expense Categories.', 'danger')
             return redirect(url_for('accounting.add_expense'))
-        if (request.form.get('payment_transfer_type') == 'bill' and request.form.get('payment_transfer_target_id')
+        if (request.form.get('payment_transfer_type') in ('bill', 'shipping') and request.form.get('payment_transfer_target_id')
                 and not category_opts['purchase']):
             flash(f'The "{picked_category.name}" category does not allow Add to Purchase Payment. '
                   f'Pick a different category, or enable it on Expense Categories.', 'danger')
@@ -2833,7 +2934,7 @@ def add_expense():
         # only counts as an available option for admins.
         if category_opts['pd'] and is_admin: option_labels.append('Shift Expense to PD Project')
         if option_labels:
-            used_transfer = (request.form.get('payment_transfer_type') == 'bill'
+            used_transfer = (request.form.get('payment_transfer_type') in ('bill', 'shipping')
                               and request.form.get('payment_transfer_target_id') and category_opts['purchase'])
             used_shift = request.form.get('shift_to_inventory') == '1' and category_opts['shift']
             used_overhead = is_overhead and category_opts['overhead']
@@ -3066,7 +3167,7 @@ def add_expense():
             # Only a real conflict when a Sale/Bill was actually picked -
             # the transfer-type radio always submits a value (one of them is
             # pre-checked), so the type alone doesn't mean the user chose it.
-            if (request.form.get('payment_transfer_type') in ('sale', 'bill')
+            if (request.form.get('payment_transfer_type') in ('sale', 'bill', 'shipping')
                     and request.form.get('payment_transfer_target_id')):
                 db.session.rollback()
                 flash('Expense not created — it cannot both be shifted to inventory and linked to an '
@@ -3125,7 +3226,7 @@ def add_expense():
             if transfer_type == 'sale':
                 transfer_type = None
             transfer_target_id = request.form.get('payment_transfer_target_id', type=int)
-            if transfer_type in ('sale', 'bill') and transfer_target_id and len(created_expenses) == 1:
+            if transfer_type in ('sale', 'bill', 'shipping') and transfer_target_id and len(created_expenses) == 1:
                 db.session.flush()
                 _sync_expense_payment_transfer(created_expenses[0], transfer_type, transfer_target_id,
                                                created_expenses[0].amount, current_user.id, is_admin)
@@ -3935,7 +4036,7 @@ def edit_expense(id):
             flash(f'The "{picked_category.name}" category does not allow Shift Expense to PD Project. '
                   f'Pick a different category, or enable it on Expense Categories.', 'danger')
             return redirect(url_for('accounting.edit_expense', id=id))
-        if (request.form.get('payment_transfer_type') == 'bill' and request.form.get('payment_transfer_target_id')
+        if (request.form.get('payment_transfer_type') in ('bill', 'shipping') and request.form.get('payment_transfer_target_id')
                 and not category_opts['purchase']):
             db.session.rollback()
             flash(f'The "{picked_category.name}" category does not allow Add to Purchase Payment. '
@@ -3965,7 +4066,7 @@ def edit_expense(id):
             option_labels.append('Shift Expense to PD Project')
         if option_labels:
             transfer_target_id = request.form.get('payment_transfer_target_id', type=int)
-            used_purchase = (request.form.get('payment_transfer_type') == 'bill'
+            used_purchase = (request.form.get('payment_transfer_type') in ('bill', 'shipping')
                               and transfer_target_id and category_opts['purchase'])
             used_invoice = (request.form.get('payment_transfer_type') == 'sale' and transfer_target_id
                              and (category_opts['invoice']
@@ -4111,7 +4212,10 @@ def edit_expense(id):
             if 'bill_image' in request.files:
                 bill_file = request.files['bill_image']
                 if bill_file and bill_file.filename:
-                    filename = secure_filename(bill_file.filename)
+                    # Unique prefix, same as Add Expense - a plain filename
+                    # (e.g. "1.jpg") would overwrite another record's image.
+                    import time, uuid
+                    filename = f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{secure_filename(bill_file.filename)}"
                     bill_path = os.path.join('app', 'static', 'uploads', 'bills', filename)
                     os.makedirs(os.path.dirname(bill_path), exist_ok=True)
                     bill_file.save(bill_path)
@@ -4136,7 +4240,7 @@ def edit_expense(id):
         if (not new_is_overhead and getattr(current_user, 'is_admin', False)
                 and not getattr(expense, 'is_inventory_shifted', False)
                 and request.form.get('shift_to_inventory') == '1'):
-            if (request.form.get('payment_transfer_type') in ('sale', 'bill')
+            if (request.form.get('payment_transfer_type') in ('sale', 'bill', 'shipping')
                     and request.form.get('payment_transfer_target_id')):
                 db.session.rollback()
                 flash('Expense not updated — it cannot both be shifted to inventory and linked to an '
@@ -4219,7 +4323,7 @@ def edit_expense(id):
         transfer_target_id = request.form.get('payment_transfer_target_id', type=int)
         if transfer_type == 'sale' and not (expense.linked_sale_id and expense.linked_sale_id == transfer_target_id):
             transfer_type = None
-        if transfer_type in ('sale', 'bill') and transfer_target_id:
+        if transfer_type in ('sale', 'bill', 'shipping') and transfer_target_id:
             _sync_expense_payment_transfer(expense, transfer_type, transfer_target_id,
                                            expense.amount, current_user.id, is_admin)
         else:
@@ -4300,8 +4404,12 @@ def edit_expense(id):
     elif expense.linked_bill_id and expense.linked_bill:
         b = expense.linked_bill
         balance = max(0.0, b.total - b.paid_amount - (b.cancelled_amount or 0))
-        existing_payment_transfer = {'id': b.id, 'type': 'bill',
-                                     'text': f"{b.bill_number} — {b.vendor.name if b.vendor else 'No Vendor'} (Due: PKR {balance:,.2f})"}
+        if (expense.shipping_transfer_amount or 0) > 0:
+            existing_payment_transfer = {'id': b.id, 'type': 'shipping',
+                                         'text': f"{b.bill_number} — {b.vendor.name if b.vendor else 'No Vendor'} (Shipping: PKR {(b.shipping_charge or 0):,.2f})"}
+        else:
+            existing_payment_transfer = {'id': b.id, 'type': 'bill',
+                                         'text': f"{b.bill_number} — {b.vendor.name if b.vendor else 'No Vendor'} (Due: PKR {balance:,.2f})"}
 
     return render_template('accounting/edit_expense.html', form=form, expense=expense,
                            expense_accounts=expense_accounts, existing_account_id=existing_account_id,

@@ -2123,6 +2123,11 @@ class Expense(db.Model):
     linked_sale_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=True, index=True)
     linked_bill_id = db.Column(db.Integer, db.ForeignKey('purchase_bills.id'), nullable=True, index=True)
     is_payment_transfer = db.Column(db.Boolean, default=False, index=True)
+    # "Add this to PO Shipping": when > 0, this expense's amount was ALSO
+    # added to linked_bill's shipping_charge (and paid off by the linked
+    # BillPayment), so reversing the transfer takes exactly this much back
+    # off the bill's shipping.
+    shipping_transfer_amount = db.Column(db.Float, default=0)
 
     # Relationships
     vendor = db.relationship('Vendor', backref='expenses', lazy=True)
@@ -3569,6 +3574,27 @@ class ManufacturingOrderStaff(db.Model):
                             backref=db.backref('staff_assignments', lazy=True, cascade='all, delete-orphan'))
 
     __table_args__ = (db.UniqueConstraint('mo_id', 'staff_id', name='uq_mo_staff_once'),)
+
+
+class ManufacturingOrderStaffExclusion(db.Model):
+    """A staff member unticked on a Manufacturing Order's "Staff / Salary
+    Allocation" card - their salary is NOT charged to that order's labor
+    cost. Their salary is instead shared across the other active orders
+    they're still included on (see _recompute_active_order_salaries in
+    app/routes/manufacturing.py). No row = included (the default)."""
+    __tablename__ = 'manufacturing_order_staff_exclusions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    mo_id = db.Column(db.Integer, db.ForeignKey('manufacturing_orders.id', ondelete='CASCADE'), nullable=False, index=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id', ondelete='CASCADE'), nullable=False, index=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    staff = db.relationship('Staff')
+    order = db.relationship('ManufacturingOrder',
+                            backref=db.backref('staff_exclusions', lazy=True, cascade='all, delete-orphan'))
+
+    __table_args__ = (db.UniqueConstraint('mo_id', 'staff_id', name='uq_mo_staff_exclusion_once'),)
 
 class MonthlyTarget(db.Model):
     """Monthly target model for KPIs"""
