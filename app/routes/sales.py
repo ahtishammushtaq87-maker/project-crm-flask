@@ -398,7 +398,10 @@ def create_invoice():
             if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
                 product = Product.query.get(int(product_ids[i]))
                 quantity = float(quantities[i])
-                price = float(prices[i])
+                # Selling price for THIS invoice only. It defaults to the product's
+                # list price on the form but may be overridden per invoice; it is
+                # stored on the SaleItem and Product.unit_price is never changed.
+                price = max(float(prices[i] or 0) if i < len(prices) else float(product.unit_price or 0), 0)
                 delivery_fee = float(deliveries[i]) if i < len(deliveries) else 0
                 unit_discount = 0
                 if i < len(item_unit_discounts) and item_unit_discounts[i]:
@@ -747,7 +750,10 @@ def edit_invoice(id):
             if product_ids[i] and quantities[i] and float(quantities[i]) > 0:
                 product = Product.query.get(int(product_ids[i]))
                 quantity = float(quantities[i])
-                price = float(prices[i])
+                # Selling price for THIS invoice only. It defaults to the product's
+                # list price on the form but may be overridden per invoice; it is
+                # stored on the SaleItem and Product.unit_price is never changed.
+                price = max(float(prices[i] or 0) if i < len(prices) else float(product.unit_price or 0), 0)
                 delivery_fee = float(deliveries[i]) if i < len(deliveries) else 0
                 unit_discount = 0
                 if i < len(item_unit_discounts) and item_unit_discounts[i]:

@@ -333,7 +333,8 @@
                                         </td>
                                         <td>
                                             <input type="number" name="price[]" class="form-control form-control-sm price text-center" step="0.01"
-                                                value="{{ '%.2f'|format(item.unit_price) }}" {% if not current_user.is_admin %}readonly{% endif %}>
+                                                value="{{ '%.2f'|format(item.unit_price) }}" min="0" title="Selling price for THIS invoice only - the product's price in inventory is not changed">
+                                            <small class="price-note d-block text-center" style="font-size:.62rem;"></small>
                                         </td>
                                         <td>
                                             <input type="number" name="unit_discount[]" class="form-control form-control-sm item-discount text-center" step="0.01"
@@ -492,7 +493,6 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
-    const isAdmin = "{{ 'true' if current_user.is_admin else 'false' }}" === "true";
 
     function addItem() {
         const newRow = document.querySelector('.item-row').cloneNode(true);
@@ -505,8 +505,7 @@
         newRow.querySelectorAll('input, select').forEach(input => input.value = '');
         newRow.querySelector('.quantity').value = '1';
         newRow.querySelector('.price').value = '0';
-        if (isAdmin) { newRow.querySelector('.price').removeAttribute('readonly'); }
-        else { newRow.querySelector('.price').setAttribute('readonly', true); }
+        newRow.querySelector('.price-note').textContent = '';
         newRow.querySelector('.item-discount').value = '0';
         newRow.querySelector('.delivery').value = '0';
         newRow.querySelector('.cost-display').value = '-';
@@ -564,6 +563,26 @@
         discountInput.addEventListener('input', () => calculateItemTotal(row));
     }
 
+    // The price box holds this invoice's selling price. It starts at the
+    // product's list price, but can be changed for this invoice only — the
+    // product's price in inventory is never touched.
+    function updatePriceNote(row) {
+        const note = row.querySelector('.price-note');
+        if (!note) return;
+        const opt = row.querySelector('.product-select');
+        const selected = opt && opt.options[opt.selectedIndex];
+        if (!selected || !selected.value) { note.textContent = ''; return; }
+        const listPrice = parseFloat(selected.getAttribute('data-price')) || 0;
+        const price = parseFloat(row.querySelector('.price').value) || 0;
+        if (Math.abs(price - listPrice) < 0.005) {
+            note.className = 'price-note d-block text-center text-muted';
+            note.textContent = 'List price';
+        } else {
+            note.className = 'price-note d-block text-center text-warning fw-bold';
+            note.textContent = 'Custom (list ' + listPrice.toFixed(2) + ')';
+        }
+    }
+
     function calculateItemTotal(row) {
         // In Lump Sum mode the per-unit figures are derived, not typed, so a
         // quantity or price change re-splits the invoice discount first.
@@ -574,6 +593,7 @@
         }
         const qty = parseFloat(row.querySelector('.quantity').value) || 0;
         const price = parseFloat(row.querySelector('.price').value) || 0;
+        updatePriceNote(row);
         const delivery = parseFloat(row.querySelector('.delivery').value) || 0;
         // The field holds the discount for ONE unit, so the line discount grows
         // with the quantity.
