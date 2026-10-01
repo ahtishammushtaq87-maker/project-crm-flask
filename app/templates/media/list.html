@@ -1,337 +1,597 @@
 {% extends 'base.html' %}
 
-{% block title %}Media Library{% endblock %}
+{% block title %}{{ folder.name if folder else 'Media Library' }} - Media{% endblock %}
+
+{% macro file_kind(doc) -%}
+{%- set t = (doc.file_type or '')|lower -%}
+{%- set ext = (doc.filename.rsplit('.', 1)[-1]|lower) if '.' in doc.filename else '' -%}
+{%- if 'image' in t -%}image
+{%- elif 'pdf' in t or ext == 'pdf' -%}pdf
+{%- elif 'word' in t or ext in ('doc', 'docx') -%}word
+{%- elif 'excel' in t or 'sheet' in t or 'csv' in t or ext in ('xls', 'xlsx', 'csv') -%}excel
+{%- elif 'presentation' in t or 'powerpoint' in t or ext in ('ppt', 'pptx') -%}ppt
+{%- elif 'zip' in t or 'compressed' in t or ext in ('zip', 'rar', '7z') -%}zip
+{%- elif 'video' in t -%}video
+{%- elif 'audio' in t -%}audio
+{%- elif 'text' in t -%}text
+{%- else -%}other{%- endif -%}
+{%- endmacro %}
+
+{% macro size_text(bytes) -%}
+{%- set b = bytes or 0 -%}
+{%- if b >= 1048576 -%}{{ '%.1f'|format(b / 1048576) }} MB
+{%- elif b >= 1024 -%}{{ '%.1f'|format(b / 1024) }} KB
+{%- else -%}{{ b }} B{%- endif -%}
+{%- endmacro %}
+
+{% macro folder_svg() %}
+<svg viewBox="0 0 64 52" class="mx-folder-svg" aria-hidden="true">
+    <path d="M4 6a4 4 0 0 1 4-4h15.5a4 4 0 0 1 2.9 1.2L31 8h25a4 4 0 0 1 4 4v4H4z" fill="#E8A317"/>
+    <rect x="4" y="13" width="56" height="37" rx="4" fill="#FFC83D"/>
+    <rect x="4" y="13" width="56" height="5" rx="2" fill="#FFD766"/>
+</svg>
+{% endmacro %}
 
 {% block content %}
-<div class="row mb-4">
-    <div class="col-md-12">
-        <div class="card shadow-sm border-0 rounded-3">
-            <div class="card-body p-4">
-                <div class="d-flex justify-content-between align-items-center mb-4">
-                    <div>
-                        <h3 class="fw-bold text-primary mb-1"><i class="fas fa-folder-open me-2"></i>Media Library</h3>
-                        <p class="text-muted mb-0">Upload and manage your business documents and assets.</p>
-                    </div>
+<div class="mx-wrap">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <div>
+            <h3 class="fw-bold mb-0"><i class="fas fa-folder-open me-2 text-warning"></i>Media Library</h3>
+            <small class="text-muted">Create folders, drag files in from your computer, and drag items onto a folder to move them.</small>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            {% if can_add %}
+            <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#mxNewFolderModal">
+                <i class="fas fa-folder-plus me-1 text-warning"></i>New Folder
+            </button>
+            <button type="button" class="btn btn-primary" id="mxUploadBtn">
+                <i class="fas fa-cloud-upload-alt me-1"></i>Upload
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+    {% endwith %}
+
+    <!-- Address bar / toolbar -->
+    <div class="mx-toolbar mb-3">
+        <nav class="mx-crumbs" aria-label="Folder path">
+            {% if folder %}
+            <a href="{{ url_for('media.index', folder=folder.parent_id) if folder.parent_id else url_for('media.index') }}"
+               class="mx-up btn btn-sm btn-light border me-2" title="Up one level"><i class="fas fa-arrow-up"></i></a>
+            {% endif %}
+            <a href="{{ url_for('media.index') }}" class="mx-crumb mx-drop" data-folder-id="">
+                <i class="fas fa-hdd me-1"></i>Media Library
+            </a>
+            {% if folder %}
+            {% for f in folder.path %}
+            <i class="fas fa-chevron-right mx-crumb-sep"></i>
+            <a href="{{ url_for('media.index', folder=f.id) }}" class="mx-crumb mx-drop {% if loop.last %}active{% endif %}" data-folder-id="{{ f.id }}">{{ f.name }}</a>
+            {% endfor %}
+            {% endif %}
+        </nav>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+            <div class="input-group input-group-sm mx-search">
+                <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                <input type="search" id="mxSearch" class="form-control" placeholder="Search in {{ folder.name if folder else 'Media Library' }}">
+            </div>
+            <select id="mxSort" class="form-select form-select-sm" style="width:auto">
+                <option value="name">Sort: Name</option>
+                <option value="date">Sort: Date</option>
+                <option value="size">Sort: Size</option>
+                <option value="type">Sort: Type</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Selection bar -->
+    <div id="mxSelBar" class="mx-selbar d-none mb-3">
+        <span><strong id="mxSelCount">0</strong> selected</span>
+        {% if can_add %}
+        <button type="button" class="btn btn-sm btn-light border" id="mxSelMove"><i class="fas fa-share me-1"></i>Move to…</button>
+        {% endif %}
+        <button type="button" class="btn btn-sm btn-link text-decoration-none" id="mxSelClear">Clear</button>
+    </div>
+
+    <!-- Upload progress -->
+    <div id="mxProgress" class="mb-3 d-none">
+        <div class="d-flex justify-content-between small mb-1">
+            <span id="mxProgressText" class="text-muted">Uploading…</span><span id="mxProgressPct" class="fw-bold">0%</span>
+        </div>
+        <div class="progress" style="height:8px;"><div id="mxProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div></div>
+    </div>
+    <div id="mxUploadErrors"></div>
+
+    <!-- Explorer -->
+    <div id="mxArea" class="mx-area" data-folder-id="{{ folder.id if folder else '' }}">
+        <div class="mx-drop-overlay"><div><i class="fas fa-cloud-upload-alt fa-3x mb-2"></i><br>Drop files to upload to <strong>{{ folder.name if folder else 'Media Library' }}</strong></div></div>
+
+        {% if folders %}
+        <div class="mx-section-title">Folders <span class="text-muted fw-normal">({{ folders|length }})</span></div>
+        <div class="mx-grid mb-4">
+            {% for f in folders %}
+            <div class="mx-tile mx-drop" tabindex="0" draggable="{{ 'true' if can_add else 'false' }}"
+                 data-type="folder" data-id="{{ f.id }}" data-folder-id="{{ f.id }}"
+                 data-name="{{ f.name|lower }}" data-date="{{ f.created_at.isoformat() if f.created_at else '' }}" data-size="0" data-kind="folder"
+                 data-open="{{ url_for('media.index', folder=f.id) }}">
+                <input type="checkbox" class="form-check-input mx-check" title="Select">
+                <div class="mx-icon">{{ folder_svg() }}</div>
+                <div class="mx-meta">
+                    <div class="mx-name" title="{{ f.name }}">{{ f.name }}</div>
+                    <div class="mx-sub">{{ folder_counts.get(f.id, 0) }} item{{ '' if folder_counts.get(f.id, 0) == 1 else 's' }}</div>
+                    <div class="mx-sub2">File folder</div>
                 </div>
-
-                <!-- Flash messages -->
-                {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                {% for category, message in messages %}
-                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-                {% endfor %}
-                {% endif %}
-                {% endwith %}
-
-                {% if current_user.is_admin or current_user.can_add_media %}
-                <!-- Upload Zone -->
-                <div id="drop-zone" class="upload-zone mb-4 p-5 text-center rounded-3">
-                    <div class="upload-icon mb-3">
-                        <i class="fas fa-cloud-upload-alt fa-4x text-primary" style="opacity:0.5"></i>
-                    </div>
-                    <h4 class="fw-bold">Drag & Drop Files Here</h4>
-                    <p class="text-muted mb-3">or click the button below to browse files</p>
-                    <button type="button" id="browse-btn" class="btn btn-primary">
-                        <i class="fas fa-folder-open me-2"></i>Browse Files
-                    </button>
-                    <!-- Hidden file input — NOT inside drop zone to avoid click conflicts -->
-                </div>
-
-                <!-- Upload Progress -->
-                <div id="upload-progress-container" class="mb-3 d-none">
-                    <div class="d-flex align-items-center mb-1">
-                        <span id="upload-status-text" class="text-muted small me-2">Uploading...</span>
-                        <span id="progress-percent" class="fw-bold small">0%</span>
-                    </div>
-                    <div class="progress" style="height: 10px;">
-                        <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%"></div>
-                    </div>
-                </div>
-
-                <div id="upload-alerts"></div>
-                {% endif %}
-
-                <!-- Files Table -->
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle border-top" id="mediaTable">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Filename</th>
-                                <th>Type</th>
-                                <th>Size</th>
-                                <th>Uploaded By</th>
-                                <th>Date</th>
-                                <th class="text-end">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for doc in documents %}
-                            <tr>
-                                <td>
-                                    <div class="d-flex align-items-center">
-                                        <div class="file-icon-sm me-3 bg-light rounded p-2">
-                                            {% if doc.file_type and 'image' in doc.file_type %}
-                                            <i class="fas fa-file-image text-success"></i>
-                                            {% elif doc.file_type and 'pdf' in doc.file_type %}
-                                            <i class="fas fa-file-pdf text-danger"></i>
-                                            {% elif doc.file_type and ('word' in doc.file_type or 'doc' in doc.file_type) %}
-                                            <i class="fas fa-file-word text-primary"></i>
-                                            {% elif doc.file_type and ('excel' in doc.file_type or 'sheet' in doc.file_type or 'csv' in doc.file_type) %}
-                                            <i class="fas fa-file-excel text-success"></i>
-                                            {% else %}
-                                            <i class="fas fa-file-alt text-secondary"></i>
-                                            {% endif %}
-                                        </div>
-                                        <span class="fw-semibold">{{ doc.filename }}</span>
-                                    </div>
-                                </td>
-                                <td><span class="badge bg-light text-dark border">{{ doc.file_type.split('/')[-1].upper() if doc.file_type else 'UNKNOWN' }}</span></td>
-                                <td>{{ (doc.file_size / 1024) | round(1) if doc.file_size else 0 }} KB</td>
-                                <td>{{ doc.uploaded_by.username if doc.uploaded_by else 'Unknown' }}</td>
-                                <td>{{ doc.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                                <td class="text-end">
-                                    <div class="btn-group shadow-sm rounded">
-                                        <a href="{{ url_for('media.view', media_id=doc.id) }}" target="_blank" class="btn btn-sm btn-white border" title="View">
-                                            <i class="fas fa-eye text-primary"></i>
-                                        </a>
-                                        <a href="{{ url_for('media.download', media_id=doc.id) }}" class="btn btn-sm btn-white border" title="Download">
-                                            <i class="fas fa-download text-success"></i>
-                                        </a>
-                                        {% if current_user.is_admin or current_user.can_delete_media %}
-                                        <form action="{{ url_for('media.delete', media_id=doc.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this document?')">
-                                            <button type="submit" class="btn btn-sm btn-white border" title="Delete">
-                                                <i class="fas fa-trash-alt text-danger"></i>
-                                            </button>
-                                        </form>
-                                        {% endif %}
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                            {% if not documents %}
-                            <tr>
-                                <td colspan="6" class="text-center text-muted py-4">
-                                    <i class="fas fa-folder-open fa-2x mb-2 d-block"></i>
-                                    No documents uploaded yet.
-                                </td>
-                            </tr>
-                            {% endif %}
-                        </tbody>
-                    </table>
+                <div class="dropdown mx-menu">
+                    <button class="btn btn-sm btn-link text-muted" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="More"><i class="fas fa-ellipsis-v"></i></button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><a class="dropdown-item" href="{{ url_for('media.index', folder=f.id) }}"><i class="fas fa-folder-open me-2 text-warning"></i>Open</a></li>
+                        {% if can_add %}
+                        <li><button class="dropdown-item mx-act-rename" data-id="{{ f.id }}" data-name="{{ f.name }}"><i class="fas fa-i-cursor me-2"></i>Rename</button></li>
+                        <li><button class="dropdown-item mx-act-move"><i class="fas fa-share me-2"></i>Move to…</button></li>
+                        {% endif %}
+                        {% if can_delete %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li><button class="dropdown-item text-danger mx-act-delete" data-url="{{ url_for('media.delete_folder', folder_id=f.id) }}"
+                                    data-name="{{ f.name }}" data-folder="1"><i class="fas fa-trash-alt me-2"></i>Delete</button></li>
+                        {% endif %}
+                    </ul>
                 </div>
             </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if documents %}
+        <div class="mx-section-title">Files <span class="text-muted fw-normal">({{ documents|length }})</span></div>
+        <div class="mx-grid">
+            {% for doc in documents %}
+            {% set kind = file_kind(doc) %}
+            {% set ext = (doc.filename.rsplit('.', 1)[-1]|upper) if '.' in doc.filename else (doc.file_type.split('/')[-1]|upper if doc.file_type else 'FILE') %}
+            <div class="mx-tile" tabindex="0" draggable="{{ 'true' if can_add else 'false' }}"
+                 data-type="file" data-id="{{ doc.id }}" data-kind="{{ kind }}"
+                 data-name="{{ doc.filename|lower }}" data-date="{{ doc.uploaded_at.isoformat() if doc.uploaded_at else '' }}" data-size="{{ doc.file_size or 0 }}"
+                 data-open="{{ url_for('media.view', media_id=doc.id) }}" data-title="{{ doc.filename }}">
+                <input type="checkbox" class="form-check-input mx-check" title="Select">
+                <div class="mx-icon">
+                    {% if kind == 'image' %}
+                    <img src="{{ url_for('static', filename=doc.filepath) }}" alt="" loading="lazy" class="mx-thumb"
+                         onerror="this.replaceWith(Object.assign(document.createElement('i'), {className: 'fas fa-file-image mx-fi mx-k-image'}))">
+                    {% else %}
+                    <i class="fas {{ {'pdf': 'fa-file-pdf', 'word': 'fa-file-word', 'excel': 'fa-file-excel', 'ppt': 'fa-file-powerpoint',
+                                      'zip': 'fa-file-archive', 'video': 'fa-file-video', 'audio': 'fa-file-audio', 'text': 'fa-file-alt'}.get(kind, 'fa-file') }} mx-fi mx-k-{{ kind }}"></i>
+                    {% endif %}
+                </div>
+                <div class="mx-meta">
+                    <div class="mx-name" title="{{ doc.filename }}">{{ doc.filename }}</div>
+                    <div class="mx-sub">{{ ext }} file · {{ size_text(doc.file_size) }}</div>
+                    <div class="mx-sub2">{{ doc.uploaded_at.strftime('%d %b %Y, %H:%M') if doc.uploaded_at else '' }}{% if doc.uploaded_by %} · {{ doc.uploaded_by.username }}{% endif %}</div>
+                </div>
+                <div class="dropdown mx-menu">
+                    <button class="btn btn-sm btn-link text-muted" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="More"><i class="fas fa-ellipsis-v"></i></button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><a class="dropdown-item" href="{{ url_for('media.view', media_id=doc.id) }}" target="_blank"><i class="fas fa-eye me-2 text-primary"></i>Open</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('media.download', media_id=doc.id) }}"><i class="fas fa-download me-2 text-success"></i>Download</a></li>
+                        {% if can_add %}
+                        <li><button class="dropdown-item mx-act-move"><i class="fas fa-share me-2"></i>Move to…</button></li>
+                        {% endif %}
+                        {% if can_delete %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li><button class="dropdown-item text-danger mx-act-delete" data-url="{{ url_for('media.delete', media_id=doc.id) }}"
+                                    data-name="{{ doc.filename }}"><i class="fas fa-trash-alt me-2"></i>Delete</button></li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if not folders and not documents %}
+        <div class="mx-empty">
+            <div class="mb-2">{{ folder_svg() }}</div>
+            <h5 class="mb-1">This folder is empty</h5>
+            <p class="text-muted mb-0">{% if can_add %}Drag files here from your computer, click <strong>Upload</strong>, or create a <strong>New Folder</strong>.{% else %}Nothing has been added here yet.{% endif %}</p>
+        </div>
+        {% endif %}
+        <div id="mxNoMatch" class="mx-empty d-none"><i class="fas fa-search fa-2x text-muted mb-2"></i><p class="text-muted mb-0">No items match your search.</p></div>
+    </div>
+</div>
+
+<!-- Hidden picker; data-enhanced opts out of base.html's global file-input helper -->
+<input type="file" id="mxFileInput" multiple data-enhanced="true" style="display:none !important;">
+
+{% if can_add %}
+<!-- New folder -->
+<div class="modal fade" id="mxNewFolderModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <form class="modal-content" method="POST" action="{{ url_for('media.create_folder') }}">
+            <div class="modal-header"><h5 class="modal-title"><i class="fas fa-folder-plus text-warning me-2"></i>New Folder</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" name="parent_id" value="{{ folder.id if folder else '' }}">
+                <label class="form-label small text-muted">Create in: {{ folder.name if folder else 'Media Library' }}</label>
+                <input type="text" name="name" class="form-control" maxlength="150" required placeholder="Folder name" value="New folder">
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button></div>
+        </form>
+    </div>
+</div>
+
+<!-- Rename folder -->
+<div class="modal fade" id="mxRenameModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <form class="modal-content" method="POST" id="mxRenameForm">
+            <div class="modal-header"><h5 class="modal-title"><i class="fas fa-i-cursor me-2"></i>Rename Folder</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body"><input type="text" name="name" id="mxRenameInput" class="form-control" maxlength="150" required></div>
+            <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Rename</button></div>
+        </form>
+    </div>
+</div>
+
+<!-- Move to -->
+<div class="modal fade" id="mxMoveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="fas fa-share me-2"></i>Move <span id="mxMoveWhat"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <label class="form-label">Destination folder</label>
+                <select id="mxMoveTarget" class="form-select">
+                    <option value="">Media Library (top level)</option>
+                    {% for o in folder_options %}<option value="{{ o.id }}">{{ o.label }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="mxMoveGo">Move</button></div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if can_delete %}
+<!-- Delete -->
+<div class="modal fade" id="mxDeleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content" method="POST" id="mxDeleteForm">
+            <div class="modal-header border-0 pb-0"><h5 class="modal-title text-danger"><i class="fas fa-trash-alt me-2"></i>Delete <span id="mxDeleteName"></span>?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body" id="mxDeleteText"></div>
+            <div class="modal-footer border-0 pt-0"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-danger">Delete</button></div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<!-- Image preview -->
+<div class="modal fade" id="mxPreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-0"><h6 class="modal-title text-white text-truncate" id="mxPreviewTitle"></h6>
+                <a id="mxPreviewOpen" href="#" target="_blank" class="btn btn-sm btn-outline-light ms-auto me-2"><i class="fas fa-external-link-alt"></i></a>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body text-center pt-0"><img id="mxPreviewImg" src="" alt="" style="max-width:100%; max-height:75vh;"></div>
         </div>
     </div>
 </div>
 
-<!-- Hidden file input placed OUTSIDE the drop zone to avoid event conflicts -->
-<input type="file" id="file-input" multiple style="display:none !important; position:absolute; top:-9999px;">
-
 <style>
-    .upload-zone {
-        background-color: #f0f4ff;
-        border: 2.5px dashed #b0c4f8;
-        transition: all 0.25s ease;
-    }
-    .upload-zone.dragover {
-        background-color: #dce8ff;
-        border-color: #4a7cf7;
-        box-shadow: 0 0 20px rgba(74, 124, 247, 0.2);
-        transform: translateY(-2px);
-    }
-    .file-icon-sm {
-        width: 40px;
-        height: 40px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.2rem;
-        flex-shrink: 0;
-    }
-    .btn-white { background: white; }
-    .btn-white:hover { background: #f8f9fa; }
+    .mx-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+                  background: #fff; border: 1px solid #e3e7ee; border-radius: 10px; padding: 8px 12px; }
+    .mx-crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; min-width: 0; }
+    .mx-crumb { padding: 4px 8px; border-radius: 6px; color: #495057; text-decoration: none; font-weight: 500; border: 1px solid transparent; }
+    .mx-crumb:hover { background: #f1f4f9; color: #212529; }
+    .mx-crumb.active { color: #212529; font-weight: 600; }
+    .mx-crumb-sep { font-size: .65rem; color: #adb5bd; margin: 0 2px; }
+    .mx-search { width: 240px; }
+    .mx-selbar { display: flex; align-items: center; gap: 10px; background: #e8f1ff; border: 1px solid #b6d4fe; border-radius: 8px; padding: 6px 12px; }
+
+    .mx-area { position: relative; min-height: 340px; background: #fff; border: 1px solid #e3e7ee; border-radius: 12px; padding: 18px; }
+    .mx-section-title { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; margin-bottom: 10px; }
+    .mx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 6px 14px; }
+
+    .mx-tile { position: relative; display: flex; align-items: center; gap: 14px; padding: 10px 34px 10px 12px;
+               border: 1px solid transparent; border-radius: 8px; cursor: pointer; user-select: none; outline: none;
+               transition: background .12s, border-color .12s; }
+    .mx-tile:hover { background: #f3f6fb; }
+    .mx-tile:focus-visible { border-color: #86b7fe; }
+    .mx-tile.selected { background: #e5efff; border-color: #b6d4fe; }
+    .mx-tile.drop-target { background: #fff6dc; border-color: #f0b429; box-shadow: 0 0 0 2px rgba(240,180,41,.25); }
+    .mx-tile.dragging { opacity: .45; }
+    .mx-check { position: absolute; left: 4px; top: 4px; margin: 0; opacity: 0; transition: opacity .12s; }
+    .mx-tile:hover .mx-check, .mx-tile.selected .mx-check, .mx-area.has-selection .mx-check { opacity: 1; }
+
+    .mx-icon { width: 64px; height: 56px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .mx-folder-svg { width: 62px; height: 50px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.12)); }
+    .mx-thumb { width: 60px; height: 52px; object-fit: cover; border-radius: 6px; border: 1px solid #e3e7ee; background: #f8f9fa; }
+    .mx-fi { font-size: 2.6rem; }
+    .mx-k-pdf { color: #e03131; } .mx-k-word { color: #1c7ed6; } .mx-k-excel { color: #2b8a3e; } .mx-k-ppt { color: #e8590c; }
+    .mx-k-zip { color: #a87b00; } .mx-k-video { color: #7048e8; } .mx-k-audio { color: #d6336c; } .mx-k-image { color: #2b8a3e; }
+    .mx-k-text, .mx-k-other { color: #868e96; }
+
+    .mx-meta { min-width: 0; line-height: 1.25; }
+    .mx-name { font-weight: 500; color: #212529; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mx-sub { font-size: .82rem; color: #6c757d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mx-sub2 { font-size: .72rem; color: #adb5bd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* no transform here: it would trap the open dropdown under the next tiles */
+    .mx-menu { position: absolute; right: 2px; top: 0; bottom: 0; display: flex; align-items: center; z-index: 2; }
+    .mx-tile:has(.dropdown-menu.show), .mx-tile.menu-open { z-index: 30; }
+    .mx-menu .btn { opacity: 0; } .mx-tile:hover .mx-menu .btn, .mx-menu .btn[aria-expanded="true"] { opacity: 1; }
+    @media (hover: none) { .mx-menu .btn, .mx-check { opacity: 1; } }
+
+    .mx-empty { text-align: center; padding: 50px 10px; }
+    .mx-empty .mx-folder-svg { width: 90px; height: 72px; opacity: .8; }
+    .mx-drop-overlay { display: none; position: absolute; inset: 0; z-index: 5; border-radius: 12px; border: 3px dashed #4a7cf7;
+                       background: rgba(232,241,255,.92); color: #1c4fd6; font-size: 1.05rem; align-items: center; justify-content: center; text-align: center; pointer-events: none; }
+    .mx-area.files-over .mx-drop-overlay { display: flex; }
+    .mx-area.files-over-tile .mx-drop-overlay { display: none; }
+    .mx-crumb.drop-target { background: #fff6dc; border-color: #f0b429; }
+    @media (max-width: 576px) { .mx-search { width: 100%; } .mx-grid { grid-template-columns: 1fr; } }
 </style>
 
 <script>
-(function() {
-    var dropZone    = document.getElementById('drop-zone');
-    var fileInput   = document.getElementById('file-input');
-    var browseBtn   = document.getElementById('browse-btn');
-    var progressContainer = document.getElementById('upload-progress-container');
-    var progressBar       = document.getElementById('progress-bar');
-    var progressPercent   = document.getElementById('progress-percent');
-    var uploadStatusText  = document.getElementById('upload-status-text');
-    var uploadAlerts      = document.getElementById('upload-alerts');
+(function () {
+    const UPLOAD_URL = "{{ url_for('media.upload') }}";
+    const MOVE_URL = "{{ url_for('media.move') }}";
+    const CURRENT_FOLDER = "{{ folder.id if folder else '' }}";
+    const CAN_ADD = {{ 'true' if can_add else 'false' }};
+    const area = document.getElementById('mxArea');
+    const tiles = () => Array.from(document.querySelectorAll('.mx-tile'));
+    const ITEM_MIME = 'application/x-media-items';
 
-    if (!dropZone || !fileInput) return;
+    function csrf() {
+        const m = document.querySelector('meta[name="csrf-token"]');
+        if (m) return m.content;
+        const i = document.querySelector('input[name="csrf_token"]');
+        return i ? i.value : '';
+    }
+    function modal(id) { const el = document.getElementById(id); return el ? bootstrap.Modal.getOrCreateInstance(el) : null; }
 
-    // --- Browse button opens file dialog ---
-    browseBtn.addEventListener('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        fileInput.click();
-    });
+    // ── Selection ──
+    function selected() { return tiles().filter(t => t.classList.contains('selected')); }
+    function itemsOf(list) { return list.map(t => ({type: t.dataset.type, id: t.dataset.id})); }
+    function refreshSel() {
+        const n = selected().length;
+        document.getElementById('mxSelBar').classList.toggle('d-none', n === 0);
+        document.getElementById('mxSelCount').textContent = n;
+        area.classList.toggle('has-selection', n > 0);
+    }
+    function setSel(tile, on) {
+        tile.classList.toggle('selected', on);
+        tile.querySelector('.mx-check').checked = on;
+    }
+    document.getElementById('mxSelClear').addEventListener('click', () => { tiles().forEach(t => setSel(t, false)); refreshSel(); });
 
-    // --- Prevent drop zone click from also firing (it has its own button) ---
-    // (No click handler on the drop zone itself)
-
-    // --- Prevent browser default for drag events over the WHOLE page ---
-    document.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }, false);
-
-    document.addEventListener('drop', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }, false);
-
-    // --- Drop zone highlight on drag enter/over ---
-    dropZone.addEventListener('dragenter', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        dropZone.classList.add('dragover');
-    }, false);
-
-    dropZone.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        dropZone.classList.add('dragover');
-    }, false);
-
-    dropZone.addEventListener('dragleave', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        // Only remove if we've actually left the zone (not just moved to a child)
-        if (!dropZone.contains(e.relatedTarget)) {
-            dropZone.classList.remove('dragover');
+    // ── Open ──
+    function openTile(t) {
+        if (t.dataset.type === 'folder') { window.location = t.dataset.open; return; }
+        if (t.dataset.kind === 'image') {
+            document.getElementById('mxPreviewImg').src = t.dataset.open;
+            document.getElementById('mxPreviewTitle').textContent = t.dataset.title;
+            document.getElementById('mxPreviewOpen').href = t.dataset.open;
+            modal('mxPreviewModal').show();
+        } else {
+            window.open(t.dataset.open, '_blank');
         }
-    }, false);
-
-    // --- Handle drop ---
-    dropZone.addEventListener('drop', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        dropZone.classList.remove('dragover');
-        var files = e.dataTransfer.files;
-        if (files && files.length > 0) {
-            handleUpload(files);
-        }
-    }, false);
-
-    // --- Handle file input change (browse) ---
-    fileInput.addEventListener('change', function(e) {
-        var files = e.target.files;
-        if (files && files.length > 0) {
-            handleUpload(files);
-        }
-    });
-
-    function showAlert(type, message) {
-        var div = document.createElement('div');
-        div.className = 'alert alert-' + type + ' alert-dismissible fade show mt-2';
-        div.role = 'alert';
-        div.innerHTML = message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
-        uploadAlerts.appendChild(div);
     }
 
-    function handleUpload(files) {
-        var fileArray = Array.from(files);
-        var completed = 0;
-        var total = fileArray.length;
-        var failed = 0;
+    tiles().forEach(t => {
+        t.addEventListener('click', e => {
+            if (e.target.closest('.mx-menu')) return;
+            if (e.target.classList.contains('mx-check')) { setSel(t, e.target.checked); refreshSel(); return; }
+            if (e.ctrlKey || e.metaKey || area.classList.contains('has-selection')) {
+                setSel(t, !t.classList.contains('selected')); refreshSel(); return;
+            }
+            openTile(t);
+        });
+        t.addEventListener('keydown', e => { if (e.key === 'Enter') openTile(t); });
+    });
 
-        progressContainer.classList.remove('d-none');
-        progressBar.style.width = '0%';
-        progressPercent.textContent = '0%';
-        uploadStatusText.textContent = 'Uploading ' + total + ' file(s)...';
-        uploadAlerts.innerHTML = '';
+    // ── Search & sort (folders always stay before files) ──
+    const search = document.getElementById('mxSearch');
+    search.addEventListener('input', () => {
+        const q = search.value.trim().toLowerCase();
+        let shown = 0;
+        tiles().forEach(t => { const ok = !q || t.dataset.name.includes(q); t.style.display = ok ? '' : 'none'; if (ok) shown++; });
+        document.querySelectorAll('.mx-section-title').forEach(h => {
+            const grid = h.nextElementSibling;
+            h.style.display = grid && Array.from(grid.children).some(c => c.style.display !== 'none') ? '' : 'none';
+        });
+        document.getElementById('mxNoMatch').classList.toggle('d-none', !(q && shown === 0 && tiles().length));
+    });
+    const sortSel = document.getElementById('mxSort');
+    function applySort() {
+        const key = sortSel.value;
+        try { localStorage.setItem('mxSort', key); } catch (e) {}
+        document.querySelectorAll('.mx-grid').forEach(grid => {
+            Array.from(grid.children).sort((a, b) => {
+                if (key === 'date') return (b.dataset.date || '').localeCompare(a.dataset.date || '');
+                if (key === 'size') return (+b.dataset.size) - (+a.dataset.size);
+                if (key === 'type') return a.dataset.kind.localeCompare(b.dataset.kind) || a.dataset.name.localeCompare(b.dataset.name);
+                return a.dataset.name.localeCompare(b.dataset.name, undefined, {numeric: true});
+            }).forEach(c => grid.appendChild(c));
+        });
+    }
+    try { const s = localStorage.getItem('mxSort'); if (s) sortSel.value = s; } catch (e) {}
+    sortSel.addEventListener('change', applySort);
+    applySort();
 
-        fileArray.forEach(function(file) {
-            var formData = new FormData();
-            formData.append('file', file);
+    // ── Move (menu / selection bar / drag) ──
+    function postMove(items, target) {
+        return fetch(MOVE_URL, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
+            body: JSON.stringify({items: items, target_folder_id: target || null})
+        }).then(r => r.json()).then(d => {
+            if (d.error) { alert(d.error); return; }
+            if (d.skipped && d.skipped.length) alert('Some items were not moved:\n- ' + d.skipped.join('\n- '));
+            window.location.reload();
+        }).catch(() => alert('Could not move the item(s). Please try again.'));
+    }
+    let moveItems = [];
+    function askMove(list) {
+        moveItems = itemsOf(list);
+        if (!moveItems.length) return;
+        document.getElementById('mxMoveWhat').textContent = list.length === 1
+            ? '"' + (list[0].querySelector('.mx-name').textContent) + '"' : list.length + ' items';
+        const sel = document.getElementById('mxMoveTarget');
+        // can't move a folder into itself
+        Array.from(sel.options).forEach(o => { o.disabled = moveItems.some(i => i.type === 'folder' && i.id === o.value); });
+        sel.value = CURRENT_FOLDER;
+        modal('mxMoveModal').show();
+    }
+    if (CAN_ADD) {
+        document.getElementById('mxMoveGo').addEventListener('click', () => {
+            const target = document.getElementById('mxMoveTarget').value;
+            if (target === CURRENT_FOLDER) { modal('mxMoveModal').hide(); return; }
+            postMove(moveItems, target);
+        });
+        document.getElementById('mxSelMove').addEventListener('click', () => askMove(selected()));
+    }
+    document.querySelectorAll('.mx-act-move').forEach(b => b.addEventListener('click', e => {
+        const t = e.target.closest('.mx-tile');
+        askMove(t.classList.contains('selected') ? selected() : [t]);
+    }));
 
-            var xhr = new XMLHttpRequest();
+    // ── Rename / delete ──
+    document.querySelectorAll('.mx-act-rename').forEach(b => b.addEventListener('click', () => {
+        document.getElementById('mxRenameForm').action = "{{ url_for('media.rename_folder', folder_id=0) }}".replace('/0/', '/' + b.dataset.id + '/');
+        document.getElementById('mxRenameInput').value = b.dataset.name;
+        modal('mxRenameModal').show();
+        setTimeout(() => document.getElementById('mxRenameInput').select(), 300);
+    }));
+    document.querySelectorAll('.mx-act-delete').forEach(b => b.addEventListener('click', () => {
+        document.getElementById('mxDeleteForm').action = b.dataset.url;
+        document.getElementById('mxDeleteName').textContent = '"' + b.dataset.name + '"';
+        document.getElementById('mxDeleteText').innerHTML = b.dataset.folder
+            ? 'Only the folder is removed. <strong>Everything inside it is moved up one level</strong> — no file is deleted.'
+            : 'The file is <strong>permanently deleted</strong>. This cannot be undone.';
+        modal('mxDeleteModal').show();
+    }));
+    // raise the tile whose menu is open above its neighbours (fallback for browsers without :has)
+    document.querySelectorAll('.mx-menu').forEach(m => {
+        m.addEventListener('show.bs.dropdown', () => m.closest('.mx-tile').classList.add('menu-open'));
+        m.addEventListener('hidden.bs.dropdown', () => m.closest('.mx-tile').classList.remove('menu-open'));
+    });
 
-            xhr.upload.addEventListener('progress', function(e) {
-                if (e.lengthComputable && total === 1) {
-                    var pct = Math.round((e.loaded / e.total) * 100);
-                    progressBar.style.width = pct + '%';
-                    progressPercent.textContent = pct + '%';
-                }
-            });
+    const nf = document.getElementById('mxNewFolderModal');
+    if (nf) nf.addEventListener('shown.bs.modal', () => nf.querySelector('input[name=name]').select());
 
-            xhr.addEventListener('load', function() {
-                completed++;
-                var pct = Math.round((completed / total) * 100);
-                progressBar.style.width = pct + '%';
-                progressPercent.textContent = pct + '%';
+    // ── Upload ──
+    const fileInput = document.getElementById('mxFileInput');
+    const uploadBtn = document.getElementById('mxUploadBtn');
+    if (uploadBtn) uploadBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => { if (fileInput.files.length) upload(fileInput.files, CURRENT_FOLDER); });
 
-                if (xhr.status === 200) {
-                    uploadStatusText.textContent = file.name + ' uploaded!';
-                } else {
+    function upload(files, folderId) {
+        const list = Array.from(files);
+        const bar = document.getElementById('mxProgressBar'), pct = document.getElementById('mxProgressPct');
+        const txt = document.getElementById('mxProgressText'), errs = document.getElementById('mxUploadErrors');
+        document.getElementById('mxProgress').classList.remove('d-none');
+        errs.innerHTML = '';
+        let done = 0, failed = 0;
+        const step = () => {
+            const p = Math.round(done / list.length * 100);
+            bar.style.width = p + '%'; pct.textContent = p + '%';
+            if (done === list.length) {
+                txt.textContent = failed ? ('Done with ' + failed + ' error(s).') : 'All files uploaded! Refreshing…';
+                if (failed < list.length) setTimeout(() => window.location.reload(), failed ? 1500 : 600);
+            }
+        };
+        txt.textContent = 'Uploading ' + list.length + ' file(s)…';
+        list.forEach(file => {
+            const fd = new FormData();
+            fd.append('file', file);
+            fd.append('folder_id', folderId || '');
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', UPLOAD_URL);
+            const tok = csrf(); if (tok) { xhr.setRequestHeader('X-CSRFToken', tok); fd.append('csrf_token', tok); }
+            xhr.onload = () => {
+                done++;
+                if (xhr.status !== 200) {
                     failed++;
-                    var errMsg = 'Upload failed';
-                    try {
-                        var resp = JSON.parse(xhr.responseText);
-                        errMsg = resp.error || errMsg;
-                    } catch(ex) {}
-                    showAlert('danger', '<strong>' + file.name + '</strong>: ' + errMsg);
+                    let msg = 'Upload failed';
+                    try { msg = JSON.parse(xhr.responseText).error || msg; } catch (e) {}
+                    const d = document.createElement('div');
+                    d.className = 'text-danger small';
+                    d.textContent = file.name + ': ' + msg;
+                    errs.appendChild(d);
                 }
-
-                if (completed === total) {
-                    if (failed === 0) {
-                        uploadStatusText.textContent = 'All files uploaded! Refreshing...';
-                        setTimeout(function() { window.location.reload(); }, 800);
-                    } else {
-                        uploadStatusText.textContent = 'Done with ' + failed + ' error(s).';
-                        if (completed - failed > 0) {
-                            setTimeout(function() { window.location.reload(); }, 1500);
-                        }
-                    }
-                }
-            });
-
-            xhr.addEventListener('error', function() {
-                completed++;
-                failed++;
-                showAlert('danger', '<strong>' + file.name + '</strong>: Network error during upload.');
-                if (completed === total) {
-                    uploadStatusText.textContent = 'Upload failed.';
-                }
-            });
-
-            xhr.open('POST', "{{ url_for('media.upload') }}");
-            // Send CSRF token
-            var csrfMeta = document.querySelector('meta[name="csrf-token"]');
-            if (csrfMeta) {
-                xhr.setRequestHeader('X-CSRFToken', csrfMeta.getAttribute('content'));
-            }
-            // Flask-WTF CSRF via cookie fallback: include it in FormData
-            var csrfInput = document.querySelector('input[name="csrf_token"]');
-            if (csrfInput) {
-                formData.append('csrf_token', csrfInput.value);
-            }
-            xhr.send(formData);
+                step();
+            };
+            xhr.onerror = () => { done++; failed++; step(); };
+            xhr.send(fd);
         });
     }
 
-    // --- Init DataTable if available ---
-    if (typeof $ !== 'undefined' && $.fn && $.fn.DataTable) {
-        $('#mediaTable').DataTable({
-            order: [[4, 'desc']],
-            stateSave: true,
-            stateLoadParams: function (settings, data) {
-                data.length = -1;
-            },
-            pageLength: -1,
-            lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
-            language: { emptyTable: "No documents uploaded yet." }
+    // ── Drag & drop ──
+    // Files from the computer: onto the page = current folder, onto a folder tile = that folder.
+    // Tiles dragged inside the page: onto a folder tile or a breadcrumb = move there.
+    const isFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+    const isItems = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes(ITEM_MIME);
+    document.addEventListener('dragover', e => e.preventDefault());
+    document.addEventListener('drop', e => e.preventDefault());
+
+    let dragged = [];
+    tiles().forEach(t => {
+        t.addEventListener('dragstart', e => {
+            if (!CAN_ADD) { e.preventDefault(); return; }
+            dragged = t.classList.contains('selected') ? selected() : [t];
+            dragged.forEach(d => d.classList.add('dragging'));
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData(ITEM_MIME, JSON.stringify(itemsOf(dragged)));
+            e.dataTransfer.setData('text/plain', dragged.length + ' item(s)');
         });
-    }
+        t.addEventListener('dragend', () => { dragged.forEach(d => d.classList.remove('dragging')); dragged = []; });
+    });
+
+    document.querySelectorAll('.mx-drop').forEach(target => {
+        const valid = e => CAN_ADD && (isFiles(e) || (isItems(e) && !dragged.includes(target)));
+        target.addEventListener('dragover', e => {
+            if (!valid(e)) return;
+            e.preventDefault(); e.stopPropagation();
+            e.dataTransfer.dropEffect = isFiles(e) ? 'copy' : 'move';
+            target.classList.add('drop-target');
+            area.classList.toggle('files-over-tile', isFiles(e) && target.classList.contains('mx-tile'));
+        });
+        target.addEventListener('dragleave', e => {
+            if (!target.contains(e.relatedTarget)) { target.classList.remove('drop-target'); area.classList.remove('files-over-tile'); }
+        });
+        target.addEventListener('drop', e => {
+            target.classList.remove('drop-target');
+            area.classList.remove('files-over', 'files-over-tile');
+            if (!valid(e)) return;
+            e.preventDefault(); e.stopPropagation();
+            const folderId = target.dataset.folderId || '';
+            if (isFiles(e)) { if (e.dataTransfer.files.length) upload(e.dataTransfer.files, folderId); return; }
+            let items = [];
+            try { items = JSON.parse(e.dataTransfer.getData(ITEM_MIME)); } catch (err) {}
+            if (folderId === CURRENT_FOLDER) return;  // already here
+            if (items.length) postMove(items, folderId);
+        });
+    });
+
+    // whole explorer area = upload into the current folder
+    let depth = 0;
+    area.addEventListener('dragenter', e => { if (CAN_ADD && isFiles(e)) { depth++; area.classList.add('files-over'); } });
+    area.addEventListener('dragleave', e => { if (isFiles(e) && --depth <= 0) { depth = 0; area.classList.remove('files-over'); } });
+    area.addEventListener('dragover', e => { if (CAN_ADD && isFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+    area.addEventListener('drop', e => {
+        depth = 0; area.classList.remove('files-over', 'files-over-tile');
+        if (!CAN_ADD || !isFiles(e)) return;
+        e.preventDefault();
+        if (e.dataTransfer.files.length) upload(e.dataTransfer.files, CURRENT_FOLDER);
+    });
 })();
 </script>
 {% endblock %}

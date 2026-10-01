@@ -4662,11 +4662,44 @@ class Media(db.Model):
     file_size = db.Column(db.Integer) # in bytes
     uploaded_by_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+    # Folder it is shown in; NULL = top level of the Media Library. Folders
+    # are only an organisation layer - the file itself stays in filepath.
+    folder_id = db.Column(db.Integer, db.ForeignKey('media_folders.id'), nullable=True, index=True)
+
     uploaded_by = db.relationship('User', backref='uploaded_media')
+    folder = db.relationship('MediaFolder', backref='files')
 
     def __repr__(self):
         return f'<Media {self.filename}>'
+
+
+class MediaFolder(db.Model):
+    """Folder in the Media Library. Folders nest through parent_id (NULL =
+    top level). Deleting a folder moves what it holds up to its parent, so
+    no file is ever lost by removing a folder."""
+    __tablename__ = 'media_folders'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(150), nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('media_folders.id'), nullable=True, index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    parent = db.relationship('MediaFolder', remote_side=[id], backref='children')
+    created_by = db.relationship('User')
+
+    @property
+    def path(self):
+        """[top-level folder, ..., self] for the breadcrumb."""
+        chain, node, seen = [], self, set()
+        while node is not None and node.id not in seen:
+            seen.add(node.id)
+            chain.append(node)
+            node = node.parent
+        return list(reversed(chain))
+
+    def __repr__(self):
+        return f'<MediaFolder {self.name}>'
 
 
 class RecoveryTask(db.Model):

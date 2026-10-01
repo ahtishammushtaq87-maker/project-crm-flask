@@ -48,7 +48,7 @@ def create_app(config_class=Config):
             JournalAccount, JournalEntry, JournalLine, FixedExpense,
             Quotation, QuotationItem, DatabaseBackup, PackingSlip, PackingSlipSettings, SaleReturnReason,
             ExpenseAccount, ExpenseAccountTransaction, BillPayment, AccountDailyClose,
-            WarehouseTransfer, WarehouseTransferItem
+            WarehouseTransfer, WarehouseTransferItem, MediaFolder
         )
         from app.filter_models import SavedFilter
         
@@ -150,6 +150,7 @@ def create_app(config_class=Config):
             'bill_payments': BillPayment,
             'warehouse_transfers': WarehouseTransfer,
             'warehouse_transfer_items': WarehouseTransferItem,
+            'media_folders': MediaFolder,
         }
         
         try:
