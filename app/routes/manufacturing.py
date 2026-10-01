@@ -9,6 +9,7 @@ from calendar import monthrange
 from datetime import datetime
 from sqlalchemy import inspect, or_
 from app.routes.filters import apply_saved_filter_to_query
+from app.services import warehouse_cost
 
 bp = Blueprint('manufacturing', __name__)
 
@@ -18,6 +19,23 @@ def has_column(table_name, column_name):
         return column_name in [c['name'] for c in inspector.get_columns(table_name)]
     except:
         return False
+
+
+def _component_cost(component, warehouse_id):
+    """Unit cost of a component in the warehouse it is consumed from (the
+    item's default warehouse when none is set - same rule as the stock)."""
+    return warehouse_cost.get_cost(component, warehouse_id or component.warehouse_id)
+
+
+def _set_finished_cost(order, finished_good, unit_cost):
+    """Production re-costs only the warehouse the goods were finished into.
+    Other warehouses holding the item keep the cost they had; the item's
+    normal cost still becomes the latest production cost, as before."""
+    wh_id = order.finished_warehouse_id or finished_good.warehouse_id
+    if wh_id:
+        warehouse_cost.freeze_other_warehouses(finished_good, wh_id)
+        warehouse_cost.set_cost(finished_good, wh_id, unit_cost)
+    finished_good.cost_price = unit_cost
 
 
 def _active_manufacturing_staff():
@@ -721,7 +739,7 @@ def add_order():
         multiplier = mo.quantity_to_produce
         for bom_item in bom.items:
             req_qty = bom_item.quantity * multiplier
-            comp_cost = bom_item.component.cost_price * req_qty
+            comp_cost = _component_cost(bom_item.component, bom_item.warehouse_id) * req_qty
             
             mo_item = ManufacturingOrderItem()
             mo_item.mo_id = mo.id
@@ -749,7 +767,7 @@ def add_order():
             total_mo_overhead += exp.amount
             
         mo.actual_overhead_cost = total_mo_overhead
-        mo.actual_material_cost = sum(item.component.cost_price * (item.quantity * multiplier) for item in bom.items)
+        mo.actual_material_cost = sum(_component_cost(item.component, item.warehouse_id) * (item.quantity * multiplier) for item in bom.items)
         # Staff unticked in the form's salary picker are excluded from this
         # order's salary allocation.
         included_ids = _included_staff_ids_from_form()
@@ -870,7 +888,7 @@ def edit_order(id):
             new_bom = BOM.query.get(order.bom_id)
             for bom_item in new_bom.items:
                 req_qty = bom_item.quantity * multiplier
-                comp_cost = bom_item.component.cost_price * req_qty
+                comp_cost = _component_cost(bom_item.component, bom_item.warehouse_id) * req_qty
 
                 mo_item = ManufacturingOrderItem()
                 mo_item.mo_id = order.id
@@ -882,7 +900,7 @@ def edit_order(id):
                 mo_item.cost = comp_cost
                 db.session.add(mo_item)
 
-            order.actual_material_cost = sum(item.component.cost_price * (item.quantity * multiplier) for item in new_bom.items)
+            order.actual_material_cost = sum(_component_cost(item.component, item.warehouse_id) * (item.quantity * multiplier) for item in new_bom.items)
 
         # Labor cost: re-run the cost-share formula across every active
         # order (this one's material/overhead cost may have just changed,
@@ -1069,7 +1087,7 @@ def complete_order(id):
             movement_out.reason = f'Consumed (Final) in MO {order.order_number}'
             movement_out.created_by = current_user.id
             db.session.add(movement_out)
-            total_batch_material_cost += item.component.cost_price * consume_qty
+            total_batch_material_cost += _component_cost(item.component, item.warehouse_id) * consume_qty
             # Also deduct from per-warehouse stock when configured
             wh_id = getattr(item, 'warehouse_id', None) or (item.component.warehouse_id if hasattr(item.component, 'warehouse_id') else None)
             if wh_id:
@@ -1111,7 +1129,7 @@ def complete_order(id):
     
     # Calculate costs for the whole order
     # material cost is now correctly the sum in item.quantity_consumed * cost_price
-    total_material_cost = sum(item.component.cost_price * item.quantity_consumed for item in order.items)
+    total_material_cost = sum(_component_cost(item.component, item.warehouse_id) * item.quantity_consumed for item in order.items)
     order.actual_material_cost = total_material_cost
     
     # Update total cost of order
@@ -1139,7 +1157,7 @@ def complete_order(id):
 
     # Update product cost price based on total production cost per unit
     if order.quantity_to_produce > 0:
-        finished_good.cost_price = order.total_cost / order.quantity_to_produce
+        _set_finished_cost(order, finished_good, order.total_cost / order.quantity_to_produce)
         
     order.status = 'Completed'
     order.produced_qty = order.quantity_to_produce
@@ -1254,7 +1272,7 @@ def partial_complete_order(id):
         movement_out.reason = f'Consumed (Partial) in MO {order.order_number}'
         movement_out.created_by = current_user.id
         db.session.add(movement_out)
-        total_material_cost += item.component.cost_price * batch_consume_qty
+        total_material_cost += _component_cost(item.component, item.warehouse_id) * batch_consume_qty
         # Deduct from per-warehouse stock when configured
         wh_id = getattr(item, 'warehouse_id', None) or (item.component.warehouse_id if hasattr(item.component, 'warehouse_id') else None)
         if wh_id:
@@ -1314,7 +1332,7 @@ def partial_complete_order(id):
     # Update product cost price based on this batch's unit cost
     if qty_produced > 0:
         unit_cost = batch_total_cost / qty_produced
-        finished_good.cost_price = unit_cost
+        _set_finished_cost(order, finished_good, unit_cost)
         
     # Record history
     history = ManufacturingOrderHistory()
@@ -1602,6 +1620,22 @@ def delete_order(id):
             # Fallback to the current BOM's estimated cost
             order.bom.calculate_total_cost()
             finished_product.cost_price = order.bom.total_cost
+
+        # Same for the cost of the warehouse this order finished into: back to
+        # the last completed order that finished there, else back to following
+        # the item's normal cost. Other warehouses were never touched.
+        if finished_wh_id:
+            wh_row = ProductWarehouseStock.query.filter_by(product_id=finished_product.id,
+                                                           warehouse_id=finished_wh_id).first()
+            if wh_row and wh_row.cost_price is not None:
+                prev_here = ManufacturingOrder.query.filter(
+                    ManufacturingOrder.bom.has(product_id=finished_product.id),
+                    ManufacturingOrder.status == 'Completed',
+                    ManufacturingOrder.id != order.id,
+                    ManufacturingOrder.finished_warehouse_id == finished_wh_id,
+                    ManufacturingOrder.quantity_to_produce > 0
+                ).order_by(ManufacturingOrder.end_date.desc()).first()
+                wh_row.cost_price = (prev_here.total_cost / prev_here.quantity_to_produce) if prev_here else None
 
         # 4. Remove associated StockMovements - reference_type values here
         # must match what complete_order/partial_complete_order actually

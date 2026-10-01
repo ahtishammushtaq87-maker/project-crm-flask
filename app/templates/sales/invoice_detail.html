@@ -1249,7 +1249,7 @@
                                     <td class="text-end">PKR {{ "{:,.2f}".format(item.unit_price) }}</td>
                                     <td class="text-end text-muted">
                                         {% if item.product %}
-                                        PKR {{ "{:,.2f}".format(item.product.cost_price) }}
+                                        PKR {{ "{:,.2f}".format(sale_item_cost(item)) }}
                                         {% else %}
                                         -
                                         {% endif %}
@@ -1280,7 +1280,7 @@
                                     {% endif %}
                                     <td class="text-end">
                                         {% if item.product %}
-                                        {% set item_cost_total = item.quantity * item.product.cost_price %}
+                                        {% set item_cost_total = item.quantity * sale_item_cost(item) %}
                                         {# Net profit includes item's share of overall invoice discount #}
                                         {% set net_profit = item.total - item_cost_total - item_discount %}
                                         {% set profit_margin = (net_profit / (item.total - item_discount) * 100) if

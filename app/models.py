@@ -572,6 +572,38 @@ class Product(db.Model):
     purchase_items = db.relationship('PurchaseItem', backref='product', lazy=True)
     
     @property
+    def warehouse_costs(self):
+        """[{warehouse, quantity, cost, own}] for every warehouse holding this
+        item. `own` = the warehouse has its own cost (set by a transfer with
+        shipping, a manufacturing order or by hand); otherwise it uses
+        cost_price."""
+        out = []
+        for ws in self.warehouse_stocks:
+            if (ws.quantity or 0) == 0 or not ws.warehouse:
+                continue
+            own = ws.cost_price is not None
+            out.append({'warehouse': ws.warehouse, 'quantity': ws.quantity,
+                        'cost': ws.cost_price if own else (self.cost_price or 0), 'own': own})
+        return sorted(out, key=lambda x: x['warehouse'].name)
+
+    @property
+    def has_warehouse_costs(self):
+        """True when some warehouse holds this item at a cost other than cost_price."""
+        return any(w['own'] and abs(w['cost'] - (self.cost_price or 0)) > 1e-6 for w in self.warehouse_costs)
+
+    @property
+    def warehouse_stock_value(self):
+        """Stock value with each warehouse's stock at that warehouse's cost
+        (stock not assigned to any warehouse at cost_price). Same as
+        quantity x cost_price when no warehouse has a different cost."""
+        if not self.has_warehouse_costs:
+            return (self.quantity or 0) * (self.cost_price or 0)
+        rows = self.warehouse_costs
+        in_rows = sum(w['quantity'] for w in rows)
+        rest = max((self.quantity or 0) - in_rows, 0)
+        return sum(w['quantity'] * w['cost'] for w in rows) + rest * (self.cost_price or 0)
+
+    @property
     def stock_value(self):
         """Calculate total stock value at cost price"""
         return self.quantity * self.cost_price
@@ -637,6 +669,9 @@ class ProductWarehouseStock(db.Model):
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
     warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=False, index=True)
     quantity = db.Column(db.Float, default=0)
+    # This warehouse's own cost for the item. NULL = no own cost, use
+    # Product.cost_price (see app/services/warehouse_cost.py).
+    cost_price = db.Column(db.Float, nullable=True)
     __table_args__ = (db.UniqueConstraint('product_id', 'warehouse_id', name='uq_product_warehouse'),)
 
     product = db.relationship('Product', backref='warehouse_stocks', lazy=True)
@@ -664,6 +699,10 @@ class WarehouseTransfer(db.Model):
     to_warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=False, index=True)
     reference = db.Column(db.String(100))
     notes = db.Column(db.Text)
+    # Shipping paid to move the stock. Split over the lines by value and
+    # added to the destination warehouse's cost of each item.
+    shipping_cost = db.Column(db.Float, default=0)
+    image_path = db.Column(db.String(255))  # gate pass / delivery slip photo
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     updated_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -682,7 +721,11 @@ class WarehouseTransfer(db.Model):
 
     @property
     def total_value(self):
-        return sum((i.quantity or 0) * ((i.product.cost_price or 0) if i.product else 0) for i in self.items)
+        return sum(i.value for i in self.items)
+
+    @property
+    def landed_value(self):
+        return self.total_value + (self.shipping_cost or 0)
 
     def __repr__(self):
         return f'<WarehouseTransfer {self.transfer_number}>'
@@ -696,8 +739,28 @@ class WarehouseTransferItem(db.Model):
     transfer_id = db.Column(db.Integer, db.ForeignKey('warehouse_transfers.id'), nullable=False, index=True)
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
     quantity = db.Column(db.Float, nullable=False, default=0)
+    # Source warehouse's cost per unit when the stock was moved, and this
+    # line's share of the transfer's shipping. NULL unit_cost = line saved
+    # before warehouse costs existed (reversing it then only moves qty).
+    unit_cost = db.Column(db.Float, nullable=True)
+    shipping_share = db.Column(db.Float, default=0)
 
     product = db.relationship('Product')
+
+    @property
+    def effective_unit_cost(self):
+        if self.unit_cost is not None:
+            return self.unit_cost
+        return (self.product.cost_price or 0) if self.product else 0
+
+    @property
+    def value(self):
+        return (self.quantity or 0) * self.effective_unit_cost
+
+    @property
+    def landed_unit_cost(self):
+        qty = self.quantity or 0
+        return self.effective_unit_cost + ((self.shipping_share or 0) / qty if qty else 0)
 
     def __repr__(self):
         return f'<WarehouseTransferItem transfer={self.transfer_id} product={self.product_id} qty={self.quantity}>'

@@ -565,9 +565,11 @@ def dashboard():
     total_sales = db.session.query(func.sum(Sale.total)).filter(Sale.date >= date_from, Sale.date <= date_to).scalar() or 0
     
     # Calculate COGS (Cost of Goods Sold)
-    total_cogs = db.session.query(func.sum(SaleItem.quantity * Product.cost_price))\
-        .join(Sale, SaleItem.sale_id == Sale.id)\
-        .join(Product, SaleItem.product_id == Product.id)\
+    from app.services import warehouse_cost
+    total_cogs = warehouse_cost.join_sale_item_cost(
+        db.session.query(func.sum(SaleItem.quantity * warehouse_cost.SALE_ITEM_UNIT_COST))
+        .join(Sale, SaleItem.sale_id == Sale.id)
+        .join(Product, SaleItem.product_id == Product.id))\
         .filter(Sale.date >= date_from, Sale.date <= date_to)\
         .scalar() or 0
         

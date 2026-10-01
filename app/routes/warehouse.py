@@ -127,7 +127,8 @@ def warehouse_detail(id):
             'quantity': sr.quantity,
             'unit': p.unit,
             'unit_price': p.unit_price,
-            'cost_price': p.cost_price
+            # this warehouse's own cost, else the item's normal cost
+            'cost_price': sr.cost_price if sr.cost_price is not None else p.cost_price
         })
         handled_product_ids.add(p.id)
     
@@ -490,7 +491,7 @@ def api_warehouse_summary(id):
     
     handled_product_ids = {sr.product_id for sr in stock_records}
     total_quantity = sum(sr.quantity for sr in stock_records)
-    total_value = sum(sr.quantity * sr.product.cost_price for sr in stock_records)
+    total_value = sum(sr.quantity * (sr.cost_price if sr.cost_price is not None else sr.product.cost_price) for sr in stock_records)
     total_products = len(stock_records)
     
     # Fallback/Legacy

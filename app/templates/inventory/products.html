@@ -157,7 +157,7 @@
     {% set ns.sum_cost = ns.sum_cost + cost %}
     {% set ns.sum_selling = ns.sum_selling + price %}
     {% set ns.total_qty = ns.total_qty + qty %}
-    {% set ns.total_stock_value = ns.total_stock_value + (qty * cost) %}
+    {% set ns.total_stock_value = ns.total_stock_value + product.warehouse_stock_value %}
     {% endfor %}
 
     <style>
@@ -328,11 +328,24 @@
                                     Stock</span>
                                     {% endif %}
                             </td>
-                            <td>PKR{{ "%.2f"|format(product.cost_price) }}</td>
+                            <td>
+                                PKR{{ "%.2f"|format(product.cost_price) }}
+                                {% if product.has_warehouse_costs %}
+                                {# Warehouses holding this item at a different cost (transfer + shipping, production, manual) #}
+                                <div class="mt-1" style="line-height:1.15;">
+                                    {% for wc in product.warehouse_costs %}
+                                    <div class="small {% if wc.own and (wc.cost - (product.cost_price or 0))|abs > 0.000001 %}text-primary fw-semibold{% else %}text-muted{% endif %}"
+                                         title="{{ wc.warehouse.name }}: {{ wc.quantity }} @ PKR {{ '%.2f'|format(wc.cost) }}{% if wc.own %} (own warehouse cost){% endif %}">
+                                        <i class="fas fa-warehouse me-1" style="font-size:.7em;"></i>{{ wc.warehouse.name }}: {{ "%.2f"|format(wc.cost) }}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            </td>
                             <td>PKR{{ "%.2f"|format(product.unit_price) }}</td>
                             <td><span class="badge bg-light text-dark border">{{ product.unit|capitalize if product.unit
                                     else 'Pieces' }}</span></td>
-                            <td>PKR{{ "%.2f"|format(product.quantity * product.cost_price) }}</td>
+                            <td>PKR{{ "%.2f"|format(product.warehouse_stock_value) }}</td>
                             <td>
                                 {% if product.is_obsolete %}
                                 <span class="badge bg-dark mb-1" title="{% if product.obsoleted_at %}Marked obsolete on {{ product.obsoleted_at.strftime('%d-%b-%Y') }}{% endif %}">

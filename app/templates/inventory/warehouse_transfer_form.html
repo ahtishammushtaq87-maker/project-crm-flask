@@ -66,7 +66,7 @@
         </a>
     </div>
 
-    <form method="POST" id="wtForm" autocomplete="off">
+    <form method="POST" id="wtForm" autocomplete="off" enctype="multipart/form-data">
         <div class="row g-4">
             <div class="col-lg-9">
                 <!-- Route -->
@@ -122,7 +122,7 @@
                                         <th style="min-width:300px">Item</th>
                                         <th class="text-center" style="width:130px">In Source</th>
                                         <th style="width:190px">Transfer Qty</th>
-                                        <th class="text-end" style="width:140px">Value</th>
+                                        <th class="text-end" style="width:170px">Value</th>
                                         <th style="width:44px"></th>
                                     </tr>
                                 </thead>
@@ -149,9 +149,36 @@
                                 <input type="text" name="reference" class="form-control" maxlength="100" placeholder="e.g. Gate pass #, driver"
                                        value="{{ fv.reference if fv else ((transfer.reference or '') if is_edit else '') }}">
                             </div>
-                            <div>
+                            <div class="mb-3">
+                                <label class="form-label" for="shippingCost">Shipping Price</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">PKR</span>
+                                    <input type="number" name="shipping_cost" id="shippingCost" class="form-control" min="0" step="0.01" placeholder="0.00"
+                                           value="{{ fv.shipping_cost if fv else ((transfer.shipping_cost or '') if is_edit else '') }}">
+                                </div>
+                                <small class="text-muted">Split over the items by value and added to their cost in the destination warehouse.</small>
+                            </div>
+                            <div class="mb-3">
                                 <label class="form-label">Notes</label>
                                 <textarea name="notes" class="form-control" rows="3" placeholder="Reason / remarks">{{ fv.notes if fv else ((transfer.notes or '') if is_edit else '') }}</textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="imageInput">Image <small class="text-muted fw-normal">(gate pass, slip, photo)</small></label>
+                                {% if is_edit and transfer.image_path %}
+                                <div class="mb-2">
+                                    {% if transfer.image_path.lower().endswith('.pdf') %}
+                                    <a href="{{ url_for('static', filename=transfer.image_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="fas fa-file-pdf me-1"></i>Current file</a>
+                                    {% else %}
+                                    <a href="{{ url_for('static', filename=transfer.image_path) }}" target="_blank"><img src="{{ url_for('static', filename=transfer.image_path) }}" class="img-thumbnail" style="max-height:120px;" alt="Transfer image"></a>
+                                    {% endif %}
+                                    <div class="form-check mt-1">
+                                        <input class="form-check-input" type="checkbox" name="remove_image" id="removeImage" value="1">
+                                        <label class="form-check-label small text-danger" for="removeImage">Remove current image</label>
+                                    </div>
+                                </div>
+                                {% endif %}
+                                <input type="file" name="image" id="imageInput" class="form-control" accept="image/*,.pdf">
+                                <div id="imagePreview" class="mt-2"></div>
                             </div>
                         </div>
                     </div>
@@ -160,6 +187,8 @@
                             <div class="d-flex justify-content-between mb-1"><span class="text-muted">Items</span><strong id="sumItems">0</strong></div>
                             <div class="d-flex justify-content-between mb-1"><span class="text-muted">Total Qty</span><strong id="sumQty">0</strong></div>
                             <div class="d-flex justify-content-between mb-1"><span class="text-muted">Value at Cost</span><strong id="sumValue">PKR 0.00</strong></div>
+                            <div class="d-flex justify-content-between mb-1"><span class="text-muted">Shipping</span><strong id="sumShip">PKR 0.00</strong></div>
+                            <div class="d-flex justify-content-between mb-1"><span class="text-muted">Landed Value</span><strong id="sumLanded">PKR 0.00</strong></div>
                             <div class="d-flex justify-content-between mb-3"><span class="text-muted">Value at Selling</span><strong id="sumSell" class="text-primary">PKR 0.00</strong></div>
                             <button type="submit" class="btn btn-primary w-100" id="submitBtn">
                                 <i class="fas fa-check me-2"></i>{{ 'Update Transfer' if is_edit else 'Save Transfer' }}
@@ -200,9 +229,29 @@
     const fmt = n => (n || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
     const fmtQty = n => (Math.round((n || 0) * 10000) / 10000).toLocaleString();
 
+    const shipInput = document.getElementById('shippingCost');
+    const shipping = () => Math.max(parseFloat(shipInput.value) || 0, 0);
+
+    // Same split as the server: by line value at source cost, by qty if no line has a cost.
+    function shippingShares() {
+        const rows = [];
+        tbody.querySelectorAll('tr').forEach(tr => {
+            const pid = $(tr).find('.wt-product').val();
+            const q = parseFloat(tr.querySelector('.wt-qty').value) || 0;
+            if (pid && q > 0 && stock[pid]) rows.push({tr, q, w: q * (stock[pid].cost_price || 0)});
+        });
+        const shares = new Map();
+        const ship = shipping();
+        let total = rows.reduce((a, r) => a + r.w, 0);
+        const useQty = total <= 0;
+        if (useQty) total = rows.reduce((a, r) => a + r.q, 0);
+        rows.forEach(r => shares.set(r.tr, ship > 0 && total > 0 ? ship * (useQty ? r.q : r.w) / total : 0));
+        return shares;
+    }
+
     function loadStock() {
         const wh = fromWh.value;
-        let url = STOCK_URL + '?warehouse_id=' + encodeURIComponent(wh || '');
+        let url = STOCK_URL + '?warehouse_id=' + encodeURIComponent(wh || '') + '&to_warehouse_id=' + encodeURIComponent(toWh.value || '');
         if (EXCLUDE_ID) url += '&exclude_transfer_id=' + EXCLUDE_ID;
         return fetch(url, {credentials: 'same-origin'}).then(r => r.json()).then(data => {
             stockList = data.results || [];
@@ -301,7 +350,7 @@
         // Item info chips: total stock across all warehouses + cost + selling price
         infoEl.innerHTML = p
             ? '<span class="wt-chip"><i class="fas fa-layer-group me-1"></i>Total stock: <strong>' + fmtQty(p.total_qty) + ' ' + unit + '</strong></span>' +
-              '<span class="wt-chip cost"><i class="fas fa-tag me-1"></i>Cost: <strong>PKR ' + fmt(p.cost_price) + '</strong></span>' +
+              '<span class="wt-chip cost" title="Cost per unit in the source warehouse"><i class="fas fa-tag me-1"></i>Cost: <strong>PKR ' + fmt(p.cost_price) + '</strong></span>' +
               '<span class="wt-chip sell"><i class="fas fa-store me-1"></i>Selling: <strong>PKR ' + fmt(p.unit_price) + '</strong></span>'
             : '';
 
@@ -314,7 +363,7 @@
             ? whs.map(w => {
                 const cls = String(w.id) === fromWh.value ? ' is-src' : (String(w.id) === toWh.value ? ' is-dst' : '');
                 const tag = cls === ' is-src' ? '<span class="tag">source</span>' : (cls === ' is-dst' ? '<span class="tag">destination</span>' : '');
-                return '<span class="wt-wh-pill' + cls + '" data-wh="' + w.id + '" title="Transfer from ' + $('<div>').text(w.name).html() + '">' +
+                return '<span class="wt-wh-pill' + cls + '" data-wh="' + w.id + '" title="Transfer from ' + $('<div>').text(w.name).html() + ' (cost PKR ' + fmt(w.cost) + ' per unit)">' +
                        $('<div>').text(w.name).html() + ':<strong>' + fmtQty(w.qty) + ' ' + unit + '</strong>' + tag + '</span>';
               }).join('')
             : '<span class="text-danger small"><i class="fas fa-exclamation-circle me-1"></i>Not in stock in any warehouse</span>';
@@ -336,11 +385,35 @@
                 ? '<span class="text-danger"><i class="fas fa-exclamation-circle me-1"></i>Only ' + fmtQty(avail) + ' ' + unit + ' available</span>'
                 : (qty > 0 ? 'Source after transfer: <strong>' + fmtQty(avail - qty) + ' ' + unit + '</strong>' : '');
         }
-        const cost = qty * (p ? p.cost_price : 0);
-        const sell = qty * (p ? p.unit_price : 0);
-        tr.querySelector('.wt-value').innerHTML = '<span class="num">PKR ' + fmt(cost) + '</span><small>at cost</small>' +
-            (p && sell ? '<small>Sell: PKR ' + fmt(sell) + '</small>' : '');
         updateSummary();
+    }
+
+    // Value column: cost value, shipping share, landed cost per unit and what
+    // the destination warehouse's cost becomes (weighted average).
+    function refreshValues() {
+        const shares = shippingShares();
+        tbody.querySelectorAll('tr').forEach(tr => {
+            const pid = $(tr).find('.wt-product').val();
+            const p = pid ? stock[pid] : null;
+            const qty = parseFloat(tr.querySelector('.wt-qty').value) || 0;
+            const cost = qty * (p ? p.cost_price : 0);
+            const sell = qty * (p ? p.unit_price : 0);
+            const share = shares.get(tr) || 0;
+            let html = '<span class="num">PKR ' + fmt(cost) + '</span><small>at cost</small>';
+            if (p && qty > 0) {
+                const landed = p.cost_price + share / qty;
+                if (share > 0) html += '<small>+ Shipping: PKR ' + fmt(share) + '</small>';
+                html += '<small>Landed: PKR ' + fmt(landed) + ' / ' + (p.unit || 'unit') + '</small>';
+                if (p.dest_qty !== null && p.dest_qty !== undefined) {
+                    const have = Math.max(p.dest_qty, 0);
+                    const newCost = have > 0 ? (have * p.dest_cost + qty * landed) / (have + qty) : landed;
+                    html += '<small class="text-success">Dest. cost: ' + (have > 0 ? 'PKR ' + fmt(p.dest_cost) + ' &rarr; ' : '') +
+                            'PKR ' + fmt(newCost) + '</small>';
+                }
+            }
+            if (p && sell) html += '<small>Sell: PKR ' + fmt(sell) + '</small>';
+            tr.querySelector('.wt-value').innerHTML = html;
+        });
     }
 
     function renumber() {
@@ -372,7 +445,10 @@
         document.getElementById('sumItems').textContent = items;
         document.getElementById('sumQty').textContent = fmtQty(qty);
         document.getElementById('sumValue').textContent = 'PKR ' + fmt(value);
+        document.getElementById('sumShip').textContent = 'PKR ' + fmt(shipping());
+        document.getElementById('sumLanded').textContent = 'PKR ' + fmt(value + shipping());
         document.getElementById('sumSell').textContent = 'PKR ' + fmt(sell);
+        refreshValues();
     }
 
     function checkSame() {
@@ -394,7 +470,23 @@
         if (pill.dataset.wh === toWh.value) $(toWh).val(null).trigger('change.select2');
         $(fromWh).val(pill.dataset.wh).trigger('change');
     });
-    $(toWh).on('change', () => tbody.querySelectorAll('tr').forEach(refreshRow));
+    $(toWh).on('change', () => loadStock());  // reload destination qty/cost for the preview
+    shipInput.addEventListener('input', updateSummary);
+    const imgInput = document.getElementById('imageInput');
+    imgInput.addEventListener('change', () => {
+        const box = document.getElementById('imagePreview');
+        box.innerHTML = '';
+        const f = imgInput.files && imgInput.files[0];
+        if (f && f.type.startsWith('image/')) {
+            const img = document.createElement('img');
+            img.className = 'img-thumbnail';
+            img.style.maxHeight = '120px';
+            img.src = URL.createObjectURL(f);
+            box.appendChild(img);
+        } else if (f) {
+            box.innerHTML = '<small class="text-muted"><i class="fas fa-file me-1"></i>' + $('<div>').text(f.name).html() + '</small>';
+        }
+    });
     document.getElementById('swapWh').addEventListener('click', () => {
         const a = $(fromWh).val(), b = $(toWh).val();
         $(toWh).val(a).trigger('change.select2');

@@ -3671,7 +3671,12 @@
                             }
                         });
 
-                        container.addEventListener('click', () => input.focus());
+                        // Only for clicks on empty space of the drop area - never
+                        // steal focus from another field/button inside it.
+                        container.addEventListener('click', (e) => {
+                            if (e.target.closest('input, select, textarea, button, a, label, .select2-container')) return;
+                            input.focus();
+                        });
                     });
                 }
 

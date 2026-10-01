@@ -90,8 +90,10 @@
                                     <th>Item</th>
                                     <th>SKU</th>
                                     <th class="text-end">Qty Moved</th>
-                                    <th class="text-end">Unit Cost</th>
+                                    <th class="text-end" title="Cost per unit in the source warehouse when moved">Unit Cost</th>
                                     <th class="text-end">Value (PKR)</th>
+                                    <th class="text-end">Shipping</th>
+                                    <th class="text-end" title="Unit cost + shipping share, per unit">Landed / Unit</th>
                                     <th class="text-end no-print" title="Current stock of this item in each warehouse">Now in Source / Destination</th>
                                 </tr>
                             </thead>
@@ -105,8 +107,10 @@
                                     </td>
                                     <td>{{ p.sku if p else '-' }}</td>
                                     <td class="text-end fw-semibold">{{ "%g"|format(r.item.quantity) }} <small class="text-muted">{{ p.unit if p else '' }}</small></td>
-                                    <td class="text-end">{{ "{:,.2f}".format(p.cost_price or 0) if p else '-' }}</td>
-                                    <td class="text-end">{{ "{:,.2f}".format((r.item.quantity or 0) * ((p.cost_price or 0) if p else 0)) }}</td>
+                                    <td class="text-end">{{ "{:,.2f}".format(r.item.effective_unit_cost) if p else '-' }}</td>
+                                    <td class="text-end">{{ "{:,.2f}".format(r.item.value) }}</td>
+                                    <td class="text-end">{{ "{:,.2f}".format(r.item.shipping_share or 0) }}</td>
+                                    <td class="text-end fw-semibold">{{ "{:,.2f}".format(r.item.landed_unit_cost) if p else '-' }}</td>
                                     <td class="text-end no-print">
                                         <span class="badge bg-danger-subtle text-danger border border-danger-subtle">{{ "%g"|format(r.from_now) }}</span>
                                         <span class="text-muted mx-1">/</span>
@@ -121,6 +125,8 @@
                                     <th class="text-end">{{ "%g"|format(transfer.total_quantity) }}</th>
                                     <th></th>
                                     <th class="text-end">PKR {{ "{:,.2f}".format(transfer.total_value) }}</th>
+                                    <th class="text-end">PKR {{ "{:,.2f}".format(transfer.shipping_cost or 0) }}</th>
+                                    <th class="text-end" title="Value + shipping">PKR {{ "{:,.2f}".format(transfer.landed_value) }}</th>
                                     <th class="no-print"></th>
                                 </tr>
                             </tfoot>
@@ -136,6 +142,8 @@
                     <dl class="wt-meta mb-0">
                         <dt>Date</dt><dd>{{ transfer.date.strftime(date_format) if transfer.date else '-' }}</dd>
                         <dt>Reference</dt><dd>{{ transfer.reference or '-' }}</dd>
+                        <dt>Shipping Price</dt><dd>PKR {{ "{:,.2f}".format(transfer.shipping_cost or 0) }}</dd>
+                        <dt>Landed Value</dt><dd>PKR {{ "{:,.2f}".format(transfer.landed_value) }}</dd>
                         <dt>Notes</dt><dd style="white-space: pre-line;">{{ transfer.notes or '-' }}</dd>
                         <dt>Created By</dt>
                         <dd>{{ transfer.creator.username if transfer.creator else '-' }}<br><small class="text-muted">{{ transfer.created_at.strftime(date_format ~ ' %H:%M') if transfer.created_at else '' }}</small></dd>
@@ -146,6 +154,20 @@
                     </dl>
                 </div>
             </div>
+            {% if transfer.image_path %}
+            <div class="card shadow-sm mt-3">
+                <div class="card-header bg-white"><h6 class="mb-0"><i class="fas fa-image me-2 text-primary"></i>Image</h6></div>
+                <div class="card-body text-center">
+                    {% if transfer.image_path.lower().endswith('.pdf') %}
+                    <a href="{{ url_for('static', filename=transfer.image_path) }}" target="_blank" class="btn btn-outline-secondary"><i class="fas fa-file-pdf me-1"></i>Open PDF</a>
+                    {% else %}
+                    <a href="{{ url_for('static', filename=transfer.image_path) }}" target="_blank">
+                        <img src="{{ url_for('static', filename=transfer.image_path) }}" class="img-fluid rounded border" alt="Transfer image">
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>

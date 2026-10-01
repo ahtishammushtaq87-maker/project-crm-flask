@@ -10,49 +10,51 @@ changes location.
   * edit    -> reverse the old lines, apply the new ones
   * delete  -> reverse the lines
 
+Cost: each line is valued at the SOURCE warehouse's cost for the item
+(stored on the line as unit_cost). The transfer's shipping is split over
+the lines by value (by quantity if nothing has a cost) and added on top, and
+the destination warehouse's cost for the item becomes the weighted average
+of what it already held and this landed stock. The source keeps its cost.
+Reversing a line (edit/delete) undoes exactly that. See
+app/services/warehouse_cost.py.
+
 Every change is validated AFTER it's applied: if any touched warehouse row
 would go negative (e.g. the destination already used/sold the stock that a
 delete or edit wants to take back) the whole request is rolled back and the
 user is told exactly which item/warehouse is short.
 """
+import os
+import uuid
 from datetime import datetime
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_login import login_required, current_user
 from sqlalchemy import or_, func
+from werkzeug.utils import secure_filename
 
 from app import db
 from app.models import (Company, Product, ProductWarehouseStock, Warehouse,
                         WarehouseTransfer, WarehouseTransferItem)
+from app.services import warehouse_cost as wc
 from app.utils import permission_required, log_activity
 
 bp = Blueprint('warehouse_transfer', __name__)
 
 QTY_EPS = 1e-9
+IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf'}
+IMAGE_DIR = ('uploads', 'warehouse_transfers')
 
 
 # ── Stock helpers ────────────────────────────────────────────────────────
 
-def _materialize_legacy_stock(product):
-    """A product that has never had a ProductWarehouseStock row keeps all
-    its stock implicitly in Product.warehouse_id (the legacy single
-    warehouse). Turn that into a real row first, so moving stock in or out
-    of it can't silently lose the implicit quantity."""
-    has_rows = ProductWarehouseStock.query.filter_by(product_id=product.id).first() is not None
-    if not has_rows and product.warehouse_id and (product.quantity or 0) > 0:
-        db.session.add(ProductWarehouseStock(product_id=product.id,
-                                             warehouse_id=product.warehouse_id,
-                                             quantity=product.quantity))
-        db.session.flush()
+# A product that has never had a ProductWarehouseStock row keeps all its
+# stock implicitly in Product.warehouse_id (the legacy single warehouse).
+# Turn that into a real row first, so moving stock in or out of it can't
+# silently lose the implicit quantity.
+_materialize_legacy_stock = wc.materialize_legacy
 
 
-def _stock_row(product_id, warehouse_id):
-    row = ProductWarehouseStock.query.filter_by(product_id=product_id, warehouse_id=warehouse_id).first()
-    if not row:
-        row = ProductWarehouseStock(product_id=product_id, warehouse_id=warehouse_id, quantity=0)
-        db.session.add(row)
-        db.session.flush()
-    return row
+_stock_row = wc.stock_row
 
 
 def warehouse_available_qty(product, warehouse_id):
@@ -67,19 +69,63 @@ def warehouse_available_qty(product, warehouse_id):
     return 0.0
 
 
-def _move_lines(from_wh_id, to_wh_id, lines, direction=1):
-    """Apply (direction=1) or reverse (direction=-1) transfer lines.
-    lines: iterable of (product, qty). Returns the set of (product_id,
-    warehouse_id) rows touched, for validation."""
-    touched = set()
-    for product, qty in lines:
+def _split_shipping(shipping, lines, unit_costs):
+    """Share of `shipping` for each line, by line value (qty x source cost);
+    by quantity when no line has a cost. Shares always add up exactly."""
+    if not lines or shipping <= 0:
+        return [0.0] * len(lines)
+    weights = [q * unit_costs[i] for i, (_, q) in enumerate(lines)]
+    if sum(weights) <= 0:
+        weights = [q for _, q in lines]
+    total_w = sum(weights)
+    shares = [round(shipping * w / total_w, 6) for w in weights]
+    shares[-1] = round(shipping - sum(shares[:-1]), 6)
+    return shares
+
+
+def _apply_lines(from_wh_id, to_wh_id, lines, shipping=0.0):
+    """Move lines [(product, qty)] from -> to, valuing them at the source
+    warehouse's cost plus their share of `shipping`. Returns (touched rows,
+    [(product, qty, unit_cost, shipping_share)] to save on the transfer)."""
+    for product, _ in lines:
         _materialize_legacy_stock(product)
+    unit_costs = [wc.get_cost(product, from_wh_id) for product, _ in lines]
+    shares = _split_shipping(shipping, lines, unit_costs)
+
+    touched, saved = set(), []
+    for (product, qty), unit, share in zip(lines, unit_costs, shares):
         src = _stock_row(product.id, from_wh_id)
         dst = _stock_row(product.id, to_wh_id)
-        src.quantity = round((src.quantity or 0) - direction * qty, 6)
-        dst.quantity = round((dst.quantity or 0) + direction * qty, 6)
+        wc.receive(product, dst, qty, unit + share / qty)
+        src.quantity = round((src.quantity or 0) - qty, 6)
+        dst.quantity = round((dst.quantity or 0) + qty, 6)
         touched.add((product.id, from_wh_id))
         touched.add((product.id, to_wh_id))
+        saved.append((product, qty, round(unit, 6), share))
+    db.session.flush()
+    return touched, saved
+
+
+def _reverse_items(transfer):
+    """Undo a saved transfer's movement: stock goes back to the source and
+    the destination's cost drops the landed stock again. Lines saved before
+    warehouse costs existed (unit_cost NULL) only move quantity back."""
+    touched = set()
+    for item in transfer.items:
+        product = item.product
+        if not product:
+            continue
+        qty = float(item.quantity or 0)
+        _materialize_legacy_stock(product)
+        src = _stock_row(product.id, transfer.from_warehouse_id)
+        dst = _stock_row(product.id, transfer.to_warehouse_id)
+        if item.unit_cost is not None and qty > 0:
+            wc.unreceive(product, dst, qty, item.landed_unit_cost)
+            wc.receive(product, src, qty, item.unit_cost)
+        dst.quantity = round((dst.quantity or 0) - qty, 6)
+        src.quantity = round((src.quantity or 0) + qty, 6)
+        touched.add((product.id, transfer.from_warehouse_id))
+        touched.add((product.id, transfer.to_warehouse_id))
     db.session.flush()
     return touched
 
@@ -109,6 +155,48 @@ def _next_transfer_number():
 
 def _lines_text(lines):
     return '; '.join(f'{p.name} (SKU: {p.sku}) x {q:g}' for p, q in lines)
+
+
+def _set_items(transfer, saved):
+    transfer.items.clear()
+    for product, qty, unit, share in saved:
+        transfer.items.append(WarehouseTransferItem(product_id=product.id, quantity=qty,
+                                                    unit_cost=unit, shipping_share=share))
+
+
+def _image_error():
+    f = request.files.get('image')
+    if f and f.filename:
+        ext = f.filename.rsplit('.', 1)[1].lower() if '.' in f.filename else ''
+        if ext not in IMAGE_EXTENSIONS:
+            return 'Invalid image file. Allowed: ' + ', '.join(sorted(IMAGE_EXTENSIONS))
+    return None
+
+
+def _save_image(transfer_number):
+    """Save the uploaded transfer image (already validated by _parse_form).
+    Returns its static-relative path, or None when nothing was uploaded."""
+    f = request.files.get('image')
+    if not f or not f.filename or _image_error():
+        return None
+    ext = f.filename.rsplit('.', 1)[1].lower()
+    upload_dir = os.path.join(current_app.root_path, 'static', *IMAGE_DIR)
+    os.makedirs(upload_dir, exist_ok=True)
+    filename = secure_filename(f'{transfer_number}_{datetime.now().strftime("%Y%m%d%H%M%S")}_'
+                               f'{uuid.uuid4().hex[:6]}.{ext}')
+    f.save(os.path.join(upload_dir, filename))
+    return '/'.join(IMAGE_DIR + (filename,))
+
+
+def _delete_image_file(path):
+    if not path:
+        return
+    full = os.path.join(current_app.root_path, 'static', path)
+    try:
+        if os.path.isfile(full):
+            os.remove(full)
+    except OSError:
+        pass
 
 
 def _parse_form():
@@ -152,7 +240,20 @@ def _parse_form():
     if not lines and not errors:
         errors.append('Add at least one item to transfer.')
 
+    try:
+        shipping = round(float(request.form.get('shipping_cost') or 0), 2)
+    except (TypeError, ValueError):
+        shipping = 0
+        errors.append('Shipping price must be a number.')
+    if shipping < 0:
+        errors.append('Shipping price cannot be negative.')
+
+    img_err = _image_error()
+    if img_err:
+        errors.append(img_err)
+
     data = {
+        'shipping': max(shipping, 0),
         'date': date,
         'from_wh': from_wh,
         'to_wh': to_wh,
@@ -193,6 +294,7 @@ def _posted_values():
         'to_warehouse_id': request.form.get('to_warehouse_id', type=int),
         'reference': request.form.get('reference', ''),
         'notes': request.form.get('notes', ''),
+        'shipping_cost': request.form.get('shipping_cost', ''),
         'items': rows,
     }
 
@@ -239,6 +341,7 @@ def transfers():
         'this_month': sum(1 for t in transfer_list if t.date and t.date.year == today.year and t.date.month == today.month),
         'total_qty': sum(t.total_quantity for t in transfer_list),
         'total_value': sum(t.total_value for t in transfer_list),
+        'total_shipping': sum(t.shipping_cost or 0 for t in transfer_list),
     }
     warehouses = Warehouse.query.order_by(Warehouse.name).all()
     return render_template('inventory/warehouse_transfers.html', transfers=transfer_list, stats=stats,
@@ -266,13 +369,13 @@ def create_transfer():
             to_warehouse_id=data['to_wh'].id,
             reference=data['reference'],
             notes=data['notes'],
+            shipping_cost=data['shipping'],
             created_by=current_user.id,
         )
-        for product, qty in lines:
-            transfer.items.append(WarehouseTransferItem(product_id=product.id, quantity=qty))
         db.session.add(transfer)
 
-        touched = _move_lines(data['from_wh'].id, data['to_wh'].id, lines, direction=1)
+        touched, saved = _apply_lines(data['from_wh'].id, data['to_wh'].id, lines, data['shipping'])
+        _set_items(transfer, saved)
         problems = _shortages(touched)
         if problems:
             db.session.rollback()
@@ -282,9 +385,11 @@ def create_transfer():
             return render_template('inventory/warehouse_transfer_form.html',
                                    **_form_context(form_values=_posted_values()))
 
+        transfer.image_path = _save_image(transfer.transfer_number)
         db.session.commit()
         log_activity('Warehouse', f'Warehouse Transfer {transfer.transfer_number} created',
-                     f'{data["from_wh"].name} → {data["to_wh"].name}: {_lines_text(lines)}')
+                     f'{data["from_wh"].name} → {data["to_wh"].name}: {_lines_text(lines)}'
+                     + (f' | Shipping: PKR {data["shipping"]:,.2f}' if data['shipping'] else ''))
         flash(f'Transfer {transfer.transfer_number} saved — {len(lines)} item(s) moved from '
               f'{data["from_wh"].name} to {data["to_wh"].name}.', 'success')
         return redirect(url_for('warehouse_transfer.transfer_detail', id=transfer.id))
@@ -325,12 +430,14 @@ def edit_transfer(id):
 
         old_from, old_to = transfer.from_warehouse, transfer.to_warehouse
         old_lines = [(i.product, float(i.quantity or 0)) for i in transfer.items if i.product]
+        old_shipping = transfer.shipping_cost or 0
 
         # 1. Undo the old movement, 2. apply the new one, 3. validate the
         # combined result - so e.g. lowering a quantity only needs the
         # destination to still hold the difference, not the whole amount.
-        touched = _move_lines(old_from.id, old_to.id, old_lines, direction=-1)
-        touched |= _move_lines(data['from_wh'].id, data['to_wh'].id, lines, direction=1)
+        touched = _reverse_items(transfer)
+        new_touched, saved = _apply_lines(data['from_wh'].id, data['to_wh'].id, lines, data['shipping'])
+        touched |= new_touched
         problems = _shortages(touched)
         if problems:
             db.session.rollback()
@@ -346,15 +453,23 @@ def edit_transfer(id):
         transfer.to_warehouse_id = data['to_wh'].id
         transfer.reference = data['reference']
         transfer.notes = data['notes']
+        transfer.shipping_cost = data['shipping']
         transfer.updated_by = current_user.id
-        transfer.items.clear()
-        for product, qty in lines:
-            transfer.items.append(WarehouseTransferItem(product_id=product.id, quantity=qty))
+        _set_items(transfer, saved)
+
+        new_image = _save_image(transfer.transfer_number)
+        old_image = None
+        if new_image or request.form.get('remove_image') == '1':
+            old_image = transfer.image_path
+            transfer.image_path = new_image
 
         db.session.commit()
+        _delete_image_file(old_image)
         log_activity('Warehouse', f'Warehouse Transfer {transfer.transfer_number} updated',
-                     f'Before: {old_from.name} → {old_to.name}: {_lines_text(old_lines)} | '
-                     f'After: {data["from_wh"].name} → {data["to_wh"].name}: {_lines_text(lines)}')
+                     f'Before: {old_from.name} → {old_to.name}: {_lines_text(old_lines)}, '
+                     f'shipping PKR {old_shipping:,.2f} | '
+                     f'After: {data["from_wh"].name} → {data["to_wh"].name}: {_lines_text(lines)}, '
+                     f'shipping PKR {data["shipping"]:,.2f}')
         flash(f'Transfer {transfer.transfer_number} updated — warehouse stock adjusted.', 'success')
         return redirect(url_for('warehouse_transfer.transfer_detail', id=transfer.id))
 
@@ -369,8 +484,9 @@ def delete_transfer(id):
     number = transfer.transfer_number
     from_wh, to_wh = transfer.from_warehouse, transfer.to_warehouse
     lines = [(i.product, float(i.quantity or 0)) for i in transfer.items if i.product]
+    image_path = transfer.image_path
 
-    touched = _move_lines(from_wh.id, to_wh.id, lines, direction=-1)
+    touched = _reverse_items(transfer)
     problems = _shortages(touched)
     if problems:
         db.session.rollback()
@@ -382,6 +498,7 @@ def delete_transfer(id):
 
     db.session.delete(transfer)
     db.session.commit()
+    _delete_image_file(image_path)
     log_activity('Warehouse', f'Warehouse Transfer {number} deleted (stock reversed)',
                  f'{to_wh.name} → back to {from_wh.name}: {_lines_text(lines)}')
     flash(f'Transfer {number} deleted — stock moved back from {to_wh.name} to {from_wh.name}.', 'success')
@@ -423,8 +540,10 @@ def warehouse_stock_json():
     always find what they're looking for; the form shows 0 available and
     blocks transferring more than the source warehouse holds."""
     wh_id = request.args.get('warehouse_id', type=int)
+    to_id = request.args.get('to_warehouse_id', type=int)
     dist = _stock_distribution(request.args.get('exclude_transfer_id', type=int))
     wh_names = {w.id: w.name for w in Warehouse.query.all()}
+    cmap = wc.cost_map()
 
     ids_with_stock = [pid for pid, d in dist.items() if any(q > QTY_EPS for q in d.values())]
     products = Product.query.filter(or_(Product.is_active == True, Product.id.in_(ids_with_stock)))         .order_by(Product.name).all()
@@ -432,8 +551,11 @@ def warehouse_stock_json():
     results = []
     for p in products:
         d = dist.get(p.id, {})
+        own = cmap.get(p.id, {})
+        default_cost = float(p.cost_price or 0)
         breakdown = sorted(
-            [{'id': w, 'name': wh_names.get(w, f'Warehouse #{w}'), 'qty': round(q, 4)}
+            [{'id': w, 'name': wh_names.get(w, f'Warehouse #{w}'), 'qty': round(q, 4),
+              'cost': round(own.get(w, default_cost), 4)}
              for w, q in d.items() if q > QTY_EPS],
             key=lambda x: -x['qty'])
         results.append({
@@ -441,7 +563,10 @@ def warehouse_stock_json():
             'text': f'{p.name} ({p.sku})',
             'available': round(max(d.get(wh_id, 0), 0), 4) if wh_id else None,
             'unit': p.unit or '',
-            'cost_price': float(p.cost_price or 0),
+            # cost in the source warehouse (the item's normal cost until one is picked)
+            'cost_price': round(own.get(wh_id, default_cost), 4) if wh_id else default_cost,
+            'dest_qty': round(max(d.get(to_id, 0), 0), 4) if to_id else None,
+            'dest_cost': round(own.get(to_id, default_cost), 4) if to_id else None,
             'unit_price': float(p.unit_price or 0),
             'total_qty': float(p.quantity or 0),
             'warehouses': breakdown,

@@ -366,8 +366,8 @@
                             <td>{{ s.invoice_number }}</td>
                             <td class="{% if item.product.margin_color %}text-{{ item.product.margin_color }} fw-bold{% endif %}">{{ item.product.name }}</td>
                             <td>{{ item.quantity }}</td>
-                            <td class="text-end">{{ "{:,.2f}".format(item.product.cost_price or 0) }}</td>
-                            <td class="text-end">{{ "{:,.2f}".format((item.product.cost_price or 0) * item.quantity) }}
+                            <td class="text-end">{{ "{:,.2f}".format(sale_item_cost(item)) }}</td>
+                            <td class="text-end">{{ "{:,.2f}".format(sale_item_cost(item) * item.quantity) }}
                             </td>
                         </tr>
                         {% endfor %}

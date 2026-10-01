@@ -112,6 +112,7 @@
                             <th class="text-center">Items</th>
                             <th class="text-end">Total Qty</th>
                             <th class="text-end">Value (PKR)</th>
+                            <th class="text-end">Shipping (PKR)</th>
                             <th>Reference</th>
                             <th>Created By</th>
                             <th class="text-end no-export">Actions</th>
@@ -132,6 +133,7 @@
                             <td class="text-center"><span class="badge bg-secondary">{{ t.items|length }}</span></td>
                             <td class="text-end fw-semibold">{{ "%g"|format(t.total_quantity) }}</td>
                             <td class="text-end">{{ "{:,.2f}".format(t.total_value) }}</td>
+                            <td class="text-end">{{ "{:,.2f}".format(t.shipping_cost or 0) }}</td>
                             <td>{{ t.reference or '-' }}</td>
                             <td>{{ t.creator.username if t.creator and t.creator.username else '-' }}</td>
                             <td class="text-end no-export text-nowrap">
@@ -152,7 +154,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="9" class="text-center text-muted py-5">
+                            <td colspan="10" class="text-center text-muted py-5">
                                 <i class="fas fa-dolly fa-2x mb-2 d-block opacity-50"></i>
                                 No warehouse transfers found.
                                 {% if current_user.has_permission('warehouse', 'add') %}

@@ -47,7 +47,8 @@ def create_app(config_class=Config):
             RecoveryTask, RecoveryLog, RecoveryComment, Salesman,
             JournalAccount, JournalEntry, JournalLine, FixedExpense,
             Quotation, QuotationItem, DatabaseBackup, PackingSlip, PackingSlipSettings, SaleReturnReason,
-            ExpenseAccount, ExpenseAccountTransaction, BillPayment, AccountDailyClose
+            ExpenseAccount, ExpenseAccountTransaction, BillPayment, AccountDailyClose,
+            WarehouseTransfer, WarehouseTransferItem
         )
         from app.filter_models import SavedFilter
         
@@ -147,6 +148,8 @@ def create_app(config_class=Config):
             'expense_account_transactions': ExpenseAccountTransaction,
             'account_daily_closes': AccountDailyClose,
             'bill_payments': BillPayment,
+            'warehouse_transfers': WarehouseTransfer,
+            'warehouse_transfer_items': WarehouseTransferItem,
         }
         
         try:
@@ -568,6 +571,11 @@ def create_app(config_class=Config):
     # Global helper: render a clickable item-SKU that opens the Item History popup
     from app.utils import sku_link
     app.jinja_env.globals['sku_link'] = sku_link
+
+    # Per-warehouse item cost (see app/services/warehouse_cost.py)
+    from app.services import warehouse_cost
+    app.jinja_env.globals['warehouse_cost_map'] = warehouse_cost.cost_map
+    app.jinja_env.globals['sale_item_cost'] = warehouse_cost.sale_item_cost
     import json
     app.jinja_env.filters['from_json'] = json.loads
 

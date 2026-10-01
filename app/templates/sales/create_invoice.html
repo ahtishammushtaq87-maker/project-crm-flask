@@ -341,7 +341,7 @@
                                             <select name="product_id[]" class="form-select form-select-sm product-select" id="productSelect1" required>
                                                 <option value="">Select Product</option>
                                                 {% for product in products %}
-                                                <option value="{{ product.id }}" data-price="{{ product.unit_price }}" data-cost="{{ product.cost_price }}">
+                                                <option value="{{ product.id }}" data-price="{{ product.unit_price }}" data-cost="{{ product.cost_price }}" data-wh="{{ product.warehouse_id or '' }}">
                                                     {{ product.sku }} - {{ product.name }} (Stock: {{ product.quantity }}){% if product.is_obsolete %} (Obsolete){% endif %}
                                                 </option>
                                                 {% endfor %}
@@ -520,6 +520,23 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
+    // Cost of each item per warehouse ({product_id: {warehouse_id: cost}}) for
+    // warehouses that have their own cost; everything else uses the item's
+    // normal cost (data-cost). With no warehouse picked the stock comes out of
+    // the item's default warehouse (data-wh), so its cost is used.
+    const WAREHOUSE_COSTS = {{ warehouse_cost_map()|tojson }};
+    function updateRowCost(row) {
+        const sel = row.querySelector('.product-select');
+        const opt = sel && sel.options[sel.selectedIndex];
+        const display = row.querySelector('.cost-display');
+        if (!opt || !opt.value) { display.value = '-'; return; }
+        const whSel = row.querySelector('.warehouse-select');
+        const wh = (whSel && whSel.value) || opt.getAttribute('data-wh') || '';
+        const own = (WAREHOUSE_COSTS[opt.value] || {})[wh];
+        const cost = own !== undefined ? own : (parseFloat(opt.getAttribute('data-cost')) || 0);
+        display.value = cost > 0 ? cost.toFixed(2) : '-';
+    }
+
 
     // Fetches the customer's ledger totals (same source as the Ledger modal) and
     // fills the summary card under the items table. Read-only — never posts.
@@ -669,8 +686,11 @@
         $productSelect.on('change', function () {
             const opt = $(this).find(':selected');
             priceInput.value = opt.attr('data-price') || 0;
-            const cost = parseFloat(opt.attr('data-cost')) || 0;
-            row.querySelector('.cost-display').value = cost > 0 ? cost.toFixed(2) : '-';
+            updateRowCost(row);
+            calculateItemTotal(row);
+        });
+        $(row).find('.warehouse-select').on('change', function () {
+            updateRowCost(row);
             calculateItemTotal(row);
         });
 

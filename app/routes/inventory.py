@@ -344,6 +344,8 @@ def edit_product(id):
                 # If the user is specifically editing the "Primary" warehouse quantity:
                 wh_stock.quantity = product.quantity
 
+            _save_warehouse_costs(product)
+
             db.session.commit()
             
             log_activity('Inventory', f'Updated Product: {product.name}', 
@@ -400,7 +402,72 @@ def edit_product(id):
     categories = ProductCategory.query.filter_by(is_active=True).order_by(ProductCategory.name).all()
     units = Unit.query.filter_by(is_active=True).order_by(Unit.name).all()
     
-    return render_template('inventory/edit_product.html', form=form, product=product, categories=categories, warehouses=warehouses, units=units)
+    return render_template('inventory/edit_product.html', form=form, product=product, categories=categories, warehouses=warehouses, units=units,
+                           warehouse_cost_rows=_warehouse_cost_rows(product, warehouses))
+
+
+def _warehouse_cost_rows(product, warehouses):
+    """One row per warehouse for the item's 'Cost by Warehouse' table: active
+    warehouses plus any other warehouse that has a stock row for it."""
+    from app.models import ProductWarehouseStock
+    rows = {r.warehouse_id: r for r in ProductWarehouseStock.query.filter_by(product_id=product.id).all()}
+    whs = list(warehouses)
+    known = {w.id for w in whs}
+    for wid, r in rows.items():
+        if wid not in known and r.warehouse:
+            whs.append(r.warehouse)
+    # Latest transfer INTO each warehouse for this item: shows how its cost was
+    # built (source cost + this warehouse's share of the shipping, per unit).
+    from app.models import WarehouseTransfer, WarehouseTransferItem
+    last_in = {}
+    items = (WarehouseTransferItem.query.join(WarehouseTransfer)
+             .filter(WarehouseTransferItem.product_id == product.id)
+             .order_by(WarehouseTransfer.date.desc(), WarehouseTransfer.id.desc()).all())
+    for it in items:
+        last_in.setdefault(it.transfer.to_warehouse_id, it)
+
+    out = []
+    for wh in whs:
+        r = rows.get(wh.id)
+        if r:
+            qty = r.quantity or 0
+        else:  # legacy: all stock implicitly in Product.warehouse_id
+            qty = (product.quantity or 0) if (not rows and product.warehouse_id == wh.id) else 0
+        out.append({'warehouse': wh, 'quantity': qty, 'own_cost': r.cost_price if r else None,
+                    'last_transfer': last_in.get(wh.id)})
+    out.sort(key=lambda x: (-(x['quantity'] > 0), x['warehouse'].name))
+    return out
+
+
+def _save_warehouse_costs(product):
+    """Save the 'Cost by Warehouse' inputs: a number gives that warehouse its
+    own cost, blank makes it follow the item's normal cost again."""
+    if not request.form.get('wh_costs_present'):
+        return
+    from app.models import ProductWarehouseStock
+    from app.services import warehouse_cost
+    for key, raw in request.form.items():
+        if not key.startswith('wh_cost_'):
+            continue
+        try:
+            wh_id = int(key[len('wh_cost_'):])
+        except ValueError:
+            continue
+        raw = (raw or '').strip()
+        row = ProductWarehouseStock.query.filter_by(product_id=product.id, warehouse_id=wh_id).first()
+        if raw == '':
+            if row and row.cost_price is not None:
+                row.cost_price = None
+            continue
+        try:
+            value = max(float(raw), 0.0)
+        except ValueError:
+            continue
+        if row and row.cost_price is not None and abs(row.cost_price - value) < 0.005:
+            continue  # unchanged (the input shows it rounded to 2 decimals)
+        if not row and not Warehouse.query.get(wh_id):
+            continue
+        warehouse_cost.set_cost(product, wh_id, value)
 
 @bp.route('/product/<int:id>/delete', methods=['GET', 'POST'])
 @login_required

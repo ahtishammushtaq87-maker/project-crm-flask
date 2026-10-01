@@ -5,6 +5,7 @@ from app.models import Sale, Product, ProductCategory, PurchaseBill, PurchaseIte
 from datetime import datetime, timedelta
 from sqlalchemy import func, inspect
 from calendar import monthrange
+from app.services import warehouse_cost
 
 bp = Blueprint('dashboard', __name__)
 
@@ -72,9 +73,10 @@ def index():
     ).scalar() or 0
 
     # Total COGS — only from approved invoices
-    total_cogs = db.session.query(func.sum(SaleItem.quantity * Product.cost_price))\
-        .join(Sale, SaleItem.sale_id == Sale.id)\
-        .join(Product, SaleItem.product_id == Product.id)\
+    total_cogs = warehouse_cost.join_sale_item_cost(
+        db.session.query(func.sum(SaleItem.quantity * warehouse_cost.SALE_ITEM_UNIT_COST))
+        .join(Sale, SaleItem.sale_id == Sale.id)
+        .join(Product, SaleItem.product_id == Product.id))\
         .filter(
             Sale.is_approved == True,
             Sale.is_rejected == False,

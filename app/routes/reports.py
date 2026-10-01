@@ -9,6 +9,7 @@ import pandas as pd
 from io import BytesIO
 from app.report_utils import generate_excel, generate_csv, generate_pdf, generate_profit_loss_pdf, generate_manufacturing_fact_sheet_pdf, generate_manufacturing_fact_sheet_excel
 from app.routes.filters import apply_saved_filter_to_query
+from app.services import warehouse_cost
 
 bp = Blueprint('reports', __name__)
 
@@ -288,6 +289,7 @@ def cogs_report():
     query = apply_saved_filter_to_query(query, 'cogs_report', request.args)
 
     sale_items = query.order_by(Sale.date.desc()).all()
+    cost_map = warehouse_cost.cost_map({i.product_id for i in sale_items})
 
     product_stats = {}
     total_cogs = 0
@@ -300,9 +302,10 @@ def cogs_report():
         if not prod:
             continue
 
-        cogs = (prod.cost_price or 0) * item.quantity
+        # cost in the warehouse the line was sold from
+        cogs = warehouse_cost.sale_item_cost(item, cost_map) * item.quantity
         revenue = item.total
-        
+
         # Calculate proportional discount from invoice
         sale = item.sale
         item_discount = 0
@@ -348,6 +351,11 @@ def cogs_report():
         total_revenue += revenue
         total_discount += item_discount
         total_quantity += item.quantity
+
+    # Sold from warehouses with different costs -> show the average cost actually used
+    for st in product_stats.values():
+        if st['quantity_sold']:
+            st['cost_price'] = st['cogs'] / st['quantity_sold']
 
     products = sorted(product_stats.values(), key=lambda x: x['product_name'])
     categories = ProductCategory.query.order_by(ProductCategory.name).all()
@@ -730,7 +738,9 @@ def compute_profit_loss(start_date, end_date):
 
     # 2. COGS: Sum(SaleItem.qty * Product.cost_price)
     sale_items = SaleItem.query.join(Sale).filter(Sale.date >= start_date, Sale.date <= end_date).all()
-    total_cogs = sum((item.product.cost_price or 0) * item.quantity for item in sale_items)
+    cost_map = warehouse_cost.cost_map({i.product_id for i in sale_items})
+    total_cogs = sum(warehouse_cost.sale_item_cost(item, cost_map) * item.quantity
+                     for item in sale_items if item.product)
 
     # 3. Gross Profit
     gross_profit = net_revenue - total_cogs
@@ -1334,12 +1344,13 @@ def download_report(format, report_type):
         if search: query = query.filter(or_(Product.name.ilike(f'%{search}%'), Product.sku.ilike(f'%{search}%')))
         
         sale_items = query.order_by(Sale.date.desc()).all()
+        cost_map = warehouse_cost.cost_map({i.product_id for i in sale_items})
         product_stats = {}
         for item in sale_items:
             prod = item.product
             if not prod:
                 continue
-            cogs = (prod.cost_price or 0) * item.quantity
+            cogs = warehouse_cost.sale_item_cost(item, cost_map) * item.quantity
             revenue = item.total
             
             # Calculate proportional discount from invoice
@@ -1379,6 +1390,10 @@ def download_report(format, report_type):
                 product_stats[prod.id]['Profit %'] = (profit / net_sales) * 100
             else:
                 product_stats[prod.id]['Profit %'] = -100 if float(product_stats[prod.id]['COGS']) > 0 else 0
+
+        for st in product_stats.values():
+            if st['Qty Sold']:
+                st['Cost Price'] = f"{float(st['COGS']) / st['Qty Sold']:.2f}"
 
         title = "COGS Report"
         headers = ['Product', 'SKU', 'Category', 'Qty Sold', 'Cost Price', 'COGS', 'Revenue', 'Discount', 'Profit', 'Profit %', 'Invoices Used']

@@ -228,6 +228,59 @@
                 </div>
                 </div>
 
+                {% if warehouse_cost_rows %}
+                <div class="form-section">
+                    <div class="form-section-title"><i class="fas fa-warehouse"></i> Cost by Warehouse</div>
+                    <input type="hidden" name="wh_costs_present" value="1">
+                    <p class="text-muted small mb-2">
+                        Each warehouse can hold this item at its own cost (set automatically by warehouse transfers with shipping and by
+                        manufacturing orders). Sales and production use the cost of the warehouse they take the stock from.
+                        Leave a cost <strong>blank</strong> to use the item's normal Cost Price above.
+                    </p>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0 no-datatable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Warehouse</th>
+                                    <th class="text-end">Stock</th>
+                                    <th style="width:220px">Cost / Unit (PKR)</th>
+                                    <th class="text-end">Stock Value</th>
+                                    <th>Last Transfer In</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for r in warehouse_cost_rows %}
+                                <tr>
+                                    <td>{{ r.warehouse.name }}{% if product.warehouse_id == r.warehouse.id %} <span class="badge bg-light text-dark border">default</span>{% endif %}</td>
+                                    <td class="text-end">{{ "%g"|format(r.quantity) }} <small class="text-muted">{{ product.unit or '' }}</small></td>
+                                    <td>
+                                        <input type="number" name="wh_cost_{{ r.warehouse.id }}" class="form-control form-control-sm wh-cost-input"
+                                               step="0.01" min="0" data-qty="{{ r.quantity }}"
+                                               value="{{ '%.2f'|format(r.own_cost) if r.own_cost is not none else '' }}"
+                                               placeholder="{{ '%.2f'|format(product.cost_price or 0) }} (normal cost)">
+                                    </td>
+                                    <td class="text-end wh-cost-value">{{ "{:,.2f}".format(r.quantity * (r.own_cost if r.own_cost is not none else (product.cost_price or 0))) }}</td>
+                                    <td class="small">
+                                        {% set lt = r.last_transfer %}
+                                        {% if lt %}
+                                        {% set ship_unit = (lt.shipping_share or 0) / lt.quantity if lt.quantity else 0 %}
+                                        <a href="{{ url_for('warehouse_transfer.transfer_detail', id=lt.transfer_id) }}" target="_blank">{{ lt.transfer.transfer_number }}</a>
+                                        <span class="text-muted">from {{ lt.transfer.from_warehouse.name if lt.transfer.from_warehouse else '-' }}, {{ "%g"|format(lt.quantity) }} {{ product.unit or '' }}</span><br>
+                                        {{ "%.2f"|format(lt.effective_unit_cost) }}
+                                        {% if ship_unit > 0 %}+ <span class="text-primary">{{ "%.2f"|format(ship_unit) }} shipping</span>{% endif %}
+                                        = <strong>{{ "%.2f"|format(lt.landed_unit_cost) }}</strong> / unit
+                                        {% else %}
+                                        <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
+
                 <div class="form-section">
                     <div class="form-section-title"><i class="fas fa-align-left"></i> Media &amp; Description</div>
                 <div class="mb-3">
@@ -314,6 +367,22 @@ document.addEventListener('DOMContentLoaded', function() {
             allowClear: false
         });
     });
+
+    // Cost by Warehouse: keep each row's stock value in step with its cost
+    // (a blank cost follows the normal Cost Price).
+    function refreshWarehouseCostValues() {
+        const normal = parseFloat((document.getElementById('cost_price') || {}).value) || 0;
+        document.querySelectorAll('.wh-cost-input').forEach(inp => {
+            const own = inp.value.trim() === '' ? normal : (parseFloat(inp.value) || 0);
+            const qty = parseFloat(inp.dataset.qty) || 0;
+            inp.placeholder = normal.toFixed(2) + ' (normal cost)';
+            inp.closest('tr').querySelector('.wh-cost-value').textContent =
+                (qty * own).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        });
+    }
+    document.querySelectorAll('.wh-cost-input').forEach(inp => inp.addEventListener('input', refreshWarehouseCostValues));
+    const normalCostInput = document.getElementById('cost_price');
+    if (normalCostInput) normalCostInput.addEventListener('input', refreshWarehouseCostValues);
 
     const isManufacturedCheckbox = document.getElementById('is_manufactured');
     const costPriceContainer = document.getElementById('cost_price_container');

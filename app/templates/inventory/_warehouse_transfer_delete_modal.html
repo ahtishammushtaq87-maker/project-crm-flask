@@ -14,7 +14,8 @@
                 </div>
                 <div class="modal-body">
                     <p class="mb-2">Deleting this transfer <strong>reverses the stock movement</strong>:</p>
-                    <div class="alert alert-warning d-flex align-items-center gap-2 mb-2">
+                    {# Not an .alert: base.html auto-removes every .alert (flash messages) after a few seconds #}
+                    <div class="d-flex align-items-center gap-2 mb-2 p-3 rounded border border-warning-subtle bg-warning-subtle text-warning-emphasis">
                         <i class="fas fa-undo"></i>
                         <span>All quantities go back from <strong id="wtDeleteTo"></strong> to <strong id="wtDeleteFrom"></strong>.</span>
                     </div>
@@ -55,9 +56,10 @@
         }
         if (modalEl.parentElement !== document.body) document.body.appendChild(modalEl);
         modalEl.querySelector('#wtDeleteForm').setAttribute('action', url);
-        modalEl.querySelector('#wtDeleteNumber').textContent = btn.dataset.number || '';
-        modalEl.querySelector('#wtDeleteFrom').textContent = btn.dataset.from || '';
-        modalEl.querySelector('#wtDeleteTo').textContent = btn.dataset.to || '';
+        const setText = (sel, val) => { const el = modalEl.querySelector(sel); if (el) el.textContent = val || ''; };
+        setText('#wtDeleteNumber', btn.dataset.number);
+        setText('#wtDeleteFrom', btn.dataset.from);
+        setText('#wtDeleteTo', btn.dataset.to);
         bootstrap.Modal.getOrCreateInstance(modalEl).show();
     });
 
