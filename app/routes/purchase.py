@@ -1726,7 +1726,9 @@ def delete_receive(id):
         
         # For each affected product, set cost price to latest active cost history (if any)
         for product in affected_products.values():
-            latest_active = CostPriceHistory.query.filter_by(product_id=product.id, is_active=True)\
+            # Item-level rows only (warehouse_id NULL) - per-warehouse cost
+            # rows describe a warehouse's own cost, not Product.cost_price.
+            latest_active = CostPriceHistory.query.filter_by(product_id=product.id, is_active=True, warehouse_id=None)\
                 .order_by(CostPriceHistory.change_date.desc()).first()
             if latest_active:
                 product.cost_price = latest_active.new_price
@@ -3185,30 +3187,114 @@ def bulk_delete_purchase_orders():
 @bp.route('/api/product/<int:product_id>/cost-history')
 @login_required
 def product_cost_history(product_id):
-    """Return JSON with cost price history for a product"""
+    """Cost history popup data: current cost / selling price / profit, the
+    cost in every warehouse (own cost or the item's normal cost), and every
+    cost change - item-level (warehouse_id NULL) and per-warehouse."""
+    from app.models import ProductWarehouseStock
     product = Product.query.get_or_404(product_id)
-    history = CostPriceHistory.query.filter_by(product_id=product_id).order_by(CostPriceHistory.change_date.desc()).all()
-    
+    history = CostPriceHistory.query.filter_by(product_id=product_id)\
+        .order_by(CostPriceHistory.change_date.desc(), CostPriceHistory.id.desc()).all()
+
+    cost = float(product.cost_price or 0)
+    selling = float(product.unit_price or 0)
+
+    from datetime import timezone
+    from app.utils import PAKISTAN_TZ
+
+    def pk_time(dt):
+        # change_date is stored with datetime.utcnow - show Pakistan time
+        return dt.replace(tzinfo=timezone.utc).astimezone(PAKISTAN_TZ).strftime('%d-%m-%Y %I:%M %p') if dt else ''
+
+    def profit_info(c):
+        profit = selling - c
+        return round(profit, 4), (round(profit / selling * 100, 2) if selling > 0 else None)
+
+    item_profit, item_margin = profit_info(cost)
+
+    # Cost per warehouse: every warehouse holding stock or carrying its own cost
+    last_change = {}
+    for h in history:
+        if h.warehouse_id and h.warehouse_id not in last_change:
+            last_change[h.warehouse_id] = h.change_date
+    warehouses = []
+    # (warehouse, quantity, own cost or None)
+    rows = [(r.warehouse, r.quantity, r.cost_price)
+            for r in ProductWarehouseStock.query.filter_by(product_id=product.id).all()]
+    if not rows and product.warehouse and (product.quantity or 0) > 0:
+        rows = [(product.warehouse, product.quantity, None)]  # legacy: stock only on the item
+    for wh, qty, own in rows:
+        qty = float(qty or 0)
+        if not wh or (abs(qty) < 1e-9 and own is None):
+            continue
+        wc = float(own) if own is not None else cost
+        p, m = profit_info(wc)
+        lc = last_change.get(wh.id)
+        warehouses.append({
+            'id': wh.id,
+            'name': wh.name,
+            'quantity': qty,
+            'cost': wc,
+            'own_cost': own is not None and abs(wc - cost) > 0.005,
+            'is_default': wh.id == product.warehouse_id,
+            'profit': p,
+            'margin_percent': m,
+            'stock_value': round(qty * wc, 2),
+            'last_change': pk_time(lc) if lc else None,
+        })
+    warehouses.sort(key=lambda w: (not w['is_default'], w['name']))
+
+    latest_item_row = next((h for h in history if h.warehouse_id is None), None)
+    # The item's cost was set before changes were tracked (no item-level row
+    # ends at the current cost) - the popup says so instead of looking wrong.
+    if latest_item_row is None:
+        untracked = cost > 0
+    else:
+        untracked = abs((latest_item_row.new_price or 0) - cost) > 0.005
+
+    def row(h):
+        old = h.old_price if (h.old_price or 0) > 0 else None
+        new = float(h.new_price or 0)
+        change = (new - old) if old is not None else None
+        p, m = profit_info(new)
+        bill = h.purchase_bill
+        return {
+            'id': h.id,
+            'change_date': pk_time(h.change_date),
+            'warehouse_id': h.warehouse_id,
+            'warehouse_name': h.warehouse.name if h.warehouse else None,
+            'old_price': old or 0,
+            'new_price': new,
+            'change': change,
+            'change_percent': (round(change / old * 100, 2) if old else None),
+            'no_change': change is not None and abs(change) < 0.005,
+            'profit_now': p,
+            'margin_now': m,
+            'quantity_at_old_price': max(h.quantity_at_old_price or 0, 0),
+            'remaining_at_old_price': h.remaining_at_old_price,
+            'used_quantity': h.used_quantity,
+            'reason': h.reason,
+            'user': h.user.username if h.user else None,
+            'is_active': h.is_active,
+            'purchase_bill_id': h.purchase_bill_id,
+            'bill_number': bill.bill_number if bill else None,
+            'bill_url': url_for('purchase.bill_detail', id=bill.id) if bill else None,
+        }
+
     return jsonify({
         'product_id': product_id,
         'product_name': product.name,
-        'current_cost_price': product.cost_price,
+        'sku': product.sku,
+        'unit': product.unit or 'units',
+        'current_cost_price': cost,
+        'selling_price': selling,
+        'profit': item_profit,
+        'margin_percent': item_margin,
         'total_quantity': product.quantity,
-        'history': [
-            {
-                'id': h.id,
-                'old_price': h.old_price or 0,
-                'new_price': h.new_price,
-                'quantity_at_old_price': h.quantity_at_old_price,
-                'remaining_at_old_price': h.remaining_at_old_price,
-                'used_quantity': h.used_quantity,
-                'change_date': h.change_date.strftime('%d-%m-%Y %H:%M'),
-                'reason': h.reason,
-                'is_active': h.is_active,
-                'purchase_bill_id': h.purchase_bill_id
-            }
-            for h in history
-        ]
+        'untracked_current_cost': untracked,
+        'warehouses': warehouses,
+        'has_warehouse_costs': any(w['own_cost'] for w in warehouses),
+        'can_delete': current_user.has_permission('purchases', 'delete'),
+        'history': [row(h) for h in history],
     })
 
 

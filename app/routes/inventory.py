@@ -7,7 +7,7 @@ from app.models import (
     SaleItem, SaleReturnItem, PurchaseItem, PurchaseReturnItem,
     ToolReceivingItem, ToolDeliveringItem, StockMovement, ActivityLog,
     Sale, SaleReturn, PurchaseBill, PurchaseReturn, ToolReceiving, ToolDelivering,
-    BillReceiveItem
+    BillReceiveItem, Vendor, ProductStructureFile
 )
 from app.forms import ProductForm, UnitForm
 from sqlalchemy import func, inspect
@@ -46,6 +46,84 @@ def _delete_product_image_file_if_unshared(product):
         os.remove(path)
     except OSError:
         pass
+
+# Item Structure files (any type) live OUTSIDE app/static so they are never
+# publicly reachable - they are only served by product_structure_file(),
+# which requires login.
+STRUCTURE_UPLOAD_DIR = os.path.join('app', 'uploads', 'product_structure')
+
+# Only these are ever rendered inline in the browser; everything else is
+# forced to download (an uploaded .html/.svg must never execute in our origin).
+_STRUCTURE_INLINE_TYPES = {
+    'pdf': 'application/pdf',
+    'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+    'gif': 'image/gif', 'webp': 'image/webp', 'bmp': 'image/bmp',
+    'txt': 'text/plain', 'csv': 'text/plain', 'log': 'text/plain',
+    'md': 'text/plain', 'json': 'text/plain', 'xml': 'text/plain',
+}
+
+
+def _save_structure_files(product):
+    """Save every file posted as `structure_files` for this product.
+    Returns the list of disk paths written (so a caller can clean up if the
+    DB commit then fails)."""
+    import mimetypes, time, uuid
+    saved = []
+    files = [f for f in request.files.getlist('structure_files') if f and f.filename]
+    if not files:
+        return saved
+    folder = os.path.join(STRUCTURE_UPLOAD_DIR, str(product.id))
+    os.makedirs(folder, exist_ok=True)
+    for f in files:
+        original = os.path.basename(f.filename.replace('\\', '/'))[:255] or 'file'
+        safe = secure_filename(original) or 'file'
+        if '.' not in safe and '.' in original:
+            safe += '.' + (secure_filename(original.rsplit('.', 1)[-1]) or 'bin')
+        path = os.path.join(folder, f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{safe}")
+        f.save(path)
+        saved.append(path)
+        db.session.add(ProductStructureFile(
+            product_id=product.id,
+            original_name=original,
+            stored_path=path.replace('\\', '/'),
+            mime_type=(mimetypes.guess_type(original)[0] or f.mimetype or 'application/octet-stream')[:150],
+            file_size=os.path.getsize(path),
+            uploaded_by=current_user.id if current_user.is_authenticated else None,
+        ))
+    return saved
+
+
+def _remove_files_from_disk(paths):
+    for path in paths:
+        try:
+            if path and os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+
+
+def _structure_counts():
+    """{product_id: number of Item Structure files} in one query."""
+    rows = db.session.query(ProductStructureFile.product_id, func.count(ProductStructureFile.id)) \
+        .group_by(ProductStructureFile.product_id).all()
+    return dict(rows)
+
+
+def _vendor_choices(current_vendor_id=None):
+    """Active vendors for the product form's Vendor dropdown. The product's
+    currently linked vendor is re-included even if it has since been
+    deactivated, so editing an old product never silently drops it."""
+    vendors = Vendor.query.filter_by(is_active=True).order_by(Vendor.name).all()
+    if current_vendor_id and not any(v.id == current_vendor_id for v in vendors):
+        current = Vendor.query.get(current_vendor_id)
+        if current:
+            vendors.append(current)
+    return vendors
+
+
+def _parse_vendor_id(raw):
+    return int(raw) if raw and raw.isdigit() and raw != '0' else None
+
 
 @bp.route('/products')
 @login_required
@@ -111,6 +189,7 @@ def products():
                          categories=categories,
                          warehouses=warehouses,
                          all_products_for_sku=all_products_for_sku,
+                         structure_counts=_structure_counts(),
                          current_category=category,
                          current_sku=sku_filter,
                          current_warehouse_id=warehouse_id,
@@ -167,7 +246,9 @@ def add_product():
                 unit=unit,
                 reorder_level=float(reorder_level) if reorder_level else 0,
                 category_id=int(category_id) if category_id and category_id != '0' else None,
-                warehouse_id=int(warehouse_id) if warehouse_id and warehouse_id != '0' else None
+                warehouse_id=int(warehouse_id) if warehouse_id and warehouse_id != '0' else None,
+                vendor_id=_parse_vendor_id(request.form.get('vendor_id')),
+                location=(request.form.get('location') or '').strip()[:100] or None
             )
             
             product.is_manufactured = is_manufactured
@@ -193,9 +274,11 @@ def add_product():
                     image_file.save(image_path)
                     product.image_path = image_path.replace('\\', '/')
             
+            structure_paths = []
             try:
                 db.session.add(product)
                 db.session.flush() # Get product ID
+                structure_paths = _save_structure_files(product)
                 
                 # Sync with ProductWarehouseStock
                 if product.warehouse_id and product.quantity > 0:
@@ -216,6 +299,7 @@ def add_product():
                 return redirect(url_for('inventory.products'))
             except Exception as e:
                 db.session.rollback()
+                _remove_files_from_disk(structure_paths)
                 flash(f'Error adding product: {str(e)}', 'error')
                 return redirect(url_for('inventory.add_product'))
         else:
@@ -225,7 +309,65 @@ def add_product():
     categories = ProductCategory.query.filter_by(is_active=True).order_by(ProductCategory.name).all()
     units = Unit.query.filter_by(is_active=True).order_by(Unit.name).all()
     
-    return render_template('inventory/add_product.html', form=form, categories=categories, warehouses=warehouses, units=units)
+    return render_template('inventory/add_product.html', form=form, categories=categories, warehouses=warehouses, units=units,
+                           vendors=_vendor_choices())
+
+
+@bp.route('/product/<int:id>/structure')
+@login_required
+def product_structure(id):
+    """Gallery of every Item Structure file for a product, with previews."""
+    product = Product.query.get_or_404(id)
+    return render_template('inventory/product_structure.html', product=product,
+                           files=product.structure_files)
+
+
+@bp.route('/product/structure-file/<int:file_id>')
+@login_required
+def product_structure_file(file_id):
+    """Serve one Item Structure file. PDFs/images/text open inline (for the
+    previews); any other type - and ?download=1 - is sent as an attachment."""
+    from flask import send_file, abort
+    sf = ProductStructureFile.query.get_or_404(file_id)
+    root = os.path.abspath(STRUCTURE_UPLOAD_DIR)
+    path = os.path.abspath(sf.stored_path)
+    if not path.startswith(root + os.sep) or not os.path.exists(path):
+        abort(404)
+    inline_type = _STRUCTURE_INLINE_TYPES.get(sf.extension)
+    as_download = request.args.get('download') == '1' or not inline_type
+    response = send_file(
+        path,
+        mimetype=inline_type or sf.mime_type or 'application/octet-stream',
+        as_attachment=as_download,
+        download_name=sf.original_name,
+        max_age=0,
+    )
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
+
+
+@bp.route('/product/<int:id>/info-pdf')
+@login_required
+def product_info_pdf(id):
+    """Item Information PDF (opened inline in a new tab from the Products
+    list actions menu)."""
+    from flask import make_response
+    from app.models import Company
+    from app.pdf_utils import generate_product_info_pdf
+
+    product = Product.query.get_or_404(id)
+    try:
+        buffer = generate_product_info_pdf(product, Company.query.first(),
+                                           generated_by=getattr(current_user, 'username', None))
+    except Exception as e:
+        flash(f'Could not generate the item information PDF: {str(e)}', 'error')
+        return redirect(url_for('inventory.products'))
+
+    safe_sku = secure_filename(product.sku or '') or f'item-{product.id}'
+    response = make_response(buffer.getvalue())
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'inline; filename="Item_Info_{safe_sku}.pdf"'
+    return response
 
 
 @bp.route('/product/<int:id>/edit', methods=['GET', 'POST'])
@@ -271,6 +413,8 @@ def edit_product(id):
         category_id = request.form.get('category_id')
         product.category_id = int(category_id) if category_id and category_id != '0' else None
         product.warehouse_id = int(warehouse_id) if warehouse_id and warehouse_id != '0' else None
+        product.vendor_id = _parse_vendor_id(request.form.get('vendor_id'))
+        product.location = (request.form.get('location') or '').strip()[:100] or None
         
         # Handle quantity update
         quantity = request.form.get('quantity')
@@ -346,7 +490,17 @@ def edit_product(id):
 
             _save_warehouse_costs(product)
 
+            # Item Structure: remove the files the user marked, then add new ones
+            removed_paths = []
+            delete_ids = {int(x) for x in request.form.getlist('delete_structure_ids') if x.isdigit()}
+            for sf in list(product.structure_files):
+                if sf.id in delete_ids:
+                    removed_paths.append(sf.stored_path)
+                    db.session.delete(sf)
+            _save_structure_files(product)
+
             db.session.commit()
+            _remove_files_from_disk(removed_paths)
             
             log_activity('Inventory', f'Updated Product: {product.name}', 
                         f'SKU: {product.sku}, New Qty: {product.quantity}, New Price: {product.unit_price}')
@@ -403,6 +557,7 @@ def edit_product(id):
     units = Unit.query.filter_by(is_active=True).order_by(Unit.name).all()
     
     return render_template('inventory/edit_product.html', form=form, product=product, categories=categories, warehouses=warehouses, units=units,
+                           vendors=_vendor_choices(product.vendor_id),
                            warehouse_cost_rows=_warehouse_cost_rows(product, warehouses))
 
 
@@ -481,8 +636,10 @@ def delete_product(id):
         return redirect(url_for('inventory.products'))
         
     try:
+        structure_paths = [sf.stored_path for sf in product.structure_files]
         db.session.delete(product)
         db.session.commit()
+        _remove_files_from_disk(structure_paths)
         
         log_activity('Inventory', f'Deleted Product: {product.name}', f'SKU: {product.sku}')
         
@@ -543,6 +700,7 @@ def bulk_delete_products():
     deleted_count = 0
     skipped_count = 0
     errors = []
+    structure_paths = []
     
     for product_id in ids:
         product = Product.query.get(product_id)
@@ -555,6 +713,7 @@ def bulk_delete_products():
             continue
             
         try:
+            structure_paths += [sf.stored_path for sf in product.structure_files]
             db.session.delete(product)
             deleted_count += 1
         except Exception as e:
@@ -563,6 +722,7 @@ def bulk_delete_products():
             
     if deleted_count > 0:
         db.session.commit()
+        _remove_files_from_disk(structure_paths)
         
     message = f'Successfully deleted {deleted_count} products.'
     if skipped_count > 0:
@@ -1031,4 +1191,4 @@ def recalculate_stock(id):
         return jsonify({'success': True, 'old_qty': old_qty, 'new_qty': total_qty, 'message': f'Stock recalculated successfully! New Quantity: {total_qty}'})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
+        return jsonify({'success': False, 'message': str(e)}), 500

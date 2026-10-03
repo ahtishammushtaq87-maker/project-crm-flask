@@ -3,3 +3,6 @@ instance/
 .venv/
 *.db
 *.pyc
+
+# Item Structure uploads (user files, not source)
+app/uploads/

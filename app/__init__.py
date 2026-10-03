@@ -683,4 +683,8 @@ def create_app(config_class=Config):
     start_mo_timer_scheduler(app)
     start_attendance_bonus_scheduler(app)
 
+    # Record every item / warehouse cost change in cost_price_history
+    from app.services import cost_history
+    cost_history.register()
+
     return app

@@ -371,6 +371,18 @@
                                     </button>
                                     <ul class="dropdown-menu dropdown-menu-end shadow-sm">
                                         <li>
+                                            <a href="{{ url_for('inventory.product_info_pdf', id=product.id) }}" class="dropdown-item" target="_blank" rel="noopener">
+                                                <i class="fas fa-file-pdf me-2 text-danger"></i>Item Info
+                                            </a>
+                                        </li>
+                                        <li>
+                                            {% set structure_count = structure_counts.get(product.id, 0) %}
+                                            <a href="{{ url_for('inventory.product_structure', id=product.id) }}" class="dropdown-item d-flex align-items-center">
+                                                <i class="fas fa-sitemap me-2" style="color:#6f42c1;"></i>Item Structure
+                                                {% if structure_count %}<span class="badge rounded-pill ms-auto ps-2" style="background:#f1ebff;color:#6f42c1;">{{ structure_count }}</span>{% endif %}
+                                            </a>
+                                        </li>
+                                        <li>
                                             <button type="button" class="dropdown-item btn-show-history"
                                                 data-bs-toggle="modal" data-bs-target="#priceHistoryModal"
                                                 data-id="{{ product.id }}" data-name="{{ product.name }}">

@@ -2513,7 +2513,7 @@
 
         <!-- Global Price History Modal (opened from the Item History popup on any page) -->
         <div class="modal fade" id="priceHistoryModal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title">Price History</h5>
@@ -2982,73 +2982,183 @@
                 const bootstrapModal = bootstrap.Modal.getInstance(modal) || new bootstrap.Modal(modal);
                 bootstrapModal.show();
 
-                titleEl.textContent = `Price History - ${productName}`;
-                bodyEl.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+                titleEl.textContent = `Cost & Price History - ${productName}`;
+                bodyEl.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>';
 
                 fetch(`/purchase/api/product/${productId}/cost-history`)
                     .then(r => r.json())
                     .then(data => {
-                        let html = '';
-                        html += `<div class="alert alert-primary mb-3">
-                        <strong>Current Cost Price: PKR ${fmt(data.current_cost_price)}</strong> | Total Quantity: ${fmt(data.total_quantity)} units
-                    </div>`;
-
-                        if (data.history.length === 0) {
-                            html += '<div class="alert alert-info">No price change history available.</div>';
-                        } else {
-                            html += `<div class="table-responsive">
-                            <table class="table table-sm table-hover">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>Date</th>
-                                        <th>Old Price</th>
-                                        <th>New Price</th>
-                                        <th>Qty at Old Price</th>
-                                        <th>Remaining</th>
-                                        <th>Used</th>
-                                        <th>Status</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>`;
-
-                            data.history.forEach(h => {
-                                const status = h.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Consumed</span>';
-                                const remaining = h.remaining_at_old_price;
-                                const remainingBadge = remaining > 0 ? `<span class="badge bg-warning">${fmt(remaining)} units</span>` : '<span class="badge bg-secondary">0</span>';
-
-                                html += `<tr>
-                                <td><small>${h.change_date}</small></td>
-                                <td>PKR ${h.old_price > 0 ? fmt(h.old_price) : '—'}</td>
-                                <td><strong>PKR ${fmt(h.new_price)}</strong></td>
-                                <td>${fmt(h.quantity_at_old_price)}</td>
-                                <td>${remainingBadge}</td>
-                                <td>${fmt(h.used_quantity)}</td>
-                                <td>${status}</td>
-                                <td>
-                                    <button class="btn btn-sm btn-danger" onclick="deleteCostHistory(${h.id})" title="Delete this history entry">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </td>
-                            </tr>`;
-                            });
-
-                            html += '</tbody></table></div>';
-
-                            html += `<div class="alert alert-light mt-3 small">
-                            <strong>Legend:</strong><br>
-                            <i class="fas fa-tag text-warning me-2"></i> <strong>Qty at Old Price:</strong> Quantity that was in stock when price changed<br>
-                            <i class="fas fa-check text-success me-2"></i> <strong>Remaining:</strong> Amount still available at old price (not yet used)<br>
-                            <i class="fas fa-check-double text-info me-2"></i> <strong>Used:</strong> Amount already consumed/sold at old price
-                        </div>`;
-                        }
-
-                        bodyEl.innerHTML = html;
+                        window._priceHistoryData = data;
+                        window._priceHistoryFilter = { scope: 'all', showNoChange: false };
+                        titleEl.innerHTML = `Cost &amp; Price History <span class="text-muted fw-normal">&mdash; ${phEsc(data.product_name)}</span>`
+                            + (data.sku ? ` <span class="badge bg-light text-dark border ms-1 fw-normal">${phEsc(data.sku)}</span>` : '');
+                        renderPriceHistory();
                     })
                     .catch(err => {
                         bodyEl.innerHTML = '<div class="alert alert-danger">Error loading price history.</div>';
                         console.error('Error:', err);
                     });
+            }
+
+            function phEsc(s) {
+                return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            }
+
+            function phMoney(n) {
+                return 'PKR ' + Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+
+            // Profit cell: amount + margin, green / red
+            function phProfit(profit, margin) {
+                const cls = profit < 0 ? 'text-danger' : (profit > 0 ? 'text-success' : 'text-muted');
+                const m = margin === null || margin === undefined ? '' : `<div class="small ${cls}" style="opacity:.8">${margin.toFixed(1)}% margin</div>`;
+                return `<div class="fw-semibold ${cls}">${phMoney(profit)}</div>${m}`;
+            }
+
+            function renderPriceHistory() {
+                const data = window._priceHistoryData;
+                const f = window._priceHistoryFilter;
+                const bodyEl = document.querySelector('#priceHistoryModal .priceHistoryBody');
+                if (!data || !bodyEl) return;
+                const unit = phEsc(data.unit);
+                let html = `<style>
+                    .ph-tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
+                    .ph-tile { border:1px solid #dfe5ef; border-radius:12px; padding:12px 14px; background:#fff; }
+                    .ph-tile .lbl { font-size:.75rem; color:#6b7a99; text-transform:uppercase; letter-spacing:.03em; font-weight:600; }
+                    .ph-tile .val { font-size:1.25rem; font-weight:700; color:#0f1d3a; line-height:1.3; margin-top:2px; }
+                    .ph-tile.primary { background:#eef5ff; border-color:#cfe0f7; }
+                    .ph-section { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:18px 0 8px; }
+                    .ph-section h6 { margin:0; font-weight:700; color:#0f3d75; text-transform:uppercase; font-size:.8rem; letter-spacing:.04em; }
+                    .ph-table th { font-size:.75rem; text-transform:uppercase; letter-spacing:.03em; color:#4a5872; white-space:nowrap; background:#f6f8fc !important; }
+                    .ph-table td { vertical-align:middle; }
+                    .ph-table td.text-end { white-space:nowrap; }
+                    .ph-chip { font-size:.7rem; font-weight:600; border-radius:999px; padding:2px 8px; white-space:nowrap; }
+                    .ph-chip.item { background:#eef5ff; color:#0f3d75; }
+                    .ph-chip.wh { background:#f1ebff; color:#6f42c1; }
+                    .ph-chip.own { background:#fff4e5; color:#b45309; }
+                    .ph-chip.follow { background:#f1f4f9; color:#6b7a99; }
+                    .ph-chip.current { background:#198754; color:#fff; }
+                    .ph-up { color:#d63045; } .ph-down { color:#198754; }
+                    .ph-reason { max-width:260px; font-size:.8rem; color:#4a5872; }
+                    .ph-nochange td { color:#9aa5bb; }
+                </style>`;
+
+                // ── Summary tiles ────────────────────────────────────────
+                const pCls = data.profit < 0 ? 'text-danger' : 'text-success';
+                html += `<div class="ph-tiles">
+                    <div class="ph-tile primary"><div class="lbl">Current Cost</div><div class="val">${phMoney(data.current_cost_price)}</div><div class="small text-muted">item cost per unit</div></div>
+                    <div class="ph-tile"><div class="lbl">Selling Price</div><div class="val">${phMoney(data.selling_price)}</div><div class="small text-muted">per unit</div></div>
+                    <div class="ph-tile"><div class="lbl">Profit / Unit</div><div class="val ${pCls}">${phMoney(data.profit)}</div><div class="small text-muted">selling &minus; cost</div></div>
+                    <div class="ph-tile"><div class="lbl">Margin</div><div class="val ${pCls}">${data.margin_percent === null ? '&mdash;' : data.margin_percent.toFixed(1) + '%'}</div><div class="small text-muted">of selling price</div></div>
+                    <div class="ph-tile"><div class="lbl">In Stock</div><div class="val">${fmt(data.total_quantity)}</div><div class="small text-muted">${unit}</div></div>
+                </div>`;
+
+                if (data.untracked_current_cost) {
+                    html += `<div class="alert alert-warning py-2 small mb-2"><i class="fas fa-circle-info me-1"></i>
+                        The current cost <strong>${phMoney(data.current_cost_price)}</strong> was set before cost changes were tracked, so the change to it isn't listed below.
+                        Every cost change from now on (edit, purchase, production, transfer, warehouse cost&hellip;) is recorded automatically.</div>`;
+                }
+
+                // ── Cost by warehouse ────────────────────────────────────
+                if (data.warehouses.length) {
+                    html += `<div class="ph-section"><h6><i class="fas fa-warehouse me-1"></i>Cost by Warehouse</h6>
+                        ${data.has_warehouse_costs ? '<span class="ph-chip own">Warehouses have different costs</span>' : '<span class="ph-chip follow">All warehouses use the item cost</span>'}</div>
+                        <div class="table-responsive"><table class="table table-sm table-hover ph-table mb-0 no-datatable">
+                        <thead><tr><th>Warehouse</th><th class="text-end">Stock</th><th class="text-end">Cost / Unit</th><th></th><th class="text-end">Profit / Unit</th><th class="text-end">Stock Value</th><th>Last Cost Change</th></tr></thead><tbody>`;
+                    data.warehouses.forEach(w => {
+                        html += `<tr>
+                            <td class="fw-semibold">${phEsc(w.name)}${w.is_default ? ' <span class="badge bg-light text-dark border fw-normal">default</span>' : ''}</td>
+                            <td class="text-end">${fmt(w.quantity)}</td>
+                            <td class="text-end fw-semibold">${phMoney(w.cost)}</td>
+                            <td>${w.own_cost ? '<span class="ph-chip own">Own cost</span>' : '<span class="ph-chip follow">Item cost</span>'}</td>
+                            <td class="text-end">${phProfit(w.profit, w.margin_percent)}</td>
+                            <td class="text-end">${phMoney(w.stock_value)}</td>
+                            <td class="small text-muted">${w.last_change || '&mdash;'}</td>
+                        </tr>`;
+                    });
+                    html += '</tbody></table></div>';
+                }
+
+                // ── History ──────────────────────────────────────────────
+                const scopes = [];
+                data.history.forEach(h => {
+                    if (h.warehouse_id && !scopes.some(s => s.id === h.warehouse_id)) scopes.push({ id: h.warehouse_id, name: h.warehouse_name });
+                });
+                const noChangeCount = data.history.filter(h => h.no_change).length;
+                const rows = data.history.filter(h => {
+                    if (!f.showNoChange && h.no_change) return false;
+                    if (f.scope === 'item') return !h.warehouse_id;
+                    if (f.scope !== 'all') return String(h.warehouse_id) === String(f.scope);
+                    return true;
+                });
+                const latestItemId = (data.history.find(h => !h.warehouse_id) || {}).id;
+                const latestWh = {};
+                data.history.forEach(h => { if (h.warehouse_id && !(h.warehouse_id in latestWh)) latestWh[h.warehouse_id] = h.id; });
+
+                html += `<div class="ph-section"><h6><i class="fas fa-clock-rotate-left me-1"></i>Cost Change History</h6>
+                    <span class="text-muted small">${data.history.length} change${data.history.length === 1 ? '' : 's'}</span>
+                    <div class="ms-auto d-flex align-items-center gap-3 flex-wrap">`;
+                if (noChangeCount) {
+                    html += `<div class="form-check form-switch mb-0 small">
+                        <input class="form-check-input" type="checkbox" id="phShowNoChange" ${f.showNoChange ? 'checked' : ''}
+                               onchange="window._priceHistoryFilter.showNoChange=this.checked;renderPriceHistory()">
+                        <label class="form-check-label" for="phShowNoChange">Show ${noChangeCount} no-change entr${noChangeCount === 1 ? 'y' : 'ies'}</label></div>`;
+                }
+                if (scopes.length) {
+                    html += `<select class="form-select form-select-sm" style="width:auto" onchange="window._priceHistoryFilter.scope=this.value;renderPriceHistory()">
+                        <option value="all" ${f.scope === 'all' ? 'selected' : ''}>All changes</option>
+                        <option value="item" ${f.scope === 'item' ? 'selected' : ''}>Item cost only</option>
+                        ${scopes.map(s => `<option value="${s.id}" ${String(f.scope) === String(s.id) ? 'selected' : ''}>${phEsc(s.name)}</option>`).join('')}
+                    </select>`;
+                }
+                html += '</div></div>';
+
+                if (!rows.length) {
+                    html += `<div class="text-center text-muted py-4 border rounded-3 bg-light"><i class="fas fa-clock-rotate-left fa-2x mb-2 opacity-50"></i>
+                        <div>${!data.history.length ? 'No cost changes recorded yet.'
+                            : (noChangeCount === data.history.length && !f.showNoChange
+                                ? `All ${noChangeCount} recorded entr${noChangeCount === 1 ? 'y' : 'ies'} had no actual cost change. <a href="#" onclick="window._priceHistoryFilter.showNoChange=true;renderPriceHistory();return false;">Show them</a>`
+                                : 'No changes match this filter.')}</div></div>`;
+                } else {
+                    html += `<div class="table-responsive"><table class="table table-sm table-hover ph-table mb-0 no-datatable">
+                        <thead><tr><th>Date</th><th>Applies To</th><th class="text-end">Previous Cost</th><th class="text-end">New Cost</th><th class="text-end">Change</th>
+                        <th class="text-end" title="Current selling price minus this cost">Profit @ Current Price</th><th class="text-end">Stock Then</th><th>Source</th><th>By</th>${data.can_delete ? '<th></th>' : ''}</tr></thead><tbody>`;
+                    rows.forEach(h => {
+                        const isCurrent = h.id === latestItemId || (h.warehouse_id && latestWh[h.warehouse_id] === h.id);
+                        const scope = h.warehouse_id
+                            ? `<span class="ph-chip wh"><i class="fas fa-warehouse me-1"></i>${phEsc(h.warehouse_name)}</span>`
+                            : '<span class="ph-chip item">Item cost</span>';
+                        let change = '<span class="text-muted small">first cost</span>';
+                        if (h.no_change) {
+                            change = '<span class="text-muted small">no change</span>';
+                        } else if (h.change !== null) {
+                            const up = h.change > 0;
+                            change = `<span class="${up ? 'ph-up' : 'ph-down'} fw-semibold"><i class="fas fa-arrow-${up ? 'up' : 'down'} me-1"></i>${phMoney(Math.abs(h.change))}</span>`
+                                + (h.change_percent !== null ? `<div class="small ${up ? 'ph-up' : 'ph-down'}">${up ? '+' : ''}${h.change_percent.toFixed(1)}%</div>` : '');
+                        }
+                        const bill = h.bill_url ? `<a href="${h.bill_url}" target="_blank" class="small"><i class="fas fa-file-invoice me-1"></i>${phEsc(h.bill_number || 'Bill')}</a><br>` : '';
+                        html += `<tr class="${h.no_change ? 'ph-nochange' : ''}">
+                            <td class="small text-nowrap">${phEsc(h.change_date)}${isCurrent ? '<div><span class="ph-chip current">Current</span></div>' : ''}</td>
+                            <td>${scope}</td>
+                            <td class="text-end">${h.old_price > 0 ? phMoney(h.old_price) : '&mdash;'}</td>
+                            <td class="text-end fw-bold">${phMoney(h.new_price)}</td>
+                            <td class="text-end">${change}</td>
+                            <td class="text-end">${phProfit(h.profit_now, h.margin_now)}</td>
+                            <td class="text-end">${fmt(h.quantity_at_old_price)}</td>
+                            <td class="ph-reason">${bill}${phEsc(h.reason || '')}</td>
+                            <td class="small text-nowrap">${phEsc(h.user || '—')}</td>
+                            ${data.can_delete ? `<td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="deleteCostHistory(${h.id})" title="Delete this history entry"><i class="fas fa-trash"></i></button></td>` : ''}
+                        </tr>`;
+                    });
+                    html += '</tbody></table></div>';
+                }
+
+                html += `<div class="small text-muted mt-3 border-top pt-2">
+                    <strong>Item cost</strong> = the item's normal cost &middot; <strong>Warehouse</strong> = that warehouse's own cost (set by a transfer with shipping, a manufacturing order or by hand) &middot;
+                    <strong>Profit @ Current Price</strong> = today's selling price &minus; that cost &middot; <strong>Stock Then</strong> = stock on hand when the cost changed.
+                </div>`;
+
+                bodyEl.innerHTML = html;
             }
 
             function deleteCostHistory(historyId) {

@@ -1,0 +1,210 @@
+{#
+  Shared by the Item Structure upload section (Add/Edit Product) and the
+  Item Structure gallery page: file-card styles, the full-screen preview
+  modal and window.StructureUI (file-type icons, PDF first-page thumbnails
+  via pdf.js, open-preview). Include it ONCE per page.
+#}
+<style>
+    .st-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
+    .st-card { position: relative; border: 1px solid #dfe5ef; border-radius: 12px; background: #fff; overflow: hidden; display: flex; flex-direction: column; transition: box-shadow .15s, border-color .15s, opacity .15s; }
+    .st-card:hover { border-color: #b9d8fb; box-shadow: 0 6px 18px rgba(15, 61, 117, .08); }
+    .st-thumb { position: relative; height: 150px; background: #f4f7fb; display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: pointer; border-bottom: 1px solid #edf1f7; }
+    .st-thumb img, .st-thumb canvas { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+    .st-thumb canvas { box-shadow: 0 1px 4px rgba(0,0,0,.12); background: #fff; }
+    .st-thumb .st-icon { font-size: 46px; }
+    .st-thumb .st-ext { position: absolute; left: 8px; top: 8px; font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: rgba(15, 29, 58, .78); color: #fff; }
+    .st-thumb .st-hover { position: absolute; inset: 0; background: rgba(15, 61, 117, .55); color: #fff; display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 600; opacity: 0; transition: opacity .15s; }
+    .st-thumb:hover .st-hover { opacity: 1; }
+    .st-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .st-name { font-weight: 600; color: #0f1d3a; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .st-meta { color: #6b7a99; font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .st-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .st-actions .btn { padding: 2px 8px; font-size: .78rem; }
+    .st-badge-new { position: absolute; right: 8px; top: 8px; z-index: 2; font-size: .68rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #1e88ff; color: #fff; }
+    .st-card.is-removed { opacity: .55; border-style: dashed; border-color: #f1a7b1; }
+    .st-card.is-removed .st-thumb { filter: grayscale(1); }
+    .st-card .st-removed-note { display: none; color: #d63045; font-size: .75rem; font-weight: 600; }
+    .st-card.is-removed .st-removed-note { display: block; }
+
+    .st-icon.pdf { color: #e5484d; } .st-icon.image { color: #1e88ff; } .st-icon.excel { color: #1f9254; }
+    .st-icon.word { color: #2b5fd9; } .st-icon.ppt { color: #e8762c; } .st-icon.archive { color: #8a6d3b; }
+    .st-icon.cad { color: #6f42c1; } .st-icon.text { color: #5b6b8a; } .st-icon.other { color: #8a97b1; }
+
+    #structureViewerModal .modal-body { background: #eef2f7; min-height: 60vh; display: flex; align-items: center; justify-content: center; padding: 0; }
+    #structureViewerModal iframe { width: 100%; height: 78vh; border: 0; background: #fff; }
+    #structureViewerModal .sv-img { max-width: 100%; max-height: 78vh; object-fit: contain; }
+    #structureViewerModal .sv-empty { text-align: center; padding: 60px 20px; color: #6b7a99; }
+    #structureViewerModal .sv-empty .st-icon { font-size: 64px; }
+    #structureViewerModal .modal-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+
+<!-- Item Structure file preview -->
+<div class="modal fade" id="structureViewerModal" tabindex="-1" aria-labelledby="structureViewerTitle" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header gap-2">
+                <h5 class="modal-title" id="structureViewerTitle">Preview</h5>
+                <div class="ms-auto d-flex gap-2 flex-shrink-0">
+                    <a href="#" class="btn btn-sm btn-outline-secondary" id="structureViewerOpen" target="_blank" rel="noopener">
+                        <i class="fas fa-up-right-from-square me-1"></i>Open in new tab
+                    </a>
+                    <a href="#" class="btn btn-sm btn-primary" id="structureViewerDownload">
+                        <i class="fas fa-download me-1"></i>Download
+                    </a>
+                    <button type="button" class="btn-close ms-1" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+            </div>
+            <div class="modal-body" id="structureViewerBody"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+window.StructureUI = window.StructureUI || (function() {
+    const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const IMAGE = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'];
+    const TEXT = ['txt', 'csv', 'log', 'md', 'json', 'xml'];
+    let pdfjsPromise = null;
+    let modal = null;
+
+    function ext(name) {
+        const n = (name || '').toLowerCase();
+        return n.includes('.') ? n.split('.').pop() : '';
+    }
+
+    // pdf | image | text | other - same rules as ProductStructureFile.kind
+    function kindOf(name) {
+        const e = ext(name);
+        if (e === 'pdf') return 'pdf';
+        if (IMAGE.includes(e)) return 'image';
+        if (TEXT.includes(e)) return 'text';
+        return 'other';
+    }
+
+    function icon(name) {
+        const e = ext(name);
+        const map = [
+            [['pdf'], 'fa-file-pdf', 'pdf'],
+            [IMAGE.concat(['svg', 'tif', 'tiff', 'heic']), 'fa-file-image', 'image'],
+            [['xls', 'xlsx', 'xlsm', 'csv', 'ods'], 'fa-file-excel', 'excel'],
+            [['doc', 'docx', 'odt', 'rtf'], 'fa-file-word', 'word'],
+            [['ppt', 'pptx', 'odp'], 'fa-file-powerpoint', 'ppt'],
+            [['zip', 'rar', '7z', 'tar', 'gz'], 'fa-file-zipper', 'archive'],
+            [['dwg', 'dxf', 'step', 'stp', 'igs', 'iges', 'stl', 'sldprt', 'sldasm', 'ipt', 'iam'], 'fa-compass-drafting', 'cad'],
+            [['txt', 'log', 'md', 'json', 'xml'], 'fa-file-lines', 'text'],
+        ];
+        for (const [exts, cls, tone] of map) {
+            if (exts.includes(e)) return `<i class="fas ${cls} st-icon ${tone}"></i>`;
+        }
+        return '<i class="fas fa-file st-icon other"></i>';
+    }
+
+    function formatSize(bytes) {
+        bytes = bytes || 0;
+        return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB';
+    }
+
+    function loadPdfJs() {
+        if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+        if (!pdfjsPromise) {
+            pdfjsPromise = new Promise(function(resolve, reject) {
+                const s = document.createElement('script');
+                s.src = PDFJS;
+                s.onload = function() {
+                    window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
+                    resolve(window.pdfjsLib);
+                };
+                s.onerror = reject;
+                document.head.appendChild(s);
+            });
+        }
+        return pdfjsPromise;
+    }
+
+    // Thumbnails render one at a time so an item with many PDFs doesn't
+    // fire dozens of downloads/renders at once.
+    let thumbQueue = Promise.resolve();
+    function renderPdfThumb(thumbEl, source) {
+        thumbQueue = thumbQueue.then(() => renderPdfThumbNow(thumbEl, source));
+        return thumbQueue;
+    }
+
+    // Render page 1 of a PDF (URL or ArrayBuffer) into the .st-thumb element.
+    // Leaves the file-type icon in place if anything fails.
+    async function renderPdfThumbNow(thumbEl, source) {
+        try {
+            const pdfjsLib = await loadPdfJs();
+            let data = source;
+            if (typeof source === 'string') {
+                const res = await fetch(source, { credentials: 'same-origin' });
+                if (!res.ok) return;
+                data = await res.arrayBuffer();
+            }
+            const pdf = await pdfjsLib.getDocument({ data: data }).promise;
+            const page = await pdf.getPage(1);
+            const base = page.getViewport({ scale: 1 });
+            const scale = Math.min(320 / base.width, 300 / base.height);
+            const vp = page.getViewport({ scale: scale });
+            const canvas = document.createElement('canvas');
+            canvas.width = vp.width; canvas.height = vp.height;
+            canvas.style.maxHeight = '138px';
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+            const iconEl = thumbEl.querySelector('.st-icon');
+            if (iconEl) iconEl.replaceWith(canvas); else thumbEl.prepend(canvas);
+            const ext = thumbEl.querySelector('.st-ext');
+            if (ext && pdf.numPages > 1) ext.textContent = 'PDF · ' + pdf.numPages + ' pages';
+        } catch (e) { /* keep the icon */ }
+    }
+
+    // Fill thumbnails for server-side cards: [data-st-pdf] / [data-st-img]
+    function hydrate(root) {
+        (root || document).querySelectorAll('.st-thumb[data-st-pdf]').forEach(function(el) {
+            renderPdfThumb(el, el.getAttribute('data-st-pdf'));
+            el.removeAttribute('data-st-pdf');
+        });
+    }
+
+    function getModal() {
+        if (!modal) modal = new bootstrap.Modal(document.getElementById('structureViewerModal'));
+        return modal;
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    // opts: { name, url (inline/blob URL), downloadUrl }
+    function open(opts) {
+        const kind = kindOf(opts.name);
+        const body = document.getElementById('structureViewerBody');
+        document.getElementById('structureViewerTitle').textContent = opts.name;
+        const openBtn = document.getElementById('structureViewerOpen');
+        const dlBtn = document.getElementById('structureViewerDownload');
+        openBtn.href = opts.url;
+        openBtn.style.display = kind === 'other' ? 'none' : '';
+        dlBtn.href = opts.downloadUrl || opts.url;
+        if (opts.downloadUrl) dlBtn.removeAttribute('download'); else dlBtn.setAttribute('download', opts.name);
+
+        if (kind === 'pdf' || kind === 'text') {
+            body.innerHTML = `<iframe src="${opts.url}" title="${escapeHtml(opts.name)}"></iframe>`;
+        } else if (kind === 'image') {
+            body.innerHTML = `<img class="sv-img" src="${opts.url}" alt="${escapeHtml(opts.name)}">`;
+        } else {
+            body.innerHTML = `<div class="sv-empty">${icon(opts.name)}
+                <h5 class="mt-3 mb-1">No preview for this file type</h5>
+                <p class="mb-3">${escapeHtml(opts.name)}</p>
+                <a class="btn btn-primary" href="${dlBtn.href}" ${opts.downloadUrl ? '' : 'download'}><i class="fas fa-download me-1"></i>Download to open</a></div>`;
+        }
+        getModal().show();
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const el = document.getElementById('structureViewerModal');
+        el.addEventListener('hidden.bs.modal', function() { document.getElementById('structureViewerBody').innerHTML = ''; });
+        hydrate(document);
+    });
+
+    return { ext, kindOf, icon, formatSize, renderPdfThumb, hydrate, open, escapeHtml };
+})();
+</script>

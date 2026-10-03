@@ -163,6 +163,20 @@
                             </button>
                         </div>
                     </div>
+                    <div class="col-md-6">
+                        <label for="vendor_id" class="form-label"><i class="fas fa-truck"></i>Vendor</label>
+                        <div class="input-group">
+                            <select name="vendor_id" id="vendor_id" class="form-control select2" data-placeholder="— Search or select vendor —">
+                                <option value="0">No Vendor</option>
+                                {% for v in vendors %}
+                                <option value="{{ v.id }}" {% if product.vendor_id == v.id %}selected{% endif %}>{{ v.name }}{% if v.company_name and v.company_name != v.name %} ({{ v.company_name }}){% endif %}{% if not v.is_active %} (Inactive){% endif %}</option>
+                                {% endfor %}
+                            </select>
+                            <a href="{{ url_for('purchase.add_vendor') }}" class="btn btn-success" target="_blank" title="Create New Vendor">
+                                <i class="fas fa-plus"></i>
+                            </a>
+                        </div>
+                    </div>
                 </div>
                 </div>
 
@@ -182,6 +196,10 @@
                             <option value="{{ wh.id }}" {% if product.warehouse_id == wh.id %}selected{% endif %}>{{ wh.name }}</option>
                             {% endfor %}
                         </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="location" class="form-label"><i class="fas fa-map-marker-alt"></i>Location</label>
+                        <input type="text" class="form-control" name="location" id="location" maxlength="100" value="{{ product.location or '' }}" placeholder="e.g. Rack A-3, Shelf 2">
                     </div>
                 </div>
                 </div>
@@ -288,30 +306,22 @@
                     {{ form.description(class="form-control", rows="3", placeholder="Product details...") }}
                 </div>
 
-                <div class="mb-0">
-                    <label for="image" class="form-label"><i class="fas fa-image"></i>Product Image</label>
-                    {% if product.image_path %}
-                    <div class="mb-2">
-                        <p class="text-muted small"><strong>Current Image:</strong></p>
-                        {% set normalized_path = product.image_path.replace('\\', '/') %}
-                        {% set img_src = normalized_path.replace('app/static/', '') if 'app/static/' in normalized_path else normalized_path %}
-                        <img src="{{ url_for('static', filename=img_src) }}"
-                             alt="{{ product.name }}" class="img-thumbnail" style="max-width: 200px; max-height: 200px;"
-                             onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22200%22 height=%22200%22/%3E%3Ctext x=%22100%22 y=%22100%22 font-size=%2214%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3EImage Not Found%3C/text%3E%3C/svg%3E'">
-
-                        <div class="form-check mt-1">
-                            <input class="form-check-input" type="checkbox" name="remove_image" id="remove_image" value="1">
-                            <label class="form-check-label text-danger small" for="remove_image">
-                                <i class="fas fa-trash-alt me-1"></i> Remove current image
-                            </label>
-                        </div>
-                        <p class="text-muted small mt-1">Or upload a new one to replace it.</p>
-                    </div>
-                    {% endif %}
-                    {{ form.image(class="form-control", accept="image/*", id="imageInput") }}
-                    <div class="form-text">Upload a new product image (JPG, PNG, GIF) to replace the current one. Optional.</div>
-                    <div id="imagePreview" class="mt-2"></div>
+                {% set current_image_src = None %}
+                {% if product.image_path %}
+                    {% set normalized_path = product.image_path.replace('\\', '/') %}
+                    {% set img_src = normalized_path.replace('app/static/', '') if 'app/static/' in normalized_path else normalized_path %}
+                    {% set current_image_src = url_for('static', filename=img_src) %}
+                {% endif %}
+                {% with image_input=form.image(accept="image/*", id="imageInput"), current_image_src=current_image_src, current_image_alt=product.name %}
+                    {% include 'inventory/_image_capture.html' %}
+                {% endwith %}
                 </div>
+
+                <div class="form-section">
+                    <div class="form-section-title"><i class="fas fa-sitemap"></i> Item Structure</div>
+                    {% with existing_files=product.structure_files %}
+                        {% include 'inventory/_structure_upload.html' %}
+                    {% endwith %}
                 </div>
 
                 <div class="form-actions-bar">
@@ -327,36 +337,6 @@
 </div>
 
 <script>
-document.getElementById('imageInput').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    const preview = document.getElementById('imagePreview');
-    
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = function(event) {
-            preview.innerHTML = `
-                <div class="mt-2 position-relative d-inline-block">
-                    <p class="text-muted small"><strong>New Preview:</strong></p>
-                    <img src="${event.target.result}" class="img-thumbnail" style="max-width: 300px; max-height: 300px;">
-                    <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-1 mt-4" onclick="clearImageInput()" title="Clear selection">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-            `;
-        };
-        reader.readAsDataURL(file);
-    } else {
-        preview.innerHTML = '';
-    }
-});
-
-function clearImageInput() {
-    const input = document.getElementById('imageInput');
-    const preview = document.getElementById('imagePreview');
-    input.value = '';
-    preview.innerHTML = '';
-}
-
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize Select2 (searchable) on every dropdown: Category, Unit, Warehouse
     $('.select2').each(function() {

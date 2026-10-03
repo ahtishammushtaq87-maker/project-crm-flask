@@ -161,6 +161,20 @@
                                 </button>
                             </div>
                         </div>
+                        <div class="col-md-6">
+                            <label for="vendor_id" class="form-label"><i class="fas fa-truck"></i>Vendor</label>
+                            <div class="input-group">
+                                <select name="vendor_id" id="vendor_id" class="form-control select2" data-placeholder="— Search or select vendor —">
+                                    <option value="0">No Vendor</option>
+                                    {% for v in vendors %}
+                                    <option value="{{ v.id }}">{{ v.name }}{% if v.company_name and v.company_name != v.name %} ({{ v.company_name }}){% endif %}{% if not v.is_active %} (Inactive){% endif %}</option>
+                                    {% endfor %}
+                                </select>
+                                <a href="{{ url_for('purchase.add_vendor') }}" class="btn btn-success" target="_blank" title="Create New Vendor">
+                                    <i class="fas fa-plus"></i>
+                                </a>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -179,6 +193,10 @@
                                 <option value="{{ wh.id }}">{{ wh.name }}</option>
                                 {% endfor %}
                             </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="location" class="form-label"><i class="fas fa-map-marker-alt"></i>Location</label>
+                            <input type="text" class="form-control" name="location" id="location" maxlength="100" placeholder="e.g. Rack A-3, Shelf 2">
                         </div>
                     </div>
                 </div>
@@ -225,12 +243,12 @@
                         <textarea class="form-control" name="description" rows="3" placeholder="Product details..."></textarea>
                     </div>
 
-                    <div class="mb-0">
-                        <label for="image" class="form-label"><i class="fas fa-image"></i>Product Image</label>
-                        <input type="file" class="form-control" name="image" accept="image/*" id="imageInput">
-                        <div class="form-text">Upload a product image (JPG, PNG, GIF). Optional.</div>
-                        <div id="imagePreview" class="mt-2"></div>
-                    </div>
+                    {% include 'inventory/_image_capture.html' %}
+                </div>
+
+                <div class="form-section">
+                    <div class="form-section-title"><i class="fas fa-sitemap"></i> Item Structure</div>
+                    {% include 'inventory/_structure_upload.html' %}
                 </div>
 
                 <div class="form-actions-bar">
@@ -246,35 +264,8 @@
 </div>
 
 <script>
-document.getElementById('imageInput').addEventListener('change', function(e) {
-    const preview = document.getElementById('imagePreview');
-    if (e.target.files && e.target.files[0]) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            preview.innerHTML = `
-                <div class="mt-2 position-relative d-inline-block">
-                    <img src="${e.target.result}" style="max-width: 200px; max-height: 200px;" class="img-thumbnail">
-                    <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-1" onclick="clearImageInput()" title="Clear selection">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-            `;
-        };
-        reader.readAsDataURL(e.target.files[0]);
-    } else {
-        preview.innerHTML = '';
-    }
-});
-
-function clearImageInput() {
-    const input = document.getElementById('imageInput');
-    const preview = document.getElementById('imagePreview');
-    input.value = '';
-    preview.innerHTML = '';
-}
-
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize Select2 (searchable) on every dropdown: Category, Unit, Warehouse
+    // Initialize Select2 (searchable) on every dropdown: Category, Unit, Vendor, Warehouse
     $('.select2').each(function() {
         $(this).select2({
             theme: 'bootstrap-5',

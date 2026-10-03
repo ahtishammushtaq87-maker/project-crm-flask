@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}Item Structure: {{ product.sku }} - {{ product.name }}{% endblock %}
+
+{% block content %}
+{% set pdf_count = files|selectattr('kind', 'equalto', 'pdf')|list|length %}
+{% set image_count = files|selectattr('kind', 'equalto', 'image')|list|length %}
+{% set other_count = files|length - pdf_count - image_count %}
+<style>
+    .sp-hero { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; background: #fff; border: 1px solid #dfe5ef; border-radius: 14px; padding: 18px 20px; margin-bottom: 20px; }
+    .sp-hero-icon { width: 56px; height: 56px; border-radius: 12px; background: #f1ebff; color: #6f42c1; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+    .sp-hero h2 { margin: 0; font-size: 1.35rem; font-weight: 700; color: #0f1d3a; }
+    .sp-hero .sp-sub { color: #6b7a99; margin: 2px 0 0; }
+    .sp-stats { display: flex; gap: 10px; flex-wrap: wrap; }
+    .sp-stat { border: 1px solid #dfe5ef; border-radius: 10px; padding: 6px 14px; background: #f8fafd; text-align: center; min-width: 76px; }
+    .sp-stat b { display: block; font-size: 1.1rem; color: #0f1d3a; line-height: 1.2; }
+    .sp-stat span { font-size: .75rem; color: #6b7a99; }
+    .sp-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .sp-filter .btn { border-radius: 999px; padding: 4px 14px; font-size: .85rem; }
+    .sp-search { max-width: 260px; }
+    .sp-empty { background: #fff; border: 2px dashed #dfe5ef; border-radius: 14px; padding: 60px 20px; text-align: center; color: #6b7a99; }
+    .sp-empty i { font-size: 48px; color: #cdb9f5; }
+    .st-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)) !important; }
+    .st-thumb { height: 180px !important; }
+</style>
+
+<div class="container-fluid py-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{{ url_for('inventory.products') }}" class="text-decoration-none">Inventory</a></li>
+            <li class="breadcrumb-item">{{ product.sku }}</li>
+            <li class="breadcrumb-item active">Item Structure</li>
+        </ol>
+    </nav>
+
+    <div class="sp-hero">
+        <div class="sp-hero-icon"><i class="fas fa-sitemap"></i></div>
+        <div class="flex-grow-1" style="min-width: 220px;">
+            <h2>Item Structure &mdash; {{ product.name }}</h2>
+            <p class="sp-sub">SKU: {{ product.sku }}{% if product.location %} &middot; Location: {{ product.location }}{% endif %}</p>
+        </div>
+        <div class="sp-stats">
+            <div class="sp-stat"><b>{{ files|length }}</b><span>Files</span></div>
+            <div class="sp-stat"><b>{{ pdf_count }}</b><span>PDFs</span></div>
+            <div class="sp-stat"><b>{{ image_count }}</b><span>Images</span></div>
+            <div class="sp-stat"><b>{{ other_count }}</b><span>Other</span></div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            {% if current_user.has_permission('inventory', 'edit') %}
+            <a href="{{ url_for('inventory.edit_product', id=product.id) }}#structureUpload" class="btn btn-primary">
+                <i class="fas fa-upload me-1"></i>Add / Manage Files
+            </a>
+            {% endif %}
+            <a href="{{ url_for('inventory.products') }}" class="btn btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i>Back</a>
+        </div>
+    </div>
+
+    {% if files %}
+    <div class="sp-toolbar">
+        <div class="btn-group sp-filter" role="group" aria-label="Filter by type">
+            <button type="button" class="btn btn-outline-primary active" data-filter="all">All ({{ files|length }})</button>
+            <button type="button" class="btn btn-outline-primary" data-filter="pdf">PDFs ({{ pdf_count }})</button>
+            <button type="button" class="btn btn-outline-primary" data-filter="image">Images ({{ image_count }})</button>
+            <button type="button" class="btn btn-outline-primary" data-filter="other">Other ({{ other_count }})</button>
+        </div>
+        <input type="search" class="form-control form-control-sm sp-search ms-auto" id="spSearch" placeholder="Search file name...">
+    </div>
+
+    <div class="st-grid" id="spGrid">
+        {% for f in files %}
+        {% set view_url = url_for('inventory.product_structure_file', file_id=f.id) %}
+        {% set dl_url = url_for('inventory.product_structure_file', file_id=f.id, download=1) %}
+        <div class="st-card" data-kind="{{ f.kind if f.kind in ['pdf', 'image'] else 'other' }}" data-name="{{ f.original_name|lower }}">
+            <div class="st-thumb" data-name="{{ f.original_name }}" data-url="{{ view_url }}" data-download="{{ dl_url }}"
+                 {% if f.kind == 'pdf' %}data-st-pdf="{{ view_url }}"{% endif %} title="Preview">
+                {% if f.kind == 'image' %}
+                <img src="{{ view_url }}" alt="{{ f.original_name }}" loading="lazy">
+                {% else %}
+                <span class="st-icon-slot" data-icon-for="{{ f.original_name }}"></span>
+                {% endif %}
+                <span class="st-ext">{{ f.extension or 'file' }}</span>
+                <span class="st-hover"><i class="fas fa-eye"></i> Preview</span>
+            </div>
+            <div class="st-body">
+                <div class="st-name" title="{{ f.original_name }}">{{ f.original_name }}</div>
+                <div class="st-meta">{{ f.size_label }} &middot; {{ f.created_at.strftime('%d-%m-%Y') if f.created_at else '' }}{% if f.uploader %} &middot; {{ f.uploader.username }}{% endif %}</div>
+                <div class="st-actions">
+                    <button type="button" class="btn btn-outline-primary sp-preview"><i class="fas fa-eye me-1"></i>View</button>
+                    <a class="btn btn-outline-secondary" href="{{ dl_url }}" title="Download"><i class="fas fa-download"></i></a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="sp-empty mt-3" id="spNoMatch" style="display:none;">
+        <i class="fas fa-magnifying-glass"></i>
+        <h5 class="mt-3 mb-0">No files match</h5>
+    </div>
+    {% else %}
+    <div class="sp-empty">
+        <i class="fas fa-folder-open"></i>
+        <h5 class="mt-3 mb-1">No Item Structure files yet</h5>
+        <p class="mb-3">Upload drawings, PDFs, photos or any other files for this item.</p>
+        {% if current_user.has_permission('inventory', 'edit') %}
+        <a href="{{ url_for('inventory.edit_product', id=product.id) }}#structureUpload" class="btn btn-primary"><i class="fas fa-upload me-1"></i>Upload Files</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+{% include 'inventory/_structure_viewer.html' %}
+
+<script>
+(function() {
+    const UI = window.StructureUI;
+    const cards = Array.from(document.querySelectorAll('#spGrid .st-card'));
+    cards.forEach(function(card) {
+        const thumb = card.querySelector('.st-thumb');
+        const slot = card.querySelector('.st-icon-slot');
+        if (slot) slot.outerHTML = UI.icon(slot.dataset.iconFor);
+        const open = () => UI.open({ name: thumb.dataset.name, url: thumb.dataset.url, downloadUrl: thumb.dataset.download });
+        thumb.addEventListener('click', open);
+        card.querySelector('.sp-preview').addEventListener('click', open);
+    });
+
+    let filter = 'all';
+    const search = document.getElementById('spSearch');
+    function apply() {
+        const q = (search && search.value || '').trim().toLowerCase();
+        let shown = 0;
+        cards.forEach(function(card) {
+            const ok = (filter === 'all' || card.dataset.kind === filter) && (!q || card.dataset.name.includes(q));
+            card.style.display = ok ? '' : 'none';
+            if (ok) shown++;
+        });
+        const none = document.getElementById('spNoMatch');
+        if (none) none.style.display = cards.length && !shown ? '' : 'none';
+    }
+    document.querySelectorAll('.sp-filter [data-filter]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.sp-filter [data-filter]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            filter = btn.dataset.filter;
+            apply();
+        });
+    });
+    if (search) search.addEventListener('input', apply);
+})();
+</script>
+{% endblock %}

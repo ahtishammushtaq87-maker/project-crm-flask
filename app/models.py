@@ -556,6 +556,8 @@ class Product(db.Model):
     obsoleted_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     finished_good_price = db.Column(db.Float, nullable=True)
     warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
+    # Default/preferred vendor (supplier) for this item
+    vendor_id = db.Column(db.Integer, db.ForeignKey('vendors.id'), nullable=True, index=True)
     # Universal approval fields
     is_approved = db.Column(db.Boolean, default=False)
     is_rejected = db.Column(db.Boolean, default=False)
@@ -564,8 +566,9 @@ class Product(db.Model):
     approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     warehouse = db.relationship('Warehouse', backref='products', lazy=True)
+    vendor = db.relationship('Vendor', backref='products', lazy=True)
     
     # Relationships
     sale_items = db.relationship('SaleItem', backref='product', lazy=True)
@@ -657,6 +660,58 @@ class Product(db.Model):
     
     def __repr__(self):
         return f'<Product {self.name} ({self.sku})>'
+
+
+class ProductStructureFile(db.Model):
+    """A file attached to a product's "Item Structure" (drawings, spec PDFs,
+    photos, spreadsheets - any type). Separate from Product.image_path.
+    Files live outside app/static (see STRUCTURE_UPLOAD_DIR in
+    routes/inventory.py) and are only served through a login-protected route."""
+    __tablename__ = 'product_structure_files'
+
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id', ondelete='CASCADE'), nullable=False, index=True)
+    original_name = db.Column(db.String(255), nullable=False)
+    stored_path = db.Column(db.String(500), nullable=False)
+    mime_type = db.Column(db.String(150))
+    file_size = db.Column(db.Integer, default=0)
+    uploaded_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    product = db.relationship('Product', backref=db.backref(
+        'structure_files', lazy=True, cascade='all, delete-orphan',
+        order_by='ProductStructureFile.created_at'))
+    uploader = db.relationship('User', foreign_keys=[uploaded_by])
+
+    IMAGE_EXTS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'}
+    TEXT_EXTS = {'txt', 'csv', 'log', 'md', 'json', 'xml'}
+
+    @property
+    def extension(self):
+        name = self.original_name or ''
+        return name.rsplit('.', 1)[-1].lower() if '.' in name else ''
+
+    @property
+    def kind(self):
+        """pdf | image | text | other - decides how it is previewed."""
+        ext = self.extension
+        if ext == 'pdf':
+            return 'pdf'
+        if ext in self.IMAGE_EXTS:
+            return 'image'
+        if ext in self.TEXT_EXTS:
+            return 'text'
+        return 'other'
+
+    @property
+    def size_label(self):
+        size = self.file_size or 0
+        if size >= 1024 * 1024:
+            return f'{size / 1024 / 1024:.1f} MB'
+        return f'{max(1, round(size / 1024))} KB'
+
+    def __repr__(self):
+        return f'<ProductStructureFile {self.original_name} (product {self.product_id})>'
 
 
 class ProductWarehouseStock(db.Model):
@@ -3895,8 +3950,14 @@ class CostPriceHistory(db.Model):
     reason = db.Column(db.String(200))  # e.g., "Purchase bill #12345"
     is_active = db.Column(db.Boolean, default=True)  # Active until old_price stock is consumed
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
-    
-    product = db.relationship('Product', backref='cost_price_changes')
+    # NULL = the item's normal cost (Product.cost_price) changed. Set = that
+    # warehouse's own cost (ProductWarehouseStock.cost_price) changed.
+    # Written automatically by app/services/cost_history.py.
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True, index=True)
+
+    product = db.relationship('Product', backref=db.backref('cost_price_changes', cascade='all, delete-orphan'))
+    warehouse = db.relationship('Warehouse', foreign_keys=[warehouse_id])
+    user = db.relationship('User', foreign_keys=[created_by])
     purchase_bill = db.relationship('PurchaseBill', back_populates='cost_price_history', overlaps="cost_price_changes,bill")
     bill_receive_item = db.relationship('BillReceiveItem', back_populates='price_history', lazy=True, overlaps="cost_price_change,receive_item")
     

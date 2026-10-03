@@ -2079,3 +2079,252 @@ def generate_packing_slip_pdf(sale, company, slip=None):
     generator.generate_packing_slip(sale, slip)
     buffer.seek(0)
     return buffer
+
+
+def generate_product_info_pdf(product, company=None, generated_by=None):
+    """
+    One-page "Item Information" sheet for a product: image, identification,
+    vendor, location, selling price, stock (per warehouse) and description.
+    Deliberately leaves out cost price (and anything derived from it, like
+    stock value) and reorder level, so the sheet can be shared outside.
+    Opened from the Products list actions menu. Returns a BytesIO buffer
+    positioned at 0.
+    """
+    from xml.sax.saxutils import escape
+
+    NAVY = colors.HexColor('#0f3d75')
+    BLUE = colors.HexColor('#1e88ff')
+    SOFT = colors.HexColor('#eef5ff')
+    BORDER = colors.HexColor('#dfe5ef')
+    MUTED = colors.HexColor('#6b7a99')
+    INK = colors.HexColor('#0f1d3a')
+
+    def txt(value, dash='-'):
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return dash
+        return escape(str(value))
+
+    def money(value):
+        return f"{DEFAULT_CURRENCY} {(value or 0):,.2f}"
+
+    def qty(value):
+        return f"{(value or 0):,.2f}".rstrip('0').rstrip('.')
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=32, bottomMargin=36, leftMargin=36, rightMargin=36,
+                            title=f"Item Information - {product.name}")
+    width = A4[0] - 72
+
+    h_company = ParagraphStyle('PIHCompany', fontName='Helvetica-Bold', fontSize=15, textColor=colors.white, leading=18)
+    h_sub = ParagraphStyle('PIHSub', fontName='Helvetica', fontSize=8.5, textColor=colors.HexColor('#cfe0f7'), leading=11)
+    h_title = ParagraphStyle('PIHTitle', fontName='Helvetica-Bold', fontSize=17, textColor=colors.white, alignment=TA_RIGHT, leading=20)
+    h_num = ParagraphStyle('PIHNum', fontName='Helvetica', fontSize=9, textColor=colors.HexColor('#cfe0f7'), alignment=TA_RIGHT, leading=12)
+    name_style = ParagraphStyle('PIName', fontName='Helvetica-Bold', fontSize=16, textColor=INK, leading=20, spaceAfter=2)
+    sku_style = ParagraphStyle('PISku', fontName='Helvetica', fontSize=10, textColor=MUTED, leading=13, spaceAfter=8)
+    section_style = ParagraphStyle('PISection', fontName='Helvetica-Bold', fontSize=10, textColor=NAVY, spaceBefore=12, spaceAfter=5)
+    label_style = ParagraphStyle('PILabel', fontName='Helvetica', fontSize=8.5, textColor=MUTED, leading=11)
+    value_style = ParagraphStyle('PIValue', fontName='Helvetica', fontSize=10, textColor=INK, leading=13)
+    value_bold = ParagraphStyle('PIValueBold', parent=value_style, fontName='Helvetica-Bold')
+    th_style = ParagraphStyle('PITh', fontName='Helvetica-Bold', fontSize=8.5, textColor=NAVY, leading=11)
+    th_right = ParagraphStyle('PIThR', parent=th_style, alignment=TA_RIGHT)
+    td_right = ParagraphStyle('PITdR', parent=value_style, alignment=TA_RIGHT)
+    footer_style = ParagraphStyle('PIFooter', fontName='Helvetica', fontSize=8, textColor=MUTED, alignment=TA_CENTER)
+
+    def kv_table(rows):
+        """Rows of (label, value[, bold]) laid out two pairs per line."""
+        cells = []
+        for label, value, *bold in rows:
+            cells.append([Paragraph(label, label_style),
+                          Paragraph(value, value_bold if bold and bold[0] else value_style)])
+        lines = []
+        for i in range(0, len(cells), 2):
+            lines.append(cells[i] + (cells[i + 1] if i + 1 < len(cells) else ['', '']))
+        t = Table(lines, colWidths=[width * 0.17, width * 0.33, width * 0.17, width * 0.33])
+        t.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('LINEBELOW', (0, 0), (-1, -2), 0.5, BORDER),
+            ('BOX', (0, 0), (-1, -1), 0.75, BORDER),
+        ]))
+        return t
+
+    elements = []
+
+    # ── Header banner ────────────────────────────────────────────────────
+    company_name = getattr(company, 'name', None) or 'Company'
+    header_left = [Paragraph(escape(company_name), h_company)]
+    contact = [x for x in [getattr(company, 'address', None), getattr(company, 'phone', None),
+                           getattr(company, 'email', None)] if x]
+    if contact:
+        header_left.append(Paragraph(escape(' | '.join(contact)), h_sub))
+    logo_path = getattr(company, 'logo_path', None)
+    if logo_path and os.path.exists(logo_path):
+        try:
+            logo = Image(logo_path)
+            ratio = min(42 / logo.imageHeight, 90 / logo.imageWidth)
+            logo.drawHeight, logo.drawWidth = logo.imageHeight * ratio, logo.imageWidth * ratio
+            header_left = [Table([[logo, header_left]], colWidths=[logo.drawWidth + 10, None],
+                                 style=[('VALIGN', (0, 0), (-1, -1), 'MIDDLE'), ('LEFTPADDING', (0, 0), (-1, -1), 0)])]
+        except Exception:
+            pass
+    header_right = [Paragraph('ITEM INFORMATION', h_title), Paragraph(f"SKU: {txt(product.sku)}", h_num)]
+    header = Table([[header_left, header_right]], colWidths=[width * 0.6, width * 0.4])
+    header.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), NAVY),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (0, 0), 16),
+        ('RIGHTPADDING', (1, 0), (1, 0), 16),
+        ('TOPPADDING', (0, 0), (-1, -1), 14),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 14),
+    ]))
+    elements.append(header)
+    elements.append(HRFlowable(width='100%', color=BLUE, thickness=3, spaceAfter=14))
+
+    # ── Image + headline details ─────────────────────────────────────────
+    category = product.category.name if getattr(product, 'category', None) else product.category_name
+    if product.is_obsolete:
+        status = 'Obsolete'
+    elif product.is_rejected:
+        status = 'Rejected'
+    elif product.is_approved:
+        status = 'Active (Approved)'
+    else:
+        status = 'Active'
+    item_type = 'Finished Good / Produced Item' if product.is_manufactured else 'Raw Material / Purchased Item'
+
+    summary = [
+        Paragraph(txt(product.name), name_style),
+        Paragraph(f"SKU: {txt(product.sku)}" + (f"  |  Barcode: {txt(product.barcode)}" if product.barcode else ''), sku_style),
+    ]
+    stats = Table([[
+        [Paragraph('In Stock', label_style), Paragraph(f"{qty(product.quantity)} {txt(product.unit, '')}", value_bold)],
+        [Paragraph('Selling Price', label_style), Paragraph(money(product.unit_price), value_bold)],
+    ]])
+    stats.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), SOFT),
+        ('BOX', (0, 0), (-1, -1), 0.75, BORDER),
+        ('LINEAFTER', (0, 0), (-2, -1), 0.75, BORDER),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+    ]))
+    summary.append(stats)
+    summary.append(Spacer(1, 6))
+    summary.append(Paragraph(f"<b>Type:</b> {item_type} &nbsp;&nbsp; <b>Status:</b> {status}", value_style))
+
+    image_cell = None
+    img_path = (product.image_path or '').replace(os.sep, '/')
+    if img_path and os.path.exists(img_path):
+        try:
+            img = Image(img_path)
+            ratio = min(150 / img.imageWidth, 150 / img.imageHeight)
+            img.drawWidth, img.drawHeight = img.imageWidth * ratio, img.imageHeight * ratio
+            image_cell = img
+        except Exception:
+            image_cell = None
+    if image_cell is None:
+        image_cell = Paragraph('No Image', ParagraphStyle('PINoImg', parent=label_style, alignment=TA_CENTER))
+
+    top = Table([[image_cell, summary]], colWidths=[165, width - 165], rowHeights=[166])
+    top.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+        ('BOX', (0, 0), (0, 0), 0.75, BORDER),
+        ('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#fafcff')),
+        ('LEFTPADDING', (1, 0), (1, 0), 16),
+    ]))
+    elements.append(top)
+
+    # ── General information ──────────────────────────────────────────────
+    elements.append(Paragraph('GENERAL INFORMATION', section_style))
+    elements.append(kv_table([
+        ('Item Name', txt(product.name), True),
+        ('SKU / Item Code', txt(product.sku), True),
+        ('Category', txt(category)),
+        ('Unit', txt(product.unit)),
+        ('Brand', txt(product.brand)),
+        ('Barcode', txt(product.barcode)),
+        ('Location', txt(product.location)),
+        ('Default Warehouse', txt(product.warehouse.name if product.warehouse else None)),
+        ('Item Type', item_type),
+        ('Status', status),
+    ]))
+
+    # ── Vendor ───────────────────────────────────────────────────────────
+    vendor = getattr(product, 'vendor', None)
+    elements.append(Paragraph('VENDOR', section_style))
+    if vendor:
+        addr = ', '.join(x for x in [vendor.address, vendor.city, vendor.country] if x)
+        elements.append(kv_table([
+            ('Vendor', txt(vendor.name), True),
+            ('Company', txt(vendor.company_name)),
+            ('Contact Person', txt(vendor.contact_person)),
+            ('Phone', txt(vendor.phone)),
+            ('Email', txt(vendor.email)),
+            ('Address', txt(addr)),
+        ]))
+    else:
+        elements.append(kv_table([('Vendor', 'No vendor assigned')]))
+
+    # ── Pricing & stock levels ───────────────────────────────────────────
+    elements.append(Paragraph('PRICING &amp; STOCK', section_style))
+    pricing_rows = [
+        ('Selling Price', money(product.unit_price), True),
+        ('Quantity in Stock', f"{qty(product.quantity)} {txt(product.unit, '')}", True),
+    ]
+    if product.is_manufactured:
+        pricing_rows.append(('Finished Good Price',
+                             money(product.finished_good_price) if product.finished_good_price is not None else '-'))
+    elements.append(kv_table(pricing_rows))
+
+    # ── Stock by warehouse ───────────────────────────────────────────────
+    try:
+        wh_rows = product.warehouse_costs
+    except Exception:
+        wh_rows = []
+    if wh_rows:
+        elements.append(Paragraph('STOCK BY WAREHOUSE', section_style))
+        data = [[Paragraph('Warehouse', th_style), Paragraph('Quantity', th_right)]]
+        for r in wh_rows:
+            data.append([
+                Paragraph(txt(r['warehouse'].name), value_style),
+                Paragraph(f"{qty(r['quantity'])} {txt(product.unit, '')}", td_right),
+            ])
+        t = Table(data, colWidths=[width * 0.7, width * 0.3], repeatRows=1)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), SOFT),
+            ('BOX', (0, 0), (-1, -1), 0.75, BORDER),
+            ('LINEBELOW', (0, 0), (-1, -2), 0.5, BORDER),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ]))
+        elements.append(t)
+
+    # ── Description ──────────────────────────────────────────────────────
+    if product.description and product.description.strip():
+        # Plain paragraphs (not a table cell) so a long description can
+        # flow onto the next page instead of failing the layout.
+        elements.append(Paragraph('DESCRIPTION', section_style))
+        elements.append(HRFlowable(width='100%', color=BORDER, thickness=0.75, spaceAfter=6))
+        desc_style = ParagraphStyle('PIDesc', parent=value_style, spaceAfter=4)
+        for line in product.description.strip().splitlines():
+            if line.strip():
+                elements.append(Paragraph(escape(line), desc_style))
+
+    # ── Footer ───────────────────────────────────────────────────────────
+    elements.append(Spacer(1, 18))
+    elements.append(HRFlowable(width='100%', color=BORDER, thickness=0.75, spaceAfter=6))
+    meta = []
+    if product.created_at:
+        meta.append(f"Added: {product.created_at.strftime('%d-%m-%Y')}")
+    if product.updated_at:
+        meta.append(f"Last updated: {product.updated_at.strftime('%d-%m-%Y')}")
+    meta.append(f"Generated: {datetime.now().strftime('%d-%m-%Y %I:%M %p')}"
+                + (f" by {escape(generated_by)}" if generated_by else ''))
+    elements.append(Paragraph(' &nbsp;|&nbsp; '.join(meta), footer_style))
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer

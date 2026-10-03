@@ -1,0 +1,275 @@
+{#
+  "Item Structure" section for Add/Edit Product: attach any number of files
+  of any type (bulk). Include INSIDE the product <form> (enctype multipart).
+  Optional context:  existing_files - list of ProductStructureFile (edit page)
+  Posts:   structure_files       (multiple files)
+           delete_structure_ids  (ids of existing files marked for removal)
+  Separate from the Product Image field. Optional - never required.
+#}
+{% set existing_files = existing_files or [] %}
+<style>
+    .st-upload-head { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+    .st-upload-head-icon { width: 56px; height: 56px; flex-shrink: 0; border-radius: 12px; background: #f1ebff; color: #6f42c1; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+    .st-upload-title { margin: 0; font-size: 1.25rem; font-weight: 700; color: #0f1d3a; line-height: 1.3; }
+    .st-upload-sub { margin: 2px 0 0; color: #6b7a99; font-size: .95rem; }
+    .st-upload-optional { font-size: .75rem; font-weight: 600; color: #6b7a99; background: #f1f4f9; border-radius: 999px; padding: 2px 10px; margin-left: 6px; vertical-align: middle; }
+    .st-count { font-size: .75rem; font-weight: 700; color: #6f42c1; background: #f1ebff; border-radius: 999px; padding: 2px 10px; margin-left: 4px; vertical-align: middle; }
+
+    .st-drop { border: 2px dashed #cdb9f5; border-radius: 14px; background: #fbf9ff; padding: 30px 20px; cursor: pointer; transition: background .15s, border-color .15s; outline: none; }
+    .st-drop:hover, .st-drop:focus-visible { background: #f6f1ff; border-color: #6f42c1; }
+    .st-drop.is-dragover { background: #f1ebff; border-color: #6f42c1; border-style: solid; }
+    .st-drop-inner { display: flex; align-items: center; justify-content: center; gap: 28px; }
+    .st-drop-icon { width: 84px; height: 84px; flex-shrink: 0; border-radius: 50%; background: #e7dcfd; color: #6f42c1; display: flex; align-items: center; justify-content: center; font-size: 30px; }
+    .st-drop-title { margin: 0; font-size: 1.1rem; font-weight: 700; color: #0f1d3a; }
+    .st-drop-sub { margin: 4px 0 0; color: #6b7a99; }
+    .st-drop-note { margin: 12px 0 0; color: #8a97b1; font-size: .85rem; }
+    .st-drop .btn-choose { margin-top: 12px; }
+
+    .st-group-label { display: flex; align-items: center; justify-content: space-between; margin: 22px 0 10px; font-weight: 700; color: #0f3d75; font-size: .85rem; text-transform: uppercase; letter-spacing: .03em; }
+    .st-group-label .btn-link { font-size: .8rem; text-transform: none; letter-spacing: 0; text-decoration: none; }
+    .st-error { color: #d63045; font-size: .9rem; margin-top: 10px; }
+
+    @media (max-width: 576px) {
+        .st-drop-inner { flex-direction: column; gap: 14px; text-align: center; }
+        .st-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+    }
+</style>
+
+<div class="st-upload" id="structureUpload" data-max-bytes="{{ config.get('MAX_CONTENT_LENGTH') or 0 }}">
+    <div class="st-upload-head">
+        <div class="st-upload-head-icon"><i class="fas fa-sitemap"></i></div>
+        <div>
+            <label for="structureFilesInput" class="st-upload-title">
+                Item Structure <span class="st-upload-optional">Optional</span>
+                {% if existing_files %}<span class="st-count">{{ existing_files|length }} file{{ 's' if existing_files|length != 1 }}</span>{% endif %}
+            </label>
+            <p class="st-upload-sub">Attach drawings, PDFs, spec sheets, photos or any other files for this item. Upload many at once.</p>
+        </div>
+    </div>
+
+    <div class="visually-hidden">
+        <input type="file" name="structure_files" id="structureFilesInput" multiple>
+    </div>
+    <div id="structureDeleteInputs"></div>
+
+    <div class="st-drop" id="structureDropZone" tabindex="0" role="button" aria-label="Drag and drop, paste or click to add Item Structure files">
+        <div class="st-drop-inner">
+            <div class="st-drop-icon"><i class="fas fa-folder-open"></i></div>
+            <div>
+                <p class="st-drop-title">Drag &amp; drop files here</p>
+                <p class="st-drop-sub">or click to browse &middot; click here then Ctrl+V to paste copied files</p>
+                <p class="st-drop-note">Any file type &mdash; PDF, images, Excel, Word, CAD, ZIP&hellip; Multiple files allowed.</p>
+            </div>
+        </div>
+        <div class="st-error text-center" id="structureError" style="display:none;"></div>
+    </div>
+
+    <div id="structurePendingWrap" style="display:none;">
+        <div class="st-group-label">
+            <span><i class="fas fa-cloud-arrow-up me-1"></i>Ready to upload (<span id="structurePendingCount">0</span>) &middot; <span class="text-muted fw-normal" id="structurePendingSize"></span></span>
+            <button type="button" class="btn btn-link btn-sm text-danger p-0" id="structureClearAll"><i class="fas fa-xmark me-1"></i>Clear all</button>
+        </div>
+        <div class="st-grid" id="structurePendingGrid"></div>
+    </div>
+
+    {% if existing_files %}
+    <div class="st-group-label">
+        <span><i class="fas fa-paperclip me-1"></i>Attached files ({{ existing_files|length }})</span>
+        <a class="btn btn-link btn-sm p-0" href="{{ url_for('inventory.product_structure', id=existing_files[0].product_id) }}" target="_blank" rel="noopener"><i class="fas fa-images me-1"></i>Open gallery</a>
+    </div>
+    <div class="st-grid" id="structureExistingGrid">
+        {% for f in existing_files %}
+        {% set view_url = url_for('inventory.product_structure_file', file_id=f.id) %}
+        {% set dl_url = url_for('inventory.product_structure_file', file_id=f.id, download=1) %}
+        <div class="st-card" data-id="{{ f.id }}">
+            <div class="st-thumb" data-name="{{ f.original_name }}" data-url="{{ view_url }}" data-download="{{ dl_url }}"
+                 {% if f.kind == 'pdf' %}data-st-pdf="{{ view_url }}"{% endif %} title="Preview">
+                {% if f.kind == 'image' %}
+                <img src="{{ view_url }}" alt="{{ f.original_name }}" loading="lazy">
+                {% else %}
+                <span class="st-icon-slot" data-icon-for="{{ f.original_name }}"></span>
+                {% endif %}
+                <span class="st-ext">{{ f.extension or 'file' }}</span>
+                <span class="st-hover"><i class="fas fa-eye"></i> Preview</span>
+            </div>
+            <div class="st-body">
+                <div class="st-name" title="{{ f.original_name }}">{{ f.original_name }}</div>
+                <div class="st-meta">{{ f.size_label }} &middot; {{ f.created_at.strftime('%d-%m-%Y') if f.created_at else '' }}</div>
+                <div class="st-removed-note"><i class="fas fa-trash-can me-1"></i>Will be removed on save</div>
+                <div class="st-actions">
+                    <a class="btn btn-outline-secondary" href="{{ dl_url }}" title="Download"><i class="fas fa-download"></i></a>
+                    <button type="button" class="btn btn-outline-danger st-remove-existing" title="Remove"><i class="fas fa-trash-can"></i></button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+{% include 'inventory/_structure_viewer.html' %}
+
+<script>
+(function() {
+    const UI = window.StructureUI;
+    const root = document.getElementById('structureUpload');
+    const input = document.getElementById('structureFilesInput');
+    const drop = document.getElementById('structureDropZone');
+    const pendingWrap = document.getElementById('structurePendingWrap');
+    const pendingGrid = document.getElementById('structurePendingGrid');
+    const errorBox = document.getElementById('structureError');
+    const deleteInputs = document.getElementById('structureDeleteInputs');
+    const maxBytes = parseInt(root.dataset.maxBytes || '0', 10);
+    let pending = [];   // [{file, url}]
+
+    function showError(msg) {
+        errorBox.textContent = msg || '';
+        errorBox.style.display = msg ? 'block' : 'none';
+    }
+
+    // Keep the real <input> in sync with the pending list.
+    function syncInput() {
+        const dt = new DataTransfer();
+        pending.forEach(p => dt.items.add(p.file));
+        input.files = dt.files;
+    }
+
+    function addFiles(fileList) {
+        let added = 0;
+        Array.from(fileList || []).forEach(function(file) {
+            if (!file || !file.name) return;
+            const dup = pending.some(p => p.file.name === file.name && p.file.size === file.size && p.file.lastModified === file.lastModified);
+            if (dup) return;
+            pending.push({ file: file, url: URL.createObjectURL(file) });
+            added++;
+        });
+        if (added) { showError(''); syncInput(); renderPending(); }
+    }
+
+    function removePending(index) {
+        URL.revokeObjectURL(pending[index].url);
+        pending.splice(index, 1);
+        syncInput();
+        renderPending();
+    }
+
+    function renderPending() {
+        pendingGrid.innerHTML = '';
+        pendingWrap.style.display = pending.length ? '' : 'none';
+        document.getElementById('structurePendingCount').textContent = pending.length;
+        document.getElementById('structurePendingSize').textContent = UI.formatSize(pending.reduce((a, p) => a + p.file.size, 0));
+        pending.forEach(function(p, i) {
+            const name = p.file.name;
+            const kind = UI.kindOf(name);
+            const card = document.createElement('div');
+            card.className = 'st-card';
+            card.innerHTML = `
+                <span class="st-badge-new">NEW</span>
+                <div class="st-thumb" title="Preview">
+                    ${kind === 'image' ? `<img src="${p.url}" alt="">` : UI.icon(name)}
+                    <span class="st-ext">${UI.escapeHtml(UI.ext(name) || 'file')}</span>
+                    <span class="st-hover"><i class="fas fa-eye"></i> Preview</span>
+                </div>
+                <div class="st-body">
+                    <div class="st-name" title="${UI.escapeHtml(name)}">${UI.escapeHtml(name)}</div>
+                    <div class="st-meta">${UI.formatSize(p.file.size)} &middot; not saved yet</div>
+                    <div class="st-actions">
+                        <button type="button" class="btn btn-outline-danger" title="Remove"><i class="fas fa-xmark"></i> Remove</button>
+                    </div>
+                </div>`;
+            const thumb = card.querySelector('.st-thumb');
+            thumb.addEventListener('click', () => UI.open({ name: name, url: p.url }));
+            card.querySelector('.st-actions button').addEventListener('click', () => removePending(i));
+            pendingGrid.appendChild(card);
+            if (kind === 'pdf') p.file.arrayBuffer().then(buf => UI.renderPdfThumb(thumb, buf));
+        });
+    }
+
+    // ---- choose / drop ----
+    drop.addEventListener('click', () => input.click());
+    drop.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+    });
+    // Picking replaces input.files, so merge the picked files into `pending`.
+    input.addEventListener('change', function() {
+        const picked = Array.from(input.files || []);
+        syncInput();
+        addFiles(picked);
+    });
+    ['dragenter', 'dragover'].forEach(evt => drop.addEventListener(evt, function(e) {
+        e.preventDefault(); drop.classList.add('is-dragover');
+    }));
+    ['dragleave', 'drop'].forEach(evt => drop.addEventListener(evt, function(e) {
+        e.preventDefault();
+        if (evt === 'dragleave' && drop.contains(e.relatedTarget)) return;
+        drop.classList.remove('is-dragover');
+    }));
+    drop.addEventListener('drop', e => addFiles(e.dataTransfer && e.dataTransfer.files));
+    document.getElementById('structureClearAll').addEventListener('click', function() {
+        pending.forEach(p => URL.revokeObjectURL(p.url));
+        pending = [];
+        syncInput();
+        renderPending();
+    });
+
+    // ---- paste ----
+    // Clicking/focusing this section makes it the paste target; the Product
+    // Image field claims it back when used (see _image_capture.html).
+    root.addEventListener('pointerdown', () => { window.__productPasteTarget = 'structure'; });
+    root.addEventListener('focusin', () => { window.__productPasteTarget = 'structure'; });
+    document.addEventListener('paste', function(e) {
+        if (e.defaultPrevented) return;
+        const files = Array.from((e.clipboardData && e.clipboardData.files) || []);
+        if (!files.length) return;
+        // Not targeted here: only take what the image field can't (non-images).
+        const take = window.__productPasteTarget === 'structure' ? files : files.filter(f => !(f.type || '').startsWith('image/'));
+        if (!take.length) return;
+        e.preventDefault();
+        const stamp = Date.now();
+        addFiles(take.map(function(f, i) {
+            // Pasted screenshots all arrive as "image.png" - give them unique names.
+            if (/^image\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name)) {
+                return new File([f], `pasted_${stamp}_${i + 1}.${f.name.split('.').pop()}`, { type: f.type });
+            }
+            return f;
+        }));
+        drop.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+
+    // ---- existing files (edit page) ----
+    document.querySelectorAll('#structureExistingGrid .st-card').forEach(function(card) {
+        const thumb = card.querySelector('.st-thumb');
+        const slot = card.querySelector('.st-icon-slot');
+        if (slot) slot.outerHTML = UI.icon(slot.dataset.iconFor);
+        thumb.addEventListener('click', () => UI.open({ name: thumb.dataset.name, url: thumb.dataset.url, downloadUrl: thumb.dataset.download }));
+        card.querySelector('.st-remove-existing').addEventListener('click', function() {
+            const id = card.dataset.id;
+            const removed = card.classList.toggle('is-removed');
+            this.innerHTML = removed ? '<i class="fas fa-rotate-left"></i>' : '<i class="fas fa-trash-can"></i>';
+            this.title = removed ? 'Undo remove' : 'Remove';
+            this.classList.toggle('btn-outline-danger', !removed);
+            this.classList.toggle('btn-outline-success', removed);
+            const existing = deleteInputs.querySelector(`input[value="${id}"]`);
+            if (removed && !existing) {
+                deleteInputs.insertAdjacentHTML('beforeend', `<input type="hidden" name="delete_structure_ids" value="${id}">`);
+            } else if (!removed && existing) {
+                existing.remove();
+            }
+        });
+    });
+
+    // ---- size guard: the server rejects a request bigger than MAX_CONTENT_LENGTH ----
+    const form = root.closest('form');
+    if (form && maxBytes) {
+        form.addEventListener('submit', function(e) {
+            let total = 0;
+            form.querySelectorAll('input[type="file"]').forEach(inp => Array.from(inp.files || []).forEach(f => total += f.size));
+            if (total > maxBytes - 256 * 1024) {
+                e.preventDefault();
+                showError(`Selected files total ${UI.formatSize(total)} - the upload limit per save is ${UI.formatSize(maxBytes)}. Remove some files and save, then add the rest from Edit.`);
+                drop.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        });
+    }
+})();
+</script>
