@@ -204,9 +204,18 @@ def generate_pdf(data, title, headers, company_info=None):
     hdr_style = ParagraphStyle(name='Hdr', parent=styles['Normal'], fontSize=11, fontName='Helvetica-Bold', alignment=1, textColor=colors.whitesmoke)
     cell_style = ParagraphStyle(name='Cell', parent=styles['Normal'], fontSize=9, alignment=1)
     
+    # A single table row can't span pages, so cap very long cell text (e.g. a
+    # long "Invoices Used" list) to keep every row shorter than one page.
+    max_cell_chars = 300
+    def _cell(value):
+        text = str(value)
+        if len(text) > max_cell_chars:
+            text = text[:max_cell_chars].rstrip(', ') + ' …'
+        return Paragraph(text, cell_style)
+
     table_data = [[Paragraph(str(h), hdr_style) for h in headers]]
     for row in data:
-        table_data.append([Paragraph(str(row.get(h, '')), cell_style) for h in headers])
+        table_data.append([_cell(row.get(h, '')) for h in headers])
     
     # Create Table
     # Use variable column widths based on number of headers

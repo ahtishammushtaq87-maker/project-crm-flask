@@ -1010,7 +1010,7 @@ def get_product(id):
         'cost_price': product.cost_price,
         'quantity': product.quantity,
         'reorder_level': product.reorder_level,
-        'category': product.category
+        'category': product.category.name if product.category else product.category_name
     })
 
 @bp.route('/product/<int:id>/full-history')

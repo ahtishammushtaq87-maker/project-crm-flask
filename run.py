@@ -377,7 +377,7 @@ def health_check():
     from flask import jsonify
     try:
         # Test database connection
-        db.session.execute('SELECT 1')
+        db.session.execute(text('SELECT 1'))
         return jsonify({
             'status': 'healthy',
             'database': 'connected',

@@ -1845,8 +1845,8 @@ class Payment(db.Model):
     date = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     amount = db.Column(db.Float, nullable=False)
     method = db.Column(db.String(50))
-    invoice_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=True)
-    expense_id = db.Column(db.Integer, db.ForeignKey('expenses.id'), nullable=True)
+    invoice_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=True, index=True)
+    expense_id = db.Column(db.Integer, db.ForeignKey('expenses.id'), nullable=True, index=True)
     reference_number = db.Column(db.String(100))
     notes = db.Column(db.Text)
     image_path = db.Column(db.String(255))  # Path to uploaded payment receipt/bill image
@@ -2190,7 +2190,7 @@ class Expense(db.Model):
     bill_image_path = db.Column(db.String(255))  # Path to bill image
     notes = db.Column(db.Text)
     is_bom_overhead = db.Column(db.Boolean, default=False)
-    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True, index=True)
     bom_id = db.Column(db.Integer, db.ForeignKey('boms.id'), nullable=True)
     mo_id = db.Column(db.Integer, db.ForeignKey('manufacturing_orders.id'), nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
@@ -2657,14 +2657,14 @@ class Task(db.Model):
     reminder_at = db.Column(db.DateTime, nullable=True) # When to show the alarm
     is_notification_shown = db.Column(db.Boolean, default=False) # To avoid duplicate alarms
     is_email_sent = db.Column(db.Boolean, default=False) # To avoid duplicate emails
-    assigned_to_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    created_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    assigned_to_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # New fields: task group label and linked overdue invoice
     task_group_name = db.Column(db.String(100), nullable=True)  # Free-text group label
-    linked_invoice_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=True)  # Linked overdue invoice
+    linked_invoice_id = db.Column(db.Integer, db.ForeignKey('sales.id'), nullable=True, index=True)  # Linked overdue invoice
     linked_invoice = db.relationship('Sale', foreign_keys=[linked_invoice_id], backref='linked_tasks', lazy=True)
 
     # Recovery reminder support: ties this Task back to the RecoveryTask it was
@@ -4938,7 +4938,7 @@ class RecoveryLog(db.Model):
     promise_date = db.Column(db.Date, nullable=True)
     next_follow_up_date = db.Column(db.Date, nullable=True)
 
-    logged_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    logged_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     # Set when this log entry came from a scheduled "Send Reminder" popup alarm;

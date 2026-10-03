@@ -129,7 +129,7 @@
                             </td>
                             <td>
                                 {% if log.product %}
-                                {% set bom = log.product.boms|selectattr('is_active', true)|first %}
+                                {% set bom = log.product.boms|selectattr('is_active')|first %}
                                 {% if bom %}
                                 PKR {{ bom.total_cost|round(2) }}
                                 {% else %}
@@ -141,7 +141,7 @@
                             </td>
                             <td>
                                 {% if log.product %}
-                                {% set bom = log.product.boms|selectattr('is_active', true)|first %}
+                                {% set bom = log.product.boms|selectattr('is_active')|first %}
                                 {% if bom %}
                                 PKR {{ bom.overhead_cost|round(2) }}
                                 {% else %}

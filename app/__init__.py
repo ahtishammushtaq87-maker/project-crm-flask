@@ -19,8 +19,11 @@ def create_app(config_class=Config):
     app.config['PROPAGATE_EXCEPTIONS'] = False
     app.config['TRAP_HTTP_EXCEPTIONS'] = False
     
-    # Disable Jinja2 template caching to ensure fresh renders (development)
-    app.jinja_env.cache = None
+    # Keep Jinja2's compiled-template cache on (disabling it recompiled every
+    # template, incl. the 200KB base.html, on every request). Auto-reload still
+    # picks up edited template files, so changes show without a restart.
+    app.config['TEMPLATES_AUTO_RELOAD'] = True
+    app.jinja_env.auto_reload = True
     
     db.init_app(app)
     
@@ -317,6 +320,11 @@ def create_app(config_class=Config):
             def set_sqlite_pragma(dbapi_connection, connection_record):
                 cursor = dbapi_connection.cursor()
                 cursor.execute("PRAGMA foreign_keys=ON")
+                # WAL lets page reads proceed while a background job writes,
+                # instead of every reader waiting on the write lock.
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA synchronous=NORMAL")
+                cursor.execute("PRAGMA busy_timeout=5000")
                 cursor.close()
             
     login_manager.init_app(app)

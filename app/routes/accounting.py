@@ -1345,8 +1345,7 @@ def profit_loss():
     
     # Calculate Daily Payroll (same as Dashboard)
     from calendar import monthrange
-    from datetime import timedelta
-    
+
     attendance_records_by_date = {}
     attendance_records = Attendance.query.filter(
         Attendance.date >= start_datetime.date(),

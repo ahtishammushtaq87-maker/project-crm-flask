@@ -362,34 +362,12 @@ def add_log():
             log.notes = notes
         
         try:
+            # A manual log is a record only. Finished-goods stock is added when
+            # a Manufacturing Order is completed, so changing stock here too
+            # would count the same production twice.
             db.session.commit()
-            
-            # Update stock: add production qty to finished good
-            production_product = Product.query.get(sku_id)
-            if production_product:
-                # Add to inventory
-                from app.models import StockMovement
-                production_product.quantity += qty_produced
-                
-                # Log movement
-                move = StockMovement(
-                    product_id=production_product.id,
-                    quantity=qty_produced,
-                    movement_type='in',
-                    reference_type='production_log',
-                    reference_id=log.id,
-                    notes=f"Production log: {shift} - {operator}"
-                )
-                db.session.add(move)
-                
-                # Sync cost price as well
-                active_bom = BOM.query.filter_by(product_id=production_product.id, is_active=True).first()
-                if active_bom:
-                    production_product.cost_price = active_bom.total_cost
-                
-            db.session.commit()
-            log_activity('Production', f'{"Updated" if log_id else "Created"} Production Log', f'Product ID: {sku_id}, Qty: {produced_qty}')
-            flash('Production log saved and inventory updated.', 'success')
+            log_activity('Production', f'{"Updated" if log_id else "Created"} Production Log', f'Product ID: {sku_id}, Qty: {qty_produced}')
+            flash('Production log saved.', 'success')
             return redirect(url_for('production.logs'))
         except Exception as e:
             db.session.rollback()

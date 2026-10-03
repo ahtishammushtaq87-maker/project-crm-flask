@@ -1636,8 +1636,11 @@ def download_report(format, report_type):
             } for b in boms]
 
     elif report_type == 'bom_detail':
-        bom_id = request.args.get('bom_id')
-        bom = BOM.query.get_or_404(int(bom_id))
+        bom_id = request.args.get('bom_id', type=int)
+        if not bom_id:
+            flash('Please select a BOM first.', 'warning')
+            return redirect(url_for('reports.bom_report'))
+        bom = BOM.query.get_or_404(bom_id)
         title = f"BOM Details: {bom.name}"
         headers = ['BOM Name', 'Finished Good', 'Component Name', 'Item Code', 'Qty', 'Unit Cost', 'Total Cost']
         data = [{
