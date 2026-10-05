@@ -119,8 +119,14 @@
                     </div>
                     <div class="col-md-6">
                         <label for="sku" class="form-label"><i class="fas fa-barcode"></i>SKU / Item Code</label>
-                        {{ form.sku(class="form-control" + (" is-invalid" if form.sku.errors else ""), placeholder="e.g. PRD-001") }}
-                        {% for error in form.sku.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+                        <div class="input-group">
+                            {{ form.sku(class="form-control" + (" is-invalid" if form.sku.errors else ""), placeholder="e.g. PRD-001", id="sku") }}
+                            <button type="button" class="btn btn-outline-primary" id="generate_sku_btn" title="Generate the next SKU from the selected category's SKU structure">
+                                <i class="fas fa-magic"></i> Generate
+                            </button>
+                            {% for error in form.sku.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+                        </div>
+                        <small class="text-muted" id="sku_hint">You can edit the SKU, or click Generate to take the next SKU from the category's structure.</small>
                     </div>
                 </div>
                 </div>
@@ -346,6 +352,28 @@ document.addEventListener('DOMContentLoaded', function() {
             placeholder: $(this).data('placeholder') || null,
             allowClear: false
         });
+    });
+
+    // Generate SKU from the selected category's SKU structure (this item's
+    // own current SKU is ignored, so re-generating does not skip a number).
+    document.getElementById('generate_sku_btn').addEventListener('click', function() {
+        const catId = document.getElementById('category_id').value;
+        const skuHint = document.getElementById('sku_hint');
+        if (!catId || catId === '0') {
+            skuHint.textContent = 'Select a category first.';
+            return;
+        }
+        fetch("{{ url_for('categories.api_category_next_sku', id=0) }}".replace('/0/', '/' + catId + '/') + '?exclude={{ product.id }}')
+            .then(r => r.json())
+            .then(data => {
+                if (!data.sku) {
+                    skuHint.textContent = 'This category has no SKU structure - enter the SKU manually.';
+                    return;
+                }
+                document.getElementById('sku').value = data.sku;
+                skuHint.textContent = 'Generated from category structure ' + data.sku_prefix + '. Click Update to save it.';
+            })
+            .catch(() => {});
     });
 
     // Cost by Warehouse: keep each row's stock value in step with its cost

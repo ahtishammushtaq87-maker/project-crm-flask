@@ -828,6 +828,9 @@ class ProductCategory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False, unique=True, index=True)
     description = db.Column(db.Text)
+    # SKU structure: items in this category get SKUs of the form
+    # <sku_prefix><3-digit running number>, e.g. prefix 1010 -> 1010001, 1010002...
+    sku_prefix = db.Column(db.String(20), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
     # Universal approval fields
     is_approved = db.Column(db.Boolean, default=False)
@@ -837,7 +840,29 @@ class ProductCategory(db.Model):
     approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
+    def next_sku(self, exclude_product_id=None):
+        """Next free SKU under this category's prefix: the highest existing
+        <prefix><digits> SKU + 1 (padded to at least 3 digits), or <prefix>001
+        when none exist yet. Returns None if the category has no prefix."""
+        prefix = (self.sku_prefix or '').strip()
+        if not prefix:
+            return None
+        query = Product.query.with_entities(Product.sku).filter(Product.sku.like(f'{prefix}%'))
+        if exclude_product_id:
+            query = query.filter(Product.id != exclude_product_id)
+        highest, width = 0, 3
+        for (sku,) in query.all():
+            suffix = (sku or '')[len(prefix):]
+            if suffix.isdigit():
+                highest = max(highest, int(suffix))
+                width = max(width, len(suffix))
+        candidate = highest + 1
+        # Guard against a collision with any other item's SKU
+        while query.filter(Product.sku == f'{prefix}{candidate:0{width}d}').first():
+            candidate += 1
+        return f'{prefix}{candidate:0{width}d}'
+
     def __repr__(self):
         return f'<ProductCategory {self.name}>'
 
@@ -1952,13 +1977,11 @@ class ExpenseCategory(db.Model):
         category with every flag off) means a plain expense with none of
         these special options shown.
 
-        Options are configured on parent (main) categories only - a
-        sub-category always inherits its parent's flags, so picking the
-        parent on Add/Edit Expense is enough to open the allowed options,
-        and any sub-category under it gets exactly the same ones."""
-        if self.parent_id and self.parent is not None:
-            return self.parent.option_flags
-        return {
+        A sub-category gets its parent's options PLUS any it enables
+        itself - so options can be set once on the parent for the whole
+        group, or per sub-category (e.g. a bulk-upload sheet whose parents
+        are all "No" and each sub-category carries its own flags)."""
+        own = {
             'invoice': bool(self.allow_invoice_payment),
             'purchase': bool(self.allow_purchase_payment),
             'shift': bool(self.allow_inventory_shift),
@@ -1966,6 +1989,10 @@ class ExpenseCategory(db.Model):
             'monthly': bool(self.allow_monthly_divided),
             'pd': bool(self.allow_pd_shift),
         }
+        if self.parent_id and self.parent is not None:
+            parent_flags = self.parent.option_flags
+            return {k: own[k] or parent_flags[k] for k in own}
+        return own
 
     def __repr__(self):
         return f'<ExpenseCategory {self.name}>'
@@ -5505,3 +5532,28 @@ class PackingSlip(db.Model):
 
     def __repr__(self):
         return f'<PackingSlip {self.slip_number}>'
+
+
+# ── Auto-approve categories created by an admin ───────────────────────────────
+# Runs on every insert, so it covers each way a category is created (Add
+# Category, quick-add from the expense form, bulk upload, auto-created during
+# expense import). Staff-created categories still start Pending.
+from sqlalchemy import event as _sa_event
+
+
+def _auto_approve_category_if_admin(mapper, connection, target):
+    from flask import has_request_context
+    from flask_login import current_user
+    if not has_request_context():
+        return
+    if not (getattr(current_user, 'is_authenticated', False) and getattr(current_user, 'is_admin', False)):
+        return
+    if target.is_approved or target.is_rejected or getattr(target, 'is_draft', False):
+        return
+    target.is_approved = True
+    target.approved_by = current_user.id
+    target.approved_at = datetime.utcnow()
+
+
+for _category_model in (ExpenseCategory, ProductCategory):
+    _sa_event.listen(_category_model, 'before_insert', _auto_approve_category_if_admin)

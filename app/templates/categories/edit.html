@@ -26,6 +26,12 @@
                 </div>
 
                 <div class="mb-3">
+                    <label for="sku_prefix" class="form-label">SKU Structure</label>
+                    <input type="text" class="form-control" name="sku_prefix" id="sku_prefix" maxlength="20" placeholder="e.g. 1010" value="{{ category.sku_prefix or '' }}">
+                    <small class="text-muted">Items in this category get SKUs generated automatically from this structure, e.g. 1010 &rarr; 1010001, 1010002, 1010003...</small>
+                </div>
+
+                <div class="mb-3">
                     <label for="description" class="form-label">Description</label>
                     <textarea class="form-control" name="description" rows="3" placeholder="Category description...">{{ category.description or '' }}</textarea>
                 </div>

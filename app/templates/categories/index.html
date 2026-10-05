@@ -36,6 +36,7 @@
                     <thead>
                         <tr>
                             <th>Name</th>
+                            <th>SKU Structure</th>
                             <th>Description</th>
                             <th>Products</th>
                             <th>Status</th>
@@ -47,6 +48,7 @@
                         {% for category in categories %}
                         <tr>
                             <td><strong>{{ category.name }}</strong></td>
+                            <td>{% if category.sku_prefix %}<code>{{ category.sku_prefix }}</code>{% else %}-{% endif %}</td>
                             <td>{{ category.description or '-' }}</td>
                             <td>
                                 <span class="badge bg-info">{{ category.products|length }} products</span>

@@ -780,6 +780,19 @@ class ApprovalService:
         expense.status = cls._STATUS_STRING_MAP.get(universal_status, expense.status)
         cls._sync_linked_expense_txn(expense)
 
+    @classmethod
+    def _post_status_change_expense_category(cls, category, universal_status):
+        """Setting a parent Expense Category to Draft also puts every one of
+        its sub-categories into Draft, so none of them stays selectable in
+        the Expense module while their parent is held back."""
+        if universal_status != 'draft':
+            return
+        for sub in category.subcategories:
+            sub.is_draft = True
+            sub.is_approved = False
+            sub.is_rejected = False
+            sub.rejection_reason = None
+
     # ── Post-approve hooks ──────────────────────────────────────────────────────
 
     @classmethod

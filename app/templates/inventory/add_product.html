@@ -118,7 +118,8 @@
                         </div>
                         <div class="col-md-6">
                             <label for="sku" class="form-label"><i class="fas fa-barcode"></i>SKU / Item Code *</label>
-                            <input type="text" class="form-control" name="sku" placeholder="e.g. PRD-001" required>
+                            <input type="text" class="form-control" name="sku" id="sku" placeholder="e.g. PRD-001" required>
+                            <small class="text-muted" id="sku_hint">Select a category with an SKU structure to generate the SKU automatically.</small>
                         </div>
                     </div>
                 </div>
@@ -273,6 +274,37 @@ document.addEventListener('DOMContentLoaded', function() {
             placeholder: $(this).data('placeholder') || null,
             allowClear: false
         });
+    });
+
+    // Auto SKU: when a category with an SKU structure is chosen, fill the
+    // SKU with that category's next number (e.g. 1010 -> 1010001). The field
+    // stays editable; a value the user typed themselves is never overwritten.
+    const skuInput = document.getElementById('sku');
+    const skuHint = document.getElementById('sku_hint');
+    let lastAutoSku = '';
+    $('#category_id').on('change', function() {
+        const catId = this.value;
+        const userTyped = skuInput.value.trim() !== '' && skuInput.value !== lastAutoSku;
+        if (!catId || catId === '0') {
+            if (!userTyped) { skuInput.value = ''; lastAutoSku = ''; }
+            skuHint.textContent = 'Select a category with an SKU structure to generate the SKU automatically.';
+            return;
+        }
+        fetch("{{ url_for('categories.api_category_next_sku', id=0) }}".replace('/0/', '/' + catId + '/'))
+            .then(r => r.json())
+            .then(data => {
+                if (!data.sku) {
+                    if (!userTyped) { skuInput.value = ''; lastAutoSku = ''; }
+                    skuHint.textContent = 'This category has no SKU structure - enter the SKU manually.';
+                    return;
+                }
+                if (!userTyped) {
+                    skuInput.value = data.sku;
+                    lastAutoSku = data.sku;
+                }
+                skuHint.textContent = 'Auto SKU from category structure ' + data.sku_prefix + ': ' + data.sku + ' (you can edit it).';
+            })
+            .catch(() => {});
     });
 
     const isManufacturedCheckbox = document.getElementById('is_manufactured');

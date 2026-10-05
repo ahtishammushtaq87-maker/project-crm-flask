@@ -220,7 +220,20 @@ def add_product():
         category_id = request.form.get('category_id')
         is_manufactured = 'is_manufactured' in request.form
         finished_good_price = request.form.get('finished_good_price')
-        
+
+        # Auto SKU from the category's SKU structure (e.g. 1010 -> 1010001).
+        # Blank SKU -> generate; an auto SKU taken by someone else meanwhile
+        # -> move on to the next free number instead of rejecting the form.
+        sku = (sku or '').strip()
+        category = ProductCategory.query.get(int(category_id)) if category_id and category_id.isdigit() and category_id != '0' else None
+        if category and category.sku_prefix:
+            if not sku:
+                sku = category.next_sku()
+            elif sku.startswith(category.sku_prefix) and Product.query.filter_by(sku=sku).first():
+                new_sku = category.next_sku()
+                flash(f'SKU "{sku}" was just taken, so this item was given SKU "{new_sku}".', 'info')
+                sku = new_sku
+
         # Validate required fields
         if name and sku and unit_price is not None:
             # Check if SKU already exists

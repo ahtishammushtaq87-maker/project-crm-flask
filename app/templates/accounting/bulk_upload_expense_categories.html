@@ -19,28 +19,28 @@
             <div class="alert alert-info">
                 <h5><i class="fas fa-info-circle"></i> Instructions</h5>
                 <ul class="mb-0">
-                    <li>Download the sample sheet below first - it already shows exactly how to fill it in, with a
-                        second tab ("Read Me First") explaining every column.</li>
-                    <li>Only <strong>name</strong> is required. Every other column is optional.</li>
-                    <li>Leave <strong>parent_name</strong> blank to create a main category. To create a
-                        sub-category, put the exact name of an existing main category in
-                        <strong>parent_name</strong> - add that main category as its own row too (it doesn't
-                        matter which row comes first). If you forget to add the parent as its own row, it's
-                        automatically created for you (name only) so the sub-categories still attach correctly -
-                        the result page lists any parent that had to be auto-created this way, so you can go back
-                        and fill in its description/options afterward.</li>
-                    <li>The five <code>allow_*</code> columns just take <strong>Yes</strong> or <strong>No</strong> -
-                        they control which special options (Invoice/Purchase Payment, Inventory Shift, BOM
-                        Overhead, Monthly Division) are offered on Add/Edit Expense when that category is picked.</li>
-                    <li>Category names must be unique. A row whose name already exists (in the system, or repeated
-                        earlier in the same sheet) <strong>updates that existing category's description and
-                        allow_* options</strong> instead of creating a duplicate - it is never added twice. A brand
-                        new name creates a new category as usual. The result page lists exactly which rows were
-                        added, which were updated, and which had an error.</li>
-                    <li>A duplicate row's <strong>parent_name is not applied</strong> on update - moving a category
-                        between main/sub-category is a structural change this upload deliberately doesn't make
-                        silently; use Edit Category for that instead. If a duplicate row's parent_name doesn't match
-                        where the category already lives, the result page flags it so you know to fix it by hand.</li>
+                    <li>Download the sample sheet below first - it shows exactly how to fill it in (tab
+                        <strong>"Bulk Upload"</strong>), with a second tab ("Read Me First") explaining every column.
+                        If your workbook has other tabs too, the <strong>"Bulk Upload"</strong> tab is the one read.</li>
+                    <li>Columns: <code>name</code>, <code>parent_name</code>, <code>description</code>,
+                        <code>allow_invoice_payment</code>, <code>allow_purchase_payment</code>,
+                        <code>allow_inventory_shift</code>, <code>allow_bom_overhead</code>,
+                        <code>allow_monthly_divided</code>, <code>allow_pd_shift</code>.
+                        Only <strong>name</strong> is required; a column left out of the sheet is left unchanged
+                        on existing categories.</li>
+                    <li>Leave <strong>parent_name</strong> blank for a main (parent) category. For a sub-category,
+                        put its parent's exact name in <strong>parent_name</strong> and add the parent as its own row
+                        too (row order doesn't matter). A parent that's only referenced, never given its own row, is
+                        auto-created (name only) and listed on the result page.</li>
+                    <li>The <code>allow_*</code> columns take <strong>Yes</strong> or <strong>No</strong>. They can be
+                        set on the parent (applies to all its sub-categories) and/or on each sub-category - a
+                        sub-category gets its parent's options <strong>plus</strong> its own.</li>
+                    <li><strong>No duplicates:</strong> names are matched ignoring upper/lower case and extra spaces.
+                        A name that already exists <strong>updates</strong> that category (description, options, and
+                        it is moved under the <strong>parent_name</strong> in the sheet) instead of being added
+                        again. A name repeated within the sheet is applied once and the repeat is reported.</li>
+                    <li>The result page shows a count for every row - added, updated, moved and errors - so you can
+                        confirm nothing was missed.</li>
                 </ul>
             </div>
 
@@ -50,6 +50,17 @@
                 <div class="mb-3">
                     <label for="file" class="form-label">Select Excel File</label>
                     <input type="file" name="file" class="form-control" accept=".xlsx,.xls" required>
+                </div>
+
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" name="undraft" value="1" id="undraft" checked>
+                    <label class="form-check-label" for="undraft">
+                        Take the uploaded categories out of <strong>Draft</strong>
+                    </label>
+                    <div class="form-text mt-0">A Draft category is hidden from Add/Edit Expense. When ticked, every
+                        category in the sheet that is currently in Draft is taken out of Draft so it can be used.
+                        {% if current_user.is_admin %}As an admin, every category in your upload is
+                        <strong>Approved</strong> automatically.{% else %}It then waits for admin approval.{% endif %}</div>
                 </div>
 
                 <button type="submit" class="btn btn-primary">

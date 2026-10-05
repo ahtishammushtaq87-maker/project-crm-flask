@@ -19,7 +19,7 @@
                 <div class="card-body">
                     {% if category_type == 'sub' and not main_categories %}
                     <div class="alert alert-warning mb-0">
-                        <i class="bi bi-exclamation-triangle me-1"></i> There are no parent categories yet.
+                        <i class="bi bi-exclamation-triangle me-1"></i> There are no parent categories available yet (parent categories in Draft are not listed).
                         <a href="{{ url_for('accounting.add_expense_category', type='main') }}" class="alert-link">Add a Parent Category first</a>,
                         then come back to add a sub-category under it.
                     </div>
@@ -50,14 +50,12 @@
                         </div>
 
                         <hr class="my-4">
-                        {% if category_type == 'sub' %}
-                        <div class="alert alert-info small mb-3">
-                            <i class="bi bi-info-circle me-1"></i> Allowed Options on Add/Edit Expense are set on the
-                            <strong>Parent Category</strong>. This sub-category automatically uses the same options as its parent.
-                        </div>
-                        {% else %}
                         <h6 class="fw-bold mb-2"><i class="bi bi-toggles me-1"></i> Allowed Options on Add/Edit Expense</h6>
-                        <p class="text-muted small mb-3">When this parent category is picked on an expense, only the options checked here are offered. All of its sub-categories use the same options. Leave all unchecked for a plain expense with no special options.</p>
+                        {% if category_type == 'sub' %}
+                        <p class="text-muted small mb-3">This sub-category always gets its <strong>parent's</strong> options, plus any you check here.</p>
+                        {% else %}
+                        <p class="text-muted small mb-3">When this parent category is picked on an expense, only the options checked here are offered. All of its sub-categories get these options too (and can add their own). Leave all unchecked for a plain expense with no special options.</p>
+                        {% endif %}
                         <div class="row g-2 mb-3">
                             <div class="col-md-6">
                                 <div class="form-check border rounded p-2">
@@ -102,7 +100,6 @@
                                 </div>
                             </div>
                         </div>
-                        {% endif %}
 
                         <button type="submit" class="btn btn-success">Save Category</button>
                         <a href="{{ url_for('accounting.expense_categories') }}" class="btn btn-secondary">Cancel</a>
@@ -113,4 +110,17 @@
         </div>
     </div>
 </div>
+{% if category_type == 'sub' %}
+<script>
+    // Searchable Parent Category dropdown (Select2 is loaded in base.html).
+    document.addEventListener('DOMContentLoaded', function () {
+        if (!window.jQuery || !$.fn.select2) return;
+        $('#parent_id').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: '— Search or select parent category —'
+        });
+    });
+</script>
+{% endif %}
 {% endblock %}

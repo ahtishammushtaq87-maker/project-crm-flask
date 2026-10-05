@@ -7,6 +7,23 @@ from app.models import ProductCategory
 bp = Blueprint('categories', __name__)
 
 
+def _clean_sku_prefix(raw, exclude_id=None):
+    """Normalise the SKU structure entered on the category form.
+    Returns (prefix_or_None, error_message_or_None)."""
+    prefix = (raw or '').strip().upper()
+    if not prefix:
+        return None, None
+    if not prefix.isalnum():
+        return None, 'SKU structure may only contain letters and numbers (e.g. 1010).'
+    query = ProductCategory.query.filter(ProductCategory.sku_prefix == prefix)
+    if exclude_id:
+        query = query.filter(ProductCategory.id != exclude_id)
+    clash = query.first()
+    if clash:
+        return None, f'SKU structure "{prefix}" is already assigned to category "{clash.name}".'
+    return prefix, None
+
+
 @bp.route('/categories')
 @login_required
 def categories():
@@ -36,10 +53,16 @@ def create_category():
         if existing:
             flash(f'Category "{name}" already exists.', 'error')
             return redirect(url_for('categories.create_category'))
+
+        sku_prefix, prefix_error = _clean_sku_prefix(request.form.get('sku_prefix'))
+        if prefix_error:
+            flash(prefix_error, 'error')
+            return redirect(url_for('categories.create_category'))
         
         category = ProductCategory(
             name=name,
-            description=description
+            description=description,
+            sku_prefix=sku_prefix
         )
         
         try:
@@ -76,9 +99,15 @@ def edit_category(id):
         if existing:
             flash(f'Category "{name}" already exists.', 'error')
             return redirect(url_for('categories.edit_category', id=id))
+
+        sku_prefix, prefix_error = _clean_sku_prefix(request.form.get('sku_prefix'), exclude_id=id)
+        if prefix_error:
+            flash(prefix_error, 'error')
+            return redirect(url_for('categories.edit_category', id=id))
         
         category.name = name
         category.description = description
+        category.sku_prefix = sku_prefix
         
         try:
             db.session.commit()
@@ -120,7 +149,7 @@ def delete_category(id):
 @login_required
 def api_categories():
     categories = ProductCategory.query.filter_by(is_active=True).order_by(ProductCategory.name).all()
-    return jsonify([{'id': c.id, 'name': c.name} for c in categories])
+    return jsonify([{'id': c.id, 'name': c.name, 'sku_prefix': c.sku_prefix} for c in categories])
 
 
 @bp.route('/api/category/<int:id>')
@@ -131,5 +160,19 @@ def api_category(id):
         'id': category.id,
         'name': category.name,
         'description': category.description,
+        'sku_prefix': category.sku_prefix,
         'is_active': category.is_active
+    })
+
+
+@bp.route('/api/category/<int:id>/next-sku')
+@login_required
+def api_category_next_sku(id):
+    """Next auto SKU for an item in this category (used by Item create/edit).
+    ?exclude=<product_id> ignores that item's own SKU when editing it."""
+    category = ProductCategory.query.get_or_404(id)
+    exclude = request.args.get('exclude', type=int)
+    return jsonify({
+        'sku_prefix': category.sku_prefix,
+        'sku': category.next_sku(exclude_product_id=exclude)
     })

@@ -133,7 +133,7 @@
                 <table class="table table-hover align-middle">
                     <thead>
                         <tr>
-                            {% if current_user.has_permission('accounting', 'delete') %}
+                            {% if current_user.has_permission('accounting', 'delete') or current_user.is_admin %}
                             <th style="width: 40px;" class="text-center no-export">
                                 <input type="checkbox" id="selectAll" class="form-check-input">
                             </th>
@@ -154,11 +154,11 @@
                             data-id="{{ category.id }}"
                             {% if is_nested_child %}data-parent="{{ category.parent_id }}"{% endif %}
                             data-name="{{ category.name|lower }}">
-                            {% if current_user.has_permission('accounting', 'delete') %}
+                            {% if current_user.has_permission('accounting', 'delete') or current_user.is_admin %}
                             <td class="text-center no-export">
-                                {% if not category.expenses and not category.subcategories %}
+                                {# Every category (parents included) can be selected for Bulk Status;
+                                   Delete Selected skips ones that have expenses or sub-categories. #}
                                 <input type="checkbox" class="form-check-input category-checkbox" value="{{ category.id }}">
-                                {% endif %}
                             </td>
                             {% endif %}
                             <td class="category-name-cell">
@@ -190,7 +190,7 @@
                             <td>
                                 {% set opts = category.option_flags %}
                                 {% if category.parent_id %}
-                                <span class="d-block text-muted small mb-1"><i class="fas fa-level-up-alt me-1"></i>Inherited from parent</span>
+                                <span class="d-block text-muted small mb-1"><i class="fas fa-level-up-alt me-1"></i>Parent's options + its own</span>
                                 {% endif %}
                                 <span class="badge option-badge {{ 'on' if opts.invoice else 'off' }}" title="Add to Invoice Payment">Invoice</span>
                                 <span class="badge option-badge {{ 'on' if opts.purchase else 'off' }}" title="Add to Purchase Payment">Purchase</span>
@@ -234,7 +234,7 @@
                         {% endfor %}
                         {% if not categories %}
                         <tr>
-                            <td colspan="{{ 7 if current_user.has_permission('accounting', 'delete') else 6 }}" class="text-center text-muted py-4">
+                            <td colspan="{{ 7 if current_user.has_permission('accounting', 'delete') or current_user.is_admin else 6 }}" class="text-center text-muted py-4">
                                 {% if view == 'draft' %}No draft categories. Use "Set to Draft" from a category's Approval menu to park it here.{% else %}No expense categories yet.{% endif %}
                             </td>
                         </tr>
