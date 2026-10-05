@@ -262,7 +262,8 @@ def adjustment_list():
     except Exception:
         pass  # the scheduler will retry; never block the page on this
 
-    query = SalaryAdjustment.query
+    # status='deleted' rows are tombstones for deleted auto bonuses - never shown.
+    query = SalaryAdjustment.query.filter(SalaryAdjustment.status != 'deleted')
     staff_id = request.args.get('staff_id', type=int)
     status = request.args.get('status', '')
     adj_type = request.args.get('type', '')
@@ -276,7 +277,8 @@ def adjustment_list():
 
     recurring_count = SalaryAdjustment.query.filter_by(is_recurring=True, adjustment_type='allowance', status='approved').count()
     one_time_bonus_total = sum(
-        a.amount for a in SalaryAdjustment.query.filter_by(adjustment_type='bonus', is_recurring=False).all()
+        a.amount for a in SalaryAdjustment.query.filter_by(adjustment_type='bonus', is_recurring=False)
+        .filter(SalaryAdjustment.status != 'deleted').all()
     )
     pending_deductions = SalaryAdjustment.query.filter_by(adjustment_type='deduction', status='pending').count()
     rejected_count = SalaryAdjustment.query.filter_by(status='rejected').count()
@@ -356,6 +358,30 @@ def reject_adjustment(id):
     db.session.commit()
     log_activity('HR', f'Adjustment rejected: {adj.staff.name}', f'PKR {adj.amount}')
     flash('Adjustment rejected.', 'info')
+    return redirect(url_for('hr.adjustment_list'))
+
+
+@bp.route('/adjustments/<int:id>/delete', methods=['POST'])
+@login_required
+@permission_required('hr', action='delete')
+def delete_adjustment(id):
+    adj = SalaryAdjustment.query.get_or_404(id)
+    if adj.is_applied:
+        flash(f'This adjustment is already part of Payment #{adj.salary_payment_id}. '
+              'Delete or edit that salary payment first.', 'warning')
+        return redirect(url_for('hr.adjustment_list'))
+
+    staff_name, amount = adj.staff.name, adj.amount
+    if adj.is_auto_attendance_bonus:
+        # Auto rows double as the job's "already awarded" marker (see
+        # app/services/attendance_bonus.py), so a hard delete would just be
+        # re-created on the next run. Keep the row as a hidden tombstone.
+        adj.status = 'deleted'
+    else:
+        db.session.delete(adj)
+    db.session.commit()
+    log_activity('HR', f'Adjustment deleted: {staff_name}', f'PKR {amount}')
+    flash('Adjustment deleted.', 'success')
     return redirect(url_for('hr.adjustment_list'))
 
 

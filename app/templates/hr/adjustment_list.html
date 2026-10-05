@@ -168,6 +168,12 @@
                             {% elif a.is_applied %}
                             <span class="text-muted small">Applied to Payment #{{ a.salary_payment_id }}</span>
                             {% endif %}
+                            {% if not a.is_applied and current_user.has_permission('hr', 'delete') %}
+                            <form method="POST" action="{{ url_for('hr.delete_adjustment', id=a.id) }}" class="d-inline"
+                                  onsubmit="return confirm('Delete this {{ 'auto ' if a.is_auto_attendance_bonus }}{{ a.adjustment_type }}? This cannot be undone.')">
+                                <button type="submit" class="btn btn-sm btn-danger" title="Delete"><i class="fas fa-trash"></i></button>
+                            </form>
+                            {% endif %}
                         </td>
                     </tr>
                     {% else %}
