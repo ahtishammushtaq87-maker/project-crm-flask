@@ -125,9 +125,11 @@
                                     <a href="{{ url_for('static', filename=doc.file_path) }}" target="_blank" class="btn btn-sm btn-outline-primary">
                                         <i class="fas fa-eye"></i> View
                                     </a>
-                                    <form method="POST" action="{{ url_for('salary.delete_staff_document', doc_id=doc.id) }}" onsubmit="return confirm('Remove document \'{{ doc.name }}\'?')">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
-                                    </form>
+                                    <!-- Submits the standalone delete form rendered after the main
+                                         form (via the form= attribute). A <form> nested in here would
+                                         be invalid HTML: its </form> closes the main Staff form early,
+                                         leaving the Save button outside it so Save did nothing. -->
+                                    <button type="submit" form="deleteDocForm{{ doc.id }}" class="btn btn-sm btn-outline-danger" title="Remove document"><i class="fas fa-trash"></i></button>
                                 </div>
                             </div>
                             {% endfor %}
@@ -152,6 +154,14 @@
                         </button>
                     </div>
                 </form>
+
+                {% if staff and staff.documents %}
+                {% for doc in staff.documents %}
+                <form id="deleteDocForm{{ doc.id }}" method="POST" action="{{ url_for('salary.delete_staff_document', doc_id=doc.id) }}" class="d-none" onsubmit="return confirm({{ ('Remove document \'' ~ doc.name ~ '\'?') | tojson | forceescape }})">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}">
+                </form>
+                {% endfor %}
+                {% endif %}
             </div>
             <div class="card-footer bg-white border-0 text-center py-3">
                 <a href="{{ url_for('salary.staff_list') }}" class="text-muted text-decoration-none small">
