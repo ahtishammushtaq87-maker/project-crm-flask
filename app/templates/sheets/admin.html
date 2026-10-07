@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block title %}Spreadsheet access{% endblock %}
+
+{% block extra_css %}
+<meta name="crm-sheet-csrf" content="{{ csrf_token_value }}">
+<meta name="crm-sheet-base" content="{{ url_for('sheets.index') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='sheets/css/sheets.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="crm-sheet-home" data-page="admin">
+    <div class="crm-sheet-homehead">
+        <h3><span class="crm-sheet-logo" aria-hidden="true"><i class="fas fa-user-shield"></i></span>Spreadsheet access</h3>
+        <div class="crm-sheet-search" role="search">
+            <i class="fas fa-magnifying-glass" aria-hidden="true"></i>
+            <input type="search" class="form-control" placeholder="Search spreadsheets or owners" aria-label="Search spreadsheets">
+        </div>
+        <div class="crm-sheet-homeactions">
+            <a class="btn btn-outline-secondary" href="{{ url_for('sheets.index') }}"><i class="fas fa-arrow-left me-1"></i>Spreadsheets</a>
+        </div>
+    </div>
+    <p class="text-muted small">As an administrator you can open every spreadsheet, add or remove people, change their permission and transfer ownership. Changes are recorded in each spreadsheet's version history and in the CRM Activity Log.</p>
+    <div class="form-check form-switch mb-2">
+        <input class="form-check-input" type="checkbox" id="crmShowDeleted" data-show-deleted>
+        <label class="form-check-label" for="crmShowDeleted">Show deleted spreadsheets</label>
+    </div>
+    <div class="bg-white border rounded-3 overflow-auto">
+        <table class="table table-hover align-middle mb-0 no-datatable">
+            <thead class="table-light"><tr><th>Spreadsheet</th><th>Owner</th><th>Access</th><th>Last modified</th><th>Created</th><th></th></tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='sheets/js/core.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='sheets/js/format.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='sheets/js/formula.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='sheets/js/dialogs.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='sheets/js/home.js') }}?v=1"></script>
+{% endblock %}

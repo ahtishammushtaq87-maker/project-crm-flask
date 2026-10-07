@@ -397,6 +397,10 @@ def create_app(config_class=Config):
     app.register_blueprint(recovery_bp, url_prefix='/recovery')
     app.register_blueprint(journal_bp, url_prefix='/journal')
     app.register_blueprint(backup_bp, url_prefix='/backup')
+
+    # Spreadsheet module (self-contained: app/sheets/, its own tables).
+    from app import sheets
+    sheets.init_app(app)
     
     @app.context_processor
     def inject_company():

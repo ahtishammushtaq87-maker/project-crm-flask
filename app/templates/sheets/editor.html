@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+{% block title %}{{ book.name }} - Spreadsheet{% endblock %}
+
+{% block extra_css %}
+<meta name="crm-sheet-csrf" content="{{ csrf_token_value }}">
+<meta name="crm-sheet-base" content="{{ url_for('sheets.index') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='sheets/css/sheets.css') }}">
+{% endblock %}
+
+{% macro tb(cmd, icon, label, extra='') -%}
+<button type="button" class="crm-sheet-tb" data-cmd="{{ cmd }}" title="{{ label }}" aria-label="{{ label }}" {{ extra|safe }}><i class="fas {{ icon }}"></i></button>
+{%- endmacro %}
+
+{% block content %}
+<div class="crm-sheet-app" data-book-id="{{ book.id }}" data-user-id="{{ current_user.id }}">
+    <div class="crm-sheet-top">
+        <a class="crm-sheet-logo" href="{{ url_for('sheets.index') }}" title="All spreadsheets" aria-label="All spreadsheets"><i class="fas fa-table"></i></a>
+        <div class="crm-sheet-topmain">
+            <div class="crm-sheet-titlerow">
+                <input type="text" class="crm-sheet-title" value="{{ book.name }}" maxlength="200" aria-label="Spreadsheet name">
+                <button type="button" class="crm-sheet-star" title="Star" aria-label="Star this spreadsheet" aria-pressed="false"><i class="far fa-star"></i></button>
+                <span class="crm-sheet-savestate" aria-live="polite"></span>
+            </div>
+            <nav class="crm-sheet-menubar" aria-label="Spreadsheet menu">
+                <button type="button" data-menu="file">File</button>
+                <button type="button" data-menu="edit">Edit</button>
+                <button type="button" data-menu="view">View</button>
+                <button type="button" data-menu="insert">Insert</button>
+                <button type="button" data-menu="format">Format</button>
+                <button type="button" data-menu="data">Data</button>
+                <button type="button" data-menu="tools">Tools</button>
+                <button type="button" data-menu="help">Help</button>
+            </nav>
+        </div>
+        <div class="crm-sheet-topright">
+            <div class="text-end d-none d-lg-block">
+                <div class="crm-sheet-rolebadge"></div>
+                <div class="crm-sheet-ownerinfo small text-muted"></div>
+            </div>
+            <button type="button" class="btn btn-primary btn-sm crm-sheet-sharebtn"><i class="fas fa-user-plus me-1"></i>Share</button>
+        </div>
+    </div>
+
+    <div class="crm-sheet-toolbar" role="toolbar" aria-label="Formatting">
+        <div class="crm-sheet-tbgroup">
+            {{ tb('undo', 'fa-rotate-left', 'Undo (Ctrl+Z)') }}
+            {{ tb('redo', 'fa-rotate-right', 'Redo (Ctrl+Y)') }}
+            {{ tb('print', 'fa-print', 'Print (Ctrl+P)', 'data-export-only') }}
+            {{ tb('paintformat', 'fa-paint-roller', 'Paint format', 'data-edit-only') }}
+        </div>
+        <div class="crm-sheet-tbgroup crm-sheet-edit-only">
+            <button type="button" class="crm-sheet-tb crm-sheet-tbtext" data-cmd="currency" title="Format as currency (Rs)" aria-label="Format as currency" data-edit-only>Rs</button>
+            {{ tb('percent', 'fa-percent', 'Format as percent', 'data-edit-only') }}
+            <button type="button" class="crm-sheet-tb crm-sheet-tbtext" data-cmd="decless" title="Decrease decimal places" aria-label="Decrease decimal places" data-edit-only>.0<i class="fas fa-arrow-left crm-sheet-mini"></i></button>
+            <button type="button" class="crm-sheet-tb crm-sheet-tbtext" data-cmd="decmore" title="Increase decimal places" aria-label="Increase decimal places" data-edit-only>.00<i class="fas fa-arrow-right crm-sheet-mini"></i></button>
+            <button type="button" class="crm-sheet-tb crm-sheet-tbtext" data-cmd="numfmt" title="More number formats" aria-label="More number formats" data-edit-only>123<i class="fas fa-caret-down crm-sheet-mini"></i></button>
+        </div>
+        <div class="crm-sheet-tbgroup crm-sheet-edit-only crm-sheet-hide-sm">
+            <button type="button" class="crm-sheet-tb crm-sheet-tbwide" data-cmd="font" title="Font" aria-label="Font" data-edit-only><span class="crm-sheet-fontname">Default</span><i class="fas fa-caret-down crm-sheet-mini"></i></button>
+            {{ tb('fsminus', 'fa-minus', 'Decrease font size', 'data-edit-only') }}
+            <button type="button" class="crm-sheet-tb crm-sheet-tbtext crm-sheet-fontsize" data-cmd="fontsize" title="Font size" aria-label="Font size" data-edit-only>10</button>
+            {{ tb('fsplus', 'fa-plus', 'Increase font size', 'data-edit-only') }}
+        </div>
+        <div class="crm-sheet-tbgroup crm-sheet-edit-only">
+            {{ tb('bold', 'fa-bold', 'Bold (Ctrl+B)', 'data-edit-only') }}
+            {{ tb('italic', 'fa-italic', 'Italic (Ctrl+I)', 'data-edit-only') }}
+            {{ tb('strike', 'fa-strikethrough', 'Strikethrough', 'data-edit-only') }}
+            {{ tb('underline', 'fa-underline', 'Underline (Ctrl+U)', 'data-edit-only') }}
+            <button type="button" class="crm-sheet-tb crm-sheet-colorbtn" data-cmd="color" title="Text colour" aria-label="Text colour" data-edit-only><i class="fas fa-font"></i><span class="crm-sheet-swatchbar"></span></button>
+            <button type="button" class="crm-sheet-tb crm-sheet-colorbtn" data-cmd="fill" title="Fill colour" aria-label="Fill colour" data-edit-only><i class="fas fa-fill-drip"></i><span class="crm-sheet-swatchbar"></span></button>
+        </div>
+        <div class="crm-sheet-tbgroup crm-sheet-edit-only">
+            {{ tb('borders', 'fa-border-all', 'Borders', 'data-edit-only') }}
+            {{ tb('merge', 'fa-object-group', 'Merge cells', 'data-edit-only') }}
+        </div>
+        <div class="crm-sheet-tbgroup crm-sheet-edit-only">
+            {{ tb('halign', 'fa-align-left', 'Horizontal align', 'data-edit-only') }}
+            {{ tb('valign', 'fa-arrows-up-down', 'Vertical align', 'data-edit-only') }}
+            {{ tb('wrap', 'fa-paragraph', 'Text wrapping', 'data-edit-only') }}
+        </div>
+        <div class="crm-sheet-tbgroup">
+            {{ tb('link', 'fa-link', 'Insert link (Ctrl+K)', 'data-edit-only') }}
+            {{ tb('filter', 'fa-filter', 'Create a filter', 'data-edit-only') }}
+            {{ tb('functions', 'fa-square-root-variable', 'Functions', 'data-edit-only') }}
+            {{ tb('clearformat', 'fa-text-slash', 'Clear formatting', 'data-edit-only') }}
+            {{ tb('find', 'fa-magnifying-glass', 'Find and replace (Ctrl+F)') }}
+        </div>
+    </div>
+
+    <div class="crm-sheet-formulabar">
+        <input type="text" class="crm-sheet-namebox" aria-label="Name box - type a cell or range to go to it" spellcheck="false">
+        <span class="crm-sheet-fx" aria-hidden="true"><i>fx</i></span>
+        <input type="text" class="crm-sheet-formula" aria-label="Formula bar" spellcheck="false" autocomplete="off">
+    </div>
+
+    <div class="crm-sheet-banner" role="alert" style="display:none"></div>
+    <div class="crm-sheet-gridhost"></div>
+
+    <div class="crm-sheet-tabbar">
+        <button type="button" class="crm-sheet-tabbtn crm-sheet-addtab" title="Add sheet" aria-label="Add sheet" data-edit-only><i class="fas fa-plus"></i></button>
+        <button type="button" class="crm-sheet-tabbtn crm-sheet-alltabs" title="All sheets" aria-label="All sheets"><i class="fas fa-bars"></i></button>
+        <div class="crm-sheet-tablist" role="tablist" aria-label="Sheets"></div>
+        <div class="crm-sheet-stats" aria-live="polite"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% set v = '1' %}
+<script src="{{ url_for('static', filename='sheets/js/core.js') }}?v={{ v }}"></script>
+<script src="{{ url_for('static', filename='sheets/js/format.js') }}?v={{ v }}"></script>
+<script src="{{ url_for('static', filename='sheets/js/formula.js') }}?v={{ v }}"></script>
+<script src="{{ url_for('static', filename='sheets/js/model.js') }}?v={{ v }}"></script>
+<script src="{{ url_for('static', filename='sheets/js/grid.js') }}?v={{ v }}"></script>
+<script src="{{ url_for('static', filename='sheets/js/actions.js') }}?v={{ v }}"></script>
+<script src="{{ url_for('static', filename='sheets/js/dialogs.js') }}?v={{ v }}"></script>
+<script src="{{ url_for('static', filename='sheets/js/ui.js') }}?v={{ v }}"></script>
+{% endblock %}

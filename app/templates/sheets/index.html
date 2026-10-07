@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block title %}Spreadsheets{% endblock %}
+
+{% block extra_css %}
+<meta name="crm-sheet-csrf" content="{{ csrf_token_value }}">
+<meta name="crm-sheet-base" content="{{ url_for('sheets.index') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='sheets/css/sheets.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="crm-sheet-home" data-page="home" data-admin="{{ '1' if is_admin else '0' }}">
+    <div class="crm-sheet-homehead">
+        <h3><span class="crm-sheet-logo" aria-hidden="true"><i class="fas fa-table"></i></span>Spreadsheets</h3>
+        <div class="crm-sheet-search" role="search">
+            <i class="fas fa-magnifying-glass" aria-hidden="true"></i>
+            <input type="search" class="form-control" placeholder="Search by name, description or owner  ( / )" aria-label="Search spreadsheets">
+        </div>
+        <div class="crm-sheet-homeactions">
+            <button type="button" class="btn btn-outline-secondary" data-import><i class="fas fa-file-import me-1"></i>Import</button>
+            <button type="button" class="btn btn-primary" data-new><i class="fas fa-plus me-1"></i>New spreadsheet</button>
+        </div>
+    </div>
+
+    <div class="crm-sheet-templatewrap">
+        <div class="crm-sheet-section-title">Start a new spreadsheet</div>
+        <div class="crm-sheet-templates" aria-label="Templates"></div>
+    </div>
+
+    <div class="crm-sheet-recentwrap" style="display:none">
+        <div class="crm-sheet-section-title">Recent</div>
+        <div class="crm-sheet-recent mb-4"></div>
+    </div>
+
+    <div class="crm-sheet-filters">
+        <button type="button" class="crm-sheet-chip" data-scope="all">All</button>
+        <button type="button" class="crm-sheet-chip" data-scope="mine">Owned by me</button>
+        <button type="button" class="crm-sheet-chip" data-scope="shared">Shared with me</button>
+        <button type="button" class="crm-sheet-chip" data-scope="favorites"><i class="fas fa-star text-warning me-1"></i>Starred</button>
+        {% if is_admin %}
+        <button type="button" class="crm-sheet-chip" data-scope="admin_all" title="Every spreadsheet in the CRM"><i class="fas fa-user-shield me-1"></i>All (admin)</button>
+        <a class="crm-sheet-chip text-decoration-none" href="{{ url_for('sheets.admin') }}"><i class="fas fa-users-gear me-1"></i>Access management</a>
+        {% endif %}
+        <div class="ms-auto d-flex align-items-center gap-2">
+            <label class="small text-muted mb-0" for="crmSheetSort">Sort</label>
+            <select class="form-select form-select-sm w-auto" id="crmSheetSort" data-sort>
+                <option value="modified">Last modified</option>
+                <option value="created">Date created</option>
+                <option value="name">Name</option>
+                <option value="owner">Owner</option>
+            </select>
+            <div class="btn-group btn-group-sm" role="group" aria-label="View">
+                <button type="button" class="btn btn-outline-secondary" data-view="grid" title="Grid view" aria-label="Grid view"><i class="fas fa-grip"></i></button>
+                <button type="button" class="btn btn-outline-secondary" data-view="list" title="List view" aria-label="List view"><i class="fas fa-list"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <div class="crm-sheet-section-title crm-sheet-results-title">All spreadsheets</div>
+    <div class="crm-sheet-results" aria-live="polite"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='sheets/js/core.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='sheets/js/format.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='sheets/js/formula.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='sheets/js/dialogs.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='sheets/js/home.js') }}?v=1"></script>
+{% endblock %}

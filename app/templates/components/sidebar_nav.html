@@ -232,6 +232,11 @@
     </div>
     {% endif %}
 
+    {# ── Spreadsheet (every signed-in user; each sees only the spreadsheets they own or that are shared with them) #}
+    <a class="nav-link" href="{{ url_for('sheets.index') }}">
+        <i class="fas fa-table nav-ico"></i> <span>Spreadsheet</span>
+    </a>
+
     {# ── Settings ──────────────────────────────────────────── #}
     {% if show_settings %}
     <a class="nav-link nav-group-toggle collapsed" data-bs-toggle="collapse" href="#{{ nav_ns }}NavSettings"
