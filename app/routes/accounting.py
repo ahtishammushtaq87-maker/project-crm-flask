@@ -2588,6 +2588,97 @@ def _parse_shifted_product_quantities(raw):
     return result
 
 
+def _parse_shifted_warehouse_info(raw):
+    """{product_id: (warehouse_id, old_own_cost_or_None)} for the items of a
+    shift that was applied to one warehouse's cost (tokens written as
+    'pid:new_cost:old_cost:warehouse_id:old_own_cost', old_own_cost blank
+    when the warehouse had no cost of its own). Items shifted at the item's
+    normal cost (3-part tokens) are not in the result."""
+    if not raw:
+        return {}
+    result = {}
+    for token in raw.split(','):
+        parts = token.strip().split(':')
+        if len(parts) < 5 or not parts[3].strip().isdigit():
+            continue
+        try:
+            pid = int(parts[0])
+            old_own = float(parts[4]) if parts[4].strip() else None
+        except ValueError:
+            continue
+        result[pid] = (int(parts[3]), old_own)
+    return result
+
+
+def _warehouse_cost_and_qty(product, warehouse_id):
+    """(cost per unit, quantity) of `product` in one warehouse - the same
+    figures the Add/Edit Expense shift picker shows (see
+    inventory_warehouse_stock_map). An item with no per-warehouse rows yet
+    keeps all its stock in its default warehouse."""
+    from app.models import ProductWarehouseStock
+    row = ProductWarehouseStock.query.filter_by(product_id=product.id, warehouse_id=warehouse_id).first()
+    if row:
+        cost = row.cost_price if row.cost_price is not None else (product.cost_price or 0)
+        return float(cost), float(row.quantity or 0)
+    has_rows = ProductWarehouseStock.query.filter_by(product_id=product.id).first() is not None
+    qty = float(product.quantity or 0) if (not has_rows and product.warehouse_id == warehouse_id) else 0.0
+    return float(product.cost_price or 0), qty
+
+
+@bp.app_template_global()
+def inventory_warehouse_stock_map():
+    """{product_id: {warehouse_id: [cost, qty]}} for the "Shift Directly to
+    Inventory Cost" picker, so it can show each item's cost and stock in the
+    warehouse picked on the expense. One query; called only from the
+    templates that render the picker."""
+    from app.models import Product, ProductWarehouseStock
+    out = {}
+    rows = (db.session.query(ProductWarehouseStock, Product.cost_price)
+            .join(Product, Product.id == ProductWarehouseStock.product_id).all())
+    for ws, normal_cost in rows:
+        cost = ws.cost_price if ws.cost_price is not None else (normal_cost or 0)
+        out.setdefault(ws.product_id, {})[ws.warehouse_id] = [round(float(cost), 4), float(ws.quantity or 0)]
+    # Items with no per-warehouse rows hold all stock in their default warehouse.
+    legacy = (Product.query.with_entities(Product.id, Product.warehouse_id, Product.cost_price, Product.quantity)
+              .filter(Product.warehouse_id.isnot(None)).all())
+    for pid, wid, cost, qty in legacy:
+        if pid not in out:
+            out[pid] = {wid: [round(float(cost or 0), 4), float(qty or 0)]}
+    return out
+
+
+def _mo_is_active(mo):
+    """In Progress and still running. A timer-stopped order stays 'In
+    Progress' in the DB but has moved to the Previous Orders tab."""
+    return mo.status == 'In Progress' and not mo.timer_stopped
+
+
+def _populate_overhead_mo_choices(form):
+    """Fill the BOM-overhead Manufacturing Order picker with EVERY order -
+    running ones first, then Previous (timer-stopped), Completed and Draft
+    ones labelled with their state. `form.mo_id.active_ids` holds the
+    running ones: the page shows only those until "Show all orders" is
+    switched on, and the server only accepts a non-running order when
+    that switch was on (see add_expense)."""
+    from app.models import ManufacturingOrder
+    mos = ManufacturingOrder.query.order_by(ManufacturingOrder.order_number.desc()).all()
+    active = [mo for mo in mos if _mo_is_active(mo)]
+    others = [mo for mo in mos if not _mo_is_active(mo)]
+    active.sort(key=lambda mo: mo.order_number)
+
+    def label(mo):
+        product = mo.bom.product.name if mo.bom and mo.bom.product else 'No product'
+        text = f"{mo.order_number} — {product}"
+        if _mo_is_active(mo):
+            return text
+        state = 'Previous (timer stopped)' if mo.status == 'In Progress' else (mo.status or 'Unknown')
+        return f"{text} · {state}"
+
+    form.mo_id.choices = [(mo.id, label(mo)) for mo in active + others]
+    form.mo_id.active_ids = {mo.id for mo in active}
+    return active
+
+
 def _inventory_shift_blockers(expense):
     """Returns a user-facing message if `expense` can't be shifted to
     inventory cost right now, else None. Shared by the standalone
@@ -2616,13 +2707,15 @@ def _apply_inventory_shift(expense):
     straight off `request.form` — shared by the standalone AJAX
     shift-to-inventory action and by shifting inline while creating/editing
     an expense. Each selected item's amount must add up to the expense's
-    full amount, and quantity (default 1 if left blank) is ADDED onto the
-    item's existing stock quantity. How cost_price changes depends on
-    `inventory_cost_mode` on the form:
-      - 'replace' (default): cost_price is REPLACED with amount / quantity.
-      - 'average': the amount is added to the stock's total value and
-        cost_price becomes the weighted average over the new total quantity:
-        (old_cost * old_qty + amount) / (old_qty + quantity).
+    full amount. How cost changes depends on `inventory_cost_mode`:
+      - 'replace' (default): cost is REPLACED with amount / quantity, and
+        quantity (default 1 if left blank) is ADDED onto the stock.
+      - 'average': the amount is spread over the stock already held - no
+        quantity is entered or added:
+        (old_cost * current_qty + amount) / current_qty.
+    When the expense has a warehouse, that warehouse's own cost and stock
+    are used and changed (items keep a separate cost per warehouse - see
+    app/services/warehouse_cost.py); otherwise the item's normal cost.
     Either way the old cost is recorded, so Undo shift restores it exactly.
 
     Mutates `expense` and the affected Product rows in the current session
@@ -2630,6 +2723,7 @@ def _apply_inventory_shift(expense):
     validation failure. Returns (message, applied_names) on success.
     """
     from app.models import Product
+    from app.services import warehouse_cost
 
     raw_ids = request.form.getlist('product_ids') or request.form.getlist('product_ids[]')
     if not raw_ids:
@@ -2656,6 +2750,14 @@ def _apply_inventory_shift(expense):
     # editable, so the values actually submitted may differ per item. They
     # must still add up to the expense's full amount. Each value REPLACES
     # that item's cost_price outright — it is not added on top of it.
+    cost_mode = request.form.get('inventory_cost_mode', 'replace')
+    if cost_mode not in ('replace', 'average'):
+        cost_mode = 'replace'
+    from app.models import Warehouse
+    warehouse_id = expense.warehouse_id or None
+    warehouse = db.session.get(Warehouse, warehouse_id) if warehouse_id else None
+    warehouse_label = f' in {warehouse.name}' if warehouse else ''
+
     item_costs = {}
     item_qtys = {}
     total_entered = 0.0
@@ -2670,6 +2772,18 @@ def _apply_inventory_shift(expense):
         item_costs[product.id] = cost
         total_entered += cost
 
+        if cost_mode == 'average':
+            # No quantity: the amount is spread over the stock already held.
+            if warehouse_id:
+                _, held = _warehouse_cost_and_qty(product, warehouse_id)
+            else:
+                held = product.quantity or 0
+            if held <= 0:
+                raise ValueError(f'{product.name} has no stock{warehouse_label} to spread the amount over. '
+                                 f'Use "Replace Current Cost" for this item instead.')
+            item_qtys[product.id] = 0.0
+            continue
+
         raw_qty = (request.form.get(f'item_qty_{product.id}') or '').strip()
         try:
             qty = float(raw_qty) if raw_qty else 1.0
@@ -2683,40 +2797,63 @@ def _apply_inventory_shift(expense):
         raise ValueError(f'The item costs must add up to the expense amount (PKR {expense.amount:,.2f}). '
                           f'They currently total PKR {total_entered:,.2f}.')
 
-    cost_mode = request.form.get('inventory_cost_mode', 'replace')
-    if cost_mode not in ('replace', 'average'):
-        cost_mode = 'replace'
-
     applied_names = []
     shifted_tokens = []
     qty_tokens = []
+    new_costs = {}
     for product in products:
-        old_cost = product.cost_price or 0
         qty = item_qtys[product.id]
-        if cost_mode == 'average':
-            # Negative stock (oversold) counts as zero for the average.
-            old_qty = max(0.0, product.quantity or 0)
-            unit_cost = round((old_cost * old_qty + item_costs[product.id]) / (old_qty + qty), 2)
+        amount = item_costs[product.id]
+        if warehouse_id:
+            # Only this warehouse's cost/stock changes; other warehouses and
+            # the item's normal cost stay as they are.
+            warehouse_cost.materialize_legacy(product)
+            row = warehouse_cost.stock_row(product.id, warehouse_id)
+            old_own = row.cost_price
+            old_cost = float(old_own) if old_own is not None else float(product.cost_price or 0)
+            if cost_mode == 'average':
+                held = float(row.quantity or 0)
+                unit_cost = round((old_cost * held + amount) / held, 2)
+            else:
+                unit_cost = round(amount / qty, 2)
+                row.quantity = (row.quantity or 0) + qty
+                product.quantity = (product.quantity or 0) + qty
+            row.cost_price = unit_cost
+            shifted_tokens.append(f'{product.id}:{unit_cost}:{old_cost}:{warehouse_id}:'
+                                  f'{"" if old_own is None else old_own}')
         else:
-            unit_cost = round(item_costs[product.id] / qty, 2)
-        product.cost_price = unit_cost
-        product.quantity = (product.quantity or 0) + qty
+            old_cost = product.cost_price or 0
+            if cost_mode == 'average':
+                held = float(product.quantity or 0)
+                unit_cost = round((old_cost * held + amount) / held, 2)
+            else:
+                unit_cost = round(amount / qty, 2)
+                product.quantity = (product.quantity or 0) + qty
+            product.cost_price = unit_cost
+            shifted_tokens.append(f'{product.id}:{unit_cost}:{old_cost}')
+        new_costs[product.id] = unit_cost
+        qty_note = f', +{qty:g} qty' if qty else ''
         applied_names.append(
-            f'{product.name} (PKR {old_cost:,.2f} -> PKR {unit_cost:,.2f}/unit, +{qty:g} qty)')
-        shifted_tokens.append(f'{product.id}:{unit_cost}:{old_cost}')
-        qty_tokens.append(f'{product.id}:{qty}')
+            f'{product.name}{warehouse_label} (PKR {old_cost:,.2f} -> PKR {unit_cost:,.2f}/unit{qty_note})')
+        if qty:
+            qty_tokens.append(f'{product.id}:{qty}')
 
     expense.is_inventory_shifted = True
     expense.shifted_to_product_ids = ','.join(shifted_tokens)
-    expense.shifted_product_quantities = ','.join(qty_tokens)
+    expense.shifted_product_quantities = ','.join(qty_tokens) or None
 
     if len(products) == 1:
         p = products[0]
-        verb = 'averaged to' if cost_mode == 'average' else 'set to'
-        msg = (f'{p.name} cost {verb} PKR {p.cost_price:,.2f}/unit '
-               f'and quantity increased by {item_qtys[p.id]:g}.')
+        if cost_mode == 'average':
+            msg = (f'{p.name} cost{warehouse_label} averaged to PKR {new_costs[p.id]:,.2f}/unit '
+                   f'(stock quantity unchanged).')
+        else:
+            msg = (f'{p.name} cost{warehouse_label} set to PKR {new_costs[p.id]:,.2f}/unit '
+                   f'and quantity increased by {item_qtys[p.id]:g}.')
+    elif cost_mode == 'average':
+        msg = f'Cost averaged{warehouse_label} on {len(products)} items (PKR {expense.amount:,.2f} total).'
     else:
-        msg = f'Cost and quantity updated on {len(products)} items (PKR {expense.amount:,.2f} total).'
+        msg = f'Cost and quantity updated{warehouse_label} on {len(products)} items (PKR {expense.amount:,.2f} total).'
     return msg, applied_names
 
 
@@ -2768,7 +2905,7 @@ def unshift_expense_from_inventory():
     if not getattr(current_user, 'is_admin', False):
         return jsonify({'success': False, 'message': 'Admin access required.'}), 403
 
-    from app.models import Product
+    from app.models import Product, ProductWarehouseStock
 
     expense_id = request.form.get('expense_id', type=int)
     expense = Expense.query.get_or_404(expense_id)
@@ -2779,8 +2916,22 @@ def unshift_expense_from_inventory():
     try:
         item_specs = _parse_shifted_product_costs(expense.shifted_to_product_ids, expense.amount)
         item_qtys = _parse_shifted_product_quantities(expense.shifted_product_quantities)
+        wh_specs = _parse_shifted_warehouse_info(expense.shifted_to_product_ids)
         products = Product.query.filter(Product.id.in_(item_specs.keys())).all() if item_specs else []
         for product in products:
+            if product.id in wh_specs:
+                # Shifted onto one warehouse's cost: restore that warehouse's
+                # own cost (None = back to following the item's normal cost).
+                wid, old_own = wh_specs[product.id]
+                row = ProductWarehouseStock.query.filter_by(product_id=product.id, warehouse_id=wid).first()
+                qty = item_qtys.get(product.id, 0)
+                if row:
+                    row.cost_price = old_own
+                    if qty:
+                        row.quantity = max(0, (row.quantity or 0) - qty)
+                if qty:
+                    product.quantity = max(0, (product.quantity or 0) - qty)
+                continue
             mode, value = item_specs.get(product.id, ('add', 0))
             if mode == 'set':
                 product.cost_price = max(0, value)
@@ -2862,15 +3013,10 @@ def add_expense():
     # separate, purely cosmetic flag - see app/services/manufacturing_timer.py)
     # but has already moved to the Previous Orders tab, so it must not show
     # up here as something overhead can still be charged to.
-    from app.models import ManufacturingOrder
-    in_progress_mos = (
-        ManufacturingOrder.query
-        .filter_by(status='In Progress', timer_stopped=False)
-        .order_by(ManufacturingOrder.order_number)
-        .all()
-    )
-    form.mo_id.choices = [(mo.id, f"{mo.order_number} — {mo.bom.product.name}") for mo in in_progress_mos]
-    
+    # All orders are listed (so any can be picked once "Show all orders" is
+    # switched on); the page shows only running ones by default.
+    in_progress_mos = _populate_overhead_mo_choices(form)
+
     if form.validate_on_submit():
         if not request.form.get('account_id', type=int):
             flash('Please select an account for this expense.', 'warning')
@@ -3010,19 +3156,21 @@ def add_expense():
         # ── MODE 1: Direct MO link (Single or Bulk) ────────────────────────
         if is_overhead and mode == 'mo':
             selected_mo_ids = form.mo_id.data if form.mo_id.data else []
+            show_all_mos = request.form.get('show_all_mos') == '1'
             from app.models import ManufacturingOrder
             valid_mos = []
             for mo_id in selected_mo_ids:
                 if mo_id != 0:
                     target_mo = ManufacturingOrder.query.get(mo_id)
-                    # Same rule as the dropdown itself - status alone isn't
-                    # enough, a timer-stopped order has already moved to
-                    # Previous Orders and shouldn't accept new overhead.
-                    if target_mo and target_mo.status == 'In Progress' and not target_mo.timer_stopped:
+                    # Same rule as the dropdown itself: only running orders,
+                    # unless "Show all orders" was switched on, which lets
+                    # overhead be charged to a previous/completed order too.
+                    if target_mo and (show_all_mos or _mo_is_active(target_mo)):
                         valid_mos.append(target_mo)
 
             if not valid_mos and any(m != 0 for m in selected_mo_ids):
-                flash('Invalid, completed, or timer-stopped Manufacturing Order(s) selected.', 'danger')
+                flash('Invalid, completed, or timer-stopped Manufacturing Order(s) selected. '
+                      'Switch on "Show all orders" to charge overhead to an order that is not in progress.', 'danger')
                 return redirect(url_for('accounting.add_expense'))
 
             num_mos = len(valid_mos)
@@ -3937,8 +4085,9 @@ def edit_expense(id):
     # but has already moved to the Previous Orders tab, so it must not show
     # up here as something overhead can still be charged to.
     from app.models import ManufacturingOrder
-    in_progress_mos = ManufacturingOrder.query.filter_by(status='In Progress', timer_stopped=False).order_by(ManufacturingOrder.order_number).all()
-    form.mo_id.choices = [(mo.id, f"{mo.order_number} — {mo.bom.product.name}") for mo in in_progress_mos]
+    # All orders are listed; the page shows only running ones until "Show
+    # all orders" is switched on (plus whichever order is already linked).
+    in_progress_mos = _populate_overhead_mo_choices(form)
 
     # Handle case where MO was deleted - store original mo_id before potential overwrite
     original_mo_id = expense.mo_id if has_column('expenses', 'mo_id') else None

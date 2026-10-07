@@ -169,6 +169,59 @@ document.addEventListener('DOMContentLoaded', function () {
         });
         html += '</div>';
 
+        // Inventory: stock and cost in each warehouse
+        if (Array.isArray(data.warehouse_stock) && data.warehouse_stock.length) {
+            const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+                c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            const money = n => 'PKR ' + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const qtyFmt = n => (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+            const unit = esc(data.unit || '');
+            let totalQty = 0, totalValue = 0;
+            let rows = '';
+            data.warehouse_stock.forEach(w => {
+                const value = (Number(w.quantity) || 0) * (Number(w.cost) || 0);
+                totalQty += Number(w.quantity) || 0;
+                totalValue += value;
+                rows += `
+                    <tr>
+                        <td class="fw-semibold">${w.unassigned
+                            ? `<i class="fas fa-question-circle me-1 text-muted"></i><span class="text-muted fst-italic">${esc(w.name)}</span>`
+                            : `<i class="fas fa-warehouse me-1 text-primary"></i>${esc(w.name)}`}</td>
+                        <td class="text-end">${qtyFmt(w.quantity)} ${unit}</td>
+                        <td class="text-end">${money(w.cost)}${w.own_cost
+                            ? ' <span class="badge bg-info-subtle text-info-emphasis border fw-normal" title="This warehouse has its own cost">own</span>'
+                            : ''}</td>
+                        <td class="text-end">${money(value)}</td>
+                    </tr>`;
+            });
+            html += `
+                <div class="mb-3">
+                    <h6 class="fw-bold mb-2"><i class="fas fa-warehouse me-2"></i> Stock by Warehouse</h6>
+                    <div class="table-responsive border rounded bg-white">
+                        <table class="table table-sm align-middle mb-0 no-datatable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Warehouse</th>
+                                    <th class="text-end">Quantity</th>
+                                    <th class="text-end">Cost / Unit</th>
+                                    <th class="text-end">Stock Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                            ${data.warehouse_stock.length > 1 ? `
+                            <tfoot class="table-light fw-bold">
+                                <tr>
+                                    <td>Total</td>
+                                    <td class="text-end">${qtyFmt(totalQty)} ${unit}</td>
+                                    <td></td>
+                                    <td class="text-end">${money(totalValue)}</td>
+                                </tr>
+                            </tfoot>` : ''}
+                        </table>
+                    </div>
+                </div>`;
+        }
+
         // ---- Manufacturing / 3-column layout for inventory ----
         if (data.has_manufacturing_history) {
             const currentLimit = data.history_limit || '5';

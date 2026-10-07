@@ -191,6 +191,25 @@ def get_entity_details(entity_type, entity_id):
             if entity.image_path:
                 data['image'] = url_for('static', filename=entity.image_path.replace('app/static/', '').replace('\\', '/'))
 
+            # --- Stock & cost per warehouse ---
+            # Each warehouse can hold the item at its own cost (see
+            # app/services/warehouse_cost.py). An item with no per-warehouse
+            # rows yet keeps all its stock in its default warehouse.
+            wh_rows = [{'name': w['warehouse'].name, 'quantity': float(w['quantity'] or 0),
+                        'cost': float(w['cost'] or 0), 'own_cost': w['own']}
+                       for w in entity.warehouse_costs]
+            if not wh_rows and not entity.warehouse_stocks and entity.warehouse and (entity.quantity or 0):
+                wh_rows = [{'name': entity.warehouse.name, 'quantity': float(entity.quantity or 0),
+                            'cost': float(entity.cost_price or 0), 'own_cost': False}]
+            # Stock not assigned to any warehouse (so the rows add up to
+            # Current Stock), valued at the item's normal cost.
+            unassigned = float(entity.quantity or 0) - sum(w['quantity'] for w in wh_rows)
+            if wh_rows and unassigned > 1e-6:
+                wh_rows.append({'name': 'Not in a warehouse', 'quantity': unassigned,
+                                'cost': float(entity.cost_price or 0), 'own_cost': False, 'unassigned': True})
+            data['warehouse_stock'] = wh_rows
+            data['unit'] = entity.unit or ''
+
             # --- Sale history ---
             sale_items = entity.sale_items
             if history_limit:

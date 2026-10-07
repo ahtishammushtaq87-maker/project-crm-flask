@@ -310,49 +310,37 @@
 
                         <div id="overhead_targets_container" style="display: none;">
                             <!-- Mode selector -->
-                            <div class="d-flex gap-3 mb-3">
-                                <div class="form-check flex-fill border rounded p-3" id="mode_mo_card" style="cursor:pointer; background:#fff8f0; border-color:#fd7e14;">
-                                    <input class="form-check-input" type="radio" name="overhead_mode" id="mode_mo" value="mo" checked>
-                                    <label class="form-check-label fw-semibold" for="mode_mo">
+                            <!-- Overhead is charged to Manufacturing Orders only (the
+                                 "Split across Products / BOMs" option was removed). -->
+                            <div class="mb-3">
+                                <div class="border rounded p-3" id="mode_mo_card" style="background:#fff8f0; border-color:#fd7e14 !important;">
+                                    <input type="radio" name="overhead_mode" id="mode_mo" value="mo" checked class="d-none">
+                                    <label class="fw-semibold" for="mode_mo">
                                         <i class="bi bi-gear-fill text-warning me-1"></i>
                                         Link to a Manufacturing Order
-                                        <span class="badge bg-warning text-dark ms-1">In Progress Only</span>
+                                        <span class="badge bg-warning text-dark ms-1" id="mo_scope_badge">In Progress Only</span>
                                     </label>
                                     <div class="text-muted small mt-1">Pick a specific running order to charge this overhead to.</div>
-                                </div>
-                                <div class="form-check flex-fill border rounded p-3" id="mode_bulk_card" style="cursor:pointer; background:#f0f5ff; border-color:#0d6efd;">
-                                    <input class="form-check-input" type="radio" name="overhead_mode" id="mode_bulk" value="bulk">
-                                    <label class="form-check-label fw-semibold" for="mode_bulk">
-                                        <i class="bi bi-collection-fill text-primary me-1"></i>
-                                        Split across Products / BOMs
-                                    </label>
-                                    <div class="text-muted small mt-1">Divide equally across multiple finished goods or BOMs.</div>
                                 </div>
                             </div>
 
                             <!-- Mode 1: MO picker -->
                             <div id="mo_mode_section">
                                 <div class="mb-3">
-                                    <label class="form-label fw-semibold">Manufacturing Order <span class="badge bg-secondary">Multi-select</span></label>
-                                    {{ form.mo_id(class="form-select", id="mo_id_select", multiple="multiple") }}
-                                    <div class="form-text">Only <strong>In Progress</strong> orders are shown by default. Previously linked (or deleted) orders appear as "(Current)" or "(Deleted)" and remain selectable. Selecting several orders splits this expense by each order's current cost share (Manufacturing Cost Percentage) — not equally.</div>
-                                </div>
-                            </div>
-
-                            <!-- Mode 2: Bulk product/BOM -->
-                            <div id="bulk_mode_section" style="display:none;">
-                                <div class="mb-3">
-                                    <label class="form-label fw-semibold">Finished Products <span class="badge bg-secondary">Multi-select</span></label>
-                                    {{ form.product_id(class="form-select", id="product_id_select", multiple="multiple") }}
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label fw-semibold">BOMs <span class="badge bg-secondary">Multi-select</span></label>
-                                    {{ form.bom_id(class="form-select", id="bom_id_select", multiple="multiple") }}
-                                </div>
-                                <!-- Live Allocation Preview -->
-                                <div id="allocation_preview" class="alert alert-info mb-0" style="display: none;">
-                                    <strong><i class="bi bi-calculator me-1"></i> Allocation Preview:</strong>
-                                    <span id="allocation_summary"></span>
+                                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                                        <label class="form-label fw-semibold mb-0" for="mo_id_select">Manufacturing Order <span class="badge bg-secondary">Multi-select</span></label>
+                                        <div class="form-check form-switch mb-0" title="Also list previous (timer-stopped), completed and draft orders">
+                                            <input class="form-check-input" type="checkbox" role="switch" name="show_all_mos" id="show_all_mos" value="1"{{ ' checked' if request.form.get('show_all_mos') == '1' }}>
+                                            <label class="form-check-label small fw-semibold" for="show_all_mos">Show all orders</label>
+                                        </div>
+                                    </div>
+                                    {% set mo_active_ids = form.mo_id.active_ids if form.mo_id.active_ids is defined else [] %}
+                                    <select name="{{ form.mo_id.name }}" id="mo_id_select" class="form-select" multiple="multiple">
+                                        {% for opt in form.mo_id %}
+                                        {{ opt(**{'data-active': '1' if opt.data in mo_active_ids else '0'}) }}
+                                        {% endfor %}
+                                    </select>
+                                    <div class="form-text">Only <strong>In Progress</strong> orders are shown by default — switch on <strong>Show all orders</strong> to also pick previous, completed or draft orders. The order already linked to this expense always stays listed (a deleted one appears as "(Deleted)"). Selecting several orders splits this expense by each order's current cost share (Manufacturing Cost Percentage) — not equally.</div>
                                 </div>
                             </div>
                         </div>
@@ -389,7 +377,7 @@
                                     <label class="form-check flex-fill border rounded p-2 ps-5 mb-0" style="cursor:pointer; min-width:240px;">
                                         <input class="form-check-input inv-cost-mode" type="radio" name="inventory_cost_mode" value="average">
                                         <span class="fw-semibold">Add to Current Stock (Average Cost)</span>
-                                        <div class="form-text mt-0">Amount is added to the current stock value. New cost/unit = (current cost × current qty + amount) ÷ (current qty + quantity).</div>
+                                        <div class="form-text mt-0">Amount is spread over the stock already held — no quantity needed, stock quantity is not changed. New cost/unit = (current cost × current qty + amount) ÷ current qty.</div>
                                     </label>
                                 </div>
                             </div>
@@ -397,17 +385,19 @@
                                 <div class="mb-3">
                                     <label for="inline_product_ids" class="form-label fw-semibold">Select Inventory Item(s) <span class="text-danger">*</span></label>
                                     <select name="product_ids" id="inline_product_ids" class="form-select" multiple>
+                                        {% set inv_wh_map = inventory_warehouse_stock_map() %}
                                         {% for item in inventory_items %}
-                                        <option value="{{ item.id }}" data-cost="{{ item.cost_price or 0 }}" data-qty="{{ item.quantity or 0 }}" data-name="{{ item.sku }} - {{ item.name }}">{{ item.sku }} - {{ item.name }} (cost: PKR {{ '%.2f'|format(item.cost_price or 0) }}, qty: {{ '%.2f'|format(item.quantity or 0) }})</option>
+                                        <option value="{{ item.id }}" data-cost="{{ item.cost_price or 0 }}" data-qty="{{ item.quantity or 0 }}" data-name="{{ item.sku }} - {{ item.name }}" data-wh='{{ inv_wh_map.get(item.id, {}) | tojson }}'>{{ item.sku }} - {{ item.name }} (cost: PKR {{ '%.2f'|format(item.cost_price or 0) }}, qty: {{ '%.2f'|format(item.quantity or 0) }})</option>
                                         {% endfor %}
                                     </select>
-                                    <small class="text-muted">Select one item to apply the full amount, or several (bulk) to split it across them — each item's <strong>amount</strong> and <strong>quantity received</strong> are editable below (amounts must add up to the Amount field above). New cost/unit follows the <strong>Cost Update Method</strong> above; quantity is always <strong>added</strong> to the item's current stock.</small>
+                                    <small class="text-muted">Select one item to apply the full amount, or several (bulk) to split it across them — each item's <strong>amount</strong> is editable below (amounts must add up to the Amount field above). New cost/unit follows the <strong>Cost Update Method</strong> above: <strong>Replace</strong> asks for the quantity received and adds it to stock; <strong>Average</strong> uses the current stock and leaves quantity unchanged.</small>
+                                    <div class="small mt-1" id="inline_inv_wh_note"></div>
                                 </div>
                                 <div id="inline_inv_cost_rows" style="display:none;">
                                     <div class="table-responsive">
-                                        <table class="table table-sm align-middle mb-1">
+                                        <table class="table table-sm align-middle mb-1 no-datatable">
                                             <colgroup>
-                                                <col style="width:26%;"><col style="width:13%;"><col style="width:13%;"><col style="width:16%;"><col style="width:13%;"><col style="width:19%;">
+                                                <col style="width:26%;"><col style="width:13%;"><col style="width:12%;"><col style="width:16%;"><col style="width:12%;"><col style="width:17%;"><col style="width:4%;">
                                             </colgroup>
                                             <thead>
                                                 <tr>
@@ -415,8 +405,9 @@
                                                     <th class="text-end">Current Cost</th>
                                                     <th class="text-end">Current Qty</th>
                                                     <th class="text-end">Amount</th>
-                                                    <th class="text-end">Quantity</th>
+                                                    <th class="text-end inv-qty-col">Quantity</th>
                                                     <th class="text-end">New Cost/Unit</th>
+                                                    <th class="text-center"><span class="visually-hidden">Remove</span></th>
                                                 </tr>
                                             </thead>
                                             <tbody id="inline_inv_cost_rows_body"></tbody>
@@ -505,6 +496,40 @@ document.addEventListener('DOMContentLoaded', function() {
     $('select[name="warehouse_id"]').select2({ theme: 'bootstrap-5', placeholder: '— Select Warehouse (Optional) —', allowClear: true, width: '100%' });
     $('#accountIdSelect').select2({ theme: 'bootstrap-5', placeholder: '— Select Custodian Account —', allowClear: true, width: '100%' });
     $('#mo_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select In Progress Manufacturing Order(s) —', allowClear: true, width: '100%', closeOnSelect: false });
+
+    // "Show all orders": off (default) = only running In Progress orders;
+    // on = every order, incl. previous (timer-stopped), completed and draft.
+    // An order that's already selected always stays listed.
+    (function () {
+        const $mo = $('#mo_id_select');
+        const toggle = document.getElementById('show_all_mos');
+        if (!$mo.length || !toggle) return;
+        const allOptions = $mo.find('option').toArray();   // original order
+        const badge = document.getElementById('mo_scope_badge');
+        function applyMoScope() {
+            const showAll = toggle.checked;
+            const selected = new Set(($mo.val() || []).map(String));
+            $mo.empty();
+            allOptions.forEach(function (opt) {
+                if (showAll || opt.dataset.active === '1' || selected.has(String(opt.value))) {
+                    opt.selected = selected.has(String(opt.value));
+                    $mo.append(opt);
+                }
+            });
+            $mo.trigger('change.select2');
+            if ($mo.data('select2')) {
+                $mo.data('select2').$container.find('.select2-search__field')
+                    .attr('placeholder', ($mo.val() || []).length ? '' :
+                        (showAll ? '— Select Manufacturing Order(s) —' : '— Select In Progress Manufacturing Order(s) —'));
+            }
+            if (badge) {
+                badge.textContent = showAll ? 'All Orders' : 'In Progress Only';
+                badge.className = 'badge ms-1 ' + (showAll ? 'bg-primary' : 'bg-warning text-dark');
+            }
+        }
+        toggle.addEventListener('change', applyMoScope);
+        applyMoScope();
+    })();
     $('#product_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select Finished Products —', allowClear: true, width: '100%', closeOnSelect: false });
     $('#bom_id_select').select2({ theme: 'bootstrap-5', placeholder: '— Select BOMs —', allowClear: true, width: '100%', closeOnSelect: false });
 
@@ -998,6 +1023,27 @@ document.addEventListener('DOMContentLoaded', function() {
         function currentAmount() {
             return parseFloat(amountInput ? amountInput.value : 0) || 0;
         }
+        function isAverageMode() {
+            const modeInput = document.querySelector('input[name="inventory_cost_mode"]:checked');
+            return !!(modeInput && modeInput.value === 'average');
+        }
+        // Warehouse picked on the expense (items keep a separate cost and
+        // stock per warehouse) - null when none, then the item's normal
+        // cost and total stock are used. Mirrors _apply_inventory_shift.
+        const $warehouseSelect = $('select[name="warehouse_id"]');
+        function selectedWarehouseId() {
+            const v = $warehouseSelect.val();
+            return (v && v !== '0') ? String(v) : null;
+        }
+        function itemFigures(opt) {
+            const whId = selectedWarehouseId();
+            const normalCost = parseFloat(opt.data('cost')) || 0;
+            if (!whId) return { cost: normalCost, qty: parseFloat(opt.data('qty')) || 0 };
+            const wh = opt.data('wh') || {};
+            const entry = wh[whId];
+            return entry ? { cost: parseFloat(entry[0]) || 0, qty: parseFloat(entry[1]) || 0 }
+                         : { cost: normalCost, qty: 0 };
+        }
         function fmtMoney(n) {
             return (n || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
         }
@@ -1010,19 +1056,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (!costInput || !qtyInput || !display) return;
                 const cost = parseFloat(costInput.value) || 0;
                 const qty = parseFloat(qtyInput.value) || 0;
-                // Same formulas as _apply_inventory_shift: replace, or
-                // weighted average over current stock (negative stock = 0).
-                const modeInput = document.querySelector('input[name="inventory_cost_mode"]:checked');
-                const isAverage = modeInput && modeInput.value === 'average';
+                // Same formulas as _apply_inventory_shift: replace
+                // (amount / qty received), or spread over the current stock.
                 const curCost = parseFloat(row.dataset.curCost) || 0;
-                const curQty = Math.max(0, parseFloat(row.dataset.curQty) || 0);
-                let unit = null;
-                if (isAverage) {
-                    if (curQty + qty > 0) unit = (curCost * curQty + cost) / (curQty + qty);
-                } else if (qty > 0) {
-                    unit = cost / qty;
+                const curQty = parseFloat(row.dataset.curQty) || 0;
+                display.classList.remove('text-danger');
+                if (isAverageMode()) {
+                    if (curQty > 0) {
+                        display.textContent = 'PKR ' + fmtMoney((curCost * curQty + cost) / curQty);
+                    } else {
+                        display.textContent = 'No stock — use Replace';
+                        display.classList.add('text-danger');
+                    }
+                    return;
                 }
-                display.textContent = unit !== null ? ('PKR ' + fmtMoney(unit)) : '—';
+                display.textContent = qty > 0 ? ('PKR ' + fmtMoney(cost / qty)) : '—';
             });
         }
 
@@ -1084,39 +1132,149 @@ document.addEventListener('DOMContentLoaded', function() {
             ids.forEach(function (id) {
                 const opt = $shiftSelect.find('option[value="' + id + '"]');
                 const name = opt.data('name') || ('Item #' + id);
-                const currentCost = parseFloat(opt.data('cost')) || 0;
-                const currentQty = parseFloat(opt.data('qty')) || 0;
+                const fig = itemFigures(opt);
                 const row = document.createElement('tr');
-                row.dataset.curCost = currentCost;
-                row.dataset.curQty = currentQty;
+                row.dataset.itemId = id;
+                row.dataset.curCost = fig.cost;
+                row.dataset.curQty = fig.qty;
                 row.innerHTML =
-                    '<td>' + name + '</td>' +
-                    '<td class="text-end text-muted">PKR ' + fmtMoney(currentCost) + '</td>' +
-                    '<td class="text-end text-muted">' + currentQty.toFixed(2) + '</td>' +
+                    '<td><div class="inv-item-name">' + $('<div>').text(name).html() + '</div>' +
+                        '<div class="inv-wh-chips d-flex flex-wrap gap-1 mt-1"></div></td>' +
+                    '<td class="text-end text-muted inv-cur-cost">PKR ' + fmtMoney(fig.cost) + '</td>' +
+                    '<td class="text-end text-muted inv-cur-qty">' + fig.qty.toFixed(2) + '</td>' +
                     '<td class="text-end">' +
                         '<input type="number" step="0.01" min="0" class="form-control form-control-sm text-end inv-cost-input" ' +
                         'style="min-width:100px;" name="item_cost_' + id + '" value="' + per.toFixed(2) + '">' +
                     '</td>' +
-                    '<td class="text-end">' +
+                    '<td class="text-end inv-qty-col">' +
                         '<input type="number" step="0.01" min="0.01" class="form-control form-control-sm text-end inv-qty-input" ' +
                         'style="min-width:90px;" name="item_qty_' + id + '" value="1">' +
                     '</td>' +
-                    '<td class="text-end fw-semibold inv-unit-cost-display">PKR ' + fmtMoney(per) + '</td>';
+                    '<td class="text-end fw-semibold inv-unit-cost-display">PKR ' + fmtMoney(per) + '</td>' +
+                    '<td class="text-center">' +
+                        '<button type="button" class="btn btn-sm btn-outline-danger inv-remove-row" title="Remove this item" aria-label="Remove this item">' +
+                        '<i class="fas fa-times"></i></button>' +
+                    '</td>';
                 rowsBody.appendChild(row);
             });
             rowsWrap.style.display = '';
+            renderAllWarehouseChips();
+            applyCostMode();
             updateSplitPreview();
+        }
+
+        // Under each item: the warehouses holding it, with their stock.
+        // Clicking one picks that warehouse in the expense's Warehouse field
+        // (which then shows that warehouse's cost/stock); "All" clears it.
+        function warehouseName(whId) {
+            const t = $warehouseSelect.find('option[value="' + whId + '"]').text().trim();
+            return t || ('Warehouse #' + whId);
+        }
+        function renderWarehouseChips(row) {
+            const box = row.querySelector('.inv-wh-chips');
+            if (!box) return;
+            const opt = $shiftSelect.find('option[value="' + row.dataset.itemId + '"]');
+            const wh = opt.data('wh') || {};
+            const current = selectedWarehouseId();
+            const esc = function (s) { return $('<div>').text(s).html(); };
+            let html = '<button type="button" class="btn btn-sm py-0 px-2 inv-wh-chip ' +
+                (current ? 'btn-outline-secondary' : 'btn-secondary') + '" data-wh-id="" ' +
+                'title="No warehouse — use the item\'s normal cost and total stock">All: ' +
+                (parseFloat(opt.data('qty')) || 0).toFixed(2) + '</button>';
+            const ids = Object.keys(wh).filter(function (id) { return (parseFloat(wh[id][1]) || 0) !== 0; });
+            ids.sort(function (a, b) { return warehouseName(a).localeCompare(warehouseName(b)); });
+            ids.forEach(function (id) {
+                const qty = parseFloat(wh[id][1]) || 0;
+                const cost = parseFloat(wh[id][0]) || 0;
+                const active = current === String(id);
+                html += '<button type="button" class="btn btn-sm py-0 px-2 inv-wh-chip ' +
+                    (active ? 'btn-primary' : 'btn-outline-primary') + '" data-wh-id="' + esc(id) + '" ' +
+                    'title="' + esc(warehouseName(id)) + ' — cost PKR ' + fmtMoney(cost) + '/unit. Click to use this warehouse.">' +
+                    '<i class="fas fa-warehouse me-1"></i>' + esc(warehouseName(id)) + ': ' + qty.toFixed(2) + '</button>';
+            });
+            if (!ids.length) html += '<span class="small text-muted align-self-center">Not stocked in any warehouse</span>';
+            box.innerHTML = html;
+        }
+        function renderAllWarehouseChips() {
+            rowsBody.querySelectorAll('tr').forEach(renderWarehouseChips);
+        }
+
+        // Average mode needs no quantity: hide the column and disable its
+        // inputs so they aren't submitted or validated.
+        function applyCostMode() {
+            const avg = isAverageMode();
+            rowsWrap.querySelectorAll('.inv-qty-col').forEach(function (el) { el.style.display = avg ? 'none' : ''; });
+            rowsBody.querySelectorAll('.inv-qty-input').forEach(function (inp) { inp.disabled = avg; });
             updateUnitCostDisplays();
         }
 
-        $shiftSelect.select2({
+        const shiftSelect2Opts = {
             theme: 'bootstrap-5', width: '100%',
             placeholder: 'Search inventory items...',
             closeOnSelect: false
-        });
+        };
+
+        // Re-read every item's cost/stock for the selected warehouse:
+        // picker labels, the rows already added, and the note.
+        function refreshWarehouseFigures() {
+            const whId = selectedWarehouseId();
+            const note = document.getElementById('inline_inv_wh_note');
+            if (note) {
+                const whName = whId ? $warehouseSelect.find('option:selected').text().trim() : '';
+                note.innerHTML = whId
+                    ? '<i class="fas fa-warehouse me-1 text-primary"></i>Cost and stock shown for warehouse <strong>' +
+                      $('<div>').text(whName).html() + '</strong> — the shift updates this warehouse\'s cost.'
+                    : '<i class="fas fa-info-circle me-1 text-muted"></i><span class="text-muted">No warehouse selected — showing each item\'s normal cost and total stock.</span>';
+            }
+            const hadSelect2 = $shiftSelect.hasClass('select2-hidden-accessible');
+            if (hadSelect2) $shiftSelect.select2('destroy');
+            $shiftSelect.find('option').each(function () {
+                const opt = $(this);
+                const fig = itemFigures(opt);
+                opt.text(opt.data('name') + ' (cost: PKR ' + fig.cost.toFixed(2) + ', qty: ' + fig.qty.toFixed(2) + ')');
+            });
+            $shiftSelect.select2(shiftSelect2Opts);
+            rowsBody.querySelectorAll('tr').forEach(function (row) {
+                const fig = itemFigures($shiftSelect.find('option[value="' + row.dataset.itemId + '"]'));
+                row.dataset.curCost = fig.cost;
+                row.dataset.curQty = fig.qty;
+                row.querySelector('.inv-cur-cost').textContent = 'PKR ' + fmtMoney(fig.cost);
+                row.querySelector('.inv-cur-qty').textContent = fig.qty.toFixed(2);
+            });
+            renderAllWarehouseChips();
+            updateUnitCostDisplays();
+        }
+
         $shiftSelect.on('change', rebuildRows);
+        $warehouseSelect.on('change', refreshWarehouseFigures);
+        refreshWarehouseFigures();
         document.querySelectorAll('.inv-cost-mode').forEach(function (r) {
-            r.addEventListener('change', updateUnitCostDisplays);
+            r.addEventListener('change', applyCostMode);
+        });
+        rowsBody.addEventListener('click', function (e) {
+            const chip = e.target.closest('.inv-wh-chip');
+            if (!chip) return;
+            const whId = chip.dataset.whId;
+            const target = whId || ($warehouseSelect.find('option[value="0"]').length ? '0' : null);
+            $warehouseSelect.val(target).trigger('change');
+        });
+        rowsBody.addEventListener('click', function (e) {
+            const btn = e.target.closest('.inv-remove-row');
+            if (!btn) return;
+            const row = btn.closest('tr');
+            const pid = row.dataset.itemId;
+            row.remove();
+            dirtyItemIds.delete(pid);
+            const remaining = ($shiftSelect.val() || []).filter(function (v) { return String(v) !== String(pid); });
+            // 'change.select2' only refreshes the picker's tags - it doesn't
+            // fire rebuildRows, which would reset every row's amount.
+            $shiftSelect.val(remaining).trigger('change.select2');
+            if (!remaining.length) {
+                rowsWrap.style.display = 'none';
+                document.getElementById('inline_inv_split_preview').style.display = 'none';
+                return;
+            }
+            redistributeRows(null);
         });
         rowsBody.addEventListener('input', function (e) {
             if (e.target.classList.contains('inv-cost-input')) {
@@ -1187,6 +1345,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 alert('The item costs must add up to the expense amount (PKR ' + fmtMoney(amount) +
                       '). They currently total PKR ' + fmtMoney(total) + '.');
                 shiftContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+            if (isAverageMode()) {
+                for (const row of rowsBody.querySelectorAll('tr')) {
+                    if (!((parseFloat(row.dataset.curQty) || 0) > 0)) {
+                        e.preventDefault();
+                        const itemName = row.cells[0].textContent;
+                        alert(itemName + ' has no stock' + (selectedWarehouseId() ? ' in the selected warehouse' : '') +
+                              ' to spread the amount over. Use "Replace Current Cost" for it, or remove it.');
+                        shiftContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        return;
+                    }
+                }
                 return;
             }
             const qtyInputs = rowsBody.querySelectorAll('.inv-qty-input');
