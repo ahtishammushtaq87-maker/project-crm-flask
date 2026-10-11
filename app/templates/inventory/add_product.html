@@ -187,9 +187,13 @@
                             <input type="number" class="form-control" name="quantity" step="any" value="0">
                         </div>
                         <div class="col-md-6">
-                            <label for="warehouse_id" class="form-label"><i class="fas fa-warehouse"></i>Warehouse</label>
-                            <select name="warehouse_id" id="warehouse_id" class="form-control select2" data-placeholder="— Search or select warehouse —">
+                            <label for="warehouse_id" class="form-label"><i class="fas fa-warehouse"></i>Warehouse{% if warehouses %} *{% endif %}</label>
+                            <select name="warehouse_id" id="warehouse_id" class="form-control select2" data-placeholder="— Search or select warehouse —" {% if warehouses %}required{% endif %}>
+                                {% if warehouses %}
+                                <option value="">— Select warehouse —</option>
+                                {% else %}
                                 <option value="0">No Warehouse</option>
+                                {% endif %}
                                 {% for wh in warehouses %}
                                 <option value="{{ wh.id }}">{{ wh.name }}</option>
                                 {% endfor %}

@@ -86,12 +86,37 @@
         .fact-sheet-box { border: 1px solid #333; }
     }
 
-    .drag-scroll {
-        cursor: grab;
-        user-select: none;
+    /* Manufacturing Order cost statement - same look as profit_loss.html */
+    .mo-pl .table>:not(caption)>*>* {
+        padding: .5rem 1.5rem;
     }
-    .drag-scroll.dragging {
-        cursor: grabbing;
+    .mo-pl .ps-4 {
+        padding-left: 1.5rem !important;
+        font-size: 0.95rem;
+        color: #555;
+    }
+    .mo-pl .ps-5 {
+        padding-left: 2.75rem !important;
+        font-size: 0.9rem;
+        color: #555;
+    }
+    .mo-pl .border-bottom-2 {
+        border-bottom: 3px double #333;
+    }
+    .mo-pl .accordion-button .mo-head-total {
+        margin-left: auto;
+        margin-right: 1rem;
+        white-space: nowrap;
+    }
+    @media print {
+        .mo-pl .accordion-button::after { display: none !important; }
+        .mo-pl .accordion-collapse { display: block !important; }
+        .mo-pl .table-primary,
+        .mo-pl .table-info,
+        .mo-pl .table-dark {
+            background-color: #eee !important;
+            color: black !important;
+        }
     }
 </style>
 {% endblock %}
@@ -160,224 +185,606 @@
         </div>
     </div>
 
-    <!-- Production Performance: Target vs Actual -->
-    <div class="text-center mb-3">
-        <h5 class="fw-bold mb-0"><i class="fas fa-bullseye me-1"></i> {{ fs.month_label }} PRODUCTION PERFORMANCE — TARGET VS ACHIEVED</h5>
-        <div class="text-muted small">How much we planned to produce this month vs. how much we actually produced, and the profit each represents.</div>
-    </div>
-    <div class="row g-3 mb-3">
-        <div class="col-lg-3 col-6">
-            <div class="fact-sheet-box text-center p-3">
-                <div class="text-muted small fw-bold text-uppercase">Target Production</div>
-                <div class="h4 fw-bold mb-0">{{ '{:,.0f}'.format(fs.performance_totals.target_units) }}</div>
-                <div class="text-muted small">units planned this month</div>
-            </div>
+    <!-- Manufacturing Order Cost Statement (P&L style): summary + click an MO to drill into its costs -->
+    {% set mt = mo_costs.totals %}
+    <div class="mo-pl">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4 class="mb-0"><i class="fas fa-file-invoice-dollar text-primary me-2"></i>Manufacturing Order Cost Statement — {{ fs.month_label }}</h4>
         </div>
-        <div class="col-lg-3 col-6">
-            <div class="fact-sheet-box text-center p-3">
-                <div class="text-muted small fw-bold text-uppercase">Actual Production</div>
-                <div class="h4 fw-bold mb-0 text-primary">{{ '{:,.0f}'.format(fs.performance_totals.produced_units) }}</div>
-                <div class="text-muted small">units actually produced</div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-6">
-            <div class="fact-sheet-box text-center p-3">
-                <div class="text-muted small fw-bold text-uppercase">Completion</div>
-                <div class="h4 fw-bold mb-0 {% if fs.performance_totals.completion_pct >= 100 %}text-success{% elif fs.performance_totals.completion_pct >= 70 %}text-warning{% else %}text-danger{% endif %}">{{ '%.1f'|format(fs.performance_totals.completion_pct) }}%</div>
-                <div class="text-muted small">{{ fs.performance_totals.achieved_count }} SKU(s) achieved, {{ fs.performance_totals.not_achieved_count }} not achieved</div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-6">
-            <div class="fact-sheet-box text-center p-3">
-                <div class="text-muted small fw-bold text-uppercase">Shortfall</div>
-                <div class="h4 fw-bold mb-0 {% if fs.performance_totals.remaining > 0 %}text-danger{% else %}text-success{% endif %}">{{ '{:,.0f}'.format(fs.performance_totals.remaining) }}</div>
-                <div class="text-muted small">units still short of target</div>
-            </div>
-        </div>
-    </div>
-    <div class="row g-3 mb-4">
-        <div class="col-lg-6">
-            <div class="fact-sheet-box">
-                <div class="box-header">EXPECTED PROFIT — IF FULL TARGET IS MET</div>
-                <div class="box-row"><label>Target Revenue</label><span class="value">PKR {{ '{:,.2f}'.format(fs.performance_totals.target_revenue) }}</span></div>
-                <div class="box-row"><label>Estimated Cost</label><span class="value">PKR {{ '{:,.2f}'.format(fs.performance_totals.estimated_cost) }}</span></div>
-                <div class="box-row"><label>Expected Profit</label><span class="value text-success">PKR {{ '{:,.2f}'.format(fs.performance_totals.estimated_profit) }}</span></div>
-            </div>
-        </div>
-        <div class="col-lg-6">
-            <div class="fact-sheet-box">
-                <div class="box-header">ACTUAL PROFIT — FROM REAL PRODUCTION SO FAR</div>
-                <div class="box-row"><label>Actual Revenue</label><span class="value">PKR {{ '{:,.2f}'.format(fs.performance_totals.actual_revenue) }}</span></div>
-                <div class="box-row"><label>Actual Cost</label><span class="value">PKR {{ '{:,.2f}'.format(fs.performance_totals.actual_cost) }}</span></div>
-                <div class="box-row"><label>Actual Profit</label><span class="value text-primary">PKR {{ '{:,.2f}'.format(fs.performance_totals.actual_profit) }}</span></div>
-            </div>
-        </div>
-    </div>
+        <div class="row">
+            <!-- Cost Summary Table -->
+            <div class="col-lg-8">
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="mb-0 fw-bold text-uppercase">Manufacturing Cost Summary</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Account Description</th>
+                                        <th class="text-end">Amount (PKR)</th>
+                                        <th class="text-end">Total (PKR)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr class="table-info bg-opacity-10 fw-bold">
+                                        <td colspan="2">MANUFACTURING ORDERS ({{ mo_costs.rows|length }})</td>
+                                        <td class="text-end">{{ "{:,.0f}".format(mt.qty) }} units</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Units Planned</td>
+                                        <td class="text-end">{{ "{:,.0f}".format(mt.qty) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Units Produced</td>
+                                        <td class="text-end text-success">{{ "{:,.0f}".format(mt.produced_qty) }}</td>
+                                        <td></td>
+                                    </tr>
 
-    <!-- Labour Cost totals -->
-    <div class="row g-3 mb-4">
-        <div class="col-lg-4 col-6">
-            <div class="fact-sheet-box text-center p-3">
-                <div class="text-muted small fw-bold text-uppercase">Labor Cost (Produced)</div>
-                <div class="h4 fw-bold mb-0 text-success">PKR {{ '{:,.2f}'.format(fs.staff_labor_totals.labor_cost_produced) }}</div>
-                <div class="text-muted small">earned on units already produced</div>
-            </div>
-        </div>
-        <div class="col-lg-4 col-6">
-            <div class="fact-sheet-box text-center p-3">
-                <div class="text-muted small fw-bold text-uppercase">Labor Cost (Remaining Produced)</div>
-                <div class="h4 fw-bold mb-0 text-warning">PKR {{ '{:,.2f}'.format(fs.staff_labor_totals.labor_cost_remaining) }}</div>
-                <div class="text-muted small">tied up in units still to be produced</div>
-            </div>
-        </div>
-        <div class="col-lg-4 col-12">
-            <div class="fact-sheet-box text-center p-3">
-                <div class="text-muted small fw-bold text-uppercase">Total Labor Cost</div>
-                <div class="h4 fw-bold mb-0 text-primary">PKR {{ '{:,.2f}'.format(fs.staff_labor_totals.labor_cost_total) }}</div>
-                <div class="text-muted small">across all HR-staffed orders this month</div>
-            </div>
-        </div>
-    </div>
+                                    <tr><td colspan="3" class="py-2"></td></tr>
+                                    <tr class="table-light fw-bold text-uppercase">
+                                        <td colspan="3">Costs Charged to Orders</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Direct Material (BOM Components)</td>
+                                        <td class="text-end">{{ "{:,.2f}".format(mt.material) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Labor Cost (Staff Salary Allocation)</td>
+                                        <td class="text-end">{{ "{:,.2f}".format(mt.labor) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Factory Overhead Expenses</td>
+                                        <td class="text-end">{{ "{:,.2f}".format(mt.overhead) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Other Linked Costs</td>
+                                        <td class="text-end">{{ "{:,.2f}".format(mt.other) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr class="fw-bold border-top border-bottom">
+                                        <td colspan="2">TOTAL MANUFACTURING COST</td>
+                                        <td class="text-end text-danger">({{ "{:,.2f}".format(mt.total) }})</td>
+                                    </tr>
 
-    <!-- Per-SKU Target vs Achieved breakdown -->
-    <div class="card shadow-sm mb-4">
-        <div class="card-header bg-white py-2">
-            <strong class="small">TARGET VS ACHIEVED BY PRODUCT — {{ fs.month_label }}</strong>
-        </div>
-        <div class="card-body p-0">
-            <div class="table-responsive drag-scroll" id="factTableScroll">
-                <table class="table table-bordered table-hover mb-0 fact-table">
-                    <thead>
-                        <tr>
-                            <th>SKU</th>
-                            <th>ITEM NAME</th>
-                            <th class="center">TARGET</th>
-                            <th class="center">PRODUCED</th>
-                            <th class="center">REMAINING</th>
-                            <th class="center">COMPLETION %</th>
-                            <th>EXPECTED PROFIT</th>
-                            <th>ACTUAL PROFIT</th>
-                            <th class="center">RESULT</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for r in fs.performance_rows %}
-                        <tr>
-                            <td>{{ r.product.sku }}</td>
-                            <td class="text-wrap" style="white-space: normal; min-width: 220px;">{{ r.product.name }}</td>
-                            <td class="center">{{ '{:,.0f}'.format(r.target_units) }}</td>
-                            <td class="center">{{ '{:,.0f}'.format(r.produced_units) }}</td>
-                            <td class="center">{{ '{:,.0f}'.format(r.remaining) }}</td>
-                            <td class="center">{{ '%.1f'|format(r.completion_pct) }}%</td>
-                            <td class="num">PKR {{ '{:,.2f}'.format(r.estimated_profit) }}</td>
-                            <td class="num">PKR {{ '{:,.2f}'.format(r.actual_profit) }}</td>
-                            <td class="center">
-                                {% if r.achieved %}
-                                <span class="margin-status success">ACHIEVED</span>
-                                {% else %}
-                                <span class="margin-status danger">NOT ACHIEVED</span>
-                                {% endif %}
-                            </td>
-                        </tr>
+                                    <tr><td colspan="3" class="py-3"></td></tr>
+                                    <tr class="table-dark fw-bold fs-5">
+                                        <td colspan="2">AVERAGE COST PER UNIT</td>
+                                        <td class="text-end">{{ "{:,.2f}".format(mt.cost_per_unit) }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="3" class="small text-muted ps-4">
+                                            <i class="fas fa-info-circle me-1"></i> Click any Manufacturing Order below to see every material, labor and overhead cost charged to it.
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column Metrics -->
+            <div class="col-lg-4">
+                <div class="card shadow-sm border-0 mb-4 text-white bg-primary">
+                    <div class="card-body text-center py-4">
+                        <h6 class="text-uppercase mb-2">Total Manufacturing Cost</h6>
+                        <h2 class="display-6 fw-bold mb-0">PKR {{ "{:,.0f}".format(mt.total) }}</h2>
+                        <div class="small opacity-75 mt-1">across {{ mo_costs.rows|length }} order(s) in {{ fs.month_label }}</div>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-header bg-white py-3">
+                        <h6 class="mb-0 fw-bold">Cost Breakdown</h6>
+                    </div>
+                    <div class="card-body">
+                        {% for label, amt, color in [('Material', mt.material, 'primary'), ('Labor', mt.labor, 'success'), ('Overhead', mt.overhead, 'warning'), ('Other', mt.other, 'secondary')] %}
+                        {% set pct = (amt / mt.total * 100) if mt.total > 0 else 0 %}
+                        <div class="{{ 'mb-0' if loop.last else 'mb-3' }}">
+                            <div class="d-flex justify-content-between mb-1 small">
+                                <span>{{ label }} <span class="text-muted">({{ '%.1f'|format(pct) }}%)</span></span>
+                                <span>{{ "{:,.0f}".format(amt) }}</span>
+                            </div>
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar bg-{{ color }} mo-cost-bar" role="progressbar" data-width="{{ '%.2f'|format(pct) }}"></div>
+                            </div>
+                        </div>
                         {% endfor %}
-                        {% if not fs.performance_rows %}
-                        <tr>
-                            <td colspan="9" class="text-center py-4 text-muted">No production targets found for {{ fs.month_label }}.</td>
-                        </tr>
-                        {% endif %}
-                    </tbody>
-                </table>
+                    </div>
+                </div>
             </div>
+        </div>
+
+        <!-- One accordion item per Manufacturing Order -->
+        <div class="accordion mb-4" id="moCostDetails">
+            {% for r in mo_costs.rows %}
+            {% set o = r.order %}
+            <div class="accordion-item shadow-sm border-0 mb-3 rounded overflow-hidden">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse"
+                        data-bs-target="#collapseMo{{ o.id }}">
+                        <i class="fas fa-industry me-2 text-warning"></i>
+                        {{ o.order_number }}
+                        <span class="fw-normal text-muted ms-2">— {{ r.product.name if r.product else 'N/A' }} ({{ "{:,.0f}".format(r.produced_qty) }}/{{ "{:,.0f}".format(r.qty) }} units)</span>
+                        <span class="badge ms-2 {% if o.status == 'Completed' %}bg-success{% elif o.status == 'In Progress' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ o.status }}</span>
+                        <span class="mo-head-total">PKR {{ "{:,.2f}".format(r.total) }}</span>
+                    </button>
+                </h2>
+                <div id="collapseMo{{ o.id }}" class="accordion-collapse collapse">
+                    <div class="accordion-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Account Description</th>
+                                        <th class="text-end">Amount (PKR)</th>
+                                        <th class="text-end">Total (PKR)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr class="text-secondary small">
+                                        <td colspan="3" class="ps-4">
+                                            <em>Start: {{ o.start_date.strftime('%Y-%m-%d') if o.start_date else '-' }}
+                                            &nbsp;|&nbsp; End: {{ o.end_date.strftime('%Y-%m-%d') if o.end_date else '-' }}
+                                            &nbsp;|&nbsp; BOM: {{ o.bom.name if o.bom else '-' }}</em>
+                                        </td>
+                                    </tr>
+
+                                    <!-- Material -->
+                                    <tr class="table-info bg-opacity-10 fw-bold">
+                                        <td colspan="2">DIRECT MATERIAL</td>
+                                        <td class="text-end">{{ "{:,.2f}".format(r.material_total) }}</td>
+                                    </tr>
+                                    {% for m in r.materials %}
+                                    <tr>
+                                        <td class="ps-4">{{ m.name }}{% if m.sku %} <span class="text-muted small">({{ m.sku }})</span>{% endif %} <span class="text-muted small">× {{ "{:,.2f}".format(m.qty) }}</span></td>
+                                        <td class="text-end">{{ "{:,.2f}".format(m.amount) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="3" class="ps-4 text-muted"><em>No components on this order</em></td></tr>
+                                    {% endfor %}
+
+                                    <!-- Labor -->
+                                    <tr><td colspan="3" class="py-2"></td></tr>
+                                    <tr class="table-info bg-opacity-10 fw-bold">
+                                        <td colspan="2">LABOR COST</td>
+                                        <td class="text-end">{{ "{:,.2f}".format(r.labor_total) }}</td>
+                                    </tr>
+                                    {% for l in r.labor %}
+                                    <tr>
+                                        <td class="ps-4">{{ l.name }}{% if l.designation %} <span class="text-muted small">({{ l.designation }})</span>{% endif %}
+                                            {% if l.days %}<span class="text-muted small">— {{ "{:,.2f}".format(l.daily_rate) }}/day × {{ "{:g}".format(l.days) }} days</span>{% endif %}</td>
+                                        <td class="text-end">{{ "{:,.2f}".format(l.amount) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    {% endfor %}
+                                    {% if r.bom_labor_estimate %}
+                                    <tr>
+                                        <td class="ps-4">BOM Labor Estimate (not allocated to staff)</td>
+                                        <td class="text-end">{{ "{:,.2f}".format(r.bom_labor_estimate) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    {% endif %}
+                                    {% if not r.labor and not r.bom_labor_estimate %}
+                                    <tr><td colspan="3" class="ps-4 text-muted"><em>No labor cost charged</em></td></tr>
+                                    {% endif %}
+
+                                    <!-- Overhead -->
+                                    <tr><td colspan="3" class="py-2"></td></tr>
+                                    <tr class="table-info bg-opacity-10 fw-bold">
+                                        <td colspan="2">FACTORY OVERHEAD EXPENSES</td>
+                                        <td class="text-end">{{ "{:,.2f}".format(r.overhead_total) }}</td>
+                                    </tr>
+                                    {% for e in r.overheads %}
+                                    <tr>
+                                        <td class="ps-4">{{ e.category }}{% if e.description %} — {{ e.description }}{% endif %}
+                                            <span class="text-muted small">({{ e.number or '' }} {{ e.date.strftime('%Y-%m-%d') if e.date else '' }})</span>
+                                            {% if e.status != 'confirmed' %}<span class="badge bg-light text-dark border ms-1">{{ e.status|capitalize }}</span>{% endif %}</td>
+                                        <td class="text-end">{{ "{:,.2f}".format(e.amount) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="3" class="ps-4 text-muted"><em>No overhead expenses linked to this order</em></td></tr>
+                                    {% endfor %}
+
+                                    <!-- Other -->
+                                    {% if r.other_costs %}
+                                    <tr><td colspan="3" class="py-2"></td></tr>
+                                    <tr class="table-info bg-opacity-10 fw-bold">
+                                        <td colspan="2">OTHER COSTS</td>
+                                        <td class="text-end">{{ "{:,.2f}".format(r.other_total) }}</td>
+                                    </tr>
+                                    {% for e in r.other_costs %}
+                                    <tr>
+                                        <td class="ps-4">{{ e.category }}{% if e.description %} — {{ e.description }}{% endif %}
+                                            <span class="text-muted small">({{ e.number or '' }} {{ e.date.strftime('%Y-%m-%d') if e.date else '' }})</span>
+                                            {% if e.status != 'confirmed' %}<span class="badge bg-light text-dark border ms-1">{{ e.status|capitalize }}</span>{% endif %}</td>
+                                        <td class="text-end">{{ "{:,.2f}".format(e.amount) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    {% endfor %}
+                                    {% endif %}
+
+                                    <!-- Totals -->
+                                    <tr><td colspan="3" class="py-2"></td></tr>
+                                    <tr class="fw-bold border-top border-bottom">
+                                        <td colspan="2">TOTAL ORDER COST</td>
+                                        <td class="text-end text-danger">({{ "{:,.2f}".format(r.total) }})</td>
+                                    </tr>
+                                    <tr class="table-dark fw-bold fs-5">
+                                        <td colspan="2">COST PER UNIT <span class="small fw-normal">({{ "{:,.0f}".format(r.qty) }} units)</span></td>
+                                        <td class="text-end">{{ "{:,.2f}".format(r.cost_per_unit) }}</td>
+                                    </tr>
+
+                                    <!-- Informational: completion batches -->
+                                    {% if r.batches %}
+                                    <tr><td colspan="3" class="py-2"></td></tr>
+                                    <tr class="table-light fw-bold text-uppercase">
+                                        <td colspan="3">Production Batches (Informational)</td>
+                                    </tr>
+                                    {% for b in r.batches %}
+                                    <tr>
+                                        <td class="ps-4">{{ b.completion_date.strftime('%Y-%m-%d') if b.completion_date else '-' }} — {{ "{:,.0f}".format(b.quantity_produced) }} units
+                                            <span class="text-muted small">(Material {{ "{:,.2f}".format(b.material_cost or 0) }} · Labor {{ "{:,.2f}".format(b.labor_cost or 0) }} · Overhead {{ "{:,.2f}".format(b.overhead_cost or 0) }}{% if b.is_manual_overhead %} manual{% endif %})</span></td>
+                                        <td class="text-end">{{ "{:,.2f}".format(b.total_cost or 0) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    {% endfor %}
+                                    <tr>
+                                        <td colspan="3" class="small text-muted ps-4">
+                                            <i class="fas fa-info-circle me-1"></i> Batch costs are what was booked into finished-goods cost at each completion and are not added again above.
+                                        </td>
+                                    </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="card shadow-sm border-0 mb-3">
+                <div class="card-body text-center text-muted py-4">No Manufacturing Orders found for {{ fs.month_label }}.</div>
+            </div>
+            {% endfor %}
         </div>
     </div>
 
-    <!-- Labor Cost by Staff: produced vs remaining/unproduced quantity -->
-    <div class="card shadow-sm mb-4">
-        <div class="card-header bg-white py-2">
-            <strong class="small">LABOUR COST BY STAFF — {{ fs.month_label }}</strong>
-            <div class="text-muted small">Each staff member's labor cost on this SKU's orders this month, split between the portion already produced and the portion still remaining.</div>
+    <!-- Production Performance: Target vs Achieved (P&L style) - click a product to see labor used according to production -->
+    {% set pt = fs.performance_totals %}
+    {% set lt = fs.staff_labor_totals %}
+    <div class="mo-pl">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+            <h4 class="mb-0"><i class="fas fa-bullseye text-primary me-2"></i>Production Performance — Target vs Achieved — {{ fs.month_label }}</h4>
         </div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-bordered table-hover mb-0 fact-table">
-                    <thead>
-                        <tr>
-                            <th>SKU</th>
-                            <th>ITEM NAME</th>
-                            <th>STAFF NAME</th>
-                            <th class="center">PRODUCED QTY</th>
-                            <th class="center">REMAINING QTY</th>
-                            <th>LABOR COST (PRODUCED)</th>
-                            <th>LABOR COST (REMAINING PRODUCED)</th>
-                            <th>TOTAL LABOR COST</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for r in fs.staff_labor_rows %}
-                        <tr>
-                            <td>{{ r.product.sku }}</td>
-                            <td class="text-wrap" style="white-space: normal; min-width: 200px;">{{ r.product.name }}</td>
-                            <td>{{ r.staff.name }}{% if r.staff.designation %} <span class="text-muted small">({{ r.staff.designation }})</span>{% endif %}</td>
-                            <td class="center">{{ '{:,.0f}'.format(r.produced_qty) }}</td>
-                            <td class="center">{{ '{:,.0f}'.format(r.remaining_qty) }}</td>
-                            <td class="num">PKR {{ '{:,.2f}'.format(r.labor_cost_produced) }}</td>
-                            <td class="num">PKR {{ '{:,.2f}'.format(r.labor_cost_remaining) }}</td>
-                            <td class="num fw-bold">PKR {{ '{:,.2f}'.format(r.labor_cost_total) }}</td>
-                        </tr>
+        <div class="text-muted small mb-3">How much we planned to produce this month vs. how much we actually produced, the profit each represents, and the labor used according to production.</div>
+        <div class="row">
+            <!-- Performance Summary Table -->
+            <div class="col-lg-8">
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="mb-0 fw-bold text-uppercase">Production Performance Summary</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Account Description</th>
+                                        <th class="text-end">Amount</th>
+                                        <th class="text-end">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Production -->
+                                    <tr class="table-info bg-opacity-10 fw-bold">
+                                        <td colspan="2">PRODUCTION (UNITS)</td>
+                                        <td class="text-end">{{ '%.1f'|format(pt.completion_pct) }}% complete</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Target Production (units planned)</td>
+                                        <td class="text-end">{{ '{:,.0f}'.format(pt.target_units) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Actual Production (units produced)</td>
+                                        <td class="text-end text-success">{{ '{:,.0f}'.format(pt.produced_units) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Less: Shortfall (units still short of target)</td>
+                                        <td class="text-end text-danger">({{ '{:,.0f}'.format(pt.remaining) }})</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr class="fw-bold border-bottom-2">
+                                        <td colspan="2">SKUs ACHIEVED / NOT ACHIEVED</td>
+                                        <td class="text-end"><span class="text-success">{{ pt.achieved_count }}</span> / <span class="text-danger">{{ pt.not_achieved_count }}</span></td>
+                                    </tr>
+
+                                    <!-- Expected -->
+                                    <tr><td colspan="3" class="py-2"></td></tr>
+                                    <tr class="table-light fw-bold text-uppercase">
+                                        <td colspan="3">Expected Profit — If Full Target Is Met (PKR)</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Target Revenue</td>
+                                        <td class="text-end text-success">{{ '{:,.2f}'.format(pt.target_revenue) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Less: Estimated Cost</td>
+                                        <td class="text-end text-danger">({{ '{:,.2f}'.format(pt.estimated_cost) }})</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr class="table-primary fw-bold">
+                                        <td colspan="2">EXPECTED PROFIT</td>
+                                        <td class="text-end {{ 'text-danger' if pt.estimated_profit < 0 }}">{{ '{:,.2f}'.format(pt.estimated_profit) }}</td>
+                                    </tr>
+
+                                    <!-- Labor used according to production -->
+                                    <tr><td colspan="3" class="py-2"></td></tr>
+                                    <tr class="table-light fw-bold text-uppercase">
+                                        <td colspan="3">Labor Used According to Production (PKR)</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Labor Used on Produced Units ({{ '{:,.0f}'.format(pt.produced_units) }})</td>
+                                        <td class="text-end text-success">{{ '{:,.2f}'.format(lt.labor_cost_produced) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Labor Tied Up in Remaining Units ({{ '{:,.0f}'.format(pt.remaining) }})</td>
+                                        <td class="text-end text-warning">{{ '{:,.2f}'.format(lt.labor_cost_remaining) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr class="fw-bold border-top border-bottom">
+                                        <td colspan="2">TOTAL LABOR COST (HR-STAFFED ORDERS)</td>
+                                        <td class="text-end text-danger">({{ '{:,.2f}'.format(lt.labor_cost_total) }})</td>
+                                    </tr>
+
+                                    <!-- Actual -->
+                                    <tr><td colspan="3" class="py-2"></td></tr>
+                                    <tr class="table-light fw-bold text-uppercase">
+                                        <td colspan="3">Actual Profit — From Real Production So Far (PKR)</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Actual Revenue</td>
+                                        <td class="text-end text-success">{{ '{:,.2f}'.format(pt.actual_revenue) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Less: Actual Cost</td>
+                                        <td class="text-end text-danger">({{ '{:,.2f}'.format(pt.actual_cost) }})</td>
+                                        <td></td>
+                                    </tr>
+
+                                    <tr><td colspan="3" class="py-3"></td></tr>
+                                    <tr class="table-dark fw-bold fs-4">
+                                        <td colspan="2">ACTUAL PROFIT</td>
+                                        <td class="text-end {{ 'text-success' if pt.actual_profit >= 0 else 'text-danger' }}">{{ '{:,.2f}'.format(pt.actual_profit) }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="3" class="small text-muted ps-4">
+                                            <i class="fas fa-info-circle me-1"></i> Click any product below to see its target, what was achieved, and each staff member's labor used on produced vs. remaining units.
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column Metrics -->
+            <div class="col-lg-4">
+                <div class="card shadow-sm border-0 mb-4 text-white {% if pt.completion_pct >= 100 %}bg-success{% elif pt.completion_pct >= 70 %}bg-warning{% else %}bg-danger{% endif %}">
+                    <div class="card-body text-center py-4">
+                        <h6 class="text-uppercase mb-2">Target Completion</h6>
+                        <h2 class="display-5 fw-bold mb-0">{{ '%.1f'|format(pt.completion_pct) }}%</h2>
+                        <div class="small opacity-75 mt-1">{{ '{:,.0f}'.format(pt.produced_units) }} of {{ '{:,.0f}'.format(pt.target_units) }} units produced</div>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-header bg-white py-3">
+                        <h6 class="mb-0 fw-bold">Labor Used vs. Remaining</h6>
+                    </div>
+                    <div class="card-body">
+                        {% for label, amt, color in [('Used on Produced Units', lt.labor_cost_produced, 'success'), ('Tied Up in Remaining Units', lt.labor_cost_remaining, 'warning')] %}
+                        {% set pct = (amt / lt.labor_cost_total * 100) if lt.labor_cost_total > 0 else 0 %}
+                        <div class="{{ 'mb-0' if loop.last else 'mb-3' }}">
+                            <div class="d-flex justify-content-between mb-1 small">
+                                <span>{{ label }} <span class="text-muted">({{ '%.1f'|format(pct) }}%)</span></span>
+                                <span>{{ '{:,.0f}'.format(amt) }}</span>
+                            </div>
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar bg-{{ color }} mo-cost-bar" role="progressbar" data-width="{{ '%.2f'|format(pct) }}"></div>
+                            </div>
+                        </div>
                         {% endfor %}
-                        {% if not fs.staff_labor_rows %}
-                        <tr>
-                            <td colspan="8" class="text-center py-4 text-muted">No HR-staffed Manufacturing Orders (see "Staff Used" on Order Add/Edit) found for {{ fs.month_label }}.</td>
-                        </tr>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-header bg-white py-3">
+                        <h6 class="mb-0 fw-bold">Profit: Expected vs. Actual</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between small mb-2">
+                            <span>Expected Profit (full target)</span>
+                            <span class="fw-bold {{ 'text-success' if pt.estimated_profit >= 0 else 'text-danger' }}">{{ '{:,.0f}'.format(pt.estimated_profit) }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between small">
+                            <span>Actual Profit (so far)</span>
+                            <span class="fw-bold {{ 'text-success' if pt.actual_profit >= 0 else 'text-danger' }}">{{ '{:,.0f}'.format(pt.actual_profit) }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- One accordion item per product -->
+        <div class="accordion mb-4" id="targetDetails">
+            {% for r in fs.performance_rows %}
+            {% set p = r.product %}
+            {% set staff_rows = fs.staff_labor_rows|selectattr('product.id', 'equalto', p.id)|list %}
+            {% set labor_used = staff_rows|sum(attribute='labor_cost_produced') %}
+            {% set labor_remaining = staff_rows|sum(attribute='labor_cost_remaining') %}
+            <div class="accordion-item shadow-sm border-0 mb-3 rounded overflow-hidden">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse"
+                        data-bs-target="#collapseTarget{{ p.id }}">
+                        <i class="fas fa-box me-2 text-primary"></i>
+                        {{ p.sku }}
+                        <span class="fw-normal text-muted ms-2">— {{ p.name }} ({{ '{:,.0f}'.format(r.produced_units) }}/{{ '{:,.0f}'.format(r.target_units) }} units, {{ '%.1f'|format(r.completion_pct) }}%)</span>
+                        {% if r.achieved %}
+                        <span class="margin-status success ms-2">ACHIEVED</span>
                         {% else %}
-                        <tr class="total-row">
-                            <td colspan="5">TOTAL</td>
-                            <td class="num">PKR {{ '{:,.2f}'.format(fs.staff_labor_totals.labor_cost_produced) }}</td>
-                            <td class="num">PKR {{ '{:,.2f}'.format(fs.staff_labor_totals.labor_cost_remaining) }}</td>
-                            <td class="num">PKR {{ '{:,.2f}'.format(fs.staff_labor_totals.labor_cost_total) }}</td>
-                        </tr>
+                        <span class="margin-status danger ms-2">NOT ACHIEVED</span>
                         {% endif %}
-                    </tbody>
-                </table>
+                        <span class="mo-head-total {{ 'text-danger' if r.actual_profit < 0 }}">Profit PKR {{ '{:,.2f}'.format(r.actual_profit) }}</span>
+                    </button>
+                </h2>
+                <div id="collapseTarget{{ p.id }}" class="accordion-collapse collapse">
+                    <div class="accordion-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Account Description</th>
+                                        <th class="text-end">Amount</th>
+                                        <th class="text-end">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Production -->
+                                    <tr class="table-info bg-opacity-10 fw-bold">
+                                        <td colspan="2">PRODUCTION (UNITS)</td>
+                                        <td class="text-end">{{ '%.1f'|format(r.completion_pct) }}% complete</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Target</td>
+                                        <td class="text-end">{{ '{:,.0f}'.format(r.target_units) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Produced</td>
+                                        <td class="text-end text-success">{{ '{:,.0f}'.format(r.produced_units) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Remaining</td>
+                                        <td class="text-end text-danger">({{ '{:,.0f}'.format(r.remaining) }})</td>
+                                        <td></td>
+                                    </tr>
+
+                                    <!-- Expected -->
+                                    <tr><td colspan="3" class="py-2"></td></tr>
+                                    <tr class="table-light fw-bold text-uppercase">
+                                        <td colspan="3">Expected — Full Target (PKR)</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Target Revenue</td>
+                                        <td class="text-end text-success">{{ '{:,.2f}'.format(r.target_revenue) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Less: Estimated Cost</td>
+                                        <td class="text-end text-danger">({{ '{:,.2f}'.format(r.estimated_cost) }})</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr class="table-primary fw-bold">
+                                        <td colspan="2">EXPECTED PROFIT</td>
+                                        <td class="text-end {{ 'text-danger' if r.estimated_profit < 0 }}">{{ '{:,.2f}'.format(r.estimated_profit) }}</td>
+                                    </tr>
+
+                                    <!-- Labor used on produced units -->
+                                    <tr><td colspan="3" class="py-2"></td></tr>
+                                    <tr class="table-info bg-opacity-10 fw-bold">
+                                        <td colspan="2">LABOR USED ON PRODUCED UNITS (PKR)</td>
+                                        <td class="text-end">{{ '{:,.2f}'.format(labor_used) }}</td>
+                                    </tr>
+                                    {% for s in staff_rows %}
+                                    <tr>
+                                        <td class="ps-4">{{ s.staff.name }}{% if s.staff.designation %} <span class="text-muted small">({{ s.staff.designation }})</span>{% endif %}
+                                            <span class="text-muted small">— {{ '{:,.0f}'.format(s.produced_qty) }} unit(s) produced</span></td>
+                                        <td class="text-end">{{ '{:,.2f}'.format(s.labor_cost_produced) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    {% else %}
+                                    <tr><td colspan="3" class="ps-4 text-muted"><em>No HR-staffed Manufacturing Orders (see "Staff Used" on Order Add/Edit) for this product this month</em></td></tr>
+                                    {% endfor %}
+
+                                    <!-- Labor tied up in remaining units -->
+                                    {% if staff_rows %}
+                                    <tr><td colspan="3" class="py-2"></td></tr>
+                                    <tr class="table-info bg-opacity-10 fw-bold">
+                                        <td colspan="2">LABOR TIED UP IN REMAINING UNITS (PKR)</td>
+                                        <td class="text-end">{{ '{:,.2f}'.format(labor_remaining) }}</td>
+                                    </tr>
+                                    {% for s in staff_rows %}
+                                    <tr>
+                                        <td class="ps-4">{{ s.staff.name }}{% if s.staff.designation %} <span class="text-muted small">({{ s.staff.designation }})</span>{% endif %}
+                                            <span class="text-muted small">— {{ '{:,.0f}'.format(s.remaining_qty) }} unit(s) remaining</span></td>
+                                        <td class="text-end">{{ '{:,.2f}'.format(s.labor_cost_remaining) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    {% endfor %}
+                                    <tr class="fw-bold border-top border-bottom">
+                                        <td colspan="2">TOTAL LABOR COST</td>
+                                        <td class="text-end text-danger">({{ '{:,.2f}'.format(labor_used + labor_remaining) }})</td>
+                                    </tr>
+                                    {% endif %}
+
+                                    <!-- Actual -->
+                                    <tr><td colspan="3" class="py-2"></td></tr>
+                                    <tr class="table-light fw-bold text-uppercase">
+                                        <td colspan="3">Actual — Real Production So Far (PKR)</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Actual Revenue</td>
+                                        <td class="text-end text-success">{{ '{:,.2f}'.format(r.actual_revenue) }}</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ps-4">Less: Actual Cost</td>
+                                        <td class="text-end text-danger">({{ '{:,.2f}'.format(r.actual_cost) }})</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr class="table-dark fw-bold fs-5">
+                                        <td colspan="2">ACTUAL PROFIT</td>
+                                        <td class="text-end {{ 'text-success' if r.actual_profit >= 0 else 'text-danger' }}">{{ '{:,.2f}'.format(r.actual_profit) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
+            {% else %}
+            <div class="card shadow-sm border-0 mb-3">
+                <div class="card-body text-center text-muted py-4">No production targets found for {{ fs.month_label }}.</div>
+            </div>
+            {% endfor %}
         </div>
     </div>
+
 
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    (function() {
-        var el = document.getElementById('factTableScroll');
-        if (!el) return;
-        var isDown = false, startX = 0, startScroll = 0, moved = false;
-
-        el.addEventListener('mousedown', function(e) {
-            isDown = true;
-            moved = false;
-            el.classList.add('dragging');
-            startX = e.pageX;
-            startScroll = el.scrollLeft;
-        });
-        window.addEventListener('mouseup', function() {
-            isDown = false;
-            el.classList.remove('dragging');
-        });
-        window.addEventListener('mousemove', function(e) {
-            if (!isDown) return;
-            var delta = e.pageX - startX;
-            if (Math.abs(delta) > 3) moved = true;
-            el.scrollLeft = startScroll - delta;
-        });
-        // Prevent text-selection clicks from being treated as a drag once released.
-        el.addEventListener('click', function(e) {
-            if (moved) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-        }, true);
-    })();
+    document.querySelectorAll('.mo-cost-bar').forEach(function(bar) {
+        bar.style.width = Math.min(parseFloat(bar.dataset.width) || 0, 100) + '%';
+    });
 </script>
 <script>
     $(document).ready(function() {

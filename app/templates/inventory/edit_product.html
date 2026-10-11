@@ -189,13 +189,67 @@
                 <div class="form-section">
                     <div class="form-section-title"><i class="fas fa-warehouse"></i> Stock &amp; Warehouse</div>
                 <div class="row g-3">
+                    {% if warehouse_cost_rows %}
+                    {# Stock is edited per warehouse; the total is always the sum, so the
+                       warehouse badges on the item list can never disagree with Quantity. #}
+                    <div class="col-12">
+                        <input type="hidden" name="wh_qty_present" value="1">
+                        <label class="form-label"><i class="fas fa-boxes"></i>Quantity by Warehouse</label>
+                        {% if warehouse_total - (product.quantity or 0) > 0.0001 %}
+                        <div class="alert alert-warning py-2 small mb-2">
+                            <i class="fas fa-exclamation-triangle me-1"></i>
+                            The saved quantity (<strong>{{ "%g"|format(product.quantity or 0) }}</strong>) does not match the warehouse total
+                            (<strong>{{ "%g"|format(warehouse_total + unassigned_qty) }}</strong>). Check each warehouse below &mdash; when you
+                            click Update, the item's quantity will be set to the warehouse total.
+                        </div>
+                        {% endif %}
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-1 no-datatable" id="whQtyTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Warehouse</th>
+                                        <th style="width:220px">Quantity ({{ product.unit or 'units' }})</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for r in warehouse_cost_rows %}
+                                    <tr>
+                                        <td>{{ r.warehouse.name }}{% if product.warehouse_id == r.warehouse.id %} <span class="badge bg-light text-dark border">default</span>{% endif %}</td>
+                                        <td>
+                                            <input type="number" name="wh_qty_{{ r.warehouse.id }}" class="form-control form-control-sm wh-qty-input"
+                                                   data-wh="{{ r.warehouse.id }}" value="{{ '%g'|format(r.quantity) }}" step="any" min="0">
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                    {% if unassigned_qty > 0 %}
+                                    <tr>
+                                        <td class="text-muted">Not in any warehouse</td>
+                                        <td>
+                                            <input type="number" name="wh_qty_unassigned" class="form-control form-control-sm wh-qty-input"
+                                                   value="{{ '%g'|format(unassigned_qty) }}" step="any" min="0">
+                                        </td>
+                                    </tr>
+                                    {% endif %}
+                                </tbody>
+                                <tfoot>
+                                    <tr class="fw-bold">
+                                        <td>Total Quantity</td>
+                                        <td><span id="whQtyTotal">{{ "%g"|format(warehouse_total + unassigned_qty) }}</span> <small class="text-muted fw-normal">{{ product.unit or '' }}</small></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                        <small class="text-muted">Enter the stock held in each warehouse. The item's total quantity is the sum of all warehouses.</small>
+                    </div>
+                    {% else %}
                     <div class="col-md-6">
                         <label class="form-label"><i class="fas fa-boxes"></i>Quantity</label>
                         <input type="number" name="quantity" class="form-control" value="{{ product.quantity }}" step="any" min="0">
                         <small class="text-muted">Current stock quantity</small>
                     </div>
+                    {% endif %}
                     <div class="col-md-6" id="warehouse_field_container">
-                        <label for="warehouse_id" class="form-label"><i class="fas fa-warehouse"></i>Warehouse</label>
+                        <label for="warehouse_id" class="form-label"><i class="fas fa-warehouse"></i>Default Warehouse</label>
                         <select name="warehouse_id" id="warehouse_id" class="form-control select2" data-placeholder="— Search or select warehouse —">
                             <option value="0">No Warehouse</option>
                             {% for wh in warehouses %}
@@ -276,9 +330,10 @@
                                 {% for r in warehouse_cost_rows %}
                                 <tr>
                                     <td>{{ r.warehouse.name }}{% if product.warehouse_id == r.warehouse.id %} <span class="badge bg-light text-dark border">default</span>{% endif %}</td>
-                                    <td class="text-end">{{ "%g"|format(r.quantity) }} <small class="text-muted">{{ product.unit or '' }}</small></td>
+                                    <td class="text-end"><span class="wh-cost-qty" data-wh="{{ r.warehouse.id }}">{{ "%g"|format(r.quantity) }}</span> <small class="text-muted">{{ product.unit or '' }}</small></td>
                                     <td>
                                         <input type="number" name="wh_cost_{{ r.warehouse.id }}" class="form-control form-control-sm wh-cost-input"
+                                               data-wh="{{ r.warehouse.id }}"
                                                step="0.01" min="0" data-qty="{{ r.quantity }}"
                                                value="{{ '%.2f'|format(r.own_cost) if r.own_cost is not none else '' }}"
                                                placeholder="{{ '%.2f'|format(product.cost_price or 0) }} (normal cost)">
@@ -389,6 +444,26 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     document.querySelectorAll('.wh-cost-input').forEach(inp => inp.addEventListener('input', refreshWarehouseCostValues));
+
+    // Quantity by Warehouse: live total, and keep the Cost by Warehouse
+    // table's Stock / Stock Value columns in step with what's typed.
+    function refreshWarehouseQuantities() {
+        let total = 0;
+        document.querySelectorAll('.wh-qty-input').forEach(inp => {
+            const qty = Math.max(parseFloat(inp.value) || 0, 0);
+            total += qty;
+            const wh = inp.dataset.wh;
+            if (!wh) return;
+            const costInp = document.querySelector('.wh-cost-input[data-wh="' + wh + '"]');
+            if (costInp) costInp.dataset.qty = qty;
+            const qtyCell = document.querySelector('.wh-cost-qty[data-wh="' + wh + '"]');
+            if (qtyCell) qtyCell.textContent = qty;
+        });
+        const totalEl = document.getElementById('whQtyTotal');
+        if (totalEl) totalEl.textContent = parseFloat(total.toFixed(4));
+        refreshWarehouseCostValues();
+    }
+    document.querySelectorAll('.wh-qty-input').forEach(inp => inp.addEventListener('input', refreshWarehouseQuantities));
     const normalCostInput = document.getElementById('cost_price');
     if (normalCostInput) normalCostInput.addEventListener('input', refreshWarehouseCostValues);
 

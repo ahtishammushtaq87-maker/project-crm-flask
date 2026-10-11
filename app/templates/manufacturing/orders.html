@@ -4,6 +4,61 @@
 
 {% from 'components/approval_notification.html' import pending_approval_alert with context %}
 
+{% block extra_css %}
+<style>
+    /* Manufacturing Orders table: give the columns room, keep numbers on one
+       line and the header boxes compact. Scoped to .mo-card / .mo-table only. */
+    .mo-card .card-body { padding: .75rem; }
+    @media (min-width: 992px) { .mo-card .card-body { padding: 1rem 1.25rem; } }
+    .mo-table { font-size: .8125rem; margin-bottom: 0; }
+    .mo-table thead th {
+        vertical-align: bottom; white-space: normal !important; line-height: 1.2;
+        font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .02em;
+        color: #5a5c69; background: #f8f9fc; padding: .5rem 1.35rem .5rem .5rem !important;
+        border-bottom-width: 2px;
+    }
+    .mo-table thead th.mo-c-select { padding: .5rem !important; }
+    .mo-table tbody td { vertical-align: middle; padding: .5rem; }
+    .mo-table .mo-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .mo-table thead th.mo-num { text-align: right; }
+    .mo-table .mo-nowrap { white-space: nowrap; }
+    .mo-table .mo-c-select { width: 38px; }
+    .mo-table .mo-c-order { min-width: 112px; }
+    .mo-table .mo-c-product { min-width: 190px; max-width: 280px; }
+    .mo-table .mo-c-money { min-width: 96px; }
+    .mo-table .mo-c-actions { width: 64px; }
+    .mo-actions-toggle { width: 34px; }
+    .mo-actions-menu { font-size: .875rem; min-width: 210px; }
+    .mo-actions-menu .dropdown-item { display: flex; align-items: center; gap: .6rem; padding: .45rem 1rem; }
+    .mo-actions-menu .dropdown-item i { width: 16px; text-align: center; }
+    /* Totals boxes above the table */
+    .mo-total-box { height: 100%; background: #fff; border-radius: .5rem; padding: .45rem .75rem; border: 1px solid #e3e6f0;
+        border-left: 4px solid var(--mo-tb, #4e73df); box-shadow: 0 .1rem .35rem rgba(58, 59, 69, .07); }
+    .mo-tb-label { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--mo-tb, #4e73df);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+    .mo-tb-label i { margin-right: .3rem; }
+    .mo-tb-value { font-size: 1.05rem; font-weight: 700; color: #3a3b45; line-height: 1.35; white-space: nowrap;
+        overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+    .mo-tb-value small { font-size: .65em; color: #858796; font-weight: 600; }
+    .mo-tb-sub { font-size: .72rem; color: #858796; font-weight: 400; margin-left: .35rem; }
+    .mo-tb-primary { --mo-tb: #4e73df; } .mo-tb-info { --mo-tb: #36b9cc; } .mo-tb-warning { --mo-tb: #d4a017; }
+    .mo-tb-purple { --mo-tb: #6f42c1; } .mo-tb-success { --mo-tb: #1cc88a; }
+    .mo-totals { --bs-gutter-y: .6rem; --bs-gutter-x: .6rem; }
+    .mo-totals > [class*="col"] { min-width: 0; }
+    .mo-table .mo-cur { color: #858796; font-size: .75em; margin-right: .2rem; }
+    .mo-table .mo-strong { font-weight: 700; color: #13855c; }
+    /* Export buttons / page-size / search wrap neatly on small screens. */
+    @media (max-width: 767.98px) {
+        .mo-card .dataTables_wrapper > .d-flex { flex-wrap: wrap; gap: .5rem; }
+        .mo-card .dt-buttons { display: flex; flex-wrap: wrap; gap: .25rem; }
+        .mo-card .dt-buttons .btn { flex: 0 0 auto; margin: 0 !important; }
+        .mo-card .dataTables_length, .mo-card .dataTables_filter { margin: 0; }
+        .mo-card .dataTables_filter input { width: 100% !important; margin-left: 0 !important; }
+        .mo-card .dataTables_filter, .mo-card .dataTables_filter label { width: 100%; }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div id="module-context" data-module="manufacturing_order" style="display:none;"></div>
 <div class="container-fluid">
@@ -37,47 +92,96 @@
         </li>
     </ul>
 
+    {# ── Totals across every order in this list ─────────────────────── #}
+    {% set t = namespace(qty=0, produced=0, remaining=0, mo_cost=0, salary=0, new_cost=0, in_progress=0) %}
+    {% for ord in orders %}
+        {% set t.qty = t.qty + (ord.quantity_to_produce or 0) %}
+        {% set t.produced = t.produced + (ord.produced_qty or 0) %}
+        {% set t.remaining = t.remaining + (ord.remaining_qty or 0) %}
+        {% set t.mo_cost = t.mo_cost + (ord.actual_material_cost or 0) + (ord.actual_overhead_cost or 0) %}
+        {% if ord.status == 'In Progress' and not ord.timer_stopped %}{% set t.in_progress = t.in_progress + 1 %}{% endif %}
+        {% set sbt = salary_breakdown.get(ord.id) %}
+        {% if sbt %}
+            {% set t.salary = t.salary + sbt.salary_allocated %}
+            {% set t.new_cost = t.new_cost + sbt.new_mo_cost %}
+        {% endif %}
+    {% endfor %}
+    <div class="row mb-3 mo-totals">
+        <div class="col-6 col-md-4 col-xl">
+            <div class="mo-total-box mo-tb-primary">
+                <div class="mo-tb-label"><i class="fas fa-clipboard-list"></i> Orders</div>
+                <div class="mo-tb-value">{{ orders|length }} <span class="mo-tb-sub">{% if view == 'previous' %}timer stopped{% else %}{{ t.in_progress }} in progress{% endif %}</span></div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl">
+            <div class="mo-total-box mo-tb-info">
+                <div class="mo-tb-label"><i class="fas fa-boxes-stacked"></i> Qty to Produce</div>
+                <div class="mo-tb-value">{{ "{:,.0f}".format(t.qty) }} <span class="mo-tb-sub">{{ "{:,.0f}".format(t.produced) }} produced · {{ "{:,.0f}".format(t.remaining) }} left</span></div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4 col-xl">
+            <div class="mo-total-box mo-tb-warning">
+                <div class="mo-tb-label"><i class="fas fa-industry"></i> MO Cost (excl. Salary)</div>
+                <div class="mo-tb-value"><small>PKR</small> {{ "{:,.2f}".format(t.mo_cost) }} <span class="mo-tb-sub">material + overhead</span></div>
+            </div>
+        </div>
+        {% if view != 'previous' %}
+        <div class="col-12 col-md-4 col-xl">
+            <div class="mo-total-box mo-tb-purple">
+                <div class="mo-tb-label"><i class="fas fa-user-tie"></i> Salary Allocated</div>
+                <div class="mo-tb-value"><small>PKR</small> {{ "{:,.2f}".format(t.salary) }} <span class="mo-tb-sub">{% if t.qty %}PKR {{ "{:,.2f}".format(t.salary / t.qty) }}/unit avg{% else %}&nbsp;{% endif %}</span></div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4 col-xl">
+            <div class="mo-total-box mo-tb-success">
+                <div class="mo-tb-label"><i class="fas fa-sack-dollar"></i> New MO Cost (incl. Salary)</div>
+                <div class="mo-tb-value"><small>PKR</small> {{ "{:,.2f}".format(t.new_cost) }} <span class="mo-tb-sub">{% if t.qty %}PKR {{ "{:,.2f}".format(t.new_cost / t.qty) }}/unit avg{% else %}&nbsp;{% endif %}</span></div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
     <!-- DataTales Example -->
-    <div class="card shadow mb-4">
+    <div class="card shadow mb-4 mo-card">
         <div class="card-header py-3">
             <h6 class="m-0 font-weight-bold text-primary">{% if view == 'previous' %}Previous (Timer Stopped) Orders{% else %}Active Production Orders{% endif %}</h6>
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-bordered datatable-export" id="dataTable" width="100%" cellspacing="0"
+                <table class="table table-bordered table-hover datatable-export mo-table" id="dataTable" width="100%" cellspacing="0"
                     data-export-title="Manufacturing Orders">
                     <thead>
                         <tr>
-                            <th style="width: 40px;" class="text-center no-export">
+                            <th style="width: 40px;" class="text-center no-export mo-c-select">
                                 <input type="checkbox" id="selectAll" class="form-check-input"
                                     onclick="document.querySelectorAll('.order-checkbox').forEach(cb => cb.checked = this.checked)">
                             </th>
-                            <th>Order No</th>
-                            <th>Target Product</th>
+                            <th class="mo-c-order">Order No</th>
+                            <th class="mo-c-product">Target Product</th>
                             <th>Status</th>
-                            <th>Qty to Produce</th>
-                            <th>Produced</th>
-                            <th>Remaining</th>
-                            <th>Start Date</th>
-                            <th title="Material + Overhead cost only, before HR salary is added">MO Cost (Without Salary)</th>
+                            <th class="mo-num">Qty to Produce</th>
+                            <th class="mo-num">Produced</th>
+                            <th class="mo-num">Remaining</th>
+                            <th class="mo-nowrap">Start Date</th>
+                            <th class="mo-num mo-c-money" title="Material + Overhead cost only, before HR salary is added">MO Cost (Without Salary)</th>
                             {% if view != 'previous' %}
-                            <th title="This order's share of the total salary allocated across active orders (its Material+Overhead cost share, adjusted for any staff excluded on the order)">Cost Share</th>
-                            <th title="Monthly Manufacturing Salaries (active HR staff) × Cost Share">Salary Allocated</th>
-                            <th title="Salary Allocated ÷ Quantity to Produce">Salary per Unit</th>
-                            <th title="MO Cost (Without Salary) + Salary Allocated">New MO Cost (With Salary)</th>
+                            <th class="mo-num" title="This order's share of the total salary allocated across active orders (its Material+Overhead cost share, adjusted for any staff excluded on the order)">Cost Share</th>
+                            <th class="mo-num mo-c-money" title="Monthly Manufacturing Salaries (active HR staff) × Cost Share">Salary Allocated</th>
+                            <th class="mo-num mo-c-money" title="Salary Allocated ÷ Quantity to Produce">Salary per Unit</th>
+                            <th class="mo-num mo-c-money" title="MO Cost (Without Salary) + Salary Allocated">New MO Cost (With Salary)</th>
                             {% endif %}
                             <th class="no-export">Approval</th>
-                            <th class="no-export">Actions</th>
+                            <th class="no-export mo-c-actions">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for ord in orders %}
                         {% set sb = salary_breakdown.get(ord.id) %}
                         <tr>
-                            <td class="text-center no-export">
+                            <td class="text-center no-export mo-c-select">
                                 <input type="checkbox" class="form-check-input order-checkbox" value="{{ ord.id }}">
                             </td>
-                            <td>
+                            <td class="mo-c-order">
                                 <strong>{{ ord.order_number }}</strong>
                                 {% if not ord.timer_stopped and ord.end_date %}
                                 <br><small class="text-danger fw-bold mo-countdown" data-deadline="{{ ord.deadline_datetime.isoformat() }}">
@@ -85,7 +189,7 @@
                                 </small>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td class="mo-c-product">
                                 <span class="{% if ord.bom.product.margin_color %}text-{{ ord.bom.product.margin_color }} fw-bold{% endif %}">{{ ord.bom.product.name }}</span><br>
                                 <a href="{{ url_for('manufacturing.bom_details', id=ord.bom.id) }}"
                                     class="small text-decoration-none" title="View BOM details">
@@ -105,58 +209,57 @@
                                 <span class="badge bg-secondary">{{ ord.status }}</span>
                                 {% endif %}
                             </td>
-                            <td>{{ ord.quantity_to_produce }}</td>
-                            <td><span class="badge bg-info text-dark">{{ ord.produced_qty or 0 }}</span></td>
-                            <td><span class="badge bg-light text-dark border">{{ ord.remaining_qty }}</span></td>
-                            <td>{{ ord.start_date.strftime('%d-%b-%Y') if ord.start_date else '-' }}</td>
-                            <td>PKR {{ "%.2f"|format((ord.actual_material_cost or 0) + (ord.actual_overhead_cost or 0)) }}</td>
+                            <td class="mo-num">{{ ord.quantity_to_produce }}</td>
+                            <td class="mo-num"><span class="badge bg-info text-dark">{{ ord.produced_qty or 0 }}</span></td>
+                            <td class="mo-num"><span class="badge bg-light text-dark border">{{ ord.remaining_qty }}</span></td>
+                            <td class="mo-nowrap">{{ ord.start_date.strftime('%d-%b-%Y') if ord.start_date else '-' }}</td>
+                            <td class="mo-num"><span class="mo-cur">PKR</span>{{ "{:,.2f}".format((ord.actual_material_cost or 0) + (ord.actual_overhead_cost or 0)) }}</td>
                             {% if view != 'previous' %}
-                            <td>{{ "%.2f"|format(sb.cost_share_pct) }}%</td>
-                            <td>PKR {{ "%.2f"|format(sb.salary_allocated) }}{% if sb.excluded_staff %}<br><a href="{{ url_for('manufacturing.order_details', id=ord.id) }}" class="badge bg-secondary text-decoration-none fw-normal" title="Staff excluded from this order's salary allocation">{{ sb.excluded_staff }} staff excluded</a>{% endif %}</td>
-                            <td>PKR {{ "%.2f"|format(sb.salary_per_unit) }}</td>
-                            <td>PKR {{ "%.2f"|format(sb.new_mo_cost) }}</td>
+                            <td class="mo-num">{{ "%.2f"|format(sb.cost_share_pct) }}%</td>
+                            <td class="mo-num"><span class="mo-cur">PKR</span>{{ "{:,.2f}".format(sb.salary_allocated) }}{% if sb.excluded_staff %}<br><a href="{{ url_for('manufacturing.order_details', id=ord.id) }}" class="badge bg-secondary text-decoration-none fw-normal" title="Staff excluded from this order's salary allocation">{{ sb.excluded_staff }} staff excluded</a>{% endif %}</td>
+                            <td class="mo-num"><span class="mo-cur">PKR</span>{{ "{:,.2f}".format(sb.salary_per_unit) }}</td>
+                            <td class="mo-num mo-strong"><span class="mo-cur">PKR</span>{{ "{:,.2f}".format(sb.new_mo_cost) }}</td>
                             {% endif %}
                             <td class="no-export">
                                 {% from 'components/approval_widget.html' import approval_widget with context %}
                                 {{ approval_widget('manufacturing_order', ord) }}
                             </td>
-                            <td class="no-export">
-                                <a href="{{ url_for('manufacturing.order_details', id=ord.id) }}"
-                                    class="btn btn-info btn-sm" title="View Details">
-                                    <i class="fas fa-eye"></i>
-                                </a>
-                                {% if ord.status != 'Completed' %}
-                                <button class="btn btn-primary btn-sm partial-complete-btn" data-id="{{ ord.id }}"
-                                    data-number="{{ ord.order_number }}" data-remaining="{{ ord.remaining_qty }}"
-                                    data-overhead="{{ ord.actual_overhead_cost or 0 }}"
-                                    data-fg-sku="{{ ord.bom.product.sku }}"
-                                    data-fg-stock="{{ ord.bom.product.quantity }}"
-                                    data-mo-total="{{ ord.quantity_to_produce }}"
-                                    data-items='[{% for item in ord.items %}{"sku":"{{ item.component.sku }}", "stock":{{ item.component.quantity }}, "req":{{ item.quantity_required }}}{% if not loop.last %},{% endif %}{% endfor %}]'
-                                    title="Partial Complete">
-                                    <i class="fas fa-check-circle"></i>
-                                </button>
-                                {% endif %}
-                                <button class="btn btn-dark btn-sm history-btn" data-id="{{ ord.id }}"
-                                    data-number="{{ ord.order_number }}" title="Production History">
-                                    <i class="fas fa-history"></i>
-                                </button>
-                                {% if current_user.has_permission('manufacturing', 'edit') %}
-                                <a href="{{ url_for('manufacturing.edit_order', id=ord.id) }}"
-                                    class="btn btn-warning btn-sm" title="Edit Order">
-                                    <i class="fas fa-edit"></i>
-                                </a>
-                                {% endif %}
-                                {% if current_user.has_permission('manufacturing', 'delete') %}
-                                <form action="{{ url_for('manufacturing.delete_order', id=ord.id) }}" method="POST"
-                                    style="display:inline;">
-                                    <button type="submit" class="btn btn-danger btn-sm"
-                                        onclick="return confirm('WARNING: Are you sure you want to delete this Manufacturing Order? If it is already Completed, all inventory changes (stock in/out) will be REVERSED! All linked overhead expenses will also be DELETED.');"
-                                        title="Delete & Reverse Stock">
-                                        <i class="fas fa-trash"></i>
+                            <td class="no-export mo-c-actions text-center">
+                                <div class="dropdown">
+                                    <button type="button" class="btn btn-sm btn-light border mo-actions-toggle" data-bs-toggle="dropdown"
+                                        aria-expanded="false" title="Actions" aria-label="Actions for {{ ord.order_number }}">
+                                        <i class="fas fa-ellipsis-v"></i>
                                     </button>
-                                </form>
-                                {% endif %}
+                                    <ul class="dropdown-menu dropdown-menu-end shadow mo-actions-menu">
+                                        <li><a class="dropdown-item" href="{{ url_for('manufacturing.order_details', id=ord.id) }}">
+                                            <i class="fas fa-eye text-info"></i> View Details</a></li>
+                                        {% if ord.status != 'Completed' %}
+                                        <li><button type="button" class="dropdown-item partial-complete-btn" data-id="{{ ord.id }}"
+                                            data-number="{{ ord.order_number }}" data-remaining="{{ ord.remaining_qty }}"
+                                            data-overhead="{{ ord.actual_overhead_cost or 0 }}"
+                                            data-fg-sku="{{ ord.bom.product.sku }}"
+                                            data-fg-stock="{{ ord.bom.product.quantity }}"
+                                            data-mo-total="{{ ord.quantity_to_produce }}"
+                                            data-items='[{% for item in ord.items %}{"sku":"{{ item.component.sku }}", "stock":{{ item.component.quantity }}, "req":{{ item.quantity_required }}}{% if not loop.last %},{% endif %}{% endfor %}]'>
+                                            <i class="fas fa-check-circle text-primary"></i> Partial Complete</button></li>
+                                        {% endif %}
+                                        <li><button type="button" class="dropdown-item history-btn" data-id="{{ ord.id }}"
+                                            data-number="{{ ord.order_number }}">
+                                            <i class="fas fa-history text-dark"></i> Production History</button></li>
+                                        {% if current_user.has_permission('manufacturing', 'edit') %}
+                                        <li><a class="dropdown-item" href="{{ url_for('manufacturing.edit_order', id=ord.id) }}">
+                                            <i class="fas fa-edit text-warning"></i> Edit Order</a></li>
+                                        {% endif %}
+                                        {% if current_user.has_permission('manufacturing', 'delete') %}
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><form action="{{ url_for('manufacturing.delete_order', id=ord.id) }}" method="POST" class="m-0">
+                                            <button type="submit" class="dropdown-item text-danger"
+                                                onclick="return confirm('WARNING: Are you sure you want to delete this Manufacturing Order? If it is already Completed, all inventory changes (stock in/out) will be REVERSED! All linked overhead expenses will also be DELETED.');">
+                                                <i class="fas fa-trash"></i> Delete &amp; Reverse Stock</button>
+                                        </form></li>
+                                        {% endif %}
+                                    </ul>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -596,6 +699,14 @@
                         loadSummary();
                     });
                 })();
+
+                // Actions dropdowns: position them against the page so the
+                // table's horizontal scroll area can't clip them.
+                document.querySelectorAll('.mo-actions-toggle').forEach(function (el) {
+                    bootstrap.Dropdown.getOrCreateInstance(el, {
+                        popperConfig: function (cfg) { return Object.assign({}, cfg, { strategy: 'fixed' }); }
+                    });
+                });
 
                 // Partial Complete Button Click
                 const partialBtns = document.querySelectorAll('.partial-complete-btn');

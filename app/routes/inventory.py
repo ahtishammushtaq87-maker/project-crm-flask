@@ -177,7 +177,10 @@ def products():
     
     # Get all categories for filter
     categories = ProductCategory.query.filter_by(is_active=True).order_by(ProductCategory.name).all()
-    
+    # Item count per category, shown in the category filter dropdown
+    category_counts = dict(db.session.query(Product.category_id, func.count(Product.id))
+                           .group_by(Product.category_id).all())
+
     # Get all warehouses for filter
     warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
     
@@ -187,6 +190,7 @@ def products():
     return render_template('inventory/products.html', 
                          products=products, 
                          categories=categories,
+                         category_counts=category_counts,
                          warehouses=warehouses,
                          all_products_for_sku=all_products_for_sku,
                          structure_counts=_structure_counts(),
@@ -243,6 +247,12 @@ def add_product():
                 return redirect(url_for('inventory.add_product'))
             
             warehouse_id = request.form.get('warehouse_id')
+            # A warehouse is required whenever any exist, so an item's stock
+            # always lives in a warehouse and the warehouse badges add up to
+            # its quantity.
+            if warehouses and not (warehouse_id and warehouse_id.isdigit() and warehouse_id != '0'):
+                flash('Please select a warehouse for this item.', 'error')
+                return redirect(url_for('inventory.add_product'))
             # If finished good, use finished_good_price as the selling price
             if is_manufactured and finished_good_price:
                 final_unit_price = float(finished_good_price)
@@ -402,7 +412,17 @@ def edit_product(id):
         
         # Store old cost for versioning check
         old_cost = product.cost_price
-        
+
+        def keep_if_unchanged(old, submitted):
+            # The form shows prices rounded to 2 decimals. Saving that rounded
+            # figure back over e.g. 426.3679 counted as a cost change, which
+            # re-versioned every BOM using this item and changed those
+            # finished goods' costs even when only the name was edited - so a
+            # value the user didn't touch keeps its exact stored amount.
+            if old is not None and submitted is not None and abs(round(old, 2) - submitted) < 0.005:
+                return old
+            return submitted
+
         warehouse_id = request.form.get('warehouse_id')
         product.name = form.name.data
         product.sku = form.sku.data
@@ -412,15 +432,17 @@ def edit_product(id):
         
         # Handle finished_good_price
         finished_good_price = request.form.get('finished_good_price')
-        product.finished_good_price = float(finished_good_price) if finished_good_price else None
-        
+        product.finished_good_price = keep_if_unchanged(
+            product.finished_good_price, float(finished_good_price) if finished_good_price else None)
+
         # If finished good, use finished_good_price as the selling price
         if product.is_manufactured and product.finished_good_price:
             product.unit_price = product.finished_good_price
         else:
-            product.unit_price = form.unit_price.data
-        
-        product.cost_price = form.cost_price.data if form.cost_price.data is not None else 0.0
+            product.unit_price = keep_if_unchanged(product.unit_price, form.unit_price.data)
+
+        product.cost_price = keep_if_unchanged(
+            old_cost, form.cost_price.data if form.cost_price.data is not None else 0.0)
         product.unit = request.form.get('unit')
         product.reorder_level = form.reorder_level.data
         category_id = request.form.get('category_id')
@@ -429,9 +451,12 @@ def edit_product(id):
         product.vendor_id = _parse_vendor_id(request.form.get('vendor_id'))
         product.location = (request.form.get('location') or '').strip()[:100] or None
         
-        # Handle quantity update
+        # Handle quantity update. With the per-warehouse inputs (the normal
+        # case) the total is rebuilt from the warehouses below in
+        # _save_warehouse_quantities; the single Quantity box only exists
+        # when there are no warehouses to split stock across.
         quantity = request.form.get('quantity')
-        if quantity is not None:
+        if quantity is not None and not request.form.get('wh_qty_present'):
             try:
                 product.quantity = float(quantity)
             except (ValueError, TypeError):
@@ -478,8 +503,10 @@ def edit_product(id):
             product.image_path = None
         
         try:
-            # Sync with ProductWarehouseStock if warehouse_id is set
-            if product.warehouse_id:
+            if request.form.get('wh_qty_present'):
+                _save_warehouse_quantities(product)
+            # Legacy single-quantity form: sync with ProductWarehouseStock if warehouse_id is set
+            elif product.warehouse_id:
                 from app.models import ProductWarehouseStock
                 wh_stock = ProductWarehouseStock.query.filter_by(
                     product_id=product.id,
@@ -569,9 +596,85 @@ def edit_product(id):
     categories = ProductCategory.query.filter_by(is_active=True).order_by(ProductCategory.name).all()
     units = Unit.query.filter_by(is_active=True).order_by(Unit.name).all()
     
+    warehouse_cost_rows = _warehouse_cost_rows(product, warehouses)
+    warehouse_total = sum(r['quantity'] for r in warehouse_cost_rows)
+    # Stock the item has that isn't in any warehouse (legacy items with no
+    # warehouse at all) - shown as its own editable row so saving the
+    # per-warehouse form can't silently drop it.
+    unassigned_qty = max((product.quantity or 0) - warehouse_total, 0)
+
     return render_template('inventory/edit_product.html', form=form, product=product, categories=categories, warehouses=warehouses, units=units,
                            vendors=_vendor_choices(product.vendor_id),
-                           warehouse_cost_rows=_warehouse_cost_rows(product, warehouses))
+                           warehouse_cost_rows=warehouse_cost_rows,
+                           warehouse_total=warehouse_total,
+                           unassigned_qty=unassigned_qty)
+
+
+def _save_warehouse_quantities(product):
+    """Save the edit form's 'Quantity by Warehouse' inputs.
+
+    Each warehouse's stock is set to exactly what was typed for it, and the
+    item's total quantity is rebuilt as the sum of every warehouse (plus any
+    stock not in a warehouse), so the warehouse badges on the item list
+    always add up to the Quantity column. Previously the single Quantity box
+    was copied into the default warehouse as the whole total while the other
+    warehouses kept their stock, which made the two disagree.
+
+    A change to the total is recorded as a stock adjustment (StockMovement,
+    reference_type='adjustment') so Recalculate Stock keeps it.
+    """
+    def parse(raw):
+        try:
+            return max(float(raw), 0.0)
+        except (TypeError, ValueError):
+            return None
+
+    rows = {r.warehouse_id: r for r in ProductWarehouseStock.query.filter_by(product_id=product.id).all()}
+    changes = []
+    for key, raw in request.form.items():
+        if not key.startswith('wh_qty_') or key in ('wh_qty_present', 'wh_qty_unassigned'):
+            continue
+        try:
+            wh_id = int(key[len('wh_qty_'):])
+        except ValueError:
+            continue
+        value = parse(raw)
+        if value is None:
+            continue
+        row = rows.get(wh_id)
+        warehouse = row.warehouse if row is not None else Warehouse.query.get(wh_id)
+        if row is None:
+            if value == 0 or not warehouse:
+                continue
+            row = rows[wh_id] = ProductWarehouseStock(product_id=product.id, warehouse_id=wh_id, quantity=0.0)
+            db.session.add(row)
+        old = row.quantity or 0
+        if abs(old - value) > 1e-9:
+            changes.append(f"{warehouse.name if warehouse else f'#{wh_id}'}: {old:g} → {value:g}")
+            row.quantity = value
+
+    unassigned = parse(request.form.get('wh_qty_unassigned')) or 0
+    old_total = product.quantity or 0
+    new_total = sum((r.quantity or 0) for r in rows.values()) + unassigned
+    product.quantity = new_total
+
+    delta = new_total - old_total
+    if abs(delta) > 1e-9:
+        reason = 'Manual stock edit (Edit Item)'
+        if changes:
+            reason += ': ' + ', '.join(changes)
+        movement = StockMovement(
+            product_id=product.id,
+            movement_type='in' if delta > 0 else 'out',
+            reference_type='adjustment',
+            reference_id=product.id,
+            quantity=abs(delta),
+            previous_quantity=old_total,
+            new_quantity=new_total,
+            reason=reason[:200],
+            created_by=current_user.id if current_user and current_user.is_authenticated else None,
+        )
+        db.session.add(movement)
 
 
 def _warehouse_cost_rows(product, warehouses):

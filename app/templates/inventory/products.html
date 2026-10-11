@@ -140,6 +140,99 @@
             }
         }
 
+        /* Compact searchable category filter, pill-shaped to match the search box */
+        #productsTableCard .category-filter {
+            flex: 0 1 240px;
+            width: 240px;
+            max-width: 100%;
+        }
+        #productsTableCard .dataTables_wrapper .category-filter {
+            margin: 0 .5rem 0 auto !important;
+        }
+        #productsTableCard .category-filter .select2-container--bootstrap-5 .select2-selection {
+            min-height: 36px;
+            border-radius: 999px;
+            background-color: #f8f9fa;
+            font-size: .9rem;
+            padding-left: 2.1rem;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%236c757d'%3E%3Cpath d='M1.5 2A1.5 1.5 0 0 0 0 3.5v2h16v-2A1.5 1.5 0 0 0 14.5 2zM0 6.5v6A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-6z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: .8rem center;
+            background-size: .9rem;
+        }
+        #productsTableCard .category-filter.is-active .select2-selection {
+            border-color: #4e73df;
+            background-color: #eef2ff;
+            font-weight: 600;
+        }
+        #categoryFilterWrap { position: relative; }
+        #categoryFilterWrap .select2-dropdown {
+            min-width: 260px;
+            max-width: 340px;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
+            border-color: #dee2e6;
+        }
+        #categoryFilterWrap .select2-search__field {
+            border-radius: 8px;
+            font-size: .88rem;
+        }
+        #categoryFilterWrap .select2-results__options {
+            max-height: 300px;
+        }
+        #categoryFilterWrap .select2-results__option {
+            font-size: .88rem;
+            padding: .4rem .75rem;
+        }
+
+        /* Single "Actions" dropdown replacing the row of export/filter buttons */
+        #productsTableCard .dt-actions-btn {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            background: #fff;
+            border: 1px solid #ced4da;
+            border-radius: 999px;
+            padding: .4rem 1rem;
+            font-size: .9rem;
+            font-weight: 600;
+            color: #3a3f51;
+        }
+        #productsTableCard .dt-actions-btn:hover,
+        #productsTableCard .dt-actions-btn[aria-expanded="true"] {
+            border-color: #4e73df;
+            color: #4e73df;
+            background: #eef2ff;
+        }
+        #productsTableCard .dt-actions-dot {
+            position: absolute;
+            top: 4px;
+            left: 26px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #dc3545;
+            box-shadow: 0 0 0 2px #fff;
+        }
+        #productsTableCard .dataTables_length {
+            margin-left: .75rem;
+        }
+        #productsTableCard .dt-actions .dropdown-menu {
+            border-radius: 12px;
+            min-width: 200px;
+            font-size: .9rem;
+        }
+        @media (max-width: 576px) {
+            #productsTableCard .category-filter {
+                flex: 1 1 100%;
+                width: 100%;
+            }
+            #productsTableCard .dataTables_wrapper .category-filter {
+                margin: 0 0 .5rem 0 !important;
+            }
+        }
+
         /* Let the row-actions dropdown escape the table's horizontal-scroll
            container instead of being clipped - keeps X-scroll for wide
            tables while Y stays open so the menu isn't cut off. */
@@ -245,6 +338,16 @@
 
     <div class="card" id="productsTableCard">
         <div class="card-body">
+            <!-- Category filter: moved into the DataTables toolbar next to the
+                 search box by JS below (stays here if DataTables isn't loaded). -->
+            <div id="categoryFilterWrap" class="category-filter mb-3">
+                <select id="categoryFilter" aria-label="Filter by category">
+                    <option value="all" {% if current_category == 'all' %}selected{% endif %}>All categories ({{ category_counts.values()|sum }})</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.id }}" {% if current_category == cat.id|string %}selected{% endif %}>{{ cat.name }} ({{ category_counts.get(cat.id, 0) }})</option>
+                    {% endfor %}
+                </select>
+            </div>
             <div class="table-responsive">
                 <table class="table table-hover datatable-export" data-export-title="Products Inventory">
                     <thead>
@@ -491,6 +594,96 @@
     // doesn't keep silently narrowing the list with no UI left to explain
     // or clear it.
     localStorage.removeItem('inventory_products_filters');
+
+    // Category filter: searchable select2 that sits in the table toolbar next
+    // to the search box. Picking a category reloads the list (server-side)
+    // so the summary cards above reflect just that category too.
+    $(function () {
+        var $wrap = $('#categoryFilterWrap');
+        var $sel = $('#categoryFilter');
+        if (!$sel.length) return;
+
+        if ($.fn.select2) {
+            // dropdownParent keeps the list anchored under the control at its
+            // own width (auto-width made it stretch across the whole page).
+            $sel.select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                placeholder: 'All categories',
+                dropdownParent: $wrap
+            });
+        }
+        $wrap.toggleClass('is-active', $sel.val() !== 'all');
+
+        $sel.on('change', function () {
+            var url = new URL(window.location.href);
+            if (this.value === 'all') url.searchParams.delete('category');
+            else url.searchParams.set('category', this.value);
+            window.location.href = url.toString();
+        });
+
+        function placeInToolbar() {
+            var $filter = $('#productsTableCard .dataTables_filter');
+            if (!$filter.length) return false;
+            $filter.before($wrap.removeClass('mb-3'));
+            return true;
+        }
+        if (!placeInToolbar()) {
+            $(document).on('init.dt', function () { placeInToolbar(); });
+        }
+    });
+
+    // Fold the toolbar's Excel / CSV / PDF / Print / Advanced Filter buttons
+    // into one compact "Actions" dropdown (this page only). The original
+    // buttons stay in the DOM, hidden, and the menu items just click them,
+    // so export and filter behave exactly as before.
+    $(function () {
+        var $container = $('#productsTableCard .dt-buttons').first();
+        if (!$container.length || $container.data('folded')) return;
+        $container.data('folded', true);
+
+        var exportBtns = [
+            ['.buttons-excel', 'fa-file-excel text-success', 'Excel'],
+            ['.buttons-csv', 'fa-file-csv text-info', 'CSV'],
+            ['.buttons-pdf', 'fa-file-pdf text-danger', 'PDF'],
+            ['.buttons-print', 'fa-print text-secondary', 'Print']
+        ];
+        var $menu = $('<ul class="dropdown-menu dropdown-menu-start shadow-sm"></ul>');
+        $menu.append('<li><h6 class="dropdown-header">Export</h6></li>');
+        exportBtns.forEach(function (b) {
+            var $orig = $container.find(b[0]).first();
+            if (!$orig.length) return;
+            $('<li><a class="dropdown-item" href="#"><i class="fas ' + b[1] + ' fa-fw me-2"></i>' + b[2] + '</a></li>')
+                .on('click', 'a', function (e) { e.preventDefault(); $orig.trigger('click'); })
+                .appendTo($menu);
+        });
+
+        var $filterBtn = $container.find('#universal-filter-trigger-btn');
+        var $clearBtn = $container.find('a[title="Clear filter"]');
+        var filterActive = $clearBtn.length > 0;
+        if ($filterBtn.length) {
+            $menu.append('<li><hr class="dropdown-divider"></li><li><h6 class="dropdown-header">Filter</h6></li>');
+            $('<li><a class="dropdown-item" href="#"><i class="fas fa-filter text-primary fa-fw me-2"></i>Advanced Filter</a></li>')
+                .on('click', 'a', function (e) { e.preventDefault(); $filterBtn.trigger('click'); })
+                .appendTo($menu);
+            if (filterActive) {
+                $('<li><a class="dropdown-item text-danger"><i class="fas fa-times fa-fw me-2"></i>Clear Filter</a></li>')
+                    .find('a').attr('href', $clearBtn.attr('href')).end()
+                    .appendTo($menu);
+            }
+        }
+
+        // Park the originals in a hidden holder (base.html's .dt-button CSS
+        // overrides a class-level d-none); their click handlers keep working.
+        $('<div class="dt-hidden-originals" style="display:none"></div>')
+            .append($container.children())
+            .appendTo($container);
+        var $toggle = $('<button type="button" class="btn dt-actions-btn" data-bs-toggle="dropdown" aria-expanded="false" title="Export &amp; filter">' +
+            '<i class="fas fa-sliders-h"></i><span class="ms-2">Actions</span>' +
+            (filterActive ? '<span class="dt-actions-dot" title="Advanced filter active"></span>' : '') +
+            '<i class="fas fa-chevron-down ms-2 small opacity-75"></i></button>');
+        $('<div class="dropdown dt-actions"></div>').append($toggle, $menu).appendTo($container);
+    });
 
     document.addEventListener('DOMContentLoaded', function () {
         // Initialize Select2 (still used by the Assign Warehouse modal)

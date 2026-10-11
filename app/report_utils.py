@@ -19,14 +19,13 @@ def generate_excel(data, sheet_name="Report"):
     output.seek(0)
     return output
 
-def generate_manufacturing_fact_sheet_excel(fs, company_name=None):
-    """Manufacturing/Sales Fact Sheet workbook - replicates the layout of the
-    manually-built monthly fact sheet: a merged title row, a two-box
-    assumptions/summary header (matching app/templates/reports/manufacturing_report.html),
-    then the per-SKU pricing/margin table with a weighted TOTAL row and
-    colour-coded margin status, and a footnote.
+def _write_fact_sheet_costing(ws, fs, company_name=None):
+    """'Costing & Margin' sheet of the Manufacturing Report workbook -
+    replicates the layout of the manually-built monthly fact sheet: a merged
+    title row, a two-box assumptions/summary header, then the per-SKU
+    pricing/margin table with a weighted TOTAL row and colour-coded margin
+    status, and a footnote.
     """
-    from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
@@ -38,10 +37,6 @@ def generate_manufacturing_fact_sheet_excel(fs, company_name=None):
     RED = 'FFDC3545'
     DARK = 'FF212529'
     status_color = {'success': GREEN, 'warning': AMBER, 'danger': RED}
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = 'Fact Sheet'
 
     NCOLS = 17
     thin = Side(style='thin', color='FFDDDDDD')
@@ -159,10 +154,10 @@ def generate_manufacturing_fact_sheet_excel(fs, company_name=None):
 
     ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
 
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return output
+
+def generate_manufacturing_fact_sheet_excel(fs, company_name=None, mo_costs=None):
+    """Kept for existing callers - see generate_manufacturing_report_excel."""
+    return generate_manufacturing_report_excel(fs, mo_costs, company_name)
 
 
 def generate_csv(data):
@@ -171,7 +166,9 @@ def generate_csv(data):
     """
     df = pd.DataFrame(data)
     output = BytesIO()
-    df.to_csv(output, index=False)
+    # utf-8-sig (with BOM) so Excel opens dashes, ×, Urdu text etc. correctly
+    # instead of showing them as garbled characters.
+    df.to_csv(output, index=False, encoding='utf-8-sig')
     output.seek(0)
     return output
 
@@ -246,280 +243,643 @@ def generate_pdf(data, title, headers, company_info=None):
     return output
 
 
-def generate_manufacturing_fact_sheet_pdf(fs, company_info=None, audience='admin'):
-    """Manufacturing Performance Report PDF - mirrors the on-screen page
-    (app/templates/reports/manufacturing_report.html): production KPI cards,
-    expected-vs-actual profit boxes, labour cost totals, the Target vs
-    Achieved by Product table, and the Labour Cost by Staff table.
+def build_manufacturing_statement(fs, mo_costs=None, staff_copy=False):
+    """Single source for every Manufacturing Report export (PDF / Excel / CSV).
+
+    Returns the report as P&L-style statement blocks that mirror the on-screen
+    page (app/templates/reports/manufacturing_report.html) section for section,
+    so a download reads exactly like the screen:
+
+        {'summary':  [block, ...],   # Production Performance + MO Cost summaries
+         'products': [block, ...],   # one statement per product (target vs achieved + labor used)
+         'orders':   [block, ...]}   # one statement per Manufacturing Order (material/labor/overhead)
+
+    A block is {'title', 'subtitle', 'lines'}; each line is a dict with
+    kind  - section | band | line | total | primary | grand | spacer | note
+    label, amount, total - number or text; fmt - money | int | text;
+    neg   - show the figure as a deduction, e.g. (1,234.00); color - green/red/amber/muted.
+
+    staff_copy drops every money figure (revenue, cost, profit, labor cost)
+    entirely, leaving the production quantities and staff assignments.
+    """
+    def L(kind, label='', amount=None, total=None, fmt='money', neg=False, color=None, total_color=None):
+        return {'kind': kind, 'label': label, 'amount': amount, 'total': total, 'fmt': fmt,
+                'neg': neg, 'color': color, 'total_color': total_color}
+
+    def staff_label(staff):
+        name = staff.name or ''
+        return f"{name} ({staff.designation})" if staff.designation else name
+
+    pt = fs['performance_totals']
+    lt = fs['staff_labor_totals']
+    month = fs['month_label']
+
+    # ── Production Performance Summary ─────────────────────────────────────
+    lines = [
+        L('section', 'PRODUCTION (UNITS)', total=f"{pt['completion_pct']:.1f}% complete", fmt='text'),
+        L('line', 'Target Production (units planned)', pt['target_units'], fmt='int'),
+        L('line', 'Actual Production (units produced)', pt['produced_units'], fmt='int', color='green'),
+        L('line', 'Less: Shortfall (units still short of target)', pt['remaining'], fmt='int', neg=True, color='red'),
+        L('total', 'SKUs ACHIEVED / NOT ACHIEVED', total=f"{pt['achieved_count']} / {pt['not_achieved_count']}", fmt='text'),
+    ]
+    if not staff_copy:
+        lines += [
+            L('spacer'),
+            L('band', 'EXPECTED PROFIT — IF FULL TARGET IS MET (PKR)'),
+            L('line', 'Target Revenue', pt['target_revenue'], color='green'),
+            L('line', 'Less: Estimated Cost', pt['estimated_cost'], neg=True, color='red'),
+            L('primary', 'EXPECTED PROFIT', total=pt['estimated_profit']),
+            L('spacer'),
+            L('band', 'LABOR USED ACCORDING TO PRODUCTION (PKR)'),
+            L('line', f"Labor Used on Produced Units ({pt['produced_units']:,.0f})", lt['labor_cost_produced'], color='green'),
+            L('line', f"Labor Tied Up in Remaining Units ({pt['remaining']:,.0f})", lt['labor_cost_remaining'], color='amber'),
+            L('total', 'TOTAL LABOR COST (HR-STAFFED ORDERS)', total=lt['labor_cost_total'], neg=True, total_color='red'),
+            L('spacer'),
+            L('band', 'ACTUAL PROFIT — FROM REAL PRODUCTION SO FAR (PKR)'),
+            L('line', 'Actual Revenue', pt['actual_revenue'], color='green'),
+            L('line', 'Less: Actual Cost', pt['actual_cost'], neg=True, color='red'),
+            L('grand', 'ACTUAL PROFIT', total=pt['actual_profit']),
+        ]
+    summary = [{'title': f"PRODUCTION PERFORMANCE SUMMARY — {month}",
+                'subtitle': ('Units planned vs. units produced this month.' if staff_copy else
+                             'Target vs achieved this month, the profit each represents, and labor used according to production.'),
+                'lines': lines}]
+
+    # ── One statement per product ──────────────────────────────────────────
+    products = []
+    for r in fs['performance_rows']:
+        p = r['product']
+        staff_rows = [s for s in fs['staff_labor_rows'] if s['product'].id == p.id]
+        lines = [
+            L('section', 'PRODUCTION (UNITS)', total=f"{r['completion_pct']:.1f}% complete", fmt='text'),
+            L('line', 'Target', r['target_units'], fmt='int'),
+            L('line', 'Produced', r['produced_units'], fmt='int', color='green'),
+            L('line', 'Remaining', r['remaining'], fmt='int', neg=True, color='red'),
+        ]
+        if staff_copy:
+            lines += [L('spacer'), L('section', 'STAFF ON THIS PRODUCT (PRODUCED / REMAINING UNITS)')]
+            lines += [L('line', staff_label(s['staff']),
+                        f"{s['produced_qty']:,.0f} / {s['remaining_qty']:,.0f}", fmt='text')
+                      for s in staff_rows] or [L('note', 'No HR-staffed Manufacturing Orders for this product this month.')]
+        else:
+            used = sum(s['labor_cost_produced'] for s in staff_rows)
+            remaining = sum(s['labor_cost_remaining'] for s in staff_rows)
+            lines += [
+                L('spacer'),
+                L('band', 'EXPECTED — FULL TARGET (PKR)'),
+                L('line', 'Target Revenue', r['target_revenue'], color='green'),
+                L('line', 'Less: Estimated Cost', r['estimated_cost'], neg=True, color='red'),
+                L('primary', 'EXPECTED PROFIT', total=r['estimated_profit']),
+                L('spacer'),
+                L('section', 'LABOR USED ON PRODUCED UNITS (PKR)', total=used),
+            ]
+            lines += [L('line', f"{staff_label(s['staff'])} — {s['produced_qty']:,.0f} unit(s) produced",
+                        s['labor_cost_produced']) for s in staff_rows] \
+                or [L('note', 'No HR-staffed Manufacturing Orders for this product this month.')]
+            if staff_rows:
+                lines += [L('spacer'), L('section', 'LABOR TIED UP IN REMAINING UNITS (PKR)', total=remaining)]
+                lines += [L('line', f"{staff_label(s['staff'])} — {s['remaining_qty']:,.0f} unit(s) remaining",
+                            s['labor_cost_remaining']) for s in staff_rows]
+                lines.append(L('total', 'TOTAL LABOR COST', total=used + remaining, neg=True, total_color='red'))
+            lines += [
+                L('spacer'),
+                L('band', 'ACTUAL — REAL PRODUCTION SO FAR (PKR)'),
+                L('line', 'Actual Revenue', r['actual_revenue'], color='green'),
+                L('line', 'Less: Actual Cost', r['actual_cost'], neg=True, color='red'),
+                L('grand', 'ACTUAL PROFIT', total=r['actual_profit']),
+            ]
+        products.append({
+            'title': f"{p.sku or ''} — {p.name or ''}",
+            'subtitle': (f"{r['produced_units']:,.0f} of {r['target_units']:,.0f} units produced · "
+                         f"{r['completion_pct']:.1f}% · {'ACHIEVED' if r['achieved'] else 'NOT ACHIEVED'}"),
+            'achieved': r['achieved'],
+            'lines': lines,
+        })
+
+    # ── Manufacturing Orders: cost summary + one statement per order ───────
+    orders = []
+    if mo_costs is not None:
+        mt = mo_costs['totals']
+        if not staff_copy:
+            summary.append({
+                'title': f"MANUFACTURING ORDER COST SUMMARY — {month}",
+                'subtitle': 'Every material, labor and overhead cost charged to this month\'s Manufacturing Orders.',
+                'lines': [
+                    L('section', f"MANUFACTURING ORDERS ({len(mo_costs['rows'])})", total=f"{mt['qty']:,.0f} units", fmt='text'),
+                    L('line', 'Units Planned', mt['qty'], fmt='int'),
+                    L('line', 'Units Produced', mt['produced_qty'], fmt='int', color='green'),
+                    L('spacer'),
+                    L('band', 'COSTS CHARGED TO ORDERS (PKR)'),
+                    L('line', 'Direct Material (BOM Components)', mt['material']),
+                    L('line', 'Labor Cost (Staff Salary Allocation)', mt['labor']),
+                    L('line', 'Factory Overhead Expenses', mt['overhead']),
+                    L('line', 'Other Linked Costs', mt['other']),
+                    L('total', 'TOTAL MANUFACTURING COST', total=mt['total'], neg=True, total_color='red'),
+                    L('spacer'),
+                    L('grand', 'AVERAGE COST PER UNIT', total=mt['cost_per_unit']),
+                ],
+            })
+
+        for r in mo_costs['rows']:
+            o = r['order']
+            subtitle = (f"{o.status} · {r['produced_qty']:,.0f} of {r['qty']:,.0f} units produced · "
+                        f"Start {o.start_date.strftime('%Y-%m-%d') if o.start_date else '-'} · "
+                        f"End {o.end_date.strftime('%Y-%m-%d') if o.end_date else '-'} · "
+                        f"BOM {o.bom.name if o.bom else '-'}")
+            if staff_copy:
+                lines = [
+                    L('section', 'PRODUCTION (UNITS)'),
+                    L('line', 'Planned', r['qty'], fmt='int'),
+                    L('line', 'Produced', r['produced_qty'], fmt='int', color='green'),
+                    L('line', 'Remaining', max(0, r['qty'] - r['produced_qty']), fmt='int', neg=True, color='red'),
+                    L('spacer'),
+                    L('section', 'COMPONENTS REQUIRED (QTY)'),
+                ]
+                lines += [L('line', f"{m['name']}" + (f" ({m['sku']})" if m['sku'] else ''), m['qty'], fmt='int')
+                          for m in r['materials']] or [L('note', 'No components on this order.')]
+                lines += [L('spacer'), L('section', 'STAFF ASSIGNED')]
+                lines += [L('line', l['name'] + (f" ({l['designation']})" if l['designation'] else ''))
+                          for l in r['labor']] or [L('note', 'No staff assigned.')]
+            else:
+                lines = [L('section', 'DIRECT MATERIAL', total=r['material_total'])]
+                lines += [L('line', f"{m['name']}" + (f" ({m['sku']})" if m['sku'] else '') + f" × {m['qty']:,.2f}",
+                            m['amount']) for m in r['materials']] or [L('note', 'No components on this order.')]
+
+                lines += [L('spacer'), L('section', 'LABOR COST', total=r['labor_total'])]
+                for l in r['labor']:
+                    label = l['name'] + (f" ({l['designation']})" if l['designation'] else '')
+                    if l['days']:
+                        label += f" — {l['daily_rate']:,.2f}/day × {l['days']:g} days"
+                    lines.append(L('line', label, l['amount']))
+                if r['bom_labor_estimate']:
+                    lines.append(L('line', 'BOM Labor Estimate (not allocated to staff)', r['bom_labor_estimate']))
+                if not r['labor'] and not r['bom_labor_estimate']:
+                    lines.append(L('note', 'No labor cost charged.'))
+
+                def expense_lines(entries):
+                    out = []
+                    for e in entries:
+                        label = e['category'] + (f" — {e['description']}" if e['description'] else '')
+                        label += f" ({e['number'] or ''} {e['date'].strftime('%Y-%m-%d') if e['date'] else ''})".replace('( ', '(')
+                        if e['status'] != 'confirmed':
+                            label += f" [{e['status'].capitalize()}]"
+                        out.append(L('line', label, e['amount']))
+                    return out
+
+                lines += [L('spacer'), L('section', 'FACTORY OVERHEAD EXPENSES', total=r['overhead_total'])]
+                lines += expense_lines(r['overheads']) or [L('note', 'No overhead expenses linked to this order.')]
+                if r['other_costs']:
+                    lines += [L('spacer'), L('section', 'OTHER COSTS', total=r['other_total'])]
+                    lines += expense_lines(r['other_costs'])
+
+                lines += [
+                    L('spacer'),
+                    L('total', 'TOTAL ORDER COST', total=r['total'], neg=True, total_color='red'),
+                    L('grand', f"COST PER UNIT ({r['qty']:,.0f} units)", total=r['cost_per_unit']),
+                ]
+                if r['batches']:
+                    lines += [L('spacer'), L('band', 'PRODUCTION BATCHES (INFORMATIONAL)')]
+                    for b in r['batches']:
+                        lines.append(L('line',
+                            f"{b.completion_date.strftime('%Y-%m-%d') if b.completion_date else '-'} — "
+                            f"{b.quantity_produced:,.0f} unit(s) (Material {b.material_cost or 0:,.2f} · "
+                            f"Labor {b.labor_cost or 0:,.2f} · Overhead {b.overhead_cost or 0:,.2f}"
+                            f"{' manual' if b.is_manual_overhead else ''})",
+                            b.total_cost or 0))
+                    lines.append(L('note', 'Batch costs are what was booked into finished-goods cost at each '
+                                           'completion and are not added again above.'))
+            orders.append({
+                'title': f"{o.order_number} — {r['product'].name if r['product'] else 'N/A'}",
+                'subtitle': subtitle,
+                'head_total': None if staff_copy else r['total'],
+                'lines': lines,
+            })
+
+    return {'summary': summary, 'products': products, 'orders': orders}
+
+
+def format_statement_value(value, fmt='money', neg=False):
+    """Text for one statement figure: 1,234.00 / (1,234.00) / 1,234 / text."""
+    if value is None or value == '':
+        return ''
+    if fmt == 'text' or isinstance(value, str):
+        return str(value)
+    pattern = '{:,.0f}' if fmt == 'int' else '{:,.2f}'
+    if neg:
+        return '(' + pattern.format(abs(value)) + ')'
+    if value < 0:
+        return '(' + pattern.format(abs(value)) + ')'
+    return pattern.format(value)
+
+
+def manufacturing_statement_csv_rows(fs, mo_costs=None, staff_copy=False):
+    """Flat CSV rows (Section / Account Description / Amount / Total) of the
+    same statements the PDF and Excel show, in the same order."""
+    st = build_manufacturing_statement(fs, mo_costs, staff_copy)
+    groups = [('', st['summary']), ('TARGET VS ACHIEVED BY PRODUCT', st['products']),
+              ('MANUFACTURING ORDERS', st['orders'])]
+    rows = []
+
+    def row(section='', label='', amount='', total=''):
+        rows.append({'Section': section, 'Account Description': label, 'Amount': amount, 'Total': total})
+
+    for group_title, blocks in groups:
+        if group_title and blocks:
+            row(group_title)
+        for b in blocks:
+            row(b['title'], b.get('subtitle', ''))
+            for ln in b['lines']:
+                if ln['kind'] == 'spacer':
+                    continue
+                indent = '    ' if ln['kind'] == 'line' else ''
+                row(b['title'], indent + ln['label'],
+                    format_statement_value(ln['amount'], ln['fmt'], ln['neg']) if ln['kind'] != 'total' and ln['amount'] is not None else '',
+                    format_statement_value(ln['total'], ln['fmt'], ln['neg']) if ln['total'] is not None else '')
+            row()
+    return rows
+
+
+def _manufacturing_statement_excel_sheet(ws, blocks, heading=None, start_row=1):
+    """Write statement blocks onto one worksheet in the P&L layout.
+    Returns the next free row."""
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    NAVY, INFO, PRIMARY, DARK, LIGHT = 'FF3F51B5', 'FFD1ECF1', 'FFCFE2FF', 'FF212529', 'FFF1F3F5'
+    COLORS = {'green': 'FF198754', 'red': 'FFDC3545', 'amber': 'FFB8860B', 'muted': 'FF6C757D'}
+    money_fmt = '#,##0.00;(#,##0.00)'
+    int_fmt = '#,##0;(#,##0)'
+    thin = Side(style='thin', color='FFE0E0E0')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    top_bottom = Border(top=Side(style='thin', color='FF495057'), bottom=Side(style='double', color='FF495057'))
+
+    ws.column_dimensions['A'].width = 78
+    ws.column_dimensions['B'].width = 20
+    ws.column_dimensions['C'].width = 22
+
+    def put(r, c, value, fmt='money', neg=False, bold=False, italic=False, color=None, fill=None, align=None):
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and fmt != 'text':
+            value = -abs(value) if neg else value
+        cell = ws.cell(row=r, column=c, value=value)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            cell.number_format = int_fmt if fmt == 'int' else money_fmt
+            cell.alignment = Alignment(horizontal='right', vertical='center')
+        else:
+            cell.alignment = Alignment(horizontal=align or ('right' if c > 1 else 'left'),
+                                       vertical='center', wrap_text=(c == 1))
+        cell.font = Font(bold=bold, italic=italic, color=color or 'FF212529')
+        if fill:
+            cell.fill = PatternFill('solid', fgColor=fill)
+        cell.border = border
+        return cell
+
+    r = start_row
+    if heading:
+        c = ws.cell(row=r, column=1, value=heading)
+        c.font = Font(bold=True, size=14, color=NAVY)
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=3)
+        r += 2
+
+    for b in blocks:
+        # Block title bar (like the accordion header / card header)
+        title = b['title']
+        put(r, 1, title, bold=True, color='FFFFFFFF', fill=NAVY)
+        head_total = b.get('head_total')
+        put(r, 2, None, fill=NAVY)
+        if head_total is not None:
+            put(r, 3, head_total, bold=True, color='FFFFFFFF', fill=NAVY)
+        else:
+            put(r, 3, None, fill=NAVY)
+        r += 1
+        if b.get('subtitle'):
+            put(r, 1, b['subtitle'], italic=True, color=COLORS['muted'])
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=3)
+            r += 1
+        for col, h in enumerate(['Account Description', 'Amount', 'Total'], start=1):
+            put(r, col, h, bold=True, fill=LIGHT, align='left' if col == 1 else 'right')
+        r += 1
+
+        for ln in b['lines']:
+            kind = ln['kind']
+            color = COLORS.get(ln['color'])
+            tcolor = COLORS.get(ln['total_color'])
+            if kind == 'spacer':
+                r += 1
+                continue
+            if kind == 'note':
+                put(r, 1, ln['label'], italic=True, color=COLORS['muted'])
+                ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=3)
+            elif kind == 'band':
+                put(r, 1, ln['label'].upper(), bold=True, fill=LIGHT)
+                put(r, 2, None, fill=LIGHT)
+                put(r, 3, None, fill=LIGHT)
+            elif kind == 'line':
+                put(r, 1, '    ' + ln['label'], color=COLORS['muted'])
+                put(r, 2, ln['amount'], ln['fmt'], ln['neg'], color=color)
+                put(r, 3, None)
+            else:
+                fill = {'section': INFO, 'primary': PRIMARY, 'grand': DARK}.get(kind)
+                font_color = 'FFFFFFFF' if kind == 'grand' else None
+                total = ln['total']
+                if kind == 'grand' and isinstance(total, (int, float)):
+                    tcolor = 'FF75D99B' if total >= 0 else 'FFFF8A95'
+                put(r, 1, ln['label'], bold=True, fill=fill, color=font_color)
+                put(r, 2, None, fill=fill)
+                put(r, 3, total, ln['fmt'], ln['neg'], bold=True, fill=fill, color=tcolor or font_color)
+                if kind == 'total':
+                    for col in (1, 2, 3):
+                        ws.cell(row=r, column=col).border = top_bottom
+            r += 1
+        r += 2
+    return r
+
+
+def generate_manufacturing_report_excel(fs, mo_costs=None, company_name=None):
+    """Manufacturing Report workbook, laid out like the screen and the P&L:
+
+      Summary                - Production Performance + MO Cost summaries
+      By Product             - one statement per product (target vs achieved, labor used vs remaining)
+      By Manufacturing Order - one statement per order (material, labor, overhead, other)
+      Costing & Margin       - the per-SKU planned costing / margin fact sheet
+    """
+    from openpyxl import Workbook
+
+    st = build_manufacturing_statement(fs, mo_costs)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Summary'
+    company = (company_name or 'COMPANY').upper()
+    _manufacturing_statement_excel_sheet(ws, st['summary'],
+                                         heading=f"{company} — MANUFACTURING REPORT — {fs['month_label']}")
+
+    ws_p = wb.create_sheet('By Product')
+    if st['products']:
+        _manufacturing_statement_excel_sheet(ws_p, st['products'],
+                                             heading=f"TARGET VS ACHIEVED BY PRODUCT — {fs['month_label']}")
+    else:
+        ws_p['A1'] = f"No production targets found for {fs['month_label']}."
+
+    ws_o = wb.create_sheet('By Manufacturing Order')
+    if st['orders']:
+        _manufacturing_statement_excel_sheet(ws_o, st['orders'],
+                                             heading=f"MANUFACTURING ORDER COSTS — {fs['month_label']}")
+    else:
+        ws_o['A1'] = f"No Manufacturing Orders found for {fs['month_label']}."
+
+    _write_fact_sheet_costing(wb.create_sheet('Costing & Margin'), fs, company_name)
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
+def generate_manufacturing_fact_sheet_pdf(fs, company_info=None, audience='admin', mo_costs=None):
+    """Manufacturing Report PDF in the Profit & Loss statement style - mirrors
+    the on-screen page section for section (see build_manufacturing_statement):
+    headline badges, the Production Performance summary, one statement per
+    product, then the Manufacturing Order cost summary and one statement per
+    order.
 
     audience:
       'admin' - everything, including every money figure.
-      'staff' - production copy: quantities, completion % and staff
-                assignments only. Every monetary figure (revenue, cost,
-                profit, labour cost) is omitted entirely - not blanked out,
-                but dropped from the layout - so the sheet can be handed to
-                production staff without exposing financials.
+      'staff' - production copy: quantities, completion %, components and
+                staff assignments only. Every monetary figure is dropped from
+                the layout entirely, so the sheet can be handed to production
+                staff without exposing financials.
     """
+    from xml.sax.saxutils import escape
+    from reportlab.platypus import KeepTogether, PageBreak
+
     staff_copy = (audience == 'staff')
+    st = build_manufacturing_statement(fs, mo_costs, staff_copy)
+
     GREEN = colors.HexColor('#198754')
     RED = colors.HexColor('#dc3545')
     AMBER = colors.HexColor('#b8860b')
+    BLUE = colors.HexColor('#0d6efd')
     MUTED = colors.HexColor('#6c757d')
-    HEAD_BG = colors.HexColor('#3f51b5')
+    NAVY = colors.HexColor('#3f51b5')
     GRAY_BG = colors.HexColor('#f1f3f5')
-    LINE = colors.HexColor('#e0e0e0')
-
-    status_color = {'success': GREEN, 'warning': AMBER, 'danger': RED}
+    INFO_BG = colors.HexColor('#d1ecf1')
+    PRIMARY_BG = colors.HexColor('#cfe2ff')
+    DARK_BG = colors.HexColor('#212529')
+    LINE = colors.HexColor('#e9ecef')
+    COLORS = {'green': GREEN, 'red': RED, 'amber': AMBER, 'muted': MUTED}
 
     output = BytesIO()
-    doc = SimpleDocTemplate(output, pagesize=landscape(legal),
-                            rightMargin=24, leftMargin=24,
-                            topMargin=24, bottomMargin=24)
-    elements = []
+    doc = SimpleDocTemplate(output, pagesize=letter,
+                            rightMargin=36, leftMargin=36, topMargin=32, bottomMargin=32,
+                            title=f"Manufacturing Report {fs['month_label']}")
     styles = getSampleStyleSheet()
+    elements = []
 
-    title_style = ParagraphStyle('FSTitle', parent=styles['Heading1'], alignment=1, fontSize=15)
-    sub_style = ParagraphStyle('FSSub', parent=styles['Normal'], alignment=1, textColor=MUTED)
+    title_style = ParagraphStyle('MRTitle', parent=styles['Heading1'], alignment=1, fontSize=16)
+    sub_style = ParagraphStyle('MRSub', parent=styles['Normal'], alignment=1, textColor=MUTED)
+    part_style = ParagraphStyle('MRPart', parent=styles['Heading2'], textColor=NAVY, fontSize=13,
+                                spaceBefore=4, spaceAfter=6, keepWithNext=1)
+    block_title_style = ParagraphStyle('MRBlock', parent=styles['Normal'], fontName='Helvetica-Bold',
+                                       fontSize=10.5, textColor=colors.white)
+    block_total_style = ParagraphStyle('MRBlockTot', parent=block_title_style, alignment=2)
+    block_sub_style = ParagraphStyle('MRBlockSub', parent=styles['Normal'], fontSize=8,
+                                     textColor=MUTED, fontName='Helvetica-Oblique')
+    label_style = ParagraphStyle('MRLabel', parent=styles['Normal'], fontSize=9, leading=11)
+    line_style = ParagraphStyle('MRLine', parent=label_style, leftIndent=12, textColor=colors.HexColor('#555555'))
+    bold_style = ParagraphStyle('MRBold', parent=label_style, fontName='Helvetica-Bold')
+    white_style = ParagraphStyle('MRWhite', parent=bold_style, textColor=colors.white, fontSize=10.5)
+    note_style = ParagraphStyle('MRNote', parent=label_style, fontSize=7.5, textColor=MUTED,
+                                fontName='Helvetica-Oblique', leftIndent=12)
 
     if company_info:
-        elements.append(Paragraph(f"<b>{company_info.get('name', 'Company Report')}</b>",
-                                   ParagraphStyle('co', parent=styles['Heading2'], alignment=1)))
-        elements.append(Spacer(1, 0.05 * inch))
+        elements.append(Paragraph(f"<b>{escape(company_info.get('name') or 'Company Report')}</b>",
+                                  ParagraphStyle('co', parent=styles['Heading2'], alignment=1)))
+        addr_bits = [b for b in [
+            company_info.get('address'),
+            f"Phone: {company_info.get('phone')}" if company_info.get('phone') else None,
+            company_info.get('email'),
+        ] if b]
+        if addr_bits:
+            elements.append(Paragraph(escape(' | '.join(addr_bits)),
+                                      ParagraphStyle('co2', parent=styles['Normal'], alignment=1,
+                                                     fontSize=9, textColor=MUTED)))
+        elements.append(Spacer(1, 0.12 * inch))
 
-    elements.append(Paragraph(f"MANUFACTURING PERFORMANCE REPORT &mdash; {fs['month_label']}", title_style))
+    elements.append(Paragraph(f"MANUFACTURING REPORT &mdash; {escape(fs['month_label'])}", title_style))
     elements.append(Paragraph(
         'PRODUCTION COPY &mdash; quantities and staff assignments only' if staff_copy
-        else 'MANAGEMENT COPY &mdash; full costing and profitability',
-        sub_style))
+        else 'MANAGEMENT COPY &mdash; full costing and profitability', sub_style))
     elements.append(Spacer(1, 0.18 * inch))
 
-    def money(n):
-        return f"PKR {n:,.2f}"
+    # ── Headline badges (like the P&L's Net Profit Margin card) ────────────
+    pt = fs['performance_totals']
+    completion = pt['completion_pct']
+    comp_bg = GREEN if completion >= 100 else (AMBER if completion >= 70 else RED)
+    badge_label = ParagraphStyle('bl', parent=styles['Normal'], alignment=1, textColor=colors.white, fontSize=9)
+    badge_value = ParagraphStyle('bv', parent=styles['Normal'], alignment=1, textColor=colors.white,
+                                 fontSize=20, leading=24, fontName='Helvetica-Bold')
+    badge_foot = ParagraphStyle('bf', parent=badge_label, fontSize=8)
 
-    perf = fs['performance_totals']
-    label_style = ParagraphStyle('lbl', parent=styles['Normal'], fontSize=9, textColor=MUTED)
-    value_style = ParagraphStyle('val', parent=styles['Normal'], fontSize=10.5, fontName='Helvetica-Bold')
-    box_title_style = ParagraphStyle('boxTitle', parent=styles['Normal'], fontSize=9.5,
-                                      fontName='Helvetica-Bold', textColor=colors.white)
-    kpi_cap_style = ParagraphStyle('kpiCap', parent=styles['Normal'], fontSize=7.5,
-                                    alignment=1, textColor=MUTED, fontName='Helvetica-Bold')
-    hdr_style = ParagraphStyle('hdr', parent=styles['Normal'], fontSize=8, fontName='Helvetica-Bold',
-                                alignment=1, textColor=colors.whitesmoke)
-    cell_style = ParagraphStyle('cell', parent=styles['Normal'], fontSize=7.5, alignment=1)
-    name_style = ParagraphStyle('name', parent=styles['Normal'], fontSize=7, alignment=0)
-    sec_style = ParagraphStyle('sec', parent=styles['Normal'], fontSize=10,
-                                fontName='Helvetica-Bold', textColor=HEAD_BG)
-
-    # ── KPI cards: production quantities (safe for both audiences) ──────────
-    def kpi_card(caption, value, value_color):
-        v_style = ParagraphStyle(f'kpi{caption}', parent=styles['Normal'], fontSize=14,
-                                  alignment=1, fontName='Helvetica-Bold', textColor=value_color)
-        card = Table([[Paragraph(caption.upper(), kpi_cap_style)], [Paragraph(value, v_style)]])
-        card.setStyle(TableStyle([
-            ('BOX', (0, 0), (-1, -1), 0.6, LINE),
-            ('BACKGROUND', (0, 0), (-1, -1), GRAY_BG),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    def badge(label, value, foot, bg):
+        t = Table([[Paragraph(label, badge_label)], [Paragraph(value, badge_value)], [Paragraph(foot, badge_foot)]])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), bg),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+            ('BOTTOMPADDING', (0, -1), (-1, -1), 10),
         ]))
-        return card
-
-    completion = perf['completion_pct']
-    comp_color = GREEN if completion >= 100 else (AMBER if completion >= 70 else RED)
-    kpis = [
-        kpi_card('Target Production', f"{perf['target_units']:,.0f}", colors.black),
-        kpi_card('Actual Production', f"{perf['produced_units']:,.0f}", HEAD_BG),
-        kpi_card('Completion', f"{completion:.1f}%", comp_color),
-        kpi_card('Shortfall', f"{perf['remaining']:,.0f}", RED if perf['remaining'] > 0 else GREEN),
-    ]
-    gap = doc.width * 0.02
-    card_w = (doc.width - gap * 3) / 4
-    kpi_row = Table([[kpis[0], '', kpis[1], '', kpis[2], '', kpis[3]]],
-                    colWidths=[card_w, gap, card_w, gap, card_w, gap, card_w])
-    kpi_row.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP')]))
-    elements.append(kpi_row)
-    elements.append(Spacer(1, 0.25 * inch))
-
-    def info_box(title, rows, width_fraction=0.47):
-        data = [[Paragraph(title, box_title_style), '']]
-        cmds = [
-            ('SPAN', (0, 0), (-1, 0)),
-            ('BACKGROUND', (0, 0), (-1, 0), HEAD_BG),
-            ('GRID', (0, 0), (-1, -1), 0.4, LINE),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 5),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-            ('LEFTPADDING', (0, 0), (-1, -1), 8),
-        ]
-        for r, (label, value) in enumerate(rows, start=1):
-            data.append([Paragraph(label, label_style), Paragraph(value, value_style)])
-            if r % 2 == 0:
-                cmds.append(('BACKGROUND', (0, r), (-1, r), GRAY_BG))
-        t = Table(data, colWidths=[doc.width * width_fraction * 0.62,
-                                    doc.width * width_fraction * 0.38])
-        t.setStyle(TableStyle(cmds))
         return t
 
-    # ── Financial sections: management copy only ───────────────────────────
+    badges = [badge('TARGET COMPLETION', f"{completion:.1f}%",
+                    f"{pt['produced_units']:,.0f} of {pt['target_units']:,.0f} units produced", comp_bg)]
     if not staff_copy:
-        expected = info_box('EXPECTED PROFIT - IF FULL TARGET IS MET', [
-            ('Target Revenue', money(perf['target_revenue'])),
-            ('Estimated Cost', money(perf['estimated_cost'])),
-            ('Expected Profit', money(perf['estimated_profit'])),
-        ])
-        actual = info_box('ACTUAL PROFIT - FROM REAL PRODUCTION SO FAR', [
-            ('Actual Revenue', money(perf['actual_revenue'])),
-            ('Actual Cost', money(perf['actual_cost'])),
-            ('Actual Profit', money(perf['actual_profit'])),
-        ])
-        boxes = Table([[expected, '', actual]],
-                       colWidths=[doc.width * 0.47, doc.width * 0.06, doc.width * 0.47])
-        boxes.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP')]))
-        elements.append(boxes)
-        elements.append(Spacer(1, 0.22 * inch))
+        badges.append(badge('ACTUAL PROFIT (SO FAR)', f"PKR {pt['actual_profit']:,.0f}",
+                            f"Expected if target met: PKR {pt['estimated_profit']:,.0f}",
+                            BLUE if pt['actual_profit'] >= 0 else RED))
+        if mo_costs is not None:
+            badges.append(badge('TOTAL MANUFACTURING COST', f"PKR {mo_costs['totals']['total']:,.0f}",
+                                f"across {len(mo_costs['rows'])} order(s)", NAVY))
+    gap = 8
+    bw = (doc.width - gap * (len(badges) - 1)) / len(badges)
+    cells, widths = [], []
+    for i, b in enumerate(badges):
+        if i:
+            cells.append('')
+            widths.append(gap)
+        cells.append(b)
+        widths.append(bw)
+    badge_row = Table([cells], colWidths=widths)
+    badge_row.setStyle(TableStyle([('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                                   ('VALIGN', (0, 0), (-1, -1), 'TOP')]))
+    elements.append(badge_row)
+    elements.append(Spacer(1, 0.22 * inch))
 
-        sl = fs['staff_labor_totals']
-        labour = info_box('LABOUR COST SUMMARY', [
-            ('Labour Cost (Produced)', money(sl['labor_cost_produced'])),
-            ('Labour Cost (Remaining Produced)', money(sl['labor_cost_remaining'])),
-            ('Total Labour Cost', money(sl['labor_cost_total'])),
-        ], width_fraction=0.47)
-        assumptions = info_box('COSTING ASSUMPTIONS', [
-            ('Expected Labour + Factory Overhead', money(fs['expected_overhead'])),
-            ('Target Manufacturing Margin', f"{fs['target_margin'] * 100:.1f}%"),
-            ('Overhead Loading Rate on BOM', f"{fs['overhead_loading_rate'] * 100:.1f}%"),
-        ], width_fraction=0.47)
-        boxes2 = Table([[labour, '', assumptions]],
-                        colWidths=[doc.width * 0.47, doc.width * 0.06, doc.width * 0.47])
-        boxes2.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP')]))
-        elements.append(boxes2)
-        elements.append(Spacer(1, 0.25 * inch))
+    # ── Statement block renderer (same styling as generate_profit_loss_pdf) ─
+    col_w = [doc.width * 0.62, doc.width * 0.19, doc.width * 0.19]
 
-    def build_table(headers, body_rows, col_weights, total_row_index=None):
-        data = [[Paragraph(h, hdr_style) for h in headers]] + body_rows
-        weight_total = sum(col_weights)
-        widths = [doc.width * w / weight_total for w in col_weights]
-        t = Table(data, colWidths=widths, repeatRows=1)
+    def render_block(b):
+        rows = [[Paragraph(escape(b['title']), block_title_style), '',
+                 Paragraph(f"PKR {b['head_total']:,.2f}", block_total_style) if b.get('head_total') is not None else '']]
         cmds = [
-            ('BACKGROUND', (0, 0), (-1, 0), HEAD_BG),
-            ('GRID', (0, 0), (-1, -1), 0.4, LINE),
+            ('SPAN', (0, 0), (1, 0)),
+            ('BACKGROUND', (0, 0), (-1, 0), NAVY),
+            ('GRID', (0, 1), (-1, -1), 0.4, LINE),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
             ('TOPPADDING', (0, 0), (-1, -1), 4),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
         ]
-        if total_row_index is not None:
-            cmds.append(('BACKGROUND', (0, total_row_index), (-1, total_row_index), GRAY_BG))
+        if b.get('subtitle'):
+            rows.append([Paragraph(escape(b['subtitle']), block_sub_style), '', ''])
+            cmds.append(('SPAN', (0, 1), (2, 1)))
+        hr = len(rows)
+        header_rows = hr + 1
+        rows.append([Paragraph('<b>Account Description</b>', label_style), 'Amount', 'Total'])
+        cmds += [('BACKGROUND', (0, hr), (-1, hr), colors.HexColor('#f8f9fa')),
+                 ('FONTNAME', (1, hr), (-1, hr), 'Helvetica-Bold')]
+
+        for ln in b['lines']:
+            r = len(rows)
+            kind = ln['kind']
+            if kind == 'spacer':
+                rows.append(['', '', ''])
+                cmds += [('SPAN', (0, r), (2, r)), ('TOPPADDING', (0, r), (-1, r), 1),
+                         ('BOTTOMPADDING', (0, r), (-1, r), 1)]
+                continue
+            if kind == 'note':
+                rows.append([Paragraph(escape(ln['label']), note_style), '', ''])
+                cmds.append(('SPAN', (0, r), (2, r)))
+                continue
+            if kind == 'band':
+                rows.append([Paragraph(escape(ln['label'].upper()), bold_style), '', ''])
+                cmds += [('SPAN', (0, r), (2, r)), ('BACKGROUND', (0, r), (-1, r), GRAY_BG)]
+                continue
+            if kind == 'line':
+                rows.append([Paragraph(escape(ln['label']), line_style),
+                             format_statement_value(ln['amount'], ln['fmt'], ln['neg']), ''])
+                if ln['color']:
+                    cmds.append(('TEXTCOLOR', (1, r), (1, r), COLORS[ln['color']]))
+                continue
+            # section / total / primary / grand: label spans two columns, figure in Total
+            total = ln['total']
+            style = white_style if kind == 'grand' else bold_style
+            rows.append([Paragraph(escape(ln['label']), style), '',
+                         format_statement_value(total, ln['fmt'], ln['neg'])])
+            cmds += [('SPAN', (0, r), (1, r)), ('FONTNAME', (2, r), (2, r), 'Helvetica-Bold')]
+            if kind == 'section':
+                cmds.append(('BACKGROUND', (0, r), (-1, r), INFO_BG))
+            elif kind == 'primary':
+                cmds.append(('BACKGROUND', (0, r), (-1, r), PRIMARY_BG))
+                if isinstance(total, (int, float)) and total < 0:
+                    cmds.append(('TEXTCOLOR', (2, r), (2, r), RED))
+            elif kind == 'grand':
+                cmds += [('BACKGROUND', (0, r), (-1, r), DARK_BG), ('FONTSIZE', (2, r), (2, r), 10.5)]
+                if isinstance(total, (int, float)):
+                    cmds.append(('TEXTCOLOR', (2, r), (2, r),
+                                 colors.HexColor('#75d99b') if total >= 0 else colors.HexColor('#ff8a95')))
+                else:
+                    cmds.append(('TEXTCOLOR', (2, r), (2, r), colors.white))
+            elif kind == 'total':
+                cmds += [('LINEABOVE', (0, r), (-1, r), 0.8, colors.HexColor('#495057')),
+                         ('LINEBELOW', (0, r), (-1, r), 1.2, colors.HexColor('#495057'))]
+            if ln['total_color']:
+                cmds.append(('TEXTCOLOR', (2, r), (2, r), COLORS[ln['total_color']]))
+
+        # A statement that runs onto the next page repeats its title + column header there.
+        t = Table(rows, colWidths=col_w, repeatRows=header_rows)
         t.setStyle(TableStyle(cmds))
         return t
 
-    # ── Target vs Achieved by Product ──────────────────────────────────────
-    elements.append(Paragraph(f"TARGET VS ACHIEVED BY PRODUCT &mdash; {fs['month_label']}", sec_style))
-    elements.append(Spacer(1, 0.08 * inch))
+    def add_blocks(blocks, lead=None):
+        # lead: a section heading kept on the same page as the first statement.
+        for i, b in enumerate(blocks):
+            t = render_block(b)
+            group = ([lead] if (lead is not None and i == 0) else []) + [t]
+            # Short statements stay on one page; long ones flow on with a repeated header
+            # rather than jumping whole to a new page and leaving a gap.
+            if len(b['lines']) <= 22:
+                elements.append(KeepTogether(group))
+            else:
+                elements.extend(group)
+            elements.append(Spacer(1, 0.18 * inch))
+
+    # Part A - production performance
+    elements.append(Paragraph('PART A &mdash; PRODUCTION PERFORMANCE: TARGET VS ACHIEVED', part_style))
+    add_blocks(st['summary'][:1])
+    products_heading = Paragraph(f"TARGET VS ACHIEVED BY PRODUCT &mdash; {escape(fs['month_label'])}", part_style)
+    if st['products']:
+        add_blocks(st['products'], lead=products_heading)
+    else:
+        elements.append(products_heading)
+        elements.append(Paragraph(f"No production targets found for {escape(fs['month_label'])}.", note_style))
+        elements.append(Spacer(1, 0.18 * inch))
+
+    # Part B - manufacturing order costs
+    if mo_costs is not None:
+        elements.append(PageBreak())
+        elements.append(Paragraph('PART B &mdash; MANUFACTURING ORDER ' +
+                                  ('PRODUCTION SHEET' if staff_copy else 'COST STATEMENT'), part_style))
+        add_blocks(st['summary'][1:])
+        if st['orders']:
+            add_blocks(st['orders'])
+        else:
+            elements.append(Paragraph(f"No Manufacturing Orders found for {escape(fs['month_label'])}.", note_style))
 
     if staff_copy:
-        headers = ['SKU', 'Item Name', 'Target', 'Produced', 'Remaining', 'Completion %', 'Result']
-        weights = [0.10, 0.40, 0.09, 0.09, 0.09, 0.11, 0.12]
+        note = ("NOTE: This is the production copy of the monthly manufacturing report. It shows target vs "
+                "actual production quantities, the components each order needs and which staff worked on each "
+                "product's orders. Costing, labour rates, revenue and profit figures are intentionally excluded.")
     else:
-        headers = ['SKU', 'Item Name', 'Target', 'Produced', 'Remaining', 'Completion %',
-                   'Expected Profit', 'Actual Profit', 'Result']
-        weights = [0.08, 0.26, 0.07, 0.07, 0.08, 0.10, 0.12, 0.12, 0.10]
-
-    body = []
-    for r in fs['performance_rows']:
-        res_color = GREEN if r['achieved'] else RED
-        res_style = ParagraphStyle(f"res{len(body)}", parent=cell_style,
-                                    textColor=res_color, fontName='Helvetica-Bold')
-        cells = [
-            Paragraph(str(r['product'].sku or ''), cell_style),
-            Paragraph(str(r['product'].name or ''), name_style),
-            Paragraph(f"{r['target_units']:,.0f}", cell_style),
-            Paragraph(f"{r['produced_units']:,.0f}", cell_style),
-            Paragraph(f"{r['remaining']:,.0f}", cell_style),
-            Paragraph(f"{r['completion_pct']:.1f}%", cell_style),
-        ]
-        if not staff_copy:
-            cells.append(Paragraph(money(r['estimated_profit']), cell_style))
-            cells.append(Paragraph(money(r['actual_profit']), cell_style))
-        cells.append(Paragraph('ACHIEVED' if r['achieved'] else 'NOT ACHIEVED', res_style))
-        body.append(cells)
-
-    if not body:
-        span = len(headers)
-        body.append([Paragraph(f"No production targets found for {fs['month_label']}.",
-                                ParagraphStyle('empty', parent=cell_style, textColor=MUTED))] +
-                     [''] * (span - 1))
-
-    elements.append(build_table(headers, body, weights))
-    elements.append(Spacer(1, 0.28 * inch))
-
-    # ── Staff breakdown ────────────────────────────────────────────────────
-    elements.append(Paragraph(
-        (f"STAFF PRODUCTION ASSIGNMENT &mdash; {fs['month_label']}" if staff_copy
-         else f"LABOUR COST BY STAFF &mdash; {fs['month_label']}"), sec_style))
-    elements.append(Spacer(1, 0.08 * inch))
-
-    if staff_copy:
-        s_headers = ['SKU', 'Item Name', 'Staff Name', 'Produced Qty', 'Remaining Qty']
-        s_weights = [0.11, 0.42, 0.23, 0.12, 0.12]
-    else:
-        s_headers = ['SKU', 'Item Name', 'Staff Name', 'Produced Qty', 'Remaining Qty',
-                     'Labour Cost (Produced)', 'Labour Cost (Remaining)', 'Total Labour Cost']
-        s_weights = [0.08, 0.24, 0.16, 0.09, 0.09, 0.12, 0.12, 0.12]
-
-    s_body = []
-    for r in fs['staff_labor_rows']:
-        staff_name = r['staff'].name or ''
-        if r['staff'].designation:
-            staff_name = f"{staff_name} ({r['staff'].designation})"
-        cells = [
-            Paragraph(str(r['product'].sku or ''), cell_style),
-            Paragraph(str(r['product'].name or ''), name_style),
-            Paragraph(staff_name, cell_style),
-            Paragraph(f"{r['produced_qty']:,.0f}", cell_style),
-            Paragraph(f"{r['remaining_qty']:,.0f}", cell_style),
-        ]
-        if not staff_copy:
-            cells.append(Paragraph(money(r['labor_cost_produced']), cell_style))
-            cells.append(Paragraph(money(r['labor_cost_remaining']), cell_style))
-            cells.append(Paragraph(money(r['labor_cost_total']), cell_style))
-        s_body.append(cells)
-
-    total_idx = None
-    if not s_body:
-        s_body.append([Paragraph('No HR-staffed Manufacturing Orders found for this period.',
-                                  ParagraphStyle('empty2', parent=cell_style, textColor=MUTED))] +
-                       [''] * (len(s_headers) - 1))
-    elif not staff_copy:
-        bold_cell = ParagraphStyle('boldCell', parent=cell_style, fontName='Helvetica-Bold')
-        sl = fs['staff_labor_totals']
-        s_body.append([
-            Paragraph('TOTAL', bold_cell), '', '', '', '',
-            Paragraph(money(sl['labor_cost_produced']), bold_cell),
-            Paragraph(money(sl['labor_cost_remaining']), bold_cell),
-            Paragraph(money(sl['labor_cost_total']), bold_cell),
-        ])
-        total_idx = len(s_body)
-
-    elements.append(build_table(s_headers, s_body, s_weights, total_row_index=total_idx))
-    elements.append(Spacer(1, 0.2 * inch))
-
-    if staff_copy:
-        note = ("NOTE: This is the production copy of the monthly manufacturing report. It shows target "
-                "vs actual production quantities and which staff worked on each product's orders. "
-                "Costing, labour rates, revenue and profit figures are intentionally excluded. "
-                "Produced/Remaining quantities are taken from each Manufacturing Order's own progress.")
-    else:
-        note = ("NOTE: Target combines the Production Target Tracker's manual target with the planned "
-                "quantity of Manufacturing Orders started in the period. Produced is actual completed "
-                "production for the SKU across all orders in the period. Labour cost per staff member "
-                "comes from the order's HR 'Staff Used' assignment and is split between the quantity "
-                "already produced and the quantity still remaining. Profit shown is manufacturing "
-                "profit before sales/admin expenses, discounts, freight, warranty, taxes and financing costs.")
+        note = ("NOTE: Target combines the Production Target Tracker's manual target with the planned quantity "
+                "of Manufacturing Orders started in the period. Labour cost per staff member comes from the "
+                "order's HR 'Staff Used' assignment and is split between the quantity already produced (labor "
+                "used) and the quantity still remaining. Figures in brackets are deductions. Profit shown is "
+                "manufacturing profit before sales/admin expenses, discounts, freight, warranty, taxes and "
+                "financing costs.")
+    elements.append(Spacer(1, 0.1 * inch))
     elements.append(Paragraph(note, ParagraphStyle('note', parent=styles['Normal'], fontSize=7.5,
-                                                     textColor=MUTED, fontName='Helvetica-Oblique')))
-    elements.append(Spacer(1, 0.15 * inch))
+                                                   textColor=MUTED, fontName='Helvetica-Oblique')))
+    elements.append(Spacer(1, 0.1 * inch))
     elements.append(Paragraph(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                               ParagraphStyle('gen', parent=styles['Normal'], fontSize=8, textColor=MUTED)))
+                              ParagraphStyle('gen', parent=styles['Normal'], fontSize=8, textColor=MUTED)))
 
     doc.build(elements)
     output.seek(0)

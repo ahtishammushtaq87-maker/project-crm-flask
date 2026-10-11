@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, date
 from sqlalchemy import func, and_, or_
 import pandas as pd
 from io import BytesIO
-from app.report_utils import generate_excel, generate_csv, generate_pdf, generate_profit_loss_pdf, generate_manufacturing_fact_sheet_pdf, generate_manufacturing_fact_sheet_excel
+from app.report_utils import generate_excel, generate_csv, generate_pdf, generate_profit_loss_pdf, generate_manufacturing_fact_sheet_pdf, generate_manufacturing_report_excel, manufacturing_statement_csv_rows
 from app.routes.filters import apply_saved_filter_to_query
 from app.services import warehouse_cost
 
@@ -594,11 +594,13 @@ def manufacturing_report():
     product_id = request.args.get('product_id', type=int)
 
     fs = compute_manufacturing_fact_sheet(month, year, overhead_override, margin_override, product_id)
+    mo_costs = compute_mo_cost_breakdown(month, year, product_id)
 
     finished_good_products = Product.query.filter_by(is_active=True, is_manufactured=True).order_by(Product.name).all()
 
     return render_template('reports/manufacturing_report.html',
                          fs=fs,
+                         mo_costs=mo_costs,
                          month=month,
                          year=year,
                          product_id=product_id,
@@ -1211,6 +1213,114 @@ def compute_manufacturing_fact_sheet(month, year, overhead_override=None, margin
     }
 
 
+def compute_mo_cost_breakdown(month, year, product_id=None):
+    """Per-Manufacturing-Order cost statement for one month.
+
+    An order belongs to the month when its start date, end date, or (for
+    orders with no start date) creation date falls inside it. Each order's
+    cost is broken into the lines actually charged to it: component
+    material (ManufacturingOrderItem.cost), labor (the HR staff allocation
+    in ManufacturingOrderStaff, with any remainder of actual_labor_cost
+    shown as the BOM labor estimate), and every Expense linked to it via
+    mo_id - factory overheads (is_bom_overhead) vs any other linked cost.
+    Completion batches are listed for reference, like the P&L's
+    informational section.
+    """
+    from calendar import monthrange
+
+    month_start = date(year, month, 1)
+    month_end = date(year, month, monthrange(year, month)[1])
+    month_start_dt = datetime.combine(month_start, datetime.min.time())
+    month_end_dt = datetime.combine(month_end, datetime.max.time())
+
+    query = ManufacturingOrder.query.join(BOM, ManufacturingOrder.bom_id == BOM.id).filter(
+        or_(
+            and_(ManufacturingOrder.start_date >= month_start, ManufacturingOrder.start_date <= month_end),
+            and_(ManufacturingOrder.end_date >= month_start, ManufacturingOrder.end_date <= month_end),
+            and_(ManufacturingOrder.start_date == None,
+                 ManufacturingOrder.created_at >= month_start_dt,
+                 ManufacturingOrder.created_at <= month_end_dt),
+        )
+    )
+    if product_id:
+        query = query.filter(BOM.product_id == product_id)
+    orders = query.order_by(ManufacturingOrder.start_date.desc(), ManufacturingOrder.id.desc()).all()
+
+    rows = []
+    for mo in orders:
+        materials = [{
+            'name': item.component.name if item.component else 'Unknown component',
+            'sku': item.component.sku if item.component else '',
+            'qty': item.quantity_required or 0,
+            'amount': item.cost or 0,
+        } for item in mo.items]
+        material_total = sum(m['amount'] for m in materials)
+
+        labor = [{
+            'name': a.staff.name if a.staff else 'Unknown staff',
+            'designation': a.staff.designation if a.staff else '',
+            'daily_rate': a.daily_rate or 0,
+            'days': a.days or 0,
+            'amount': a.labor_cost or 0,
+        } for a in mo.staff_assignments]
+        staff_labor_total = sum(l['amount'] for l in labor)
+        labor_total = max(mo.actual_labor_cost or 0, staff_labor_total)
+        bom_labor_estimate = labor_total - staff_labor_total
+        if bom_labor_estimate < 0.005:
+            bom_labor_estimate = 0
+
+        overheads, other_costs = [], []
+        for e in Expense.query.filter(
+                Expense.mo_id == mo.id,
+                Expense.is_payment_transfer == False
+        ).order_by(Expense.date).all():
+            entry = {
+                'number': e.expense_number,
+                'date': e.date,
+                'category': e.expense_category.name if e.expense_category else 'Other',
+                'description': e.description or '',
+                'status': e.status or 'pending',
+                'amount': e.amount or 0,
+            }
+            (overheads if e.is_bom_overhead else other_costs).append(entry)
+        overhead_total = sum(o['amount'] for o in overheads)
+        other_total = sum(o['amount'] for o in other_costs)
+
+        total = material_total + labor_total + overhead_total + other_total
+        qty = mo.quantity_to_produce or 0
+        rows.append({
+            'order': mo,
+            'product': mo.bom.product if mo.bom else None,
+            'qty': qty,
+            'produced_qty': mo.produced_qty or 0,
+            'materials': materials,
+            'material_total': material_total,
+            'labor': labor,
+            'bom_labor_estimate': bom_labor_estimate,
+            'labor_total': labor_total,
+            'overheads': overheads,
+            'overhead_total': overhead_total,
+            'other_costs': other_costs,
+            'other_total': other_total,
+            'total': total,
+            'cost_per_unit': (total / qty) if qty > 0 else 0,
+            'batches': sorted(mo.history, key=lambda h: h.completion_date or datetime.min),
+        })
+
+    totals = {
+        'material': sum(r['material_total'] for r in rows),
+        'labor': sum(r['labor_total'] for r in rows),
+        'overhead': sum(r['overhead_total'] for r in rows),
+        'other': sum(r['other_total'] for r in rows),
+        'total': sum(r['total'] for r in rows),
+        'qty': sum(r['qty'] for r in rows),
+        'produced_qty': sum(r['produced_qty'] for r in rows),
+    }
+    totals['cost_per_unit'] = (totals['total'] / totals['qty']) if totals['qty'] > 0 else 0
+
+    return {'rows': rows, 'totals': totals}
+
+
 @bp.route('/profit-loss')
 @login_required
 def profit_loss_report():
@@ -1548,34 +1658,15 @@ def download_report(format, report_type):
         mfg_product_id = request.args.get('product_id', type=int)
 
         fs = compute_manufacturing_fact_sheet(month, year, overhead_override, margin_override, mfg_product_id)
+        mo_costs = compute_mo_cost_breakdown(month, year, mfg_product_id)
 
-        title = f"Manufacturing Performance Report - {fs['month_label']}"
-        # Flat export mirrors the on-screen Target vs Achieved table. The old
-        # planned-cost columns were dropped along with that table, and were
-        # empty whenever a target's manual Target Units was 0 - which also
-        # tripped the "No data available" guard below and blocked the PDF.
+        title = f"Manufacturing Report - {fs['month_label']}"
+        # Every format (PDF / Excel / CSV) is built from the same P&L-style
+        # statement as the on-screen page - see build_manufacturing_statement.
+        # The staff copy drops all money figures.
         staff_audience = request.args.get('audience') == 'staff'
-        if staff_audience:
-            headers = ['SKU', 'Item Name', 'Target', 'Produced', 'Remaining', 'Completion %', 'Result']
-        else:
-            headers = ['SKU', 'Item Name', 'Target', 'Produced', 'Remaining', 'Completion %',
-                       'Expected Profit', 'Actual Profit', 'Result']
-
-        data = []
-        for r in fs['performance_rows']:
-            row = {
-                'SKU': r['product'].sku or '',
-                'Item Name': r['product'].name or '',
-                'Target': f"{r['target_units']:,.0f}",
-                'Produced': f"{r['produced_units']:,.0f}",
-                'Remaining': f"{r['remaining']:,.0f}",
-                'Completion %': f"{r['completion_pct']:.1f}%",
-            }
-            if not staff_audience:
-                row['Expected Profit'] = f"{r['estimated_profit']:.2f}"
-                row['Actual Profit'] = f"{r['actual_profit']:.2f}"
-            row['Result'] = 'ACHIEVED' if r['achieved'] else 'NOT ACHIEVED'
-            data.append(row)
+        headers = ['Section', 'Account Description', 'Amount', 'Total']
+        data = manufacturing_statement_csv_rows(fs, mo_costs, staff_copy=staff_audience)
 
     elif report_type == 'bom':
         product_id = request.args.get('product_id')
@@ -1769,7 +1860,7 @@ def download_report(format, report_type):
             # 'staff' produces the production copy - no revenue, cost, profit
             # or labour-cost figures anywhere in the document.
             audience = 'staff' if request.args.get('audience') == 'staff' else 'admin'
-            output = generate_manufacturing_fact_sheet_pdf(fs, company_info, audience=audience)
+            output = generate_manufacturing_fact_sheet_pdf(fs, company_info, audience=audience, mo_costs=mo_costs)
             pdf_filename = f"manufacturing_report_{audience}.pdf"
         else:
             output = generate_pdf(data, title, headers, company_info)
@@ -1777,7 +1868,7 @@ def download_report(format, report_type):
         mimetype = 'application/pdf'
     elif format == 'excel':
         if report_type == 'manufacturing':
-            output = generate_manufacturing_fact_sheet_excel(fs, company_info.get('name'))
+            output = generate_manufacturing_report_excel(fs, mo_costs, company_info.get('name'))
         else:
             output = generate_excel(data, report_type.title())
         filename = f"{report_type}_report.xlsx"
