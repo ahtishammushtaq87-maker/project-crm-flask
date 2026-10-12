@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% from "finance_journal/_delete_modal.html" import delete_button, delete_modal with context %}
+{% block title %}Journal Entries{% endblock %}
+
+{% block extra_css %}
+<style>
+    .je-stat { border: 0; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .je-stat .num { font-size: 1.4rem; font-weight: 600; }
+    .je-stat a { text-decoration: none; color: inherit; }
+    .je-accts { font-size: .85rem; line-height: 1.35; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+        <div>
+            <h2 class="mb-1">Journal Entries</h2>
+            <div class="text-muted small">Transfers and adjustments between your Expense accounts. Approved entries update account balances and Account Activity.</div>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('accounting.account_activity') }}" class="btn btn-outline-secondary"><i class="fas fa-book me-1"></i> Account Activity</a>
+            {% if current_user.is_admin or current_user.can_add_accounting %}
+            <a href="{{ url_for('finance_journal.create') }}" class="btn btn-primary"><i class="fas fa-plus me-1"></i> New Journal Entry</a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        {% set stats = [
+            ('', 'All', (counts.values()|sum), 'text-dark'),
+            ('approved', 'Approved', counts.get('approved', 0), 'text-success'),
+            ('pending', 'Pending approval', counts.get('pending', 0), 'text-warning'),
+            ('rejected', 'Rejected', counts.get('rejected', 0), 'text-danger'),
+        ] %}
+        {% for key, label, n, cls in stats %}
+        <div class="col-6 col-md-3">
+            <div class="card je-stat {{ 'border border-primary' if f.status == key }}">
+                <a href="{{ url_for('finance_journal.index', status=key) }}" class="card-body d-block">
+                    <div class="text-muted small">{{ label }}</div>
+                    <div class="num {{ cls }}">{{ n }}</div>
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <form method="GET" class="row g-2 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label small fw-semibold mb-1">From</label>
+                    <input type="date" name="date_from" class="form-control" value="{{ f.date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-semibold mb-1">To</label>
+                    <input type="date" name="date_to" class="form-control" value="{{ f.date_to }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-semibold mb-1">Account</label>
+                    <select name="account_id" class="form-select">
+                        <option value="">All accounts</option>
+                        {% for a in accounts %}
+                        <option value="{{ a.id }}" {% if f.account_id == a.id %}selected{% endif %}>{{ a.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-semibold mb-1">Status</label>
+                    <select name="status" class="form-select">
+                        <option value="">All</option>
+                        {% for s in ['approved', 'pending', 'rejected', 'recurring'] %}
+                        <option value="{{ s }}" {% if f.status == s %}selected{% endif %}>{{ s|capitalize }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-semibold mb-1">Search</label>
+                    <input type="text" name="q" class="form-control" placeholder="JV-10, reference, account…" value="{{ f.q }}">
+                </div>
+                <div class="col-md-2 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary flex-grow-1"><i class="fas fa-search me-1"></i> Filter</button>
+                    {% if f.date_from or f.date_to or f.status or f.account_id or f.q %}
+                    <a href="{{ url_for('finance_journal.index') }}" class="btn btn-outline-secondary" title="Clear"><i class="fas fa-times"></i></a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center py-3">
+            <h6 class="m-0 text-primary fw-bold">{{ entries|length }} entr{{ 'y' if entries|length == 1 else 'ies' }}</h6>
+            <strong>Approved total: Rs{{ "{:,.2f}".format(total_amount) }}</strong>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle" id="jeTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Number</th>
+                            <th>Date</th>
+                            <th>Debit (In)</th>
+                            <th>Credit (Out)</th>
+                            <th class="text-end">Amount</th>
+                            <th>Reference</th>
+                            <th>Recurring</th>
+                            <th class="text-center">Status</th>
+                            <th>Created by</th>
+                            <th class="text-center no-export">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for e in entries %}
+                        <tr>
+                            <td class="fw-semibold text-nowrap">
+                                <a href="{{ url_for('finance_journal.view', id=e.id) }}">{{ e.code }}</a>
+                                {% if e.recurring_parent_id %}<i class="fas fa-rotate text-muted ms-1" title="Generated from JV-{{ e.recurring_parent.number if e.recurring_parent else '' }}"></i>{% endif %}
+                            </td>
+                            <td class="text-nowrap">{{ e.date.strftime('%d-%m-%Y') }}</td>
+                            <td class="je-accts">
+                                {% for l in e.lines if l.entry_type == 'debit' %}
+                                <div>{{ l.account.name if l.account else '—' }} <span class="text-success">{{ "{:,.2f}".format(l.amount) }}</span>
+                                    {% if l.vendor or l.customer %}<span class="text-muted small">· {{ (l.vendor or l.customer).name }}</span>{% endif %}</div>
+                                {% endfor %}
+                            </td>
+                            <td class="je-accts">
+                                {% for l in e.lines if l.entry_type == 'credit' %}
+                                <div>{{ l.account.name if l.account else '—' }} <span class="text-danger">{{ "{:,.2f}".format(l.amount) }}</span>
+                                    {% if l.vendor or l.customer %}<span class="text-muted small">· {{ (l.vendor or l.customer).name }}</span>{% endif %}</div>
+                                {% endfor %}
+                            </td>
+                            <td class="text-end fw-semibold">{{ "{:,.2f}".format(e.total_debit) }}</td>
+                            <td>{{ e.reference or '—' }}</td>
+                            <td class="small">{{ e.recurring_label }}</td>
+                            <td class="text-center">
+                                {% if e.status == 'approved' %}<span class="badge bg-success">Approved</span>
+                                {% elif e.status == 'pending' %}<span class="badge bg-warning text-dark">Pending</span>
+                                {% else %}<span class="badge bg-danger" title="{{ e.rejection_reason or '' }}">Rejected</span>{% endif %}
+                            </td>
+                            <td class="small">{{ e.creator.username if e.creator else '—' }}</td>
+                            <td class="text-center no-export text-nowrap">
+                                <a href="{{ url_for('finance_journal.view', id=e.id) }}" class="btn btn-sm btn-outline-primary" title="View"><i class="fas fa-eye"></i></a>
+                                {% if current_user.is_admin or (current_user.can_edit_accounting and e.status != 'approved') %}
+                                <a href="{{ url_for('finance_journal.edit', id=e.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="fas fa-pen"></i></a>
+                                {% endif %}
+                                {% if current_user.is_admin and e.status == 'pending' %}
+                                <form method="POST" action="{{ url_for('finance_journal.approve', id=e.id) }}" class="d-inline">
+                                    <button class="btn btn-sm btn-outline-success" title="Approve"><i class="fas fa-check"></i></button>
+                                </form>
+                                {% endif %}
+                                {% if current_user.is_admin or (current_user.can_delete_accounting and e.status != 'approved') %}
+                                {{ delete_button(e) }}
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="10" class="text-center text-muted py-5">
+                            No journal entries yet.
+                            {% if current_user.is_admin or current_user.can_add_accounting %}
+                            <a href="{{ url_for('finance_journal.create') }}">Create the first one</a>.
+                            {% endif %}
+                        </td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{{ delete_modal() }}
+{% endblock %}

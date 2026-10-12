@@ -50,7 +50,7 @@ def create_app(config_class=Config):
             RecoveryTask, RecoveryLog, RecoveryComment, Salesman,
             JournalAccount, JournalEntry, JournalLine, FixedExpense,
             Quotation, QuotationItem, DatabaseBackup, PackingSlip, PackingSlipSettings, SaleReturnReason,
-            ExpenseAccount, ExpenseAccountTransaction, BillPayment, AccountDailyClose,
+            ExpenseAccount, ExpenseAccountTransaction, BillPayment, AccountDailyClose, FinanceJournalEntry,
             WarehouseTransfer, WarehouseTransferItem, MediaFolder
         )
         from app.filter_models import SavedFilter
@@ -148,6 +148,7 @@ def create_app(config_class=Config):
             'packing_slip_settings': PackingSlipSettings,
             'sale_return_reasons': SaleReturnReason,
             'expense_accounts': ExpenseAccount,
+            'finance_journal_entries': FinanceJournalEntry,
             'expense_account_transactions': ExpenseAccountTransaction,
             'account_daily_closes': AccountDailyClose,
             'bill_payments': BillPayment,
@@ -365,6 +366,7 @@ def create_app(config_class=Config):
     from app.routes.media import bp as media_bp
     from app.routes.recovery import bp as recovery_bp
     from app.routes.journal import bp as journal_bp
+    from app.routes.finance_journal import bp as finance_journal_bp
     from app.routes.backup import bp as backup_bp
 
     app.register_blueprint(dashboard_bp, url_prefix='/')
@@ -396,6 +398,7 @@ def create_app(config_class=Config):
     app.register_blueprint(media_bp, url_prefix='/media')
     app.register_blueprint(recovery_bp, url_prefix='/recovery')
     app.register_blueprint(journal_bp, url_prefix='/journal')
+    app.register_blueprint(finance_journal_bp, url_prefix='/finance/journal-entries')
     app.register_blueprint(backup_bp, url_prefix='/backup')
 
     # Spreadsheet module (self-contained: app/sheets/, its own tables).

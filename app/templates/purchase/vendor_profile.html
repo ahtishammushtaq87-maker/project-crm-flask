@@ -327,6 +327,7 @@
                             <th>Date</th>
                             <th>Description / Purpose</th>
                             <th class="text-end">Amount (PKR)</th>
+                            <th>Paid From</th>
                             <th class="text-center">Approval</th>
                             <th class="text-center">Status</th>
                             <th>Adjusted Against</th>
@@ -341,6 +342,9 @@
                             <td>{{ adv.description or '—' }}</td>
                             <td class="text-end fw-bold {% if not adv.is_adjusted %}text-warning{% endif %}">
                                 PKR {{ '{:,.0f}'.format(adv.amount) }}
+                            </td>
+                            <td class="small">
+                                {% if adv.expense_account %}<i class="fas fa-university me-1 text-muted"></i>{{ adv.expense_account.name }}{% else %}<span class="text-muted">—</span>{% endif %}
                             </td>
                             <td class="text-center">
                                 {{ approval_widget(module='vendor_advance', entity=adv) }}
@@ -436,7 +440,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="7" class="text-center text-muted py-4">
+                            <td colspan="8" class="text-center text-muted py-4">
                                 <i class="fas fa-hand-holding-usd fa-2x mb-2 d-block opacity-25"></i>
                                 No advances recorded. Use <strong>Give Advance</strong> to add one.
                             </td>
@@ -448,6 +452,7 @@
                         <tr>
                             <td colspan="3" class="text-end">Totals</td>
                             <td class="text-end">PKR {{ '{:,.0f}'.format(vendor.total_advances_given) }}</td>
+                            <td></td>
                             <td class="text-center">
                                 <span class="badge bg-success">PKR {{ '{:,.0f}'.format(vendor.total_advances_adjusted) }} Adjusted</span>
                             </td>
@@ -490,6 +495,17 @@
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Date</label>
                         <input type="date" name="advance_date" class="form-control" value="{{ now().strftime('%Y-%m-%d') if now is defined else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold"><i class="fas fa-university me-1 text-muted"></i>Pay from Account (Bank / Cash)</label>
+                        <select name="expense_account_id" id="advAccountSelect" class="form-select">
+                            <option value="">— Not linked to an account —</option>
+                            {% for a in pay_accounts %}
+                            <option value="{{ a.id }}" data-balance="{{ '%.2f'|format(a.balance) }}">{{ a.name }}{% if a.account_type %} ({{ a.account_type }}){% endif %}{% if a.staff %} — {{ a.staff.name }}{% endif %} — Balance: PKR {{ "{:,.2f}".format(a.balance) }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">The advance is credited (deducted) from this account and shows in its Account Activity{% if current_user.role != 'admin' %} once an admin approves it{% endif %}.</small>
+                        <div class="small mt-1" id="advAccountWarn" style="display:none;"></div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Purpose / Description</label>
@@ -589,6 +605,31 @@ document.addEventListener('DOMContentLoaded', function() {
     const dateInput = document.querySelector('#advanceModal input[name="advance_date"]');
     if (dateInput && !dateInput.value) {
         dateInput.value = new Date().toISOString().split('T')[0];
+    }
+
+    // Searchable "Pay from Account" + balance-after hint
+    const sel = document.getElementById('advAccountSelect');
+    const amt = document.querySelector('#advanceModal input[name="amount"]');
+    const warn = document.getElementById('advAccountWarn');
+    function check() {
+        const opt = sel.options[sel.selectedIndex];
+        if (!opt || !opt.value) { warn.style.display = 'none'; return; }
+        const after = parseFloat(opt.dataset.balance || 0) - (parseFloat(amt.value) || 0);
+        warn.style.display = '';
+        warn.className = 'small mt-1 ' + (after < 0 ? 'text-danger' : 'text-success');
+        warn.textContent = 'Balance after advance: PKR '
+            + after.toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 2})
+            + (after < 0 ? ' — this account will go negative.' : '');
+    }
+    if (sel) {
+        if (window.jQuery && jQuery.fn.select2) {
+            jQuery(sel).select2({theme: 'bootstrap-5', width: '100%', allowClear: true,
+                placeholder: 'Search bank / cash account…', dropdownParent: jQuery('#advanceModal')})
+                .on('change', check);
+        } else {
+            sel.addEventListener('change', check);
+        }
+        if (amt) amt.addEventListener('input', check);
     }
 });
 </script>

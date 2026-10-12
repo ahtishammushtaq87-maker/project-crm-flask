@@ -460,6 +460,19 @@
                                 </select>
                             </div>
 
+                            <!-- Bank / cash account the money is paid from -->
+                            <div class="col-12" id="payAccountSection">
+                                <label class="form-label fw-semibold"><i class="fas fa-university me-1 text-muted"></i>Pay from Account (Bank / Cash)</label>
+                                <select name="expense_account_id" id="payAccountSelect" class="form-select">
+                                    <option value="">— Not linked to an account —</option>
+                                    {% for a in pay_accounts %}
+                                    <option value="{{ a.id }}" data-balance="{{ '%.2f'|format(a.balance) }}">{{ a.name }}{% if a.account_type %} ({{ a.account_type }}){% endif %}{% if a.staff %} — {{ a.staff.name }}{% endif %} — Balance: PKR {{ "{:,.2f}".format(a.balance) }}</option>
+                                    {% endfor %}
+                                </select>
+                                <small class="text-muted">The amount is credited (deducted) from this account and shows in its Account Activity{% if current_user.role != 'admin' %} once an admin approves the payment{% endif %}.</small>
+                                <div class="small mt-1" id="payAccountWarn" style="display:none;"></div>
+                            </div>
+
                             <!-- Vendor Advances Info -->
                             <div class="col-12" id="advancesCard" style="display:none;">
                                 <div class="card border-info">
@@ -1181,6 +1194,7 @@
                                     <tr>
                                         <th>Date</th>
                                         <th>Method</th>
+                                        <th>Paid From</th>
                                         <th class="text-end">Amount</th>
                                         <th>Receipt</th>
                                         <th>Notes</th>
@@ -1197,6 +1211,11 @@
                                         </td>
                                         <td>
                                             <span class="badge bg-secondary">{{ pay.payment_method }}</span>
+                                        </td>
+                                        <td class="small">
+                                            {% if pay.expense_account %}<i class="fas fa-university me-1 text-muted"></i>{{ pay.expense_account.name }}
+                                            {% if pay.account_transaction and pay.account_transaction.amount != pay.amount %}<div class="text-muted">PKR {{ "{:,.2f}".format(pay.account_transaction.amount) }}</div>{% endif %}
+                                            {% else %}<span class="text-muted">—</span>{% endif %}
                                         </td>
                                         <td class="text-end fw-bold text-success">PKR {{ "{:,.2f}".format(pay.amount) }}
                                         </td>
@@ -1258,7 +1277,7 @@
                                         <th colspan="3" class="text-end">Total Paid</th>
                                         <th class="text-end text-success">PKR {{ "{:,.2f}".format(bill.bill_payments |
                                             sum(attribute='amount')) }}</th>
-                                        <th colspan="2"></th>
+                                        <th colspan="4"></th>
                                     </tr>
                                 </tfoot>
                             </table>
@@ -1305,6 +1324,18 @@
                                                             pay.payment_method=='Cheque' }}>Cheque</option>
                                                         <option value="Online" {{ 'selected' if
                                                             pay.payment_method=='Online' }}>Online</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-12">
+                                                    <label class="form-label fw-bold">Pay from Account (Bank / Cash)</label>
+                                                    <select name="expense_account_id" class="form-select pay-account-edit">
+                                                        <option value="">— Not linked to an account —</option>
+                                                        {% for a in pay_accounts %}
+                                                        <option value="{{ a.id }}" {{ 'selected' if pay.expense_account_id == a.id }}>{{ a.name }}{% if a.account_type %} ({{ a.account_type }}){% endif %} — Balance: PKR {{ "{:,.2f}".format(a.balance) }}</option>
+                                                        {% endfor %}
+                                                        {% if pay.expense_account and not pay.expense_account.is_active %}
+                                                        <option value="{{ pay.expense_account.id }}" selected>{{ pay.expense_account.name }} (inactive)</option>
+                                                        {% endif %}
                                                     </select>
                                                 </div>
                                                 <div class="col-md-6">
@@ -1783,9 +1814,64 @@
                 }
 
                 updatePayProofVisibility();
+                updatePayAccountVisibility();
             });
 
             updatePayProofVisibility();
+            updatePayAccountVisibility();
+            setupPayAccountSelect();
+        }
+
+        // "Use Advance" moves no new money, so there's no account to pay from.
+        function updatePayAccountVisibility() {
+            const pm = document.getElementById('paymentMethod');
+            const sec = document.getElementById('payAccountSection');
+            if (!pm || !sec) return;
+            const hide = pm.value === 'advance';
+            sec.style.display = hide ? 'none' : '';
+            if (hide) {
+                const sel = document.getElementById('payAccountSelect');
+                sel.value = '';
+                if (window.jQuery && jQuery.fn.select2) jQuery(sel).trigger('change');
+            }
+            checkPayAccountBalance();
+        }
+
+        function setupPayAccountSelect() {
+            const sel = document.getElementById('payAccountSelect');
+            if (!sel) return;
+            if (window.jQuery && jQuery.fn.select2) {
+                jQuery(sel).select2({theme: 'bootstrap-5', width: '100%', allowClear: true,
+                    placeholder: 'Search bank / cash account…', dropdownParent: jQuery('#payModal')})
+                    .on('change', checkPayAccountBalance);
+                jQuery('.pay-account-edit').each(function () {
+                    jQuery(this).select2({theme: 'bootstrap-5', width: '100%', allowClear: true,
+                        placeholder: 'Search bank / cash account…', dropdownParent: jQuery(this).closest('.modal')});
+                });
+            } else {
+                sel.addEventListener('change', checkPayAccountBalance);
+            }
+            ['paymentAmount', 'mixedCashAmount'].forEach(function (id) {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('input', checkPayAccountBalance);
+            });
+        }
+
+        function checkPayAccountBalance() {
+            const sel = document.getElementById('payAccountSelect');
+            const warn = document.getElementById('payAccountWarn');
+            if (!sel || !warn) return;
+            const opt = sel.options[sel.selectedIndex];
+            if (!opt || !opt.value) { warn.style.display = 'none'; return; }
+            const pm = document.getElementById('paymentMethod').value;
+            const amtEl = document.getElementById(pm === 'mixed' ? 'mixedCashAmount' : 'paymentAmount');
+            const amt = parseFloat(amtEl && amtEl.value) || 0;
+            const after = parseFloat(opt.dataset.balance || 0) - amt;
+            warn.style.display = '';
+            warn.className = 'small mt-1 ' + (after < 0 ? 'text-danger' : 'text-success');
+            warn.textContent = 'Balance after payment: PKR '
+                + after.toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 2})
+                + (after < 0 ? ' — this account will go negative.' : '');
         }
 
         function selectAdvance(button) {

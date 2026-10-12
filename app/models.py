@@ -2155,6 +2155,21 @@ class ExpenseAccountTransaction(db.Model):
     # Payment.invoice_id already reaches it).
     linked_payment_id = db.Column(db.Integer, db.ForeignKey('payments.id'), nullable=True, index=True)
 
+    # Set on every line (transaction_type='journal') posted by a Finance
+    # Journal Entry — the entry owns its lines, so they can only be edited or
+    # deleted through the entry, never one leg at a time.
+    journal_entry_id = db.Column(db.Integer, db.ForeignKey('finance_journal_entries.id'), nullable=True, index=True)
+    # Optional party tag on a journal line (customer_id above is reused for
+    # customers). Reference only — it doesn't post to the vendor ledger.
+    vendor_id = db.Column(db.Integer, db.ForeignKey('vendors.id'), nullable=True, index=True)
+    # Set on the credit (money out) row posted when a Purchase bill payment
+    # is paid from this account (transaction_type='bill_payment') — mirrors
+    # salary_advance_id, so editing/deleting the payment finds its movement.
+    bill_payment_id = db.Column(db.Integer, db.ForeignKey('bill_payments.id'), nullable=True, index=True)
+    # Same idea for a Vendor Advance paid out of this account
+    # (transaction_type='vendor_advance').
+    vendor_advance_id = db.Column(db.Integer, db.ForeignKey('vendor_advances.id'), nullable=True, index=True)
+
     account = db.relationship('ExpenseAccount', foreign_keys=[account_id],
                                backref=db.backref('transactions', lazy=True))
     counterparty_account = db.relationship('ExpenseAccount', foreign_keys=[counterparty_account_id])
@@ -2163,9 +2178,83 @@ class ExpenseAccountTransaction(db.Model):
     customer = db.relationship('Customer', backref='account_debit_entries', lazy=True)
     warehouse = db.relationship('Warehouse', backref='account_debit_entries', lazy=True)
     source = db.relationship('ExpenseSource', backref='transactions', lazy=True)
+    vendor = db.relationship('Vendor', foreign_keys=[vendor_id], lazy=True)
+    bill_payment = db.relationship('BillPayment', foreign_keys=[bill_payment_id],
+                                   backref=db.backref('account_transaction', uselist=False, lazy=True))
+    vendor_advance = db.relationship('VendorAdvance', foreign_keys=[vendor_advance_id],
+                                     backref=db.backref('account_transaction', uselist=False, lazy=True))
 
     def __repr__(self):
         return f'<ExpenseAccountTransaction {self.entry_type} {self.amount} -> account {self.account_id}>'
+
+
+class FinanceJournalEntry(db.Model):
+    """A Finance > Journal Entry voucher: moves money between Expense
+    accounts (ExpenseAccount) with one or more debit/credit lines that must
+    balance. The header lives here; each line is posted as an
+    ExpenseAccountTransaction (transaction_type='journal', journal_entry_id
+    set), so account balances, ledgers and Account Activity pick journal
+    entries up with no extra bookkeeping.
+
+    Debit = money IN to the account, Credit = money OUT — the same
+    convention ExpenseAccount.balance already uses.
+
+    Recurring: when is_recurring, a copy of this entry (status pending or
+    approved, same as the template) is generated every recurring_interval
+    recurring_unit(s) after the last one, until recurring_cycles copies have
+    been made (0 = no limit). Copies point back via recurring_parent_id."""
+    __tablename__ = 'finance_journal_entries'
+
+    id = db.Column(db.Integer, primary_key=True)
+    number = db.Column(db.Integer, nullable=False, unique=True, index=True)
+    date = db.Column(db.Date, nullable=False, index=True)
+    reference = db.Column(db.String(120), nullable=True)
+    description = db.Column(db.Text, nullable=True)       # rich text (HTML)
+
+    status = db.Column(db.String(20), nullable=False, default='approved', index=True)  # pending | approved | rejected
+    rejection_reason = db.Column(db.Text, nullable=True)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
+
+    is_recurring = db.Column(db.Boolean, default=False, index=True)
+    recurring_interval = db.Column(db.Integer, nullable=True)       # e.g. 1, 2, 3 …
+    recurring_unit = db.Column(db.String(10), nullable=True)        # day | week | month | year
+    recurring_cycles = db.Column(db.Integer, default=0)             # 0 = unlimited
+    recurring_cycles_done = db.Column(db.Integer, default=0)
+    last_recurring_date = db.Column(db.Date, nullable=True)
+    recurring_parent_id = db.Column(db.Integer, db.ForeignKey('finance_journal_entries.id'), nullable=True, index=True)
+
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    lines = db.relationship('ExpenseAccountTransaction', backref='journal_entry', lazy=True,
+                            cascade='all, delete-orphan', order_by='ExpenseAccountTransaction.id')
+    recurring_parent = db.relationship('FinanceJournalEntry', remote_side=[id], backref='recurring_children')
+    creator = db.relationship('User', foreign_keys=[created_by])
+    approver = db.relationship('User', foreign_keys=[approved_by])
+
+    @property
+    def code(self):
+        return f'JV-{self.number}'
+
+    @property
+    def total_debit(self):
+        return sum((l.amount or 0) for l in self.lines if l.entry_type == 'debit')
+
+    @property
+    def total_credit(self):
+        return sum((l.amount or 0) for l in self.lines if l.entry_type == 'credit')
+
+    @property
+    def recurring_label(self):
+        if not self.is_recurring or not self.recurring_interval or not self.recurring_unit:
+            return 'No'
+        n, unit = self.recurring_interval, self.recurring_unit
+        return f'Every {n} {unit}{"s" if n != 1 else ""}'
+
+    def __repr__(self):
+        return f'<FinanceJournalEntry {self.code}>'
 
 
 class AccountDailyClose(db.Model):
@@ -3780,8 +3869,12 @@ class VendorAdvance(db.Model):
     rejection_reason = db.Column(db.Text, nullable=True)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
+    # Bank / cash account (Expense > Manage Accounts) the advance was paid
+    # from — a matching credit ExpenseAccountTransaction is posted on it.
+    expense_account_id = db.Column(db.Integer, db.ForeignKey('expense_accounts.id'), nullable=True, index=True)
 
     adjusted_bill = db.relationship('PurchaseBill', backref='adjusted_advances', lazy=True)
+    expense_account = db.relationship('ExpenseAccount', foreign_keys=[expense_account_id], lazy=True)
 
     @property
     def remaining_balance(self):
@@ -3914,8 +4007,12 @@ class BillPayment(db.Model):
     # Set when this payment was created by checking "Add this to Purchase
     # Payment" on an Expense — mirrors Payment.expense_id on the sale side.
     expense_id = db.Column(db.Integer, db.ForeignKey('expenses.id'), nullable=True, index=True)
+    # The bank / cash account (Expense > Manage Accounts) this payment was
+    # paid from — a matching credit ExpenseAccountTransaction is posted on it.
+    expense_account_id = db.Column(db.Integer, db.ForeignKey('expense_accounts.id'), nullable=True, index=True)
 
     creator = db.relationship('User', foreign_keys=[created_by], backref='bill_payments_created', lazy=True)
+    expense_account = db.relationship('ExpenseAccount', foreign_keys=[expense_account_id], lazy=True)
     approver = db.relationship('User', foreign_keys=[approved_by], lazy=True)
     expense = db.relationship('Expense', foreign_keys=[expense_id], backref='bill_payments')
 

@@ -1,0 +1,72 @@
+{# Shared delete confirmation for journal entries. Trigger with a button
+   carrying class "je-delete-btn" and data-url / data-code / data-children /
+   data-status, plus a hidden <template class="je-effects"> next to it
+   listing each account's reversal. #}
+{% macro delete_button(e, small=True) -%}
+<button type="button" class="btn {{ 'btn-sm btn-outline-danger' if small else 'btn-outline-danger btn-sm' }} je-delete-btn"
+        data-url="{{ url_for('finance_journal.delete', id=e.id) }}" data-code="{{ e.code }}"
+        data-status="{{ e.status }}" data-children="{{ e.recurring_children|length }}" title="Delete">
+    <i class="fas fa-trash{{ '' if small else ' me-1' }}"></i>{{ '' if small else ' Delete' }}
+</button>
+<template class="je-effects">
+    {%- set net = {} %}
+    {%- for l in e.lines %}
+        {%- set name = l.account.name if l.account else '#' ~ l.account_id %}
+        {%- set _ = net.update({name: net.get(name, 0) + (l.amount if l.entry_type == 'debit' else -l.amount)}) %}
+    {%- endfor %}
+    {%- for name, d in net.items() if d|abs >= 0.005 %}
+    <li class="d-flex justify-content-between"><span>{{ name }}</span>
+        <span class="{{ 'text-danger' if d > 0 else 'text-success' }}">{{ '−' if d > 0 else '+' }}Rs{{ "{:,.2f}".format(d|abs) }}</span></li>
+    {%- endfor %}
+</template>
+{%- endmacro %}
+
+{% macro delete_modal() %}
+<div class="modal fade" id="jeDeleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="POST" class="modal-content" id="jeDeleteForm">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-trash me-2"></i>Delete <span id="jeDelCode"></span>?</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="jeDelPosted">
+                    <p class="mb-2">Its postings are removed and these account balances are reversed:</p>
+                    <ul class="list-unstyled border rounded p-2 mb-3" id="jeDelEffects"></ul>
+                </div>
+                <p class="text-muted mb-3" id="jeDelNotPosted" style="display:none;">This entry was never approved, so no account balance changes.</p>
+                <div class="form-check" id="jeDelChildrenWrap" style="display:none;">
+                    <input class="form-check-input" type="checkbox" name="delete_children" value="1" id="jeDelChildren">
+                    <label class="form-check-label" for="jeDelChildren">
+                        Also delete the <strong id="jeDelChildCount"></strong> recurring entr<span id="jeDelChildPlural"></span> generated from it
+                        (their balances are reversed too).
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-danger"><i class="fas fa-trash me-1"></i>Delete &amp; Reverse</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+document.addEventListener('click', function (ev) {
+    const btn = ev.target.closest('.je-delete-btn');
+    if (!btn) return;
+    const tpl = btn.nextElementSibling;
+    const posted = btn.dataset.status === 'approved' && tpl && tpl.innerHTML.trim();
+    document.getElementById('jeDeleteForm').action = btn.dataset.url;
+    document.getElementById('jeDelCode').textContent = btn.dataset.code;
+    document.getElementById('jeDelEffects').innerHTML = posted ? tpl.innerHTML : '';
+    document.getElementById('jeDelPosted').style.display = posted ? '' : 'none';
+    document.getElementById('jeDelNotPosted').style.display = posted ? 'none' : '';
+    const n = parseInt(btn.dataset.children || '0', 10);
+    document.getElementById('jeDelChildrenWrap').style.display = n ? '' : 'none';
+    document.getElementById('jeDelChildren').checked = false;
+    document.getElementById('jeDelChildCount').textContent = n;
+    document.getElementById('jeDelChildPlural').textContent = n === 1 ? 'y' : 'ies';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('jeDeleteModal')).show();
+});
+</script>
+{% endmacro %}

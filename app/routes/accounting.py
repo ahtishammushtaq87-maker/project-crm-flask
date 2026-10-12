@@ -1544,7 +1544,7 @@ def expenses():
     debit_base_query = ExpenseAccountTransaction.query.filter(
         ExpenseAccountTransaction.expense_id.is_(None),
         ExpenseAccountTransaction.entry_type == 'debit',
-        ExpenseAccountTransaction.transaction_type != 'transfer',
+        ExpenseAccountTransaction.transaction_type.notin_(('transfer', 'journal', 'bill_payment', 'vendor_advance')),
     )
     debit_count = debit_base_query.count()
 
@@ -3768,6 +3768,15 @@ def delete_expense_account_debit_entry(id):
     if txn.transaction_type == 'transfer':
         flash('This is part of a fund transfer and cannot be deleted on its own.', 'warning')
         return redirect(url_for('accounting.expenses', entry_view='debit'))
+    if txn.transaction_type == 'journal':
+        flash('This line belongs to a journal entry — edit or delete it from Finance > Journal Entries.', 'warning')
+        return redirect(url_for('accounting.expenses', entry_view='debit'))
+    if txn.bill_payment_id is not None:
+        flash('This entry belongs to a purchase bill payment — edit or delete the payment on the bill instead.', 'warning')
+        return redirect(url_for('accounting.expenses', entry_view='debit'))
+    if txn.vendor_advance_id is not None:
+        flash('This entry belongs to a vendor advance — delete the advance from the vendor profile instead.', 'warning')
+        return redirect(url_for('accounting.expenses', entry_view='debit'))
     if txn.salary_advance_id is not None:
         flash('This entry belongs to a salary advance — delete the advance instead '
               '(HR/Salary > Advances), which releases this account movement too.', 'warning')
@@ -3806,6 +3815,12 @@ def edit_expense_account_debit_entry(id):
         return jsonify({'success': False, 'message': 'This entry belongs to an expense — edit the expense instead.'})
     if txn.transaction_type == 'transfer':
         return jsonify({'success': False, 'message': 'This is part of a fund transfer and cannot be edited on its own.'})
+    if txn.transaction_type == 'journal':
+        return jsonify({'success': False, 'message': 'This line belongs to a journal entry — edit it from Finance > Journal Entries.'})
+    if txn.bill_payment_id is not None:
+        return jsonify({'success': False, 'message': 'This entry belongs to a purchase bill payment — edit the payment on the bill instead.'})
+    if txn.vendor_advance_id is not None:
+        return jsonify({'success': False, 'message': 'This entry belongs to a vendor advance — manage it from the vendor profile instead.'})
     if txn.salary_advance_id is not None:
         return jsonify({'success': False, 'message': 'This entry belongs to a salary advance — edit it from '
                                                      'HR/Salary > Advances instead. (This form is for Add Money '

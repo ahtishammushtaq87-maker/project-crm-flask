@@ -209,6 +209,9 @@
                             <td>{{ t.date.strftime('%d-%b') if t.date else '—' }}{% if t.created_at %} {{ t.created_at.strftime('%H:%M') }}{% endif %}</td>
                             <td class="fw-semibold text-nowrap">
                                 {% if t.transaction_type == 'transfer' %}TRV-{{ '%04d'|format(t.id) }}
+                                {% elif t.transaction_type == 'journal' and t.journal_entry %}{{ t.journal_entry.code }}
+                                {% elif t.transaction_type == 'bill_payment' and t.bill_payment and t.bill_payment.bill %}{{ t.bill_payment.bill.bill_number }}
+                                {% elif t.transaction_type == 'vendor_advance' %}{{ t.reference }}
                                 {% elif r.expense %}{{ r.expense.expense_number }}
                                 {% else %}ADD-{{ '%04d'|format(t.id) }}
                                 {% endif %}
@@ -216,6 +219,9 @@
                             <td class="text-nowrap">
                                 {% if t.transaction_type == 'transfer' %}
                                     {{ 'Funds Received' if t.entry_type == 'debit' else 'Funds Sent' }}
+                                {% elif t.transaction_type == 'journal' %}Journal {{ 'Debit' if t.entry_type == 'debit' else 'Credit' }}
+                                {% elif t.transaction_type == 'bill_payment' %}Bill Payment
+                                {% elif t.transaction_type == 'vendor_advance' %}Vendor Advance
                                 {% elif r.expense %}Expense Paid
                                 {% else %}Add Money
                                 {% endif %}
@@ -238,6 +244,18 @@
                                 </a>
                                 {% elif t.transaction_type == 'transfer' %}
                                 <span class="text-muted"><i class="fas fa-exchange-alt me-1"></i>Transfer Voucher</span>
+                                {% elif t.transaction_type == 'journal' and t.journal_entry %}
+                                <a href="{{ url_for('finance_journal.view', id=t.journal_entry_id) }}" class="text-decoration-none">
+                                    <i class="fas fa-book me-1"></i>{{ t.journal_entry.code }}
+                                </a>
+                                {% elif t.transaction_type == 'bill_payment' and t.bill_payment %}
+                                <a href="{{ url_for('purchase.bill_detail', id=t.bill_payment.bill_id) }}" class="text-decoration-none">
+                                    <i class="fas fa-file-invoice me-1"></i>{{ t.bill_payment.bill.bill_number if t.bill_payment.bill else 'Bill' }}
+                                </a>
+                                {% elif t.transaction_type == 'vendor_advance' and t.vendor_advance %}
+                                <a href="{{ url_for('purchase.vendor_profile', id=t.vendor_advance.vendor_id) }}" class="text-decoration-none">
+                                    <i class="fas fa-hand-holding-usd me-1"></i>{{ t.payee or 'Vendor' }}
+                                </a>
                                 {% else %}
                                 <span class="text-muted"><i class="fas fa-money-bill-wave me-1"></i>Add Money</span>
                                 {% endif %}

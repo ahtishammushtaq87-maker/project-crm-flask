@@ -285,9 +285,13 @@ def bill_detail(id):
     # Custom payment methods (same source as the sales invoice pay popup)
     payment_methods = PaymentMethod.query.filter_by(is_active=True).order_by(PaymentMethod.name).all()
 
+    from app.utils import bill_payment_account_choices
+    pay_accounts = bill_payment_account_choices()
+
     return render_template('purchase/bill_detail.html', bill=bill, date_format=date_format,
                            received_qty_map=received_qty_map, warehouses=warehouses,
-                           other_bills=other_bills, payment_methods=payment_methods)
+                           other_bills=other_bills, payment_methods=payment_methods,
+                           pay_accounts=pay_accounts)
 
 
 @bp.route('/bill/<int:id>/recalculate-paid', methods=['POST'])
@@ -1234,12 +1238,19 @@ def pay_bill(id):
     else:
         method_label = payment_method
     last_advance_id = None
+    # Bank / cash account the money is paid out of (optional) and how much of
+    # this payment actually left it — advances were paid earlier, so only the
+    # cash part of a payment hits the account.
+    pay_account_id = request.form.get('expense_account_id', type=int)
+    account_amount = 0
+    bp_record = None
 
     try:
         if payment_method == 'cash':
             amount = float(request.form.get('amount', 0))
             if amount > 0:
                 total_payment = amount
+                account_amount = amount
                 if is_admin:
                     # Cap at the bill balance; any excess becomes vendor advance credit
                     from app.utils import apply_bill_payment_with_credit
@@ -1292,6 +1303,7 @@ def pay_bill(id):
             if cash_amount > 0 and remaining_total > 0:
                 cash_to_apply = min(cash_amount, remaining_total)
                 total_payment += cash_to_apply
+                account_amount = cash_to_apply
                 if is_admin:
                     bill.paid_amount += cash_to_apply
 
@@ -1302,6 +1314,7 @@ def pay_bill(id):
             amount = float(request.form.get('amount', 0))
             if amount > 0:
                 total_payment = amount
+                account_amount = amount
                 if is_admin:
                     # Cap at the bill balance; any excess becomes vendor advance credit
                     from app.utils import apply_bill_payment_with_credit
@@ -1363,6 +1376,11 @@ def pay_bill(id):
                     # the auto-receipt failed to generate.
                     current_app.logger.warning(f"Auto-receipt generation failed for bill payment on {bill.bill_number}: {e}")
 
+        if bp_record is not None and pay_account_id and account_amount > 0:
+            db.session.flush()  # bp_record.id / date for the account row
+            from app.utils import sync_bill_payment_account_txn
+            sync_bill_payment_account_txn(bp_record, pay_account_id, account_amount, current_user.id)
+
         db.session.commit()
         if total_payment > 0:
             log_activity('Purchase', f'Recorded Payment on Bill #{bill.bill_number}',
@@ -1370,6 +1388,9 @@ def pay_bill(id):
 
         if total_payment > 0:
             msg = f'Payment of PKR {total_payment:,.2f} recorded successfully! ({method_label})'
+            if bp_record is not None and bp_record.expense_account:
+                msg += (f' PKR {account_amount:,.2f} paid from {bp_record.expense_account.name}'
+                        + ('.' if is_admin else ' (deducted from the account once approved).'))
             if overpayment_credit > 0:
                 msg += f' PKR {overpayment_credit:,.2f} exceeded the balance due and has been credited to the vendor as a remaining advance.'
             flash(msg, 'success')
@@ -1425,6 +1446,15 @@ def edit_bill_payment(id, pay_id):
 
         # IMPORTANT: Update payment amount BEFORE calculating delta effect on bill
         payment.amount = new_amount
+
+        # Bank / cash account the payment came out of. Keep any advance part
+        # of an Advance + Cash payment off the account (it was paid earlier).
+        from app.models import ExpenseAccountTransaction
+        from app.utils import sync_bill_payment_account_txn
+        acct_txn = ExpenseAccountTransaction.query.filter_by(bill_payment_id=payment.id).first()
+        advance_part = max(0.0, old_amount - acct_txn.amount) if acct_txn else (old_amount if payment.advance_id else 0.0)
+        new_account_id = request.form.get('expense_account_id', type=int)
+        sync_bill_payment_account_txn(payment, new_account_id, max(0.0, new_amount - advance_part), current_user.id)
 
         # Safe paid_amount update: adjust bill's paid_amount by the difference
         delta = new_amount - old_amount
@@ -1512,6 +1542,11 @@ def delete_bill_payment(id, pay_id):
         except:
             pass
     
+    # Release the bank / cash account movement too — the account balance is
+    # computed live, so removing the row reverses it.
+    from app.models import ExpenseAccountTransaction
+    ExpenseAccountTransaction.query.filter_by(bill_payment_id=payment.id).delete()
+
     db.session.delete(payment)
     db.session.commit()
     log_activity('Purchase', f'Deleted Payment on Bill #{bill.bill_number}',
@@ -1833,6 +1868,11 @@ def delete_bill(id):
 
     bill_number = bill.bill_number
     vendor_name = bill.vendor.name
+    # Release any bank / cash account movements posted by this bill's payments.
+    from app.models import ExpenseAccountTransaction
+    pay_ids = [p.id for p in bill.bill_payments]
+    if pay_ids:
+        ExpenseAccountTransaction.query.filter(ExpenseAccountTransaction.bill_payment_id.in_(pay_ids)).delete(synchronize_session=False)
     db.session.delete(bill)
     db.session.commit()
     log_activity('Purchase', f'Deleted Bill #{bill_number}',
@@ -2140,11 +2180,13 @@ def vendor_profile(id):
         filtered_bills = all_bills
 
     advances = sorted(vendor.advances, key=lambda a: a.date, reverse=True)
+    from app.utils import bill_payment_account_choices
 
     return render_template('purchase/vendor_profile.html',
                            vendor=vendor,
                            bills=filtered_bills,
                            advances=advances,
+                           pay_accounts=bill_payment_account_choices(),
                            date_from=date_from_str,
                            date_to=date_to_str)
 
@@ -2610,10 +2652,25 @@ def vendor_give_advance(id):
         created_by=current_user.id
     )
     db.session.add(advance)
+
+    # Bank / cash account the advance is paid from (optional). An admin's
+    # advance is deducted straight away; anyone else's once it's approved.
+    account_id = request.form.get('expense_account_id', type=int)
+    paid_from = None
+    if account_id:
+        db.session.flush()
+        from app.utils import sync_vendor_advance_account_txn
+        is_admin = current_user.role == 'admin'
+        if sync_vendor_advance_account_txn(advance, account_id, current_user.id, approved=is_admin):
+            paid_from = advance.expense_account
+
     db.session.commit()
     log_activity('Vendors', f'Recorded Advance for {vendor.name}',
-                f'Amount: PKR {amount:,.2f}')
-    flash(f'Advance of PKR {amount:,.2f} recorded for {vendor.name}.', 'success')
+                f'Amount: PKR {amount:,.2f}' + (f', paid from {paid_from.name}' if paid_from else ''))
+    msg = f'Advance of PKR {amount:,.2f} recorded for {vendor.name}.'
+    if paid_from:
+        msg += f' Paid from {paid_from.name}' + ('.' if current_user.role == 'admin' else ' (deducted once approved).')
+    flash(msg, 'success')
     return redirect(url_for('purchase.vendor_profile', id=id))
 
 
@@ -2680,6 +2737,9 @@ def vendor_delete_advance(id, adv_id):
     touched_bills = reverse_vendor_advance_from_bills(advance)
 
     advance_amount = advance.amount
+    # Put the money back in the bank / cash account it was paid from.
+    from app.models import ExpenseAccountTransaction
+    ExpenseAccountTransaction.query.filter_by(vendor_advance_id=advance.id).delete()
     db.session.delete(advance)
     db.session.commit()
     bill_numbers = ', '.join(b.bill_number for b in touched_bills)
@@ -2747,6 +2807,11 @@ def delete_vendor(id):
         return redirect(url_for('purchase.vendors'))
 
     vendor_name = vendor.name
+    # Release bank / cash account movements tied to this vendor's advances.
+    from app.models import ExpenseAccountTransaction
+    adv_ids = [a.id for a in vendor.advances]
+    if adv_ids:
+        ExpenseAccountTransaction.query.filter(ExpenseAccountTransaction.vendor_advance_id.in_(adv_ids)).delete(synchronize_session=False)
     db.session.delete(vendor)
     db.session.commit()
     log_activity('Vendors', f'Deleted Vendor: {vendor_name}',

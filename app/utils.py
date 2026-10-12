@@ -464,6 +464,141 @@ def adjust_sale_payment(sale, delta, user_id):
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# BILL PAYMENT ↔ BANK / CASH ACCOUNT — a Purchase bill payment paid from an
+# Expense account (Manage Accounts) posts a 'credit' (money out) row on that
+# account, same direction as a Salary Advance (see salary.py
+# _sync_advance_account_transaction). The row follows the payment's
+# approval state, so a pending payment never moves the account balance.
+# ─────────────────────────────────────────────────────────────────────────
+
+def bill_payment_account_choices():
+    """Active Expense accounts, labelled with their balance, for the
+    'Pay from Account' dropdowns."""
+    from app.models import ExpenseAccount
+    return ExpenseAccount.query.filter_by(is_active=True).order_by(ExpenseAccount.name).all()
+
+
+def sync_bill_payment_account_txn(payment, account_id, amount, user_id):
+    """Create / update / remove the account credit row for `payment`.
+    `amount` is the money that actually left the account (for an
+    Advance + Cash payment that's only the cash part). `payment` must already
+    have a flushed id."""
+    from app.models import ExpenseAccount, ExpenseAccountTransaction, PurchaseBill
+
+    existing = ExpenseAccountTransaction.query.filter_by(bill_payment_id=payment.id).first()
+    account = ExpenseAccount.query.get(account_id) if account_id else None
+    amount = round(float(amount or 0), 2)
+
+    if not account or amount <= 0:
+        if existing:
+            db.session.delete(existing)
+        payment.expense_account_id = None
+        return None
+
+    # Read everything before a new row joins the session (autoflush safety —
+    # same reasoning as _sync_advance_account_transaction).
+    bill = PurchaseBill.query.get(payment.bill_id)
+    vendor = bill.vendor if bill else None
+    vendor_name = (vendor.name if vendor else '') or 'Vendor'
+    bill_number = bill.bill_number if bill else str(payment.bill_id)
+    pay_date = (payment.date or datetime.utcnow())
+    pay_date = pay_date.date() if hasattr(pay_date, 'date') else pay_date
+
+    txn = existing
+    if not txn:
+        txn = ExpenseAccountTransaction(bill_payment_id=payment.id, account_id=account.id,
+                                        entry_type='credit', date=pay_date, amount=amount,
+                                        transaction_type='bill_payment', created_by=user_id)
+        db.session.add(txn)
+
+    txn.account_id = account.id
+    txn.entry_type = 'credit'
+    txn.transaction_type = 'bill_payment'
+    txn.date = pay_date
+    txn.amount = amount
+    txn.description = f'Payment for {bill_number} — {vendor_name}' + (f' ({payment.payment_method})' if payment.payment_method else '')
+    txn.reference = payment.reference_number or bill_number
+    txn.payee = vendor_name[:160]
+    txn.vendor_id = vendor.id if vendor else None
+    txn.bill_image_path = None
+    if payment.image_path:
+        txn.bill_image_path = payment.image_path if payment.image_path.startswith('app/static/') \
+            else f'app/static/{payment.image_path}'
+    payment.expense_account_id = account.id
+    sync_bill_payment_account_status(payment, txn)
+    return txn
+
+
+def sync_bill_payment_account_status(payment, txn=None):
+    """Copy the payment's approve / reject state onto its account row."""
+    from app.models import ExpenseAccountTransaction
+    txn = txn or ExpenseAccountTransaction.query.filter_by(bill_payment_id=payment.id).first()
+    if not txn:
+        return
+    txn.is_approved = bool(payment.is_approved)
+    txn.is_rejected = bool(payment.is_rejected)
+    txn.rejection_reason = payment.rejection_reason if payment.is_rejected else None
+    txn.approved_by = payment.approved_by if payment.is_approved else None
+    txn.approved_at = payment.approved_at if payment.is_approved else None
+
+
+def sync_vendor_advance_account_txn(advance, account_id, user_id, approved):
+    """Create / update / remove the account credit row for a VendorAdvance
+    paid from a bank / cash account. `advance` must already have an id."""
+    from app.models import ExpenseAccount, ExpenseAccountTransaction, Vendor
+
+    existing = ExpenseAccountTransaction.query.filter_by(vendor_advance_id=advance.id).first()
+    account = ExpenseAccount.query.get(account_id) if account_id else None
+    amount = round(float(advance.amount or 0), 2)
+
+    if not account or amount <= 0:
+        if existing:
+            db.session.delete(existing)
+        advance.expense_account_id = None
+        return None
+
+    vendor = Vendor.query.get(advance.vendor_id)
+    vendor_name = (vendor.name if vendor else '') or 'Vendor'
+    adv_date = advance.date or datetime.utcnow().date()
+
+    txn = existing
+    if not txn:
+        txn = ExpenseAccountTransaction(vendor_advance_id=advance.id, account_id=account.id,
+                                        entry_type='credit', date=adv_date, amount=amount,
+                                        transaction_type='vendor_advance', created_by=user_id)
+        db.session.add(txn)
+
+    txn.account_id = account.id
+    txn.entry_type = 'credit'
+    txn.transaction_type = 'vendor_advance'
+    txn.date = adv_date
+    txn.amount = amount
+    txn.description = f'Vendor advance — {vendor_name}' + (f': {advance.description}' if advance.description else '')
+    txn.reference = f'VADV-{advance.id:05d}'
+    txn.payee = vendor_name[:160]
+    txn.vendor_id = advance.vendor_id
+    txn.is_approved = bool(approved)
+    txn.is_rejected = False
+    txn.approved_by = user_id if approved else None
+    txn.approved_at = datetime.utcnow() if approved else None
+    advance.expense_account_id = account.id
+    return txn
+
+
+def sync_vendor_advance_account_status(advance):
+    """Copy the advance's approve / reject state onto its account row."""
+    from app.models import ExpenseAccountTransaction
+    txn = ExpenseAccountTransaction.query.filter_by(vendor_advance_id=advance.id).first()
+    if not txn:
+        return
+    txn.is_approved = bool(advance.is_approved)
+    txn.is_rejected = bool(advance.is_rejected)
+    txn.rejection_reason = advance.rejection_reason if advance.is_rejected else None
+    txn.approved_by = advance.approved_by if advance.is_approved else None
+    txn.approved_at = advance.approved_at if advance.is_approved else None
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # VENDOR (PURCHASE) ADVANCE HELPERS — mirror the customer/sale helpers above.
 # We overpay a vendor → the excess becomes OUR prepaid credit with that vendor
 # (a VendorAdvance), which then auto-applies to future bills for the vendor.

@@ -1059,8 +1059,17 @@ class ApprovalService:
 
     @classmethod
     def _post_approve_vendor_advance(cls, advance):
-        """No extra logic for VendorAdvance approval — just flips flag."""
-        pass
+        """Flips the flag; the bank / cash account it was paid from (if any)
+        now counts the money out."""
+        from app.utils import sync_vendor_advance_account_status
+        sync_vendor_advance_account_status(advance)
+
+    @classmethod
+    def _post_status_change_vendor_advance(cls, advance, universal_status):
+        """Reject / cancel / draft / pending: the account row only counts
+        while the advance is approved."""
+        from app.utils import sync_vendor_advance_account_status
+        sync_vendor_advance_account_status(advance)
 
     @classmethod
     def _post_approve_bill_payment(cls, payment):
@@ -1071,6 +1080,16 @@ class ApprovalService:
             if bill:
                 bill.paid_amount = (bill.paid_amount or 0) + payment.amount
                 bill.update_status()
+        # The bank / cash account it was paid from now counts the money out.
+        from app.utils import sync_bill_payment_account_status
+        sync_bill_payment_account_status(payment)
+
+    @classmethod
+    def _post_status_change_bill_payment(cls, payment, universal_status):
+        """Reject / cancel / draft / pending: keep the paid-from account's
+        credit row in step, so it only counts while the payment is approved."""
+        from app.utils import sync_bill_payment_account_status
+        sync_bill_payment_account_status(payment)
 
     @classmethod
     def _post_approve_tool_receiving(cls, receiving):
