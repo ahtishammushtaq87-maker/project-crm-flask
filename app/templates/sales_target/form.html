@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if target else 'Create' }} Sales Target{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='sales_target/sales_target.css') }}">
+{% endblock %}
+
+{% block content %}
+{% macro field_error(name) -%}
+{% if errors.get(name) %}<div class="invalid-feedback d-block">{{ errors[name] }}</div>{% endif %}
+{%- endmacro %}
+{% macro flabel(for_id, icon, text, required=False, optional=False) -%}
+<label class="sales-target-flabel" for="{{ for_id }}">
+    <span class="sales-target-fico"><i class="{{ icon }}"></i></span>
+    <span>{{ text }}{% if required %} <span class="sales-target-req">*</span>{% endif %}{% if optional %} <span class="sales-target-opt">(optional)</span>{% endif %}</span>
+</label>
+{%- endmacro %}
+{% set type_help = {'individual': 'One salesman’s invoices', 'team': 'Invoices of the chosen salesmen', 'company': 'Every approved invoice'} %}
+{% set type_icon = {'individual': 'fa-user', 'team': 'fa-users', 'company': 'fa-building'} %}
+
+<div class="container-fluid sales-target-page sales-target-v2">
+    <nav class="sales-target-crumbs" aria-label="Breadcrumb">
+        <i class="fas fa-house"></i>
+        <a href="{{ url_for('sales_target.index') }}">Sales Target</a>
+        {% if target %}<span>/</span><a href="{{ url_for('sales_target.detail', target_id=target.id) }}">{{ target.name }}</a>{% endif %}
+        <span>/</span><span class="sales-target-crumb-here">{{ 'Edit' if target else 'Create' }}</span>
+    </nav>
+
+    <div class="sales-target-hero sales-target-hero-form">
+        <div class="sales-target-hero-main">
+            <div class="sales-target-hero-icon"><i class="fas fa-bullseye"></i></div>
+            <div>
+                <h1 class="sales-target-hero-title">{{ 'Edit Target' if target else 'Create Target' }}</h1>
+                <p class="sales-target-hero-sub">Set your sales targets, and actual sales will be calculated automatically from approved invoices in the target period.</p>
+            </div>
+        </div>
+    </div>
+
+    <form method="post" class="sales-target-form2" id="salesTargetForm" novalidate
+          action="{{ url_for('sales_target.edit', target_id=target.id) if target else url_for('sales_target.create') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token_value }}">
+        <input type="hidden" name="form_nonce" value="{{ form_nonce }}">
+
+        <div class="sales-target-card">
+            <div class="sales-target-card-head">
+                <span class="sales-target-fico"><i class="fas fa-file-lines"></i></span>
+                <h2>Target Details</h2>
+            </div>
+
+            <div class="sales-target-card-body">
+                {% if errors.get('__all__') %}
+                <div class="sales-target-note is-bad mb-3"><i class="fas fa-triangle-exclamation mt-1"></i><div>{{ errors['__all__'] }}</div></div>
+                {% endif %}
+                {% if locked %}
+                <div class="sales-target-note is-warn mb-3"><i class="fas fa-lock mt-1"></i>
+                    <div>This target is <strong>{{ status_labels[target.status]|lower }}</strong>, so its type, amount, period and assignment are locked.
+                        You can still change the name, notes and status. Set the status to <strong>Active</strong> or <strong>Draft</strong> to unlock the other fields.</div>
+                </div>
+                {% endif %}
+
+                <div class="row g-4">
+                    {# Name + status #}
+                    <div class="col-lg-7">
+                        {{ flabel('stName', 'fas fa-bullseye', 'Target Name', required=True) }}
+                        <div class="sales-target-fctl">
+                            <input type="text" id="stName" name="name" maxlength="150" required
+                                   class="form-control {{ 'is-invalid' if errors.get('name') }}"
+                                   value="{{ values.name }}" placeholder="e.g. October Sales Target">
+                            <div class="sales-target-fhint">Enter a clear and descriptive name for this target.</div>
+                            {{ field_error('name') }}
+                        </div>
+                    </div>
+                    <div class="col-lg-5">
+                        {{ flabel('stStatusField', 'fas fa-certificate', 'Status', required=True) }}
+                        <div class="sales-target-fctl">
+                            <div class="sales-target-status-select" data-status="{{ values.status }}">
+                                <span class="sales-target-status-dot"></span>
+                                <select id="stStatusField" name="status" class="form-select {{ 'is-invalid' if errors.get('status') }}"
+                                        data-sales-target-locked-status="{{ 'true' if locked else 'false' }}">
+                                    {% for s in statuses %}
+                                    <option value="{{ s }}" {{ 'selected' if values.status == s }}>{{ status_labels[s] }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="sales-target-fhint">Draft and Cancelled targets are not counted in the overview cards. Completed is allowed once the end date has passed.</div>
+                            {{ field_error('status') }}
+                        </div>
+                    </div>
+
+                    {# Target type #}
+                    <div class="col-12">
+                        <span class="sales-target-flabel">
+                            <span class="sales-target-fico"><i class="fas fa-user"></i></span>
+                            <span>Target type <span class="sales-target-req">*</span></span>
+                        </span>
+                        <div class="sales-target-typepick {{ 'is-multi' if types|length > 1 }}" role="radiogroup" aria-label="Target type">
+                            {% for t in types %}
+                            <div class="sales-target-typecard">
+                                <input type="radio" name="target_type" id="stType_{{ t }}" value="{{ t }}"
+                                       {{ 'checked' if values.target_type == t or types|length == 1 }} {{ 'disabled' if locked }} data-sales-target-lockable>
+                                <label for="stType_{{ t }}">
+                                    <span class="sales-target-typecard-ico"><i class="fas {{ type_icon[t] }}"></i></span>
+                                    <span class="sales-target-typecard-text">
+                                        <span class="sales-target-typecard-title">{{ type_labels[t] }}</span>
+                                        <span class="sales-target-typecard-sub">{{ type_help[t] }}</span>
+                                    </span>
+                                    <i class="fas fa-chevron-down sales-target-typecard-caret"></i>
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {{ field_error('target_type') }}
+                    </div>
+
+                    {# Assigned salesman #}
+                    <div class="col-12" data-sales-target-show="individual">
+                        {{ flabel('stSalesman', 'fas fa-user-group', 'Assigned salesman', required=True) }}
+                        <div class="sales-target-fctl">
+                            <select id="stSalesman" name="salesman_id" data-sales-target-lockable {{ 'disabled' if locked }}
+                                    class="form-select {{ 'is-invalid' if errors.get('salesman_id') }}">
+                                <option value="">— Select salesman —</option>
+                                {% for s in salesmen %}
+                                {% if s.is_active or s.id == values.salesman_id %}
+                                <option value="{{ s.id }}" {{ 'selected' if values.salesman_id == s.id }}>{{ s.name }}{{ ' (inactive)' if not s.is_active }}</option>
+                                {% endif %}
+                                {% endfor %}
+                            </select>
+                            {% if not salesmen %}<div class="sales-target-fhint text-danger">No salesmen exist yet. Add them under Sales → Salesmen first.</div>{% endif %}
+                            {{ field_error('salesman_id') }}
+                        </div>
+                    </div>
+
+                    {# Team members (only for existing team targets) #}
+                    {% if 'team' in types %}
+                    <div class="col-12" data-sales-target-show="team">
+                        <span class="sales-target-flabel">
+                            <span class="sales-target-fico"><i class="fas fa-users"></i></span>
+                            <span>Team members <span class="sales-target-req">*</span></span>
+                        </span>
+                        <div class="sales-target-fctl">
+                            {% if groups %}
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <label for="stGroupFill" class="sales-target-fhint m-0">Fill from group</label>
+                                <select id="stGroupFill" class="form-select form-select-sm" style="width:auto" data-sales-target-lockable {{ 'disabled' if locked }}>
+                                    <option value="">—</option>
+                                    {% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+                                </select>
+                            </div>
+                            {% endif %}
+                            <div class="sales-target-members {{ 'is-invalid' if errors.get('member_ids') }}">
+                                {% for s in salesmen %}
+                                {% if s.is_active or s.id in values.member_ids %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="member_ids" value="{{ s.id }}" id="stMember{{ s.id }}"
+                                           data-group="{{ s.group_id or '' }}" data-sales-target-lockable {{ 'disabled' if locked }}
+                                           {{ 'checked' if s.id in values.member_ids }}>
+                                    <label class="form-check-label" for="stMember{{ s.id }}">{{ s.name }}{{ ' (inactive)' if not s.is_active }}</label>
+                                </div>
+                                {% endif %}
+                                {% endfor %}
+                            </div>
+                            {{ field_error('member_ids') }}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {# Finished items #}
+                    <div class="col-12">
+                        {{ flabel('stItems', 'fas fa-box-open', 'Finished items', optional=True) }}
+                        <div class="sales-target-fctl sales-target-items-wrap">
+                            <i class="fas fa-magnifying-glass sales-target-items-ico"></i>
+                            <select id="stItems" name="product_ids" multiple data-sales-target-items data-sales-target-lockable {{ 'disabled' if locked }}
+                                    class="form-select {{ 'is-invalid' if errors.get('product_ids') }}"
+                                    data-placeholder="All items: search finished items by name or SKU">
+                                {% for p in finished_items %}
+                                <option value="{{ p.id }}" {{ 'selected' if p.id in values.product_ids }}>{{ p.name }} ({{ p.sku }}){{ ' · no longer a finished item' if not (p.is_manufactured and p.is_active and not p.is_obsolete) }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="sales-target-fhint">
+                                Leave empty to count whole invoices. If you pick items, only those items’ invoice lines count
+                                (amount after line discount, minus approved returns of those items); invoice-level tax, delivery and discount are not included.
+                                {% if not finished_items %}<span class="text-danger">No finished items found. Mark products as manufactured in Inventory first.</span>{% endif %}
+                            </div>
+                            {% if removed_items %}
+                            <div class="sales-target-fhint text-danger">{{ removed_items }} item(s) on this target were deleted from Inventory{{ ' and will be dropped when you save' if not locked }}.</div>
+                            {% endif %}
+                            {{ field_error('product_ids') }}
+                        </div>
+                    </div>
+
+                    {# Amount, dates, bonus #}
+                    <div class="col-sm-6 col-xl-3">
+                        {{ flabel('stAmount', 'fas fa-coins', 'Target amount (PKR)', required=True) }}
+                        <div class="sales-target-fctl">
+                            <div class="input-group sales-target-ig">
+                                <span class="input-group-text">PKR</span>
+                                <input type="number" id="stAmount" name="target_amount" min="0.01" step="0.01" required inputmode="decimal"
+                                       class="form-control {{ 'is-invalid' if errors.get('target_amount') }}"
+                                       value="{{ values.target_amount }}" placeholder="e.g. 500000" data-sales-target-lockable {{ 'disabled' if locked }}>
+                            </div>
+                            {{ field_error('target_amount') }}
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-xl-3">
+                        {{ flabel('stStart', 'far fa-calendar', 'Start date', required=True) }}
+                        <div class="sales-target-fctl">
+                            <input type="date" id="stStart" name="start_date" required
+                                   class="form-control {{ 'is-invalid' if errors.get('start_date') }}"
+                                   value="{{ values.start_date }}" data-sales-target-lockable {{ 'disabled' if locked }}>
+                            {{ field_error('start_date') }}
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-xl-3">
+                        {{ flabel('stEnd', 'far fa-calendar-check', 'End date', required=True) }}
+                        <div class="sales-target-fctl">
+                            <input type="date" id="stEnd" name="end_date" required
+                                   class="form-control {{ 'is-invalid' if errors.get('end_date') }}"
+                                   value="{{ values.end_date }}" data-sales-target-lockable {{ 'disabled' if locked }}>
+                            {{ field_error('end_date') }}
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-xl-3">
+                        {{ flabel('stBonus', 'fas fa-trophy', 'Achievement bonus (PKR)') }}
+                        <div class="sales-target-fctl">
+                            <input type="number" id="stBonus" name="bonus_amount" min="0" step="0.01" inputmode="decimal"
+                                   class="form-control {{ 'is-invalid' if errors.get('bonus_amount') }}"
+                                   value="{{ values.bonus_amount }}" placeholder="Optional" data-sales-target-lockable {{ 'disabled' if locked }}>
+                            <div class="sales-target-fhint">For reference only; not posted to payroll.</div>
+                            {{ field_error('bonus_amount') }}
+                        </div>
+                    </div>
+
+                    {# Notes #}
+                    <div class="col-12">
+                        <div class="sales-target-notes-box">
+                            <label class="sales-target-flabel" for="stDescription">
+                                <span class="sales-target-fico is-sm"><i class="fas fa-note-sticky"></i></span>
+                                <span>Notes</span>
+                            </label>
+                            <textarea id="stDescription" name="description" rows="3" maxlength="2000"
+                                      class="form-control {{ 'is-invalid' if errors.get('description') }}"
+                                      placeholder="Optional: focus products, regions, or how the target was agreed">{{ values.description }}</textarea>
+                            {{ field_error('description') }}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sales-target-form-actions">
+                    <button type="submit" class="sales-target-cta" data-sales-target-once>
+                        <i class="fas fa-check"></i> {{ 'Save Changes' if target else 'Create Target' }}
+                    </button>
+                    <a href="{{ url_for('sales_target.detail', target_id=target.id) if target else url_for('sales_target.index') }}"
+                       class="sales-target-ghost-btn"><i class="fas fa-xmark"></i> Cancel</a>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='sales_target/sales_target.js') }}"></script>
+{% endblock %}

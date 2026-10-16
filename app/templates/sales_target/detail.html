@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% from 'sales_target/_macros.html' import status_badge, type_cell, progress_bar, tone_label with context %}
+
+{% block title %}{{ target.name }} · Sales Target{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='sales_target/sales_target.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid sales-target-page">
+    <div class="sales-target-breadcrumb"><a href="{{ url_for('sales_target.index') }}">Sales Target</a> / Details</div>
+    <div class="sales-target-header">
+        <div class="min-w-0" style="min-width:0">
+            <h1 class="sales-target-title text-break"><i class="fas fa-bullseye"></i> {{ target.name }}</h1>
+            <p class="sales-target-subtitle">{{ type_cell(target) }} · {{ scope_label }}{% if target.has_item_scope %} · <i class="fas fa-box"></i> {{ target.products|length }} item{{ '' if target.products|length == 1 else 's' }}{% endif %} · {{ status_badge(target) }}</p>
+        </div>
+        <div class="d-flex gap-2">
+            {% if can_edit %}
+            <a href="{{ url_for('sales_target.edit', target_id=target.id) }}" class="btn btn-sm btn-outline-primary"><i class="fas fa-pen me-1"></i>Edit</a>
+            {% endif %}
+            {% if can_delete %}
+            <button type="button" class="btn btn-sm btn-outline-danger"
+                    data-sales-target-delete="{{ url_for('sales_target.delete', target_id=target.id) }}"
+                    data-sales-target-name="{{ target.name }}"><i class="fas fa-trash me-1"></i>Delete</button>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if not perf.available %}
+    <div class="sales-target-note is-bad mb-3"><i class="fas fa-triangle-exclamation mt-1"></i>
+        <div><strong>Actual sales can't be calculated.</strong> {{ perf.error }}</div>
+    </div>
+    {% endif %}
+
+    <div class="sales-target-kpis">
+        <div class="sales-target-kpi">
+            <div class="sales-target-kpi-label"><i class="fas fa-bullseye"></i> Target Amount</div>
+            <div class="sales-target-kpi-value">{{ perf.target_amount|sales_target_money }}</div>
+            <div class="sales-target-kpi-hint">{{ perf.period_days }} day period</div>
+        </div>
+        <div class="sales-target-kpi">
+            <div class="sales-target-kpi-label"><i class="fas fa-file-invoice-dollar"></i> Actual Sales</div>
+            <div class="sales-target-kpi-value">{{ perf.actual|sales_target_money }}</div>
+            <div class="sales-target-kpi-hint">{{ perf.invoice_count }} approved invoice{{ '' if perf.invoice_count == 1 else 's' }}</div>
+        </div>
+        <div class="sales-target-kpi is-{{ perf.tone }}">
+            <div class="sales-target-kpi-label"><i class="fas fa-percent"></i> Target Achieved</div>
+            <div class="sales-target-kpi-value">{{ '%.1f'|format(perf.achievement) ~ '%' if perf.achievement is not none else '—' }}</div>
+            <div class="sales-target-kpi-hint">{{ tone_label(perf) }}</div>
+        </div>
+        <div class="sales-target-kpi">
+            <div class="sales-target-kpi-label"><i class="fas fa-flag-checkered"></i> Remaining Target</div>
+            <div class="sales-target-kpi-value">{{ perf.remaining|sales_target_money }}</div>
+            <div class="sales-target-kpi-hint">Still needed to reach the target</div>
+        </div>
+        <div class="sales-target-kpi {{ 'is-good' if perf.exceeded and perf.exceeded > 0 else 'is-muted' }}">
+            <div class="sales-target-kpi-label"><i class="fas fa-chart-line"></i> Target Exceeded</div>
+            <div class="sales-target-kpi-value">{{ perf.exceeded|sales_target_money }}</div>
+            <div class="sales-target-kpi-hint">Sales above the target</div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-lg-7">
+            <div class="sales-target-panel h-100">
+                <div class="sales-target-panel-head"><h2 class="sales-target-panel-title">Progress</h2>
+                    <span class="sales-target-sub">
+                        {% if perf.period_state == 'upcoming' %}Starts in {{ perf.days_until_start }} day{{ '' if perf.days_until_start == 1 else 's' }}
+                        {% elif perf.period_state == 'running' %}Day {{ perf.elapsed_days }} of {{ perf.period_days }} ({{ perf.elapsed_pct }}% of the period elapsed)
+                        {% else %}Period ended{% endif %}
+                    </span>
+                </div>
+                <div class="sales-target-panel-body">
+                    {{ progress_bar(perf, large=True) }}
+                    <div class="d-flex justify-content-between sales-target-sub mt-1">
+                        <span>{{ perf.actual|sales_target_money }} achieved</span>
+                        <span>of {{ perf.target_amount|sales_target_money }}</span>
+                    </div>
+                    <dl class="sales-target-facts mt-3">
+                        <div><dt>Target Period</dt><dd>{{ target.start_date.strftime('%d %b %Y') }} – {{ target.end_date.strftime('%d %b %Y') }}</dd></div>
+                        <div><dt>Owner / Scope</dt><dd>{{ scope_label }}</dd></div>
+                        <div><dt>Finished items</dt><dd>{{ items_label if target.has_item_scope else 'All items (whole invoice totals)' }}</dd></div>
+                        <div><dt>Status</dt><dd>{{ status_badge(target) }}</dd></div>
+                        <div><dt>Achievement bonus</dt><dd>{{ (target.bonus_amount|sales_target_money) if target.bonus_amount is not none else '—' }}</dd></div>
+                        <div><dt>Created</dt><dd>{{ target.created_at.strftime('%d %b %Y, %H:%M') }} UTC{% if target.creator %} by {{ target.creator.username }}{% endif %}</dd></div>
+                        <div><dt>Last updated</dt><dd>{{ target.updated_at.strftime('%d %b %Y, %H:%M') }} UTC{% if target.updater %} by {{ target.updater.username }}{% endif %}</dd></div>
+                    </dl>
+                    {% if target.description %}
+                    <div class="mt-3"><div class="sales-target-kpi-label mb-1">Notes</div>
+                        <div class="sales-target-description">{{ target.description }}</div></div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="sales-target-panel h-100">
+                <div class="sales-target-panel-head"><h2 class="sales-target-panel-title">How this is calculated</h2></div>
+                <div class="sales-target-panel-body small">
+                    <p class="mb-2">Actual sales are the totals of <strong>approved</strong> invoices dated within the target period
+                        {%- if target.target_type == 'individual' %} where the invoice’s salesman is <strong>{{ scope_label }}</strong>
+                        {%- elif target.target_type == 'team' %} where the invoice’s salesman is a team member (each invoice counted once)
+                        {%- else %} across the whole company{% endif %}.</p>
+                    {% if target.has_item_scope %}
+                    <p class="mb-2">Only the selected finished items count: each item’s invoice line after its line discount, minus the same items on approved returns of that invoice (even if the return is dated later). Invoice-level tax, delivery and invoice discount are not included. Payments are not counted as sales.</p>
+                    {% else %}
+                    <p class="mb-2">Each invoice total is after discounts, tax and delivery. Approved sales returns are already deducted from the invoice they belong to, even if the return is dated later. Payments are not counted as sales.</p>
+                    {% endif %}
+                    {% if excluded %}
+                    <div class="sales-target-kpi-label mb-1">Not counted in this period</div>
+                    <ul class="list-unstyled mb-0">
+                        <li class="d-flex justify-content-between"><span>Pending approval</span><span>{{ excluded.pending.count }} · {{ excluded.pending.amount|sales_target_money }}</span></li>
+                        <li class="d-flex justify-content-between"><span>Drafts</span><span>{{ excluded.draft.count }} · {{ excluded.draft.amount|sales_target_money }}</span></li>
+                        <li class="d-flex justify-content-between"><span>Rejected / cancelled</span><span>{{ excluded.rejected.count }} · {{ excluded.rejected.amount|sales_target_money }}</span></li>
+                    </ul>
+                    {% if excluded.unassigned and excluded.unassigned.count %}
+                    <div class="sales-target-note mt-2"><i class="fas fa-circle-info mt-1"></i>
+                        <div>{{ excluded.unassigned.count }} counted invoice{{ '' if excluded.unassigned.count == 1 else 's' }} ({{ excluded.unassigned.amount|sales_target_money }}) have no salesman, so they count here but in no individual or team target.</div></div>
+                    {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ── Contributing invoices ───────────────────────────── #}
+    <div class="sales-target-panel">
+        <div class="sales-target-panel-head">
+            <h2 class="sales-target-panel-title">Contributing invoices</h2>
+            {% if pagination %}<span class="sales-target-sub">{{ pagination.total }} invoice{{ '' if pagination.total == 1 else 's' }}</span>{% endif %}
+        </div>
+        {% if invoices %}
+        <div class="sales-target-table-wrap">
+            <table class="sales-target-table" style="min-width:760px">
+                <thead><tr>
+                    <th>Invoice</th><th>Invoice Date</th><th>Customer</th><th>Salesman</th>
+                    {% if target.has_item_scope %}<th class="num">Item Qty</th>{% endif %}
+                    <th class="num">Eligible Sales Amount</th><th class="num">Returns deducted</th><th>Payment Status</th>
+                </tr></thead>
+                <tbody>
+                {% for row in invoices %}
+                    {% set s = row.sale %}
+                    <tr>
+                        <td class="text-nowrap">
+                            {% if can_open_invoices %}<a class="sales-target-name" href="{{ url_for('sales.invoice_detail', id=s.id) }}">{{ s.invoice_number }}</a>
+                            {% else %}{{ s.invoice_number }}{% endif %}
+                        </td>
+                        <td class="text-nowrap">{{ s.date.strftime('%d %b %Y') if s.date else '—' }}</td>
+                        <td><span class="sales-target-truncate" title="{{ row.customer_name or '' }}">{{ row.customer_name or '—' }}</span></td>
+                        <td><span class="sales-target-truncate" title="{{ row.salesman_name or '' }}">{{ row.salesman_name or 'No salesman' }}</span></td>
+                        {% if target.has_item_scope %}<td class="num">{{ '%g'|format(row.qty or 0) }}</td>{% endif %}
+                        <td class="num">{{ row.amount|sales_target_money }}</td>
+                        <td class="num">{{ row.returns|sales_target_money if row.returns > 0 else '—' }}</td>
+                        <td><span class="sales-target-badge {{ 'st-completed' if s.status == 'paid' else ('st-active' if s.status == 'partial' else '') }}">{{ (s.status or 'unpaid')|capitalize }}</span></td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if pagination.pages > 1 %}
+        <div class="sales-target-pager">
+            <span>Page {{ pagination.page }} of {{ pagination.pages }}</span>
+            <ul class="pagination pagination-sm">
+                <li class="page-item {{ 'disabled' if not pagination.has_prev }}"><a class="page-link" href="{{ url_for('sales_target.detail', target_id=target.id, page=pagination.prev_num or 1) }}">Previous</a></li>
+                {% for n in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                {% if n %}<li class="page-item {{ 'active' if n == pagination.page }}"><a class="page-link" href="{{ url_for('sales_target.detail', target_id=target.id, page=n) }}">{{ n }}</a></li>
+                {% else %}<li class="page-item disabled"><span class="page-link">…</span></li>{% endif %}
+                {% endfor %}
+                <li class="page-item {{ 'disabled' if not pagination.has_next }}"><a class="page-link" href="{{ url_for('sales_target.detail', target_id=target.id, page=pagination.next_num or pagination.pages) }}">Next</a></li>
+            </ul>
+        </div>
+        {% endif %}
+        {% elif perf.available %}
+        <div class="sales-target-empty">
+            <div class="sales-target-empty-icon"><i class="fas fa-file-invoice"></i></div>
+            <h3>No approved invoices yet</h3>
+            <p>No approved invoices in this target’s period and scope yet. They will appear here automatically once approved.</p>
+        </div>
+        {% else %}
+        <div class="sales-target-empty"><p class="mb-0">Fix the target’s assignment to see its invoices.</p></div>
+        {% endif %}
+    </div>
+</div>
+
+{% if can_delete %}{% include 'sales_target/_delete_modal.html' %}{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='sales_target/sales_target.js') }}"></script>
+{% endblock %}

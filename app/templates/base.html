@@ -1099,6 +1099,11 @@
         }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/entity_modal.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/sidebar.css') }}">
+    <script>
+        /* Apply the remembered collapsed-sidebar state before first paint. */
+        try { if (localStorage.getItem('sidebarCollapsed') === '1') document.documentElement.classList.add('sidebar-collapsed'); } catch (e) {}
+    </script>
     {% block extra_css %}{% endblock %}
 </head>
 
@@ -1111,44 +1116,53 @@
     <!-- Mobile Sidebar Overlay -->
     <div class="mobile-sidebar-overlay" id="sidebarOverlay"></div>
 
+    {% macro sidebar_brand(button_id, button_icon, button_label) -%}
+    {# Sidebar header: the company name comes from Settings > Company; the
+       line under it is set here. #}
+    {% set sidebar_tagline = 'Heavy Equipment Parts' %}
+    <div class="sidebar-brand">
+        <a href="{{ url_for('dashboard.index') }}" class="sidebar-brand-logo" aria-label="Dashboard">
+            {% if company_logo_url %}<img src="{{ company_logo_url }}" alt="{{ company.name if company else 'Logo' }}">
+            {% else %}<span>{{ (company.name if company else 'ERP')[:2]|upper }}</span>{% endif %}
+        </a>
+        <div class="sidebar-brand-text">
+            <div class="sidebar-brand-name" title="{{ company.name if company else 'ERP Portal' }}">{{ company.name if company else 'ERP Portal' }}</div>
+            <div class="sidebar-brand-tag">{{ sidebar_tagline }}</div>
+        </div>
+        <button type="button" class="sidebar-brand-btn" id="{{ button_id }}" aria-label="{{ button_label }}" title="{{ button_label }}">
+            <i class="fas {{ button_icon }}"></i>
+        </button>
+    </div>
+    {%- endmacro %}
+    {% macro sidebar_status() -%}
+    <div class="sidebar-status">
+        <span class="sidebar-status-dot" aria-hidden="true"></span>
+        <span class="sidebar-status-text">System Online</span>
+        {% if current_user.is_authenticated and (current_user.is_admin or current_user.can_view_settings) %}
+        <a href="{{ url_for('sales.company_settings') }}" class="sidebar-status-gear" title="Settings" aria-label="Settings"><i class="fas fa-gear"></i></a>
+        {% endif %}
+    </div>
+    {%- endmacro %}
+
     <!-- Mobile Sidebar -->
     <div class="mobile-sidebar d-md-none" id="mobileSidebar">
-        <div class="p-3">
-            <div class="d-flex justify-content-between align-items-center mb-3 text-center">
-                {% if company_logo_url %}
-                <div class="w-100 text-center">
-                    <img src="{{ company_logo_url }}" alt="{{ company.name }}"
-                        class="img-fluid rounded shadow-sm bg-white p-1" style="max-height: 45px;">
-                </div>
-                {% else %}
-                <h4 class="mb-0">ERP Portal</h4>
-                {% endif %}
-                <button class="btn btn-light btn-sm" id="closeSidebar">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <hr class="bg-white">
+        <div class="sidebar-inner">
+            {{ sidebar_brand('closeSidebar', 'fa-times', 'Close menu') }}
             {% set nav_ns = "m" %}
             {% include 'components/sidebar_nav.html' %}
+            {{ sidebar_status() }}
         </div>
     </div>
 
     <div class="container-fluid">
         <div class="row">
             <!-- Desktop Sidebar -->
-            <div class="col-md-2 p-0 sidebar d-none d-md-block">
-                <div class="p-3">
-                    {% if company_logo_url %}
-                    <div class="text-center mb-3">
-                        <img src="{{ company_logo_url }}" alt="{{ company.name }}"
-                            class="img-fluid rounded shadow-sm bg-white p-1" style="max-height: 60px;">
-                    </div>
-                    {% else %}
-                    <h4 class="text-center">ERP Portal</h4>
-                    {% endif %}
-                    <hr class="bg-white">
+            <div class="col-md-2 p-0 sidebar d-none d-md-block" id="desktopSidebar">
+                <div class="sidebar-inner">
+                    {{ sidebar_brand('sidebarCollapseBtn', 'fa-chevron-right', 'Collapse sidebar') }}
                     {% set nav_ns = "d" %}
                     {% include 'components/sidebar_nav.html' %}
+                    {{ sidebar_status() }}
                 </div>
             </div>
 
@@ -1384,6 +1398,54 @@
                         parent = parent.parentElement;
                     }
                 });
+            });
+
+            /* Sidebar accordion: only one group open at a time. Opening a group
+               closes any open sibling at the same level (so Finance > Vouchers
+               only closes its own siblings, not Finance itself). */
+            document.addEventListener('show.bs.collapse', function (e) {
+                var opening = e.target;
+                if (!opening.closest || !opening.closest('.sidebar-nav')) return;
+                Array.prototype.forEach.call(opening.parentElement.children, function (sib) {
+                    if (sib === opening || !sib.classList.contains('collapse')) return;
+                    if (sib.classList.contains('show') || sib.classList.contains('collapsing')) {
+                        bootstrap.Collapse.getOrCreateInstance(sib, { toggle: false }).hide();
+                    }
+                });
+            });
+
+            /* Desktop rail: collapse to icons and back (remembered per browser).
+               Clicking a group while collapsed expands the rail first. */
+            document.addEventListener('DOMContentLoaded', function () {
+                var root = document.documentElement;
+                var btn = document.getElementById('sidebarCollapseBtn');
+                function setCollapsed(on) {
+                    root.classList.toggle('sidebar-collapsed', on);
+                    if (btn) {
+                        btn.setAttribute('aria-label', on ? 'Expand sidebar' : 'Collapse sidebar');
+                        btn.setAttribute('title', on ? 'Expand sidebar' : 'Collapse sidebar');
+                    }
+                    try { localStorage.setItem('sidebarCollapsed', on ? '1' : '0'); } catch (err) {}
+                }
+                if (btn) {
+                    setCollapsed(root.classList.contains('sidebar-collapsed'));
+                    btn.addEventListener('click', function () {
+                        setCollapsed(!root.classList.contains('sidebar-collapsed'));
+                    });
+                }
+                var rail = document.getElementById('desktopSidebar');
+                if (rail) {
+                    // Hover labels for the icon-only rail
+                    rail.querySelectorAll('.sidebar-nav > .nav-link').forEach(function (link) {
+                        var label = link.querySelector('span');
+                        if (label && !link.title) link.title = label.textContent.trim();
+                    });
+                    rail.addEventListener('click', function (e) {
+                        if (!root.classList.contains('sidebar-collapsed')) return;
+                        var toggle = e.target.closest('.nav-group-toggle');
+                        if (toggle) setCollapsed(false);
+                    }, true);
+                }
             });
 
             // Toast notification system

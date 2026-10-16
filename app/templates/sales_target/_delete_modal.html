@@ -1,0 +1,21 @@
+{# Delete confirmation. Buttons with data-sales-target-delete="<url>" open it
+   (see static/sales_target/sales_target.js). Deleting is always a POST. #}
+<div class="modal fade" id="salesTargetDeleteModal" tabindex="-1" aria-labelledby="salesTargetDeleteTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="post" class="modal-content" id="salesTargetDeleteForm" action="">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token_value }}">
+            <div class="modal-header py-2">
+                <h5 class="modal-title fs-6" id="salesTargetDeleteTitle"><i class="fas fa-trash text-danger me-2"></i>Delete target</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body small">
+                Delete <strong data-sales-target-delete-name></strong>? This removes the target only —
+                invoices and sales figures are not affected. This cannot be undone.
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Keep target</button>
+                <button type="submit" class="btn btn-sm btn-danger" data-sales-target-once>Delete target</button>
+            </div>
+        </form>
+    </div>
+</div>

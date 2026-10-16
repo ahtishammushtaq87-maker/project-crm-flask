@@ -405,6 +405,10 @@ def create_app(config_class=Config):
     from app import sheets
     sheets.init_app(app)
     
+    # Sales Target module (self-contained: app/sales_target/, its own tables).
+    from app import sales_target
+    sales_target.init_app(app)
+
     @app.context_processor
     def inject_company():
          from app.models import Company

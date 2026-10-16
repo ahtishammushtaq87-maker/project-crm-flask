@@ -1,0 +1,26 @@
+{# Shared bits for the Sales Target pages. #}
+
+{% macro status_badge(t) -%}
+<span class="sales-target-badge st-{{ t.status }}">{{ t.status_label }}</span>
+{%- endmacro %}
+
+{% macro type_cell(t) -%}
+<span class="sales-target-type">
+    {% if t.target_type == 'individual' %}<i class="fas fa-user"></i>
+    {% elif t.target_type == 'team' %}<i class="fas fa-users"></i>
+    {% else %}<i class="fas fa-building"></i>{% endif %}
+    {{ t.type_label }}
+</span>
+{%- endmacro %}
+
+{% macro progress_bar(p, large=False) -%}
+<div class="sales-target-progress {{ 'sales-target-progress-lg' if large }} is-{{ p.tone }}"
+     role="progressbar" aria-valuemin="0" aria-valuemax="100"
+     aria-valuenow="{{ p.progress|round(1) }}" aria-label="{{ p.target.name }} progress">
+    <span style="width: {{ p.progress }}%"></span>
+</div>
+{%- endmacro %}
+
+{% macro tone_label(p) -%}
+<span class="sales-target-tone is-{{ p.tone }}">{{ p.tone_label }}</span>
+{%- endmacro %}

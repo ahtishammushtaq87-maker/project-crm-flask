@@ -38,34 +38,37 @@
     </a>
     <div class="collapse" id="{{ nav_ns }}NavSales">
         {% if adm or u.can_view_sales %}
-        <a class="nav-link" href="{{ url_for('sales.invoices') }}">Sales Invoices</a>
+        <a class="nav-link" href="{{ url_for('sales.invoices') }}"><i class="fas fa-file-invoice-dollar nav-sub-ico"></i><span>Sales Invoices</span></a>
         {% endif %}
         {% if adm or u.can_view_packing %}
-        <a class="nav-link" href="{{ url_for('packing.index') }}">Packing Slips</a>
+        <a class="nav-link" href="{{ url_for('packing.index') }}"><i class="fas fa-box nav-sub-ico"></i><span>Packing Slips</span></a>
         {% endif %}
         {% if adm or u.can_view_quotations %}
-        <a class="nav-link" href="{{ url_for('quotation.list_quotations') }}">Quotations</a>
+        <a class="nav-link" href="{{ url_for('quotation.list_quotations') }}"><i class="fas fa-file-signature nav-sub-ico"></i><span>Quotations</span></a>
         {% endif %}
         {% if adm or u.can_view_returns %}
-        <a class="nav-link" href="{{ url_for('returns.return_list') }}">Sales Returns</a>
+        <a class="nav-link" href="{{ url_for('returns.return_list') }}"><i class="fas fa-rotate-left nav-sub-ico"></i><span>Sales Returns</span></a>
         {% endif %}
         {% if adm or u.can_view_recovery %}
-        <a class="nav-link" href="{{ url_for('recovery.dashboard') }}">Sales Recovery</a>
+        <a class="nav-link" href="{{ url_for('recovery.dashboard') }}"><i class="fas fa-hand-holding-dollar nav-sub-ico"></i><span>Sales Recovery</span></a>
         {% endif %}
         {% if adm or u.can_view_customers %}
-        <a class="nav-link" href="{{ url_for('sales.customers') }}">Customers</a>
+        <a class="nav-link" href="{{ url_for('sales.customers') }}"><i class="fas fa-user-group nav-sub-ico"></i><span>Customers</span></a>
         {% endif %}
         {% if adm or u.can_view_customer_groups %}
-        <a class="nav-link" href="{{ url_for('sales.customer_groups_list') }}">Customer Groups</a>
+        <a class="nav-link" href="{{ url_for('sales.customer_groups_list') }}"><i class="fas fa-users nav-sub-ico"></i><span>Customer Groups</span></a>
         {% endif %}
         {% if adm or u.can_view_salesmen %}
-        <a class="nav-link" href="{{ url_for('sales.salesmen_list') }}">Salesmen</a>
+        <a class="nav-link" href="{{ url_for('sales.salesmen_list') }}"><i class="fas fa-user-tie nav-sub-ico"></i><span>Salesmen</span></a>
+        {% endif %}
+        {% if adm or (u.can_view_targets and u.can_view_sales) %}
+        <a class="nav-link" href="{{ url_for('sales_target.index') }}"><i class="fas fa-bullseye nav-sub-ico"></i><span>Sales Target</span></a>
         {% endif %}
         {% if adm or u.can_view_profit_loss %}
-        <a class="nav-link fw-bold text-warning" href="{{ url_for('reports.profit_loss_report') }}">Profit &amp; Loss</a>
+        <a class="nav-link fw-bold text-warning" href="{{ url_for('reports.profit_loss_report') }}"><i class="fas fa-scale-balanced nav-sub-ico"></i><span>Profit &amp; Loss</span></a>
         {% endif %}
         {% if adm or u.can_view_reports %}
-        <a class="nav-link" href="{{ url_for('reports.sales_report') }}">Sales Report</a>
+        <a class="nav-link" href="{{ url_for('reports.sales_report') }}"><i class="fas fa-chart-column nav-sub-ico"></i><span>Sales Report</span></a>
         {% endif %}
     </div>
     {% endif %}
@@ -79,11 +82,11 @@
     </a>
     <div class="collapse" id="{{ nav_ns }}NavPurchase">
         {% if adm or u.can_view_purchases %}
-        <a class="nav-link" href="{{ url_for('purchase.bills') }}">Purchase Bills</a>
-        <a class="nav-link" href="{{ url_for('purchase.purchase_return_list') }}">Purchase Returns</a>
+        <a class="nav-link" href="{{ url_for('purchase.bills') }}"><i class="fas fa-file-invoice nav-sub-ico"></i><span>Purchase Bills</span></a>
+        <a class="nav-link" href="{{ url_for('purchase.purchase_return_list') }}"><i class="fas fa-rotate-left nav-sub-ico"></i><span>Purchase Returns</span></a>
         {% endif %}
         {% if adm or u.can_view_vendors %}
-        <a class="nav-link" href="{{ url_for('purchase.vendors') }}">Vendors</a>
+        <a class="nav-link" href="{{ url_for('purchase.vendors') }}"><i class="fas fa-store nav-sub-ico"></i><span>Vendors</span></a>
         {% endif %}
     </div>
     {% endif %}
@@ -97,14 +100,14 @@
     </a>
     <div class="collapse" id="{{ nav_ns }}NavInventory">
         {% if adm or u.can_view_inventory %}
-        <a class="nav-link" href="{{ url_for('inventory.products') }}">Items</a>
+        <a class="nav-link" href="{{ url_for('inventory.products') }}"><i class="fas fa-cubes nav-sub-ico"></i><span>Items</span></a>
         {% endif %}
         {% if adm or u.can_view_warehouse %}
-        <a class="nav-link" href="{{ url_for('warehouse.warehouses') }}">Warehouses</a>
-        <a class="nav-link" href="{{ url_for('warehouse_transfer.transfers') }}">Warehouse Transfers</a>
+        <a class="nav-link" href="{{ url_for('warehouse.warehouses') }}"><i class="fas fa-warehouse nav-sub-ico"></i><span>Warehouses</span></a>
+        <a class="nav-link" href="{{ url_for('warehouse_transfer.transfers') }}"><i class="fas fa-right-left nav-sub-ico"></i><span>Warehouse Transfers</span></a>
         {% endif %}
         {% if adm or u.can_view_categories %}
-        <a class="nav-link" href="{{ url_for('categories.categories') }}">Product Categories</a>
+        <a class="nav-link" href="{{ url_for('categories.categories') }}"><i class="fas fa-tags nav-sub-ico"></i><span>Product Categories</span></a>
         {% endif %}
     </div>
     {% endif %}
@@ -118,14 +121,14 @@
     </a>
     <div class="collapse" id="{{ nav_ns }}NavMfg">
         {% if adm or u.can_view_manufacturing %}
-        <a class="nav-link" href="{{ url_for('manufacturing.orders') }}">Manufacturing Orders</a>
-        <a class="nav-link" href="{{ url_for('manufacturing.boms') }}">BOM</a>
+        <a class="nav-link" href="{{ url_for('manufacturing.orders') }}"><i class="fas fa-clipboard-list nav-sub-ico"></i><span>Manufacturing Orders</span></a>
+        <a class="nav-link" href="{{ url_for('manufacturing.boms') }}"><i class="fas fa-file-lines nav-sub-ico"></i><span>BOM</span></a>
         {% endif %}
         {% if adm or u.can_view_production %}
-        <a class="nav-link" href="{{ url_for('production.index') }}">Target Tracker</a>
+        <a class="nav-link" href="{{ url_for('production.index') }}"><i class="fas fa-bullseye nav-sub-ico"></i><span>Target Tracker</span></a>
         {% endif %}
         {% if adm or u.can_view_reports %}
-        <a class="nav-link" href="{{ url_for('reports.manufacturing_report') }}">Manufacturing Fact Sheet</a>
+        <a class="nav-link" href="{{ url_for('reports.manufacturing_report') }}"><i class="fas fa-file-lines nav-sub-ico"></i><span>Manufacturing Fact Sheet</span></a>
         {% endif %}
     </div>
     {% endif %}
@@ -148,28 +151,28 @@
         {% if adm or u.can_view_receiving or u.can_view_delivering %}
         <a class="nav-link nav-group-toggle collapsed" data-bs-toggle="collapse" href="#{{ nav_ns }}NavVouchers"
             role="button" aria-expanded="false" aria-controls="{{ nav_ns }}NavVouchers">
-            <span>Vouchers</span>
+            <i class="fas fa-ticket nav-sub-ico"></i><span>Vouchers</span>
             <i class="fas fa-chevron-down nav-caret"></i>
         </a>
         <div class="collapse" id="{{ nav_ns }}NavVouchers">
             {% if adm or u.can_view_receiving %}
-            <a class="nav-link" href="{{ url_for('tools.receiving_list') }}">Receiving Vouchers</a>
+            <a class="nav-link" href="{{ url_for('tools.receiving_list') }}"><i class="fas fa-file-import nav-sub-ico"></i><span>Receiving Vouchers</span></a>
             {% endif %}
             {% if adm or u.can_view_delivering %}
-            <a class="nav-link" href="{{ url_for('tools.delivering_list') }}">Delivery Vouchers</a>
+            <a class="nav-link" href="{{ url_for('tools.delivering_list') }}"><i class="fas fa-file-export nav-sub-ico"></i><span>Delivery Vouchers</span></a>
             {% endif %}
         </div>
         {% endif %}
         {% if adm or u.can_view_expenses %}
-        <a class="nav-link" href="{{ url_for('accounting.expenses') }}">Expenses</a>
-        <a class="nav-link" href="{{ url_for('accounting.account_activity') }}">Account Activity</a>
+        <a class="nav-link" href="{{ url_for('accounting.expenses') }}"><i class="fas fa-receipt nav-sub-ico"></i><span>Expenses</span></a>
+        <a class="nav-link" href="{{ url_for('accounting.account_activity') }}"><i class="fas fa-chart-line nav-sub-ico"></i><span>Account Activity</span></a>
         {% endif %}
         {% if adm or u.can_view_accounting or u.can_view_expenses %}
-        <a class="nav-link" href="{{ url_for('finance_journal.index') }}">Journal Entries</a>
+        <a class="nav-link" href="{{ url_for('finance_journal.index') }}"><i class="fas fa-book nav-sub-ico"></i><span>Journal Entries</span></a>
         {% endif %}
         {% if adm or u.can_view_settings %}
-        <a class="nav-link" href="{{ url_for('accounting.expense_categories') }}">Expense Categories</a>
-        <a class="nav-link" href="{{ url_for('accounting.payment_methods') }}">Payment Methods</a>
+        <a class="nav-link" href="{{ url_for('accounting.expense_categories') }}"><i class="fas fa-folder-tree nav-sub-ico"></i><span>Expense Categories</span></a>
+        <a class="nav-link" href="{{ url_for('accounting.payment_methods') }}"><i class="fas fa-credit-card nav-sub-ico"></i><span>Payment Methods</span></a>
         {% endif %}
     </div>
     {% endif %}
@@ -183,27 +186,27 @@
     </a>
     <div class="collapse" id="{{ nav_ns }}NavHr">
         {% if adm or u.can_view_salary %}
-        <a class="nav-link" href="{{ url_for('salary.staff_list') }}">Staff</a>
+        <a class="nav-link" href="{{ url_for('salary.staff_list') }}"><i class="fas fa-id-badge nav-sub-ico"></i><span>Staff</span></a>
         {% endif %}
         {% if adm or u.can_view_attendance %}
-        <a class="nav-link" href="{{ url_for('attendance.index') }}">Attendance &amp; Time</a>
+        <a class="nav-link" href="{{ url_for('attendance.index') }}"><i class="fas fa-clock nav-sub-ico"></i><span>Attendance &amp; Time</span></a>
         {% endif %}
         {% if adm or u.can_view_hr %}
-        <a class="nav-link" href="{{ url_for('hr.leave_list') }}">Leave &amp; Absence</a>
+        <a class="nav-link" href="{{ url_for('hr.leave_list') }}"><i class="fas fa-calendar-xmark nav-sub-ico"></i><span>Leave &amp; Absence</span></a>
         {% endif %}
         {% if adm or u.can_view_salary %}
-        <a class="nav-link" href="{{ url_for('salary.payment_list') }}">Payroll Runs</a>
-        <a class="nav-link" href="{{ url_for('salary.advance_list') }}">Advances &amp; Loans</a>
+        <a class="nav-link" href="{{ url_for('salary.payment_list') }}"><i class="fas fa-money-check-dollar nav-sub-ico"></i><span>Payroll Runs</span></a>
+        <a class="nav-link" href="{{ url_for('salary.advance_list') }}"><i class="fas fa-hand-holding-dollar nav-sub-ico"></i><span>Advances &amp; Loans</span></a>
         {% endif %}
         {% if adm or u.can_view_hr %}
-        <a class="nav-link" href="{{ url_for('hr.salary_revision_list') }}">Salary Revisions</a>
-        <a class="nav-link" href="{{ url_for('hr.adjustment_list') }}">Bonuses &amp; Adjustments</a>
-        <a class="nav-link" href="{{ url_for('hr.company_funds') }}">Company Funds</a>
-        <a class="nav-link" href="{{ url_for('hr.asset_list') }}">Assets &amp; Custody</a>
-        <a class="nav-link" href="{{ url_for('hr.settlement_list') }}">Final Settlements</a>
+        <a class="nav-link" href="{{ url_for('hr.salary_revision_list') }}"><i class="fas fa-chart-line nav-sub-ico"></i><span>Salary Revisions</span></a>
+        <a class="nav-link" href="{{ url_for('hr.adjustment_list') }}"><i class="fas fa-gift nav-sub-ico"></i><span>Bonuses &amp; Adjustments</span></a>
+        <a class="nav-link" href="{{ url_for('hr.company_funds') }}"><i class="fas fa-piggy-bank nav-sub-ico"></i><span>Company Funds</span></a>
+        <a class="nav-link" href="{{ url_for('hr.asset_list') }}"><i class="fas fa-laptop nav-sub-ico"></i><span>Assets &amp; Custody</span></a>
+        <a class="nav-link" href="{{ url_for('hr.settlement_list') }}"><i class="fas fa-handshake nav-sub-ico"></i><span>Final Settlements</span></a>
         {% endif %}
         {% if adm or u.can_view_reports %}
-        <a class="nav-link" href="{{ url_for('reports_attendance.attendance_report') }}">HR Reports &amp; Audit</a>
+        <a class="nav-link" href="{{ url_for('reports_attendance.attendance_report') }}"><i class="fas fa-clipboard-check nav-sub-ico"></i><span>HR Reports &amp; Audit</span></a>
         {% endif %}
     </div>
     {% endif %}
@@ -217,21 +220,21 @@
     </a>
     <div class="collapse" id="{{ nav_ns }}NavReports">
         {% if adm or u.can_view_profit_loss %}
-        <a class="nav-link fw-bold text-warning" href="{{ url_for('reports.profit_loss_report') }}">Profit &amp; Loss</a>
+        <a class="nav-link fw-bold text-warning" href="{{ url_for('reports.profit_loss_report') }}"><i class="fas fa-scale-balanced nav-sub-ico"></i><span>Profit &amp; Loss</span></a>
         {% endif %}
-        <a class="nav-link" href="{{ url_for('reports.sales_report') }}">Sales Report</a>
-        <a class="nav-link" href="{{ url_for('reports.purchase_report') }}">Purchase Report</a>
-        <a class="nav-link" href="{{ url_for('reports.inventory_report') }}">Inventory Report</a>
-        <a class="nav-link" href="{{ url_for('reports.inventory_details_report') }}">Warehouses Details</a>
-        <a class="nav-link" href="{{ url_for('reports.manufacturing_report') }}">Manufacturing Fact Sheet</a>
-        <a class="nav-link" href="{{ url_for('reports.bom_report') }}">BOM Report</a>
-        <a class="nav-link" href="{{ url_for('reports.cogs_report') }}">COGS Report</a>
-        <a class="nav-link" href="{{ url_for('reports.vendor_report') }}">Vendor Report</a>
-        <a class="nav-link" href="{{ url_for('reports.customer_report') }}">Customer Report</a>
-        <a class="nav-link" href="{{ url_for('reports.expense_report') }}">Expense Report</a>
-        <a class="nav-link" href="{{ url_for('reports.salary_report') }}">Salary Report</a>
-        <a class="nav-link" href="{{ url_for('reports.return_report') }}">Return Report</a>
-        <a class="nav-link" href="{{ url_for('reports_attendance.attendance_report') }}">Attendance Report</a>
+        <a class="nav-link" href="{{ url_for('reports.sales_report') }}"><i class="fas fa-chart-column nav-sub-ico"></i><span>Sales Report</span></a>
+        <a class="nav-link" href="{{ url_for('reports.purchase_report') }}"><i class="fas fa-chart-column nav-sub-ico"></i><span>Purchase Report</span></a>
+        <a class="nav-link" href="{{ url_for('reports.inventory_report') }}"><i class="fas fa-chart-column nav-sub-ico"></i><span>Inventory Report</span></a>
+        <a class="nav-link" href="{{ url_for('reports.inventory_details_report') }}"><i class="fas fa-warehouse nav-sub-ico"></i><span>Warehouses Details</span></a>
+        <a class="nav-link" href="{{ url_for('reports.manufacturing_report') }}"><i class="fas fa-file-lines nav-sub-ico"></i><span>Manufacturing Fact Sheet</span></a>
+        <a class="nav-link" href="{{ url_for('reports.bom_report') }}"><i class="fas fa-file-lines nav-sub-ico"></i><span>BOM Report</span></a>
+        <a class="nav-link" href="{{ url_for('reports.cogs_report') }}"><i class="fas fa-calculator nav-sub-ico"></i><span>COGS Report</span></a>
+        <a class="nav-link" href="{{ url_for('reports.vendor_report') }}"><i class="fas fa-chart-column nav-sub-ico"></i><span>Vendor Report</span></a>
+        <a class="nav-link" href="{{ url_for('reports.customer_report') }}"><i class="fas fa-chart-column nav-sub-ico"></i><span>Customer Report</span></a>
+        <a class="nav-link" href="{{ url_for('reports.expense_report') }}"><i class="fas fa-chart-column nav-sub-ico"></i><span>Expense Report</span></a>
+        <a class="nav-link" href="{{ url_for('reports.salary_report') }}"><i class="fas fa-chart-column nav-sub-ico"></i><span>Salary Report</span></a>
+        <a class="nav-link" href="{{ url_for('reports.return_report') }}"><i class="fas fa-chart-column nav-sub-ico"></i><span>Return Report</span></a>
+        <a class="nav-link" href="{{ url_for('reports_attendance.attendance_report') }}"><i class="fas fa-chart-column nav-sub-ico"></i><span>Attendance Report</span></a>
     </div>
     {% endif %}
 
@@ -249,23 +252,23 @@
     </a>
     <div class="collapse" id="{{ nav_ns }}NavSettings">
         {% if adm or u.can_view_settings %}
-        <a class="nav-link" href="{{ url_for('sales.company_settings') }}">Company</a>
-        <a class="nav-link" href="{{ url_for('sales.invoice_settings') }}">Invoice Settings</a>
+        <a class="nav-link" href="{{ url_for('sales.company_settings') }}"><i class="fas fa-building nav-sub-ico"></i><span>Company</span></a>
+        <a class="nav-link" href="{{ url_for('sales.invoice_settings') }}"><i class="fas fa-file-invoice nav-sub-ico"></i><span>Invoice Settings</span></a>
         {% endif %}
         {% if adm or u.can_view_users %}
-        <a class="nav-link" href="{{ url_for('users.list_users') }}">User Management</a>
+        <a class="nav-link" href="{{ url_for('users.list_users') }}"><i class="fas fa-users-gear nav-sub-ico"></i><span>User Management</span></a>
         {% endif %}
         {% if adm or u.can_view_tasks %}
-        <a class="nav-link" href="{{ url_for('users.list_tasks') }}">Tasks</a>
+        <a class="nav-link" href="{{ url_for('users.list_tasks') }}"><i class="fas fa-list-check nav-sub-ico"></i><span>Tasks</span></a>
         {% endif %}
         {% if adm or u.can_view_media %}
-        <a class="nav-link" href="{{ url_for('media.index') }}">Media</a>
+        <a class="nav-link" href="{{ url_for('media.index') }}"><i class="fas fa-photo-film nav-sub-ico"></i><span>Media</span></a>
         {% endif %}
         {% if adm or u.can_view_activity_logs %}
-        <a class="nav-link" href="{{ url_for('activity_log.index') }}">Activity Log</a>
+        <a class="nav-link" href="{{ url_for('activity_log.index') }}"><i class="fas fa-clock-rotate-left nav-sub-ico"></i><span>Activity Log</span></a>
         {% endif %}
         {% if adm %}
-        <a class="nav-link" href="{{ url_for('backup.index') }}">Database Backup</a>
+        <a class="nav-link" href="{{ url_for('backup.index') }}"><i class="fas fa-database nav-sub-ico"></i><span>Database Backup</span></a>
         {% endif %}
     </div>
     {% endif %}

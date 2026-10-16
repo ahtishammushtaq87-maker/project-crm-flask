@@ -1,0 +1,377 @@
+{% extends "base.html" %}
+
+{% block title %}Sales Target{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='sales_target/sales_target.css') }}">
+{% endblock %}
+
+{% block content %}
+{% macro sort_link(key, label, icon) -%}
+    {%- set active = filters.sort == key -%}
+    {%- set next_dir = 'asc' if (active and filters.dir == 'desc') else 'desc' -%}
+    <a href="{{ url_for('sales_target.index', **dict(filters, kpi=summary.type, sort=key, dir=next_dir, page=1)) }}"
+       class="sales-target-th {{ 'is-sorted' if active }}" aria-label="Sort by {{ label }}">
+        {{ icon }}<span>{{ label }}</span>
+        <i class="fas {{ ('fa-sort-down' if filters.dir == 'desc' else 'fa-sort-up') if active else 'fa-sort' }} sales-target-th-sort"></i>
+    </a>
+{%- endmacro %}
+{% set tone_class = {'good': 'is-green', 'warn': 'is-amber', 'bad': 'is-red', 'muted': 'is-slate'} %}
+{% set status_class = {'active': 'is-green', 'draft': 'is-slate', 'completed': 'is-blue', 'cancelled': 'is-red'} %}
+
+<div class="container-fluid sales-target-page sales-target-v2">
+
+    {# ── Hero header ─────────────────────────────────────── #}
+    <div class="sales-target-hero">
+        <div class="sales-target-hero-main">
+            <div class="sales-target-hero-icon"><i class="fas fa-bullseye"></i></div>
+            <div>
+                <h1 class="sales-target-hero-title">Sales Target</h1>
+                <p class="sales-target-hero-sub">Set targets, monitor sales performance, and track progress.</p>
+            </div>
+        </div>
+        {% if can_add %}
+        <a href="{{ url_for('sales_target.create') }}" class="sales-target-cta">
+            <i class="fas fa-plus"></i> Create Target
+        </a>
+        {% endif %}
+    </div>
+
+    {% if not has_any_target %}
+    <div class="sales-target-card">
+        <div class="sales-target-empty">
+            <div class="sales-target-empty-icon"><i class="fas fa-bullseye"></i></div>
+            <h3>No sales targets yet</h3>
+            <p>Set a monthly or quarterly goal for a salesman. Progress is calculated automatically from approved invoices.</p>
+            {% if can_add %}
+            <a href="{{ url_for('sales_target.create') }}" class="sales-target-cta">
+                <i class="fas fa-plus"></i> Create Your First Target
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+
+    {# ── Overall performance ─────────────────────────────── #}
+    <div class="sales-target-overview">
+        <i class="far fa-calendar sales-target-overview-icon"></i>
+        <span class="sales-target-overview-title">Overall Performance</span>
+        <span class="sales-target-dot">•</span>
+        <div class="dropdown">
+            <button class="sales-target-overview-pick" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                {{ summary.type_label }} targets ({{ summary.count }}) <i class="fas fa-chevron-down"></i>
+            </button>
+            <ul class="dropdown-menu sales-target-menu">
+                {% for t in (types_present or [summary.type]) %}
+                <li><a class="dropdown-item {{ 'active' if t == summary.type }}"
+                       href="{{ url_for('sales_target.index', **dict(filters, kpi=t)) }}">{{ type_labels[t] }} targets</a></li>
+                {% endfor %}
+            </ul>
+        </div>
+        <span class="sales-target-dot">•</span>
+        <div class="dropdown">
+            <button class="sales-target-overview-pick" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                Selected Period: <strong>{{ period_label }}</strong> <i class="fas fa-chevron-down"></i>
+            </button>
+            <ul class="dropdown-menu sales-target-menu">
+                {% for value, label in period_choices if value != 'custom' %}
+                <li><a class="dropdown-item {{ 'active' if filters.period == value }}"
+                       href="{{ url_for('sales_target.index', **dict(filters, period=value, start_date='', end_date='', kpi=summary.type, page=1)) }}">{{ label }}</a></li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+
+    {% set ach_tone = tone_class[summary.tone] %}
+    <div class="sales-target-stats">
+        <div class="sales-target-stat is-green">
+            <span class="sales-target-stat-ico"><i class="fas fa-coins"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Total Target</div>
+                <div class="sales-target-stat-value" title="{{ summary.total_target|sales_target_money }}">{{ summary.total_target|sales_target_money }}</div>
+                <div class="sales-target-stat-hint">{{ summary.count }} active / completed target{{ '' if summary.count == 1 else 's' }}</div>
+            </div>
+            <span class="sales-target-stat-corner"><i class="fas fa-chart-line"></i></span>
+        </div>
+        <div class="sales-target-stat is-blue">
+            <span class="sales-target-stat-ico"><i class="fas fa-file-lines"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Actual Sales</div>
+                <div class="sales-target-stat-value" title="{{ summary.actual|sales_target_money }}">{{ summary.actual|sales_target_money }}</div>
+                <div class="sales-target-stat-hint">Approved invoices in each target period</div>
+            </div>
+            <span class="sales-target-stat-corner"><i class="fas fa-chart-bar"></i></span>
+        </div>
+        <div class="sales-target-stat {{ ach_tone }}">
+            <span class="sales-target-stat-ico"><i class="fas fa-crosshairs"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Target Achieved</div>
+                <div class="sales-target-stat-value sales-target-stat-accent">{{ '%.1f'|format(summary.achievement) ~ '%' if summary.achievement is not none else '—' }}</div>
+                <div class="sales-target-stat-bar"><span style="width: {{ [summary.achievement or 0, 100]|min }}%"></span></div>
+            </div>
+            <span class="sales-target-stat-corner"><i class="fas fa-trophy"></i></span>
+        </div>
+        <div class="sales-target-stat is-purple">
+            <span class="sales-target-stat-ico"><i class="fas fa-flag"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Remaining Target</div>
+                <div class="sales-target-stat-value" title="{{ summary.remaining|sales_target_money }}">{{ summary.remaining|sales_target_money }}</div>
+                <div class="sales-target-stat-hint">Still needed to reach the targets</div>
+            </div>
+            <span class="sales-target-stat-corner"><i class="far fa-clock"></i></span>
+        </div>
+        <div class="sales-target-stat is-orange">
+            <span class="sales-target-stat-ico"><i class="fas fa-chart-line"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Target Exceeded</div>
+                <div class="sales-target-stat-value" title="{{ summary.exceeded|sales_target_money }}">{{ summary.exceeded|sales_target_money }}</div>
+                <div class="sales-target-stat-hint">Sales above target amounts</div>
+            </div>
+            <span class="sales-target-stat-corner"><i class="fas fa-arrow-up"></i></span>
+        </div>
+    </div>
+
+    {% if summary.overlap_warning or summary.unavailable %}
+    <div class="d-grid gap-2 mb-3">
+        {% if summary.overlap_warning %}
+        <div class="sales-target-note is-warn"><i class="fas fa-layer-group mt-1"></i>
+            <div>Some {{ summary.type_label|lower }} targets cover the same sales for overlapping dates, so the same invoices count toward each of them in these totals.</div>
+        </div>
+        {% endif %}
+        {% if summary.unavailable %}
+        <div class="sales-target-note is-bad"><i class="fas fa-triangle-exclamation mt-1"></i>
+            <div>{{ summary.unavailable }} target{{ ' is' if summary.unavailable == 1 else 's are' }} left out of the cards because their salesman or items no longer exist. Open the target to fix it.</div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Filters + table ─────────────────────────────────── #}
+    <div class="sales-target-card">
+        <form method="get" action="{{ url_for('sales_target.index') }}" class="sales-target-filters" id="salesTargetFilters">
+            <input type="hidden" name="sort" value="{{ filters.sort }}">
+            <input type="hidden" name="dir" value="{{ filters.dir }}">
+            <div class="sales-target-f-search">
+                <label class="visually-hidden" for="stSearch">Search</label>
+                <div class="sales-target-ifield">
+                    <i class="fas fa-magnifying-glass"></i>
+                    <input type="search" id="stSearch" name="q" value="{{ filters.q }}" maxlength="100"
+                           class="form-control" placeholder="Target, salesman or item">
+                </div>
+            </div>
+            <div class="sales-target-f-sel">
+                <label class="sales-target-f-label" for="stPeriod">Period</label>
+                <div class="sales-target-ifield">
+                    <i class="far fa-calendar"></i>
+                    <select id="stPeriod" name="period" class="form-select" data-sales-target-autosubmit>
+                        {% for value, label in period_choices %}
+                        <option value="{{ value }}" {{ 'selected' if filters.period == value }}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="sales-target-f-date" data-sales-target-custom {{ 'hidden' if filters.period != 'custom' }}>
+                <label class="sales-target-f-label" for="stFrom">From</label>
+                <input type="date" id="stFrom" name="start_date" value="{{ filters.start_date }}" class="form-control">
+            </div>
+            <div class="sales-target-f-date" data-sales-target-custom {{ 'hidden' if filters.period != 'custom' }}>
+                <label class="sales-target-f-label" for="stTo">To</label>
+                <input type="date" id="stTo" name="end_date" value="{{ filters.end_date }}" class="form-control">
+            </div>
+            <div class="sales-target-f-sel">
+                <label class="sales-target-f-label" for="stType">Type</label>
+                <div class="sales-target-ifield">
+                    <i class="fas fa-layer-group"></i>
+                    <select id="stType" name="type" class="form-select" data-sales-target-autosubmit>
+                        <option value="">All types</option>
+                        {% for t in types %}
+                        <option value="{{ t }}" {{ 'selected' if filters.type == t }}>{{ type_labels[t] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="sales-target-f-sel">
+                <label class="sales-target-f-label" for="stStatus">Status</label>
+                <div class="sales-target-ifield">
+                    <i class="far fa-circle-dot"></i>
+                    <select id="stStatus" name="status" class="form-select" data-sales-target-autosubmit>
+                        <option value="">All statuses</option>
+                        {% for s in statuses %}
+                        <option value="{{ s }}" {{ 'selected' if filters.status == s }}>{{ status_labels[s] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="sales-target-f-actions">
+                <button type="submit" class="sales-target-apply"><i class="fas fa-filter"></i> Apply</button>
+                {% if is_filtered or filters.period != 'this_month' %}
+                <a href="{{ url_for('sales_target.index') }}" class="sales-target-reset" title="Reset filters"><i class="fas fa-rotate-left"></i></a>
+                {% endif %}
+            </div>
+        </form>
+
+        {% if rows %}
+        <div class="sales-target-table-wrap">
+            <table class="sales-target-grid">
+                <thead>
+                    <tr>
+                        <th>{{ sort_link('name', 'Target', '<i class="fas fa-bullseye"></i>'|safe) }}</th>
+                        <th>{{ sort_link('scope', 'Salesman / Scope', '<i class="fas fa-user"></i>'|safe) }}</th>
+                        <th>{{ sort_link('end_date', 'Target Period', '<i class="far fa-calendar"></i>'|safe) }}</th>
+                        <th>{{ sort_link('amount', 'Target', '<span class="sales-target-rs">Rs</span>'|safe) }}</th>
+                        <th>{{ sort_link('actual', 'Actual Sales', '<i class="fas fa-chart-bar"></i>'|safe) }}</th>
+                        <th>{{ sort_link('remaining', 'Remaining', '<i class="far fa-clock"></i>'|safe) }}</th>
+                        <th>{{ sort_link('achievement', 'Achieved', '<i class="fas fa-circle-check"></i>'|safe) }}</th>
+                        <th><span class="sales-target-th"><i class="fas fa-bullseye"></i><span>Progress</span></span></th>
+                        <th><span class="sales-target-th"><i class="fas fa-list"></i><span>Status</span></span></th>
+                        <th class="sales-target-sticky"><span class="sales-target-th"><i class="fas fa-gear"></i><span>Actions</span></span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in rows %}
+                    {% set t = p.target %}
+                    {% set tone = tone_class[p.tone] %}
+                    <tr>
+                        <td class="sales-target-c-name">
+                            <a href="{{ url_for('sales_target.detail', target_id=t.id) }}"
+                               class="sales-target-row-title" title="{{ t.name }}">{{ t.name }}</a>
+                            <div class="sales-target-row-sub">
+                                <i class="fas {{ 'fa-user' if t.target_type == 'individual' else ('fa-users' if t.target_type == 'team' else 'fa-building') }}"></i>
+                                {{ t.type_label }}
+                            </div>
+                        </td>
+                        <td>
+                            <div class="sales-target-person">
+                                <span class="sales-target-avatar">
+                                    {% if t.target_type == 'individual' %}{{ initials(scope_label(t)) }}
+                                    {% elif t.target_type == 'team' %}<i class="fas fa-users"></i>
+                                    {% else %}<i class="fas fa-building"></i>{% endif %}
+                                </span>
+                                <div class="sales-target-person-text">
+                                    <div class="sales-target-person-name" title="{{ scope_label(t) }}">{{ scope_label(t) }}</div>
+                                    <div class="sales-target-person-sub" title="{{ items_label(t) }}">{{ items_label(t) if t.has_item_scope else 'All items' }}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="sales-target-period">
+                                <i class="far fa-calendar"></i>
+                                <div>
+                                    <div class="sales-target-period-range">{{ t.start_date.strftime('%d %b' if t.start_date.year == t.end_date.year else '%d %b %Y') }} – {{ t.end_date.strftime('%d %b %Y') }}</div>
+                                    <div class="sales-target-period-sub">
+                                        {% if p.period_state == 'upcoming' %}Starts in {{ p.days_until_start }} day{{ '' if p.days_until_start == 1 else 's' }}
+                                        {% elif p.period_state == 'running' %}Day {{ p.elapsed_days }} of {{ p.period_days }}
+                                        {% else %}Ended{% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="sales-target-pill is-green">
+                                <span class="sales-target-rs">Rs</span>
+                                <span class="sales-target-pill-val">{{ p.target_amount|sales_target_money }}</span>
+                            </div>
+                        </td>
+                        {% if p.available %}
+                        <td>
+                            <div class="sales-target-pill is-blue">
+                                <i class="fas fa-gauge-high"></i>
+                                <span class="sales-target-pill-val">{{ p.actual|sales_target_money }}</span>
+                                <span class="sales-target-pill-sub">{{ p.invoice_count }} invoice{{ '' if p.invoice_count == 1 else 's' }}</span>
+                            </div>
+                        </td>
+                        <td>
+                            {% if p.exceeded > 0 %}
+                            <div class="sales-target-pill is-green" title="Exceeded by {{ p.exceeded|sales_target_money }}">
+                                <i class="fas fa-arrow-up"></i>
+                                <span class="sales-target-pill-val">+{{ p.exceeded|sales_target_money }}</span>
+                                <span class="sales-target-pill-sub">Exceeded</span>
+                            </div>
+                            {% else %}
+                            <div class="sales-target-pill is-purple">
+                                <i class="far fa-clock"></i>
+                                <span class="sales-target-pill-val">{{ p.remaining|sales_target_money }}</span>
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="sales-target-pill {{ tone }}">
+                                <i class="fas fa-bullseye"></i>
+                                <span class="sales-target-pill-val">{{ '%.1f'|format(p.achievement) }}%</span>
+                                <span class="sales-target-pill-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                                      aria-valuenow="{{ p.progress|round(1) }}" aria-label="{{ t.name }} progress"><span style="width: {{ p.progress }}%"></span></span>
+                            </div>
+                        </td>
+                        {% else %}
+                        <td colspan="4">
+                            <div class="sales-target-pill is-red sales-target-pill-wide">
+                                <i class="fas fa-triangle-exclamation"></i>
+                                <span class="sales-target-pill-val">Needs setup</span>
+                                <span class="sales-target-pill-sub">Open the target to fix its salesman or items</span>
+                            </div>
+                        </td>
+                        {% endif %}
+                        <td><span class="sales-target-chip {{ tone }}">{{ p.tone_label }}</span></td>
+                        <td><span class="sales-target-chip {{ status_class.get(t.status, 'is-slate') }}">{{ t.status_label }}</span></td>
+                        <td class="sales-target-sticky">
+                            <div class="sales-target-acts">
+                                <a href="{{ url_for('sales_target.detail', target_id=t.id) }}" class="sales-target-act is-view" title="View" aria-label="View {{ t.name }}"><i class="fas fa-eye"></i></a>
+                                {% if can_edit %}
+                                <a href="{{ url_for('sales_target.edit', target_id=t.id) }}" class="sales-target-act is-edit" title="Edit" aria-label="Edit {{ t.name }}"><i class="fas fa-pen"></i></a>
+                                {% endif %}
+                                {% if can_delete %}
+                                <button type="button" class="sales-target-act is-delete" title="Delete" aria-label="Delete {{ t.name }}"
+                                        data-sales-target-delete="{{ url_for('sales_target.delete', target_id=t.id) }}"
+                                        data-sales-target-name="{{ t.name }}"><i class="fas fa-trash"></i></button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="sales-target-foot">
+            <span class="sales-target-count">
+                {% if pages > 1 %}{{ (page - 1) * per_page + 1 }}–{{ [page * per_page, total]|min }} of {% endif %}{{ total }} target{{ '' if total == 1 else 's' }}
+            </span>
+            <nav class="sales-target-pages" aria-label="Pages">
+                <a class="sales-target-page-btn {{ 'is-disabled' if page <= 1 }}" aria-label="Previous page"
+                   href="{{ url_for('sales_target.index', **dict(filters, kpi=summary.type, page=page - 1)) if page > 1 else '#' }}"><i class="fas fa-chevron-left"></i></a>
+                {% for n in range(1, pages + 1) %}
+                {% if n == 1 or n == pages or (n - page)|abs <= 2 %}
+                <a class="sales-target-page-btn {{ 'is-active' if n == page }}" href="{{ url_for('sales_target.index', **dict(filters, kpi=summary.type, page=n)) }}">{{ n }}</a>
+                {% elif (n - page)|abs == 3 %}
+                <span class="sales-target-page-gap">…</span>
+                {% endif %}
+                {% endfor %}
+                <a class="sales-target-page-btn {{ 'is-disabled' if page >= pages }}" aria-label="Next page"
+                   href="{{ url_for('sales_target.index', **dict(filters, kpi=summary.type, page=page + 1)) if page < pages else '#' }}"><i class="fas fa-chevron-right"></i></a>
+            </nav>
+        </div>
+        {% else %}
+        <div class="sales-target-empty">
+            <div class="sales-target-empty-icon"><i class="fas fa-magnifying-glass"></i></div>
+            <h3>No targets match these filters</h3>
+            <p>No target overlaps <strong>{{ period_label }}</strong>{% if is_filtered %} with the selected search, type or status{% endif %}.
+               Try another period or clear the filters.</p>
+            <a href="{{ url_for('sales_target.index', period='all') }}" class="sales-target-ghost-btn">Show all periods</a>
+        </div>
+        {% endif %}
+
+        <div class="sales-target-info">
+            <i class="fas fa-circle-info"></i>
+            <span>Actual sales are approved invoices dated within each target's own period, using the invoice total after discounts, tax, delivery and approved returns.
+            Pending, draft, rejected and cancelled invoices are not counted. Draft and cancelled targets are left out of the cards.</span>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if can_delete %}{% include 'sales_target/_delete_modal.html' %}{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='sales_target/sales_target.js') }}"></script>
+{% endblock %}
