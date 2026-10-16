@@ -1,0 +1,43 @@
+{# Top bar shown on every page while an admin is signed in as another user. #}
+{% if impersonation %}
+<style>
+    .impersonation-bar {
+        position: sticky;
+        top: 0;
+        z-index: 1040;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 10px 18px;
+        background: linear-gradient(90deg, #f59e0b 0%, #f97316 100%);
+        color: #1f1300;
+        box-shadow: 0 4px 14px rgba(249, 115, 22, 0.35);
+        font-size: 0.92rem;
+    }
+    .impersonation-bar .imp-ico {
+        width: 32px; height: 32px; border-radius: 50%;
+        display: inline-flex; align-items: center; justify-content: center;
+        background: rgba(255, 255, 255, 0.35); flex: 0 0 auto;
+    }
+    .impersonation-bar .imp-text { flex: 1 1 260px; min-width: 0; }
+    .impersonation-bar .imp-text small { display: block; opacity: 0.85; }
+    .impersonation-bar form { margin: 0; }
+    .impersonation-bar .imp-return {
+        border: 0; border-radius: 8px; padding: 8px 16px; font-weight: 700;
+        background: #1f1300; color: #fff; white-space: nowrap;
+    }
+    .impersonation-bar .imp-return:hover { background: #000; }
+</style>
+<div class="impersonation-bar" role="status">
+    <span class="imp-ico"><i class="fas fa-user-secret"></i></span>
+    <div class="imp-text">
+        <strong>You are signed in as {{ impersonation.user_name }}</strong> ({{ impersonation.user_role }})
+        <small>You see exactly what this user sees and can do. Anything you change is saved as this user. Opened by {{ impersonation.admin_name }}.</small>
+    </div>
+    <form method="post" action="{{ url_for('impersonation.stop') }}">
+        <input type="hidden" name="csrf_token" value="{{ impersonation_csrf_token() }}">
+        <button type="submit" class="imp-return"><i class="fas fa-arrow-right-from-bracket me-1"></i> Return to admin</button>
+    </form>
+</div>
+{% endif %}

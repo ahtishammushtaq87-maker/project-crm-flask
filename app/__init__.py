@@ -413,6 +413,10 @@ def create_app(config_class=Config):
     from app import system_mail
     system_mail.init_app(app)
 
+    # Admin "Login as user" for permission testing (app/impersonation/).
+    from app import impersonation
+    impersonation.init_app(app)
+
     @app.context_processor
     def inject_company():
          from app.models import Company
