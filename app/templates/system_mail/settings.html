@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}Email (SMTP) Settings{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Scoped to this page */
+    .mail-settings { max-width: 1100px; }
+    .mail-settings .ms-head { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+    .mail-settings .ms-head-icon {
+        width: 56px; height: 56px; border-radius: 50%; flex: 0 0 56px;
+        display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 1.4rem;
+        background: radial-gradient(circle at 30% 25%, #8b9cff 0%, #5b5ff0 45%, #4338ca 100%);
+        box-shadow: 0 8px 18px rgba(79, 70, 229, 0.28);
+    }
+    .mail-settings h1 { font-size: 1.6rem; font-weight: 800; margin: 0; color: #111633; }
+    .mail-settings .ms-sub { color: #6b7185; margin: 2px 0 0; }
+    .mail-settings .ms-status { margin-left: auto; }
+    .mail-settings .ms-pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px; font-weight: 600; font-size: 0.85rem; }
+    .mail-settings .ms-pill.on { background: #e7f8ee; color: #15803d; }
+    .mail-settings .ms-pill.off { background: #f1f2f6; color: #64748b; }
+    .mail-settings .ms-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    .mail-settings .ms-card { background: #fff; border: 1px solid #e8eaf4; border-radius: 14px; box-shadow: 0 8px 24px rgba(17, 22, 51, 0.05); margin-bottom: 18px; }
+    .mail-settings .ms-card-head { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid #eef0f7; }
+    .mail-settings .ms-card-head h2 { font-size: 1rem; font-weight: 700; margin: 0; color: #111633; }
+    .mail-settings .ms-card-head .ico { width: 34px; height: 34px; border-radius: 50%; background: #eef0fc; color: #4f46e5; display: inline-flex; align-items: center; justify-content: center; }
+    .mail-settings .ms-card-body { padding: 18px 20px 20px; }
+    .mail-settings .form-label { font-weight: 600; font-size: 0.88rem; color: #2d3142; }
+    .mail-settings .form-control, .mail-settings .form-select { min-height: 42px; border-radius: 9px; border-color: #dfe2ee; }
+    .mail-settings .form-text { font-size: 0.78rem; }
+    .mail-settings .ms-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+    .mail-settings .ms-presets button { border: 1px solid #dfe2ee; background: #fff; border-radius: 8px; padding: 4px 12px; font-size: 0.8rem; color: #3b4163; }
+    .mail-settings .ms-presets button:hover { border-color: #6366f1; color: #4f46e5; }
+    .mail-settings .ms-switch { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: #f6f7fd; border-radius: 10px; }
+    .mail-settings .ms-switch .form-switch { padding-left: 0; }
+    .mail-settings .ms-switch .form-check-input { width: 2.6em; height: 1.35em; margin: 0; cursor: pointer; }
+    .mail-settings .ms-btn-primary { background: linear-gradient(180deg, #5457f0 0%, #4338ca 100%); color: #fff; border: 0; border-radius: 9px; padding: 10px 22px; font-weight: 600; }
+    .mail-settings .ms-btn-primary:hover { color: #fff; filter: brightness(1.05); }
+    .mail-settings .ms-btn { border: 1px solid #d9dcea; background: #fff; border-radius: 9px; padding: 10px 18px; font-weight: 500; color: #2d3142; }
+    .mail-settings .ms-btn:hover { border-color: #6366f1; color: #4f46e5; }
+    .mail-settings .ms-last { font-size: 0.82rem; color: #6b7185; display: flex; gap: 8px; align-items: flex-start; }
+    .mail-settings .ms-last.ok i { color: #16a34a; }
+    .mail-settings .ms-last.bad i { color: #e11d48; }
+    .mail-settings .ms-help li { margin-bottom: 6px; font-size: 0.84rem; color: #4b5274; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% macro field(f, help=None, attrs={}) -%}
+<label class="form-label" for="{{ f.id }}">{{ f.label.text }}</label>
+{{ f(class=("form-select" if f.type == 'SelectField' else "form-control") + (" is-invalid" if f.errors else ""), **attrs) }}
+{% for e in f.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+{% if help %}<div class="form-text">{{ help }}</div>{% endif %}
+{%- endmacro %}
+<div class="container-fluid mail-settings py-2">
+    <div class="ms-head">
+        <span class="ms-head-icon"><i class="fas fa-envelope"></i></span>
+        <div>
+            <h1>Email (SMTP) Settings</h1>
+            <p class="ms-sub">The email account the CRM uses for system emails such as “Forgot password”.</p>
+        </div>
+        <div class="ms-status">
+            {% if saved and saved.is_configured %}<span class="ms-pill on"><span class="dot"></span> Email sending is ON</span>
+            {% else %}<span class="ms-pill off"><span class="dot"></span> Email sending is OFF</span>{% endif %}
+        </div>
+    </div>
+
+    <form method="post" novalidate id="mailSettingsForm">
+        {{ form.hidden_tag() }}
+        <div class="row g-3">
+            <div class="col-lg-8">
+                <div class="ms-card">
+                    <div class="ms-card-head"><span class="ico"><i class="fas fa-server"></i></span><h2>Mail server</h2></div>
+                    <div class="ms-card-body">
+                        <div class="ms-switch mb-3">
+                            <div class="form-check form-switch m-0">{{ form.is_enabled(class="form-check-input", role="switch") }}</div>
+                            <label for="{{ form.is_enabled.id }}" class="m-0">
+                                <strong>Enable system email</strong><br>
+                                <small class="text-muted">When off, “Forgot password” tells users to contact the administrator.</small>
+                            </label>
+                        </div>
+                        <div class="mb-3">
+                            <span class="form-label d-block">Quick setup</span>
+                            <div class="ms-presets">
+                                <button type="button" data-preset="smtp.gmail.com|587|starttls">Gmail</button>
+                                <button type="button" data-preset="smtp.office365.com|587|starttls">Outlook / Microsoft 365</button>
+                                <button type="button" data-preset="smtp.mail.yahoo.com|465|ssl">Yahoo</button>
+                                <button type="button" data-preset="smtp.zoho.com|465|ssl">Zoho</button>
+                            </div>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6">{{ field(form.smtp_host, attrs={'placeholder': 'smtp.gmail.com'}) }}</div>
+                            <div class="col-md-3">{{ field(form.smtp_port) }}</div>
+                            <div class="col-md-3">{{ field(form.security) }}</div>
+                            <div class="col-md-6">{{ field(form.smtp_username, 'Usually your full email address.', attrs={'autocomplete': 'off'}) }}</div>
+                            <div class="col-md-6">
+                                {{ field(form.smtp_password,
+                                         ('A password is saved. Leave blank to keep it.' if saved and saved.smtp_password else 'For Gmail/Outlook, create an “app password”.'),
+                                         attrs={'autocomplete': 'new-password', 'placeholder': ('•••••••• (saved)' if saved and saved.smtp_password else '')}) }}
+                                {% if saved and saved.smtp_password %}
+                                <div class="form-check mt-1">
+                                    <input class="form-check-input" type="checkbox" name="clear_password" value="1" id="msClearPw">
+                                    <label class="form-check-label small" for="msClearPw">Remove the saved password</label>
+                                </div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6">{{ field(form.from_email, 'Emails are sent from this address.', attrs={'placeholder': 'no-reply@yourcompany.com'}) }}</div>
+                            <div class="col-md-6">{{ field(form.from_name, attrs={'placeholder': company.name if company else 'ERP Portal'}) }}</div>
+                            <div class="col-md-6">{{ field(form.reply_to, 'Optional: where replies should go.') }}</div>
+                            <div class="col-md-6">{{ field(form.timeout_seconds) }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="ms-card">
+                    <div class="ms-card-head"><span class="ico"><i class="fas fa-flask"></i></span><h2>Test</h2></div>
+                    <div class="ms-card-body">
+                        <p class="small text-muted mb-3">Tests use the values on this page, even before you save them.</p>
+                        <button type="submit" name="action" value="test_connection" class="ms-btn w-100 mb-3" data-busy>
+                            <i class="fas fa-plug me-1"></i> Test connection
+                        </button>
+                        {{ field(form.test_to) }}
+                        <button type="submit" name="action" value="send_test" class="ms-btn w-100 mt-2" data-busy>
+                            <i class="fas fa-paper-plane me-1"></i> Send test email
+                        </button>
+                        {% if saved and saved.last_test_at %}
+                        <hr>
+                        <div class="ms-last {{ 'ok' if saved.last_test_ok else 'bad' }}">
+                            <i class="fas {{ 'fa-circle-check' if saved.last_test_ok else 'fa-circle-xmark' }} mt-1"></i>
+                            <div>Last test {{ saved.last_test_at.strftime('%d %b %Y, %H:%M') }} UTC:<br>{{ saved.last_test_message }}</div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="ms-card">
+                    <div class="ms-card-head"><span class="ico"><i class="fas fa-circle-info"></i></span><h2>Tips</h2></div>
+                    <div class="ms-card-body">
+                        <ul class="ms-help ps-3 mb-0">
+                            <li>Port 587 uses STARTTLS; port 465 uses SSL/TLS.</li>
+                            <li>Gmail and Outlook need 2-step verification and an <strong>app password</strong>.</li>
+                            <li>Users get password emails at the address set for them in <strong>User Management</strong>.</li>
+                            <li>Task notification emails keep their own settings under Tasks.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2 mt-1">
+            <button type="submit" name="action" value="save" class="ms-btn-primary" data-busy><i class="fas fa-check me-1"></i> Save settings</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var form = document.getElementById('mailSettingsForm');
+    form.querySelectorAll('[data-preset]').forEach(function (b) {
+        b.addEventListener('click', function () {
+            var p = b.getAttribute('data-preset').split('|');
+            form.querySelector('[name=smtp_host]').value = p[0];
+            form.querySelector('[name=smtp_port]').value = p[1];
+            form.querySelector('[name=security]').value = p[2];
+        });
+    });
+    var sec = form.querySelector('[name=security]'), port = form.querySelector('[name=smtp_port]');
+    sec.addEventListener('change', function () {
+        if (sec.value === 'ssl' && port.value === '587') port.value = '465';
+        if (sec.value === 'starttls' && port.value === '465') port.value = '587';
+    });
+    var clicked = null;
+    form.querySelectorAll('button[type=submit]').forEach(function (b) { b.addEventListener('click', function () { clicked = b; }); });
+    form.addEventListener('submit', function (e) {
+        if (form.dataset.busy === '1') { e.preventDefault(); return; }
+        form.dataset.busy = '1';
+        if (clicked) {
+            // keep the clicked button's action, since disabled buttons aren't submitted
+            var h = document.createElement('input');
+            h.type = 'hidden'; h.name = 'action'; h.value = clicked.value; form.appendChild(h);
+            form.querySelectorAll('button[type=submit]').forEach(function (b) { b.disabled = true; });
+            clicked.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Working…';
+        }
+    });
+})();
+</script>
+{% endblock %}

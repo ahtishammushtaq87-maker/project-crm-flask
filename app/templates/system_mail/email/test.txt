@@ -1,0 +1,4 @@
+Email is working
+
+This test message was sent from your CRM's Email (SMTP) settings by {{ sent_by }}.
+If you received it, the CRM can send system emails such as temporary passwords.

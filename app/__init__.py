@@ -409,6 +409,10 @@ def create_app(config_class=Config):
     from app import sales_target
     sales_target.init_app(app)
 
+    # System email (SMTP) settings + "Forgot password" (app/system_mail/).
+    from app import system_mail
+    system_mail.init_app(app)
+
     @app.context_processor
     def inject_company():
          from app.models import Company

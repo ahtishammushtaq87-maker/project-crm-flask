@@ -163,6 +163,12 @@
             border: 1px solid rgba(245, 158, 11, 0.3);
         }
 
+        .alert-info {
+            background: rgba(0, 82, 204, 0.07);
+            color: var(--primary);
+            border: 1px solid rgba(0, 82, 204, 0.25);
+        }
+
         .alert-dismissible {
             position: relative;
             padding-right: 35px;
@@ -511,6 +517,35 @@
         .form-control.with-password-toggle {
             padding-right: 45px;
         }
+
+        .forgot-link-row {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 10px;
+            margin: -6px 0 6px;
+        }
+
+        .forgot-hint {
+            font-size: 12px;
+            color: var(--danger);
+            margin-right: auto;
+        }
+
+        .forgot-link {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .forgot-link:hover {
+            text-decoration: underline;
+        }
+
+        .forgot-link i {
+            margin-right: 4px;
+        }
     </style>
 </head>
 <body>
@@ -546,7 +581,7 @@
                     {% endif %}
                 {% endwith %}
 
-                <form method="POST" novalidate>
+                <form method="POST" novalidate id="loginForm">
                     {{ form.hidden_tag() }}
 
                     <div class="form-group">
@@ -583,6 +618,16 @@
                                 <i class="fas fa-eye toggle-password" id="togglePassword"></i>
                             {% endif %}
                         </div>
+                    </div>
+
+                    <div class="forgot-link-row">
+                        <span class="forgot-hint" id="forgotHint" hidden>Type your username first.</span>
+                        {# Sends the username typed above; the temporary password goes to
+                           that user's email from User Management. #}
+                        <a href="{{ url_for('password_reset.forgot_password') }}" class="forgot-link" id="forgotLink"
+                           data-action="{{ url_for('password_reset.forgot_password') }}">
+                            <i class="fas fa-key"></i> Forgot password?
+                        </a>
                     </div>
 
                     <button type="submit" class="btn btn-primary btn-login">
@@ -640,6 +685,34 @@
                 }, 400);
             });
         });
+
+        // Forgot password: post the typed username (no separate page)
+        const forgotLink = document.querySelector('#forgotLink');
+        const loginForm = document.querySelector('#loginForm');
+        if (forgotLink && loginForm) {
+            forgotLink.addEventListener('click', function (e) {
+                e.preventDefault();
+                const user = loginForm.querySelector('[name=username]');
+                const hint = document.querySelector('#forgotHint');
+                if (!user || !user.value.trim()) {
+                    if (hint) hint.hidden = false;
+                    if (user) { user.classList.add('is-invalid'); user.focus(); }
+                    return;
+                }
+                if (forgotLink.dataset.busy) return;
+                forgotLink.dataset.busy = '1';
+                forgotLink.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending email…';
+                const pw = loginForm.querySelector('[name=password]');
+                if (pw) pw.disabled = true;   // only the username is sent
+                loginForm.action = forgotLink.dataset.action;
+                loginForm.submit();
+            });
+            const user = loginForm.querySelector('[name=username]');
+            if (user) user.addEventListener('input', function () {
+                document.querySelector('#forgotHint').hidden = true;
+                user.classList.remove('is-invalid');
+            });
+        }
 
         // Toggle Password Visibility
         const togglePassword = document.querySelector('#togglePassword');
