@@ -38,15 +38,31 @@ Attribution: ``sales.salesman_id`` (one salesman per invoice). Team targets
 use ``salesman_id IN (members)``, so overlapping membership can never count an
 invoice twice. Invoices without a salesman only count toward company-wide
 targets; nothing is ever attributed to the logged-in user.
+
+Cost, selling price and profit (economics())
+--------------------------------------------
+Measured on the invoice lines of the counted invoices (only the target's items
+for an item-scoped target), the same way the invoice form shows line profit:
+  selling price = line amount after line discount, minus the same item's lines
+                  on approved returns of that invoice
+  cost          = unit cost x quantity sold, minus the returned quantity's cost
+  profit        = selling price - cost;  margin = profit / selling price
+Unit cost is the cost of the warehouse the line was sold from, falling back to
+the item's normal cost (services/warehouse_cost.py, as the Dashboard and COGS
+report use). It is the item's current cost: invoice lines don't store a
+historical cost. Invoice-level tax, delivery and invoice discount belong to no
+item, so for a whole-invoice target Actual Sales = selling price + those
+invoice charges (shown as ``invoice_charges``).
 """
 from datetime import datetime, timedelta, date
 from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 
 from app import db
-from app.models import Sale, SaleItem, SaleReturn, SaleReturnItem, Customer, Salesman
+from app.models import Sale, SaleItem, SaleReturn, SaleReturnItem, Customer, Salesman, Product
 from app.sales_target.models import SalesTarget
+from app.services import warehouse_cost
 
 CENT = Decimal('0.01')
 
@@ -148,9 +164,10 @@ def _measure(target, conds):
             .filter(*conds).one())
 
 
-def performance(target, today=None):
+def performance(target, today=None, with_economics=False):
     """All figures for one target. ``available`` is False (and the figures
-    None) when the scope can't be resolved."""
+    None) when the scope can't be resolved. with_economics adds cost, selling
+    price and profit totals under ``economics`` (None when unavailable)."""
     today = today or date.today()
     amount = to_money(target.target_amount)
     result = {
@@ -164,6 +181,7 @@ def performance(target, today=None):
         'exceeded': None,
         'achievement': None,
         'progress': 0,
+        'economics': None,
     }
     try:
         conds = _conditions(target)
@@ -180,6 +198,8 @@ def performance(target, today=None):
             achievement=achievement_pct(actual, amount),
         )
         result['progress'] = float(min(result['achievement'] or 0, Decimal('100')))
+        if with_economics:
+            result['economics'] = economics(target, actual=actual, conds=conds)
 
     result.update(timing(target, today))
     result.update(health(result))
@@ -316,3 +336,162 @@ def exclusions(target):
     if target.target_type == SalesTarget.TYPE_COMPANY:
         out['unassigned'] = summary(*eligible_sale_conditions(), Sale.salesman_id.is_(None))
     return out
+
+
+# ── Cost, selling price and profit ─────────────────────────────────────────
+
+def _dec(value):
+    return Decimal(str(value)) if value is not None else Decimal('0')
+
+
+def margin_pct(profit, selling):
+    """Profit as a % of selling price; None when nothing was sold."""
+    if profit is None or selling is None or selling <= 0:
+        return None
+    return (profit / selling * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+
+
+def _line_rows(target, conds):
+    """(sold lines, approved-return lines) of the counted invoices, as plain
+    tuples: sale_id, product_id, line warehouse, qty, line total, line
+    discount, item name, sku, item warehouse, item cost."""
+    counted = select(Sale.id).where(*conds)
+    cols = (Product.name, Product.sku, Product.warehouse_id, Product.cost_price)
+    sold = (db.session.query(SaleItem.sale_id, SaleItem.product_id, SaleItem.warehouse_id, SaleItem.quantity,
+                             SaleItem.total, SaleItem.discount, *cols)
+            .outerjoin(Product, Product.id == SaleItem.product_id)
+            .filter(SaleItem.sale_id.in_(counted)))
+    returned = (db.session.query(SaleReturn.sale_id, SaleReturnItem.product_id, SaleReturnItem.warehouse_id,
+                                 SaleReturnItem.quantity, SaleReturnItem.total, SaleReturnItem.discount, *cols)
+                .join(SaleReturnItem, SaleReturnItem.return_id == SaleReturn.id)
+                .outerjoin(Product, Product.id == SaleReturnItem.product_id)
+                .filter(SaleReturn.sale_id.in_(counted),
+                        SaleReturn.is_approved == True,  # noqa: E712
+                        SaleReturn.is_rejected == False))  # noqa: E712
+    if target.has_item_scope:
+        sold = sold.filter(SaleItem.product_id.in_(target.product_ids))
+        returned = returned.filter(SaleReturnItem.product_id.in_(target.product_ids))
+    return sold.all(), returned.all()
+
+
+def _blank_line(product_id, name, sku):
+    return {'product_id': product_id, 'name': name or 'Deleted item', 'sku': sku or '',
+            'qty': 0.0, 'returned_qty': 0.0, 'selling': Decimal('0'), 'cost': Decimal('0'),
+            'no_cost': False}
+
+
+def _finish_line(line):
+    """Round the running sums to cents and add profit, margin and per-unit
+    figures (net of returns)."""
+    line['selling'] = line['selling'].quantize(CENT, rounding=ROUND_HALF_UP)
+    line['cost'] = line['cost'].quantize(CENT, rounding=ROUND_HALF_UP)
+    line['profit'] = line['selling'] - line['cost']
+    line['margin'] = margin_pct(line['profit'], line['selling'])
+    qty = line['qty']
+    line['unit_price'] = (line['selling'] / _dec(qty)).quantize(CENT) if qty > 1e-9 else None
+    line['unit_cost'] = (line['cost'] / _dec(qty)).quantize(CENT) if qty > 1e-9 else None
+    return line
+
+
+def _sum_lines(lines):
+    selling = sum((ln['selling'] for ln in lines), Decimal('0.00'))
+    cost = sum((ln['cost'] for ln in lines), Decimal('0.00'))
+    return {'selling': selling, 'cost': cost, 'profit': selling - cost,
+            'margin': margin_pct(selling - cost, selling), 'qty': sum(ln['qty'] for ln in lines)}
+
+
+def economics(target, actual=None, conds=None):
+    """Cost, selling price and profit of everything counted toward ``target``:
+    totals, per invoice (``by_sale``, with its item lines) and per item
+    (``by_item``, best sellers first). See the module notes for the rules.
+    Raises ScopeUnavailable like performance() would report it."""
+    if conds is None:
+        conds = _conditions(target)
+    sold, returned = _line_rows(target, conds)
+    cmap = warehouse_cost.cost_map({r[1] for r in sold} | {r[1] for r in returned})
+
+    lines = {}  # (sale_id, product_id) -> line; repeated lines of an item merge
+    for sign, rows in ((1, sold), (-1, returned)):
+        for sale_id, pid, line_wh, qty, total, discount, name, sku, item_wh, item_cost in rows:
+            own = cmap.get(pid, {}).get(line_wh or item_wh)
+            unit_cost = _dec(own if own is not None else (item_cost or 0))
+            line = lines.setdefault((sale_id, pid), _blank_line(pid, name, sku))
+            qty = float(qty or 0)
+            line['qty'] += sign * qty
+            if sign < 0:
+                line['returned_qty'] += qty
+            line['selling'] += sign * (_dec(total) - _dec(discount))
+            line['cost'] += sign * unit_cost * _dec(qty)
+            if unit_cost <= 0:
+                line['no_cost'] = True
+
+    by_sale, items = {}, {}
+    for (sale_id, pid), line in lines.items():
+        item = items.setdefault(pid, _blank_line(pid, line['name'], line['sku']))
+        for key in ('qty', 'returned_qty', 'selling', 'cost'):
+            item[key] += line[key]
+        item['no_cost'] = item['no_cost'] or line['no_cost']
+        by_sale.setdefault(sale_id, []).append(_finish_line(line))
+
+    sales = {}
+    for sale_id, sale_lines in by_sale.items():
+        sale_lines.sort(key=lambda ln: (-ln['selling'], ln['name']))
+        sales[sale_id] = dict(_sum_lines(sale_lines), lines=sale_lines)
+
+    by_item = sorted((_finish_line(i) for i in items.values()), key=lambda i: (-i['selling'], i['name']))
+    out = _sum_lines(by_item)
+    for i in by_item:
+        i['share'] = ((i['selling'] / out['selling'] * 100).quantize(Decimal('0.1'))
+                      if out['selling'] > 0 else None)
+
+    actual = to_money(actual) if actual is not None else to_money(_measure(target, conds)[0])
+    amount = to_money(target.target_amount)
+    out.update(
+        by_sale=sales,
+        by_item=by_item,
+        # Tax, delivery and invoice discount: in Actual Sales, but on no item.
+        invoice_charges=Decimal('0.00') if target.has_item_scope else actual - out['selling'],
+        items_without_cost=[i['name'] for i in by_item if i['no_cost']],
+        # Profit if the rest of the target sells at the same profit rate.
+        profit_at_target=((out['profit'] / actual * amount).quantize(CENT, rounding=ROUND_HALF_UP)
+                          if actual > 0 else None),
+    )
+    return out
+
+
+def running_achievement(target, conds=None):
+    """Achievement after each counted invoice, oldest first:
+    {sale_id: (running amount, running %)} plus the id of the invoice that
+    took the target to 100% (None if not reached)."""
+    if conds is None:
+        conds = _conditions(target)
+    if target.has_item_scope:
+        items, returned = _item_subqueries(target.product_ids)
+        query = (db.session.query(Sale.id, items.c.amount - func.coalesce(returned.c.amount, 0))
+                 .select_from(Sale)
+                 .join(items, items.c.sale_id == Sale.id)
+                 .outerjoin(returned, returned.c.sale_id == Sale.id))
+    else:
+        query = db.session.query(Sale.id, Sale.total)
+    amount = to_money(target.target_amount)
+    running, out, reached_by = Decimal('0.00'), {}, None
+    for sale_id, value in query.filter(*conds).order_by(Sale.date, Sale.id).all():
+        running += to_money(value)
+        pct = achievement_pct(running, amount)
+        out[sale_id] = (running, pct)
+        if reached_by is None and pct is not None and pct >= 100:
+            reached_by = sale_id
+    return out, reached_by
+
+
+def annotate_invoices(target, rows, econ, running):
+    """Add each invoice's share of the target, the achievement after it, and
+    its cost / selling price / profit to contributing_invoices() rows."""
+    amount = to_money(target.target_amount)
+    by_sale = (econ or {}).get('by_sale', {})
+    for row in rows:
+        sid = row['sale'].id
+        row['share'] = achievement_pct(row['amount'], amount)
+        row['running'], row['running_pct'] = running.get(sid, (None, None))
+        row['econ'] = by_sale.get(sid)
+    return rows

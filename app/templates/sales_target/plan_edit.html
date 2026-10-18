@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Yearly Split · {{ plan.name }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='sales_target/sales_target.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid sales-target-page sales-target-v2">
+    <nav class="sales-target-crumbs" aria-label="Breadcrumb">
+        <i class="fas fa-house"></i>
+        <a href="{{ url_for('sales_target.index') }}">Sales Target</a>
+        <span>/</span><a href="{{ url_for('sales_target.plan_view', plan_id=plan.id) }}">{{ plan.name }}</a>
+        <span>/</span><span class="sales-target-crumb-here">Edit yearly split</span>
+    </nav>
+
+    <form method="post" id="salesTargetPlanForm" novalidate action="{{ url_for('sales_target.plan_edit', plan_id=plan.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token_value }}">
+        <input type="hidden" name="form_nonce" value="{{ form_nonce }}">
+        <div class="sales-target-card">
+            <div class="sales-target-card-head">
+                <span class="sales-target-fico"><i class="fas fa-sliders"></i></span>
+                <h2>Edit yearly split · {{ year_label }} · {{ scope_label }}</h2>
+            </div>
+            <div class="sales-target-card-body">
+                <p class="sales-target-fhint">
+                    Change the yearly amount and it is divided equally over the {{ units }}. Change a {{ unit }} and the {{ units }}
+                    you haven’t changed adjust, so the year still adds up. Completed or cancelled {{ units }} are locked but still count in the year.
+                </p>
+                <div class="table-responsive">
+                    <table class="table sales-target-grid mb-0 no-datatable" data-st-grid data-st-yearly="1" data-st-unit="{{ units }}">
+                        <thead>
+                            <tr>
+                                <th>{{ 'Item' if plan.split_by_item else 'Target' }}</th>
+                                <th>Yearly target</th>
+                                {% for q in periods %}<th>{{ q.label }}<small>{{ q.range }}</small></th>{% endfor %}
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in rows %}
+                            {% set row_total = row.targets|select|map(attribute='target_amount')|sum %}
+                            {% set tname = 'total_' ~ row.key %}
+                            <tr data-st-row>
+                                <th class="text-break">{{ row.label }}</th>
+                                <td>
+                                    <input type="number" step="0.01" min="0.01" name="{{ tname }}" data-st-total
+                                           class="form-control form-control-sm {{ 'is-invalid' if errors.get(tname) }}"
+                                           value="{{ posted.get(tname) if posted else '%.2f'|format(row_total) }}">
+                                    <div class="sales-target-grid-status" data-st-row-status></div>
+                                    {% if errors.get(tname) %}<div class="invalid-feedback d-block">{{ errors[tname] }}</div>{% endif %}
+                                </td>
+                                {% for q in periods %}
+                                {% set t = row.targets[loop.index0] %}
+                                {% set cname = 'amt_' ~ row.key ~ '_' ~ q.no %}
+                                <td>
+                                    {% if t is none %}
+                                    <span class="sales-target-sub">No target</span>
+                                    {% elif t.is_closed %}
+                                    <input type="number" class="form-control form-control-sm" value="{{ '%.2f'|format(t.target_amount) }}" readonly data-st-cell data-st-fixed
+                                           title="{{ t.status_label }}: locked">
+                                    <small class="sales-target-sub"><i class="fas fa-lock"></i> {{ t.status_label }}</small>
+                                    {% else %}
+                                    <input type="number" step="0.01" min="0.01" name="{{ cname }}" data-st-cell
+                                           class="form-control form-control-sm {{ 'is-invalid' if errors.get(cname) }}"
+                                           value="{{ posted.get(cname) if posted else '%.2f'|format(t.target_amount) }}">
+                                    {% if errors.get(cname) %}<div class="invalid-feedback d-block">{{ errors[cname] }}</div>{% endif %}
+                                    {% endif %}
+                                </td>
+                                {% endfor %}
+                                <td><button type="button" class="btn btn-sm btn-outline-secondary" data-st-even title="Divide the yearly target equally again"><i class="fas fa-equals"></i></button></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot data-st-foot></tfoot>
+                    </table>
+                </div>
+                <div class="sales-target-form-actions">
+                    <button type="submit" class="sales-target-cta" data-sales-target-once><i class="fas fa-check"></i> Save {{ unit }} targets</button>
+                    <a href="{{ url_for('sales_target.plan_view', plan_id=plan.id) }}" class="sales-target-ghost-btn"><i class="fas fa-xmark"></i> Cancel</a>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='sales_target/sales_target.js') }}"></script>
+{% endblock %}

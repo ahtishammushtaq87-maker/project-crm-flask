@@ -19,7 +19,7 @@
 {% set tone_class = {'good': 'is-green', 'warn': 'is-amber', 'bad': 'is-red', 'muted': 'is-slate'} %}
 {% set status_class = {'active': 'is-green', 'draft': 'is-slate', 'completed': 'is-blue', 'cancelled': 'is-red'} %}
 
-<div class="container-fluid sales-target-page sales-target-v2">
+<div class="container-fluid sales-target-page sales-target-v2 sales-target-compact">
 
     {# ── Hero header ─────────────────────────────────────── #}
     <div class="sales-target-hero">
@@ -131,6 +131,43 @@
         </div>
     </div>
 
+    {% if show_profit and summary.has_economics %}
+    <div class="sales-target-stats is-four">
+        <div class="sales-target-stat is-blue">
+            <span class="sales-target-stat-ico"><i class="fas fa-tags"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Total Selling Price</div>
+                <div class="sales-target-stat-value" title="{{ summary.selling|sales_target_money }}">{{ summary.selling|sales_target_money }}</div>
+                <div class="sales-target-stat-hint">Item lines of the counted invoices</div>
+            </div>
+        </div>
+        <div class="sales-target-stat is-slate">
+            <span class="sales-target-stat-ico"><i class="fas fa-boxes-stacked"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Total Cost</div>
+                <div class="sales-target-stat-value" title="{{ summary.cost|sales_target_money }}">{{ summary.cost|sales_target_money }}</div>
+                <div class="sales-target-stat-hint">Item cost × quantity sold</div>
+            </div>
+        </div>
+        <div class="sales-target-stat {{ 'is-green' if summary.profit >= 0 else 'is-red' }}">
+            <span class="sales-target-stat-ico"><i class="fas fa-coins"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Gross Profit</div>
+                <div class="sales-target-stat-value" title="{{ summary.profit|sales_target_money }}">{{ summary.profit|sales_target_money }}</div>
+                <div class="sales-target-stat-hint">Selling price − cost</div>
+            </div>
+        </div>
+        <div class="sales-target-stat {{ 'is-green' if summary.margin is not none and summary.margin >= 0 else ('is-red' if summary.margin is not none else 'is-slate') }}">
+            <span class="sales-target-stat-ico"><i class="fas fa-percent"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Profit Margin</div>
+                <div class="sales-target-stat-value sales-target-stat-accent">{{ '%.1f'|format(summary.margin) ~ '%' if summary.margin is not none else '—' }}</div>
+                <div class="sales-target-stat-hint">Profit as a share of selling price</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     {% if summary.overlap_warning or summary.unavailable %}
     <div class="d-grid gap-2 mb-3">
         {% if summary.overlap_warning %}
@@ -222,6 +259,7 @@
                         <th>{{ sort_link('actual', 'Actual Sales', '<i class="fas fa-chart-bar"></i>'|safe) }}</th>
                         <th>{{ sort_link('remaining', 'Remaining', '<i class="far fa-clock"></i>'|safe) }}</th>
                         <th>{{ sort_link('achievement', 'Achieved', '<i class="fas fa-circle-check"></i>'|safe) }}</th>
+                        {% if show_profit %}<th>{{ sort_link('profit', 'Profit', '<i class="fas fa-coins"></i>'|safe) }}</th>{% endif %}
                         <th><span class="sales-target-th"><i class="fas fa-bullseye"></i><span>Progress</span></span></th>
                         <th><span class="sales-target-th"><i class="fas fa-list"></i><span>Status</span></span></th>
                         <th class="sales-target-sticky"><span class="sales-target-th"><i class="fas fa-gear"></i><span>Actions</span></span></th>
@@ -302,8 +340,19 @@
                                       aria-valuenow="{{ p.progress|round(1) }}" aria-label="{{ t.name }} progress"><span style="width: {{ p.progress }}%"></span></span>
                             </div>
                         </td>
+                        {% if show_profit %}
+                        {% set e = p.economics %}
+                        <td>
+                            <div class="sales-target-pill {{ 'is-green' if e and e.profit >= 0 else ('is-red' if e else 'is-slate') }}"
+                                 title="{% if e %}Selling {{ e.selling|sales_target_money }} · Cost {{ e.cost|sales_target_money }}{% endif %}">
+                                <i class="fas fa-coins"></i>
+                                <span class="sales-target-pill-val">{{ e.profit|sales_target_money if e else '—' }}</span>
+                                {% if e and e.margin is not none %}<span class="sales-target-pill-sub">{{ '%.1f'|format(e.margin) }}% margin</span>{% endif %}
+                            </div>
+                        </td>
+                        {% endif %}
                         {% else %}
-                        <td colspan="4">
+                        <td colspan="{{ 5 if show_profit else 4 }}">
                             <div class="sales-target-pill is-red sales-target-pill-wide">
                                 <i class="fas fa-triangle-exclamation"></i>
                                 <span class="sales-target-pill-val">Needs setup</span>
@@ -363,7 +412,8 @@
         <div class="sales-target-info">
             <i class="fas fa-circle-info"></i>
             <span>Actual sales are approved invoices dated within each target's own period, using the invoice total after discounts, tax, delivery and approved returns.
-            Pending, draft, rejected and cancelled invoices are not counted. Draft and cancelled targets are left out of the cards.</span>
+            Pending, draft, rejected and cancelled invoices are not counted. Draft and cancelled targets are left out of the cards.
+            {% if show_profit %}Selling price, cost and profit come from the item lines of those invoices (after line discounts and returns); open a target to see them per invoice and per item.{% endif %}</span>
         </div>
     </div>
     {% endif %}

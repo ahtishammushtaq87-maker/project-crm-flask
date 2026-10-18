@@ -52,6 +52,19 @@
                 {% if errors.get('__all__') %}
                 <div class="sales-target-note is-bad mb-3"><i class="fas fa-triangle-exclamation mt-1"></i><div>{{ errors['__all__'] }}</div></div>
                 {% endif %}
+                {% set show_items = target and (target.has_item_scope or values.product_ids) %}
+                {% if errors.get('product_ids') and not show_items %}
+                <div class="sales-target-note is-bad mb-3"><i class="fas fa-triangle-exclamation mt-1"></i><div>{{ errors['product_ids'] }}</div></div>
+                {% endif %}
+                {% if plan_part %}
+                <div class="sales-target-note mb-3"><i class="fas fa-calendar-days mt-1"></i>
+                    {% set unit = 'month' if plan_part.plan.is_monthly else 'quarter' %}
+                    <div>This is one {{ unit }} ({{ target.start_date.strftime('%b %Y') if plan_part.plan.is_monthly else 'Q' ~ plan_part.period_no }}) of the yearly plan <strong>{{ plan_part.plan.name }}</strong>.
+                        Changing the amount here changes only this {{ unit }} (and the yearly total).
+                        To change one {{ unit }} and have the others adjust automatically, use
+                        <a href="{{ url_for('sales_target.plan_edit', plan_id=plan_part.plan_id) }}">Edit yearly split</a>.</div>
+                </div>
+                {% endif %}
                 {% if locked %}
                 <div class="sales-target-note is-warn mb-3"><i class="fas fa-lock mt-1"></i>
                     <div>This target is <strong>{{ status_labels[target.status]|lower }}</strong>, so its type, amount, period and assignment are locked.
@@ -165,7 +178,10 @@
                     </div>
                     {% endif %}
 
-                    {# Finished items #}
+                    {# Finished items: new targets count every item sold, so the
+                       picker only appears on older targets that were limited to
+                       chosen items (clearing it there turns them into all-items). #}
+                    {% if show_items %}
                     <div class="col-12">
                         {{ flabel('stItems', 'fas fa-box-open', 'Finished items', optional=True) }}
                         <div class="sales-target-fctl sales-target-items-wrap">
@@ -188,9 +204,75 @@
                             {{ field_error('product_ids') }}
                         </div>
                     </div>
+                    {% endif %}
+
+                    {% if not target %}
+                    {# Single period, or a total split into months / quarters #}
+                    <div class="col-12">
+                        <span class="sales-target-flabel">
+                            <span class="sales-target-fico"><i class="fas fa-calendar-days"></i></span>
+                            <span>Target period <span class="sales-target-req">*</span></span>
+                        </span>
+                        <div class="sales-target-modepick" role="radiogroup" aria-label="Target period">
+                            <input type="radio" class="btn-check" name="period_mode" id="stModeSingle" value="single" {{ 'checked' if values.period_mode != 'yearly' }} data-st-mode-input>
+                            <label class="sales-target-modecard" for="stModeSingle">
+                                <i class="far fa-calendar"></i>
+                                <span><strong>One month / custom dates</strong><small>e.g. PKR 50,000 for this month</small></span>
+                            </label>
+                            <input type="radio" class="btn-check" name="period_mode" id="stModeYearly" value="yearly" {{ 'checked' if values.period_mode == 'yearly' }} data-st-mode-input>
+                            <label class="sales-target-modecard" for="stModeYearly">
+                                <i class="fas fa-layer-group"></i>
+                                <span><strong>Monthly or quarterly plan</strong><small>Enter one total; it is divided into months or quarters for you</small></span>
+                            </label>
+                        </div>
+                        <div class="sales-target-fhint mt-2">Every item sold on the salesman’s approved invoices counts toward the target. The target page shows how much each invoice achieved, with its items, cost, selling price and profit.</div>
+                    </div>
+                    <div class="col-sm-6 col-xl-3" data-st-mode="yearly">
+                        {{ flabel('stPlanYear', 'far fa-calendar', 'Year', required=True) }}
+                        <div class="sales-target-fctl">
+                            <select id="stPlanYear" name="plan_year" class="form-select {{ 'is-invalid' if errors.get('plan_year') }}">
+                                {% for y in year_choices %}<option value="{{ y }}" {{ 'selected' if values.plan_year == y }}>{{ y }}</option>{% endfor %}
+                            </select>
+                            {{ field_error('plan_year') }}
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-xl-3" data-st-mode="yearly">
+                        {{ flabel('stPlanStart', 'fas fa-flag', 'Starts in', required=True) }}
+                        <div class="sales-target-fctl">
+                            <select id="stPlanStart" name="plan_start_month" class="form-select {{ 'is-invalid' if errors.get('plan_start_month') }}">
+                                {% for m in months %}<option value="{{ loop.index }}" {{ 'selected' if values.plan_start_month == loop.index }}>{{ m }}</option>{% endfor %}
+                            </select>
+                            <div class="sales-target-fhint">The first month. For a July–June financial year, choose July.</div>
+                            {{ field_error('plan_start_month') }}
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-xl-3" data-st-mode="yearly">
+                        {{ flabel('stPlanSplit', 'fas fa-table-columns', 'Split into', required=True) }}
+                        <div class="sales-target-fctl">
+                            <select id="stPlanSplit" name="plan_split" class="form-select">
+                                <option value="month" {{ 'selected' if values.plan_split != 'quarter' }}>Months</option>
+                                <option value="quarter" {{ 'selected' if values.plan_split == 'quarter' }}>Quarters</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-xl-3" data-st-mode="yearly">
+                        {{ flabel('stPlanCount', 'fas fa-list-ol', 'How many', required=True) }}
+                        <div class="sales-target-fctl">
+                            {% set unit = 'quarter' if values.plan_split == 'quarter' else 'month' %}
+                            {% set full = 4 if unit == 'quarter' else 12 %}
+                            <select id="stPlanCount" name="plan_count" class="form-select {{ 'is-invalid' if errors.get('plan_count') }}">
+                                {% for n in range(1, full + 1) %}
+                                <option value="{{ n }}" {{ 'selected' if values.plan_count == n or (n == full and values.plan_count > full) }}>{{ n }} {{ unit }}{{ '' if n == 1 else 's' }}{{ ' (full year)' if n == full }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="sales-target-fhint" data-st-span></div>
+                            {{ field_error('plan_count') }}
+                        </div>
+                    </div>
+                    {% endif %}
 
                     {# Amount, dates, bonus #}
-                    <div class="col-sm-6 col-xl-3">
+                    <div class="col-sm-6 col-xl-3" data-st-plain-amount>
                         {{ flabel('stAmount', 'fas fa-coins', 'Target amount (PKR)', required=True) }}
                         <div class="sales-target-fctl">
                             <div class="input-group sales-target-ig">
@@ -202,7 +284,7 @@
                             {{ field_error('target_amount') }}
                         </div>
                     </div>
-                    <div class="col-sm-6 col-xl-3">
+                    <div class="col-sm-6 col-xl-3" data-st-mode="single">
                         {{ flabel('stStart', 'far fa-calendar', 'Start date', required=True) }}
                         <div class="sales-target-fctl">
                             <input type="date" id="stStart" name="start_date" required
@@ -211,7 +293,7 @@
                             {{ field_error('start_date') }}
                         </div>
                     </div>
-                    <div class="col-sm-6 col-xl-3">
+                    <div class="col-sm-6 col-xl-3" data-st-mode="single">
                         {{ flabel('stEnd', 'far fa-calendar-check', 'End date', required=True) }}
                         <div class="sales-target-fctl">
                             <input type="date" id="stEnd" name="end_date" required
@@ -226,10 +308,37 @@
                             <input type="number" id="stBonus" name="bonus_amount" min="0" step="0.01" inputmode="decimal"
                                    class="form-control {{ 'is-invalid' if errors.get('bonus_amount') }}"
                                    value="{{ values.bonus_amount }}" placeholder="Optional" data-sales-target-lockable {{ 'disabled' if locked }}>
-                            <div class="sales-target-fhint">For reference only; not posted to payroll.</div>
+                            <div class="sales-target-fhint">For reference only; not posted to payroll.{% if not target %} With months or several items, it applies to each target created.{% endif %}</div>
                             {{ field_error('bonus_amount') }}
                         </div>
                     </div>
+
+                    {% if not target %}
+                    {# Amounts grid: rows = items (or one combined row), columns = quarters (or one amount) #}
+                    <div class="col-12" id="stGridWrap" hidden>
+                        <div class="sales-target-grid-card {{ 'is-invalid' if errors.get('grid') }}">
+                            <div class="sales-target-grid-head">
+                                <div>
+                                    <h3><i class="fas fa-table-cells"></i> <span data-st-grid-title>Target amounts</span></h3>
+                                    <p class="sales-target-fhint m-0" data-st-grid-help></p>
+                                </div>
+                                <div class="sales-target-grid-bulk" data-st-bulk hidden>
+                                    <label for="stBulkAmount" class="sales-target-fhint m-0" data-st-bulk-label>Same amount for every item</label>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text">PKR</span>
+                                        <input type="number" id="stBulkAmount" min="0" step="0.01" class="form-control" placeholder="e.g. 1200000">
+                                        <button type="button" class="btn btn-outline-primary" data-st-bulk-apply>Apply to all</button>
+                                    </div>
+                                </div>
+                            </div>
+                            {% if errors.get('grid') %}<div class="sales-target-note is-bad mx-3 mt-2"><i class="fas fa-triangle-exclamation mt-1"></i><div>{{ errors['grid'] }}</div></div>{% endif %}
+                            <div class="table-responsive">
+                                <table class="table sales-target-grid mb-0 no-datatable" data-st-grid data-st-unit="months"></table>
+                            </div>
+                        </div>
+                        <script type="application/json" id="stGridState">{{ {'values': values.grid, 'errors': grid_errors}|tojson }}</script>
+                    </div>
+                    {% endif %}
 
                     {# Notes #}
                     <div class="col-12">
@@ -248,7 +357,7 @@
 
                 <div class="sales-target-form-actions">
                     <button type="submit" class="sales-target-cta" data-sales-target-once>
-                        <i class="fas fa-check"></i> {{ 'Save Changes' if target else 'Create Target' }}
+                        <i class="fas fa-check"></i> <span data-st-submit-label>{{ 'Save Changes' if target else 'Create Target' }}</span>
                     </button>
                     <a href="{{ url_for('sales_target.detail', target_id=target.id) if target else url_for('sales_target.index') }}"
                        class="sales-target-ghost-btn"><i class="fas fa-xmark"></i> Cancel</a>

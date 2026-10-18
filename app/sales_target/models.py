@@ -10,6 +10,11 @@ the CRM is never blocked by a target (SQLite foreign keys are ON in this app).
                             (not read live from Salesman Groups) so changing a
                             group later never rewrites a past target.
 * ``sales_target_products`` optional finished items a target is limited to.
+* ``sales_target_plans``     a yearly target split into months (or, for plans
+                            made before monthly splits, quarters). Each month
+                            is an ordinary sales_targets row, linked through
+* ``sales_target_plan_parts`` (plan, row, period -> target), so every report
+                            and calculation keeps working on plain targets.
 """
 from datetime import datetime
 
@@ -78,6 +83,9 @@ class SalesTarget(db.Model):
                               cascade='all, delete-orphan', passive_deletes=True)
     products = db.relationship('SalesTargetProduct', backref='target', lazy='selectin',
                                cascade='all, delete-orphan', passive_deletes=True)
+    # Set when this target is one quarter of a yearly plan.
+    plan_part = db.relationship('SalesTargetPlanPart', back_populates='target', uselist=False,
+                                cascade='all, delete-orphan', passive_deletes=True)
 
     @property
     def type_label(self):
@@ -149,4 +157,63 @@ class SalesTargetProduct(db.Model):
     product = db.relationship('Product', lazy='joined')
 
 
-ALL_MODELS = (SalesTarget, SalesTargetMember, SalesTargetProduct)
+class SalesTargetPlan(db.Model):
+    """A yearly target divided into 12 monthly targets (period_months=1) or,
+    for older plans, 4 quarter targets (period_months=3). The yearly amount
+    is never stored: it is always the sum of its targets, so it can't drift."""
+    __tablename__ = 'sales_target_plans'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(150), nullable=False)
+    year = db.Column(db.Integer, nullable=False)          # year the plan starts in
+    start_month = db.Column(db.Integer, nullable=False, default=1)  # 1 = Jan-Dec, 7 = Jul-Jun, ...
+    split_by_item = db.Column(db.Boolean, nullable=False, default=False)
+    period_months = db.Column(db.Integer, nullable=False, default=1)  # 1 = monthly, 3 = quarterly
+    # How many months/quarters from start_month; NULL = the full year (12 or 4).
+    period_count = db.Column(db.Integer, nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.CheckConstraint('start_month BETWEEN 1 AND 12', name='ck_sales_target_plans_month'),
+        db.CheckConstraint('period_months IN (1, 3)', name='ck_sales_target_plans_period'),
+        db.CheckConstraint('period_count IS NULL OR period_count BETWEEN 1 AND 12',
+                           name='ck_sales_target_plans_count'),
+    )
+
+    @property
+    def is_monthly(self):
+        return self.period_months == 1
+
+    parts = db.relationship('SalesTargetPlanPart', back_populates='plan', lazy='selectin',
+                            cascade='all, delete-orphan', passive_deletes=True,
+                            order_by='(SalesTargetPlanPart.row_no, SalesTargetPlanPart.period_no)')
+
+    def __repr__(self):
+        return f'<SalesTargetPlan {self.id} {self.name}>'
+
+
+class SalesTargetPlanPart(db.Model):
+    """One month (or quarter) of a plan: period_no 1-12 (1-4). row_no groups
+    the periods of one item when the plan has a separate target per item
+    (always 0 otherwise)."""
+    __tablename__ = 'sales_target_plan_parts'
+
+    id = db.Column(db.Integer, primary_key=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('sales_target_plans.id', ondelete='CASCADE'), nullable=False)
+    target_id = db.Column(db.Integer, db.ForeignKey('sales_targets.id', ondelete='CASCADE'), nullable=False)
+    row_no = db.Column(db.Integer, nullable=False, default=0)
+    period_no = db.Column(db.Integer, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('target_id', name='uq_sales_target_plan_part_target'),
+        db.UniqueConstraint('plan_id', 'row_no', 'period_no', name='uq_sales_target_plan_part_slot'),
+        db.CheckConstraint('period_no BETWEEN 1 AND 12', name='ck_sales_target_plan_parts_period'),
+        db.Index('ix_sales_target_plan_parts_plan', 'plan_id'),
+    )
+
+    plan = db.relationship('SalesTargetPlan', back_populates='parts')
+    target = db.relationship('SalesTarget', back_populates='plan_part', lazy='joined')
+
+
+ALL_MODELS = (SalesTarget, SalesTargetMember, SalesTargetProduct, SalesTargetPlan, SalesTargetPlanPart)

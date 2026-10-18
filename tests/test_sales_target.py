@@ -21,7 +21,9 @@ from app.models import (User, Salesman, Customer, Sale, SaleReturn, Payment, Pro
                         SaleItem, SaleReturnItem)
 from app.sales_target import calculations as calc  # noqa: E402
 from app.sales_target import services as svc  # noqa: E402
-from app.sales_target.models import SalesTarget, SalesTargetMember, SalesTargetProduct  # noqa: E402
+from app.sales_target import plans  # noqa: E402
+from app.sales_target.models import (SalesTarget, SalesTargetMember, SalesTargetPlan,  # noqa: E402
+                                     SalesTargetProduct)
 
 PERIOD_START = date(2026, 9, 1)
 PERIOD_END = date(2026, 9, 30)
@@ -287,14 +289,18 @@ class SalesTargetTestCase(unittest.TestCase):
     def test_create_item_target_via_form(self):
         self.login(self.admin)
         html = self.client.get('/sales-target/create').get_data(as_text=True)
-        self.assertIn('Pump X (PX)', html)
-        self.assertNotIn('Bolt Z', html)  # only finished items are offered
+        self.assertNotIn('name="product_ids"', html)  # new targets count every item
+        self.assertNotIn('Bolt Z', html)
         csrf, nonce = self.form_tokens('/sales-target/create')
         r = self.client.post('/sales-target/create', data=self.valid_form(
             csrf_token=csrf, form_nonce=nonce, product_ids=[str(self.x.id), str(self.y.id)]))
         self.assertEqual(r.status_code, 302)
         t = SalesTarget.query.one()
         self.assertEqual(t.product_ids, sorted([self.x.id, self.y.id]))
+        # An item-limited target keeps its picker on edit, so it never silently widens.
+        edit_html = self.client.get(f'/sales-target/{t.id}/edit').get_data(as_text=True)
+        self.assertIn('Pump X (PX)', edit_html)
+        self.assertNotIn('Bolt Z', edit_html)  # only finished items are offered
         detail = self.client.get(f'/sales-target/{t.id}').get_data(as_text=True)
         self.assertIn('Pump X', detail)
         self.assertIn('PKR 1,550.00', detail)  # A: X 550 + Y 400 + X 600
@@ -311,6 +317,87 @@ class SalesTargetTestCase(unittest.TestCase):
                          data=self.valid_form(csrf_token=csrf, form_nonce=nonce, name='No items'))
         db.session.expire_all()
         self.assertEqual(db.session.get(SalesTarget, t.id).product_ids, [])
+
+    # ── cost, selling price, profit ────────────────────────────────────
+    def test_economics_of_whole_invoice_target(self):
+        e = calc.economics(self._target(salesman=self.a))
+        # X: 550 + (800 - 200 returned) = 1150 over 5 units; Y: 400 over 1. Cost 100 each.
+        self.assertEqual((e['selling'], e['cost'], e['profit']),
+                         (calc.to_money(1550), calc.to_money(600), calc.to_money(950)))
+        self.assertEqual(str(e['margin']), '61.3')
+        x, y = e['by_item']
+        self.assertEqual((x['name'], x['qty'], x['returned_qty'], x['cost'], x['unit_price']),
+                         ('Pump X', 5.0, 1.0, calc.to_money(500), calc.to_money(230)))
+        self.assertEqual((y['profit'], str(y['margin']), str(y['share'])), (calc.to_money(300), '75.0', '25.8'))
+        # Actual Sales (1900) = item selling price + invoice-level charges.
+        self.assertEqual(e['invoice_charges'], calc.to_money(350))
+        self.assertEqual(e['profit_at_target'], calc.to_money(1000))  # 950 / 1900 x 2000
+        inv = e['by_sale'][self.s1.id]
+        self.assertEqual((inv['selling'], inv['cost'], inv['profit']),
+                         (calc.to_money(950), calc.to_money(300), calc.to_money(650)))
+        self.assertEqual(len(inv['lines']), 2)
+
+    def test_economics_of_item_target_matches_actual(self):
+        t = self._target(ttype='company', products=(self.x,))
+        e = calc.economics(t)
+        self.assertEqual(e['selling'], calc.performance(t)['actual'])  # 550 + 600 + 400 (B)
+        self.assertEqual(e['cost'], calc.to_money(600))
+        self.assertEqual(e['invoice_charges'], calc.to_money(0))
+        self.assertEqual([i['name'] for i in e['by_item']], ['Pump X'])
+
+    def test_warehouse_cost_is_used(self):
+        from app.models import ProductWarehouseStock, Warehouse
+        wh = Warehouse(name='Main', code='MAIN')
+        db.session.add(wh)
+        db.session.flush()
+        SaleItem.query.filter_by(sale_id=self.s1.id, product_id=self.y.id).update({'warehouse_id': wh.id})
+        db.session.add(ProductWarehouseStock(product_id=self.y.id, warehouse_id=wh.id, quantity=5, cost_price=250))
+        db.session.commit()
+        e = calc.economics(self._target(salesman=self.a))
+        self.assertEqual(e['cost'], calc.to_money(750))  # Y now 250 instead of 100
+
+    def test_running_achievement_and_invoice_share(self):
+        t = self._target(salesman=self.a, amount=1500)
+        running, reached = calc.running_achievement(t)
+        self.assertEqual([str(running[s.id][1]) for s in (self.s1, self.s_ret, self.s_edge)],
+                         ['66.7', '120.0', '126.7'])
+        self.assertEqual(reached, self.s_ret.id)
+        _, rows = calc.contributing_invoices(t, per_page=100)
+        calc.annotate_invoices(t, rows, calc.economics(t), running)
+        row = next(r for r in rows if r['sale'].id == self.s1.id)
+        self.assertEqual((str(row['share']), row['econ']['profit']), ('66.7', calc.to_money(650)))
+
+    def test_summary_totals_cost_and_profit(self):
+        self._target(salesman=self.a)
+        self._target(salesman=self.b, name='B')
+        s = svc.summarize(svc.compute_all(SalesTarget.query.all()), 'individual')
+        # A: 1550 / 600; B: one X at 400 / 100
+        self.assertEqual((s['selling'], s['cost'], s['profit']),
+                         (calc.to_money(1950), calc.to_money(700), calc.to_money(1250)))
+
+    def test_detail_and_dashboard_show_profit(self):
+        t = self._target(salesman=self.a)
+        self.login(self.admin)
+        html = self.client.get(f'/sales-target/{t.id}').get_data(as_text=True)
+        for text in ('Total Cost', 'Gross Profit', 'PKR 950.00', 'Sales by Item', 'Achieved after',
+                     f'id="stLines{self.s1.id}"'):
+            self.assertIn(text, html)
+        dash = self.client.get('/sales-target/?period=all').get_data(as_text=True)
+        self.assertIn('Gross Profit', dash)
+        self.assertIn('PKR 950.00', dash)
+
+    def test_profit_hidden_without_profit_loss_access(self):
+        t = self._target(salesman=self.a)
+        user = self._user('noprofit', can_view_targets=True, can_view_sales=True, can_view_profit_loss=False)
+        db.session.commit()
+        self.login(user)
+        html = self.client.get(f'/sales-target/{t.id}').get_data(as_text=True)
+        self.assertIn('Achieved after', html)   # share of the target is still shown
+        self.assertIn('Sales by Item', html)
+        self.assertNotIn('Gross Profit', html)
+        self.assertNotIn('Total Cost', html)
+        dash = self.client.get('/sales-target/?period=all&sort=profit').get_data(as_text=True)
+        self.assertNotIn('Gross Profit', dash)
 
     def test_non_finished_item_rejected(self):
         self.login(self.admin)
@@ -537,6 +624,288 @@ class SalesTargetTestCase(unittest.TestCase):
         self.assertIsNone(t.salesman_id)
         self.assertFalse(calc.performance(t)['available'])
 
+
+    # ── yearly plans (12 months) and bulk per-item targets ─────────────
+    MONTHS_2026 = ['100000', '100000', '100000', '100000', '100000', '100000',
+                   '100000', '100000', '150000', '100000', '100000', '50000.01']   # 1,200,000.01
+
+    def plan_form(self, **over):
+        data = {'name': '2026 Sales', 'target_type': 'individual', 'salesman_id': str(self.a.id),
+                'status': 'active', 'description': '', 'period_mode': 'yearly',
+                'plan_year': '2026', 'plan_start_month': '1', 'total_all': '1200000.01'}
+        data.update({f'amt_all_{n}': v for n, v in enumerate(self.MONTHS_2026, 1)})
+        data.update(over)
+        return data
+
+    def months(self, key, amounts, total=None):
+        out = {f'amt_{key}_{n}': str(v) for n, v in enumerate(amounts, 1)}
+        out[f'total_{key}'] = str(total if total is not None else sum(amounts))
+        return out
+
+    def post_create(self, data):
+        csrf, nonce = self.form_tokens('/sales-target/create')
+        data = dict(data, csrf_token=csrf, form_nonce=nonce)
+        return self.client.post('/sales-target/create', data=data)
+
+    def test_periods_and_equal_split(self):
+        ms = plans.periods(2026, 7)  # July-June financial year, monthly
+        self.assertEqual(len(ms), 12)
+        self.assertEqual((ms[0]['start'], ms[0]['end'], ms[0]['title']), (date(2026, 7, 1), date(2026, 7, 31), 'Jul 2026'))
+        self.assertEqual((ms[7]['start'], ms[7]['end']), (date(2027, 2, 1), date(2027, 2, 28)))
+        self.assertEqual((ms[11]['start'], ms[11]['end']), (date(2027, 6, 1), date(2027, 6, 30)))
+        qs = plans.quarters(2026, 7)
+        self.assertEqual([(q['start'], q['end']) for q in qs],
+                         [(date(2026, 7, 1), date(2026, 9, 30)), (date(2026, 10, 1), date(2026, 12, 31)),
+                          (date(2027, 1, 1), date(2027, 3, 31)), (date(2027, 4, 1), date(2027, 6, 30))])
+        self.assertEqual(plans.year_label(2026, 7), 'FY 2026-27')
+        from decimal import Decimal
+        self.assertEqual(plans.split_equal(Decimal('100.01'), 4), [Decimal('25.00')] * 3 + [Decimal('25.01')])
+
+    def test_create_yearly_plan_with_custom_months(self):
+        self.login(self.admin)
+        r = self.post_create(self.plan_form())
+        self.assertEqual(r.status_code, 302, r.get_data(as_text=True)[:3000])
+        plan = SalesTargetPlan.query.one()
+        self.assertTrue(plan.is_monthly)
+        self.assertIn(f'/sales-target/plan/{plan.id}', r.headers['Location'])
+        ts = sorted(plans.plan_targets(plan), key=lambda t: t.start_date)
+        self.assertEqual(len(ts), 12)
+        self.assertEqual([t.target_amount for t in ts], [float(v) for v in self.MONTHS_2026])
+        self.assertEqual((ts[1].start_date, ts[1].end_date), (date(2026, 2, 1), date(2026, 2, 28)))
+        self.assertEqual((ts[8].start_date, ts[8].end_date), (PERIOD_START, PERIOD_END))
+        self.assertTrue(all(t.salesman_id == self.a.id and t.status == 'active' for t in ts))
+        self.assertIn('Sep 2026', ts[8].name)
+        page = self.client.get(f'/sales-target/plan/{plan.id}').get_data(as_text=True)
+        self.assertIn('PKR 1,200,000.01', page)
+        self.assertIn('PKR 1,900.00', page)          # Ali's September invoices
+        self.assertIn('PKR 900.00', page)            # ...and 31 August in August
+        detail = self.client.get(f'/sales-target/{ts[8].id}').get_data(as_text=True)
+        # The period switcher lists the full year and every month of the plan.
+        self.assertIn('Full year', detail)
+        self.assertIn(f'/sales-target/plan/{plan.id}', detail)
+        self.assertIn(f'href="/sales-target/{ts[0].id}"', detail)
+        self.assertIn('Sep 2026', detail)
+
+    def test_months_must_add_up_to_year(self):
+        self.login(self.admin)
+        r = self.post_create(self.plan_form(amt_all_12='1'))
+        self.assertEqual(r.status_code, 400)
+        html = r.get_data(as_text=True)
+        self.assertIn('the months add up to', html)
+        self.assertIn('short by PKR 49,999.01', html)
+        self.assertIn('"amt_all_9": "150000"', html)    # typed values come back
+        self.assertEqual(SalesTarget.query.count(), 0)
+        r = self.post_create(self.plan_form(amt_all_1='-5', amt_all_2='200005'))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(SalesTarget.query.count(), 0)
+
+    def test_zero_month_is_skipped(self):
+        self.login(self.admin)
+        self.post_create(self.plan_form(**self.months('all', [100] * 6 + [0] + [100] * 5)))
+        plan = SalesTargetPlan.query.one()
+        self.assertEqual(sorted(p.period_no for p in plan.parts), [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12])
+
+    def test_yearly_plan_per_item_financial_year(self):
+        self.login(self.admin)
+        x, y = self.x.id, self.y.id
+        r = self.post_create(self.plan_form(
+            split_items='1', product_ids=[str(x), str(y)], plan_year='2026', plan_start_month='7',
+            **self.months(f'p{x}', [100] * 12), **self.months(f'p{y}', [10] * 11 + [20])))
+        self.assertEqual(r.status_code, 302, r.get_data(as_text=True)[:3000])
+        plan = SalesTargetPlan.query.one()
+        self.assertTrue(plan.split_by_item)
+        ts = plans.plan_targets(plan)
+        self.assertEqual(len(ts), 24)
+        self.assertEqual(min(t.start_date for t in ts), date(2026, 7, 1))
+        self.assertEqual(max(t.end_date for t in ts), date(2027, 6, 30))
+        y_jun = next(t for t in ts if t.product_ids == [y] and t.start_date == date(2027, 6, 1))
+        self.assertEqual(y_jun.target_amount, 20)
+        _, rows = plans.plan_layout(plan)
+        self.assertEqual(len(rows), 2)
+
+    def test_item_month_actual(self):
+        self.login(self.admin)
+        x = self.x.id
+        self.post_create(self.plan_form(split_items='1', product_ids=[str(x)], **self.months(f'p{x}', [100] * 12)))
+        ts = plans.plan_targets(SalesTargetPlan.query.one())
+        x_sep = next(t for t in ts if t.start_date == PERIOD_START)
+        # Item X lines of Ali in September: 550 + (800 - 200 returned) = 1150
+        self.assertEqual(str(calc.performance(x_sep)['actual']), '1150.00')
+
+    def test_bulk_single_period_targets_per_item(self):
+        self.login(self.admin)
+        r = self.post_create(self.valid_form(
+            split_items='1', product_ids=[str(self.x.id), str(self.y.id)], target_amount='',
+            **{f'amt_p{self.x.id}_1': '5000', f'amt_p{self.y.id}_1': '7000'}))
+        self.assertEqual(r.status_code, 302, r.get_data(as_text=True)[:3000])
+        ts = SalesTarget.query.order_by(SalesTarget.target_amount).all()
+        self.assertEqual([(t.target_amount, t.product_ids) for t in ts],
+                         [(5000, [self.x.id]), (7000, [self.y.id])])
+        self.assertTrue(all(t.start_date == PERIOD_START and t.end_date == PERIOD_END for t in ts))
+        self.assertEqual(SalesTargetPlan.query.count(), 0)
+        r = self.post_create(self.valid_form(split_items='1', name='Other'))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('Choose the finished items', r.get_data(as_text=True))
+
+    def test_duplicate_plan_rejected(self):
+        self.login(self.admin)
+        self.post_create(self.plan_form())
+        r = self.post_create(self.plan_form(name='Again'))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('already exists', r.get_data(as_text=True))
+        self.assertEqual(SalesTarget.query.count(), 12)
+
+    def test_form_has_no_table_tools_on_grid(self):
+        self.login(self.admin)
+        html = self.client.get('/sales-target/create').get_data(as_text=True)
+        self.assertIn('no-datatable" data-st-grid data-st-unit="months"', html)
+
+    def _plan_edit_post(self, plan, data):
+        html = self.client.get(f'/sales-target/plan/{plan.id}/edit').get_data(as_text=True)
+        csrf = re.search(r'name="csrf_token" value="([^"]+)"', html).group(1)
+        nonce = re.search(r'name="form_nonce" value="([^"]+)"', html).group(1)
+        return self.client.post(f'/sales-target/plan/{plan.id}/edit',
+                                data=dict(data, csrf_token=csrf, form_nonce=nonce))
+
+    def test_quarters_and_partial_count(self):
+        """Split into quarters, or only some months/quarters from the start month."""
+        self.login(self.admin)
+        r = self.post_create(self.plan_form(plan_split='quarter', plan_count='4', plan_start_month='7',
+                                            **self.months('all', [100, 200, 300, 400])))
+        self.assertEqual(r.status_code, 302, r.get_data(as_text=True)[:3000])
+        plan = SalesTargetPlan.query.one()
+        self.assertEqual((plan.period_months, plan.period_count), (3, None))
+        ts = sorted(plans.plan_targets(plan), key=lambda t: t.start_date)
+        self.assertEqual([(t.start_date, t.end_date, t.target_amount) for t in ts],
+                         [(date(2026, 7, 1), date(2026, 9, 30), 100), (date(2026, 10, 1), date(2026, 12, 31), 200),
+                          (date(2027, 1, 1), date(2027, 3, 31), 300), (date(2027, 4, 1), date(2027, 6, 30), 400)])
+        self.assertIn('FY 2026-27', self.client.get(f'/sales-target/plan/{plan.id}').get_data(as_text=True))
+        # three months only, Oct-Dec 2027
+        r = self.post_create(self.plan_form(name='Q4 push', plan_year='2027', plan_start_month='10', plan_count='3',
+                                            **self.months('all', [50, 50, 100])))
+        self.assertEqual(r.status_code, 302, r.get_data(as_text=True)[:3000])
+        p2 = SalesTargetPlan.query.filter_by(name='Q4 push').one()
+        self.assertEqual((p2.period_months, p2.period_count), (1, 3))
+        ts = sorted(plans.plan_targets(p2), key=lambda t: t.start_date)
+        self.assertEqual([t.start_date for t in ts], [date(2027, 10, 1), date(2027, 11, 1), date(2027, 12, 1)])
+        page = self.client.get(f'/sales-target/plan/{p2.id}').get_data(as_text=True)
+        self.assertIn('Oct 2027 – Dec 2027', page)
+        self.assertEqual(len(plans.plan_layout(p2)[0]), 3)
+        # extra posted months beyond the count are ignored; a count too high is refused
+        r = self.post_create(self.plan_form(name='Bad', plan_split='quarter', plan_count='5'))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('between 1 and 4', r.get_data(as_text=True))
+
+    def test_edit_yearly_split(self):
+        self.login(self.admin)
+        self.post_create(self.plan_form(**self.months('all', [100] * 12)))
+        plan = SalesTargetPlan.query.one()
+        m = {p.period_no: p.target for p in plan.parts}
+        m[1].status = 'completed'   # January: locked, but still part of the year
+        db.session.commit()
+        page = self.client.get(f'/sales-target/plan/{plan.id}/edit').get_data(as_text=True)
+        self.assertNotIn('name="amt_r0_1"', page)
+        self.assertIn('Save month targets', page)
+        new = {f'amt_r0_{n}': '100' for n in range(2, 13)}
+        new.update(amt_r0_2='400', amt_r0_3='0.5', amt_r0_12='99.5', total_r0='1400')
+        r = self._plan_edit_post(plan, new)
+        self.assertEqual(r.status_code, 302, r.get_data(as_text=True)[:3000])
+        db.session.expire_all()
+        self.assertEqual([db.session.get(SalesTarget, m[n].id).target_amount for n in (1, 2, 3, 12)],
+                         [100, 400, 0.5, 99.5])
+        new['amt_r0_12'] = '1'
+        r = self._plan_edit_post(plan, new)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('short by PKR 98.50', r.get_data(as_text=True))
+
+    def test_older_quarterly_plan_still_works(self):
+        plan = SalesTargetPlan(name='Old', year=2026, start_month=1, split_by_item=False, period_months=3,
+                               created_by=self.admin.id)
+        db.session.add(plan)
+        q3 = self._target(salesman=self.a, amount=500, start=date(2026, 7, 1), end=date(2026, 9, 30), name='Old Q3')
+        q4 = self._target(salesman=self.a, amount=500, start=date(2026, 10, 1), end=date(2026, 12, 31), name='Old Q4')
+        from app.sales_target.models import SalesTargetPlanPart
+        db.session.add_all([SalesTargetPlanPart(plan=plan, target_id=q3.id, row_no=0, period_no=3),
+                            SalesTargetPlanPart(plan=plan, target_id=q4.id, row_no=0, period_no=4)])
+        db.session.commit()
+        self.login(self.admin)
+        page = self.client.get(f'/sales-target/plan/{plan.id}').get_data(as_text=True)
+        self.assertIn('split into quarters', page)
+        self.assertIn('Jul–Sep 2026', page)
+        self.assertIn('Q3 (Jul–Sep 2026)', self.client.get(f'/sales-target/{q3.id}').get_data(as_text=True))
+        edit = self.client.get(f'/sales-target/plan/{plan.id}/edit').get_data(as_text=True)
+        self.assertIn('Save quarter targets', edit)
+        r = self._plan_edit_post(plan, {'total_r0': '1000', 'amt_r0_3': '300', 'amt_r0_4': '700'})
+        self.assertEqual(r.status_code, 302)
+
+    def test_upgrade_from_quarter_only_tables(self):
+        """The first version's tables (quarter 1-4) are upgraded in place,
+        keeping their rows, and the upgrade is a no-op afterwards."""
+        import sqlite3
+        from sqlalchemy import create_engine
+        from app.sales_target import upgrade_plan_tables
+        path = os.path.join(_TMP, 'upgrade.db')
+        con = sqlite3.connect(path)
+        con.executescript("""
+            CREATE TABLE sales_targets (id INTEGER PRIMARY KEY);
+            CREATE TABLE sales_target_plans (id INTEGER NOT NULL PRIMARY KEY, name VARCHAR(150) NOT NULL,
+                year INTEGER NOT NULL, start_month INTEGER NOT NULL, split_by_item BOOLEAN NOT NULL,
+                created_by INTEGER, created_at DATETIME NOT NULL,
+                CONSTRAINT ck_sales_target_plans_month CHECK (start_month BETWEEN 1 AND 12));
+            CREATE TABLE sales_target_plan_parts (id INTEGER NOT NULL PRIMARY KEY, plan_id INTEGER NOT NULL,
+                target_id INTEGER NOT NULL, row_no INTEGER NOT NULL, quarter INTEGER NOT NULL,
+                CONSTRAINT ck_sales_target_plan_parts_quarter CHECK (quarter BETWEEN 1 AND 4));
+            INSERT INTO sales_targets VALUES (7);
+            INSERT INTO sales_target_plans VALUES (1, 'Old', 2026, 1, 0, NULL, '2026-10-01');
+            INSERT INTO sales_target_plan_parts VALUES (1, 1, 7, 0, 2);
+        """)
+        con.commit()
+        con.close()
+        engine = create_engine('sqlite:///' + path.replace('\\', '/'))
+        upgrade_plan_tables(engine)
+        upgrade_plan_tables(engine)   # second run does nothing
+        with engine.connect() as conn:
+            self.assertEqual(conn.exec_driver_sql('SELECT period_months FROM sales_target_plans').scalar(), 3)
+            self.assertIsNone(conn.exec_driver_sql('SELECT period_count FROM sales_target_plans').scalar())
+            self.assertEqual(conn.exec_driver_sql('SELECT period_no FROM sales_target_plan_parts').scalar(), 2)
+            conn.exec_driver_sql("INSERT INTO sales_target_plans (id, name, year, start_month, split_by_item, "
+                                 "period_months, created_at) VALUES (2, 'New', 2027, 1, 0, 1, '2026-10-17')")
+            conn.exec_driver_sql('INSERT INTO sales_target_plan_parts (plan_id, target_id, row_no, period_no) '
+                                 'VALUES (2, 8, 0, 12)')   # month 12 is allowed now
+            from sqlalchemy.exc import IntegrityError
+            with self.assertRaises(IntegrityError):
+                conn.exec_driver_sql('INSERT INTO sales_target_plan_parts (plan_id, target_id, row_no, period_no) '
+                                     'VALUES (2, 9, 0, 13)')
+        engine.dispose()
+
+    def test_plan_permissions_and_delete(self):
+        self.login(self.admin)
+        self.post_create(self.plan_form(**self.months('all', [100, 100] + [0] * 10)))
+        plan = SalesTargetPlan.query.one()
+        self.login(self.viewer)
+        self.assertEqual(self.client.get(f'/sales-target/plan/{plan.id}').status_code, 200)
+        self.assertEqual(self.client.get(f'/sales-target/plan/{plan.id}/edit').status_code, 302)
+        self.login(self.rep_user)       # salesperson for Ali: sees Ali's plan
+        self.assertEqual(self.client.get(f'/sales-target/plan/{plan.id}').status_code, 200)
+        # deleting months: the plan stays until its last month is gone
+        self.login(self.admin)
+        html = self.client.get('/sales-target/').get_data(as_text=True)
+        csrf = re.search(r'name="csrf_token" value="([^"]+)"', html).group(1)
+        ids = [p.target_id for p in plan.parts]
+        for i, tid in enumerate(ids):
+            self.client.post(f'/sales-target/{tid}/delete', data={'csrf_token': csrf})
+            db.session.expire_all()
+            self.assertEqual(SalesTargetPlan.query.count(), 0 if i == len(ids) - 1 else 1)
+        r = self.client.get(f'/sales-target/plan/{plan.id}')
+        self.assertEqual((r.status_code, r.headers['Location']), (302, '/'))  # 404 -> app redirect
+
+    def test_plan_hidden_from_other_salesperson(self):
+        self.login(self.admin)
+        self.post_create(self.plan_form(salesman_id=str(self.b.id)))
+        plan = SalesTargetPlan.query.one()
+        self.login(self.rep_user)       # linked to Ali, plan is Bilal's
+        r = self.client.get(f'/sales-target/plan/{plan.id}')
+        self.assertEqual((r.status_code, r.headers['Location']), (302, '/'))  # 404 -> app redirect
 
 if __name__ == '__main__':
     unittest.main()

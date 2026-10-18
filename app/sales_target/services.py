@@ -20,7 +20,7 @@ from flask import session
 
 from app import db
 from app.models import Product, Salesman
-from app.sales_target.calculations import performance, to_money
+from app.sales_target.calculations import margin_pct as calc_margin, performance, to_money
 from app.sales_target.models import SalesTarget
 
 MAX_AMOUNT = Decimal('1000000000000')  # 1 trillion, a sanity cap
@@ -63,6 +63,12 @@ def can_manage(user, action):
     if _is_admin(user):
         return True
     return bool(getattr(user, f'can_{action}_targets', False)) and scoped_salesman_ids(user) is None
+
+
+def can_view_profit(user):
+    """Cost and profit are shown to admins and to users with Profit & Loss
+    access (the same flag that guards the P&L pages); others see sales only."""
+    return can_view_module(user) and (_is_admin(user) or bool(getattr(user, 'can_view_profit_loss', False)))
 
 
 def can_view_target(user, target):
@@ -165,9 +171,10 @@ def form_target_types(existing=None):
     return types
 
 
-def validate_target_form(form, existing=None, today=None):
+def validate_target_form(form, existing=None, today=None, check_duplicate=True):
     """Return (data, errors). ``form`` is request.form. ``data`` holds clean,
-    typed values ready to save; ``errors`` maps field name -> message."""
+    typed values ready to save; ``errors`` maps field name -> message.
+    check_duplicate=False is for yearly plans, which check each quarter."""
     today = today or date.today()
     errors = {}
     data = {}
@@ -273,7 +280,7 @@ def validate_target_form(form, existing=None, today=None):
         errors['status'] = ('A target can be marked Completed only after its end date '
                             f'({end.strftime("%d %b %Y")}) has passed.')
 
-    if not errors:
+    if not errors and check_duplicate:
         dup = find_duplicate(data, exclude_id=existing.id if existing else None)
         if dup:
             errors['__all__'] = (f'A target with the same scope and period already exists: "{dup.name}". '
@@ -374,6 +381,9 @@ def summarize(perfs, kpi_type):
     exceeded = sum((p['exceeded'] for p in usable), Decimal('0.00'))
     remaining = sum((p['remaining'] for p in usable), Decimal('0.00'))
     ach = (actual / total_target * 100).quantize(Decimal('0.1')) if total_target > 0 else None
+    econs = [p['economics'] for p in usable if p.get('economics')]
+    selling = sum((e['selling'] for e in econs), Decimal('0.00'))
+    cost = sum((e['cost'] for e in econs), Decimal('0.00'))
     if ach is None:
         tone = 'muted'
     elif ach >= 100:
@@ -394,6 +404,11 @@ def summarize(perfs, kpi_type):
         'exceeded': exceeded,
         'tone': tone,
         'overlap_warning': _has_scope_overlap([p['target'] for p in usable]),
+        'has_economics': bool(econs),
+        'selling': selling,
+        'cost': cost,
+        'profit': selling - cost,
+        'margin': calc_margin(selling - cost, selling),
     }
 
 
@@ -413,9 +428,9 @@ def _has_scope_overlap(targets):
     return False
 
 
-def compute_all(targets, today=None):
+def compute_all(targets, today=None, with_economics=True):
     today = today or date.today()
-    return [performance(t, today=today) for t in targets]
+    return [performance(t, today=today, with_economics=with_economics) for t in targets]
 
 
 SORT_KEYS = {
@@ -424,6 +439,7 @@ SORT_KEYS = {
     'actual': lambda p: (p['actual'] if p['actual'] is not None else Decimal('-1'), p['target'].id),
     'achievement': lambda p: (p['achievement'] if p['achievement'] is not None else Decimal('-1'), p['target'].id),
     'remaining': lambda p: (p['remaining'] if p['remaining'] is not None else Decimal('-1'), p['target'].id),
+    'profit': lambda p: (p['economics']['profit'] if p.get('economics') else Decimal('-1e18'), p['target'].id),
     'name': lambda p: (p['target'].name.lower(), p['target'].id),
     'scope': lambda p: (scope_label(p['target']).lower(), p['target'].id),
 }

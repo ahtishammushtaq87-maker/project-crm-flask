@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from 'sales_target/_macros.html' import status_badge, type_cell, progress_bar, tone_label with context %}
 
 {% block title %}{{ target.name }} · Sales Target{% endblock %}
 
@@ -8,166 +7,638 @@
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid sales-target-page">
-    <div class="sales-target-breadcrumb"><a href="{{ url_for('sales_target.index') }}">Sales Target</a> / Details</div>
-    <div class="sales-target-header">
-        <div class="min-w-0" style="min-width:0">
-            <h1 class="sales-target-title text-break"><i class="fas fa-bullseye"></i> {{ target.name }}</h1>
-            <p class="sales-target-subtitle">{{ type_cell(target) }} · {{ scope_label }}{% if target.has_item_scope %} · <i class="fas fa-box"></i> {{ target.products|length }} item{{ '' if target.products|length == 1 else 's' }}{% endif %} · {{ status_badge(target) }}</p>
+{% macro pct(value) -%}{{ '%.1f'|format(value) ~ '%' if value is not none else '—' }}{%- endmacro %}
+{% macro profit_cls(value) -%}{{ 'sales-target-pos' if value is not none and value >= 0 else 'sales-target-neg' }}{%- endmacro %}
+{% set tone_class = {'good': 'is-green', 'warn': 'is-amber', 'bad': 'is-red', 'muted': 'is-slate'} %}
+{% set status_class = {'active': 'is-green', 'draft': 'is-slate', 'completed': 'is-blue', 'cancelled': 'is-red'} %}
+{% set type_icon = {'individual': 'fa-user', 'team': 'fa-users', 'company': 'fa-building'} %}
+{% set tone = tone_class[perf.tone] %}
+{% set period_text = target.start_date.strftime('%d %b %Y') ~ ' – ' ~ target.end_date.strftime('%d %b %Y') %}
+
+<div class="container-fluid sales-target-page sales-target-v2 sales-target-compact sales-target-detail">
+
+    {# ── Hero: title, period switcher (months of the plan), scope, create ── #}
+    <div class="sales-target-hero">
+        <div class="sales-target-hero-main">
+            <div class="sales-target-hero-icon"><i class="fas fa-bullseye"></i></div>
+            <div>
+                <h1 class="sales-target-hero-title">Sales Target</h1>
+                <p class="sales-target-hero-sub">Set targets, monitor sales performance, and track progress.</p>
+            </div>
         </div>
-        <div class="d-flex gap-2">
-            {% if can_edit %}
-            <a href="{{ url_for('sales_target.edit', target_id=target.id) }}" class="btn btn-sm btn-outline-primary"><i class="fas fa-pen me-1"></i>Edit</a>
+        <div class="sales-target-hero-tools">
+            {% if plan_part %}
+            {% set plan_total = plan_siblings|map(attribute='target.target_amount')|sum %}
+            <div class="dropdown">
+                <button class="sales-target-tool" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Switch month">
+                    <i class="far fa-calendar"></i> <span>{{ period_text }}</span> <i class="fas fa-chevron-down sales-target-tool-caret"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end sales-target-menu sales-target-period-menu">
+                    <li><h6 class="dropdown-header">{{ plan_part.plan.name }}</h6></li>
+                    <li><a class="dropdown-item" href="{{ url_for('sales_target.plan_view', plan_id=plan_part.plan_id) }}">
+                        <span><i class="fas fa-layer-group me-2"></i>Full year</span><span>{{ plan_total|sales_target_money }}</span></a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    {% for q in plan_periods %}
+                    {% set sib = plan_siblings|selectattr('period_no', 'equalto', q.no)|first %}
+                    <li>
+                        {% if sib %}
+                        <a class="dropdown-item {{ 'active' if sib.target_id == target.id }}" href="{{ url_for('sales_target.detail', target_id=sib.target_id) }}">
+                            <span>{{ q.title }}</span><span>{{ sib.target.target_amount|sales_target_money }}</span></a>
+                        {% else %}
+                        <span class="dropdown-item disabled"><span>{{ q.title }}</span><span>No target</span></span>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% else %}
+            <span class="sales-target-tool is-static"><i class="far fa-calendar"></i> <span>{{ period_text }}</span></span>
             {% endif %}
-            {% if can_delete %}
-            <button type="button" class="btn btn-sm btn-outline-danger"
-                    data-sales-target-delete="{{ url_for('sales_target.delete', target_id=target.id) }}"
-                    data-sales-target-name="{{ target.name }}"><i class="fas fa-trash me-1"></i>Delete</button>
+
+            <div class="dropdown">
+                <button class="sales-target-tool" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas {{ type_icon.get(target.target_type, 'fa-user') }}"></i>
+                    <span>{{ target.type_label }}{% if target.target_type == 'team' %} ({{ target.member_ids|length }}){% elif target.target_type == 'individual' %} (1){% endif %}</span>
+                    <i class="fas fa-chevron-down sales-target-tool-caret"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end sales-target-menu">
+                    <li><h6 class="dropdown-header text-truncate" style="max-width:260px">{{ scope_label }}</h6></li>
+                    {% if target.target_type != 'company' %}
+                    <li><a class="dropdown-item" href="{{ url_for('sales_target.index', period='all', q=target.salesman.name if target.salesman else scope_label) }}">All targets for {{ scope_label|truncate(28) }}</a></li>
+                    {% endif %}
+                    <li><a class="dropdown-item" href="{{ url_for('sales_target.index', period='all', type=target.target_type) }}">All {{ target.type_label|lower }} targets</a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('sales_target.index') }}">Back to dashboard</a></li>
+                </ul>
+            </div>
+
+            {% if can_add %}
+            <a href="{{ url_for('sales_target.create') }}" class="sales-target-cta"><i class="fas fa-plus"></i> Create Target</a>
             {% endif %}
         </div>
     </div>
 
     {% if not perf.available %}
-    <div class="sales-target-note is-bad mb-3"><i class="fas fa-triangle-exclamation mt-1"></i>
+    <div class="sales-target-note is-bad mb-2"><i class="fas fa-triangle-exclamation mt-1"></i>
         <div><strong>Actual sales can't be calculated.</strong> {{ perf.error }}</div>
     </div>
     {% endif %}
 
-    <div class="sales-target-kpis">
-        <div class="sales-target-kpi">
-            <div class="sales-target-kpi-label"><i class="fas fa-bullseye"></i> Target Amount</div>
-            <div class="sales-target-kpi-value">{{ perf.target_amount|sales_target_money }}</div>
-            <div class="sales-target-kpi-hint">{{ perf.period_days }} day period</div>
+    {# ── Target KPIs ─────────────────────────────────────── #}
+    <div class="sales-target-stats">
+        <div class="sales-target-stat is-green">
+            <span class="sales-target-stat-ico"><i class="fas fa-bullseye"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Total Target</div>
+                <div class="sales-target-stat-value" title="{{ perf.target_amount|sales_target_money }}">{{ perf.target_amount|sales_target_money }}</div>
+                <div class="sales-target-stat-hint">{{ perf.period_days }} day period · {{ target.status_label|lower }}</div>
+            </div>
+            <span class="sales-target-stat-corner"><i class="fas fa-chart-simple"></i></span>
         </div>
-        <div class="sales-target-kpi">
-            <div class="sales-target-kpi-label"><i class="fas fa-file-invoice-dollar"></i> Actual Sales</div>
-            <div class="sales-target-kpi-value">{{ perf.actual|sales_target_money }}</div>
-            <div class="sales-target-kpi-hint">{{ perf.invoice_count }} approved invoice{{ '' if perf.invoice_count == 1 else 's' }}</div>
+        <div class="sales-target-stat is-blue">
+            <span class="sales-target-stat-ico"><i class="fas fa-file-lines"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Actual Sales</div>
+                <div class="sales-target-stat-value" title="{{ perf.actual|sales_target_money }}">{{ perf.actual|sales_target_money }}</div>
+                <div class="sales-target-stat-hint">{{ perf.invoice_count }} approved invoice{{ '' if perf.invoice_count == 1 else 's' }} in the target period</div>
+            </div>
+            <span class="sales-target-stat-corner"><i class="fas fa-chart-simple"></i></span>
         </div>
-        <div class="sales-target-kpi is-{{ perf.tone }}">
-            <div class="sales-target-kpi-label"><i class="fas fa-percent"></i> Target Achieved</div>
-            <div class="sales-target-kpi-value">{{ '%.1f'|format(perf.achievement) ~ '%' if perf.achievement is not none else '—' }}</div>
-            <div class="sales-target-kpi-hint">{{ tone_label(perf) }}</div>
+        <div class="sales-target-stat {{ tone }}">
+            <span class="sales-target-stat-ico"><i class="fas fa-trophy"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Target Achieved</div>
+                <div class="sales-target-stat-value sales-target-stat-accent">{{ pct(perf.achievement) }}</div>
+                <div class="sales-target-stat-bar"><span style="width: {{ perf.progress }}%"></span></div>
+            </div>
+            <span class="sales-target-stat-corner"><i class="fas fa-arrow-up"></i></span>
         </div>
-        <div class="sales-target-kpi">
-            <div class="sales-target-kpi-label"><i class="fas fa-flag-checkered"></i> Remaining Target</div>
-            <div class="sales-target-kpi-value">{{ perf.remaining|sales_target_money }}</div>
-            <div class="sales-target-kpi-hint">Still needed to reach the target</div>
+        <div class="sales-target-stat is-purple">
+            <span class="sales-target-stat-ico"><i class="fas fa-flag"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Remaining Target</div>
+                <div class="sales-target-stat-value" title="{{ perf.remaining|sales_target_money }}">{{ perf.remaining|sales_target_money }}</div>
+                <div class="sales-target-stat-hint">Still needed to reach the target</div>
+            </div>
+            <span class="sales-target-stat-corner"><i class="fas fa-chart-pie"></i></span>
         </div>
-        <div class="sales-target-kpi {{ 'is-good' if perf.exceeded and perf.exceeded > 0 else 'is-muted' }}">
-            <div class="sales-target-kpi-label"><i class="fas fa-chart-line"></i> Target Exceeded</div>
-            <div class="sales-target-kpi-value">{{ perf.exceeded|sales_target_money }}</div>
-            <div class="sales-target-kpi-hint">Sales above the target</div>
+        <div class="sales-target-stat is-orange">
+            <span class="sales-target-stat-ico"><i class="fas fa-chart-line"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Target Exceeded</div>
+                <div class="sales-target-stat-value" title="{{ perf.exceeded|sales_target_money }}">{{ perf.exceeded|sales_target_money }}</div>
+                <div class="sales-target-stat-hint">Sales above the target amount</div>
+            </div>
+            <span class="sales-target-stat-corner"><i class="fas fa-arrow-up"></i></span>
         </div>
     </div>
 
-    <div class="row g-3 mb-3">
-        <div class="col-lg-7">
-            <div class="sales-target-panel h-100">
-                <div class="sales-target-panel-head"><h2 class="sales-target-panel-title">Progress</h2>
-                    <span class="sales-target-sub">
-                        {% if perf.period_state == 'upcoming' %}Starts in {{ perf.days_until_start }} day{{ '' if perf.days_until_start == 1 else 's' }}
-                        {% elif perf.period_state == 'running' %}Day {{ perf.elapsed_days }} of {{ perf.period_days }} ({{ perf.elapsed_pct }}% of the period elapsed)
-                        {% else %}Period ended{% endif %}
-                    </span>
-                </div>
-                <div class="sales-target-panel-body">
-                    {{ progress_bar(perf, large=True) }}
-                    <div class="d-flex justify-content-between sales-target-sub mt-1">
-                        <span>{{ perf.actual|sales_target_money }} achieved</span>
-                        <span>of {{ perf.target_amount|sales_target_money }}</span>
-                    </div>
-                    <dl class="sales-target-facts mt-3">
-                        <div><dt>Target Period</dt><dd>{{ target.start_date.strftime('%d %b %Y') }} – {{ target.end_date.strftime('%d %b %Y') }}</dd></div>
-                        <div><dt>Owner / Scope</dt><dd>{{ scope_label }}</dd></div>
-                        <div><dt>Finished items</dt><dd>{{ items_label if target.has_item_scope else 'All items (whole invoice totals)' }}</dd></div>
-                        <div><dt>Status</dt><dd>{{ status_badge(target) }}</dd></div>
-                        <div><dt>Achievement bonus</dt><dd>{{ (target.bonus_amount|sales_target_money) if target.bonus_amount is not none else '—' }}</dd></div>
-                        <div><dt>Created</dt><dd>{{ target.created_at.strftime('%d %b %Y, %H:%M') }} UTC{% if target.creator %} by {{ target.creator.username }}{% endif %}</dd></div>
-                        <div><dt>Last updated</dt><dd>{{ target.updated_at.strftime('%d %b %Y, %H:%M') }} UTC{% if target.updater %} by {{ target.updater.username }}{% endif %}</dd></div>
-                    </dl>
-                    {% if target.description %}
-                    <div class="mt-3"><div class="sales-target-kpi-label mb-1">Notes</div>
-                        <div class="sales-target-description">{{ target.description }}</div></div>
-                    {% endif %}
-                </div>
+    {# ── Cost, selling price and profit ─────────────────── #}
+    {% if econ and show_profit %}
+    <div class="sales-target-stats is-four">
+        <div class="sales-target-stat is-blue">
+            <span class="sales-target-stat-ico"><i class="fas fa-cart-shopping"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Total Selling Price</div>
+                <div class="sales-target-stat-value" title="{{ econ.selling|sales_target_money }}">{{ econ.selling|sales_target_money }}</div>
+                <div class="sales-target-stat-hint">{{ '%g'|format(econ.qty) }} unit{{ '' if econ.qty == 1 else 's' }} · item lines of the counted invoices</div>
             </div>
+            <span class="sales-target-stat-corner"><i class="fas fa-chart-simple"></i></span>
         </div>
-        <div class="col-lg-5">
-            <div class="sales-target-panel h-100">
-                <div class="sales-target-panel-head"><h2 class="sales-target-panel-title">How this is calculated</h2></div>
-                <div class="sales-target-panel-body small">
-                    <p class="mb-2">Actual sales are the totals of <strong>approved</strong> invoices dated within the target period
-                        {%- if target.target_type == 'individual' %} where the invoice’s salesman is <strong>{{ scope_label }}</strong>
-                        {%- elif target.target_type == 'team' %} where the invoice’s salesman is a team member (each invoice counted once)
-                        {%- else %} across the whole company{% endif %}.</p>
-                    {% if target.has_item_scope %}
-                    <p class="mb-2">Only the selected finished items count: each item’s invoice line after its line discount, minus the same items on approved returns of that invoice (even if the return is dated later). Invoice-level tax, delivery and invoice discount are not included. Payments are not counted as sales.</p>
-                    {% else %}
-                    <p class="mb-2">Each invoice total is after discounts, tax and delivery. Approved sales returns are already deducted from the invoice they belong to, even if the return is dated later. Payments are not counted as sales.</p>
-                    {% endif %}
-                    {% if excluded %}
-                    <div class="sales-target-kpi-label mb-1">Not counted in this period</div>
-                    <ul class="list-unstyled mb-0">
-                        <li class="d-flex justify-content-between"><span>Pending approval</span><span>{{ excluded.pending.count }} · {{ excluded.pending.amount|sales_target_money }}</span></li>
-                        <li class="d-flex justify-content-between"><span>Drafts</span><span>{{ excluded.draft.count }} · {{ excluded.draft.amount|sales_target_money }}</span></li>
-                        <li class="d-flex justify-content-between"><span>Rejected / cancelled</span><span>{{ excluded.rejected.count }} · {{ excluded.rejected.amount|sales_target_money }}</span></li>
-                    </ul>
-                    {% if excluded.unassigned and excluded.unassigned.count %}
-                    <div class="sales-target-note mt-2"><i class="fas fa-circle-info mt-1"></i>
-                        <div>{{ excluded.unassigned.count }} counted invoice{{ '' if excluded.unassigned.count == 1 else 's' }} ({{ excluded.unassigned.amount|sales_target_money }}) have no salesman, so they count here but in no individual or team target.</div></div>
-                    {% endif %}
-                    {% endif %}
-                </div>
+        <div class="sales-target-stat is-purple">
+            <span class="sales-target-stat-ico"><i class="fas fa-box"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Total Cost</div>
+                <div class="sales-target-stat-value" title="{{ econ.cost|sales_target_money }}">{{ econ.cost|sales_target_money }}</div>
+                <div class="sales-target-stat-hint">Item cost × quantity sold</div>
             </div>
+            <span class="sales-target-stat-corner"><i class="fas fa-chart-simple"></i></span>
+        </div>
+        <div class="sales-target-stat {{ 'is-green' if econ.profit >= 0 else 'is-red' }}">
+            <span class="sales-target-stat-ico"><i class="fas fa-chart-line"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Gross Profit</div>
+                <div class="sales-target-stat-value" title="{{ econ.profit|sales_target_money }}">{{ econ.profit|sales_target_money }}</div>
+                <div class="sales-target-stat-hint">Selling price − cost{% if econ.profit_at_target is not none %} · {{ econ.profit_at_target|sales_target_money }} at 100% target{% endif %}</div>
+            </div>
+            <span class="sales-target-stat-corner"><i class="fas fa-chart-simple"></i></span>
+        </div>
+        <div class="sales-target-stat {{ 'is-green' if econ.margin is not none and econ.margin >= 0 else ('is-red' if econ.margin is not none else 'is-slate') }}">
+            <span class="sales-target-stat-ico"><i class="fas fa-percent"></i></span>
+            <div class="sales-target-stat-body">
+                <div class="sales-target-stat-label">Profit Margin</div>
+                <div class="sales-target-stat-value sales-target-stat-accent">{{ pct(econ.margin) }}</div>
+                <div class="sales-target-stat-hint">Profit as a share of selling price</div>
+            </div>
+            <span class="sales-target-stat-corner"><i class="fas fa-chart-simple"></i></span>
         </div>
     </div>
+    {% if econ.invoice_charges != 0 or econ.items_without_cost %}
+    <div class="d-grid gap-2 mb-2">
+        {% if econ.invoice_charges != 0 %}
+        <div class="sales-target-note"><i class="fas fa-circle-info mt-1"></i>
+            <div>Actual Sales {{ perf.actual|sales_target_money }} = item selling price {{ econ.selling|sales_target_money }}
+                {{ '+' if econ.invoice_charges > 0 else '−' }} {{ econ.invoice_charges|abs|sales_target_money }} of invoice-level tax, delivery and invoice discount,
+                which belong to no item and so are not in cost or profit.</div>
+        </div>
+        {% endif %}
+        {% if econ.items_without_cost %}
+        <div class="sales-target-note is-warn"><i class="fas fa-triangle-exclamation mt-1"></i>
+            <div>{{ econ.items_without_cost|length }} item{{ ' has' if econ.items_without_cost|length == 1 else 's have' }} no cost price
+                ({{ econ.items_without_cost[:5]|join(', ') }}{{ '…' if econ.items_without_cost|length > 5 }}), so profit is overstated. Set the cost in Inventory.</div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {# ── Search bar (opens the dashboard with these filters) ── #}
+    <div class="sales-target-card mb-3">
+        <form method="get" action="{{ url_for('sales_target.index') }}" class="sales-target-filters mb-0">
+            <div class="sales-target-f-search">
+                <label class="visually-hidden" for="stSearch">Search</label>
+                <div class="sales-target-ifield">
+                    <i class="fas fa-magnifying-glass"></i>
+                    <input type="search" id="stSearch" name="q" maxlength="100" class="form-control" placeholder="Search target, salesman or item...">
+                </div>
+            </div>
+            <div class="sales-target-f-sel">
+                <label class="sales-target-f-label" for="stPeriod">Period</label>
+                <div class="sales-target-ifield">
+                    <i class="far fa-calendar"></i>
+                    <select id="stPeriod" name="period" class="form-select">
+                        {% for value, label in period_choices if value != 'custom' %}
+                        <option value="{{ value }}" {{ 'selected' if value == 'this_month' }}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="sales-target-f-sel">
+                <label class="sales-target-f-label" for="stType">Type</label>
+                <div class="sales-target-ifield">
+                    <i class="fas fa-layer-group"></i>
+                    <select id="stType" name="type" class="form-select">
+                        <option value="">All types</option>
+                        {% for t in types %}<option value="{{ t }}">{{ type_labels[t] }}</option>{% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="sales-target-f-sel">
+                <label class="sales-target-f-label" for="stStatus">Status</label>
+                <div class="sales-target-ifield">
+                    <i class="far fa-circle-dot"></i>
+                    <select id="stStatus" name="status" class="form-select">
+                        <option value="">All statuses</option>
+                        {% for s in statuses %}<option value="{{ s }}">{{ status_labels[s] }}</option>{% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="sales-target-f-actions">
+                <button type="submit" class="sales-target-apply"><i class="fas fa-filter"></i> Apply</button>
+            </div>
+        </form>
+    </div>
+
+    {# ── This target as a dashboard row, then its details ── #}
+    <div class="sales-target-card mb-3">
+        <div class="sales-target-table-wrap">
+            <table class="sales-target-grid">
+                <thead>
+                    <tr>
+                        <th><span class="sales-target-th sales-target-th-tab"><i class="fas fa-bullseye"></i><span>Targets</span></span></th>
+                        <th><span class="sales-target-th"><i class="fas fa-user"></i><span>Salesman / Scope</span></span></th>
+                        <th><span class="sales-target-th"><i class="far fa-calendar"></i><span>Target Period</span></span></th>
+                        <th><span class="sales-target-th"><i class="fas fa-bullseye"></i><span>Target</span></span></th>
+                        <th><span class="sales-target-th"><i class="fas fa-chart-bar"></i><span>Actual Sales</span></span></th>
+                        <th><span class="sales-target-th"><i class="far fa-clock"></i><span>Remaining</span></span></th>
+                        <th><span class="sales-target-th"><i class="fas fa-circle-check"></i><span>Achieved</span></span></th>
+                        {% if show_profit %}<th><span class="sales-target-th"><i class="fas fa-coins"></i><span>Profit</span></span></th>{% endif %}
+                        <th><span class="sales-target-th"><i class="fas fa-bullseye"></i><span>Progress</span></span></th>
+                        <th class="sales-target-sticky"><span class="sales-target-th"><i class="fas fa-gear"></i><span>Actions</span></span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="sales-target-c-name">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="sales-target-row-title" title="{{ target.name }}">{{ target.name }}</span>
+                                <span class="sales-target-chip is-sm {{ status_class.get(target.status, 'is-slate') }}">{{ target.status_label }}</span>
+                            </div>
+                            <div class="sales-target-row-sub"><i class="fas {{ type_icon.get(target.target_type, 'fa-user') }}"></i> {{ target.type_label }}</div>
+                        </td>
+                        <td>
+                            <div class="sales-target-person">
+                                <span class="sales-target-avatar">
+                                    {% if target.target_type == 'individual' %}{{ initials }}
+                                    {% elif target.target_type == 'team' %}<i class="fas fa-users"></i>
+                                    {% else %}<i class="fas fa-building"></i>{% endif %}
+                                </span>
+                                <div class="sales-target-person-text">
+                                    <div class="sales-target-person-name" title="{{ scope_label }}">{{ scope_label }}</div>
+                                    <div class="sales-target-person-sub" title="{{ items_label }}">{{ items_label if target.has_item_scope else 'All items' }}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="sales-target-period">
+                                <i class="far fa-calendar"></i>
+                                <div>
+                                    <div class="sales-target-period-range">{{ target.start_date.strftime('%d %b' if target.start_date.year == target.end_date.year else '%d %b %Y') }} – {{ target.end_date.strftime('%d %b %Y') }}</div>
+                                    <div class="sales-target-period-sub">
+                                        {% if perf.period_state == 'upcoming' %}Starts in {{ perf.days_until_start }} day{{ '' if perf.days_until_start == 1 else 's' }}
+                                        {% elif perf.period_state == 'running' %}Day {{ perf.elapsed_days }} of {{ perf.period_days }}
+                                        {% else %}Ended{% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="sales-target-pill is-green">
+                                <span class="sales-target-rs">Rs</span>
+                                <span class="sales-target-pill-val">{{ perf.target_amount|sales_target_money }}</span>
+                                <span class="sales-target-pill-sub">Target</span>
+                            </div>
+                        </td>
+                        {% if perf.available %}
+                        <td>
+                            <div class="sales-target-pill is-blue">
+                                <i class="fas fa-circle-dollar-to-slot"></i>
+                                <span class="sales-target-pill-val">{{ perf.actual|sales_target_money }}</span>
+                                <span class="sales-target-pill-sub">{{ perf.invoice_count }} invoice{{ '' if perf.invoice_count == 1 else 's' }}</span>
+                            </div>
+                        </td>
+                        <td>
+                            {% if perf.exceeded > 0 %}
+                            <div class="sales-target-pill is-green">
+                                <i class="fas fa-arrow-up"></i>
+                                <span class="sales-target-pill-val">+{{ perf.exceeded|sales_target_money }}</span>
+                                <span class="sales-target-pill-sub">Exceeded</span>
+                            </div>
+                            {% else %}
+                            <div class="sales-target-pill is-purple">
+                                <i class="far fa-clock"></i>
+                                <span class="sales-target-pill-val">{{ perf.remaining|sales_target_money }}</span>
+                                <span class="sales-target-pill-sub">Remaining</span>
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="sales-target-pill {{ tone }}">
+                                <i class="far fa-circle-dot"></i>
+                                <span class="sales-target-pill-val">{{ pct(perf.achievement) }}</span>
+                                <span class="sales-target-pill-bar"><span style="width: {{ perf.progress }}%"></span></span>
+                            </div>
+                        </td>
+                        {% if show_profit %}
+                        <td>
+                            {% if econ %}
+                            <div class="sales-target-pill {{ 'is-green' if econ.profit >= 0 else 'is-red' }}" title="Selling {{ econ.selling|sales_target_money }} · Cost {{ econ.cost|sales_target_money }}">
+                                <i class="fas {{ 'fa-circle-check' if econ.profit >= 0 else 'fa-circle-xmark' }}"></i>
+                                <span class="sales-target-pill-val">{{ econ.profit|sales_target_money }}</span>
+                                <span class="sales-target-pill-sub">{{ pct(econ.margin) }} margin</span>
+                            </div>
+                            {% else %}—{% endif %}
+                        </td>
+                        {% endif %}
+                        {% else %}
+                        <td colspan="{{ 4 if show_profit else 3 }}">
+                            <div class="sales-target-pill is-red sales-target-pill-wide">
+                                <i class="fas fa-triangle-exclamation"></i>
+                                <span class="sales-target-pill-val">Needs setup</span>
+                                <span class="sales-target-pill-sub">Edit the target to fix its salesman or items</span>
+                            </div>
+                        </td>
+                        {% endif %}
+                        <td><span class="sales-target-chip {{ tone }}"><i class="far fa-circle-check me-1"></i>{{ perf.tone_label }}</span></td>
+                        <td class="sales-target-sticky">
+                            <div class="sales-target-acts">
+                                <a href="#stInvoices" class="sales-target-act is-view" title="View contributing invoices" aria-label="View contributing invoices"><i class="fas fa-eye"></i></a>
+                                {% if can_edit %}
+                                <a href="{{ url_for('sales_target.edit', target_id=target.id) }}" class="sales-target-act is-edit" title="Edit" aria-label="Edit {{ target.name }}"><i class="fas fa-pen"></i></a>
+                                {% endif %}
+                                {% if can_delete %}
+                                <button type="button" class="sales-target-act is-delete" title="Delete" aria-label="Delete {{ target.name }}"
+                                        data-sales-target-delete="{{ url_for('sales_target.delete', target_id=target.id) }}"
+                                        data-sales-target-name="{{ target.name }}"><i class="fas fa-trash"></i></button>
+                                {% endif %}
+                                <div class="dropdown">
+                                    <button type="button" class="sales-target-act is-more" data-bs-toggle="dropdown" data-st-fixed-dropdown aria-expanded="false" title="More" aria-label="More actions"><i class="fas fa-ellipsis-vertical"></i></button>
+                                    <ul class="dropdown-menu dropdown-menu-end sales-target-menu">
+                                        <li><a class="dropdown-item" href="#stInvoices"><i class="fas fa-file-invoice me-2"></i>Contributing invoices</a></li>
+                                        {% if plan_part %}
+                                        <li><a class="dropdown-item" href="{{ url_for('sales_target.plan_view', plan_id=plan_part.plan_id) }}"><i class="fas fa-layer-group me-2"></i>Yearly plan</a></li>
+                                        {% if can_edit %}<li><a class="dropdown-item" href="{{ url_for('sales_target.plan_edit', plan_id=plan_part.plan_id) }}"><i class="fas fa-table-columns me-2"></i>Edit yearly split</a></li>{% endif %}
+                                        {% endif %}
+                                        <li><a class="dropdown-item" href="{{ url_for('sales_target.index') }}"><i class="fas fa-arrow-left me-2"></i>All targets</a></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="sales-target-ipanels">
+            {# Target details #}
+            <section class="sales-target-ipanel">
+                <h3 class="sales-target-ipanel-title"><i class="fas fa-bullseye"></i> Target Details</h3>
+                <dl class="sales-target-idl">
+                    <div><dt>Target Period</dt><dd>{{ period_text }}</dd></div>
+                    <div><dt>Salesman / Scope</dt><dd class="text-break">{{ scope_label }}</dd></div>
+                    <div><dt>Target Type</dt><dd>{{ period_kind }}</dd></div>
+                    <div><dt>Items</dt><dd class="text-break">{{ items_label if target.has_item_scope else 'All items (whole invoice totals)' }}</dd></div>
+                    {% if plan_part %}
+                    <div class="is-wide"><dt>Yearly plan</dt><dd><a href="{{ url_for('sales_target.plan_view', plan_id=plan_part.plan_id) }}">{{ plan_part.plan.name }}</a> · {{ plan_periods[plan_part.period_no - 1].title }}</dd></div>
+                    {% endif %}
+                </dl>
+            </section>
+
+            {# Progress ring #}
+            <section class="sales-target-ipanel">
+                <h3 class="sales-target-ipanel-title"><i class="fas fa-chart-pie"></i> Progress Overview</h3>
+                <div class="sales-target-progress-overview">
+                    <div class="sales-target-ring {{ tone }}" style="--p: {{ perf.progress }}" role="img" aria-label="{{ pct(perf.achievement) }} achieved">
+                        <span>{{ '%.0f'|format(perf.achievement) ~ '%' if perf.achievement is not none else '—' }}</span>
+                    </div>
+                    <div class="sales-target-progress-text">
+                        <div class="sales-target-sub">Target Achieved</div>
+                        <div class="sales-target-progress-big">{{ pct(perf.achievement) }}</div>
+                        <div class="sales-target-stat-bar {{ tone }}"><span style="width: {{ perf.progress }}%"></span></div>
+                        {% if perf.available %}
+                        <div class="sales-target-progress-foot {{ 'sales-target-pos' if perf.exceeded > 0 else '' }}">
+                            {% if perf.exceeded > 0 %}{{ perf.exceeded|sales_target_money }} exceeded{% else %}{{ perf.remaining|sales_target_money }} to go{% endif %}
+                        </div>
+                        {% endif %}
+                        <div class="sales-target-sub">
+                            {% if perf.period_state == 'upcoming' %}Starts in {{ perf.days_until_start }} day{{ '' if perf.days_until_start == 1 else 's' }}
+                            {% elif perf.period_state == 'running' %}{{ perf.elapsed_pct }}% of the period elapsed
+                            {% else %}Period ended{% endif %}
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {# Activity #}
+            <section class="sales-target-ipanel">
+                <h3 class="sales-target-ipanel-title"><i class="fas fa-clock-rotate-left"></i> Last Activity</h3>
+                <ul class="sales-target-activity">
+                    <li><i class="fas fa-trophy"></i><div><div class="sales-target-activity-head">Achievement Bonus</div>
+                        <div class="sales-target-sub">{{ (target.bonus_amount|sales_target_money) if target.bonus_amount is not none else '—' }}</div></div></li>
+                    {% if last_invoice %}
+                    <li><i class="fas fa-file-invoice"></i><div><div class="sales-target-activity-head">Latest invoice</div>
+                        <div class="sales-target-sub">{{ last_invoice.sale.invoice_number }} · {{ last_invoice.sale.date.strftime('%d %b %Y') if last_invoice.sale.date }} · {{ last_invoice.amount|sales_target_money }}</div></div></li>
+                    {% endif %}
+                    <li><i class="far fa-user"></i><div><div class="sales-target-activity-head">Created</div>
+                        <div class="sales-target-sub">{{ target.created_at.strftime('%d %b %Y, %H:%M') }} UTC{% if target.creator %} by {{ target.creator.username }}{% endif %}</div></div></li>
+                    <li><i class="fas fa-rotate"></i><div><div class="sales-target-activity-head">Updated</div>
+                        <div class="sales-target-sub">{{ target.updated_at.strftime('%d %b %Y, %H:%M') }} UTC{% if target.updater %} by {{ target.updater.username }}{% endif %}</div></div></li>
+                </ul>
+            </section>
+
+            {# Notes + how it is calculated #}
+            <section class="sales-target-ipanel">
+                <h3 class="sales-target-ipanel-title"><i class="fas fa-pen-to-square"></i> Notes</h3>
+                {% if target.description %}<div class="sales-target-description mb-2">{{ target.description }}</div>{% endif %}
+                <div class="sales-target-info">
+                    <i class="fas fa-circle-info"></i>
+                    <div>
+                        <p class="mb-1">Actual sales are approved invoices dated within the target period
+                            {%- if target.target_type == 'individual' %} where the invoice’s salesman is <strong>{{ scope_label }}</strong>
+                            {%- elif target.target_type == 'team' %} where the invoice’s salesman is a team member (each invoice counted once)
+                            {%- else %} across the whole company{% endif %}.</p>
+                        {% if target.has_item_scope %}
+                        <p class="mb-1">Only the selected items count: their invoice lines after line discount, minus approved returns of them. Invoice tax, delivery and invoice discount are not included.</p>
+                        {% else %}
+                        <p class="mb-1">Each invoice total is after discounts, tax and delivery. Approved sales returns are already deducted from the invoice they belong to. Payments are not counted as sales.</p>
+                        {% endif %}
+                        {% if show_profit %}
+                        <p class="mb-0">Selling price = item line after line discount, minus returns. Cost = the item’s current warehouse cost × quantity (as in the COGS report). Profit = selling price − cost.</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% if excluded %}
+                <ul class="sales-target-excluded">
+                    <li><span>Pending approval</span><span>{{ excluded.pending.count }} · {{ excluded.pending.amount|sales_target_money }}</span></li>
+                    <li><span>Drafts</span><span>{{ excluded.draft.count }} · {{ excluded.draft.amount|sales_target_money }}</span></li>
+                    <li><span>Rejected / cancelled</span><span>{{ excluded.rejected.count }} · {{ excluded.rejected.amount|sales_target_money }}</span></li>
+                    {% if excluded.unassigned and excluded.unassigned.count %}
+                    <li><span>Without a salesman (counted here)</span><span>{{ excluded.unassigned.count }} · {{ excluded.unassigned.amount|sales_target_money }}</span></li>
+                    {% endif %}
+                </ul>
+                {% endif %}
+            </section>
+        </div>
+    </div>
+
+    {# ── Item breakdown ──────────────────────────────────── #}
+    {% if econ and econ.by_item %}
+    <div class="sales-target-card mb-3">
+        <div class="sales-target-card-titlebar">
+            <h2>Sales by Item</h2>
+            <span class="sales-target-sub">{{ econ.by_item|length }} item{{ '' if econ.by_item|length == 1 else 's' }} sold toward this target</span>
+        </div>
+        <div class="sales-target-table-wrap">
+            <table class="sales-target-table sales-target-soft-table" style="min-width:{{ 900 if show_profit else 560 }}px">
+                <thead><tr>
+                    <th>Item</th><th class="num">Qty sold</th><th class="num">Avg. selling price</th>
+                    <th class="num">Selling price</th><th>Share of item sales</th>
+                    {% if show_profit %}<th class="num">Unit cost</th><th class="num">Cost</th><th class="num">Profit</th><th class="num">Margin</th>{% endif %}
+                </tr></thead>
+                <tbody>
+                {% for i in econ.by_item %}
+                    <tr>
+                        <td>
+                            <div class="sales-target-item-cell">
+                                <span class="sales-target-item-ico"><i class="fas fa-cube"></i></span>
+                                <div>
+                                    <div class="sales-target-item-name">{{ i.name }}</div>
+                                    <div class="sales-target-sub">{{ i.sku }}{% if i.returned_qty %} · {{ '%g'|format(i.returned_qty) }} returned{% endif %}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="num">{{ '%g'|format(i.qty) }}</td>
+                        <td class="num">{{ i.unit_price|sales_target_money }}</td>
+                        <td class="num">{{ i.selling|sales_target_money }}</td>
+                        <td><div class="sales-target-share"><span class="sales-target-progress"><span style="width: {{ [i.share or 0, 100]|min }}%"></span></span><span>{{ pct(i.share) }}</span></div></td>
+                        {% if show_profit %}
+                        <td class="num">{{ i.unit_cost|sales_target_money }}{% if i.no_cost %} <i class="fas fa-triangle-exclamation text-warning" title="No cost price set"></i>{% endif %}</td>
+                        <td class="num">{{ i.cost|sales_target_money }}</td>
+                        <td class="num {{ profit_cls(i.profit) }}">{{ i.profit|sales_target_money }}</td>
+                        <td class="num {{ profit_cls(i.margin) }}">{{ pct(i.margin) }}</td>
+                        {% endif %}
+                    </tr>
+                {% endfor %}
+                </tbody>
+                <tfoot><tr>
+                    <th>Total</th><th class="num">{{ '%g'|format(econ.qty) }}</th><th></th>
+                    <th class="num">{{ econ.selling|sales_target_money }}</th><th></th>
+                    {% if show_profit %}<th></th><th class="num">{{ econ.cost|sales_target_money }}</th>
+                    <th class="num {{ profit_cls(econ.profit) }}">{{ econ.profit|sales_target_money }}</th>
+                    <th class="num {{ profit_cls(econ.margin) }}">{{ pct(econ.margin) }}</th>{% endif %}
+                </tr></tfoot>
+            </table>
+        </div>
+    </div>
+    {% endif %}
 
     {# ── Contributing invoices ───────────────────────────── #}
-    <div class="sales-target-panel">
-        <div class="sales-target-panel-head">
-            <h2 class="sales-target-panel-title">Contributing invoices</h2>
-            {% if pagination %}<span class="sales-target-sub">{{ pagination.total }} invoice{{ '' if pagination.total == 1 else 's' }}</span>{% endif %}
+    <div class="sales-target-card" id="stInvoices">
+        <div class="sales-target-card-titlebar">
+            <h2>Contributing Invoices</h2>
+            {% if pagination %}<span class="sales-target-sub">{{ pagination.total }} invoice{{ '' if pagination.total == 1 else 's' }} · newest first · open a row to see its items</span>{% endif %}
         </div>
         {% if invoices %}
-        <div class="sales-target-table-wrap">
-            <table class="sales-target-table" style="min-width:760px">
+        {# Related values are stacked in one cell (date under the invoice,
+           salesman under the customer, ...) so the table fits without
+           sideways scrolling; below ~900px wide each invoice becomes a card,
+           using the data-label of every cell (see sales_target.css). #}
+        {% set line_cols = 9 if show_profit else 5 %}
+        {% set main_cols = 6 + (1 if target.has_item_scope else 0) + (3 if show_profit else 0) %}
+        <div class="sales-target-inv-wrap">
+            <table class="sales-target-table sales-target-soft-table sales-target-inv-table">
                 <thead><tr>
-                    <th>Invoice</th><th>Invoice Date</th><th>Customer</th><th>Salesman</th>
+                    <th class="sales-target-toggle-col"><span class="visually-hidden">Items</span></th>
+                    <th>Invoice</th>
+                    <th>Customer / Salesman</th>
                     {% if target.has_item_scope %}<th class="num">Item Qty</th>{% endif %}
-                    <th class="num">Eligible Sales Amount</th><th class="num">Returns deducted</th><th>Payment Status</th>
+                    <th class="num">Counted Amount</th>
+                    <th title="This invoice’s amount as a share of the target, and the target achieved once it is counted (invoices in date order)">Target share</th>
+                    {% if show_profit %}<th class="num">Selling price</th><th class="num">Cost</th><th class="num">Profit</th>{% endif %}
+                    <th>Payment</th>
                 </tr></thead>
                 <tbody>
                 {% for row in invoices %}
                     {% set s = row.sale %}
-                    <tr>
-                        <td class="text-nowrap">
-                            {% if can_open_invoices %}<a class="sales-target-name" href="{{ url_for('sales.invoice_detail', id=s.id) }}">{{ s.invoice_number }}</a>
-                            {% else %}{{ s.invoice_number }}{% endif %}
+                    {% set e = row.econ %}
+                    <tr class="sales-target-inv-row {{ 'sales-target-reached-row' if s.id == reached_by }}">
+                        <td class="sales-target-toggle-col {{ '' if e and e.lines else 'is-empty' }}" data-label="Items">
+                            {% if e and e.lines %}
+                            <button type="button" class="sales-target-line-toggle" data-st-lines-toggle="stLines{{ s.id }}"
+                                    aria-expanded="false" aria-controls="stLines{{ s.id }}" title="Show the items on this invoice">
+                                <i class="fas fa-chevron-right"></i><span class="sales-target-toggle-text">Show items ({{ e.lines|length }})</span></button>
+                            {% endif %}
                         </td>
-                        <td class="text-nowrap">{{ s.date.strftime('%d %b %Y') if s.date else '—' }}</td>
-                        <td><span class="sales-target-truncate" title="{{ row.customer_name or '' }}">{{ row.customer_name or '—' }}</span></td>
-                        <td><span class="sales-target-truncate" title="{{ row.salesman_name or '' }}">{{ row.salesman_name or 'No salesman' }}</span></td>
-                        {% if target.has_item_scope %}<td class="num">{{ '%g'|format(row.qty or 0) }}</td>{% endif %}
-                        <td class="num">{{ row.amount|sales_target_money }}</td>
-                        <td class="num">{{ row.returns|sales_target_money if row.returns > 0 else '—' }}</td>
-                        <td><span class="sales-target-badge {{ 'st-completed' if s.status == 'paid' else ('st-active' if s.status == 'partial' else '') }}">{{ (s.status or 'unpaid')|capitalize }}</span></td>
+                        <td class="sales-target-inv-main" data-label="Invoice">
+                            {% if can_open_invoices %}<a class="sales-target-name" href="{{ url_for('sales.invoice_detail', id=s.id) }}">{{ s.invoice_number }}</a>
+                            {% else %}<span class="sales-target-name">{{ s.invoice_number }}</span>{% endif %}
+                            <div class="sales-target-sub">{{ s.date.strftime('%d %b %Y') if s.date else '—' }}</div>
+                            {% if s.id == reached_by %}<span class="sales-target-badge st-completed"><i class="fas fa-flag-checkered me-1"></i>Target reached</span>{% endif %}
+                        </td>
+                        <td data-label="Customer">
+                            <div class="sales-target-wrap-text">{{ row.customer_name or '—' }}</div>
+                            <div class="sales-target-sub sales-target-wrap-text"><i class="far fa-user me-1"></i>{{ row.salesman_name or 'No salesman' }}</div>
+                        </td>
+                        {% if target.has_item_scope %}<td class="num" data-label="Item Qty">{{ '%g'|format(row.qty or 0) }}</td>{% endif %}
+                        <td class="num" data-label="Counted Amount">
+                            <strong>{{ row.amount|sales_target_money }}</strong>
+                            {% if row.returns > 0 %}<div class="sales-target-sub">−{{ row.returns|sales_target_money }} returns</div>{% endif %}
+                        </td>
+                        <td data-label="Target share">
+                            <div class="sales-target-share"><span class="sales-target-progress"><span style="width: {{ [row.share or 0, 100]|min }}%"></span></span><span>{{ pct(row.share) }}</span></div>
+                            <div class="sales-target-sub">Achieved after: <strong>{{ pct(row.running_pct) }}</strong></div>
+                        </td>
+                        {% if show_profit %}
+                        <td class="num" data-label="Selling price">{{ e.selling|sales_target_money if e else '—' }}</td>
+                        <td class="num" data-label="Cost">{{ e.cost|sales_target_money if e else '—' }}</td>
+                        <td class="num {{ profit_cls(e.profit) if e }}" data-label="Profit">{% if e %}{{ e.profit|sales_target_money }}<div class="sales-target-sub">{{ pct(e.margin) }} margin</div>{% else %}—{% endif %}</td>
+                        {% endif %}
+                        <td data-label="Payment"><span class="sales-target-badge {{ 'st-completed' if s.status == 'paid' else ('st-active' if s.status == 'partial' else '') }}">{{ (s.status or 'unpaid')|capitalize }}</span></td>
                     </tr>
+                    {% if e and e.lines %}
+                    <tr class="sales-target-lines-row" id="stLines{{ s.id }}" hidden>
+                        <td class="sales-target-lines-spacer"></td>
+                        <td colspan="{{ main_cols - 1 }}">
+                            <table class="sales-target-lines">
+                                <thead><tr>
+                                    <th>Item on {{ s.invoice_number }}</th><th class="num">Qty</th><th class="num">Price / unit</th><th class="num">Selling price</th>
+                                    {% if show_profit %}<th class="num">Cost / unit</th><th class="num">Cost</th><th class="num">Profit</th><th class="num">Margin</th>{% endif %}
+                                    <th class="num">Share of target</th>
+                                </tr></thead>
+                                <tbody>
+                                {% for ln in e.lines %}
+                                <tr>
+                                    <td data-label="Item"><span class="sales-target-wrap-text">{{ ln.name }}</span>{% if ln.sku %} <span class="sales-target-sub">{{ ln.sku }}</span>{% endif %}{% if ln.returned_qty %} <span class="sales-target-sub">· {{ '%g'|format(ln.returned_qty) }} returned</span>{% endif %}</td>
+                                    <td class="num" data-label="Qty">{{ '%g'|format(ln.qty) }}</td>
+                                    <td class="num" data-label="Price / unit">{{ ln.unit_price|sales_target_money }}</td>
+                                    <td class="num" data-label="Selling price">{{ ln.selling|sales_target_money }}</td>
+                                    {% if show_profit %}
+                                    <td class="num" data-label="Cost / unit">{{ ln.unit_cost|sales_target_money }}</td>
+                                    <td class="num" data-label="Cost">{{ ln.cost|sales_target_money }}</td>
+                                    <td class="num {{ profit_cls(ln.profit) }}" data-label="Profit">{{ ln.profit|sales_target_money }}</td>
+                                    <td class="num {{ profit_cls(ln.margin) }}" data-label="Margin">{{ pct(ln.margin) }}</td>
+                                    {% endif %}
+                                    <td class="num" data-label="Share of target">{{ pct((ln.selling / perf.target_amount * 100) if perf.target_amount > 0 else none) }}</td>
+                                </tr>
+                                {% endfor %}
+                                </tbody>
+                                {% if not target.has_item_scope and row.amount != e.selling %}
+                                <tfoot><tr><td colspan="{{ line_cols }}" class="sales-target-sub">
+                                    {% set diff = row.amount - e.selling %}
+                                    Counted amount {{ row.amount|sales_target_money }} = items {{ e.selling|sales_target_money }}
+                                    {{ '+' if diff > 0 else '−' }} {{ diff|abs|sales_target_money }} invoice tax, delivery and invoice discount (these belong to no item).
+                                </td></tr></tfoot>
+                                {% endif %}
+                            </table>
+                        </td>
+                    </tr>
+                    {% endif %}
                 {% endfor %}
                 </tbody>
             </table>
         </div>
         {% if pagination.pages > 1 %}
-        <div class="sales-target-pager">
-            <span>Page {{ pagination.page }} of {{ pagination.pages }}</span>
-            <ul class="pagination pagination-sm">
-                <li class="page-item {{ 'disabled' if not pagination.has_prev }}"><a class="page-link" href="{{ url_for('sales_target.detail', target_id=target.id, page=pagination.prev_num or 1) }}">Previous</a></li>
+        <div class="sales-target-foot">
+            <span class="sales-target-count">Page {{ pagination.page }} of {{ pagination.pages }}</span>
+            <nav class="sales-target-pages" aria-label="Invoice pages">
+                <a class="sales-target-page-btn {{ 'is-disabled' if not pagination.has_prev }}" aria-label="Previous page"
+                   href="{{ url_for('sales_target.detail', target_id=target.id, page=pagination.prev_num or 1, _anchor='stInvoices') }}"><i class="fas fa-chevron-left"></i></a>
                 {% for n in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
-                {% if n %}<li class="page-item {{ 'active' if n == pagination.page }}"><a class="page-link" href="{{ url_for('sales_target.detail', target_id=target.id, page=n) }}">{{ n }}</a></li>
-                {% else %}<li class="page-item disabled"><span class="page-link">…</span></li>{% endif %}
+                {% if n %}<a class="sales-target-page-btn {{ 'is-active' if n == pagination.page }}" href="{{ url_for('sales_target.detail', target_id=target.id, page=n, _anchor='stInvoices') }}">{{ n }}</a>
+                {% else %}<span class="sales-target-page-gap">…</span>{% endif %}
                 {% endfor %}
-                <li class="page-item {{ 'disabled' if not pagination.has_next }}"><a class="page-link" href="{{ url_for('sales_target.detail', target_id=target.id, page=pagination.next_num or pagination.pages) }}">Next</a></li>
-            </ul>
+                <a class="sales-target-page-btn {{ 'is-disabled' if not pagination.has_next }}" aria-label="Next page"
+                   href="{{ url_for('sales_target.detail', target_id=target.id, page=pagination.next_num or pagination.pages, _anchor='stInvoices') }}"><i class="fas fa-chevron-right"></i></a>
+            </nav>
         </div>
         {% endif %}
         {% elif perf.available %}
