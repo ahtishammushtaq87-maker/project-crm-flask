@@ -1,0 +1,239 @@
+{# In-app file viewer for the Media module. Standalone page (no base.html) so
+   the Media page can show it inside its preview popup (embed=1) and it can
+   also open on its own in a new tab. Nothing here ever triggers a download:
+   the file is read from media.view (served inline) and only the Download
+   button uses media.download. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ document.filename }} · Preview</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        html, body { height: 100%; }
+        body { margin: 0; display: flex; flex-direction: column; background: #eef1f6; color: #212529; }
+        .pv-top { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: #fff; border-bottom: 1px solid #e3e7ee; }
+        .pv-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pv-body { flex: 1; min-height: 0; overflow: auto; display: flex; }
+        .pv-center { margin: auto; text-align: center; padding: 24px; }
+        .pv-img { max-width: 100%; max-height: 100%; object-fit: contain; margin: auto; display: block; background: #fff; }
+        .pv-frame { flex: 1; width: 100%; border: 0; background: #fff; }
+        .pv-pre { flex: 1; margin: 0; padding: 16px 18px; background: #fff; font-size: .82rem; white-space: pre-wrap; word-break: break-word; }
+        .pv-docx { flex: 1; overflow: auto; }
+        .pv-docx .docx-wrapper { background: #eef1f6; padding: 20px 0; }
+        .pv-sheet { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #fff; }
+        .pv-tabs { display: flex; gap: 4px; padding: 6px 10px 0; border-bottom: 1px solid #dee2e6; overflow-x: auto; background: #f8f9fa; }
+        .pv-tabs button { border: 1px solid #dee2e6; border-bottom: 0; background: #e9ecef; border-radius: 6px 6px 0 0; padding: 4px 12px; font-size: .82rem; white-space: nowrap; }
+        .pv-tabs button.active { background: #fff; font-weight: 600; }
+        .pv-grid-wrap { flex: 1; overflow: auto; }
+        .pv-grid { border-collapse: collapse; font-size: .8rem; }
+        .pv-grid th, .pv-grid td { border: 1px solid #dee2e6; padding: 3px 8px; white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+        .pv-grid thead th, .pv-grid tbody th { background: #f1f3f5; color: #6c757d; font-weight: 500; position: sticky; z-index: 1; }
+        .pv-grid thead th { top: 0; } .pv-grid tbody th { left: 0; }
+        .pv-note { font-size: .78rem; color: #6c757d; padding: 6px 12px; background: #fff8e1; border-top: 1px solid #f1e3a6; }
+        .pv-media { max-width: 100%; max-height: 100%; margin: auto; display: block; }
+        .pv-icon { font-size: 4rem; color: #adb5bd; }
+    </style>
+</head>
+<body>
+    {% set view_url = url_for('media.view', media_id=document.id) %}
+    {% set download_url = url_for('media.download', media_id=document.id) %}
+    {% if not embed %}
+    <div class="pv-top">
+        <a href="{{ url_for('media.index', folder=document.folder_id) if document.folder_id else url_for('media.index') }}"
+           class="btn btn-sm btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i>Media</a>
+        <span class="pv-name" title="{{ document.filename }}">{{ document.filename }}</span>
+        <a href="{{ download_url }}" class="btn btn-sm btn-success ms-auto"><i class="fas fa-download me-1"></i>Download</a>
+    </div>
+    {% endif %}
+
+    <div class="pv-body" id="pvBody">
+    {% macro unavailable(icon, title, text) %}
+        <div class="pv-center">
+            <i class="fas {{ icon }} pv-icon mb-3"></i>
+            <h5 class="mb-1">{{ title }}</h5>
+            <p class="text-muted mb-3">{{ text }}</p>
+            <a href="{{ download_url }}" class="btn btn-success"><i class="fas fa-download me-1"></i>Download {{ document.filename }}</a>
+        </div>
+    {% endmacro %}
+
+    {% if not exists %}
+        <div class="pv-center" style="max-width: 640px;">
+            <i class="fas fa-triangle-exclamation pv-icon mb-3" style="color:#e8590c"></i>
+            <h5 class="mb-2">The file is missing on this server</h5>
+            <p class="text-muted mb-2">The Media Library has a record for <strong>{{ document.filename }}</strong>
+                (uploaded {{ document.uploaded_at.strftime('%d %b %Y') if document.uploaded_at else 'earlier' }}), but the file itself is not here, so it can't be previewed or downloaded.</p>
+            <p class="text-muted small mb-2">This usually happens after restoring a database from another server: the database comes across, but uploaded files are kept in a folder and have to be copied separately.</p>
+            <div class="small text-start bg-white border rounded p-2"><span class="text-muted">Expected at:</span><br><code>app/static/{{ document.filepath }}</code></div>
+            <p class="text-muted small mt-2 mb-0">Copy <code>app/static/uploads/media/</code> from the server this file was uploaded to, and it will open here again.</p>
+        </div>
+    {% elif kind == 'image' %}
+        <img src="{{ view_url }}" alt="{{ document.filename }}" class="pv-img">
+    {% elif kind == 'pdf' %}
+        <iframe src="{{ view_url }}#view=FitH" class="pv-frame" title="{{ document.filename }}"></iframe>
+    {% elif kind == 'video' %}
+        <video src="{{ view_url }}" class="pv-media" controls preload="metadata"></video>
+    {% elif kind == 'audio' %}
+        <div class="pv-center"><i class="fas fa-file-audio pv-icon mb-3"></i><audio src="{{ view_url }}" controls preload="metadata"></audio></div>
+    {% elif kind == 'zip' and ext == 'zip' %}
+        <div class="flex-grow-1 bg-white">
+            {% if zip_error %}
+            {{ unavailable('fa-file-zipper', 'Cannot read this ZIP file', zip_error) }}
+            {% else %}
+            <div class="p-3 pb-0 small text-muted"><i class="fas fa-file-zipper me-1"></i>{{ zip_entries|length }}{{ '+' if zip_truncated }} item(s) inside. Download the file to extract it.</div>
+            <table class="table table-sm table-hover mb-0 small">
+                <thead><tr><th>Name</th><th class="text-end">Size</th></tr></thead>
+                <tbody>
+                {% for e in zip_entries %}
+                <tr><td><i class="fas {{ 'fa-folder text-warning' if e.is_dir else 'fa-file text-muted' }} me-2"></i>{{ e.name }}</td>
+                    <td class="text-end">{{ '' if e.is_dir else '{:,}'.format(e.size) ~ ' bytes' }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+    {% elif kind == 'word' and ext == 'docx' %}
+        <div class="pv-docx" id="pvDocx"><div class="pv-center text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Opening document…</div></div>
+    {% elif kind == 'excel' %}
+        <div class="pv-sheet" id="pvSheet"><div class="pv-center text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Opening spreadsheet…</div></div>
+    {% elif kind == 'text' %}
+        <pre class="pv-pre" id="pvText">Loading…</pre>
+    {% elif kind == 'word' %}
+        {{ unavailable('fa-file-word', 'Preview not available for old Word (.doc) files', 'Only .docx documents can be shown here. Download the file to open it in Word.') }}
+    {% elif kind == 'ppt' %}
+        {{ unavailable('fa-file-powerpoint', 'Preview not available for presentations', 'PowerPoint files cannot be shown in the browser. Download the file to open it.') }}
+    {% elif kind == 'zip' %}
+        {{ unavailable('fa-file-zipper', 'Preview not available for this archive', 'Only .zip contents can be listed here. Download the file to extract it.') }}
+    {% else %}
+        {{ unavailable('fa-file', 'Preview not available for this file type', 'This kind of file cannot be shown in the browser. Download it to open it.') }}
+    {% endif %}
+    </div>
+
+    {% if exists and kind in ('word', 'excel', 'text') %}
+    <script>
+    (function () {
+        'use strict';
+        var VIEW_URL = {{ view_url|tojson }};
+        var DOWNLOAD_URL = {{ download_url|tojson }};
+        var EXT = {{ ext|tojson }};
+        var SIZE = {{ (document.file_size or 0)|int }};
+        var TEXT_LIMIT = {{ text_limit|int }};
+        var MAX_RENDER = 25 * 1024 * 1024;   // larger Office files: offer Download instead
+        var MAX_ROWS = 2000, MAX_COLS = 100;
+
+        function failed(where, msg) {
+            where.innerHTML = '';
+            var box = document.createElement('div');
+            box.className = 'pv-center';
+            box.innerHTML = '<i class="fas fa-eye-slash pv-icon mb-3"></i><h5 class="mb-1">This file could not be previewed</h5>' +
+                '<p class="text-muted mb-3"></p><a class="btn btn-success"><i class="fas fa-download me-1"></i>Download</a>';
+            box.querySelector('p').textContent = msg;
+            box.querySelector('a').href = DOWNLOAD_URL;
+            where.appendChild(box);
+        }
+        function load(scripts, done) {
+            if (!scripts.length) return done();
+            var s = document.createElement('script');
+            s.src = scripts[0];
+            s.onload = function () { load(scripts.slice(1), done); };
+            s.onerror = function () { done(new Error('Could not load the viewer. Check the internet connection.')); };
+            document.head.appendChild(s);
+        }
+        function fetchFile(as) {
+            return fetch(VIEW_URL, { credentials: 'same-origin' }).then(function (r) {
+                if (!r.ok) throw new Error('The server returned ' + r.status + '.');
+                return as === 'text' ? r.text() : r.arrayBuffer();
+            });
+        }
+
+        // ── Plain text (shown as text, never rendered as HTML) ──
+        var pre = document.getElementById('pvText');
+        if (pre) {
+            fetchFile('text').then(function (t) {
+                pre.textContent = t.length > TEXT_LIMIT ? t.slice(0, TEXT_LIMIT) : t;
+                if (t.length > TEXT_LIMIT) {
+                    var n = document.createElement('div');
+                    n.className = 'pv-note';
+                    n.textContent = 'Showing the first ' + (TEXT_LIMIT / 1024 / 1024) + ' MB. Download the file to see all of it.';
+                    pre.after(n);
+                }
+            }).catch(function (e) { failed(pre.parentNode, e.message); });
+            return;
+        }
+
+        // ── Word .docx ──
+        var docx = document.getElementById('pvDocx');
+        if (docx) {
+            if (SIZE > MAX_RENDER) return failed(docx, 'This document is too large to preview in the browser.');
+            load(['https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+                  'https://cdn.jsdelivr.net/npm/docx-preview@0.3.5/dist/docx-preview.min.js'], function (err) {
+                if (err) return failed(docx, err.message);
+                fetchFile('buffer').then(function (buf) {
+                    docx.innerHTML = '';
+                    return window.docx.renderAsync(buf, docx, null, { inWrapper: true, ignoreLastRenderedPageBreak: true });
+                }).catch(function (e) { failed(docx, e.message || 'The document could not be read.'); });
+            });
+            return;
+        }
+
+        // ── Excel / CSV ──
+        var sheet = document.getElementById('pvSheet');
+        if (sheet) {
+            if (SIZE > MAX_RENDER) return failed(sheet, 'This spreadsheet is too large to preview in the browser.');
+            load(['https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'], function (err) {
+                if (err) return failed(sheet, err.message);
+                (EXT === 'csv' ? fetchFile('text') : fetchFile('buffer')).then(function (data) {
+                    var wb = EXT === 'csv' ? XLSX.read(data, { type: 'string' }) : XLSX.read(new Uint8Array(data), { type: 'array' });
+                    renderBook(wb);
+                }).catch(function (e) { failed(sheet, e.message || 'The spreadsheet could not be read.'); });
+            });
+        }
+        function colName(i) { var s = ''; i++; while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+        function renderBook(wb) {
+            sheet.innerHTML = '';
+            var tabs = document.createElement('div'); tabs.className = 'pv-tabs';
+            var wrap = document.createElement('div'); wrap.className = 'pv-grid-wrap';
+            var note = document.createElement('div'); note.className = 'pv-note'; note.hidden = true;
+            sheet.append(tabs, wrap, note);
+            wb.SheetNames.forEach(function (name, i) {
+                var b = document.createElement('button');
+                b.type = 'button'; b.textContent = name;
+                b.addEventListener('click', function () { show(i); });
+                tabs.appendChild(b);
+            });
+            tabs.hidden = wb.SheetNames.length < 2;
+            function show(i) {
+                Array.prototype.forEach.call(tabs.children, function (b, j) { b.classList.toggle('active', i === j); });
+                var rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1, raw: false, defval: '' });
+                var cols = rows.reduce(function (m, r) { return Math.max(m, r.length); }, 0);
+                var shownRows = Math.min(rows.length, MAX_ROWS), shownCols = Math.min(cols, MAX_COLS);
+                var table = document.createElement('table'); table.className = 'pv-grid';
+                var head = table.createTHead().insertRow();
+                head.appendChild(document.createElement('th'));
+                for (var c = 0; c < shownCols; c++) { var th = document.createElement('th'); th.textContent = colName(c); head.appendChild(th); }
+                var body = table.createTBody();
+                for (var r = 0; r < shownRows; r++) {
+                    var tr = body.insertRow();
+                    var rh = document.createElement('th'); rh.textContent = r + 1; tr.appendChild(rh);
+                    for (var k = 0; k < shownCols; k++) {
+                        var td = tr.insertCell(); var v = rows[r][k];
+                        td.textContent = v == null ? '' : String(v);   // text only — never HTML
+                        td.title = td.textContent;
+                    }
+                }
+                wrap.innerHTML = ''; wrap.appendChild(table);
+                if (!rows.length) wrap.innerHTML = '<div class="p-4 text-muted">This sheet is empty.</div>';
+                var cut = rows.length > MAX_ROWS || cols > MAX_COLS;
+                note.hidden = !cut;
+                if (cut) note.textContent = 'Showing the first ' + shownRows + ' rows and ' + shownCols +
+                    ' columns. Download the file to see everything.';
+            }
+            show(0);
+        }
+    })();
+    </script>
+    {% endif %}
+</body>
+</html>

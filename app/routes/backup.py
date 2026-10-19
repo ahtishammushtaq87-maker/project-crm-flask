@@ -24,6 +24,18 @@ Safety design:
     is_admin gate on every route in this module.
   - Backup filenames include a random suffix so two backups requested at
     the same wall-clock second can never collide/race on the same path.
+
+Keeping a backup ("Keep" checkbox):
+  - Retention keeps the newest MAX_BACKUPS unprotected backups; a protected
+    one is never auto-deleted and doesn't count toward the limit, so ticking
+    old backups never makes a brand-new backup delete itself.
+  - Unticking only puts the backup back into the rotation — retention runs
+    when a backup is created (never on unticking or viewing the page), so it
+    goes when the next backup is made, if it's beyond the limit then.
+  - Protection is stored twice: is_protected on the row, and a
+    <filename>.keep marker file next to the backup. The marker is the
+    source of truth, because restoring replaces the database_backups table
+    with an older copy and would otherwise silently unprotect backups.
 """
 import os
 import sqlite3
@@ -149,24 +161,58 @@ def create_backup(backup_type='manual', user_id=None, note=None):
     return backup
 
 
+KEEP_SUFFIX = '.keep'
+
+
+def _keep_marker_path(filename):
+    backup_dir = _get_backup_dir()
+    return os.path.join(backup_dir, filename + KEEP_SUFFIX) if backup_dir else None
+
+
+def _set_protected(backup, protected):
+    """Tick / untick "Keep": write or remove the on-disk marker, then the row.
+    The marker is written first, so a failure never leaves the row claiming a
+    protection the disk doesn't have."""
+    marker = _keep_marker_path(backup.filename)
+    if marker:
+        if protected:
+            with open(marker, 'w', encoding='utf-8') as f:
+                f.write(f'Kept {pk_now():%Y-%m-%d %H:%M:%S} (Pakistan time). Delete this file, or untick Keep, '
+                        f'to let the {MAX_BACKUPS}-backup limit remove {backup.filename} again.\n')
+        elif os.path.exists(marker):
+            os.remove(marker)
+    backup.is_protected = bool(protected)
+    db.session.commit()
+
+
 def _delete_backup_files_and_row(backup):
     backup_dir = _get_backup_dir()
     if backup_dir:
         path = os.path.join(backup_dir, backup.filename)
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-        except OSError:
-            current_app.logger.exception(f'Failed to delete backup file {path}')
+        for target in (path, path + KEEP_SUFFIX):
+            try:
+                if os.path.exists(target):
+                    os.remove(target)
+            except OSError:
+                current_app.logger.exception(f'Failed to delete backup file {target}')
     db.session.delete(backup)
     db.session.commit()
 
 
+def _retention_candidates(limit=MAX_BACKUPS):
+    """Unprotected backups beyond the newest `limit` unprotected ones — what
+    the next retention pass will delete. Protected ones are never included."""
+    unprotected = (DatabaseBackup.query.filter(DatabaseBackup.is_protected.isnot(True))
+                   .order_by(DatabaseBackup.created_at.desc()).all())
+    return unprotected[limit:]
+
+
 def _enforce_retention(limit=MAX_BACKUPS):
-    """Keep only the most recent `limit` backups; delete the rest (file +
-    row) — oldest first — whenever a new one pushes the count over."""
-    all_backups = DatabaseBackup.query.order_by(DatabaseBackup.created_at.desc()).all()
-    for stale in all_backups[limit:]:
+    """Keep the most recent `limit` unprotected backups; delete the older
+    unprotected ones (file + row). Protected ("Keep") backups are skipped and
+    don't count. Runs when a backup is created."""
+    _sync_protection_from_disk()
+    for stale in _retention_candidates(limit):
         _delete_backup_files_and_row(stale)
 
 
@@ -200,6 +246,23 @@ def _reconcile_backup_index():
             created_at=datetime.utcfromtimestamp(stat.st_mtime),
         ))
         changed = True
+    if changed:
+        db.session.commit()
+    _sync_protection_from_disk()
+
+
+def _sync_protection_from_disk():
+    """Make every row's is_protected match its .keep marker (the marker wins:
+    after a restore the table can hold an older copy of the flags)."""
+    backup_dir = _get_backup_dir()
+    if not backup_dir or not os.path.isdir(backup_dir):
+        return
+    changed = False
+    for b in DatabaseBackup.query.all():
+        on_disk = os.path.exists(os.path.join(backup_dir, b.filename + KEEP_SUFFIX))
+        if bool(b.is_protected) != on_disk:
+            b.is_protected = on_disk
+            changed = True
     if changed:
         db.session.commit()
 
@@ -299,10 +362,13 @@ def index():
     guard = _require_admin()
     if guard:
         return guard
+    # Only reconciles here — retention runs when a backup is created, so a
+    # just-unticked backup stays until then (see the module notes).
     _reconcile_backup_index()
-    _enforce_retention()
     backups = DatabaseBackup.query.order_by(DatabaseBackup.created_at.desc()).all()
-    return render_template('backup/index.html', backups=backups,
+    next_to_go = {b.id for b in _retention_candidates()}
+    return render_template('backup/index.html', backups=backups, next_to_go=next_to_go,
+                           protected_count=sum(1 for b in backups if b.is_protected),
                            sqlite_ok=bool(_get_sqlite_path()), max_backups=MAX_BACKUPS)
 
 
@@ -444,6 +510,33 @@ def restore_upload():
 
     ok, message = _perform_restore(backup, current_user.id)
     flash(message, 'success' if ok else 'danger')
+    return redirect(url_for('backup.index'))
+
+
+@bp.route('/<int:id>/protect', methods=['POST'])
+@login_required
+def protect(id):
+    """The "Keep" checkbox: protect (keep=1) or release (keep=0) a backup."""
+    guard = _require_admin()
+    if guard:
+        return guard
+    backup = DatabaseBackup.query.get_or_404(id)
+    keep = request.form.get('keep') == '1'
+    try:
+        _set_protected(backup, keep)
+    except OSError as e:
+        db.session.rollback()
+        current_app.logger.exception('Could not change backup protection')
+        flash(f'Could not change "Keep" for {backup.filename}: {e}', 'danger')
+        return redirect(url_for('backup.index'))
+    if keep:
+        _log(f'Kept backup {backup.filename}', 'Protected from automatic deletion', user_id=current_user.id)
+        flash(f'{backup.filename} is kept: it will not be deleted automatically when the '
+              f'{MAX_BACKUPS}-backup limit is reached.', 'success')
+    else:
+        _log(f'Released backup {backup.filename}', 'Back in the automatic rotation', user_id=current_user.id)
+        flash(f'{backup.filename} is no longer kept. It will be deleted automatically when the next backup is '
+              f'created, if it is older than the newest {MAX_BACKUPS} backups.', 'info')
     return redirect(url_for('backup.index'))
 
 

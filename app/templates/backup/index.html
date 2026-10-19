@@ -35,10 +35,14 @@
     {% else %}
     <div class="alert alert-info border-0 shadow-sm">
         <i class="fas fa-info-circle me-2"></i>
-        An automatic backup is created every night at <strong>10:00 PM Pakistan time</strong>. Up to
-        <strong>{{ max_backups }}</strong> backups are kept in total (manual + automatic + pre-restore safety
-        snapshots combined) — the oldest is deleted automatically as soon as a new one pushes the count over
+        An automatic backup is created every night at <strong>10:00 PM Pakistan time</strong>. The newest
+        <strong>{{ max_backups }}</strong> backups are kept (manual + automatic + pre-restore safety snapshots
+        combined) — when a new backup is created, the oldest one beyond {{ max_backups }} is deleted automatically.
+        <br><i class="fas fa-lock me-2 text-success"></i>Tick <strong>Keep</strong> on a backup to protect it: it is
+        never deleted automatically and doesn't count toward the {{ max_backups }}. Untick it to put it back in the
+        rotation — it is then deleted when the next backup is created, if it is older than the newest
         {{ max_backups }}.
+        {% if protected_count %}<span class="badge bg-success ms-1">{{ protected_count }} kept</span>{% endif %}
     </div>
     {% endif %}
 
@@ -48,6 +52,7 @@
                 <table class="table table-hover mb-0">
                     <thead class="table-light">
                         <tr>
+                            <th class="text-center" style="width:70px" title="Protect from automatic deletion">Keep</th>
                             <th>Filename</th>
                             <th>Type</th>
                             <th class="text-end">Size</th>
@@ -59,8 +64,24 @@
                     </thead>
                     <tbody>
                         {% for b in backups %}
-                        <tr>
-                            <td class="fw-semibold small">{{ b.filename }}</td>
+                        <tr class="{{ 'table-success' if b.is_protected }}">
+                            <td class="text-center">
+                                <form action="{{ url_for('backup.protect', id=b.id) }}" method="POST" class="m-0">
+                                    <input type="hidden" name="keep" value="{{ '0' if b.is_protected else '1' }}">
+                                    <input class="form-check-input" type="checkbox" style="cursor:pointer; width:1.2em; height:1.2em;"
+                                        {{ 'checked' if b.is_protected }} onchange="this.form.submit()"
+                                        title="{{ 'Kept — untick to let the ' ~ max_backups ~ '-backup limit delete it again' if b.is_protected else 'Keep — never delete this backup automatically' }}"
+                                        aria-label="Keep {{ b.filename }}">
+                                </form>
+                            </td>
+                            <td class="fw-semibold small">{{ b.filename }}
+                                {% if b.is_protected %}
+                                <span class="badge bg-success ms-1"><i class="fas fa-lock me-1"></i>Kept</span>
+                                {% elif b.id in next_to_go %}
+                                <span class="badge bg-warning text-dark ms-1" title="Older than the newest {{ max_backups }} — deleted when the next backup is created. Tick Keep to protect it.">
+                                    <i class="fas fa-hourglass-end me-1"></i>Removed at next backup</span>
+                                {% endif %}
+                            </td>
                             <td>
                                 <span class="badge
                                     {% if b.backup_type == 'manual' %}bg-primary
@@ -90,7 +111,7 @@
                                         <i class="fas fa-undo"></i>
                                     </button>
                                     <form action="{{ url_for('backup.delete', id=b.id) }}" method="POST" class="d-inline"
-                                        onsubmit="return confirm('Delete backup {{ b.filename }}? This cannot be undone.');">
+                                        onsubmit="return confirm('Delete backup {{ b.filename }}?{{ ' It is marked Keep.' if b.is_protected }} This cannot be undone.');">
                                         <button type="submit" class="btn btn-outline-danger" title="Delete">
                                             <i class="fas fa-trash"></i>
                                         </button>
@@ -100,7 +121,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="7" class="text-center py-4 text-muted">No backups yet.</td>
+                            <td colspan="8" class="text-center py-4 text-muted">No backups yet.</td>
                         </tr>
                         {% endfor %}
                     </tbody>

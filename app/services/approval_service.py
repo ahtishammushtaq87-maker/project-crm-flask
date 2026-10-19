@@ -970,6 +970,9 @@ class ApprovalService:
         (staff payments flagged needs_approval) — approving those only
         acknowledges them, so adding the amount again would double-pay.
         """
+        # The account it was received into (if any) counts the money now.
+        from app.utils import sync_receipt_account_status
+        sync_receipt_account_status(payment)
         if getattr(payment, '_was_already_applied', False):
             return
         from app.models import Sale
@@ -981,8 +984,17 @@ class ApprovalService:
 
     @classmethod
     def _post_approve_advance(cls, advance):
-        """No extra logic for CustomerAdvance approval — just flips flag."""
-        pass
+        """Flips the flag; an advance received into a bank / cash account
+        (Universal Pay leftover) keeps its account row in step."""
+        from app.utils import sync_receipt_account_status
+        sync_receipt_account_status(advance)
+
+    @classmethod
+    def _post_status_change_advance(cls, advance, universal_status):
+        """Reject / cancel / draft / pending: the account row only counts
+        while the advance is approved."""
+        from app.utils import sync_receipt_account_status
+        sync_receipt_account_status(advance)
 
     @classmethod
     def _post_status_change_payment(cls, payment, universal_status):
@@ -993,6 +1005,10 @@ class ApprovalService:
         a payment the admin refused. Legacy pending payments were never applied
         (_was_already_applied is False), so nothing happens for them.
         """
+        # Keep the received-into account row in step with every status
+        # change (a refused payment never reached the account).
+        from app.utils import sync_receipt_account_status
+        sync_receipt_account_status(payment)
         if universal_status not in ('reject', 'cancel'):
             return
         from app.models import Sale

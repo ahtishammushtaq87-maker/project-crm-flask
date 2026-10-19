@@ -212,6 +212,8 @@
                                 {% elif t.transaction_type == 'journal' and t.journal_entry %}{{ t.journal_entry.code }}
                                 {% elif t.transaction_type == 'bill_payment' and t.bill_payment and t.bill_payment.bill %}{{ t.bill_payment.bill.bill_number }}
                                 {% elif t.transaction_type == 'vendor_advance' %}{{ t.reference }}
+                                {% elif t.transaction_type == 'sale_payment' and t.sale_payment and t.sale_payment.invoice %}{{ t.sale_payment.invoice.invoice_number }}
+                                {% elif t.transaction_type == 'customer_advance' %}ADV-{{ '%04d'|format(t.customer_advance_id or t.id) }}
                                 {% elif r.expense %}{{ r.expense.expense_number }}
                                 {% else %}ADD-{{ '%04d'|format(t.id) }}
                                 {% endif %}
@@ -222,6 +224,8 @@
                                 {% elif t.transaction_type == 'journal' %}Journal {{ 'Debit' if t.entry_type == 'debit' else 'Credit' }}
                                 {% elif t.transaction_type == 'bill_payment' %}Bill Payment
                                 {% elif t.transaction_type == 'vendor_advance' %}Vendor Advance
+                                {% elif t.transaction_type == 'sale_payment' %}Invoice Payment
+                                {% elif t.transaction_type == 'customer_advance' %}Customer Advance
                                 {% elif r.expense %}Expense Paid
                                 {% else %}Add Money
                                 {% endif %}
@@ -230,7 +234,7 @@
                             <td>{{ r.to_label }}</td>
                             <td>{{ t.description or '—' }}</td>
                             <td>{{ t.reference or '—' }}</td>
-                            <td>{{ r.expense.customer.name if r.expense and r.expense.customer else '—' }}</td>
+                            <td>{% if r.expense and r.expense.customer %}{{ r.expense.customer.name }}{% elif t.transaction_type in ('sale_payment', 'customer_advance') and t.customer %}{{ t.customer.name }}{% else %}—{% endif %}</td>
                             <td>{{ r.expense.warehouse.name if r.expense and r.expense.warehouse else '—' }}</td>
                             <td class="text-end text-success">{{ "{:,.2f}".format(t.amount) if t.entry_type == 'debit' else '' }}</td>
                             <td class="text-end text-danger">{{ "{:,.2f}".format(t.amount) if t.entry_type == 'credit' else '' }}</td>
@@ -251,6 +255,14 @@
                                 {% elif t.transaction_type == 'bill_payment' and t.bill_payment %}
                                 <a href="{{ url_for('purchase.bill_detail', id=t.bill_payment.bill_id) }}" class="text-decoration-none">
                                     <i class="fas fa-file-invoice me-1"></i>{{ t.bill_payment.bill.bill_number if t.bill_payment.bill else 'Bill' }}
+                                </a>
+                                {% elif t.transaction_type == 'sale_payment' and t.sale_payment %}
+                                <a href="{{ url_for('sales.invoice_detail', id=t.sale_payment.invoice_id) }}" class="text-decoration-none">
+                                    <i class="fas fa-file-invoice-dollar me-1"></i>{{ t.sale_payment.invoice.invoice_number if t.sale_payment.invoice else 'Invoice' }}
+                                </a>
+                                {% elif t.transaction_type == 'customer_advance' and t.customer_advance %}
+                                <a href="{{ url_for('sales.customer_profile', id=t.customer_advance.customer_id) }}" class="text-decoration-none">
+                                    <i class="fas fa-hand-holding-usd me-1"></i>{{ t.payee or 'Customer' }}
                                 </a>
                                 {% elif t.transaction_type == 'vendor_advance' and t.vendor_advance %}
                                 <a href="{{ url_for('purchase.vendor_profile', id=t.vendor_advance.vendor_id) }}" class="text-decoration-none">

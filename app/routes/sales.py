@@ -666,8 +666,10 @@ def invoice_detail(id):
         db.session.rollback()
         packing_slip_history = []
 
+    from app.utils import receipt_account_choices
     return render_template('sales/invoice_detail.html',
                            sale=sale,
+                           receipt_accounts=receipt_account_choices(),
                            returns=returns,
                            date_format=date_format,
                            payment_methods=payment_methods,
@@ -1028,7 +1030,16 @@ def _save_lump_proof(file_storage):
 def pay_invoice(id):
     sale = Sale.query.get_or_404(id)
     amount = float(request.form.get('amount', 0))
-    
+
+    # Account the money is received into (Expense > Manage Accounts) —
+    # required whenever money is received. Checked before anything changes,
+    # so a bad pick never half-records.
+    from app.utils import parse_receipt_account, sync_sale_payment_account_txn
+    receipt_account, account_error = parse_receipt_account(request.form, required=amount > 0)
+    if account_error:
+        flash(account_error, 'danger')
+        return redirect(url_for('sales.invoice_detail', id=sale.id))
+
     # ── Optional lump-sum discount granted alongside this payment ──────────
     # Applied BEFORE the payment is allocated so the balance the payment eats
     # into is the discounted one.
@@ -1137,12 +1148,18 @@ def pay_invoice(id):
                 current_app.logger.warning(f"Auto-receipt generation failed for payment on invoice {sale.invoice_number}: {e}")
 
         db.session.add(payment)
+        if receipt_account:
+            db.session.flush()  # the account row needs the payment's id
+            sync_sale_payment_account_txn(payment, receipt_account, current_user.id)
 
         db.session.commit()
         log_activity('Sales', f'Recorded Payment on Invoice #{sale.invoice_number}',
                     f'Amount: PKR {amount:,.2f}, Method: {payment_method}, '
-                    f'Applied immediately. Pending admin approval: {not payer_is_admin}')
+                    + (f'Received into account: {receipt_account.name}, ' if receipt_account else '')
+                    + f'Applied immediately. Pending admin approval: {not payer_is_admin}')
         msg = f'Payment of PKR {amount:,.2f} recorded and applied to invoice {sale.invoice_number}.'
+        if receipt_account:
+            msg += f' PKR {amount:,.2f} added (debit) to account "{receipt_account.name}".'
         if lump_amount > 0:
             msg += f' Lump sum discount of PKR {lump_amount:,.2f} was applied to the invoice.'
         if advance_applied_now > 0:
@@ -1176,6 +1193,16 @@ def customers_list_json():
     return jsonify({
         'customers': [{'id': c.id, 'name': c.name, 'phone': c.phone or ''} for c in customers]
     })
+
+
+@bp.route('/receipt-accounts-json')
+@login_required
+def receipt_accounts_json():
+    """Active bank / cash accounts for the 'Received into Account' dropdown
+    of the Universal Pay modal (base.html), loaded when the modal opens."""
+    from app.utils import receipt_account_choices
+    return jsonify({'accounts': [{'id': a.id, 'name': a.name, 'type': a.account_type or ''}
+                                 for a in receipt_account_choices()]})
 
 
 @bp.route('/customer/<int:id>/pay-summary-json')
@@ -1254,6 +1281,15 @@ def universal_pay(id):
 
     if amount <= 0 and lump_amount <= 0:
         flash('Payment amount must be greater than zero.', 'danger')
+        return redirect(request.referrer or url_for('sales.invoices'))
+
+    # Account the whole amount is received into (required when money comes
+    # in): each invoice's portion and any leftover advance get their own
+    # debit row on it.
+    from app.utils import parse_receipt_account, sync_sale_payment_account_txn, sync_customer_advance_account_txn
+    receipt_account, account_error = parse_receipt_account(request.form, required=amount > 0)
+    if account_error:
+        flash(account_error, 'danger')
         return redirect(request.referrer or url_for('sales.invoices'))
 
     payer_is_admin = (current_user.role == 'admin')
@@ -1383,6 +1419,14 @@ def universal_pay(id):
         db.session.add(advance)
         advance_created = remaining
 
+    if receipt_account and (invoices_paid or advance_created > 0):
+        db.session.flush()  # ids for the account rows
+        for _sale, _portion, payment in invoices_paid:
+            sync_sale_payment_account_txn(payment, receipt_account, current_user.id)
+        if advance_created > 0:
+            sync_customer_advance_account_txn(advance, receipt_account, current_user.id,
+                                              reference=f'Universal Pay — {customer.name}')
+
     # Cash payments skip manual proof upload — auto-generate a receipt per
     # invoice touched, same as the single-invoice flow.
     if not image_path and payment_method == 'Cash' and invoices_paid:
@@ -1399,6 +1443,8 @@ def universal_pay(id):
                 with open(file_path, 'wb') as f:
                     f.write(pdf_buffer.getvalue())
                 payment.image_path = f"app/static/uploads/sale_payments/{filename}"
+                if payment.account_transaction is not None:
+                    payment.account_transaction.bill_image_path = payment.image_path
             except Exception as e:
                 current_app.logger.warning(f"Auto-receipt generation failed for universal payment on invoice {sale.invoice_number}: {e}")
 
@@ -1406,6 +1452,7 @@ def universal_pay(id):
 
     log_activity('Sales', f'Universal Payment for {customer.name}',
                 f'Amount: PKR {amount:,.2f}, Method: {payment_method}, '
+                + (f'Received into account: {receipt_account.name}, ' if receipt_account else '') +
                 f'Applied to {len(invoices_paid)} invoice(s), Advance: PKR {advance_created:,.2f}, '
                 f'Applied immediately. Pending admin approval: {not payer_is_admin}')
 
@@ -1417,6 +1464,8 @@ def universal_pay(id):
         msg += f' Applied to: {details}.'
     if advance_created > 0:
         msg += f' PKR {advance_created:,.2f} credited to the customer as a remaining advance.'
+    if receipt_account and (invoices_paid or advance_created > 0):
+        msg += f' PKR {amount:,.2f} added (debit) to account "{receipt_account.name}".'
     if payer_is_admin:
         flash(msg, 'success')
     else:
@@ -1572,6 +1621,8 @@ def approve_payment(id, pay_id):
         payment.needs_approval = False
         payment.approved_by = current_user.id
         payment.approved_at = datetime.utcnow()
+        from app.utils import sync_receipt_account_status
+        sync_receipt_account_status(payment)
         db.session.commit()
         log_activity('Sales', f'Approved Payment #{payment.payment_number} on Invoice #{sale.invoice_number}',
                      f'Amount: PKR {payment.amount:,.2f} acknowledged by {current_user.username} (already applied)')
@@ -1594,6 +1645,8 @@ def approve_payment(id, pay_id):
     from app.utils import auto_apply_customer_advance, apply_sale_payment_with_credit
     advance_applied_now = auto_apply_customer_advance(sale)
     overpayment_credit = apply_sale_payment_with_credit(sale, payment.amount, current_user.id)
+    from app.utils import sync_receipt_account_status
+    sync_receipt_account_status(payment)  # the account now counts the money in
 
     db.session.commit()
     log_activity('Sales', f'Approved Payment #{payment.payment_number} on Invoice #{sale.invoice_number}',
@@ -1649,6 +1702,9 @@ def reject_payment(id, pay_id):
     payment.is_approved = False
     payment.needs_approval = False
     payment.rejection_reason = reason
+    # A refused payment never reached the account, so its debit stops counting.
+    from app.utils import sync_receipt_account_status
+    sync_receipt_account_status(payment)
     db.session.commit()
 
     log_activity('Sales', f'Rejected Payment on Invoice #{sale.invoice_number}',
@@ -1674,6 +1730,25 @@ def edit_payment(id, pay_id):
 
     if request.method == 'POST':
         old_amount = payment.amount
+
+        # The account dropdown is only on forms that know about it: a form
+        # without the field leaves the payment's account as it is.
+        from app.utils import parse_receipt_account, sync_sale_payment_account_txn
+        account_posted = 'account_id' in request.form
+        try:
+            posted_amount = float(request.form.get('amount', 0) or 0)
+        except ValueError:
+            posted_amount = 0
+        receipt_account, account_error = parse_receipt_account(
+            request.form, required=account_posted and posted_amount > 0)
+        if account_error:
+            # Keeping the current (now inactive) account is still allowed.
+            current_id = str(payment.expense_account_id or '')
+            if account_posted and (request.form.get('account_id') or '').strip() == current_id:
+                receipt_account, account_error = payment.expense_account, None
+        if account_error:
+            flash(account_error, 'danger')
+            return redirect(url_for('sales.invoice_detail', id=sale.id))
 
         # Update payment details
         payment_date_str = request.form.get('payment_date')
@@ -1723,9 +1798,17 @@ def edit_payment(id, pay_id):
             from app.utils import adjust_sale_payment
             overflow = adjust_sale_payment(sale, delta, current_user.id)
 
+        # Keep the account row in step: new amount / date / receipt, moved
+        # to another account, or removed when "No account" is chosen.
+        if account_posted:
+            sync_sale_payment_account_txn(payment, receipt_account, current_user.id)
+        elif payment.expense_account_id:
+            sync_sale_payment_account_txn(payment, payment.expense_account, current_user.id)
+
         db.session.commit()
         log_activity('Sales', f'Updated Payment #{payment.payment_number} on Invoice #{sale.invoice_number}',
-                    f'Old Amount: PKR {old_amount:,.2f}, New Amount: PKR {new_amount:,.2f}')
+                    f'Old Amount: PKR {old_amount:,.2f}, New Amount: PKR {new_amount:,.2f}'
+                    + (f', Account: {payment.expense_account.name}' if payment.expense_account_id else ''))
         msg = f'Payment updated: PKR{new_amount:,.2f} ({payment.method})'
         if overflow > 0:
             msg += f'. PKR {overflow:,.2f} exceeded the balance due and was credited to the customer as a remaining advance.'
@@ -1733,7 +1816,9 @@ def edit_payment(id, pay_id):
         return redirect(url_for('sales.invoice_detail', id=sale.id))
 
     # GET: render edit form
-    return render_template('sales/edit_payment.html', payment=payment, sale=sale)
+    from app.utils import receipt_account_choices
+    return render_template('sales/edit_payment.html', payment=payment, sale=sale,
+                           receipt_accounts=receipt_account_choices())
 
 
 @bp.route('/invoice/<int:id>/payment/<int:pay_id>/delete', methods=['POST'])
@@ -3765,6 +3850,8 @@ def approve_advance(id, adv_id):
     advance.needs_approval = False
     advance.approved_by = current_user.id
     advance.approved_at = datetime.utcnow()
+    from app.utils import sync_receipt_account_status
+    sync_receipt_account_status(advance)  # account row, if it was received into one
     db.session.commit()
     
     log_activity('Customers', f'Approved Advance from {advance.customer.name}',
@@ -3800,6 +3887,8 @@ def reject_advance(id, adv_id):
     advance.is_approved = False
     advance.needs_approval = False
     advance.rejection_reason = reason
+    from app.utils import sync_receipt_account_status
+    sync_receipt_account_status(advance)
     db.session.commit()
 
     log_activity('Customers', f'Rejected Advance from {advance.customer.name}',

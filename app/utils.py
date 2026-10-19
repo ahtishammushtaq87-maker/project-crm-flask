@@ -599,6 +599,124 @@ def sync_vendor_advance_account_status(advance):
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# SALE PAYMENT → BANK / CASH ACCOUNT — the mirror image of the bill payment
+# helpers above. A customer's invoice payment received into an Expense
+# account posts a 'debit' (money IN) row on that account, owned by the
+# Payment (sale_payment_id). The Universal Pay leftover that becomes a
+# customer advance gets its own row (customer_advance_id), so the account
+# always receives the full amount the customer handed over. Each row follows
+# its record's approval state: only an approved payment moves the balance.
+# ─────────────────────────────────────────────────────────────────────────
+
+def receipt_account_choices():
+    """Active accounts a customer payment can be received into (the same
+    list the Expense form's account dropdown shows)."""
+    return bill_payment_account_choices()
+
+
+def parse_receipt_account(form, required=True):
+    """(account_or_None, error_or_None) for the posted 'account_id'. Money
+    received must name the account it went into (required); pass
+    required=False where no money moves (e.g. a lump-sum discount on its
+    own). An unknown or inactive account is always an error, so a stale page
+    can never post money into a closed account."""
+    from app.models import ExpenseAccount
+    raw = (form.get('account_id') or '').strip()
+    if not raw:
+        if required:
+            return None, 'Select the account this payment was received into.'
+        return None, None
+    try:
+        account = ExpenseAccount.query.get(int(raw))
+    except (TypeError, ValueError):
+        account = None
+    if not account or not account.is_active:
+        return None, 'The selected account is not available any more. Choose another account.'
+    return account, None
+
+
+def _receipt_txn_fields(txn, record, account, amount, customer, label, reference):
+    record_date = getattr(record, 'date', None) or datetime.utcnow()
+    txn.account_id = account.id
+    txn.entry_type = 'debit'
+    txn.date = record_date.date() if hasattr(record_date, 'date') else record_date
+    txn.amount = round(float(amount or 0), 2)
+    txn.description = label
+    txn.reference = reference
+    txn.payee = ((customer.name if customer else '') or 'Customer')[:160]
+    txn.customer_id = customer.id if customer else None
+    sync_receipt_account_status(record, txn)
+
+
+def sync_sale_payment_account_txn(payment, account, user_id):
+    """Create / update / remove the account debit row for an invoice
+    `payment` (which must already have a flushed id). account=None removes
+    the row. Returns the row or None."""
+    from app.models import Sale
+
+    txn = payment.account_transaction
+    amount = round(float(payment.amount or 0), 2)
+    if account is None or amount <= 0:
+        if txn is not None:
+            payment.account_transaction = None  # delete-orphan removes the row
+        payment.expense_account_id = None
+        return None
+
+    sale = Sale.query.get(payment.invoice_id) if payment.invoice_id else None
+    customer = sale.customer if sale else None
+    number = sale.invoice_number if sale else (payment.payment_number or '')
+    if txn is None:
+        from app.models import ExpenseAccountTransaction
+        txn = ExpenseAccountTransaction(transaction_type='sale_payment', created_by=user_id)
+        payment.account_transaction = txn
+    txn.transaction_type = 'sale_payment'
+    _receipt_txn_fields(
+        txn, payment, account, amount, customer,
+        f'Payment received for {number}' + (f' ({payment.method})' if payment.method else ''),
+        (payment.reference_number or payment.payment_number or number or '')[:120])
+    txn.bill_image_path = None
+    if payment.image_path:
+        txn.bill_image_path = payment.image_path if payment.image_path.startswith('app/static/') \
+            else f'app/static/{payment.image_path}'
+    payment.expense_account_id = account.id
+    return txn
+
+
+def sync_customer_advance_account_txn(advance, account, user_id, reference=None):
+    """Account debit row for a customer advance created from money received
+    (the Universal Pay leftover). `advance` must have a flushed id."""
+    from app.models import ExpenseAccountTransaction, Customer
+
+    txn = advance.account_transaction
+    amount = round(float(advance.amount or 0), 2)
+    if account is None or amount <= 0:
+        if txn is not None:
+            advance.account_transaction = None
+        return None
+    if txn is None:
+        txn = ExpenseAccountTransaction(transaction_type='customer_advance', created_by=user_id)
+        advance.account_transaction = txn
+    txn.transaction_type = 'customer_advance'
+    customer = Customer.query.get(advance.customer_id)
+    _receipt_txn_fields(txn, advance, account, amount, customer,
+                        'Customer advance received (Universal Pay)', (reference or 'Advance')[:120])
+    return txn
+
+
+def sync_receipt_account_status(record, txn=None):
+    """Copy a Payment's / CustomerAdvance's approve-reject state onto its
+    account row, so a rejected payment stops counting in the balance."""
+    txn = txn if txn is not None else getattr(record, 'account_transaction', None)
+    if txn is None:
+        return
+    txn.is_approved = bool(record.is_approved)
+    txn.is_rejected = bool(record.is_rejected)
+    txn.rejection_reason = record.rejection_reason if record.is_rejected else None
+    txn.approved_by = record.approved_by if record.is_approved else None
+    txn.approved_at = record.approved_at if record.is_approved else None
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # VENDOR (PURCHASE) ADVANCE HELPERS — mirror the customer/sale helpers above.
 # We overpay a vendor → the excess becomes OUR prepaid credit with that vendor
 # (a VendorAdvance), which then auto-applies to future bills for the vendor.

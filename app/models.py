@@ -1882,6 +1882,11 @@ class Payment(db.Model):
     # proof supplied for it, so it stays auditable from the Payment History.
     lump_discount_amount = db.Column(db.Float, default=0)
     lump_discount_proof = db.Column(db.String(255))
+    # Bank / cash account (Expense > Manage Accounts) the customer's money was
+    # received into. Its debit row lives in expense_account_transactions
+    # (sale_payment_id) — see app.utils.sync_sale_payment_account_txn.
+    expense_account_id = db.Column(db.Integer, db.ForeignKey('expense_accounts.id'), nullable=True, index=True)
+    expense_account = db.relationship('ExpenseAccount', foreign_keys=[expense_account_id], lazy=True)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     # `is_approved` is the MONEY flag: True means this amount is already included
     # in Sale.paid_amount. Every add/reverse path (approve/reject/edit/delete)
@@ -2169,6 +2174,15 @@ class ExpenseAccountTransaction(db.Model):
     # Same idea for a Vendor Advance paid out of this account
     # (transaction_type='vendor_advance').
     vendor_advance_id = db.Column(db.Integer, db.ForeignKey('vendor_advances.id'), nullable=True, index=True)
+    # Set on the debit (money in) row posted when a customer's invoice payment
+    # is received into this account (transaction_type='sale_payment'), from
+    # Record Payment, Universal Pay or Edit Payment — the payment owns the row,
+    # so it is edited / approved / deleted through the payment, never here.
+    sale_payment_id = db.Column(db.Integer, db.ForeignKey('payments.id'), nullable=True, index=True)
+    # Same for the leftover of a Universal Pay that became a customer advance
+    # (transaction_type='customer_advance') — that money came into the
+    # account too, but no Payment row exists for it.
+    customer_advance_id = db.Column(db.Integer, db.ForeignKey('customer_advances.id'), nullable=True, index=True)
 
     account = db.relationship('ExpenseAccount', foreign_keys=[account_id],
                                backref=db.backref('transactions', lazy=True))
@@ -2183,6 +2197,14 @@ class ExpenseAccountTransaction(db.Model):
                                    backref=db.backref('account_transaction', uselist=False, lazy=True))
     vendor_advance = db.relationship('VendorAdvance', foreign_keys=[vendor_advance_id],
                                      backref=db.backref('account_transaction', uselist=False, lazy=True))
+    # delete-orphan: deleting the payment / advance anywhere in the app (its
+    # own Delete button, deleting the invoice, ...) removes its account row.
+    sale_payment = db.relationship('Payment', foreign_keys=[sale_payment_id],
+                                   backref=db.backref('account_transaction', uselist=False, lazy=True,
+                                                      cascade='all, delete-orphan'))
+    customer_advance = db.relationship('CustomerAdvance', foreign_keys=[customer_advance_id],
+                                       backref=db.backref('account_transaction', uselist=False, lazy=True,
+                                                          cascade='all, delete-orphan'))
 
     def __repr__(self):
         return f'<ExpenseAccountTransaction {self.entry_type} {self.amount} -> account {self.account_id}>'
@@ -5538,6 +5560,12 @@ class DatabaseBackup(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     last_restored_at = db.Column(db.DateTime, nullable=True)
+    # "Keep" checkbox: a protected backup is never removed by the 10-backup
+    # retention (it doesn't count toward the 10 either); only deleting it by
+    # hand removes it. Unticking puts it back in the rotation, so it goes
+    # when the next backup is created. Mirrored by a <filename>.keep marker
+    # file on disk, which survives a database restore — see backup.py.
+    is_protected = db.Column(db.Boolean, default=False, nullable=False)
 
     created_by_user = db.relationship('User', foreign_keys=[created_by], lazy=True)
 

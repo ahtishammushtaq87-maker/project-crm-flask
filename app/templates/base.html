@@ -2798,6 +2798,19 @@
                                     </select>
                                 </div>
                                 <div class="col-12">
+                                    <label class="form-label fw-semibold" for="universalPayAccount">
+                                        <i class="fas fa-wallet me-1 text-success"></i>Received into Account <span class="text-danger">*</span>
+                                    </label>
+                                    <select name="account_id" id="universalPayAccount" class="form-select"
+                                        data-receipt-account data-required data-source="{{ url_for('sales.receipt_accounts_json') }}"
+                                        data-placeholder="— Select Account —">
+                                        <option value="">— Select Account —</option>
+                                    </select>
+                                    <small class="text-muted">The full amount is added (debit — money in) to this
+                                        account's balance: one entry per invoice it settles, plus one for any leftover
+                                        advance. Same accounts as Expense › Manage Accounts.</small>
+                                </div>
+                                <div class="col-12">
                                     <label class="form-label fw-semibold">Amount (PKR)</label>
                                     <div class="input-group">
                                         <span class="input-group-text">PKR</span>
@@ -3027,6 +3040,7 @@
         {% endif %}
 
         <script src="{{ url_for('static', filename='js/entity_handler.js') }}"></script>
+        <script src="{{ url_for('static', filename='js/receipt_account_select.js') }}"></script>
         <script>
             // ---- Global Price History (used by the Item History popup on every page) ----
             function fmt(n) {

@@ -1544,7 +1544,8 @@ def expenses():
     debit_base_query = ExpenseAccountTransaction.query.filter(
         ExpenseAccountTransaction.expense_id.is_(None),
         ExpenseAccountTransaction.entry_type == 'debit',
-        ExpenseAccountTransaction.transaction_type.notin_(('transfer', 'journal', 'bill_payment', 'vendor_advance')),
+        ExpenseAccountTransaction.transaction_type.notin_(('transfer', 'journal', 'bill_payment', 'vendor_advance',
+                                                            'sale_payment', 'customer_advance')),
     )
     debit_count = debit_base_query.count()
 
@@ -3774,6 +3775,10 @@ def delete_expense_account_debit_entry(id):
     if txn.bill_payment_id is not None:
         flash('This entry belongs to a purchase bill payment — edit or delete the payment on the bill instead.', 'warning')
         return redirect(url_for('accounting.expenses', entry_view='debit'))
+    if txn.sale_payment_id is not None or txn.customer_advance_id is not None:
+        flash('This entry belongs to a customer payment received on a sales invoice — edit or delete '
+              'the payment on the invoice (or the advance on the customer profile) instead.', 'warning')
+        return redirect(url_for('accounting.expenses', entry_view='debit'))
     if txn.vendor_advance_id is not None:
         flash('This entry belongs to a vendor advance — delete the advance from the vendor profile instead.', 'warning')
         return redirect(url_for('accounting.expenses', entry_view='debit'))
@@ -3819,6 +3824,9 @@ def edit_expense_account_debit_entry(id):
         return jsonify({'success': False, 'message': 'This line belongs to a journal entry — edit it from Finance > Journal Entries.'})
     if txn.bill_payment_id is not None:
         return jsonify({'success': False, 'message': 'This entry belongs to a purchase bill payment — edit the payment on the bill instead.'})
+    if txn.sale_payment_id is not None or txn.customer_advance_id is not None:
+        return jsonify({'success': False, 'message': 'This entry belongs to a customer payment received on a sales '
+                                                     'invoice — edit the payment on the invoice instead.'})
     if txn.vendor_advance_id is not None:
         return jsonify({'success': False, 'message': 'This entry belongs to a vendor advance — manage it from the vendor profile instead.'})
     if txn.salary_advance_id is not None:

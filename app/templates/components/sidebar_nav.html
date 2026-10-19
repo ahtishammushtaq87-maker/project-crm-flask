@@ -19,7 +19,7 @@
 {% set show_finance = adm or u.can_view_receiving or u.can_view_delivering or u.can_view_expenses or u.can_view_accounting or u.can_view_settings %}
 {% set show_hr = adm or u.can_view_salary or u.can_view_attendance or u.can_view_hr %}
 {% set show_reports = adm or u.can_view_reports %}
-{% set show_settings = adm or u.can_view_settings or u.can_view_users or u.can_view_tasks or u.can_view_media or u.can_view_activity_logs %}
+{% set show_settings = adm or u.can_view_settings or u.can_view_users or u.can_view_tasks or u.can_view_activity_logs %}
 
 <nav class="nav flex-column sidebar-nav">
 
@@ -243,6 +243,13 @@
         <i class="fas fa-table nav-ico"></i> <span>Spreadsheet</span>
     </a>
 
+    {# ── Media library (its own top-level module, like Spreadsheet) #}
+    {% if adm or u.can_view_media %}
+    <a class="nav-link" href="{{ url_for('media.index') }}">
+        <i class="fas fa-photo-film nav-ico"></i> <span>Media</span>
+    </a>
+    {% endif %}
+
     {# ── Settings ──────────────────────────────────────────── #}
     {% if show_settings %}
     <a class="nav-link nav-group-toggle collapsed" data-bs-toggle="collapse" href="#{{ nav_ns }}NavSettings"
@@ -260,9 +267,6 @@
         {% endif %}
         {% if adm or u.can_view_tasks %}
         <a class="nav-link" href="{{ url_for('users.list_tasks') }}"><i class="fas fa-list-check nav-sub-ico"></i><span>Tasks</span></a>
-        {% endif %}
-        {% if adm or u.can_view_media %}
-        <a class="nav-link" href="{{ url_for('media.index') }}"><i class="fas fa-photo-film nav-sub-ico"></i><span>Media</span></a>
         {% endif %}
         {% if adm or u.can_view_activity_logs %}
         <a class="nav-link" href="{{ url_for('activity_log.index') }}"><i class="fas fa-clock-rotate-left nav-sub-ico"></i><span>Activity Log</span></a>

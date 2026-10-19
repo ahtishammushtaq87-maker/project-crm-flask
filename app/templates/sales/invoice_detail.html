@@ -830,6 +830,20 @@
                                 </select>
                             </div>
                             <div class="col-12">
+                                <label class="form-label fw-semibold" for="payAccountSelect">
+                                    <i class="fas fa-wallet me-1 text-success"></i>Received into Account <span class="text-danger">*</span>
+                                </label>
+                                <select name="account_id" id="payAccountSelect" class="form-select"
+                                    data-receipt-account data-required data-placeholder="— Select Account —">
+                                    <option value="">— Select Account —</option>
+                                    {% for acct in receipt_accounts or [] %}
+                                    <option value="{{ acct.id }}">{{ acct.name }}{% if acct.account_type %} ({{ acct.account_type }}){% endif %}</option>
+                                    {% endfor %}
+                                </select>
+                                <small class="text-muted">The payment is added (debit — money in) to this account's
+                                    balance. Same accounts as Expense › Manage Accounts.</small>
+                            </div>
+                            <div class="col-12">
                                 <label class="form-label fw-semibold">Amount (PKR)</label>
                                 <div class="input-group">
                                     <span class="input-group-text">PKR</span>
@@ -1396,7 +1410,9 @@
                                         {{ payment.date.strftime(date_format) }}
                                         <br><small class="text-muted">{{ payment.date.strftime('%H:%M') }}</small>
                                     </td>
-                                    <td>{{ payment.method }}</td>
+                                    <td>{{ payment.method }}
+                                        {% if payment.expense_account %}<br><small class="text-success" title="Received into account"><i class="fas fa-wallet me-1"></i>{{ payment.expense_account.name }}</small>{% endif %}
+                                    </td>
                                     <td
                                         class="text-end fw-bold {% if payment.is_approved %}text-success{% elif payment.is_rejected %}text-danger{% else %}text-warning{% endif %}">
                                         PKR {{ "{:,.2f}".format(payment.amount) }}
@@ -1731,6 +1747,20 @@
                                     method.name }}</option>
                                 {% endfor %}
                             </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold" for="editPayAccount{{ payment.id }}">Received into Account <span class="text-danger">*</span></label>
+                            <select name="account_id" id="editPayAccount{{ payment.id }}" class="form-select"
+                                data-receipt-account data-required data-placeholder="— Select Account —">
+                                <option value="">— Select Account —</option>
+                                {% for acct in receipt_accounts or [] %}
+                                <option value="{{ acct.id }}" {{ 'selected' if payment.expense_account_id == acct.id }}>{{ acct.name }}{% if acct.account_type %} ({{ acct.account_type }}){% endif %}</option>
+                                {% endfor %}
+                                {% if payment.expense_account and payment.expense_account not in (receipt_accounts or []) %}
+                                <option value="{{ payment.expense_account_id }}" selected>{{ payment.expense_account.name }} (inactive)</option>
+                                {% endif %}
+                            </select>
+                            <small class="text-muted">Changing it moves this payment's debit to the new account.</small>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold">New Receipt (optional)</label>

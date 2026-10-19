@@ -28,6 +28,20 @@
                         </select>
                     </div>
                     <div class="col-md-6">
+                        <label class="form-label" for="editPayAccount">Received into Account <span class="text-danger">*</span></label>
+                        <select name="account_id" id="editPayAccount" class="form-select"
+                                data-receipt-account data-required data-placeholder="— Select Account —">
+                            <option value="">— Select Account —</option>
+                            {% for acct in receipt_accounts or [] %}
+                            <option value="{{ acct.id }}" {{ 'selected' if payment.expense_account_id == acct.id }}>{{ acct.name }}{% if acct.account_type %} ({{ acct.account_type }}){% endif %}</option>
+                            {% endfor %}
+                            {% if payment.expense_account and payment.expense_account not in (receipt_accounts or []) %}
+                            <option value="{{ payment.expense_account_id }}" selected>{{ payment.expense_account.name }} (inactive)</option>
+                            {% endif %}
+                        </select>
+                        <small class="text-muted">The payment is added (debit — money in) to this account's balance.</small>
+                    </div>
+                    <div class="col-md-6">
                         <label class="form-label">Receipt Image (optional - replaces old)</label>
                         <input type="file" name="payment_image" class="form-control" accept="image/*,.pdf">
                         {% if payment.image_path %}

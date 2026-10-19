@@ -157,7 +157,9 @@
             <div class="mx-tile" tabindex="0" draggable="{{ 'true' if can_add else 'false' }}"
                  data-type="file" data-id="{{ doc.id }}" data-kind="{{ kind }}"
                  data-name="{{ doc.filename|lower }}" data-date="{{ doc.uploaded_at.isoformat() if doc.uploaded_at else '' }}" data-size="{{ doc.file_size or 0 }}"
-                 data-open="{{ url_for('media.view', media_id=doc.id) }}" data-title="{{ doc.filename }}">
+                 data-open="{{ url_for('media.preview', media_id=doc.id) }}" data-title="{{ doc.filename }}"
+                 data-download="{{ url_for('media.download', media_id=doc.id) }}"
+                 data-missing="{{ '1' if doc.id in missing_ids else '' }}">
                 <input type="checkbox" class="form-check-input mx-check" title="Select">
                 <div class="mx-icon">
                     {% if kind == 'image' %}
@@ -170,13 +172,17 @@
                 </div>
                 <div class="mx-meta">
                     <div class="mx-name" title="{{ doc.filename }}">{{ doc.filename }}</div>
+                    {% if doc.id in missing_ids %}
+                    <span class="badge mx-missing"
+                          title="The file is not on this server (app/static/{{ doc.filepath }}). Copy it from the server it was uploaded to."><i class="fas fa-triangle-exclamation me-1"></i>File missing</span>
+                    {% endif %}
                     <div class="mx-sub">{{ ext }} file · {{ size_text(doc.file_size) }}</div>
                     <div class="mx-sub2">{{ doc.uploaded_at.strftime('%d %b %Y, %H:%M') if doc.uploaded_at else '' }}{% if doc.uploaded_by %} · {{ doc.uploaded_by.username }}{% endif %}</div>
                 </div>
                 <div class="dropdown mx-menu">
                     <button class="btn btn-sm btn-link text-muted" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="More"><i class="fas fa-ellipsis-v"></i></button>
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                        <li><a class="dropdown-item" href="{{ url_for('media.view', media_id=doc.id) }}" target="_blank"><i class="fas fa-eye me-2 text-primary"></i>Open</a></li>
+                        <li><button type="button" class="dropdown-item mx-act-open"><i class="fas fa-eye me-2 text-primary"></i>Open</button></li>
                         <li><a class="dropdown-item" href="{{ url_for('media.download', media_id=doc.id) }}"><i class="fas fa-download me-2 text-success"></i>Download</a></li>
                         {% if can_add %}
                         <li><button class="dropdown-item mx-act-move"><i class="fas fa-share me-2"></i>Move to…</button></li>
@@ -273,14 +279,20 @@
 </div>
 {% endif %}
 
-<!-- Image preview -->
+<!-- File preview: every file opens here (media.preview, embedded). Nothing is
+     downloaded unless the Download button is pressed. -->
 <div class="modal fade" id="mxPreviewModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-xl">
-        <div class="modal-content bg-dark">
-            <div class="modal-header border-0"><h6 class="modal-title text-white text-truncate" id="mxPreviewTitle"></h6>
-                <a id="mxPreviewOpen" href="#" target="_blank" class="btn btn-sm btn-outline-light ms-auto me-2"><i class="fas fa-external-link-alt"></i></a>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body text-center pt-0"><img id="mxPreviewImg" src="" alt="" style="max-width:100%; max-height:75vh;"></div>
+    <div class="modal-dialog modal-dialog-centered modal-xl mx-preview-dialog">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title text-truncate me-2" id="mxPreviewTitle"></h6>
+                <div class="ms-auto d-flex gap-2 flex-shrink-0">
+                    <a id="mxPreviewTab" href="#" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Open in a new tab"><i class="fas fa-external-link-alt"></i></a>
+                    <a id="mxPreviewDownload" href="#" class="btn btn-sm btn-success"><i class="fas fa-download me-1"></i>Download</a>
+                    <button type="button" class="btn-close ms-1" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+            </div>
+            <div class="modal-body p-0"><iframe id="mxPreviewFrame" title="File preview" src="about:blank"></iframe></div>
         </div>
     </div>
 </div>
@@ -337,6 +349,9 @@
     .mx-area.files-over-tile .mx-drop-overlay { display: none; }
     .mx-crumb.drop-target { background: #fff6dc; border-color: #f0b429; }
     @media (max-width: 576px) { .mx-search { width: 100%; } .mx-grid { grid-template-columns: 1fr; } }
+    .mx-preview-dialog { max-width: min(1200px, 96vw); }
+    .mx-missing { font-size: .68rem; font-weight: 600; background: #fdecec; color: #b02a37; border: 1px solid #f5c2c7; }
+    #mxPreviewFrame { display: block; width: 100%; height: 78vh; border: 0; border-radius: 0 0 .3rem .3rem; background: #eef1f6; }
 </style>
 
 <script>
@@ -373,17 +388,26 @@
     document.getElementById('mxSelClear').addEventListener('click', () => { tiles().forEach(t => setSel(t, false)); refreshSel(); });
 
     // ── Open ──
+    // Files always open in the preview popup — a file is only downloaded
+    // when its Download button is pressed.
     function openTile(t) {
         if (t.dataset.type === 'folder') { window.location = t.dataset.open; return; }
-        if (t.dataset.kind === 'image') {
-            document.getElementById('mxPreviewImg').src = t.dataset.open;
-            document.getElementById('mxPreviewTitle').textContent = t.dataset.title;
-            document.getElementById('mxPreviewOpen').href = t.dataset.open;
-            modal('mxPreviewModal').show();
-        } else {
-            window.open(t.dataset.open, '_blank');
-        }
+        document.getElementById('mxPreviewTitle').textContent = t.dataset.title;
+        document.getElementById('mxPreviewTab').href = t.dataset.open;
+        const dl = document.getElementById('mxPreviewDownload');
+        dl.href = t.dataset.download;
+        dl.classList.toggle('d-none', !!t.dataset.missing);   // nothing to download
+        document.getElementById('mxPreviewFrame').src = t.dataset.open + (t.dataset.open.includes('?') ? '&' : '?') + 'embed=1';
+        modal('mxPreviewModal').show();
     }
+    // Stop video/audio and free the document when the popup closes.
+    document.getElementById('mxPreviewModal').addEventListener('hidden.bs.modal', () => {
+        document.getElementById('mxPreviewFrame').src = 'about:blank';
+    });
+    document.addEventListener('click', e => {
+        const btn = e.target.closest('.mx-act-open');
+        if (btn) openTile(btn.closest('.mx-tile'));
+    });
 
     tiles().forEach(t => {
         t.addEventListener('click', e => {
