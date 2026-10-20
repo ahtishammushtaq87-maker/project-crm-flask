@@ -115,8 +115,17 @@ def dashboard():
         .filter(active_invoice_criterion()) \
         .order_by(Sale.invoice_number.desc()).all()
 
+    # Mute All / Unmute All buttons: counted over ALL open invoices (they act
+    # on all of them, whatever filter is applied to the table).
+    every_open = _all_open_tasks()
+    open_total = len(every_open)
+    muted_total = sum(1 for t in every_open if t.is_muted)
+
     return render_template(
         'recovery/dashboard.html',
+        open_total=open_total,
+        muted_total=muted_total,
+        can_mute_all=current_user.is_admin or current_user.can_edit_recovery,
         tasks=tasks,
         customer_groups=customer_groups,
         today=today,
@@ -1319,6 +1328,66 @@ def toggle_mute(task_id):
 
     db.session.commit()
     return jsonify({'success': True, 'is_muted': task.is_muted})
+
+
+def _all_open_tasks():
+    """Every open recovery invoice (not closed, not a draft/cancelled sale),
+    one task per invoice — what Mute All / Unmute All act on."""
+    q = exclude_draft_cancelled(RecoveryTask.query).filter(
+        RecoveryTask.recovery_status.notin_(['CLOSED_PAID', 'CLOSED_WRITTEN_OFF']))
+    return _dedupe_by_invoice(q.all())
+
+
+@bp.route('/mute-all', methods=['POST'])
+@login_required
+def mute_all():
+    """Dashboard buttons: mute (action=mute) or unmute (action=unmute) the
+    popup reminders and countdown timers of every open recovery invoice in
+    one go — the same effect as ticking / unticking each invoice's Mute box.
+    Unmuting leaves On Hold invoices quiet (hold is a separate switch)."""
+    if not (current_user.is_admin or current_user.can_edit_recovery):
+        flash('You do not have permission to change recovery notifications.', 'danger')
+        return redirect(url_for('recovery.dashboard'))
+
+    muting = request.form.get('action') != 'unmute'
+    tasks = _all_open_tasks()
+    changing = [t for t in tasks if bool(t.is_muted) != muting]
+    if not changing:
+        flash('All open recovery invoices are already muted.' if muting
+              else 'No open recovery invoice is muted.', 'info')
+        return redirect(url_for('recovery.dashboard'))
+
+    now = datetime.utcnow()
+    for t in changing:
+        t.is_muted = muting
+        t.updated_at = now
+        t.muted_at, t.muted_by = (now, current_user.id) if muting else (None, None)
+        db.session.add(RecoveryLog(
+            task_id=t.id, response_type='general',
+            note=f'Notifications {"muted" if muting else "unmuted"} (Mute All) by {current_user.username}.',
+            logged_by=current_user.id,
+        ))
+
+    if muting:
+        cancel_group_reminders(tasks)          # every pending popup + its timer
+    else:
+        from app.services.recovery_automation import _ensure_reminder
+        for t in changing:
+            if not t.is_on_hold:
+                _ensure_reminder(t)            # one popup per customer+salesman group
+
+    db.session.commit()
+    from app.utils import log_activity
+    log_activity('Recovery', f'{"Muted" if muting else "Unmuted"} all recovery notifications',
+                 f'{len(changing)} open invoice(s) {"muted" if muting else "unmuted"} by {current_user.username}')
+    if muting:
+        flash(f'Muted {len(changing)} recovery invoice(s): no reminder popups and no countdown timers '
+              f'until you unmute them.', 'success')
+    else:
+        held = sum(1 for t in changing if t.is_on_hold)
+        flash(f'Unmuted {len(changing)} recovery invoice(s); reminders are running again.'
+              + (f' {held} of them stay quiet because they are On Hold.' if held else ''), 'success')
+    return redirect(url_for('recovery.dashboard'))
 
 
 # ─── Put On Hold / Resume ──────────────────────────────────────────────────────

@@ -47,6 +47,29 @@
             <a href="{{ url_for('recovery.radar') }}" class="btn btn-outline-primary btn-sm">
                 <i class="fas fa-radar me-1"></i> My Radar
             </a>
+            {% if can_mute_all and open_total %}
+            {# Mute / unmute the reminder popups + countdown timers of every open invoice #}
+            {% if muted_total < open_total %}
+            <form method="POST" action="{{ url_for('recovery.mute_all') }}" class="d-inline">
+                <input type="hidden" name="action" value="mute">
+                <button class="btn btn-sm btn-warning" title="Stop reminder popups and countdown timers for all open recovery invoices"
+                        onclick="return confirm('Mute notifications for all {{ open_total - muted_total }} unmuted recovery invoice(s)?\n\nNo reminder popups and no countdown timers until you unmute them.')">
+                    <i class="fas fa-bell-slash me-1"></i> Mute All
+                    <span class="badge bg-light text-dark ms-1">{{ open_total - muted_total }}</span>
+                </button>
+            </form>
+            {% endif %}
+            {% if muted_total %}
+            <form method="POST" action="{{ url_for('recovery.mute_all') }}" class="d-inline">
+                <input type="hidden" name="action" value="unmute">
+                <button class="btn btn-sm btn-outline-success" title="Start reminder popups and countdown timers again for all muted recovery invoices"
+                        onclick="return confirm('Unmute all {{ muted_total }} muted recovery invoice(s)?\n\nReminders and countdown timers start again (On Hold invoices stay quiet).')">
+                    <i class="fas fa-bell me-1"></i> Unmute All
+                    <span class="badge bg-success ms-1">{{ muted_total }}</span>
+                </button>
+            </form>
+            {% endif %}
+            {% endif %}
             {% if current_user.is_admin %}
             <form method="POST" action="{{ url_for('recovery.run_automation') }}" class="d-inline">
                 <button class="btn btn-sm btn-outline-secondary"
