@@ -238,6 +238,18 @@ $(document).ready(function() {
                             {{ form.payment_instructions(class="form-control", rows="3") }}
                         </div>
 
+                        <div class="mb-3">
+                            <label for="defaultReceiptAccount" class="form-label">Default Receiving Account (payments)</label>
+                            <select name="default_receipt_account_id" id="defaultReceiptAccount" class="form-select searchable-select"
+                                    data-placeholder="— No default —">
+                                <option value="">— No default —</option>
+                                {% for acct in receipt_accounts or [] %}
+                                <option value="{{ acct.id }}" {{ 'selected' if acct.id == default_receipt_account_id }}>{{ acct.name }}{% if acct.account_type %} ({{ acct.account_type }}){% endif %}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Pre-selected in "Received into Account" on Record Payment and Universal Pay. It can still be changed for any payment.</div>
+                        </div>
+
                         <hr>
                         <h6>Number Formatting</h6>
 

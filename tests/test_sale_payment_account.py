@@ -260,6 +260,56 @@ class SalePaymentAccountTestCase(unittest.TestCase):
         data = self.client.get('/sales/receipt-accounts-json').get_json()
         self.assertEqual([a['name'] for a in data['accounts']], ['Cash Box', 'Meezan Bank'])
 
+    # ── Default receiving account ─────────────────────────────────────────
+    def _pumpter(self):
+        acct = ExpenseAccount(name='Pumpter Bank', account_type='Bank', is_active=True)
+        db.session.add(acct)
+        db.session.commit()
+        return acct
+
+    def _selected_option(self, html, select_id):
+        import re
+        block = re.search(rf'id="{select_id}".*?</select>', html, re.S).group(0)
+        picked = re.findall(r'<option value="(\d*)"\s+selected', block)
+        return picked[0] if picked else None
+
+    def test_pumpter_account_is_preselected(self):
+        pumpter = self._pumpter()
+        html = self.client.get(f'/sales/invoice/{self.s1.id}').get_data(as_text=True)
+        self.assertEqual(self._selected_option(html, 'payAccountSelect'), str(pumpter.id))
+        data = self.client.get('/sales/receipt-accounts-json').get_json()
+        self.assertEqual(data['default_id'], pumpter.id)           # Universal Pay starts on it too
+
+    def test_default_can_be_changed_per_payment(self):
+        pumpter = self._pumpter()
+        self.pay(self.s1, 200, self.bank)                          # user picked another account
+        self.assertEqual(Payment.query.one().expense_account_id, self.bank.id)
+        html = self.client.get(f'/sales/invoice/{self.s1.id}').get_data(as_text=True)
+        p = Payment.query.one()                                    # its edit keeps its own account
+        self.assertEqual(self._selected_option(html, f'editPayAccount{p.id}'), str(self.bank.id))
+        self.assertEqual(self._selected_option(html, 'payAccountSelect'), str(pumpter.id))
+
+    def test_default_is_set_in_invoice_settings(self):
+        from app.models import InvoiceSettings
+        from app.utils import default_receipt_account
+        self._pumpter()
+        db.session.add(InvoiceSettings(default_receipt_account_id=self.cash.id))
+        db.session.commit()
+        self.assertEqual(default_receipt_account().id, self.cash.id)
+        InvoiceSettings.query.one().default_receipt_account_id = 0  # "No default"
+        db.session.commit()
+        self.assertIsNone(default_receipt_account())
+        html = self.client.get(f'/sales/invoice/{self.s1.id}').get_data(as_text=True)
+        self.assertIsNone(self._selected_option(html, 'payAccountSelect'))
+        InvoiceSettings.query.one().default_receipt_account_id = self.closed.id  # inactive -> none
+        db.session.commit()
+        self.assertIsNone(default_receipt_account())
+
+    def test_settings_page_offers_the_default(self):
+        pumpter = self._pumpter()
+        html = self.client.get('/sales/invoice/settings').get_data(as_text=True)
+        self.assertEqual(self._selected_option(html, 'defaultReceiptAccount'), str(pumpter.id))
+
     def test_account_activity_shows_invoice_payment(self):
         self.pay(self.s1, 200, self.bank)
         html = self.client.get(f'/accounting/expenses/account-activity?account_id={self.bank.id}&date_from=2026-01-01&date_to=2026-12-31').get_data(as_text=True)

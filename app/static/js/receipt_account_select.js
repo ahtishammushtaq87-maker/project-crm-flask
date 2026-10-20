@@ -38,16 +38,20 @@
         sel.dataset.receiptAccountReady = '1';
     }
 
-    function fill(sel, accounts) {
+    // defaultId (Invoice Settings) is marked defaultSelected, so it is both
+    // pre-selected now and what form.reset() returns to on the next open.
+    function fill(sel, accounts, defaultId) {
         var keep = sel.value;
         while (sel.options.length > 1) sel.remove(1);  // keep the "no account" option
         accounts.forEach(function (a) {
             var opt = document.createElement('option');
             opt.value = a.id;
             opt.textContent = a.name + (a.type ? ' (' + a.type + ')' : '');
+            if (defaultId != null && String(a.id) === String(defaultId)) opt.defaultSelected = true;
             sel.appendChild(opt);
         });
-        sel.value = keep;
+        if (keep) sel.value = keep;
+        else if (defaultId != null) sel.value = String(defaultId);
         if (hasSelect2()) jQuery(sel).trigger('change');
     }
 
@@ -57,7 +61,7 @@
         sel.dataset.receiptAccountLoaded = '1';
         fetch(url, { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
-            .then(function (data) { fill(sel, data.accounts || []); })
+            .then(function (data) { fill(sel, data.accounts || [], data.default_id); })
             .catch(function () { sel.dataset.receiptAccountLoaded = ''; });
     }
 

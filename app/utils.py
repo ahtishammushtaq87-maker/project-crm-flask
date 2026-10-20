@@ -614,6 +614,27 @@ def receipt_account_choices():
     return bill_payment_account_choices()
 
 
+DEFAULT_RECEIPT_ACCOUNT_HINT = 'pumpter'  # used until a default is chosen in Invoice Settings
+
+
+def default_receipt_account():
+    """The account the payment dropdowns start on, or None. Invoice Settings
+    decides it; until it has been set there, the active account whose name
+    contains 'Pumpter' (the company's own bank account) is used. An inactive
+    or deleted default simply means no preselection."""
+    from app.models import ExpenseAccount, InvoiceSettings
+    settings = InvoiceSettings.query.first()
+    chosen = settings.default_receipt_account_id if settings else None
+    if chosen == 0:
+        return None
+    if chosen:
+        account = ExpenseAccount.query.get(chosen)
+        return account if account and account.is_active else None
+    return (ExpenseAccount.query.filter(ExpenseAccount.is_active == True,  # noqa: E712
+                                        ExpenseAccount.name.ilike(f'%{DEFAULT_RECEIPT_ACCOUNT_HINT}%'))
+            .order_by(ExpenseAccount.id).first())
+
+
 def parse_receipt_account(form, required=True):
     """(account_or_None, error_or_None) for the posted 'account_id'. Money
     received must name the account it went into (required); pass

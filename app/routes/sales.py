@@ -666,10 +666,12 @@ def invoice_detail(id):
         db.session.rollback()
         packing_slip_history = []
 
-    from app.utils import receipt_account_choices
+    from app.utils import receipt_account_choices, default_receipt_account
+    _default_acct = default_receipt_account()
     return render_template('sales/invoice_detail.html',
                            sale=sale,
                            receipt_accounts=receipt_account_choices(),
+                           default_receipt_account_id=_default_acct.id if _default_acct else None,
                            returns=returns,
                            date_format=date_format,
                            payment_methods=payment_methods,
@@ -1200,9 +1202,11 @@ def customers_list_json():
 def receipt_accounts_json():
     """Active bank / cash accounts for the 'Received into Account' dropdown
     of the Universal Pay modal (base.html), loaded when the modal opens."""
-    from app.utils import receipt_account_choices
+    from app.utils import receipt_account_choices, default_receipt_account
+    default = default_receipt_account()
     return jsonify({'accounts': [{'id': a.id, 'name': a.name, 'type': a.account_type or ''}
-                                 for a in receipt_account_choices()]})
+                                 for a in receipt_account_choices()],
+                    'default_id': default.id if default else None})
 
 
 @bp.route('/customer/<int:id>/pay-summary-json')
@@ -1816,9 +1820,11 @@ def edit_payment(id, pay_id):
         return redirect(url_for('sales.invoice_detail', id=sale.id))
 
     # GET: render edit form
-    from app.utils import receipt_account_choices
+    from app.utils import receipt_account_choices, default_receipt_account
+    _default_acct = default_receipt_account()
     return render_template('sales/edit_payment.html', payment=payment, sale=sale,
-                           receipt_accounts=receipt_account_choices())
+                           receipt_accounts=receipt_account_choices(),
+                           default_receipt_account_id=_default_acct.id if _default_acct else None)
 
 
 @bp.route('/invoice/<int:id>/payment/<int:pay_id>/delete', methods=['POST'])
@@ -3760,6 +3766,14 @@ def invoice_settings():
             settings.overdue_restricted_groups = None
 
         settings.product_discount_conditions = form.product_discount_conditions.data
+
+        # Default "Received into Account" for payments ('' = no default -> 0;
+        # only an active account can be the default).
+        if 'default_receipt_account_id' in request.form:
+            from app.models import ExpenseAccount
+            raw = (request.form.get('default_receipt_account_id') or '').strip()
+            acct = ExpenseAccount.query.get(int(raw)) if raw.isdigit() else None
+            settings.default_receipt_account_id = acct.id if acct and acct.is_active else 0
             
         db.session.commit()
         log_activity('Settings', f'Updated Invoice Settings', f'Prefix: {settings.invoice_prefix}, Next #: {settings.next_number}')
@@ -3778,8 +3792,12 @@ def invoice_settings():
         for p in all_active
     }
 
+    from app.utils import receipt_account_choices, default_receipt_account
+    _default_acct = default_receipt_account()
     return render_template('sales/invoice_settings.html', settings=settings, form=form,
-                           products=products, product_lookup=product_lookup)
+                           products=products, product_lookup=product_lookup,
+                           receipt_accounts=receipt_account_choices(),
+                           default_receipt_account_id=_default_acct.id if _default_acct else None)
 
 
 # ===== CUSTOMER ADVANCE ROUTES =====

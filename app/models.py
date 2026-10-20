@@ -2562,6 +2562,11 @@ class InvoiceSettings(db.Model):
     payment_terms = db.Column(db.Text)
     notes = db.Column(db.Text)
     overdue_restricted_groups = db.Column(db.Text) # Stored as JSON list of group IDs
+    # Account the "Received into Account" dropdowns (Record Payment, Universal
+    # Pay) start on - still changeable per payment. NULL = not chosen yet
+    # (falls back to the active "Pumpter" account), 0 = no default on purpose.
+    # See app.utils.default_receipt_account.
+    default_receipt_account_id = db.Column(db.Integer, nullable=True)
     
     @property
     def restricted_group_ids(self):
