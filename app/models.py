@@ -3423,6 +3423,9 @@ class SalaryAdvance(db.Model):
     # and touches no account.
     expense_account_id = db.Column(db.Integer, db.ForeignKey('expense_accounts.id'), nullable=True, index=True)
     expense_account = db.relationship('ExpenseAccount', foreign_keys=[expense_account_id])
+    # Optional receipt/proof image, project-root-relative
+    # ("app/static/uploads/advances/...") like Expense.bill_image_path.
+    image_path = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     def __init__(self,staff_id,amount,date,description ):
      self.staff_id=staff_id

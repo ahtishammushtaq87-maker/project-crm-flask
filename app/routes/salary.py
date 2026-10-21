@@ -548,6 +548,7 @@ def bulk_delete_advances():
     for adv_id in ids:
         advance = SalaryAdvance.query.get(adv_id)
         if advance and not advance.is_deducted:
+            _delete_advance_image(advance)
             db.session.delete(advance)
             deleted += 1
         else:
@@ -623,6 +624,36 @@ def _sync_advance_account_transaction(advance, account_id, is_confirmed):
     advance.expense_account_id = account_id
 
 
+ADVANCE_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
+
+
+def _save_advance_image(file_storage):
+    """Save an uploaded advance receipt/proof image under
+    app/static/uploads/advances/ and return the project-root-relative path
+    (same convention as Expense.bill_image_path). Returns None when nothing
+    usable was uploaded."""
+    if not file_storage or not file_storage.filename:
+        return None
+    ext = file_storage.filename.rsplit('.', 1)[-1].lower() if '.' in file_storage.filename else ''
+    if ext not in ADVANCE_IMAGE_EXTENSIONS:
+        return None
+    import time
+    import uuid
+    filename = f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{secure_filename(file_storage.filename)}"
+    full_path = os.path.join('app', 'static', 'uploads', 'advances', filename)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    file_storage.save(full_path)
+    return f"app/static/uploads/advances/{filename}"
+
+
+def _delete_advance_image(advance):
+    if advance.image_path and os.path.isfile(advance.image_path):
+        try:
+            os.remove(advance.image_path)
+        except OSError:
+            pass
+
+
 @bp.route('/advances/add', methods=['GET', 'POST'])
 @login_required
 @permission_required('salary', action='add')
@@ -637,6 +668,7 @@ def add_advance():
             date=form.date.data,
             description=form.description.data
         )
+        advance.image_path = _save_advance_image(request.files.get('image'))
         db.session.add(advance)
         db.session.flush()  # need advance.id for the account transaction
 
@@ -670,6 +702,7 @@ def delete_advance(id):
     linked_txn = ExpenseAccountTransaction.query.filter_by(salary_advance_id=advance.id).first()
     if linked_txn:
         db.session.delete(linked_txn)
+    _delete_advance_image(advance)
     db.session.delete(advance)
     db.session.commit()
     log_activity('Salary', f'Deleted Advance for: {advance_staff_name}', f'Amount: {advance_amount}')

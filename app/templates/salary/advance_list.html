@@ -126,6 +126,7 @@
                         <th>Staff Name</th>
                         <th>Amount</th>
                         <th>Description</th>
+                        <th class="no-export">Image</th>
                         <th>Status</th>
                         <th class="text-end px-4 no-export">Actions</th>
                     </tr>
@@ -140,6 +141,17 @@
                         <td>{{ advance.staff.name }}</td>
                         <td><strong class="text-info">{{ "%.2f" % advance.amount }}</strong></td>
                         <td>{{ advance.description or '---' }}</td>
+                        <td class="no-export">
+                            {% if advance.image_path %}
+                            {% set adv_img = url_for('static', filename=advance.image_path.replace('app/static/', '')) %}
+                            <a href="{{ adv_img }}" class="advance-img-link" data-img="{{ adv_img }}"
+                               data-caption="{{ advance.staff.name }} · {{ '%.2f' % advance.amount }} · {{ advance.date.strftime('%d %b, %Y') }}">
+                                <img src="{{ adv_img }}" alt="Advance image" class="advance-thumb">
+                            </a>
+                            {% else %}
+                            <span class="text-muted small">---</span>
+                            {% endif %}
+                        </td>
                         <td>
                             {% if advance.is_deducted %}
                             <span class="badge bg-success-soft text-success px-2 py-1">
@@ -168,7 +180,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="7" class="text-center py-4 text-muted border-0">No advances found.</td>
+                        <td colspan="8" class="text-center py-4 text-muted border-0">No advances found.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -177,7 +189,42 @@
     </div>
 </div>
 
+<!-- Advance Image Preview Modal -->
+<div class="modal fade" id="advanceImageModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title" id="advanceImageCaption">Advance Image</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center bg-light">
+                <img id="advanceImageFull" src="" alt="Advance image" class="img-fluid rounded" style="max-height: 75vh;">
+            </div>
+            <div class="modal-footer">
+                <a id="advanceImageOpen" href="#" target="_blank" class="btn btn-outline-primary btn-sm">
+                    <i class="fas fa-external-link-alt me-1"></i>Open in new tab
+                </a>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('click', function (e) {
+    const link = e.target.closest('.advance-img-link');
+    if (!link) return;
+    e.preventDefault();
+    document.getElementById('advanceImageFull').src = link.dataset.img;
+    document.getElementById('advanceImageOpen').href = link.dataset.img;
+    document.getElementById('advanceImageCaption').textContent = link.dataset.caption;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('advanceImageModal')).show();
+});
+</script>
+
 <style>
+    .advance-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; border: 1px solid #dfe5ef; cursor: zoom-in; transition: transform .15s; }
+    .advance-thumb:hover { transform: scale(1.08); }
     .bg-success-soft { background-color: rgba(72, 187, 120, 0.25); }
     .bg-warning-soft { background-color: rgba(236, 201, 75, 0.25); }
     .text-success { color: #276749 !important; }

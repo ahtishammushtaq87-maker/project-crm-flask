@@ -170,24 +170,24 @@
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover mb-0 align-middle">
+                <table class="table table-hover mb-0 align-middle" id="activityTable">
                     <thead class="table-light">
                         <tr>
-                            <th>Date / Time</th>
-                            <th>Transaction</th>
-                            <th>Type</th>
-                            <th>From Account</th>
-                            <th>To Account / Payee</th>
-                            <th>Description</th>
-                            <th>Reference</th>
-                            <th>Customer</th>
-                            <th>Warehouse</th>
-                            <th class="text-end">Money In</th>
-                            <th class="text-end">Money Out</th>
-                            <th class="text-end">Balance</th>
-                            <th>Linked Doc.</th>
+                            <th data-sort-type="date">Date / Time</th>
+                            <th data-sort-type="text">Transaction</th>
+                            <th data-sort-type="text">Type</th>
+                            <th data-sort-type="text">From Account</th>
+                            <th data-sort-type="text">To Account / Payee</th>
+                            <th data-sort-type="text">Description</th>
+                            <th data-sort-type="text">Reference</th>
+                            <th data-sort-type="text">Customer</th>
+                            <th data-sort-type="text">Warehouse</th>
+                            <th data-sort-type="num" class="text-end">Money In</th>
+                            <th data-sort-type="num" class="text-end">Money Out</th>
+                            <th data-sort-type="num" class="text-end">Balance</th>
+                            <th data-sort-type="text">Linked Doc.</th>
                             <th class="no-export">Bill</th>
-                            <th class="text-center">Status</th>
+                            <th data-sort-type="text" class="text-center">Status</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -205,8 +205,8 @@
                         </tr>
                         {% for r in group.rows %}
                         {% set t = r.txn %}
-                        <tr>
-                            <td>{{ t.date.strftime('%d-%b') if t.date else '—' }}{% if t.created_at %} {{ t.created_at.strftime('%H:%M') }}{% endif %}</td>
+                        <tr class="activity-row">
+                            <td data-sort="{{ t.date.isoformat() if t.date else '' }} {{ t.created_at.strftime('%H:%M:%S') if t.created_at else '' }}">{{ t.date.strftime('%d-%b') if t.date else '—' }}{% if t.created_at %} {{ t.created_at.strftime('%H:%M') }}{% endif %}</td>
                             <td class="fw-semibold text-nowrap">
                                 {% if t.transaction_type == 'transfer' %}TRV-{{ '%04d'|format(t.id) }}
                                 {% elif t.transaction_type == 'journal' and t.journal_entry %}{{ t.journal_entry.code }}
@@ -236,9 +236,9 @@
                             <td>{{ t.reference or '—' }}</td>
                             <td>{% if r.expense and r.expense.customer %}{{ r.expense.customer.name }}{% elif t.transaction_type in ('sale_payment', 'customer_advance') and t.customer %}{{ t.customer.name }}{% else %}—{% endif %}</td>
                             <td>{{ r.expense.warehouse.name if r.expense and r.expense.warehouse else '—' }}</td>
-                            <td class="text-end text-success">{{ "{:,.2f}".format(t.amount) if t.entry_type == 'debit' else '' }}</td>
-                            <td class="text-end text-danger">{{ "{:,.2f}".format(t.amount) if t.entry_type == 'credit' else '' }}</td>
-                            <td class="text-end fw-semibold {{ 'text-success' if r.running >= 0 else 'text-danger' }}">
+                            <td class="text-end text-success" data-sort="{{ t.amount if t.entry_type == 'debit' else '' }}">{{ "{:,.2f}".format(t.amount) if t.entry_type == 'debit' else '' }}</td>
+                            <td class="text-end text-danger" data-sort="{{ t.amount if t.entry_type == 'credit' else '' }}">{{ "{:,.2f}".format(t.amount) if t.entry_type == 'credit' else '' }}</td>
+                            <td class="text-end fw-semibold {{ 'text-success' if r.running >= 0 else 'text-danger' }}" data-sort="{{ r.running }}">
                                 {{ "{:,.2f}".format(r.running) }}
                             </td>
                             <td>
@@ -365,6 +365,74 @@
 </div>
 {% endif %}
 {% endfor %}
+
+<style>
+    #activityTable th[data-sort-type] { cursor: pointer; user-select: none; white-space: nowrap; }
+    #activityTable th[data-sort-type]:hover { background: #e9eef6; }
+    .sort-arrows { display: inline-flex; flex-direction: column; vertical-align: middle; margin-left: 6px; line-height: 0; }
+    .sort-arrows i { font-size: 10px; height: 7px; color: #c3c9d4; }
+    th.sort-asc .sort-arrows .fa-caret-up,
+    th.sort-desc .sort-arrows .fa-caret-down { color: #495057; }
+</style>
+<script>
+// Click a header to sort: ascending -> descending -> original order.
+// The table is grouped per account (Opening / Closing / header rows), so only
+// the transaction rows inside each group are reordered; those rows stay put.
+(function () {
+    const table = document.getElementById('activityTable');
+    if (!table) return;
+    const tbody = table.tBodies[0];
+    const headers = Array.from(table.tHead.rows[0].cells);
+    tbody.querySelectorAll('tr.activity-row').forEach((tr, i) => tr.dataset.origIndex = i);
+
+    headers.forEach(th => {
+        if (!th.dataset.sortType) return;
+        th.insertAdjacentHTML('beforeend', '<span class="sort-arrows"><i class="fas fa-caret-up"></i><i class="fas fa-caret-down"></i></span>');
+        th.addEventListener('click', () => {
+            const dir = th.classList.contains('sort-asc') ? 'desc' : th.classList.contains('sort-desc') ? '' : 'asc';
+            headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+            if (dir) th.classList.add('sort-' + dir);
+            sortTable(headers.indexOf(th), th.dataset.sortType, dir);
+        });
+    });
+
+    function cellValue(tr, col, type) {
+        const td = tr.cells[col];
+        const raw = (td.dataset.sort !== undefined ? td.dataset.sort : td.textContent).trim();
+        if (raw === '' || raw === '—' || raw === '-') return null;
+        if (type === 'num') { const n = parseFloat(raw.replace(/,/g, '')); return isNaN(n) ? null : n; }
+        return raw.toLowerCase();
+    }
+
+    function sortTable(col, type, dir) {
+        // Collect each contiguous run of transaction rows (one per account group).
+        const runs = [];
+        let run = null;
+        Array.from(tbody.rows).forEach(tr => {
+            if (tr.classList.contains('activity-row')) {
+                if (!run) { run = { rows: [], anchor: null }; runs.push(run); }
+                run.rows.push(tr);
+            } else if (run) {
+                run.anchor = tr;
+                run = null;
+            }
+        });
+        runs.forEach(r => {
+            r.rows.sort((a, b) => {
+                if (!dir) return a.dataset.origIndex - b.dataset.origIndex;
+                const va = cellValue(a, col, type), vb = cellValue(b, col, type);
+                // Empty cells always sink to the bottom.
+                if (va === null && vb === null) return a.dataset.origIndex - b.dataset.origIndex;
+                if (va === null) return 1;
+                if (vb === null) return -1;
+                const cmp = type === 'num' ? va - vb : va.localeCompare(vb, undefined, { numeric: true });
+                return (dir === 'asc' ? cmp : -cmp) || (a.dataset.origIndex - b.dataset.origIndex);
+            });
+            r.rows.forEach(tr => tbody.insertBefore(tr, r.anchor));
+        });
+    }
+})();
+</script>
 
 {% include 'accounting/_account_manager_modal.html' %}
 {% include 'accounting/_transfer_funds_modal.html' %}

@@ -10,7 +10,7 @@
                 <h4 class="mb-0"><i class="fas fa-hand-holding-usd me-2"></i>{{ title }}</h4>
             </div>
             <div class="card-body p-4 bg-light">
-                <form method="POST">
+                <form method="POST" enctype="multipart/form-data">
                     {{ form.hidden_tag() }}
                     <div class="mb-3">
                         <label class="form-label fw-bold small text-muted text-uppercase">Staff Member</label>
@@ -49,6 +49,11 @@
                     <div class="mb-3">
                         <label class="form-label fw-bold small text-muted text-uppercase">Description / Reason</label>
                         {{ form.description(class="form-control", rows=3, placeholder="Enter reason for advance...") }}
+                    </div>
+                    <div class="mb-3">
+                        {% with image_label='Advance Receipt / Image', image_noun='receipt or proof image' %}
+                        {% include 'inventory/_image_capture.html' %}
+                        {% endwith %}
                     </div>
                     <div class="d-grid mt-4">
                         <button type="submit" class="btn btn-info text-white btn-lg shadow-sm">

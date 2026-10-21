@@ -193,8 +193,10 @@ def create_user():
 def edit_user(id):
     user = User.query.get_or_404(id)
     form = UserEditForm()
+    form.user_id = user.id
     if form.validate_on_submit():
-        # Username is not editable, keep original
+        old_username = user.username
+        user.username = form.username.data
         user_email = form.email.data
         if not user_email or not user_email.strip():
             user_email = f"{user.username.lower()}_at_noemail.local"
@@ -328,11 +330,15 @@ def edit_user(id):
             user.set_password(form.password.data)
         db.session.commit()
         
-        log_activity('Users', f'Updated User: {user.username}', f'Role: {user.role}, Active: {user.is_active}')
+        details = f'Role: {user.role}, Active: {user.is_active}'
+        if old_username != user.username:
+            details = f'Username: {old_username} -> {user.username}, ' + details
+        log_activity('Users', f'Updated User: {user.username}', details)
         
         flash('User updated successfully.', 'success')
         return redirect(url_for('users.list_users'))
     elif request.method == 'GET':
+        form.username.data = user.username
         form.email.data = user.email
         form.role.data = user.role
         form.is_active.data = 'True' if user.is_active else 'False'

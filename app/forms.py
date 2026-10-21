@@ -1,6 +1,6 @@
 from flask_wtf import FlaskForm
 from wtforms import StringField, FloatField, IntegerField, SelectField, TextAreaField, DateField, FileField, BooleanField, DecimalField, SelectMultipleField, SubmitField
-from wtforms.validators import DataRequired, Email, Optional, NumberRange, EqualTo, InputRequired
+from wtforms.validators import DataRequired, Email, Optional, NumberRange, EqualTo, InputRequired, Length, ValidationError
 from wtforms.fields import DateTimeField, TimeField
 from datetime import datetime
 from decimal import Decimal
@@ -269,7 +269,19 @@ class UserForm(FlaskForm):
 
 
 class UserEditForm(FlaskForm):
-    username = StringField('Username', validators=[Optional()])
+    username = StringField('Username', validators=[DataRequired(), Length(max=64)])
+    # Set by the edit route so the uniqueness check skips the user being edited.
+    user_id = None
+
+    def validate_username(self, field):
+        from sqlalchemy import func
+        from app.models import User
+        field.data = (field.data or '').strip()
+        if not field.data:
+            raise ValidationError('Username is required.')
+        taken = User.query.filter(func.lower(User.username) == field.data.lower(), User.id != self.user_id).first()
+        if taken:
+            raise ValidationError(f'Username "{field.data}" is already taken.')
     email = StringField('Email', validators=[Optional(), Email()])
     password = StringField('Password', validators=[Optional()])
     role = SelectField('Role', choices=[('admin', 'Admin'), ('manager', 'Manager'), ('user', 'Staff')], validators=[DataRequired()])

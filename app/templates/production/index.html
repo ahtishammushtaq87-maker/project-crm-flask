@@ -283,17 +283,8 @@
                         <tr>
                             <td class="sku-col">{{ sku_link(r.product.sku, r.product.id) }}</td>
                             <td class="product-col {% if r.product.margin_color %}text-{{ r.product.margin_color }} fw-bold{% endif %}">{{ r.product.name }}</td>
-                            <td class="numeric-col">
-                                <input type="number" class="form-control form-control-sm inline-edit text-end"
-                                    data-target-id="{{ r.target.id }}" data-field="target_units"
-                                    value="{{ r.effective_target_units|int }}" min="0" style="width: 100px;">
-                            </td>
-                            <td class="numeric-col">
-                                <input type="number"
-                                    class="form-control form-control-sm inline-edit text-end text-success fw-bold"
-                                    data-target-id="{{ r.target.id }}" data-field="produced_qty"
-                                    value="{{ r.produced_qty|int }}" min="0" style="width: 100px;">
-                            </td>
+                            <td class="numeric-col">{{ r.effective_target_units|int }}</td>
+                            <td class="numeric-col text-success fw-bold">{{ r.produced_qty|int }}</td>
                             <td class="numeric-col text-danger">{{ r.rejected_qty|int }}</td>
                             <td class="numeric-col text-warning">{{ r.returned_qty|int }}</td>
                             <td class="numeric-col text-primary fw-bold">{{ r.net_produced|int }}</td>

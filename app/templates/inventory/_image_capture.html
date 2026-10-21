@@ -7,6 +7,8 @@
     current_image_src  - URL of the product's existing image (edit page);
                          shows it with a "Remove current image" checkbox
     current_image_alt  - alt text for that image
+    image_label        - field title (default "Product Image")
+    image_noun         - lower-case noun used in help text (default "product image")
   Everything selected/captured/pasted/dropped ends up in #imageInput, so the
   server-side upload handling (request.files['image']) is unchanged.
   The field is OPTIONAL - nothing here makes it required.
@@ -54,12 +56,14 @@
     }
 </style>
 
+{% set image_label = image_label or 'Product Image' %}
+{% set image_noun = image_noun or 'product image' %}
 <div class="img-upload mb-0">
     <div class="img-upload-head">
         <div class="img-upload-head-icon"><i class="fas fa-camera"></i></div>
         <div>
-            <label for="imageInput" class="img-upload-title">Product Image <span class="img-upload-optional">Optional</span></label>
-            <p class="img-upload-sub">Upload, capture or paste a product image (JPG, PNG, GIF, WEBP).</p>
+            <label for="imageInput" class="img-upload-title">{{ image_label }} <span class="img-upload-optional">Optional</span></label>
+            <p class="img-upload-sub">Upload, capture or paste a {{ image_noun }} (JPG, PNG, GIF, WEBP).</p>
         </div>
     </div>
 
@@ -80,17 +84,17 @@
         </div>
     </div>
 
-    <div class="img-upload-drop" id="imageDropZone" tabindex="0" role="button" aria-label="Drag and drop, paste or click to upload a product image">
+    <div class="img-upload-drop" id="imageDropZone" tabindex="0" role="button" aria-label="Drag and drop, paste or click to upload a {{ image_noun }}">
         <div class="img-upload-drop-inner" id="imageDropEmpty">
             <div class="img-upload-drop-icon"><i class="fas fa-camera"></i></div>
             <div>
-                <p class="img-upload-drop-title">Drag &amp; drop your product image here</p>
+                <p class="img-upload-drop-title">Drag &amp; drop your {{ image_noun }} here</p>
                 <p class="img-upload-drop-sub">or click to upload / capture &middot; Ctrl+V to paste</p>
                 <p class="img-upload-drop-note">Supports JPG, PNG, GIF, WEBP (Max 5MB)</p>
             </div>
         </div>
         <div class="img-upload-drop-preview" id="imageDropPreview" style="display:none;">
-            <img id="imagePreviewImg" alt="Selected product image">
+            <img id="imagePreviewImg" alt="Selected {{ image_noun }}">
             <div class="text-start">
                 <p class="img-upload-drop-title mb-1"><i class="fas fa-check-circle text-success me-1"></i>New image ready</p>
                 <p class="img-upload-drop-sub mb-3" id="imagePreviewMeta"></p>
@@ -121,12 +125,12 @@
     {% endif %}
 </div>
 
-<!-- Camera Capture Modal (Product Image) -->
+<!-- Camera Capture Modal ({{ image_label }}) -->
 <div class="modal fade" id="imageCameraModal" tabindex="-1" aria-labelledby="imageCameraModalLabel" aria-hidden="true" data-bs-backdrop="static">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="imageCameraModalLabel">Capture Product Image from Camera</h5>
+                <h5 class="modal-title" id="imageCameraModalLabel">Capture {{ image_label }} from Camera</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body text-center">

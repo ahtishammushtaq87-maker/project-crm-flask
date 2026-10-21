@@ -19,9 +19,14 @@
                         </div>
                         <div class="mb-3">
                             <label for="username" class="form-label">Username</label>
-                            <input type="text" class="form-control" value="{{ user.username }}" disabled readonly>
-                            <small class="text-muted">Cannot be changed after creation</small>
-                            <input type="hidden" name="username" value="{{ user.username }}">
+                            {{ form.username(class="form-control" + (" is-invalid" if form.username.errors else ""), id="username", maxlength=64, autocomplete="off") }}
+                            {% if form.username.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.username.errors %}<i class="fas fa-exclamation-circle me-1"></i>{{ error }}<br>{% endfor %}
+                            </div>
+                            {% else %}
+                            <small class="text-muted">Used to log in. Must be unique.</small>
+                            {% endif %}
                         </div>
                         <div class="mb-3">
                             <label for="email" class="form-label">Email</label>
