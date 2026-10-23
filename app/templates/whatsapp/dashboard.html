@@ -1,0 +1,168 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}WhatsApp Overview{% endblock %}
+
+{% block wa_content %}
+{% call m.head('WhatsApp', 'Conversations, delivery and campaign activity — ' ~ range_label) %}
+    {{ m.range_filter('whatsapp.dashboard', preset, start, end) }}
+    <a class="wa-btn wa-btn-primary" href="{{ url_for('whatsapp.inbox') }}"><i class="fas fa-inbox"></i> Open inbox</a>
+{% endcall %}
+
+{% if not settings or not settings.phone_number_id %}
+<div class="wa-alert wa-alert-warn">
+    <strong>WhatsApp is not connected yet.</strong>
+    {% if wa_perms.can_manage_settings %}<a href="{{ url_for('whatsapp.settings') }}">Add your Meta credentials in Settings</a> to start receiving and sending messages.
+    {% else %}Ask an administrator to connect the WhatsApp Business number.{% endif %}
+</div>
+{% endif %}
+
+{% set ms = data.messages %}
+<div class="wa-stats">
+    <div class="wa-stat"><div class="wa-stat-label">Conversations</div><div class="wa-stat-value">{{ data.conversations }}</div>
+        <div class="wa-stat-sub">{{ data.new_conversations }} new in range</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">Open</div><div class="wa-stat-value">{{ data.open }}</div>
+        <div class="wa-stat-sub">all time</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">Unread</div><div class="wa-stat-value">{{ data.unread }}</div>
+        <div class="wa-stat-sub">conversations</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">Received</div><div class="wa-stat-value">{{ ms.inbound }}</div>
+        <div class="wa-stat-sub">messages in range</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">Sent</div><div class="wa-stat-value">{{ ms.outbound }}</div>
+        <div class="wa-stat-sub">{{ ms.pending_outcome }} awaiting status</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">Failed</div><div class="wa-stat-value" style="color:{{ '#c63c3c' if ms.failed else 'inherit' }}">{{ ms.failed }}</div>
+        <div class="wa-stat-sub">failure rate {{ ms.failure_rate|wa_pct }}</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">Campaigns</div><div class="wa-stat-value">{{ data.campaigns_running }}</div>
+        <div class="wa-stat-sub">running · {{ data.campaigns_completed }} completed</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">Subscribed</div><div class="wa-stat-value">{{ data.subscribed }}</div>
+        <div class="wa-stat-sub">opted in of {{ data.contacts }} contacts</div></div>
+</div>
+
+<div class="row g-3">
+    <div class="col-xl-8">
+        <div class="wa-card">
+            <div class="wa-card-head"><h2>Message activity</h2>
+                <div class="wa-legend"><span><i class="wa-bar-in"></i>Received</span><span><i class="wa-bar-out"></i>Sent</span></div></div>
+            <div class="wa-card-body">
+                {% set peak = (series|map(attribute='in')|max or 0) + (series|map(attribute='out')|max or 0) %}
+                {% if peak == 0 %}
+                <div class="wa-empty"><i class="fas fa-chart-column"></i>No messages in this period.</div>
+                {% else %}
+                <div class="wa-bars" role="img" aria-label="Messages per day">
+                    {% for d in series %}
+                    <div class="wa-bar" title="{{ d.date }}: {{ d.in }} received, {{ d.out }} sent">
+                        <span class="wa-bar-out" style="height:{{ (d.out / peak * 110)|round(1) }}px"></span>
+                        <span class="wa-bar-in" style="height:{{ (d.in / peak * 110)|round(1) }}px"></span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="d-flex justify-content-between wa-small wa-muted mt-1"><span>{{ series[0].date }}</span><span>{{ series[-1].date }}</span></div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="wa-card">
+            <div class="wa-card-head"><h2>Recent conversations</h2><a class="wa-small" href="{{ url_for('whatsapp.inbox') }}">View all</a></div>
+            {% if recent %}
+            <ul class="wa-list-plain" style="padding:0 16px">
+                {% for c in recent %}
+                <li>
+                    <a href="{{ url_for('whatsapp.inbox', c=c.id) }}" class="d-flex gap-2 align-items-center text-decoration-none" style="color:inherit">
+                        <span class="wa-avatar">{{ c.contact.display_name[:1]|upper }}</span>
+                        <span class="flex-grow-1" style="min-width:0">
+                            <span class="d-flex justify-content-between"><strong>{{ c.contact.display_name }}</strong>
+                                <span class="wa-small wa-muted">{{ c.last_message_at|wa_ago }}</span></span>
+                            <span class="wa-small wa-muted wa-truncate" style="max-width:100%">{{ c.last_message_preview or '' }}</span>
+                        </span>
+                        {% if c.unread_count %}<span class="wa-unread-count">{{ c.unread_count }}</span>{% endif %}
+                        {{ m.status_badge(c.status) }}
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="wa-empty"><i class="far fa-comments"></i>No conversations yet. They appear here when customers message your WhatsApp number.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="col-xl-4">
+        <div class="wa-card">
+            <div class="wa-card-head"><h2>Connection</h2>
+                {% if wa_perms.can_manage_settings %}<a class="wa-small" href="{{ url_for('whatsapp.settings') }}">Settings</a>{% endif %}</div>
+            <div class="wa-card-body">
+                {% if settings and settings.is_connected %}
+                <div class="mb-2"><span class="wa-dot wa-dot-green"></span> <strong>Connected</strong></div>
+                {% elif settings and settings.connection_status == 'error' %}
+                <div class="mb-2"><span class="wa-dot wa-dot-red"></span> <strong>Error</strong></div>
+                <div class="wa-small wa-muted mb-2">{{ settings.connection_message }}</div>
+                {% else %}
+                <div class="mb-2"><span class="wa-dot"></span> <strong>Not verified</strong></div>
+                {% endif %}
+                <dl class="wa-kv">
+                    <dt>Number</dt><dd>{{ settings.display_phone_number if settings and settings.display_phone_number else '—' }}</dd>
+                    <dt>Name</dt><dd>{{ settings.verified_name if settings and settings.verified_name else '—' }}</dd>
+                    <dt>Quality</dt><dd>{{ settings.quality_rating if settings and settings.quality_rating else '—' }}</dd>
+                    <dt>Last test</dt><dd>{{ (settings.last_test_at if settings else None)|wa_dt }}</dd>
+                    <dt>Last webhook</dt><dd>{{ (settings.last_webhook_ok_at if settings else None)|wa_ago }}</dd>
+                    <dt>Templates</dt><dd>synced {{ (settings.templates_synced_at if settings else None)|wa_ago }}</dd>
+                </dl>
+            </div>
+        </div>
+
+        <div class="wa-card">
+            <div class="wa-card-head"><h2>Delivery &amp; read</h2></div>
+            <div class="wa-card-body">
+                {% if ms.with_outcome %}
+                {% set total = ms.with_outcome %}
+                <div class="wa-progress mb-2" aria-hidden="true">
+                    <span style="width:{{ ms.read / total * 100 }}%;background:#2a8ee8"></span>
+                    <span style="width:{{ (ms.delivered - ms.read) / total * 100 }}%;background:#128c5e"></span>
+                    <span style="width:{{ ms.failed / total * 100 }}%;background:#c63c3c"></span>
+                </div>
+                <dl class="wa-kv">
+                    <dt>Delivered</dt><dd>{{ ms.delivered }} ({{ ms.delivery_rate|wa_pct }})</dd>
+                    <dt>Read</dt><dd>{{ ms.read }} ({{ ms.read_rate|wa_pct }} of delivered)</dd>
+                    <dt>Failed</dt><dd>{{ ms.failed }}</dd>
+                    <dt>No status yet</dt><dd>{{ ms.pending_outcome }}</dd>
+                </dl>
+                <div class="wa-small wa-muted mt-2">Read receipts are only reported when the customer has them turned on.</div>
+                {% else %}
+                <div class="wa-empty" style="padding:12px"><i class="fas fa-check-double"></i>No delivery reports in this period yet.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="wa-card">
+            <div class="wa-card-head"><h2>Recent activity</h2></div>
+            {% if activity %}
+            <ul class="wa-list-plain" style="padding:0 16px">
+                {% for msg in activity %}
+                <li class="wa-small d-flex gap-2 align-items-center">
+                    <i class="fas {{ 'fa-arrow-down text-success' if msg.direction == 'in' else 'fa-arrow-up text-primary' }}" aria-hidden="true"></i>
+                    <span class="flex-grow-1 wa-truncate" style="max-width:190px">{{ msg.conversation.contact.display_name }}: {{ msg.body or msg.msg_type }}</span>
+                    {% if msg.direction == 'out' %}{{ m.status_badge(msg.status) }}{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="wa-empty" style="padding:14px">No activity in this period.</div>
+            {% endif %}
+        </div>
+
+        {% if wa_perms.can_manage_settings %}
+        <div class="wa-card">
+            <div class="wa-card-head"><h2>Recent errors</h2><a class="wa-small" href="{{ url_for('whatsapp.settings', tab='diagnostics') }}">Diagnostics</a></div>
+            {% if errors %}
+            <ul class="wa-list-plain" style="padding:0 16px">
+                {% for e in errors %}
+                <li class="wa-small"><span class="wa-badge wa-badge-red">{{ e.source }}</span> {{ e.message }}
+                    <div class="wa-muted">{{ e.created_at|wa_ago }}</div></li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="wa-empty" style="padding:14px"><i class="fas fa-circle-check"></i>No errors recorded.</div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

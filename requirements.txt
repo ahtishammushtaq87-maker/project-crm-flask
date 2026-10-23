@@ -31,3 +31,4 @@ Werkzeug==2.3.7
 WTForms==3.0.1
 arabic-reshaper
 python-bidi
+cryptography==50.0.2

@@ -1,0 +1,57 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}WhatsApp · {{ sale.invoice_number }}{% endblock %}
+
+{% block wa_content %}
+{% call m.head('Send invoice ' ~ sale.invoice_number, 'Notify the customer with an approved WhatsApp template.', 'fas fa-file-invoice') %}
+    <a class="wa-btn" href="{{ url_for('sales.invoice_detail', id=sale.id) }}"><i class="fas fa-arrow-left"></i> Invoice</a>
+{% endcall %}
+
+{% if not contacts %}
+<div class="wa-alert wa-alert-warn">This customer has no linked WhatsApp contact.
+    {% if sale.customer_id %}<a href="{{ url_for('whatsapp.customer', customer_id=sale.customer_id) }}">Link a WhatsApp number</a> first.{% endif %}</div>
+{% elif not approved %}
+<div class="wa-alert wa-alert-warn">No approved templates. Create a Utility template (for example with variables for invoice number, amount and link) and wait for Meta's approval.</div>
+{% else %}
+<form class="wa-card wa-form" style="max-width:760px" method="post">
+    {{ m.csrf() }}
+    <div class="wa-card-body">
+        <div class="wa-grid-2">
+            <div class="wa-row"><label for="n_contact">To</label><select id="n_contact" name="contact_id">
+                {% for c in contacts %}<option value="{{ c.id }}" {{ 'disabled' if c.is_opted_out }}>{{ c.display_name }} (+{{ c.wa_id }}){{ ' — opted out' if c.is_opted_out }}</option>{% endfor %}</select></div>
+            <div class="wa-row"><label for="n_tpl">Template</label><select id="n_tpl" name="template_id">
+                {% for t in approved %}<option value="{{ t.id }}">{{ t.name }} · {{ t.language }}</option>{% endfor %}</select></div>
+        </div>
+        {% for t in approved %}
+        <div class="n-vars" data-tpl="{{ t.id }}" {{ 'hidden' if not loop.first }}>
+            {% for v in tpl_vars[t.id] %}
+            <div class="wa-row"><label>{{ v.label }}</label>
+                <input type="text" name="var_{{ v.key }}" list="nVals" required></div>
+            {% else %}<div class="wa-small wa-muted">No variables.</div>{% endfor %}
+        </div>
+        {% endfor %}
+        <datalist id="nVals">{% for k, v in values.items() if v %}<option value="{{ v }}">{{ k }}</option>{% endfor %}</datalist>
+        <div class="wa-small wa-muted">Suggestions: {% for k, v in values.items() if v and k.startswith('invoice') %}<code>{{ k }}</code> = {{ v }}<br>{% endfor %}
+            The invoice link is the CRM's existing public share link (valid 30 days); only use it if you are comfortable sharing that PDF.</div>
+    </div>
+    <div class="wa-card-foot text-end"><button class="wa-btn wa-btn-primary" onclick="return confirm('Send this WhatsApp message to the customer now?');"><i class="fas fa-paper-plane"></i> Send</button></div>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block wa_js %}
+<script>
+(function () {
+    var sel = document.getElementById('n_tpl');
+    if (!sel) return;
+    function sync() {
+        document.querySelectorAll('.n-vars').forEach(function (d) {
+            var on = d.dataset.tpl === sel.value;
+            d.hidden = !on;
+            d.querySelectorAll('input').forEach(function (i) { i.disabled = !on; });
+        });
+    }
+    sel.addEventListener('change', sync); sync();
+})();
+</script>
+{% endblock %}

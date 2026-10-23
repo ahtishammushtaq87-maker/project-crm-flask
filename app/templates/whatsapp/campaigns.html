@@ -1,0 +1,38 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}WhatsApp Campaigns{% endblock %}
+
+{% block wa_content %}
+{% call m.head('Campaigns', 'Approved-template broadcasts to contacts who opted in.', 'fas fa-bullhorn') %}
+    <a class="wa-btn wa-btn-primary" href="{{ url_for('whatsapp.campaign_form') }}"><i class="fas fa-plus"></i> New campaign</a>
+{% endcall %}
+
+{% if not settings or not settings.campaigns_enabled %}
+<div class="wa-alert wa-alert-warn">Campaign sending is turned off. You can prepare drafts; an administrator enables sending in Settings › Messaging after a successful connection test.</div>
+{% endif %}
+
+<div class="wa-card">
+    <div class="wa-card-head">
+        <div class="wa-seg" role="group" aria-label="Status">
+            <a href="{{ url_for('whatsapp.campaigns') }}" class="{{ 'wa-active' if not status }}">All</a>
+            {% for s in ['draft','scheduled','running','paused','completed','cancelled','failed'] %}
+            <a href="{{ url_for('whatsapp.campaigns', status=s) }}" class="{{ 'wa-active' if status == s }}">{{ s|title }}</a>{% endfor %}
+        </div>
+    </div>
+    {% if pager.items %}
+    <div class="wa-table-wrap"><table class="wa-table">
+        <thead><tr><th>Campaign</th><th>Status</th><th>Template</th><th class="wa-num">Recipients</th><th class="wa-num">Sent</th><th class="wa-num">Delivered</th><th class="wa-num">Read</th><th class="wa-num">Failed</th><th>Created</th></tr></thead>
+        <tbody>{% for c in pager.items %}{% set k = counts(c) %}
+        <tr><td><a href="{{ url_for('whatsapp.campaign_detail', cid=c.id) }}"><strong>{{ c.name }}</strong></a>
+                {% if c.status == 'scheduled' %}<div class="wa-small wa-muted">{{ c.scheduled_at|wa_dt }}</div>{% endif %}</td>
+            <td>{{ m.status_badge(c.status) }}</td><td>{{ c.template.name if c.template else '—' }}</td>
+            <td class="wa-num">{{ k.total }}</td><td class="wa-num">{{ k.sent_total }}</td><td class="wa-num">{{ k.delivered_total }}</td>
+            <td class="wa-num">{{ k.read }}</td><td class="wa-num">{{ k.failed }}</td><td class="wa-small">{{ c.created_at|wa_dt('%d %b %Y') }}</td></tr>
+        {% endfor %}</tbody>
+    </table></div>
+    {{ m.pager(pager, 'whatsapp.campaigns', status=status) }}
+    {% else %}
+    <div class="wa-empty"><i class="fas fa-bullhorn"></i>No campaigns yet.</div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}WhatsApp Message Templates{% endblock %}
+
+{% block wa_content %}
+{% call m.head('Message Templates', 'Pre-approved messages for starting conversations and messaging outside the 24-hour window.', 'fas fa-file-lines') %}
+    {% if wa_perms.can_manage_templates %}
+    <form method="post" action="{{ url_for('whatsapp.templates_sync') }}">{{ m.csrf() }}
+        <button class="wa-btn" {{ 'disabled' if not settings or not settings.waba_id }}><i class="fas fa-rotate"></i> Sync from Meta</button></form>
+    <a class="wa-btn wa-btn-primary" href="{{ url_for('whatsapp.template_new') }}"><i class="fas fa-plus"></i> New template</a>
+    {% endif %}
+{% endcall %}
+
+<div class="wa-alert wa-alert-info wa-small">
+    Meta reviews every template; only <strong>Approved</strong> templates can be sent. Approval, rejection, pausing and pricing are decided by Meta.
+    You can also manage templates in <a href="https://business.facebook.com/wa/manage/message-templates/" target="_blank" rel="noopener noreferrer">WhatsApp Manager</a>, then click Sync.
+    Last synced: {{ (settings.templates_synced_at if settings else None)|wa_ago }}.
+</div>
+
+<div class="wa-card">
+    <div class="wa-card-head">
+        <form class="wa-filters" method="get">
+            <input type="search" class="wa-input" name="q" value="{{ q }}" placeholder="Template name" aria-label="Search">
+            <select name="status" class="wa-input" aria-label="Status"><option value="">Any status</option>
+                {% for s in ['APPROVED','PENDING','REJECTED','PAUSED','DISABLED'] %}<option value="{{ s }}" {{ 'selected' if s == status }}>{{ s|title }}</option>{% endfor %}</select>
+            <button class="wa-btn">Filter</button>
+        </form>
+        <span class="wa-small wa-muted">{{ items|length }} template(s)</span>
+    </div>
+    {% if items %}
+    <div class="wa-table-wrap">
+        <table class="wa-table">
+            <thead><tr><th>Name</th><th>Language</th><th>Category</th><th>Status</th><th>Header</th><th>Variables</th><th>Buttons</th><th>Synced</th><th></th></tr></thead>
+            <tbody>
+            {% for t in items %}
+            {% set header = component(t, 'HEADER') %}{% set btns = component(t, 'BUTTONS') %}
+            <tr>
+                <td><strong>{{ t.name }}</strong></td><td>{{ t.language }}</td><td>{{ (t.category or '')|title }}</td>
+                <td>{{ m.status_badge(t.status) }}{% if t.rejected_reason %}<div class="wa-small" style="color:#c63c3c">{{ t.rejected_reason }}</div>{% endif %}</td>
+                <td>{{ (header.format or 'TEXT')|title if header else '—' }}</td>
+                <td>{% set vs = variables(t) %}{{ vs|length if vs else '—' }}</td>
+                <td>{{ (btns.buttons|length) if btns else '—' }}</td>
+                <td class="wa-small">{{ t.synced_at|wa_ago }}</td>
+                <td class="text-end"><button type="button" class="wa-btn wa-btn-sm" data-bs-toggle="collapse" data-bs-target="#tpl{{ t.id }}" aria-expanded="false">Preview</button></td>
+            </tr>
+            <tr class="collapse" id="tpl{{ t.id }}"><td colspan="9" style="background:#fafbfd">
+                <div class="d-flex flex-wrap gap-4">
+                    <div>
+                        {% for c in t.components %}
+                        {% if c.type == 'HEADER' and c.text %}<div class="fw-bold mb-1">{{ c.text }}</div>{% elif c.type == 'HEADER' %}<div class="wa-badge mb-1">{{ c.format }} header</div>{% endif %}
+                        {% endfor %}
+                        <div class="wa-preview-bubble">{% for c in t.components %}{% if c.type == 'BODY' %}{{ c.text }}{% endif %}{% endfor %}</div>
+                        {% for c in t.components %}{% if c.type == 'FOOTER' %}<div class="wa-small wa-muted mt-1">{{ c.text }}</div>{% endif %}{% endfor %}
+                        {% if btns %}<div class="d-flex gap-1 mt-2 flex-wrap">{% for b in btns.buttons %}<span class="wa-badge wa-badge-blue">{{ b.type|lower|replace('_', ' ') }}: {{ b.text }}</span>{% endfor %}</div>{% endif %}
+                    </div>
+                    <div class="wa-small">
+                        <strong>Variables to fill when sending</strong>
+                        <ul class="mb-0">{% for v in variables(t) %}<li>{{ v.label }}</li>{% else %}<li class="wa-muted">None</li>{% endfor %}</ul>
+                    </div>
+                </div>
+            </td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="wa-empty"><i class="fas fa-file-lines"></i>No templates yet. {% if wa_perms.can_manage_templates %}Click “Sync from Meta” to load the templates of your WhatsApp Business Account.{% endif %}</div>
+    {% endif %}
+</div>
+{% endblock %}

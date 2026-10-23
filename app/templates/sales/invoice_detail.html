@@ -171,6 +171,12 @@
             </button>
             {% endif %}
             {% endif %}
+            {% if sale.customer and wa_can('can_reply') %}
+            <a href="{{ url_for('whatsapp.invoice_notify', sale_id=sale.id) }}" class="btn btn-outline-success"
+                title="Send an approved WhatsApp template from the CRM's WhatsApp number">
+                <i class="fab fa-whatsapp me-1"></i>WhatsApp Notify
+            </a>
+            {% endif %}
             {% if sale.is_approved %}
             {% if sale.status != 'paid' %}
             <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#discountModal">

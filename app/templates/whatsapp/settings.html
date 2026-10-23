@@ -1,0 +1,313 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}WhatsApp Settings{% endblock %}
+
+{% macro secret_field(name, label, help) -%}
+{% set sv = secrets[name] %}
+<div class="wa-row">
+    <label for="f_{{ name }}">{{ label }}
+        {% if sv.set %}<span class="wa-badge wa-badge-green ms-1">saved</span>{% else %}<span class="wa-badge wa-badge-amber ms-1">not set</span>{% endif %}
+    </label>
+    <div class="wa-secret">
+        <input type="password" id="f_{{ name }}" name="{{ name }}" autocomplete="new-password" spellcheck="false"
+               placeholder="{{ sv.masked if sv.set else 'Paste ' ~ label }}">
+        <button type="button" class="wa-btn wa-btn-icon" data-reveal="f_{{ name }}" aria-label="Show what you typed"><i class="far fa-eye"></i></button>
+    </div>
+    <div class="wa-help">{{ help }} {% if sv.set %}Leave blank to keep the saved value.{% endif %}</div>
+    {% if sv.error %}<div class="wa-help" style="color:#c63c3c">{{ sv.error }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+{% block wa_content %}
+{% call m.head('WhatsApp Settings', 'Connect the official WhatsApp Business Platform (Cloud API) and control how the module works.', 'fas fa-sliders') %}
+    <form method="post" action="{{ url_for('whatsapp.settings_test') }}">{{ m.csrf() }}<input type="hidden" name="tab" value="{{ tab }}">
+        <button class="wa-btn wa-btn-primary" {{ 'disabled' if not saved }}><i class="fas fa-plug-circle-check"></i> Test connection</button></form>
+{% endcall %}
+
+{% if test_result %}
+<div class="wa-alert {{ 'wa-alert-ok' if test_result.ok else 'wa-alert-err' }}" role="status">
+    <strong>{{ test_result.label }}</strong>{% if test_result.detail %} — {{ test_result.detail }}{% endif %}
+    {% if test_result.hint %}<div class="mt-1">{{ test_result.hint }}</div>{% endif %}
+    {% if test_result.checks %}
+    <ul class="mb-0 mt-1">{% for name, ok, detail in test_result.checks %}
+        <li><i class="fas {{ 'fa-check text-success' if ok else 'fa-xmark text-danger' }}"></i> {{ name }}: {{ detail }}</li>{% endfor %}</ul>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if enc_status != 'ok' %}
+<div class="wa-alert wa-alert-warn"><i class="fas fa-lock-open"></i> {{ enc_message }} See the setup guide (WHATSAPP_SETUP.md) for how to set <code>WHATSAPP_ENCRYPTION_KEY</code>.</div>
+{% endif %}
+
+<nav class="wa-tabs" aria-label="Settings sections">
+    {% for key, label in [('connection','Connection'),('webhook','Webhook'),('profile','Business Profile'),('messaging','Messaging'),('media','Media'),('staff','Staff Permissions'),('notifications','Notifications'),('diagnostics','Diagnostics')] %}
+    <a href="{{ url_for('whatsapp.settings', tab=key) }}" class="{{ 'wa-active' if tab == key }}" {{ 'aria-current=page' if tab == key }}>{{ label }}</a>
+    {% endfor %}
+</nav>
+
+{% if tab == 'connection' %}
+<div class="row g-3">
+    <div class="col-lg-8">
+        <form class="wa-card wa-form" method="post" action="{{ url_for('whatsapp.settings_connection') }}" autocomplete="off">
+            {{ m.csrf() }}
+            <div class="wa-card-head"><h2>Meta credentials</h2>
+                <span>{% if s.is_connected %}<span class="wa-badge wa-badge-green"><span class="wa-dot wa-dot-green"></span> Connected</span>
+                    {% elif s.connection_status == 'error' %}<span class="wa-badge wa-badge-red">Error</span>
+                    {% else %}<span class="wa-badge">Not verified</span>{% endif %}</span></div>
+            <div class="wa-card-body">
+                <div class="wa-grid-2">
+                    <div class="wa-row"><label for="f_pnid">Phone Number ID</label>
+                        <input type="text" id="f_pnid" name="phone_number_id" value="{{ s.phone_number_id or '' }}" inputmode="numeric" placeholder="e.g. 106540352242922">
+                        <div class="wa-help">WhatsApp Manager › API Setup. Not the phone number itself.</div></div>
+                    <div class="wa-row"><label for="f_waba">WhatsApp Business Account ID</label>
+                        <input type="text" id="f_waba" name="waba_id" value="{{ s.waba_id or '' }}" inputmode="numeric">
+                        <div class="wa-help">Needed for templates, campaigns and webhook subscription.</div></div>
+                    <div class="wa-row"><label for="f_appid">Meta App ID</label>
+                        <input type="text" id="f_appid" name="app_id" value="{{ s.app_id or '' }}" inputmode="numeric">
+                        <div class="wa-help">For reference; App Dashboard › Settings › Basic.</div></div>
+                    <div class="wa-row"><label for="f_gv">Graph API version</label>
+                        <input type="text" id="f_gv" name="graph_version" value="{{ s.graph_version or 'v23.0' }}" pattern="v\d{1,2}\.\d">
+                        <div class="wa-help">Format v23.0. Meta supports each version for about two years.</div></div>
+                </div>
+                {{ secret_field('access_token', 'System User permanent access token', 'Business Settings › System Users › Generate token with whatsapp_business_messaging and whatsapp_business_management.') }}
+                {{ secret_field('app_secret', 'Meta App Secret', 'App Dashboard › Settings › Basic. Used only to verify webhook signatures.') }}
+                {{ secret_field('verify_token', 'Webhook verify token', 'Any random string; the same value goes into the Meta webhook setup. You can generate one on the Webhook tab.') }}
+                <div class="wa-row" style="max-width:220px"><label for="f_cc">Default country code</label>
+                    <input type="text" id="f_cc" name="default_country_code" value="{{ s.default_country_code or '92' }}" inputmode="numeric" maxlength="4">
+                    <div class="wa-help">Used for local numbers such as 0300 1234567.</div></div>
+            </div>
+            <div class="wa-card-foot d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span class="wa-small wa-muted">Secrets are never shown again after saving{{ ' and are encrypted at rest' if enc_status == 'ok' }}.</span>
+                <button class="wa-btn wa-btn-primary"><i class="fas fa-floppy-disk"></i> Save</button>
+            </div>
+        </form>
+    </div>
+    <div class="col-lg-4">
+        <div class="wa-card">
+            <div class="wa-card-head"><h2>Connected number</h2></div>
+            <div class="wa-card-body">
+                <dl class="wa-kv">
+                    <dt>Number</dt><dd>{{ s.display_phone_number or '—' }}</dd>
+                    <dt>Display name</dt><dd>{{ s.verified_name or '—' }}</dd>
+                    <dt>Quality</dt><dd>{{ s.quality_rating or '—' }}</dd>
+                    <dt>Limit tier</dt><dd>{{ s.messaging_limit or '—' }}</dd>
+                    <dt>Last test</dt><dd>{{ s.last_test_at|wa_dt }}</dd>
+                    <dt>Result</dt><dd>{{ s.connection_message or '—' }}</dd>
+                </dl>
+            </div>
+        </div>
+        {% if saved and wa_perms.can_manage_settings and current_user.role == 'admin' %}
+        <form class="wa-card wa-form" method="post" action="{{ url_for('whatsapp.settings_clear') }}">
+            {{ m.csrf() }}
+            <div class="wa-card-head"><h2>Clear credentials</h2></div>
+            <div class="wa-card-body">
+                <p class="wa-small wa-muted">Removes the token, app secret and verify token. Sending and webhooks stop and campaigns are disabled. Messages and contacts are kept.</p>
+                <label for="f_clear">Type CLEAR to confirm</label>
+                <input type="text" id="f_clear" name="confirm" autocomplete="off">
+                <button class="wa-btn wa-btn-danger mt-2"><i class="fas fa-eraser"></i> Clear credentials</button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+{% elif tab == 'webhook' %}
+<div class="row g-3">
+    <div class="col-lg-7">
+        <div class="wa-card">
+            <div class="wa-card-head"><h2>Webhook</h2>
+                {% if s.webhook_subscribed %}<span class="wa-badge wa-badge-green">App subscribed</span>{% elif s.webhook_subscribed == false %}<span class="wa-badge wa-badge-amber">App not subscribed</span>{% else %}<span class="wa-badge">Unknown — run Test connection</span>{% endif %}</div>
+            <div class="wa-card-body wa-form">
+                <div class="wa-row"><label>Callback URL</label>
+                    <div class="wa-copy"><code id="cbUrl">{{ callback_url or '(set WHATSAPP_PUBLIC_BASE_URL)' }}</code>
+                        <button type="button" class="wa-btn" data-copy="cbUrl"><i class="far fa-copy"></i> Copy</button></div>
+                    {% if not callback_https %}<div class="wa-help" style="color:#b7791f">Meta only accepts HTTPS callback URLs with a valid certificate. Open this page through your public HTTPS address, or set <code>WHATSAPP_PUBLIC_BASE_URL</code>.</div>{% endif %}
+                </div>
+                <div class="wa-row"><label>Verify token</label>
+                    <div class="wa-copy"><code>{{ secrets.verify_token.masked if secrets.verify_token.set else 'Not set' }}</code></div>
+                    <div class="wa-help">The full token is only shown once, right after it is generated or typed in.</div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap">
+                    <form method="post" action="{{ url_for('whatsapp.settings_generate_verify_token') }}"
+                          onsubmit="return {{ 'confirm(\'Replace the saved verify token? You must paste the new one into Meta.\')' if secrets.verify_token.set else 'true' }}">
+                        {{ m.csrf() }}<button class="wa-btn"><i class="fas fa-key"></i> Generate verify token</button></form>
+                    <form method="post" action="{{ url_for('whatsapp.settings_subscribe') }}">{{ m.csrf() }}
+                        <button class="wa-btn" {{ 'disabled' if not s.waba_id or not secrets.access_token.set }}><i class="fas fa-link"></i> Subscribe app to WABA</button></form>
+                </div>
+            </div>
+        </div>
+        <div class="wa-card">
+            <div class="wa-card-head"><h2>Setup steps</h2></div>
+            <div class="wa-card-body wa-small">
+                <ol class="mb-0">
+                    <li>Save the App Secret and a verify token on the Connection tab.</li>
+                    <li>In the Meta App Dashboard open <strong>WhatsApp › Configuration › Webhook › Edit</strong>.</li>
+                    <li>Paste the Callback URL and the verify token, then click <strong>Verify and save</strong>. Meta calls this CRM; it must be reachable over HTTPS.</li>
+                    <li>Under <strong>Webhook fields</strong> subscribe to <code>messages</code> (incoming messages and delivery/read statuses) and <code>message_template_status_update</code> (template approvals).</li>
+                    <li>Click <strong>Subscribe app to WABA</strong> above (or Meta's “Subscribe” in WhatsApp Manager) so events for your number reach this app.</li>
+                    <li>Send a WhatsApp message to your business number — it should appear in the Inbox within seconds.</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="wa-card">
+            <div class="wa-card-head"><h2>Health</h2></div>
+            <div class="wa-card-body">
+                <dl class="wa-kv">
+                    <dt>Last event</dt><dd>{{ s.last_webhook_at|wa_dt }}</dd>
+                    <dt>Last success</dt><dd>{{ s.last_webhook_ok_at|wa_dt }}</dd>
+                </dl>
+                <h3 class="wa-small fw-bold mt-3 mb-1">Recent verification / signature errors</h3>
+                {% set wh_errors = api_errors|selectattr('source', 'equalto', 'webhook')|list %}
+                {% if wh_errors %}
+                <ul class="wa-list-plain wa-small">{% for e in wh_errors[:6] %}<li>{{ e.message }}<div class="wa-muted">{{ e.created_at|wa_dt }}</div></li>{% endfor %}</ul>
+                {% else %}<div class="wa-small wa-muted">None recorded.</div>{% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% elif tab == 'profile' %}
+<div class="wa-card wa-form" style="max-width:760px">
+    <div class="wa-card-head"><h2>WhatsApp business profile</h2></div>
+    {% if not saved or not secrets.access_token.set %}
+    <div class="wa-card-body"><div class="wa-empty">Save the connection credentials first.</div></div>
+    {% elif profile_error %}
+    <div class="wa-card-body"><div class="wa-alert wa-alert-err">Could not load the profile from Meta: {{ profile_error }}</div></div>
+    {% else %}
+    <form method="post" action="{{ url_for('whatsapp.settings_profile') }}">
+        {{ m.csrf() }}
+        <div class="wa-card-body">
+            <p class="wa-small wa-muted">Loaded live from Meta. Changes are shown to customers in WhatsApp. The display name is changed in WhatsApp Manager (Meta reviews it).</p>
+            <div class="wa-row"><label for="p_about">About (max 139)</label><input type="text" id="p_about" name="about" maxlength="139" value="{{ profile.about or '' }}"></div>
+            <div class="wa-row"><label for="p_desc">Description</label><textarea id="p_desc" name="description" maxlength="512" rows="3">{{ profile.description or '' }}</textarea></div>
+            <div class="wa-grid-2">
+                <div class="wa-row"><label for="p_email">Email</label><input type="email" id="p_email" name="email" value="{{ profile.email or '' }}"></div>
+                <div class="wa-row"><label for="p_addr">Address</label><input type="text" id="p_addr" name="address" value="{{ profile.address or '' }}"></div>
+            </div>
+            <div class="wa-row"><label for="p_web">Websites (one per line, max 2)</label><textarea id="p_web" name="websites" rows="2">{{ (profile.websites or [])|join('\n') }}</textarea></div>
+        </div>
+        <div class="wa-card-foot text-end"><button class="wa-btn wa-btn-primary">Update on WhatsApp</button></div>
+    </form>
+    {% endif %}
+</div>
+
+{% elif tab in ('messaging', 'media', 'notifications') %}
+<form class="wa-card wa-form" style="max-width:760px" method="post" action="{{ url_for('whatsapp.settings_options') }}">
+    {{ m.csrf() }}<input type="hidden" name="tab" value="{{ tab }}">
+    <div class="wa-card-body">
+    {% if tab == 'messaging' %}
+        <div class="wa-row form-check"><input class="form-check-input" type="checkbox" id="o_read" name="auto_mark_read" value="1" {{ 'checked' if s.auto_mark_read }}>
+            <label class="form-check-label" for="o_read">Mark messages as read on WhatsApp (blue ticks) when staff open the conversation</label></div>
+        <div class="wa-row"><label for="o_kw">Opt-out keywords</label><input type="text" id="o_kw" name="optout_keywords" value="{{ s.optout_keywords }}">
+            <div class="wa-help">Comma separated. A customer message that is exactly one of these marks the contact as opted out.</div></div>
+        <hr>
+        <div class="wa-row form-check"><input class="form-check-input" type="checkbox" id="o_camp" name="campaigns_enabled" value="1" {{ 'checked' if s.campaigns_enabled }} {{ 'disabled' if not s.is_connected }}>
+            <label class="form-check-label" for="o_camp">Allow campaign sending</label>
+            <div class="wa-help">Requires a successful connection test. Campaigns only go to contacts who opted in.</div></div>
+        <div class="wa-row" style="max-width:260px"><label for="o_rate">Campaign rate (messages per minute)</label>
+            <input type="number" id="o_rate" name="campaign_rate_per_minute" min="1" max="1000" value="{{ s.campaign_rate_per_minute }}">
+            <div class="wa-help">Stay well below your Meta messaging limit tier ({{ s.messaging_limit or 'unknown' }}).</div></div>
+    {% elif tab == 'media' %}
+        <div class="wa-row" style="max-width:260px"><label for="o_mb">Maximum upload size (MB)</label>
+            <input type="number" id="o_mb" name="max_upload_mb" min="1" max="16" value="{{ s.max_upload_mb }}">
+            <div class="wa-help">Meta limits: images 5 MB, video/audio 16 MB, documents 100 MB. The CRM accepts up to 16 MB per request.</div></div>
+        <div class="wa-row" style="max-width:260px"><label for="o_mr">Keep cached media (days)</label>
+            <input type="number" id="o_mr" name="media_retention_days" min="1" max="365" value="{{ s.media_retention_days }}">
+            <div class="wa-help">Media is stored privately under instance/whatsapp_media and re-downloaded from Meta when needed (Meta keeps received media for a limited time).</div></div>
+        <div class="wa-row" style="max-width:260px"><label for="o_lr">Keep webhook and error logs (days)</label>
+            <input type="number" id="o_lr" name="log_retention_days" min="7" max="365" value="{{ s.log_retention_days }}"></div>
+    {% else %}
+        <div class="wa-row form-check"><input class="form-check-input" type="checkbox" id="o_notify" name="notify_assigned_by_email" value="1" {{ 'checked' if s.notify_assigned_by_email }}>
+            <label class="form-check-label" for="o_notify">Email staff when a conversation is assigned to them</label>
+            <div class="wa-help">Uses Settings › Email (SMTP). For alerts on new messages, create an Automation with the action “Email the assigned staff member”. The inbox also shows unread counts live.</div></div>
+    {% endif %}
+    </div>
+    <div class="wa-card-foot text-end"><button class="wa-btn wa-btn-primary">Save</button></div>
+</form>
+
+{% elif tab == 'staff' %}
+<form class="wa-card" method="post" action="{{ url_for('whatsapp.settings_permissions') }}">
+    {{ m.csrf() }}
+    <div class="wa-card-head"><h2>Staff permissions</h2><span class="wa-small wa-muted">Administrators always have full access.</span></div>
+    {% if staff %}
+    <div class="wa-table-wrap">
+        <table class="wa-table">
+            <thead><tr><th>User</th>{% for flag, label in flags %}<th class="text-center" style="min-width:90px">{{ label }}</th>{% endfor %}</tr></thead>
+            <tbody>
+            {% for u in staff %}{% set p = perms.get(u.id) %}
+                <tr><td><strong>{{ u.username }}</strong><div class="wa-small wa-muted">{{ u.role }}</div></td>
+                {% for flag, label in flags %}
+                    <td class="text-center"><input class="form-check-input" type="checkbox" name="p_{{ u.id }}_{{ flag }}" value="1"
+                        aria-label="{{ label }} for {{ u.username }}" {{ 'checked' if p and p[flag] }} {{ 'disabled' if current_user.role != 'admin' }}></td>
+                {% endfor %}</tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="wa-card-foot d-flex justify-content-between flex-wrap gap-2">
+        <span class="wa-small wa-muted">Without “View all conversations”, staff only see conversations assigned to them. Every change is audit-logged.</span>
+        {% if current_user.role == 'admin' %}<button class="wa-btn wa-btn-primary">Save permissions</button>{% endif %}
+    </div>
+    {% else %}
+    <div class="wa-empty">No non-admin users.</div>
+    {% endif %}
+</form>
+
+{% elif tab == 'diagnostics' %}
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="wa-card">
+            <div class="wa-card-head"><h2>Recent webhook deliveries</h2></div>
+            {% if webhook_events %}
+            <div class="wa-table-wrap"><table class="wa-table"><thead><tr><th>Received</th><th>Result</th><th>Summary</th></tr></thead><tbody>
+            {% for e in webhook_events %}<tr><td class="wa-small">{{ e.received_at|wa_dt }}</td>
+                <td>{% if e.processed_ok %}<span class="wa-badge wa-badge-green">ok</span>{% else %}<span class="wa-badge wa-badge-red">failed</span>{% endif %}</td>
+                <td class="wa-small">{{ e.summary or e.error or '' }}</td></tr>{% endfor %}
+            </tbody></table></div>
+            {% else %}<div class="wa-empty"><i class="fas fa-satellite-dish"></i>No webhook events received yet.</div>{% endif %}
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="wa-card">
+            <div class="wa-card-head"><h2>Recent errors (sanitized)</h2></div>
+            {% if api_errors %}
+            <div class="wa-table-wrap"><table class="wa-table"><thead><tr><th>When</th><th>Source</th><th>Error</th></tr></thead><tbody>
+            {% for e in api_errors %}<tr><td class="wa-small">{{ e.created_at|wa_dt }}</td><td><span class="wa-badge">{{ e.source }}</span></td>
+                <td class="wa-small">{% if e.code %}<span class="wa-mono">{{ e.code }}</span> {% endif %}{{ e.message }}</td></tr>{% endfor %}
+            </tbody></table></div>
+            {% else %}<div class="wa-empty"><i class="fas fa-circle-check"></i>No errors recorded.</div>{% endif %}
+        </div>
+    </div>
+    <div class="col-12">
+        <div class="wa-card">
+            <div class="wa-card-head"><h2>Audit log</h2></div>
+            {% if audit_rows %}
+            <div class="wa-table-wrap"><table class="wa-table"><thead><tr><th>When</th><th>User</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead><tbody>
+            {% for a in audit_rows %}<tr><td class="wa-small">{{ a.created_at|wa_dt }}</td><td>{{ a.user.username if a.user else 'system' }}</td>
+                <td class="wa-mono">{{ a.action }}</td><td class="wa-small">{{ a.target or '' }}</td><td class="wa-small">{{ a.detail or '' }}</td></tr>{% endfor %}
+            </tbody></table></div>
+            {% else %}<div class="wa-empty">No audit entries yet.</div>{% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block wa_js %}
+<script>
+document.querySelectorAll('[data-reveal]').forEach(function (b) {
+    b.addEventListener('click', function () {
+        var i = document.getElementById(b.dataset.reveal);
+        i.type = i.type === 'password' ? 'text' : 'password';
+    });
+});
+document.querySelectorAll('[data-copy]').forEach(function (b) {
+    b.addEventListener('click', function () {
+        var t = document.getElementById(b.dataset.copy).textContent.trim();
+        navigator.clipboard.writeText(t).then(function () { b.innerHTML = '<i class="fas fa-check"></i> Copied'; });
+    });
+});
+</script>
+{% endblock %}

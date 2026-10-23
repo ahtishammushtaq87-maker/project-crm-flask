@@ -1,0 +1,81 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}{{ 'Edit' if c.id else 'New' }} Campaign{% endblock %}
+
+{% block wa_content %}
+{% call m.head(('Edit ' ~ c.name) if c.id else 'New campaign', 'Saved as a draft. Nothing is sent until you review and confirm it.', 'fas fa-bullhorn') %}
+    <a class="wa-btn" href="{{ url_for('whatsapp.campaigns') }}"><i class="fas fa-arrow-left"></i> Campaigns</a>
+{% endcall %}
+
+{% if not approved %}
+<div class="wa-alert wa-alert-warn">There are no approved templates. Campaigns can only send Meta-approved templates — sync or create one in Message Templates.</div>
+{% endif %}
+
+<form class="wa-form" method="post">
+{{ m.csrf() }}
+<div class="row g-3">
+    <div class="col-lg-7">
+        <div class="wa-card"><div class="wa-card-head"><h2>Campaign</h2></div><div class="wa-card-body">
+            <div class="wa-row"><label for="cp_name">Name</label><input type="text" id="cp_name" name="name" maxlength="150" required value="{{ c.name or '' }}"></div>
+            <div class="wa-row"><label for="cp_desc">Description (internal)</label><textarea id="cp_desc" name="description" rows="2">{{ c.description or '' }}</textarea></div>
+        </div></div>
+        <div class="wa-card"><div class="wa-card-head"><h2>Audience</h2></div><div class="wa-card-body">
+            <div class="wa-row"><label for="cp_tags">Contacts with ALL of these tags (blank = every opted-in contact)</label>
+                <input type="text" id="cp_tags" name="tag_filter" value="{{ c.tag_filter or '' }}" list="cpTagList" placeholder="vip, lahore">
+                <datalist id="cpTagList">{% for t in tags %}<option value="{{ t }}">{% endfor %}</datalist></div>
+            <div class="wa-alert wa-alert-info wa-small mb-0" id="cpEstimate">
+                <strong id="cpEligible">{{ eligible }}</strong> eligible recipient(s). Only contacts with consent “opted in” are included; opted-out and unknown-consent contacts are always excluded.
+            </div>
+        </div></div>
+        <div class="wa-card"><div class="wa-card-head"><h2>Message</h2></div><div class="wa-card-body">
+            <div class="wa-row"><label for="cp_tpl">Approved template</label>
+                <select id="cp_tpl" name="template_id" required>
+                    <option value="">— choose —</option>
+                    {% for t in approved %}<option value="{{ t.id }}" {{ 'selected' if c.template_id == t.id }}>{{ t.name }} · {{ t.language }} · {{ (t.category or '')|lower }}</option>{% endfor %}
+                </select></div>
+            {% for t in approved %}
+            <div class="cp-vars" data-tpl="{{ t.id }}" {{ 'hidden' if c.template_id != t.id }}>
+                {% for v in tpl_vars[t.id] %}
+                <div class="wa-row"><label>{{ v.label }}</label>
+                    <input type="text" name="var_{{ v.key }}" maxlength="1024" value="{{ c.params.get(v.key, '') if c.template_id == t.id else '' }}" {{ 'disabled' if c.template_id != t.id }}>
+                </div>
+                {% else %}<div class="wa-small wa-muted">No variables.</div>{% endfor %}
+            </div>
+            {% endfor %}
+            <div class="wa-help">Use <code>{contact_name}</code> or <code>{contact_phone}</code> to personalise a variable.</div>
+        </div></div>
+    </div>
+    <div class="col-lg-5">
+        <div class="wa-card"><div class="wa-card-head"><h2>Next step</h2></div><div class="wa-card-body wa-small">
+            <ol class="mb-0"><li>Save the draft — the recipient list is built from the audience.</li><li>Review the preview and recipients.</li>
+                <li>Confirm by typing the recipient count, and choose “send now” or a schedule.</li></ol>
+        </div>
+        <div class="wa-card-foot text-end"><button class="wa-btn wa-btn-primary"><i class="fas fa-floppy-disk"></i> Save draft</button></div></div>
+    </div>
+</div>
+</form>
+{% endblock %}
+
+{% block wa_js %}
+<script>
+(function () {
+    var sel = document.getElementById('cp_tpl');
+    sel.addEventListener('change', function () {
+        document.querySelectorAll('.cp-vars').forEach(function (d) {
+            var on = d.dataset.tpl === sel.value;
+            d.hidden = !on;
+            d.querySelectorAll('input').forEach(function (i) { i.disabled = !on; });
+        });
+    });
+    var tags = document.getElementById('cp_tags'), t;
+    tags.addEventListener('input', function () {
+        clearTimeout(t);
+        t = setTimeout(function () {
+            fetch("{{ url_for('whatsapp.campaign_estimate') }}?tags=" + encodeURIComponent(tags.value), { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (d) { document.getElementById('cpEligible').textContent = d.eligible; });
+        }, 300);
+    });
+})();
+</script>
+{% endblock %}

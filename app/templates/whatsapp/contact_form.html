@@ -1,0 +1,98 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}{{ 'Edit' if contact.id else 'Add' }} WhatsApp Contact{% endblock %}
+
+{% block wa_content %}
+{% set f = form or {} %}
+{% call m.head(('Edit ' ~ contact.display_name) if contact.id else 'Add contact', 'Numbers are stored in international format so the same person is never added twice.', 'fas fa-user') %}
+    <a class="wa-btn" href="{{ url_for('whatsapp.contacts') }}"><i class="fas fa-arrow-left"></i> Contacts</a>
+{% endcall %}
+
+{% for e in errors %}<div class="wa-alert wa-alert-err">{{ e }}</div>{% endfor %}
+
+<div class="row g-3">
+<div class="col-lg-8">
+<form class="wa-card wa-form" method="post">
+    {{ m.csrf() }}
+    <div class="wa-card-body">
+        <div class="wa-grid-2">
+            <div class="wa-row"><label for="c_name">Name</label>
+                <input type="text" id="c_name" name="name" maxlength="150" value="{{ f.get('name', contact.name or '') }}"></div>
+            <div class="wa-row"><label for="c_phone">WhatsApp number {% if not contact.id %}*{% endif %}</label>
+                <input type="text" id="c_phone" name="phone" value="{{ f.get('phone', ('+' ~ contact.wa_id) if contact.wa_id else '') }}" {{ 'required' if not contact.id }} placeholder="+92 300 1234567">
+                <div class="wa-help">International format. Local numbers starting with 0 use the default country code.</div></div>
+            <div class="wa-row"><label for="c_email">Email</label>
+                <input type="email" id="c_email" name="email" value="{{ f.get('email', contact.email or '') }}"></div>
+            <div class="wa-row"><label for="c_tags">Tags</label>
+                <input type="text" id="c_tags" name="tags" value="{{ f.get('tags', contact.tag_list|join(', ')) }}" placeholder="vip, wholesale">
+                <div class="wa-help">Comma separated. Used for filters and campaign audiences.</div></div>
+            <div class="wa-row"><label for="c_cust">Linked CRM customer</label>
+                <select id="c_cust" name="customer_id" data-wa-customer-select>
+                    <option value="">— none —</option>
+                    {% if customer %}<option value="{{ customer.id }}" selected>{{ customer.name }}{{ ' (' ~ customer.phone ~ ')' if customer.phone }}</option>{% endif %}
+                </select>
+                <div class="wa-help">Search by name or phone. Linking never changes the customer record.</div></div>
+            <div class="wa-row"><label for="c_assigned">Assigned staff</label>
+                <select id="c_assigned" name="assigned_to_id"><option value="">— nobody —</option>
+                    {% for u in users %}<option value="{{ u.id }}" {{ 'selected' if (f.get('assigned_to_id')|string) == (u.id|string) or (not f and contact.assigned_to_id == u.id) }}>{{ u.username }}</option>{% endfor %}</select></div>
+        </div>
+        <div class="wa-grid-2">
+            <div class="wa-row"><label for="c_consent">Consent to WhatsApp messages</label>
+                {% set cur = f.get('consent_status', contact.consent_status or 'unknown') %}
+                <select id="c_consent" name="consent_status">
+                    {% for v, l in [('unknown','Unknown — no consent recorded'),('opted_in','Opted in'),('opted_out','Opted out')] %}
+                    <option value="{{ v }}" {{ 'selected' if v == cur }}>{{ l }}</option>{% endfor %}</select>
+                <div class="wa-help">Only opted-in contacts receive campaigns and automated templates. Having a number is not consent.</div></div>
+            <div class="wa-row"><label for="c_source">Consent source</label>
+                <input type="text" id="c_source" name="consent_source" maxlength="120" value="{{ f.get('consent_source', contact.consent_source or '') }}" placeholder="e.g. Signed order form 12 Oct">
+                {% if contact.consent_at %}<div class="wa-help">Opted in {{ contact.consent_at|wa_dt }}</div>{% endif %}
+                {% if contact.opted_out_at %}<div class="wa-help">Opted out {{ contact.opted_out_at|wa_dt }}</div>{% endif %}</div>
+        </div>
+        <div class="wa-row"><label for="c_notes">Notes</label>
+            <textarea id="c_notes" name="notes" rows="3">{{ f.get('notes', contact.notes or '') }}</textarea></div>
+    </div>
+    <div class="wa-card-foot d-flex justify-content-between">
+        <a class="wa-btn" href="{{ url_for('whatsapp.contacts') }}">Cancel</a>
+        <button class="wa-btn wa-btn-primary"><i class="fas fa-floppy-disk"></i> Save contact</button>
+    </div>
+</form>
+</div>
+{% if contact.id %}
+<div class="col-lg-4">
+    <div class="wa-card">
+        <div class="wa-card-head"><h2>Details</h2></div>
+        <div class="wa-card-body"><dl class="wa-kv">
+            <dt>WhatsApp name</dt><dd>{{ contact.profile_name or '—' }}</dd>
+            <dt>Created</dt><dd>{{ contact.created_at|wa_dt }}</dd>
+            <dt>Updated</dt><dd>{{ contact.updated_at|wa_dt }}</dd>
+            <dt>Last message</dt><dd>{{ contact.last_message_at|wa_dt }}</dd>
+        </dl></div>
+    </div>
+    {% if current_user.role == 'admin' %}
+    <form class="wa-card" method="post" action="{{ url_for('whatsapp.contact_delete', cid=contact.id) }}"
+          onsubmit="return confirm('Delete this contact and its whole conversation history? This cannot be undone.');">
+        {{ m.csrf() }}
+        <div class="wa-card-body"><p class="wa-small wa-muted">Deleting removes the contact, its conversation and messages from the CRM (not from the customer's phone).</p>
+            <button class="wa-btn wa-btn-danger"><i class="fas fa-trash"></i> Delete contact</button></div>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
+</div>
+{% endblock %}
+
+{% block wa_js %}
+<script>
+(function () {
+    // Customer search: uses the module's own endpoint; works with or without select2.
+    var sel = document.querySelector('[data-wa-customer-select]');
+    if (!sel || !window.jQuery || !jQuery.fn.select2) return;
+    jQuery(sel).select2({
+        width: '100%', allowClear: true, placeholder: '— none —', minimumInputLength: 2,
+        ajax: { url: "{{ url_for('whatsapp.api_customer_search') }}", dataType: 'json', delay: 250,
+                data: function (p) { return { q: p.term }; },
+                processResults: function (d) { return { results: d.items }; } }
+    });
+})();
+</script>
+{% endblock %}

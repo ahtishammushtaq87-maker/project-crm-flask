@@ -1,0 +1,52 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}Import WhatsApp Contacts{% endblock %}
+
+{% block wa_content %}
+{% call m.head('Import contacts', 'Upload a CSV, review the preview, then confirm. Nothing is saved until you confirm.', 'fas fa-file-import') %}
+    <a class="wa-btn" href="{{ url_for('whatsapp.contacts') }}"><i class="fas fa-arrow-left"></i> Contacts</a>
+{% endcall %}
+
+{% if rows is none %}
+<form class="wa-card wa-form" style="max-width:720px" method="post" enctype="multipart/form-data">
+    {{ m.csrf() }}
+    <div class="wa-card-body">
+        <div class="wa-row"><label for="i_file">CSV file (UTF-8, max 5,000 rows)</label>
+            <input type="file" id="i_file" name="file" accept=".csv,text/csv" required class="form-control"></div>
+        <p class="wa-small mb-1">Columns (header row required; only <code>phone</code> is mandatory):</p>
+        <code class="wa-small">{{ fields|join(',') }}</code>
+        <ul class="wa-small wa-muted mt-2 mb-0">
+            <li><code>consent_status</code>: unknown, opted_in or opted_out. Rows marked opted_in must say where consent was given in <code>consent_source</code>.</li>
+            <li>Existing contacts (same number) are updated; an existing opt-out is never overwritten.</li>
+            <li>Tags are added to existing tags; separate several with commas or semicolons.</li>
+        </ul>
+    </div>
+    <div class="wa-card-foot text-end"><button class="wa-btn wa-btn-primary"><i class="fas fa-eye"></i> Preview</button></div>
+</form>
+{% else %}
+<div class="wa-stats">
+    <div class="wa-stat"><div class="wa-stat-label">New</div><div class="wa-stat-value">{{ summary['create'] }}</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">Update existing</div><div class="wa-stat-value">{{ summary['update'] }}</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">Skipped (errors)</div><div class="wa-stat-value">{{ summary['skip'] }}</div></div>
+</div>
+<div class="wa-card">
+    <div class="wa-card-head"><h2>Preview</h2>
+        <form method="post" action="{{ url_for('whatsapp.contact_import_confirm') }}" class="d-flex gap-2">
+            {{ m.csrf() }}<input type="hidden" name="token" value="{{ token }}">
+            <a class="wa-btn" href="{{ url_for('whatsapp.contact_import') }}">Start over</a>
+            <button class="wa-btn wa-btn-primary" {{ 'disabled' if not (summary['create'] + summary['update']) }}>Import {{ summary['create'] + summary['update'] }} contact(s)</button>
+        </form>
+    </div>
+    <div class="wa-table-wrap" style="max-height:60vh;overflow:auto">
+        <table class="wa-table"><thead><tr><th>Line</th><th>Action</th><th>Name</th><th>Phone</th><th>Email</th><th>Tags</th><th>Consent</th><th>Problem</th></tr></thead><tbody>
+        {% for r in rows %}
+        <tr><td>{{ r.line }}</td>
+            <td>{% if r.action == 'skip' %}<span class="wa-badge wa-badge-red">skip</span>{% elif r.action == 'update' %}<span class="wa-badge wa-badge-blue">update</span>{% else %}<span class="wa-badge wa-badge-green">new</span>{% endif %}</td>
+            <td>{{ r.name }}</td><td class="wa-mono">{{ ('+' ~ r.wa_id) if r.wa_id else r.raw_phone }}</td><td>{{ r.email }}</td>
+            <td>{{ r.tags }}</td><td>{{ r.consent_status }}</td><td class="wa-small" style="color:#c63c3c">{{ r.error or '' }}</td></tr>
+        {% endfor %}
+        </tbody></table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

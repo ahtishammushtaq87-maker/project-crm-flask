@@ -1,0 +1,60 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}WhatsApp Reports{% endblock %}
+
+{% block wa_content %}
+{% set extra = {'user_id': user_id or '', 'campaign_id': campaign_id or '', 'status': status or ''} %}
+{% call m.head('Reports', range_label ~ ' · all figures from stored messages and webhook statuses', 'fas fa-chart-line') %}
+    {{ m.range_filter('whatsapp.reports', preset, start, end, extra) }}
+    {% if wa_perms.can_export %}<a class="wa-btn" href="{{ url_for('whatsapp.reports', range=preset, start=start, end=end, export='csv', **extra) }}"><i class="fas fa-file-csv"></i> CSV</a>{% endif %}
+{% endcall %}
+
+<form class="wa-filters mb-3" method="get">
+    <input type="hidden" name="range" value="{{ preset }}"><input type="hidden" name="start" value="{{ start }}"><input type="hidden" name="end" value="{{ end }}">
+    <select name="user_id" class="wa-input" aria-label="Staff"><option value="">All staff</option>{% for u in users %}<option value="{{ u.id }}" {{ 'selected' if u.id == user_id }}>{{ u.username }}</option>{% endfor %}</select>
+    <select name="campaign_id" class="wa-input" aria-label="Campaign"><option value="">All campaigns</option>{% for c in all_campaigns %}<option value="{{ c.id }}" {{ 'selected' if c.id == campaign_id }}>{{ c.name }}</option>{% endfor %}</select>
+    <select name="status" class="wa-input" aria-label="Message status"><option value="">Any status</option>{% for s in ['accepted','sent','delivered','read','failed','unknown'] %}<option value="{{ s }}" {{ 'selected' if s == status }}>{{ s|title }}</option>{% endfor %}</select>
+    <button class="wa-btn">Apply</button>
+</form>
+
+{% set ms = data.messages %}
+<div class="wa-stats">
+    <div class="wa-stat"><div class="wa-stat-label">Inbound</div><div class="wa-stat-value">{{ ms.inbound }}</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">Outbound{{ ' (staff)' if user_id }}</div><div class="wa-stat-value">{{ ms.outbound }}</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">Delivery rate</div><div class="wa-stat-value">{{ ms.delivery_rate|wa_pct }}</div><div class="wa-stat-sub">of {{ ms.with_outcome }} with a final status</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">Read rate</div><div class="wa-stat-value">{{ ms.read_rate|wa_pct }}</div><div class="wa-stat-sub">of delivered</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">Failure rate</div><div class="wa-stat-value">{{ ms.failure_rate|wa_pct }}</div><div class="wa-stat-sub">{{ ms.failed }} failed</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">First response</div>
+        <div class="wa-stat-value">{% if data.median_response is not none %}{% set mins = (data.median_response / 60)|round|int %}{{ (mins // 60 ~ 'h ' if mins >= 60) }}{{ mins % 60 }}m{% else %}—{% endif %}</div>
+        <div class="wa-stat-sub">median of {{ data.responses }} conversation(s)</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">New contacts</div><div class="wa-stat-value">{{ data.growth }}</div></div>
+    <div class="wa-stat"><div class="wa-stat-label">Opt-ins / outs</div><div class="wa-stat-value">{{ data.opt_ins }} / {{ data.opt_outs }}</div></div>
+</div>
+{% if status %}<div class="wa-alert wa-alert-info wa-small">{{ data.status_filter_count }} outbound message(s) currently “{{ status }}” in this period.</div>{% endif %}
+<p class="wa-small wa-muted">“—” means there is no data to calculate the figure. Read rates are lower bounds: customers can turn read receipts off. Meta does not report per-message pricing to webhooks in all versions, so costs are not shown here — see WhatsApp Manager › Insights.</p>
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="wa-card"><div class="wa-card-head"><h2>Conversations by status</h2></div><div class="wa-card-body">
+            <dl class="wa-kv">{% for s in ['open','pending','resolved'] %}<dt>{{ s|title }}</dt><dd>{{ data.by_status.get(s, 0) }}</dd>{% endfor %}</dl></div></div>
+        <div class="wa-card"><div class="wa-card-head"><h2>Staff workload</h2></div>
+            {% if data.workload %}<div class="wa-table-wrap"><table class="wa-table"><thead><tr><th>Staff</th><th class="wa-num">Assigned</th><th class="wa-num">Not resolved</th><th class="wa-num">Messages sent (range)</th></tr></thead><tbody>
+            {% for uid, uname, total, active in data.workload %}<tr><td>{{ uname }}</td><td class="wa-num">{{ total }}</td><td class="wa-num">{{ active or 0 }}</td><td class="wa-num">{{ data.sent_by.get(uid, 0) }}</td></tr>{% endfor %}
+            </tbody></table></div>{% else %}<div class="wa-empty">No assigned conversations.</div>{% endif %}</div>
+        <div class="wa-card"><div class="wa-card-head"><h2>API errors</h2></div>
+            {% if data.errors %}<div class="wa-table-wrap"><table class="wa-table"><thead><tr><th>Source</th><th>Kind</th><th class="wa-num">Count</th></tr></thead><tbody>
+            {% for src, kind, n in data.errors %}<tr><td>{{ src }}</td><td>{{ kind or '—' }}</td><td class="wa-num">{{ n }}</td></tr>{% endfor %}</tbody></table></div>
+            {% else %}<div class="wa-empty">No errors in this period.</div>{% endif %}</div>
+    </div>
+    <div class="col-lg-6">
+        <div class="wa-card"><div class="wa-card-head"><h2>Campaign performance</h2></div>
+            {% if data.campaigns %}<div class="wa-table-wrap"><table class="wa-table"><thead><tr><th>Campaign</th><th class="wa-num">Recipients</th><th class="wa-num">Sent</th><th class="wa-num">Delivered</th><th class="wa-num">Read</th><th class="wa-num">Failed</th></tr></thead><tbody>
+            {% for c, k in data.campaigns %}<tr><td><a href="{{ url_for('whatsapp.campaign_detail', cid=c.id) }}">{{ c.name }}</a></td><td class="wa-num">{{ k.total }}</td><td class="wa-num">{{ k.sent_total }}</td><td class="wa-num">{{ k.delivered_total }}</td><td class="wa-num">{{ k.read }}</td><td class="wa-num">{{ k.failed }}</td></tr>{% endfor %}
+            </tbody></table></div>{% else %}<div class="wa-empty">No campaigns.</div>{% endif %}</div>
+        <div class="wa-card"><div class="wa-card-head"><h2>Template performance</h2></div>
+            {% if data.templates %}<div class="wa-table-wrap"><table class="wa-table"><thead><tr><th>Template</th><th class="wa-num">Sent</th><th class="wa-num">Delivered</th><th class="wa-num">Read</th><th class="wa-num">Failed</th><th class="wa-num">Delivery</th></tr></thead><tbody>
+            {% for t in data.templates %}<tr><td>{{ t.name }}</td><td class="wa-num">{{ t.sent }}</td><td class="wa-num">{{ t.delivered }}</td><td class="wa-num">{{ t.read }}</td><td class="wa-num">{{ t.failed }}</td><td class="wa-num">{{ t.delivery_rate|wa_pct }}</td></tr>{% endfor %}
+            </tbody></table></div>{% else %}<div class="wa-empty">No template messages in this period.</div>{% endif %}</div>
+    </div>
+</div>
+{% endblock %}

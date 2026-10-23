@@ -1,0 +1,94 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}{{ 'Edit' if a else 'New' }} Automation{% endblock %}
+
+{% block wa_content %}
+{% set f = form or {} %}
+{% set cond = a.conditions if a else {} %}
+{% set cfg = a.config if a else {} %}
+{% call m.head(('Edit ' ~ a.name) if a else 'New automation', 'Trigger → optional conditions → action.', 'fas fa-robot') %}
+    <a class="wa-btn" href="{{ url_for('whatsapp.automations') }}"><i class="fas fa-arrow-left"></i> Automations</a>
+{% endcall %}
+{% if error %}<div class="wa-alert wa-alert-err">{{ error }}</div>{% endif %}
+
+<form class="wa-form" method="post" id="autoForm">
+{{ m.csrf() }}
+<div class="row g-3"><div class="col-lg-8">
+    <div class="wa-card"><div class="wa-card-body">
+        <div class="wa-row"><label for="a_name">Name</label><input type="text" id="a_name" name="name" required maxlength="150" value="{{ f.get('name', a.name if a else '') }}"></div>
+    </div></div>
+
+    <div class="wa-card"><div class="wa-card-head"><h2>1 · When</h2></div><div class="wa-card-body">
+        {% set trg = f.get('trigger', a.trigger if a else '') %}
+        <select name="trigger" id="a_trigger" required aria-label="Trigger"><option value="">— choose a trigger —</option>
+            {% for k, l in triggers.items() %}<option value="{{ k }}" {{ 'selected' if k == trg }}>{{ l }}</option>{% endfor %}</select>
+        <div class="wa-help">Invoice triggers are checked every minute by the background job and only consider invoices created / due / paid after this automation was created.</div>
+    </div></div>
+
+    <div class="wa-card"><div class="wa-card-head"><h2>2 · Only if (optional)</h2></div><div class="wa-card-body wa-grid-2">
+        <div><label for="a_kw">Message contains</label><input type="text" id="a_kw" name="cond_keyword" value="{{ f.get('cond_keyword', cond.get('keyword', '')) }}" placeholder="price"></div>
+        <div><label for="a_tag">Contact has tag</label><input type="text" id="a_tag" name="cond_tag" value="{{ f.get('cond_tag', cond.get('tag', '')) }}" placeholder="vip"></div>
+    </div></div>
+
+    <div class="wa-card"><div class="wa-card-head"><h2>3 · Then</h2></div><div class="wa-card-body">
+        {% set act = f.get('action', a.action if a else '') %}
+        <div class="wa-row"><select name="action" id="a_action" required aria-label="Action"><option value="">— choose an action —</option>
+            {% for k, l in actions.items() %}<option value="{{ k }}" {{ 'selected' if k == act }}>{{ l }}</option>{% endfor %}</select></div>
+
+        {% set uid = f.get('cfg_user_id', cfg.get('user_id', '')|string) %}
+        <div class="wa-row" data-for="assign_conversation create_task notify_staff"><label for="a_user">Staff member</label>
+            <select id="a_user" name="cfg_user_id"><option value="">Assigned staff member (default)</option>
+                {% for u in users %}<option value="{{ u.id }}" {{ 'selected' if (u.id|string) == uid }}>{{ u.username }}</option>{% endfor %}</select></div>
+        <div class="wa-row" data-for="add_tag"><label for="a_ctag">Tag to add</label><input type="text" id="a_ctag" name="cfg_tag" value="{{ f.get('cfg_tag', cfg.get('tag', '')) }}"></div>
+        <div data-for="create_task">
+            <div class="wa-row"><label for="a_title">Task title</label><input type="text" id="a_title" name="cfg_title" maxlength="100" value="{{ f.get('cfg_title', cfg.get('title', 'Follow up WhatsApp: {contact_name}')) }}"></div>
+            <div class="wa-grid-2">
+                <div class="wa-row"><label for="a_prio">Priority</label><select id="a_prio" name="cfg_priority">{% for p in ['Low','Medium','High','Critical'] %}<option {{ 'selected' if p == f.get('cfg_priority', cfg.get('priority', 'Medium')) }}>{{ p }}</option>{% endfor %}</select></div>
+                <div class="wa-row"><label for="a_due">Due in (days)</label><input type="number" id="a_due" name="cfg_due_days" min="0" max="60" value="{{ f.get('cfg_due_days', cfg.get('due_days', 1)) }}"></div>
+            </div>
+        </div>
+        <div data-for="send_template">
+            {% set tid = f.get('cfg_template_id', cfg.get('template_id', '')|string) %}
+            <div class="wa-row"><label for="a_tpl">Approved template</label><select id="a_tpl" name="cfg_template_id"><option value="">— choose —</option>
+                {% for t in approved %}<option value="{{ t.id }}" {{ 'selected' if (t.id|string) == tid }}>{{ t.name }} · {{ t.language }}</option>{% endfor %}</select></div>
+            {% for t in approved %}
+            <div class="a-vars" data-tpl="{{ t.id }}" {{ 'hidden' if (t.id|string) != tid }}>
+                {% for v in tpl_vars[t.id] %}
+                <div class="wa-row"><label>{{ v.label }}</label><input type="text" name="cfg_var_{{ v.key }}" {{ 'disabled' if (t.id|string) != tid }}
+                    value="{{ f.get('cfg_var_' ~ v.key, (cfg.get('values') or {}).get(v.key, '')) }}"></div>
+                {% endfor %}
+            </div>
+            {% endfor %}
+            <div class="wa-help">Placeholders: {% for p in placeholders %}<code>{{ '{' ~ p ~ '}' }}</code> {% endfor %}. Sent only to contacts who opted in; skipped otherwise.</div>
+        </div>
+    </div></div>
+</div>
+<div class="col-lg-4">
+    <div class="wa-card"><div class="wa-card-body wa-small">
+        <p class="mb-2"><i class="fas fa-shield-halved text-success"></i> Safety</p>
+        <ul class="mb-0 ps-3"><li>Each event runs an automation at most once.</li><li>Automations never trigger other automations.</li>
+            <li>Test mode logs what would happen without doing it.</li><li>Nothing is sent to a customer without consent and an approved template.</li></ul>
+    </div><div class="wa-card-foot text-end"><button class="wa-btn wa-btn-primary"><i class="fas fa-floppy-disk"></i> Save</button></div></div>
+</div></div>
+</form>
+{% endblock %}
+
+{% block wa_js %}
+<script>
+(function () {
+    var act = document.getElementById('a_action'), tpl = document.getElementById('a_tpl');
+    function sync() {
+        document.querySelectorAll('[data-for]').forEach(function (el) {
+            var on = el.dataset.for.split(' ').indexOf(act.value) >= 0;
+            el.hidden = !on;
+        });
+        document.querySelectorAll('.a-vars').forEach(function (d) {
+            var on = d.dataset.tpl === tpl.value;
+            d.hidden = !on;
+            d.querySelectorAll('input').forEach(function (i) { i.disabled = !on; });
+        });
+    }
+    act.addEventListener('change', sync); tpl.addEventListener('change', sync); sync();
+})();
+</script>
+{% endblock %}

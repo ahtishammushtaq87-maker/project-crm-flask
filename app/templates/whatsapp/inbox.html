@@ -1,0 +1,129 @@
+{% extends "whatsapp/_base.html" %}
+{% block title %}WhatsApp Inbox{% endblock %}
+
+{% block wa_content %}
+{% if not settings or not settings.phone_number_id %}
+<div class="wa-alert wa-alert-warn">WhatsApp is not connected yet — you can browse stored conversations, but sending is disabled until an administrator adds the credentials.</div>
+{% endif %}
+<div class="wa-inbox" id="waInbox"
+     data-open="{{ open_id or '' }}"
+     data-me="{{ current_user.id }}"
+     data-can-reply="{{ 1 if wa_perms.can_reply else 0 }}"
+     data-can-assign="{{ 1 if wa_perms.can_assign else 0 }}"
+     data-max-mb="{{ settings.max_upload_mb if settings else 16 }}">
+
+    {# ── Left: conversation list ───────────────────────────────── #}
+    <section class="wa-pane wa-pane-list" aria-label="Conversations">
+        <div class="wa-list-tools">
+            <div class="d-flex gap-2">
+                <input type="search" class="wa-input" id="waSearch" placeholder="Search name, number or message" aria-label="Search conversations">
+                {% if wa_perms.can_reply %}
+                <button class="wa-btn wa-btn-icon" id="waNewConv" title="New conversation" aria-label="New conversation"><i class="fas fa-pen-to-square"></i></button>
+                {% endif %}
+            </div>
+            <div class="wa-chips" role="tablist" aria-label="Filter">
+                {% for key, label in [('all','All'),('unread','Unread'),('open','Open'),('pending','Pending'),('resolved','Resolved'),('mine','Assigned to me'),('unassigned','Unassigned'),('starred','Starred')] %}
+                <button type="button" class="wa-chip {{ 'wa-active' if key == 'all' }}" data-filter="{{ key }}" role="tab">{{ label }}</button>
+                {% endfor %}
+            </div>
+            <details class="wa-small">
+                <summary class="wa-muted" style="cursor:pointer">More filters</summary>
+                <div class="d-flex flex-column gap-2 mt-2">
+                    <select class="wa-input" id="waTagFilter" aria-label="Tag">
+                        <option value="">Any tag</option>
+                        {% for t in tags %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+                    </select>
+                    <div class="d-flex gap-2">
+                        <input type="date" class="wa-input" id="waFrom" aria-label="Last activity from">
+                        <input type="date" class="wa-input" id="waTo" aria-label="Last activity to">
+                    </div>
+                </div>
+            </details>
+        </div>
+        <div class="wa-conv-list" id="waConvList" aria-live="polite">
+            <div class="wa-empty"><span class="wa-spinner"></span></div>
+        </div>
+    </section>
+
+    {# ── Center: conversation ──────────────────────────────────── #}
+    <section class="wa-pane wa-pane-chat" aria-label="Conversation">
+        <div class="wa-placeholder" id="waPlaceholder">
+            <div><i class="far fa-comments" style="font-size:40px;color:#c3ccd8"></i>
+                <p class="mt-2 mb-0">Select a conversation to start.</p></div>
+        </div>
+        <div id="waChat" class="d-none d-flex flex-column" style="flex:1;min-height:0">
+            <div class="wa-chat-head">
+                <button class="wa-btn wa-btn-icon wa-mobile-back" id="waBack" aria-label="Back to list"><i class="fas fa-arrow-left"></i></button>
+                <span class="wa-avatar" id="waChatAvatar">#</span>
+                <div style="min-width:0">
+                    <div class="wa-conv-name" id="waChatName"></div>
+                    <div class="wa-small wa-muted" id="waChatPhone"></div>
+                </div>
+                <div class="wa-chat-tools">
+                    <button class="wa-btn wa-btn-icon" id="waStar" title="Star" aria-label="Star conversation" aria-pressed="false"><i class="far fa-star"></i></button>
+                    <select id="waStatus" aria-label="Conversation status">
+                        <option value="open">Open</option><option value="pending">Pending</option><option value="resolved">Resolved</option>
+                    </select>
+                    {% if wa_perms.can_assign %}
+                    <select id="waAssign" aria-label="Assigned to">
+                        <option value="">Unassigned</option>
+                        {% for u in users %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}
+                    </select>
+                    {% endif %}
+                    <button class="wa-btn wa-btn-icon" id="waInfoToggle" title="Customer details" aria-label="Customer details"><i class="fas fa-circle-info"></i></button>
+                </div>
+            </div>
+            <div class="wa-thread" id="waThread" tabindex="0" aria-label="Messages"></div>
+            <div class="wa-window-bar" id="waWindow"></div>
+            {% if wa_perms.can_reply %}
+            <div class="wa-composer" id="waComposer">
+                <div class="wa-upload-bar" id="waUploadBar"></div>
+                <div class="wa-reply-to d-none" id="waReplyTo"><span class="wa-truncate" id="waReplyText"></span>
+                    <button class="wa-btn wa-btn-sm" id="waReplyCancel" aria-label="Cancel reply">×</button></div>
+                <div class="wa-attach-preview d-none" id="waAttachPreview"><i class="fas fa-paperclip"></i>
+                    <span class="wa-truncate" id="waAttachName"></span>
+                    <button class="wa-btn wa-btn-sm ms-auto" id="waAttachCancel" aria-label="Remove attachment">×</button></div>
+                <div class="wa-composer-row">
+                    <button class="wa-btn wa-btn-icon" id="waEmojiBtn" title="Emoji" aria-label="Emoji" aria-expanded="false"><i class="far fa-face-smile"></i></button>
+                    <label class="wa-btn wa-btn-icon mb-0" title="Attach image, video, audio or document" aria-label="Attach file">
+                        <i class="fas fa-paperclip"></i>
+                        <input type="file" id="waFile" class="d-none"
+                               accept="image/jpeg,image/png,video/mp4,video/3gpp,audio/aac,audio/amr,audio/mpeg,audio/mp4,audio/ogg,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt">
+                    </label>
+                    <button class="wa-btn wa-btn-icon" id="waTemplateBtn" title="Send template" aria-label="Send template"><i class="fas fa-file-lines"></i></button>
+                    <textarea id="waText" rows="1" placeholder="Type a message" aria-label="Message"></textarea>
+                    <button class="wa-btn wa-btn-primary" id="waSend" aria-label="Send"><i class="fas fa-paper-plane"></i></button>
+                </div>
+                <div class="wa-composer-hint">Enter to send · Shift+Enter for a new line</div>
+                <div class="wa-emoji-panel d-none" id="waEmojiPanel" role="listbox" aria-label="Emoji"></div>
+            </div>
+            {% else %}
+            <div class="wa-window-bar wa-muted">You can read this conversation but do not have permission to reply.</div>
+            {% endif %}
+        </div>
+    </section>
+
+    {# ── Right: customer info ──────────────────────────────────── #}
+    <aside class="wa-pane wa-pane-info" id="waInfo" aria-label="Customer details">
+        <div class="wa-placeholder">Customer details appear here.</div>
+    </aside>
+</div>
+
+{# Template picker / new conversation modals are built by whatsapp.js #}
+{% endblock %}
+
+{% block wa_js %}
+<script>
+window.WA_URLS = {
+    conversations: "{{ url_for('whatsapp.api_conversations') }}",
+    conversation: "{{ url_for('whatsapp.api_conversation', cid=0) }}".replace(/0$/, ''),
+    poll: "{{ url_for('whatsapp.api_poll') }}",
+    templates: "{{ url_for('whatsapp.api_templates') }}",
+    templatePreview: "{{ url_for('whatsapp.api_template_preview', tid=0) }}".replace(/0\/preview$/, ''),
+    retry: "{{ url_for('whatsapp.api_retry', mid=0) }}".replace(/0\/retry$/, ''),
+    contactSearch: "{{ url_for('whatsapp.api_contact_search') }}",
+    contactOpen: "{{ url_for('whatsapp.api_contact_open', contact_id=0) }}".replace(/0\/open$/, ''),
+};
+</script>
+<script src="{{ url_for('static', filename='whatsapp/whatsapp.js') }}"></script>
+{% endblock %}

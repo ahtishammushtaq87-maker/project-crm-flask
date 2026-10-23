@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}WhatsApp{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='whatsapp/whatsapp.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid wa-page">
+    {% block wa_content %}{% endblock %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>window.WA_CSRF = "{{ wa_csrf_token() }}";</script>
+{% block wa_js %}{% endblock %}
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}New WhatsApp Template{% endblock %}
+
+{% block wa_content %}
+{% call m.head('New template', 'Submitted to Meta for review through the official API. It can be used once Meta approves it.', 'fas fa-file-circle-plus') %}
+    <a class="wa-btn" href="{{ url_for('whatsapp.templates') }}"><i class="fas fa-arrow-left"></i> Templates</a>
+{% endcall %}
+{% if error %}<div class="wa-alert wa-alert-err">{{ error }}</div>{% endif %}
+<div class="row g-3">
+<div class="col-lg-7">
+<form class="wa-card wa-form" method="post" id="tplForm">
+    {{ m.csrf() }}
+    <div class="wa-card-body">
+        <div class="wa-grid-2">
+            <div class="wa-row"><label for="t_name">Name</label><input type="text" id="t_name" name="name" required pattern="[a-z0-9_]+" value="{{ form.get('name', '') }}" placeholder="order_update">
+                <div class="wa-help">Lowercase letters, numbers, underscores.</div></div>
+            <div class="wa-row"><label for="t_lang">Language code</label><input type="text" id="t_lang" name="language" required value="{{ form.get('language', 'en') }}" placeholder="en, en_US, ur"></div>
+        </div>
+        <div class="wa-row"><label for="t_cat">Category</label>
+            <select id="t_cat" name="category">
+                <option value="UTILITY" {{ 'selected' if form.get('category') == 'UTILITY' }}>Utility — order, invoice, account updates</option>
+                <option value="MARKETING" {{ 'selected' if form.get('category') == 'MARKETING' }}>Marketing — offers, announcements</option>
+            </select>
+            <div class="wa-help">Meta may re-categorise a template. Authentication templates are managed in WhatsApp Manager.</div></div>
+        <div class="wa-row"><label for="t_head">Header (optional, text)</label><input type="text" id="t_head" name="header" maxlength="60" value="{{ form.get('header', '') }}"></div>
+        <div class="wa-row"><label for="t_body">Body</label><textarea id="t_body" name="body" rows="5" maxlength="1024" required placeholder="Hello {{ '{{1}}' }}, your invoice {{ '{{2}}' }} is ready.">{{ form.get('body', '') }}</textarea>
+            <div class="wa-help">Use {{ '{{1}}' }}, {{ '{{2}}' }} … for variables.</div></div>
+        <div class="wa-row"><label for="t_ex">Example values for review (separate with |)</label><input type="text" id="t_ex" name="examples" value="{{ form.get('examples', '') }}" placeholder="Ali | INV-1001"></div>
+        <div class="wa-row"><label for="t_foot">Footer (optional)</label><input type="text" id="t_foot" name="footer" maxlength="60" value="{{ form.get('footer', '') }}"></div>
+        <div class="wa-row form-check"><input class="form-check-input" type="checkbox" id="t_stop" name="add_stop_button" value="1" {{ 'checked' if form.get('add_stop_button') }}>
+            <label class="form-check-label" for="t_stop">Add a “Stop promotions” quick-reply button (marketing) — replies mark the contact opted out</label></div>
+    </div>
+    <div class="wa-card-foot text-end"><button class="wa-btn wa-btn-primary"><i class="fas fa-paper-plane"></i> Submit to Meta</button></div>
+</form>
+</div>
+<div class="col-lg-5">
+    <div class="wa-card"><div class="wa-card-head"><h2>Preview</h2></div>
+        <div class="wa-card-body"><div class="fw-bold mb-1" id="pvHead"></div><div class="wa-preview-bubble" id="pvBody">…</div><div class="wa-small wa-muted mt-1" id="pvFoot"></div></div></div>
+</div>
+</div>
+{% endblock %}
+
+{% block wa_js %}
+<script>
+(function () {
+    var f = document.getElementById('tplForm');
+    function upd() {
+        var ex = f.examples.value.split('|').map(function (s) { return s.trim(); });
+        document.getElementById('pvHead').textContent = f.header.value;
+        document.getElementById('pvBody').textContent = (f.body.value || '…').replace(/\{\{\s*(\d+)\s*\}\}/g, function (m, n) { return ex[n - 1] || m; });
+        document.getElementById('pvFoot').textContent = f.footer.value;
+    }
+    f.addEventListener('input', upd); upd();
+})();
+</script>
+{% endblock %}

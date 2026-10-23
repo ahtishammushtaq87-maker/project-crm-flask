@@ -1,0 +1,33 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}Duplicate WhatsApp Contacts{% endblock %}
+
+{% block wa_content %}
+{% call m.head('Possible duplicates', 'Contacts sharing a CRM customer, an email address, or the same last 9 digits of their number.', 'fas fa-clone') %}
+    <a class="wa-btn" href="{{ url_for('whatsapp.contacts') }}"><i class="fas fa-arrow-left"></i> Contacts</a>
+{% endcall %}
+
+{% if not groups %}
+<div class="wa-card"><div class="wa-empty"><i class="fas fa-circle-check"></i>No likely duplicates found.</div></div>
+{% endif %}
+{% for g in groups %}
+<div class="wa-card">
+    <div class="wa-card-head"><h2>Group {{ loop.index }}</h2><span class="wa-small wa-muted">{{ g|length }} contacts</span></div>
+    <div class="wa-table-wrap"><table class="wa-table">
+        <thead><tr><th>Name</th><th>WhatsApp</th><th>Email</th><th>Customer</th><th>Consent</th><th>Last message</th><th>Created</th></tr></thead>
+        <tbody>{% for c in g %}<tr><td>{{ c.display_name }}</td><td class="wa-mono">+{{ c.wa_id }}</td><td>{{ c.email or '—' }}</td>
+            <td>{{ c.customer.name if c.customer else '—' }}</td><td>{{ m.status_badge(c.consent_status) }}</td>
+            <td class="wa-small">{{ c.last_message_at|wa_ago }}</td><td class="wa-small">{{ c.created_at|wa_dt('%d %b %Y') }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <form class="wa-card-foot wa-form d-flex flex-wrap gap-2 align-items-end" method="post" action="{{ url_for('whatsapp.contact_merge') }}"
+          onsubmit="return confirm('Merge these two contacts? Messages, notes and tags move to the kept contact and the other is deleted.');">
+        {{ m.csrf() }}
+        <div><label>Keep</label><select name="primary_id">{% for c in g %}<option value="{{ c.id }}">{{ c.display_name }} (+{{ c.wa_id }})</option>{% endfor %}</select></div>
+        <div><label>Merge into it and delete</label><select name="other_id">{% for c in g %}<option value="{{ c.id }}" {{ 'selected' if loop.index == 2 }}>{{ c.display_name }} (+{{ c.wa_id }})</option>{% endfor %}</select></div>
+        <div><label>Type MERGE</label><input type="text" name="confirm" autocomplete="off" style="width:110px"></div>
+        <button class="wa-btn wa-btn-danger">Merge</button>
+        <span class="wa-small wa-muted">An opt-out on either contact is kept. WhatsApp messages still go to the kept contact's number only.</span>
+    </form>
+</div>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,55 @@
+{% macro head(title, subtitle, icon='fab fa-whatsapp') -%}
+<div class="wa-head">
+    <div class="wa-head-title">
+        <div class="wa-head-icon"><i class="{{ icon }}" aria-hidden="true"></i></div>
+        <div>
+            <h1>{{ title }}</h1>
+            <p>{{ subtitle }}</p>
+        </div>
+    </div>
+    <div class="wa-head-actions">{{ caller() if caller }}</div>
+</div>
+{%- endmacro %}
+
+{% macro csrf() -%}
+<input type="hidden" name="csrf_token" value="{{ wa_csrf_token() }}">
+{%- endmacro %}
+
+{% macro status_badge(status) -%}
+{%- set cls = {'read': 'wa-badge-blue', 'delivered': 'wa-badge-green', 'sent': 'wa-badge-green',
+    'accepted': 'wa-badge', 'failed': 'wa-badge-red', 'unknown': 'wa-badge-amber', 'sending': 'wa-badge-amber',
+    'received': 'wa-badge', 'pending': 'wa-badge-amber', 'skipped': 'wa-badge',
+    'open': 'wa-badge-green', 'resolved': 'wa-badge', 'draft': 'wa-badge', 'scheduled': 'wa-badge-blue',
+    'running': 'wa-badge-green', 'paused': 'wa-badge-amber', 'completed': 'wa-badge-blue', 'cancelled': 'wa-badge',
+    'APPROVED': 'wa-badge-green', 'PENDING': 'wa-badge-amber', 'REJECTED': 'wa-badge-red', 'PAUSED': 'wa-badge-amber',
+    'DISABLED': 'wa-badge-red', 'opted_in': 'wa-badge-green', 'opted_out': 'wa-badge-red', 'dry_run': 'wa-badge-blue',
+    'done': 'wa-badge-green', 'error': 'wa-badge-red'} -%}
+<span class="wa-badge {{ cls.get(status, '') }}">{{ status|replace('_', ' ') }}</span>
+{%- endmacro %}
+
+{% macro range_filter(endpoint, preset, start, end, extra={}) -%}
+<form class="wa-filters" method="get" action="{{ url_for(endpoint) }}">
+    {% for k, v in extra.items() %}{% if v %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
+    <div class="wa-seg" role="group" aria-label="Date range">
+        {% for key, label in [('today', 'Today'), ('7d', '7 days'), ('30d', '30 days')] %}
+        <a href="{{ url_for(endpoint, range=key, **extra) }}" class="{{ 'wa-active' if preset == key }}">{{ label }}</a>
+        {% endfor %}
+    </div>
+    <input type="hidden" name="range" value="custom">
+    <input type="date" name="start" value="{{ start }}" class="wa-input" aria-label="From date" style="min-width:0">
+    <input type="date" name="end" value="{{ end }}" class="wa-input" aria-label="To date" style="min-width:0">
+    <button class="wa-btn {{ 'wa-btn-primary' if preset == 'custom' }}" type="submit">Apply</button>
+</form>
+{%- endmacro %}
+
+{% macro pager(p, endpoint) -%}
+{% if p.pages > 1 %}
+<div class="wa-pager">
+    <span>Page {{ p.page }} of {{ p.pages }} · {{ p.total }} total</span>
+    <span>
+        {% if p.has_prev %}<a class="wa-btn wa-btn-sm" href="{{ url_for(endpoint, page=p.prev_num, **kwargs) }}">‹ Previous</a>{% endif %}
+        {% if p.has_next %}<a class="wa-btn wa-btn-sm" href="{{ url_for(endpoint, page=p.next_num, **kwargs) }}">Next ›</a>{% endif %}
+    </span>
+</div>
+{% endif %}
+{%- endmacro %}

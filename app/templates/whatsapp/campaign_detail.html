@@ -1,0 +1,84 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}Campaign {{ c.name }}{% endblock %}
+
+{% block wa_content %}
+{% call m.head(c.name, (c.description or 'Template campaign') ~ ' · created ' ~ (c.created_at|wa_dt('%d %b %Y')), 'fas fa-bullhorn') %}
+    {{ m.status_badge(c.status) }}
+    {% if c.status == 'draft' %}<a class="wa-btn" href="{{ url_for('whatsapp.campaign_form', cid=c.id) }}"><i class="fas fa-pen"></i> Edit</a>{% endif %}
+    {% for action, label, allowed in [('pause','Pause',['running','scheduled']),('resume','Resume',['paused']),('retry','Retry failed',['running','paused','completed']),('cancel','Cancel',['draft','scheduled','running','paused']),('delete','Delete',['draft','cancelled','completed','failed'])] %}
+    {% if c.status in allowed %}
+    <form method="post" action="{{ url_for('whatsapp.campaign_action', cid=c.id, action=action) }}"
+          onsubmit="return confirm('{{ label }} this campaign?');">{{ m.csrf() }}
+        <button class="wa-btn {{ 'wa-btn-danger' if action in ('cancel','delete') }}">{{ label }}</button></form>
+    {% endif %}
+    {% endfor %}
+    {% if wa_perms.can_export %}<a class="wa-btn" href="{{ url_for('whatsapp.campaign_export', cid=c.id) }}"><i class="fas fa-file-export"></i> Export</a>{% endif %}
+{% endcall %}
+
+{% if c.status_message %}<div class="wa-alert wa-alert-warn">{{ c.status_message }}</div>{% endif %}
+
+<div class="wa-stats">
+    {% for key, label in [('total','Recipients'),('pending','Pending'),('sent_total','Sent'),('delivered_total','Delivered'),('read','Read'),('failed','Failed'),('skipped','Skipped'),('unknown','Unknown')] %}
+    <div class="wa-stat"><div class="wa-stat-label">{{ label }}</div><div class="wa-stat-value">{{ counts[key] }}</div></div>
+    {% endfor %}
+</div>
+{% if counts.total %}
+<div class="wa-progress mb-3" aria-label="Progress">
+    <span style="width:{{ counts.read / counts.total * 100 }}%;background:#2a8ee8"></span>
+    <span style="width:{{ (counts.delivered_total - counts.read) / counts.total * 100 }}%;background:#128c5e"></span>
+    <span style="width:{{ (counts.sent_total - counts.delivered_total) / counts.total * 100 }}%;background:#7cc6a5"></span>
+    <span style="width:{{ counts.failed / counts.total * 100 }}%;background:#c63c3c"></span>
+</div>
+{% endif %}
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="wa-card"><div class="wa-card-head"><h2>Message preview</h2><span class="wa-small wa-muted">{{ c.template.name if c.template else '' }}</span></div>
+            <div class="wa-card-body">
+                {% if preview %}<div class="wa-preview-bubble">{{ preview }}</div>{% else %}<div class="wa-muted">No template chosen.</div>{% endif %}
+                {% if preview_error %}<div class="wa-alert wa-alert-err mt-2 mb-0">{{ preview_error }}</div>{% endif %}
+                <div class="wa-small wa-muted mt-2">Shown with the first recipient's details.</div>
+            </div></div>
+
+        {% if c.status == 'draft' %}
+        <form class="wa-card wa-form" method="post" action="{{ url_for('whatsapp.campaign_confirm', cid=c.id) }}">
+            {{ m.csrf() }}
+            <div class="wa-card-head"><h2>Confirm &amp; send</h2></div>
+            <div class="wa-card-body">
+                {% if not settings or not settings.is_connected or not settings.campaigns_enabled %}
+                <div class="wa-alert wa-alert-warn">Sending is disabled until the connection test passes and campaigns are enabled in Settings.</div>
+                {% endif %}
+                <div class="wa-row"><label for="cf_when">Schedule (optional, CRM time)</label><input type="datetime-local" id="cf_when" name="scheduled_at">
+                    <div class="wa-help">Leave empty to start now.</div></div>
+                <div class="wa-row"><label for="cf_count">Type the recipient count ({{ counts.total }}) to confirm</label>
+                    <input type="text" id="cf_count" name="confirm_count" autocomplete="off" inputmode="numeric" required></div>
+                <p class="wa-small wa-muted mb-0">Messages go out in the background at the configured rate. Meta charges per delivered template message according to its current pricing.</p>
+            </div>
+            <div class="wa-card-foot text-end"><button class="wa-btn wa-btn-primary" {{ 'disabled' if preview_error or not counts.total }}><i class="fas fa-paper-plane"></i> Confirm campaign</button></div>
+        </form>
+        {% endif %}
+
+        <div class="wa-card"><div class="wa-card-head"><h2>Audit trail</h2></div>
+            {% if audit_rows %}<ul class="wa-list-plain wa-small" style="padding:0 16px">{% for a in audit_rows %}
+                <li><span class="wa-mono">{{ a.action }}</span> · {{ a.user.username if a.user else 'system' }} · {{ a.created_at|wa_dt }}<div class="wa-muted">{{ a.detail or '' }}</div></li>{% endfor %}</ul>
+            {% else %}<div class="wa-empty">No entries.</div>{% endif %}</div>
+    </div>
+    <div class="col-lg-7">
+        <div class="wa-card">
+            <div class="wa-card-head"><h2>Recipients</h2>
+                <form method="get"><select name="status" class="wa-input" onchange="this.form.submit()" aria-label="Filter recipients">
+                    <option value="">All statuses</option>
+                    {% for s in ['pending','sending','accepted','sent','delivered','read','failed','skipped','unknown'] %}<option value="{{ s }}" {{ 'selected' if s == status }}>{{ s|title }}</option>{% endfor %}
+                </select></form></div>
+            {% if pager.items %}
+            <div class="wa-table-wrap"><table class="wa-table"><thead><tr><th>Contact</th><th>Status</th><th>Attempts</th><th>Detail</th><th>Updated</th></tr></thead><tbody>
+            {% for r in pager.items %}<tr><td>{{ r.contact.display_name if r.contact else '—' }}<div class="wa-small wa-muted">+{{ r.contact.wa_id if r.contact else '' }}</div></td>
+                <td>{{ m.status_badge(r.status) }}</td><td>{{ r.attempts }}</td><td class="wa-small">{{ r.error or '' }}</td><td class="wa-small">{{ r.updated_at|wa_ago }}</td></tr>{% endfor %}
+            </tbody></table></div>
+            {{ m.pager(pager, 'whatsapp.campaign_detail', cid=c.id, status=status) }}
+            {% else %}<div class="wa-empty">No recipients{{ ' with this status' if status }}.</div>{% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

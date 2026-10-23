@@ -1,0 +1,52 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}WhatsApp Automations{% endblock %}
+
+{% block wa_content %}
+{% call m.head('Automations', 'When something happens, do one thing. New automations start disabled and in test mode.', 'fas fa-robot') %}
+    <a class="wa-btn wa-btn-primary" href="{{ url_for('whatsapp.automation_form') }}"><i class="fas fa-plus"></i> New automation</a>
+{% endcall %}
+
+<div class="wa-card">
+    {% if items %}
+    <div class="wa-table-wrap"><table class="wa-table">
+        <thead><tr><th>Automation</th><th>When</th><th>Then</th><th>State</th><th>Last run</th><th></th></tr></thead>
+        <tbody>{% for a in items %}
+        <tr><td><strong>{{ a.name }}</strong>
+                {% if a.conditions %}<div class="wa-small wa-muted">{% if a.conditions.keyword %}message contains “{{ a.conditions.keyword }}” {% endif %}{% if a.conditions.tag %}contact tagged “{{ a.conditions.tag }}”{% endif %}</div>{% endif %}</td>
+            <td class="wa-small">{{ triggers.get(a.trigger, a.trigger) }}</td>
+            <td class="wa-small">{{ describe(a) }}</td>
+            <td>{% if a.is_enabled %}<span class="wa-badge wa-badge-green">enabled</span>{% else %}<span class="wa-badge">disabled</span>{% endif %}
+                {% if a.dry_run %}<span class="wa-badge wa-badge-blue">test mode</span>{% else %}<span class="wa-badge wa-badge-amber">live</span>{% endif %}</td>
+            <td class="wa-small">{{ a.last_run_at|wa_ago }}</td>
+            <td class="text-end text-nowrap">
+                <form class="d-inline" method="post" action="{{ url_for('whatsapp.automation_action', aid=a.id, action='disable' if a.is_enabled else 'enable') }}">{{ m.csrf() }}
+                    <button class="wa-btn wa-btn-sm">{{ 'Disable' if a.is_enabled else 'Enable' }}</button></form>
+                {% if a.dry_run %}
+                <form class="d-inline" method="post" action="{{ url_for('whatsapp.automation_action', aid=a.id, action='live') }}"
+                      onsubmit="return confirm('Go live? This automation will really {{ describe(a)|e }} whenever it is triggered.');">{{ m.csrf() }}
+                    <input type="hidden" name="confirm" value="1"><button class="wa-btn wa-btn-sm">Go live</button></form>
+                {% else %}
+                <form class="d-inline" method="post" action="{{ url_for('whatsapp.automation_action', aid=a.id, action='test_mode') }}">{{ m.csrf() }}
+                    <button class="wa-btn wa-btn-sm">Test mode</button></form>
+                {% endif %}
+                <a class="wa-btn wa-btn-sm" href="{{ url_for('whatsapp.automation_form', aid=a.id) }}">Edit</a>
+                <form class="d-inline" method="post" action="{{ url_for('whatsapp.automation_action', aid=a.id, action='delete') }}" onsubmit="return confirm('Delete this automation and its log?');">{{ m.csrf() }}
+                    <button class="wa-btn wa-btn-sm wa-btn-danger" aria-label="Delete"><i class="fas fa-trash"></i></button></form>
+            </td></tr>
+        {% endfor %}</tbody>
+    </table></div>
+    {% else %}
+    <div class="wa-empty"><i class="fas fa-robot"></i>No automations yet.</div>
+    {% endif %}
+</div>
+
+<div class="wa-card">
+    <div class="wa-card-head"><h2>Execution log</h2><span class="wa-small wa-muted">Latest 50 · test-mode runs show what would have happened</span></div>
+    {% if logs %}
+    <div class="wa-table-wrap"><table class="wa-table"><thead><tr><th>When</th><th>Automation</th><th>Result</th><th>Detail</th></tr></thead><tbody>
+    {% for l in logs %}<tr><td class="wa-small">{{ l.created_at|wa_dt }}</td><td>{{ l.automation.name }}</td><td>{{ m.status_badge(l.result) }}</td><td class="wa-small">{{ l.detail or '' }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<div class="wa-empty">Nothing has run yet.</div>{% endif %}
+</div>
+{% endblock %}

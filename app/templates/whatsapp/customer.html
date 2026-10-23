@@ -1,0 +1,55 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}WhatsApp · {{ cust.name }}{% endblock %}
+
+{% block wa_content %}
+{% call m.head(cust.name, 'WhatsApp for this CRM customer' ~ (' · ' ~ cust.company_name if cust.company_name else ''), 'fab fa-whatsapp') %}
+    <a class="wa-btn" href="{{ url_for('sales.customer_profile', id=cust.id) }}"><i class="fas fa-arrow-left"></i> Customer profile</a>
+{% endcall %}
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="wa-card"><div class="wa-card-head"><h2>Linked WhatsApp contacts</h2></div>
+            {% if linked %}
+            <ul class="wa-list-plain" style="padding:0 16px">{% for c in linked %}
+                <li class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="flex-grow-1"><strong>{{ c.display_name }}</strong> <span class="wa-mono">+{{ c.wa_id }}</span><br>{{ m.status_badge(c.consent_status) }}</span>
+                    {% if wa_perms.can_reply %}<form method="post" action="{{ url_for('whatsapp.contact_start', cid=c.id) }}">{{ m.csrf() }}<button class="wa-btn wa-btn-sm wa-btn-primary"><i class="fab fa-whatsapp"></i> Open chat</button></form>{% endif %}
+                    {% if wa_perms.can_manage_contacts %}<form method="post" action="{{ url_for('whatsapp.customer_link', customer_id=cust.id) }}" onsubmit="return confirm('Unlink this WhatsApp contact from {{ cust.name|e }}?');">{{ m.csrf() }}
+                        <input type="hidden" name="action" value="unlink"><input type="hidden" name="contact_id" value="{{ c.id }}"><button class="wa-btn wa-btn-sm">Unlink</button></form>{% endif %}
+                </li>{% endfor %}</ul>
+            {% else %}<div class="wa-empty">No WhatsApp contact is linked yet.</div>{% endif %}
+        </div>
+        {% if wa_perms.can_manage_contacts %}
+        <form class="wa-card wa-form" method="post" action="{{ url_for('whatsapp.customer_link', customer_id=cust.id) }}">
+            {{ m.csrf() }}<input type="hidden" name="action" value="link">
+            <div class="wa-card-head"><h2>Link a number</h2></div>
+            <div class="wa-card-body">
+                {% if suggested %}<div class="wa-alert wa-alert-info wa-small">A WhatsApp contact already exists for this customer's phone (+{{ suggested.wa_id }}{{ ', ' ~ suggested.display_name }}). Linking reuses it — no duplicate is created.</div>{% endif %}
+                <label for="l_phone">WhatsApp number</label>
+                <input type="text" id="l_phone" name="phone" value="{{ ('+' ~ suggested_wa) if suggested_wa else (cust.phone or '') }}">
+                <div class="wa-help">Defaults to the customer's phone. Linking does not record marketing consent.</div>
+            </div>
+            <div class="wa-card-foot text-end"><button class="wa-btn wa-btn-primary">Link</button></div>
+        </form>
+        {% endif %}
+        {% if invoices and wa_perms.can_reply %}
+        <div class="wa-card"><div class="wa-card-head"><h2>Invoice notifications</h2></div>
+            <ul class="wa-list-plain" style="padding:0 16px">{% for s in invoices %}
+                <li class="d-flex justify-content-between align-items-center"><span>{{ s.invoice_number }} <span class="wa-small wa-muted">· {{ '%.2f'|format(s.total or 0) }} · {{ s.status }}</span></span>
+                    <a class="wa-btn wa-btn-sm" href="{{ url_for('whatsapp.invoice_notify', sale_id=s.id) }}">Send</a></li>{% endfor %}</ul></div>
+        {% endif %}
+    </div>
+    <div class="col-lg-7">
+        <div class="wa-card"><div class="wa-card-head"><h2>Recent WhatsApp history</h2></div>
+            <div class="wa-card-body" style="background:#f3f5f2;max-height:560px;overflow-y:auto">
+                {% for msg in history %}
+                <div class="wa-msg {{ 'wa-msg-out' if msg.direction == 'out' else 'wa-msg-in' }} {{ 'wa-msg-failed' if msg.status == 'failed' }}">
+                    <div class="wa-bubble"><div class="wa-bubble-text">{{ msg.body or ('[' ~ msg.msg_type ~ ']') }}</div>
+                        <div class="wa-bubble-meta">{{ msg.timestamp|wa_dt }}{% if msg.direction == 'out' %} · {{ msg.status }}{% endif %}</div></div>
+                </div>
+                {% else %}<div class="wa-empty">No messages you can view.</div>{% endfor %}
+            </div></div>
+    </div>
+</div>
+{% endblock %}

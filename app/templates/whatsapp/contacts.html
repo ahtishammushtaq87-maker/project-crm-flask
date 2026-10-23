@@ -1,0 +1,57 @@
+{% extends "whatsapp/_base.html" %}
+{% import "whatsapp/_macros.html" as m %}
+{% block title %}WhatsApp Contacts{% endblock %}
+
+{% block wa_content %}
+{% call m.head('Contacts', 'WhatsApp numbers, consent and links to CRM customers.', 'fas fa-address-book') %}
+    <a class="wa-btn" href="{{ url_for('whatsapp.contact_duplicates') }}"><i class="fas fa-clone"></i> Duplicates</a>
+    <a class="wa-btn" href="{{ url_for('whatsapp.contact_import') }}"><i class="fas fa-file-import"></i> Import CSV</a>
+    {% if wa_perms.can_export %}<a class="wa-btn" href="{{ url_for('whatsapp.contact_export', q=q, tag=tag, consent=consent) }}"><i class="fas fa-file-export"></i> Export</a>{% endif %}
+    <a class="wa-btn wa-btn-primary" href="{{ url_for('whatsapp.contact_form') }}"><i class="fas fa-plus"></i> Add contact</a>
+{% endcall %}
+
+<div class="wa-card">
+    <div class="wa-card-head">
+        <form class="wa-filters" method="get">
+            <input type="search" class="wa-input" name="q" value="{{ q }}" placeholder="Name, number or email" aria-label="Search">
+            <select name="tag" class="wa-input" aria-label="Tag"><option value="">Any tag</option>
+                {% for t in tags %}<option value="{{ t }}" {{ 'selected' if t == tag }}>{{ t }}</option>{% endfor %}</select>
+            <select name="consent" class="wa-input" aria-label="Consent"><option value="">Any consent</option>
+                {% for v, l in [('opted_in','Opted in'),('unknown','Unknown'),('opted_out','Opted out')] %}<option value="{{ v }}" {{ 'selected' if v == consent }}>{{ l }}</option>{% endfor %}</select>
+            <button class="wa-btn">Filter</button>
+            {% if q or tag or consent %}<a class="wa-btn" href="{{ url_for('whatsapp.contacts') }}">Clear</a>{% endif %}
+        </form>
+        <span class="wa-small wa-muted">{{ pager.total }} contact{{ 's' if pager.total != 1 }}</span>
+    </div>
+    {% if pager.items %}
+    <div class="wa-table-wrap">
+        <table class="wa-table">
+            <thead><tr><th>Contact</th><th>WhatsApp</th><th>CRM customer</th><th>Tags</th><th>Consent</th><th>Assigned</th><th>Last message</th><th></th></tr></thead>
+            <tbody>
+            {% for c in pager.items %}
+            <tr>
+                <td><strong>{{ c.display_name }}</strong>{% if c.email %}<div class="wa-small wa-muted">{{ c.email }}</div>{% endif %}</td>
+                <td class="wa-mono">+{{ c.wa_id }}</td>
+                <td>{% if c.customer %}<a href="{{ url_for('sales.customer_profile', id=c.customer_id) }}">{{ c.customer.name }}</a>{% else %}<span class="wa-muted">—</span>{% endif %}</td>
+                <td>{% for t in c.tag_list %}<span class="wa-badge">{{ t }}</span> {% endfor %}</td>
+                <td>{{ m.status_badge(c.consent_status) }}{% if c.consent_source %}<div class="wa-small wa-muted wa-truncate" style="max-width:160px" title="{{ c.consent_source }}">{{ c.consent_source }}</div>{% endif %}</td>
+                <td>{{ c.assigned_to.username if c.assigned_to else '—' }}</td>
+                <td class="wa-small">{{ c.last_message_at|wa_ago }}</td>
+                <td class="text-end text-nowrap">
+                    {% if wa_perms.can_reply %}
+                    <form method="post" action="{{ url_for('whatsapp.contact_start', cid=c.id) }}" class="d-inline">{{ m.csrf() }}
+                        <button class="wa-btn wa-btn-sm" title="Open conversation"><i class="fab fa-whatsapp"></i> Chat</button></form>
+                    {% endif %}
+                    <a class="wa-btn wa-btn-sm" href="{{ url_for('whatsapp.contact_form', cid=c.id) }}">Edit</a>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {{ m.pager(pager, 'whatsapp.contacts', q=q, tag=tag, consent=consent) }}
+    {% else %}
+    <div class="wa-empty"><i class="fas fa-address-book"></i>No contacts{{ ' match these filters' if q or tag or consent }}. Contacts are created automatically when customers message you, or add them here.</div>
+    {% endif %}
+</div>
+{% endblock %}

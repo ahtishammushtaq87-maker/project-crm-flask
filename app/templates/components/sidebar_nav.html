@@ -243,6 +243,35 @@
         <i class="fas fa-table nav-ico"></i> <span>Spreadsheet</span>
     </a>
 
+    {# ── WhatsApp (own module; each link only for users with that WhatsApp permission) #}
+    {% if wa_can('can_view') %}
+    <a class="nav-link nav-group-toggle collapsed" data-bs-toggle="collapse" href="#{{ nav_ns }}NavWhatsApp"
+        role="button" aria-expanded="false" aria-controls="{{ nav_ns }}NavWhatsApp">
+        <i class="fab fa-whatsapp nav-ico"></i> <span>WhatsApp</span>
+        <i class="fas fa-chevron-down nav-caret"></i>
+    </a>
+    <div class="collapse" id="{{ nav_ns }}NavWhatsApp">
+        <a class="nav-link" href="{{ url_for('whatsapp.dashboard') }}"><i class="fas fa-gauge nav-sub-ico"></i><span>Overview</span></a>
+        <a class="nav-link" href="{{ url_for('whatsapp.inbox') }}"><i class="fas fa-inbox nav-sub-ico"></i><span>Inbox</span></a>
+        {% if wa_can('can_manage_contacts') %}
+        <a class="nav-link" href="{{ url_for('whatsapp.contacts') }}"><i class="fas fa-address-book nav-sub-ico"></i><span>Contacts</span></a>
+        {% endif %}
+        {% if wa_can('can_manage_campaigns') %}
+        <a class="nav-link" href="{{ url_for('whatsapp.campaigns') }}"><i class="fas fa-bullhorn nav-sub-ico"></i><span>Campaigns</span></a>
+        {% endif %}
+        <a class="nav-link" href="{{ url_for('whatsapp.templates') }}"><i class="fas fa-file-lines nav-sub-ico"></i><span>Message Templates</span></a>
+        {% if wa_can('can_manage_automations') %}
+        <a class="nav-link" href="{{ url_for('whatsapp.automations') }}"><i class="fas fa-robot nav-sub-ico"></i><span>Automations</span></a>
+        {% endif %}
+        {% if wa_can('can_view_reports') %}
+        <a class="nav-link" href="{{ url_for('whatsapp.reports') }}"><i class="fas fa-chart-line nav-sub-ico"></i><span>Reports</span></a>
+        {% endif %}
+        {% if wa_can('can_manage_settings') %}
+        <a class="nav-link" href="{{ url_for('whatsapp.settings') }}"><i class="fas fa-sliders nav-sub-ico"></i><span>Settings</span></a>
+        {% endif %}
+    </div>
+    {% endif %}
+
     {# ── Media library (its own top-level module, like Spreadsheet) #}
     {% if adm or u.can_view_media %}
     <a class="nav-link" href="{{ url_for('media.index') }}">
