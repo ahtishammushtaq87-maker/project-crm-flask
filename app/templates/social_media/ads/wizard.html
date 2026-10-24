@@ -1,0 +1,111 @@
+{% extends "social_media/_base.html" %}
+{% import "social_media/_macros.html" as m with context %}
+{% block title %}Create campaign · Facebook Ads{% endblock %}
+
+{% set f = form %}
+{% block sm_content %}
+{% call m.head('Create campaign', 'A guided setup. The campaign is created PAUSED — nothing is spent until it is approved and activated.', 'fas fa-wand-magic-sparkles') %}
+    <a class="sm-btn" href="{{ url_for('social_media.ads_overview') }}">Cancel</a>
+{% endcall %}
+
+{% if not can_manage_api %}<div class="sm-alert sm-alert-danger"><code>ads_management</code> is not granted to the connected Meta login, so Meta will reject campaign creation. Reconnect Facebook with the ads permissions first.</div>{% endif %}
+{% for e in errors %}<div class="sm-alert sm-alert-danger">{{ e }}</div>{% endfor %}
+
+<form method="post" class="sm-card" id="smWizard" data-start="{{ 6 if review else 0 }}">{{ m.csrf() }}
+    <div class="sm-card-body">
+        <div class="sm-wiz-steps" aria-hidden="true">{% for s in ['1 Account', '2 Objective', '3 Name', '4 Budget & schedule', '5 Audience & placements', '6 Creative', '7 Review'] %}<span>{{ s }}</span>{% endfor %}</div>
+
+        <section class="sm-wiz-pane" aria-label="Step 1: advertising account">
+            <h3 class="h6">Step 1 · Advertising account</h3>
+            <div class="sm-dest-card"><strong>{{ acc.name }}</strong> <span class="sm-mono sm-muted">{{ acc.remote_id }}</span><div class="sm-small">Currency <strong>{{ acc.currency }}</strong>{% if acc.timezone_name %} · timezone {{ acc.timezone_name }}{% endif %}</div></div>
+            <div class="sm-help">Switch the ad account on the Facebook Ads page if needed.</div>
+        </section>
+
+        <section class="sm-wiz-pane" aria-label="Step 2: objective">
+            <h3 class="h6">Step 2 · Campaign objective</h3>
+            {% for key, o in objectives.items() %}<label class="sm-dest mb-2"><input type="radio" name="objective" value="{{ key }}" {{ 'checked' if f.get('objective', 'OUTCOME_ENGAGEMENT') == key }}><i class="fas fa-bullseye"></i><span>{{ o.label }}</span><i class="fas fa-circle-check sm-check"></i></label>{% endfor %}
+            <div class="sm-help">Not available in this wizard (use <a href="{{ ads_manager }}" target="_blank" rel="noopener">Ads Manager</a>): {% for k, why in others.items() %}<strong>{{ k|replace('OUTCOME_', '')|lower }}</strong> — {{ why }}{{ '; ' if not loop.last }}{% endfor %}.</div>
+        </section>
+
+        <section class="sm-wiz-pane" aria-label="Step 3: name">
+            <h3 class="h6">Step 3 · Campaign name</h3>
+            <input class="sm-input w-100" name="name" maxlength="200" value="{{ f.get('name', '') }}" placeholder="e.g. Eid offer – engagement – PK" aria-label="Campaign name">
+        </section>
+
+        <section class="sm-wiz-pane" aria-label="Step 4: budget and schedule">
+            <h3 class="h6">Step 4 · Budget &amp; schedule</h3>
+            <div class="sm-form-grid">
+                <div class="sm-field"><label class="sm-label" for="wType">Budget type</label><select class="sm-select" id="wType" name="budget_type">
+                    <option value="daily" {{ 'selected' if f.get('budget_type', 'daily') == 'daily' }}>Daily budget</option><option value="lifetime" {{ 'selected' if f.get('budget_type') == 'lifetime' }}>Lifetime budget (needs end date)</option></select></div>
+                <div class="sm-field"><label class="sm-label" for="wBudget">Amount ({{ acc.currency }})</label><input class="sm-input" id="wBudget" name="budget" type="number" step="0.01" min="0.01" value="{{ f.get('budget', '') }}"></div>
+                <div class="sm-field"><label class="sm-label" for="wStart">Start ({{ sm_tz_name }}) <span class="sm-muted">optional</span></label><input class="sm-input" id="wStart" name="start" type="datetime-local" value="{{ f.get('start', '') }}"></div>
+                <div class="sm-field"><label class="sm-label" for="wEnd">End ({{ sm_tz_name }})</label><input class="sm-input" id="wEnd" name="end" type="datetime-local" value="{{ f.get('end', '') }}"></div>
+            </div>
+            <div class="sm-help">Meta may enforce a minimum daily budget for your currency and objective; the review step shows Meta's answer.</div>
+        </section>
+
+        <section class="sm-wiz-pane" aria-label="Step 5: audience and placements">
+            <h3 class="h6">Step 5 · Audience &amp; placements</h3>
+            <div class="sm-form-grid">
+                <div class="sm-field"><label class="sm-label" for="wCountries">Countries (2-letter codes)</label><input class="sm-input" id="wCountries" name="countries" value="{{ f.get('countries', 'PK') }}" placeholder="PK, AE"></div>
+                <div class="sm-field"><label class="sm-label" for="wAmin">Age from</label><input class="sm-input" id="wAmin" name="age_min" type="number" min="18" max="65" value="{{ f.get('age_min', '18') }}"></div>
+                <div class="sm-field"><label class="sm-label" for="wAmax">Age to (65 = 65+)</label><input class="sm-input" id="wAmax" name="age_max" type="number" min="18" max="65" value="{{ f.get('age_max', '65') }}"></div>
+            </div>
+            <div class="sm-label">Gender</div>
+            <label class="me-3"><input type="checkbox" name="genders" value="1" {{ 'checked' if '1' in f.getlist('genders') }}> Men</label>
+            <label><input type="checkbox" name="genders" value="2" {{ 'checked' if '2' in f.getlist('genders') }}> Women</label>
+            <div class="sm-help">Leave both unticked for all.</div>
+            <div class="sm-label mt-2">Placements</div>
+            <label class="d-block"><input type="radio" name="placements" value="automatic" {{ 'checked' if f.get('placements', 'automatic') == 'automatic' }}> Automatic placements (Meta chooses across Facebook, Instagram and more)</label>
+            <label class="d-block"><input type="radio" name="placements" value="facebook_feed" {{ 'checked' if f.get('placements') == 'facebook_feed' }}> Facebook Feed only</label>
+            <div class="sm-help">Detailed interest targeting, custom audiences and special ad categories are managed in Ads Manager.</div>
+        </section>
+
+        <section class="sm-wiz-pane" aria-label="Step 6: creative">
+            <h3 class="h6">Step 6 · Creative: promote a published Facebook Page post</h3>
+            {% for d in posts %}
+            <label class="sm-dest mb-2"><input type="radio" name="post_id" value="{{ d.remote_id }}" data-page="{{ d.account.remote_id }}" {{ 'checked' if f.get('post_id') == d.remote_id }}
+                    onchange="document.getElementById('wPage').value=this.dataset.page">
+                {{ m.plat('facebook') }}<span class="sm-grow" style="min-width:0"><span class="d-block sm-clip">{{ d.post.display_title }}</span><span class="sm-small sm-muted">{{ d.account.name }} · {{ d.published_at|sm_dt }}</span></span><i class="fas fa-circle-check sm-check"></i></label>
+            {% else %}<div class="sm-empty"><i class="fas fa-image"></i>No published Facebook Page posts yet. Publish one (or sync your Page's posts) first, or build the creative in Ads Manager.</div>{% endfor %}
+            <input type="hidden" name="page_id" id="wPage" value="{{ f.get('page_id', '') }}">
+            <div class="sm-help">For the Traffic objective, choose a post that contains a link.</div>
+        </section>
+
+        <section class="sm-wiz-pane" aria-label="Step 7: review">
+            <h3 class="h6">Step 7 · Review</h3>
+            {% if spec is defined and not errors %}
+            <div class="sm-review"><dl>
+                <dt>Ad account</dt><dd>{{ acc.name }} ({{ acc.remote_id }})</dd>
+                <dt>Objective</dt><dd>{{ objectives[spec.objective].label }}</dd>
+                <dt>Name</dt><dd>{{ spec.name }}</dd>
+                <dt>Budget</dt><dd><span class="sm-money">{{ '%.2f'|format(spec.amount) }} {{ acc.currency }}</span> {{ spec.budget_type }}</dd>
+                <dt>Schedule</dt><dd>{{ spec.start|sm_dt if spec.start else 'starts when activated' }} → {{ spec.end|sm_dt if spec.end else 'no end date' }}</dd>
+                <dt>Audience</dt><dd>{{ spec.countries|join(', ') }} · ages {{ spec.age_min }}–{{ spec.age_max }}{{ '+' if spec.age_max == 65 }} · {% if spec.genders == [1] %}men{% elif spec.genders == [2] %}women{% else %}all genders{% endif %}</dd>
+                <dt>Placements</dt><dd>{{ 'Automatic' if spec.placements == 'automatic' else 'Facebook Feed only' }}</dd>
+                <dt>Creative</dt><dd>Page post <span class="sm-mono">{{ spec.post_id }}</span></dd>
+                <dt>Initial status</dt><dd>{{ m.badge('PAUSED') }} — no delivery or spend until activated</dd>
+            </dl></div>
+            {% if review %}<div class="sm-alert {{ 'sm-alert-ok' if review.ok else 'sm-alert-danger' }} mt-3"><strong>Meta validation:</strong> {{ review.message }}</div>{% endif %}
+            <div class="sm-alert sm-alert-warn mt-3">
+                <strong>Step 8 · Confirm.</strong> Meta advertising is billed by Meta to the ad account's payment method, separately from this CRM. Creating the campaign does not spend money (it is paused); activation needs “Approve ad spend”.
+                <label class="d-block mt-2"><input type="checkbox" name="ack_billing" value="1"> I understand the budget above is in <strong>{{ acc.currency }}</strong> and that Meta bills it separately.</label>
+                <input type="hidden" name="confirm_currency" value="{{ acc.currency }}">
+                <label class="d-block mt-1" for="wConfirm">Type <strong>CREATE</strong> to confirm:</label>
+                <input class="sm-input" id="wConfirm" name="confirm_text" autocomplete="off" style="width:140px">
+            </div>
+            {% else %}
+            <p class="sm-small sm-muted">Click “Review with Meta” to check your settings. Nothing is created at this step.</p>
+            {% endif %}
+        </section>
+    </div>
+    <div class="sm-actions-bar">
+        <button type="button" class="sm-btn" data-wiz-prev>‹ Back</button>
+        <button type="button" class="sm-btn" data-wiz-next>Next ›</button>
+        <button class="sm-btn" type="submit" name="step" value="review"><i class="fas fa-magnifying-glass"></i> Review with Meta</button>
+        {% if review %}<button class="sm-btn sm-btn-primary" type="submit" name="step" value="create" {{ 'disabled' if not can_manage_api }}><i class="fas fa-check"></i> Create paused campaign</button>{% endif %}
+    </div>
+</form>
+{% endblock %}
+
+{% block sm_js %}<script>SocialMedia.wizard(document.getElementById('smWizard'));</script>{% endblock %}

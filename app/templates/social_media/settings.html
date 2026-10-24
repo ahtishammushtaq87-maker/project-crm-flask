@@ -1,0 +1,283 @@
+{% extends "social_media/_base.html" %}
+{% import "social_media/_macros.html" as m with context %}
+{% block title %}API Settings · Social Media{% endblock %}
+
+{% macro sel(name, options, labels={}) -%}
+<select class="sm-select" name="{{ name }}" id="f_{{ name }}">{% for o in options %}<option value="{{ o }}" {{ 'selected' if v[name] == o }}>{{ labels.get(o, o|replace('_', ' ')|capitalize) }}</option>{% endfor %}</select>
+{%- endmacro %}
+{% macro secret(name, label, help) -%}
+<div class="sm-field"><label for="f_{{ name }}">{{ label }}</label>
+    <input class="sm-input" type="password" id="f_{{ name }}" name="{{ name }}" autocomplete="new-password"
+           placeholder="{{ '•••••••• saved — leave empty to keep' if secrets_set[name] else 'Not set' }}" {{ 'disabled' if enc[0] != 'ok' }}>
+    <div class="sm-help">{{ help }} {% if secrets_set[name] %}<label><input type="checkbox" name="clear_{{ name }}" value="1"> Remove saved value</label>{% endif %}</div></div>
+{%- endmacro %}
+{% macro links(items) -%}
+<div class="sm-small">{% for label, url in items %}<a href="{{ url }}" target="_blank" rel="noopener">{{ label }} <i class="fas fa-arrow-up-right-from-square"></i></a>{{ ' · ' if not loop.last }}{% endfor %}</div>
+{%- endmacro %}
+
+{% block sm_content %}
+{% call m.head('API Settings', 'Credentials, platform setup, scheduler and permissions for the Social Media module.', 'fas fa-sliders') %}{% endcall %}
+
+{% if enc[0] != 'ok' %}<div class="sm-alert sm-alert-danger"><strong>Setup error:</strong> {{ enc[1] }} See <a href="{{ url_for('social_media.settings', tab='security') }}">Security &amp; Logs</a>.</div>{% endif %}
+
+<div class="sm-settings">
+    <nav class="sm-vtabs" aria-label="Settings sections">
+        {% for key, label in tabs %}<a href="{{ url_for('social_media.settings', tab=key) }}" class="{{ 'sm-active' if tab == key }}" {% if tab == key %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
+    </nav>
+    <div style="min-width:0">
+
+{% if tab == 'general' %}
+<form method="post" action="{{ url_for('social_media.settings_save', section='general') }}" class="sm-card">{{ m.csrf() }}
+    <div class="sm-card-head"><h2>General</h2></div>
+    <div class="sm-card-body">
+        <div class="sm-field"><label><input type="checkbox" name="enabled" value="1" {{ 'checked' if v.enabled == '1' }}> Enable social media publishing</label>
+            <div class="sm-help">When off, nothing is published (scheduled posts wait). The rest of the CRM is not affected.</div></div>
+        <div class="sm-form-grid">
+            <div class="sm-field"><label for="f_timezone">Timezone</label><input class="sm-input" id="f_timezone" name="timezone" value="{{ v.timezone }}" list="smTzList">
+                <datalist id="smTzList">{% for t in ['Asia/Karachi', 'Asia/Dubai', 'Asia/Riyadh', 'Europe/London', 'America/New_York', 'UTC'] %}<option value="{{ t }}">{% endfor %}</datalist>
+                <div class="sm-help">IANA name. Times are entered and shown in this zone and stored in UTC.</div></div>
+            <div class="sm-field"><label for="f_default_status">Default action for new posts</label>{{ sel('default_status', enums.default_status) }}</div>
+            <div class="sm-field"><label for="f_max_retries">Automatic retries</label><input class="sm-input" type="number" min="0" max="10" id="f_max_retries" name="max_retries" value="{{ v.max_retries }}">
+                <div class="sm-help">Only for temporary errors (rate limits, outages). Permission and content errors are never retried automatically.</div></div>
+            <div class="sm-field"><label for="f_retry_base_seconds">First retry after (seconds)</label><input class="sm-input" type="number" min="30" max="3600" id="f_retry_base_seconds" name="retry_base_seconds" value="{{ v.retry_base_seconds }}">
+                <div class="sm-help">Doubles on each retry (exponential backoff), capped at 6 hours.</div></div>
+        </div>
+        <div class="sm-label">Default destinations for new posts</div>
+        {% for a in accounts %}<label class="d-block sm-small"><input type="checkbox" name="default_account_ids" value="{{ a.id }}" {{ 'checked' if a.id in default_ids }}> {{ a.label }}</label>
+        {% else %}<div class="sm-small sm-muted">No connected accounts yet.</div>{% endfor %}
+        <div class="sm-help">Media limits are on the Media Storage tab; scheduler status on the Scheduler tab; notifications on the Notifications tab.</div>
+    </div>
+    <div class="sm-actions-bar"><button class="sm-btn sm-btn-primary">Save</button></div>
+</form>
+
+{% elif tab == 'meta' %}
+{% set steps = [v.meta_app_id != '', secrets_set.meta_app_secret, meta_redirect.startswith('https://'), meta_cred is not none, accounts|selectattr('platform', 'equalto', 'facebook')|list|length > 0, v.meta_app_mode == 'live', v.meta_app_review_status in ('approved', 'not_required')] %}
+<div class="sm-card sm-setup"><div class="sm-card-head"><h2><i class="fab fa-meta"></i> Meta setup guide</h2><span class="sm-small sm-muted">{{ steps|select|list|length }} of {{ steps|length }} done</span></div>
+<div class="sm-card-body">
+    <div class="sm-progress"><span style="width:{{ (steps|select|list|length / steps|length * 100)|round }}%"></span></div>
+    <details {{ 'open' if not steps[3] }}><summary>Step-by-step: Facebook Login for Business + Instagram API</summary>
+    <ol class="sm-steps mt-2">
+        <li>Open <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener">developers.facebook.com/apps</a> and create (or open) an app. Choose the <strong>Business</strong> app type / the use case for managing Pages and Instagram content.</li>
+        <li class="{{ 'sm-done' if steps[0] and steps[1] }}">In <em>App settings › Basic</em> copy the <strong>App ID</strong> and <strong>App Secret</strong> into the form below. Add your privacy policy URL and app domain there too (required for Live mode).</li>
+        <li>Add the product <strong>Facebook Login for Business</strong>. Optionally create a <em>Configuration</em> with the permissions below and paste its <strong>Configuration ID</strong> into the form (otherwise the CRM requests the ticked permissions directly).</li>
+        <li class="{{ 'sm-done' if steps[2] }}">In <em>Facebook Login for Business › Settings</em> add this exact <strong>Valid OAuth Redirect URI</strong> and keep “Use Strict Mode for redirect URIs” on:
+            <div class="mt-1">{{ m.copy(meta_redirect) }}</div>
+            {% if not steps[2] %}<div class="sm-help" style="color:var(--sm-red)">Meta requires HTTPS. Set the Public base URL on the Media Storage tab to your real https:// address.</div>{% endif %}</li>
+        <li>Add the <strong>Instagram</strong> product (“Instagram API with Facebook Login”) if you will publish to Instagram. The Instagram account must be a <strong>Business or Creator</strong> account and be <strong>linked to the Facebook Page</strong> (Instagram app › Settings › Account type and tools, or Meta Business Suite › Settings › Instagram accounts).</li>
+        <li>Under <em>App Review › Permissions and features</em>, request only the permissions you use (list below). In Development mode they work only for people with a role on the app.</li>
+        <li class="{{ 'sm-done' if steps[3] }}">Go to <a href="{{ url_for('social_media.accounts') }}">Connected Accounts</a> › Connect Facebook &amp; Instagram, approve on Facebook, then select your Pages and Instagram accounts.</li>
+        <li class="{{ 'sm-done' if steps[4] }}">Use <em>Test</em> on each account, then publish a test post to confirm publishing works.</li>
+        <li class="{{ 'sm-done' if steps[6] }}">For use by other businesses / non-app-role users: complete <strong>Business Verification</strong> (Meta Business Settings › Security Center) and <strong>App Review</strong> for each advanced permission, then switch the app to <strong>Live</strong>.</li>
+    </ol>
+    {{ links([('Facebook Login for Business', 'https://developers.facebook.com/docs/facebook-login/facebook-login-for-business/'), ('Pages API', 'https://developers.facebook.com/docs/pages-api/'), ('Instagram Platform', 'https://developers.facebook.com/docs/instagram-platform/'), ('Permissions reference', 'https://developers.facebook.com/docs/permissions/')]) }}
+    </details>
+</div></div>
+
+<form method="post" action="{{ url_for('social_media.settings_save', section='meta') }}" class="sm-card">{{ m.csrf() }}
+    <div class="sm-card-head"><h2>Meta app credentials</h2>{{ m.badge('ok' if steps[0] and steps[1] else 'never_run', 'configured' if steps[0] and steps[1] else 'not configured') }}</div>
+    <div class="sm-card-body">
+        <div class="sm-form-grid">
+            <div class="sm-field"><label for="f_meta_app_id">Meta App ID</label><input class="sm-input" id="f_meta_app_id" name="meta_app_id" value="{{ v.meta_app_id }}" inputmode="numeric" autocomplete="off"><div class="sm-help">App settings › Basic › App ID.</div></div>
+            {{ secret('meta_app_secret', 'Meta App Secret', 'App settings › Basic › App Secret. Stored encrypted; never shown again.') }}
+            <div class="sm-field"><label for="f_meta_graph_version">Graph API version</label><input class="sm-input" id="f_meta_graph_version" name="meta_graph_version" value="{{ v.meta_graph_version }}">
+                <div class="sm-help">Use a currently supported version from the <a href="https://developers.facebook.com/docs/graph-api/changelog/" target="_blank" rel="noopener">Graph API changelog</a>; each version is supported for about two years.</div></div>
+            <div class="sm-field"><label for="f_meta_login_config_id">Login for Business Configuration ID <span class="sm-muted">(optional)</span></label><input class="sm-input" id="f_meta_login_config_id" name="meta_login_config_id" value="{{ v.meta_login_config_id }}" autocomplete="off">
+                <div class="sm-help">If set, permissions come from that configuration instead of the list below.</div></div>
+            <div class="sm-field"><label for="f_meta_app_mode">App mode (as set on Meta)</label>{{ sel('meta_app_mode', enums.meta_app_mode) }}</div>
+            <div class="sm-field"><label for="f_meta_app_review_status">App Review status</label>{{ sel('meta_app_review_status', enums.meta_app_review_status) }}</div>
+            <div class="sm-field"><label for="f_meta_business_verification">Business verification</label>{{ sel('meta_business_verification', enums.meta_business_verification) }}
+                <div class="sm-help">These three are recorded by an admin for reference; Meta does not report them through the API.</div></div>
+        </div>
+        <div class="sm-label">Permissions to request</div>
+        <div class="sm-table-wrap"><table class="sm-table"><thead><tr><th>Request</th><th>Permission</th><th>Purpose</th><th>Granted</th></tr></thead><tbody>
+        {% for p, purpose in meta_perms if p not in ('ads_read', 'ads_management') %}
+            <tr><td><input type="checkbox" name="meta_scopes" value="{{ p }}" {{ 'checked' if p in chosen_meta }} aria-label="Request {{ p }}"></td><td><code>{{ p }}</code></td><td class="sm-small">{{ purpose }}</td>
+                <td>{% if meta_cred %}{% if p in meta_cred.scope_list %}<span class="sm-chip sm-chip-ok">granted</span>{% else %}<span class="sm-chip sm-chip-missing">not granted</span>{% endif %}{% else %}<span class="sm-muted sm-small">not connected</span>{% endif %}</td></tr>
+        {% endfor %}</tbody></table></div>
+        <div class="sm-help">Not every permission is needed for every feature: Facebook-only publishing needs <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>pages_manage_posts</code>; Instagram adds <code>instagram_basic</code>, <code>instagram_content_publish</code>; insights add <code>read_insights</code>, <code>instagram_manage_insights</code>; Business-Manager-owned Pages may need <code>business_management</code>. Requesting a permission does not guarantee it — the user must grant it and Meta may require App Review. Ads permissions are controlled on the Facebook Ads tab. After changing this list, reconnect Facebook.</div>
+    </div>
+    <div class="sm-actions-bar"><button class="sm-btn sm-btn-primary">Save</button></div>
+</form>
+<div class="sm-card"><div class="sm-card-head"><h2>Connection tests</h2></div><div class="sm-card-body">
+    <div class="row g-3"><div class="col-md-6"><div class="sm-label">App credentials</div><div class="sm-help mb-1">Asks Meta to validate the App ID and Secret.</div>{{ m.test_button('meta_app', 'Test app credentials') }}</div>
+    <div class="col-md-6"><div class="sm-label">OAuth / login token</div><div class="sm-help mb-1">Checks the redirect URI and the connected login's validity and granted permissions.</div>{{ m.test_button('meta_oauth', 'Test OAuth') }}</div></div>
+</div></div>
+
+{% elif tab == 'instagram' %}
+<form method="post" action="{{ url_for('social_media.settings_save', section='instagram') }}" class="sm-card">{{ m.csrf() }}
+    <div class="sm-card-head"><h2>Instagram</h2></div>
+    <div class="sm-card-body">
+        <div class="sm-field"><label for="f_meta_instagram_mode">Integration mode</label>{{ sel('meta_instagram_mode', enums.meta_instagram_mode, {'facebook_login': 'Instagram API with Facebook Login (via a linked Facebook Page)'}) }}
+            <div class="sm-help">Uses the same Meta app and login as Facebook. The Instagram account must be a Business or Creator account linked to a Page you connect.</div></div>
+        <div class="sm-alert sm-alert-info"><strong>What is supported:</strong> single images (JPEG, up to 8 MB, aspect ratio 4:5 – 1.91:1), single videos published as Reels, and carousels of up to 10 images/videos. Captions up to 2,200 characters and 30 hashtags. Instagram allows a limited number of API-published posts per 24 hours (the account test shows the current quota).<br>
+            <strong>Not supported:</strong> personal Instagram accounts, Stories via this module, deleting posts through the API, clickable links in captions.</div>
+        <div class="sm-alert sm-alert-warn mb-0"><strong>Media URL requirement:</strong> Instagram downloads media from a public HTTPS URL. The CRM gives Meta a signed link that expires after {{ v.public_media_hours }} hours and only works for media of posts being published. Configure it on the <a href="{{ url_for('social_media.settings', tab='media') }}">Media Storage</a> tab.</div>
+        {{ links([('Content publishing', 'https://developers.facebook.com/docs/instagram-platform/content-publishing'), ('Instagram insights', 'https://developers.facebook.com/docs/instagram-platform/insights')]) }}
+    </div>
+    <div class="sm-actions-bar"><button class="sm-btn sm-btn-primary">Save</button></div>
+</form>
+
+{% elif tab == 'linkedin' %}
+{% set lsteps = [v.linkedin_client_id != '', secrets_set.linkedin_client_secret, li_redirect.startswith('https://'), li_cred is not none] %}
+<div class="sm-card sm-setup"><div class="sm-card-head"><h2><i class="fab fa-linkedin"></i> LinkedIn setup guide</h2><span class="sm-small sm-muted">{{ lsteps|select|list|length }} of {{ lsteps|length }} done</span></div>
+<div class="sm-card-body">
+    <div class="sm-progress"><span style="width:{{ (lsteps|select|list|length / lsteps|length * 100)|round }}%"></span></div>
+    <details {{ 'open' if not lsteps[3] }}><summary>Step-by-step</summary>
+    <ol class="sm-steps mt-2">
+        <li>Open <a href="https://www.linkedin.com/developers/apps" target="_blank" rel="noopener">linkedin.com/developers/apps</a> and create an app. It must be associated with your company's LinkedIn Page, which a Page admin verifies (<em>Settings › Verify</em>).</li>
+        <li class="{{ 'sm-done' if lsteps[0] and lsteps[1] }}">On the <em>Auth</em> tab copy the <strong>Client ID</strong> and <strong>Primary Client Secret</strong> into the form below.</li>
+        <li class="{{ 'sm-done' if lsteps[2] }}">On the <em>Auth</em> tab, under <strong>Authorized redirect URLs</strong>, add exactly:<div class="mt-1">{{ m.copy(li_redirect) }}</div></li>
+        <li>On the <em>Products</em> tab add <strong>Sign In with LinkedIn using OpenID Connect</strong> (scopes <code>openid profile email</code>) and <strong>Share on LinkedIn</strong> (<code>w_member_social</code>) — both are self-serve.</li>
+        <li>For company pages request the <strong>Community Management API</strong> (<code>w_organization_social</code>, <code>r_organization_social</code>, <code>rw_organization_admin</code>). LinkedIn reviews this; it can take weeks and may be declined. Until approved, only personal profile posting works.</li>
+        <li class="{{ 'sm-done' if lsteps[3] }}">Go to <a href="{{ url_for('social_media.accounts') }}">Connected Accounts</a> › Connect LinkedIn, approve, then choose your profile and/or pages. You must be an <strong>administrator</strong> (or content admin) of a page to post as it.</li>
+        <li>Test the connection and publish a test post.</li>
+    </ol>
+    {{ links([('Authorization code flow', 'https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow'), ('Posts API', 'https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api'), ('API versioning', 'https://learn.microsoft.com/en-us/linkedin/marketing/versioning')]) }}
+    </details>
+</div></div>
+<form method="post" action="{{ url_for('social_media.settings_save', section='linkedin') }}" class="sm-card">{{ m.csrf() }}
+    <div class="sm-card-head"><h2>LinkedIn app credentials</h2>{{ m.badge('ok' if lsteps[0] and lsteps[1] else 'never_run', 'configured' if lsteps[0] and lsteps[1] else 'not configured') }}</div>
+    <div class="sm-card-body">
+        <div class="sm-form-grid">
+            <div class="sm-field"><label for="f_linkedin_client_id">Client ID</label><input class="sm-input" id="f_linkedin_client_id" name="linkedin_client_id" value="{{ v.linkedin_client_id }}" autocomplete="off"></div>
+            {{ secret('linkedin_client_secret', 'Client Secret', 'Auth tab › Primary Client Secret. Stored encrypted.') }}
+            <div class="sm-field"><label for="f_linkedin_version">API version (LinkedIn-Version header)</label><input class="sm-input" id="f_linkedin_version" name="linkedin_version" value="{{ v.linkedin_version if v.linkedin_version != default_li_version else '' }}" placeholder="automatic: {{ default_li_version }}">
+                <div class="sm-help">YYYYMM. Empty = automatic (about three months back). LinkedIn supports each version for about a year.</div></div>
+            <div class="sm-field"><label for="f_linkedin_member_posting">Member posting access</label>{{ sel('linkedin_member_posting', enums.linkedin_member_posting) }}</div>
+            <div class="sm-field"><label for="f_linkedin_org_posting">Organization posting access</label>{{ sel('linkedin_org_posting', enums.linkedin_org_posting) }}
+                <div class="sm-help">Recorded by an admin from the app's Products tab. The scopes actually granted are shown below.</div></div>
+        </div>
+        <div class="sm-label">Scopes to request</div>
+        <div class="sm-table-wrap"><table class="sm-table"><thead><tr><th>Request</th><th>Scope</th><th>Purpose</th><th>Granted</th></tr></thead><tbody>
+        {% for p, purpose in li_scopes %}
+            <tr><td><input type="checkbox" name="linkedin_scopes" value="{{ p }}" {{ 'checked' if p in chosen_li }} aria-label="Request {{ p }}"></td><td><code>{{ p }}</code></td><td class="sm-small">{{ purpose }}</td>
+                <td>{% if li_cred %}{% if p in li_cred.scope_list %}<span class="sm-chip sm-chip-ok">granted</span>{% else %}<span class="sm-chip sm-chip-missing">not granted</span>{% endif %}{% else %}<span class="sm-muted sm-small">not connected</span>{% endif %}</td></tr>
+        {% endfor %}</tbody></table></div>
+        <div class="sm-help">Only request scopes of products your app has been granted; LinkedIn rejects the whole authorization if any requested scope is not available to the app.</div>
+    </div>
+    <div class="sm-actions-bar"><button class="sm-btn sm-btn-primary">Save</button></div>
+</form>
+<div class="sm-card"><div class="sm-card-head"><h2>Connection test</h2></div><div class="sm-card-body">
+    <div class="sm-help mb-1">Validates the Client ID/Secret together with the connected member's token (LinkedIn's token introspection).</div>{{ m.test_button('linkedin', 'Test LinkedIn') }}</div></div>
+
+{% elif tab == 'ads' %}
+<form method="post" action="{{ url_for('social_media.settings_save', section='ads') }}" class="sm-card">{{ m.csrf() }}
+    <div class="sm-card-head"><h2>Facebook Ads (Meta Marketing API)</h2></div>
+    <div class="sm-card-body">
+        <div class="sm-field"><label><input type="checkbox" name="ads_enabled" value="1" {{ 'checked' if v.ads_enabled == '1' }}> Request <code>ads_read</code> and <code>ads_management</code> when connecting Facebook</label>
+            <div class="sm-help">Uses the same Meta app and login as organic posting — no separate credentials. After enabling, reconnect Facebook. <code>ads_management</code> needs Advanced Access (App Review) for ad accounts of people without a role on your app; Marketing API access tiers also limit request volume.</div></div>
+        <div class="sm-form-grid">
+            <div class="sm-field"><label for="f_ads_budget_increase_confirm_pct">Second confirmation for budget increases above (%)</label><input class="sm-input" type="number" min="1" max="500" id="f_ads_budget_increase_confirm_pct" name="ads_budget_increase_confirm_pct" value="{{ v.ads_budget_increase_confirm_pct }}"></div>
+            <div class="sm-field"><label for="f_sel">Selected ad account</label>
+                <select class="sm-select" id="f_sel" name="selected_ad_account">{% for a in ad_accounts %}<option value="{{ a.id }}" {{ 'selected' if a.is_selected }}>{{ a.name }} · {{ a.remote_id }} · {{ a.currency }}</option>{% else %}<option value="">None synced yet</option>{% endfor %}</select></div>
+        </div>
+        <dl class="sm-kv">
+            <dt>Ads login</dt><dd>{% if ads_cred %}{{ ads_cred.external_user_name }}{% else %}<span style="color:var(--sm-red)">none with ads permissions</span>{% endif %}</dd>
+            <dt>ads_read</dt><dd>{{ m.badge('ok', 'granted') if ads_cred and 'ads_read' in ads_cred.scope_list else m.badge('error', 'not granted') }}</dd>
+            <dt>ads_management</dt><dd>{{ m.badge('ok', 'granted') if ads_cred and 'ads_management' in ads_cred.scope_list else m.badge('error', 'not granted') }} <span class="sm-small sm-muted">needed to create campaigns</span></dd>
+            <dt>Ad accounts</dt><dd>{{ ad_accounts|length }} synced{% for a in ad_accounts if a.is_selected %} · reporting currency <strong>{{ a.currency }}</strong>{% endfor %}</dd>
+        </dl>
+        {{ links([('Marketing API', 'https://developers.facebook.com/docs/marketing-apis/'), ('Access levels', 'https://developers.facebook.com/docs/marketing-api/overview/authorization')]) }}
+    </div>
+    <div class="sm-actions-bar"><button class="sm-btn sm-btn-primary">Save</button></div>
+</form>
+<div class="sm-card"><div class="sm-card-head"><h2>Reporting connection test</h2></div><div class="sm-card-body">{{ m.test_button('ads', 'Test Marketing API') }}</div></div>
+
+{% elif tab == 'media' %}
+<form method="post" action="{{ url_for('social_media.settings_save', section='media') }}" class="sm-card">{{ m.csrf() }}
+    <div class="sm-card-head"><h2>Media storage</h2></div>
+    <div class="sm-card-body">
+        <div class="sm-alert sm-alert-info">Uploads are stored privately on this server (instance folder), outside the public static folder. Facebook and LinkedIn receive the file directly from the server. Only Instagram needs a URL.</div>
+        <div class="sm-form-grid">
+            <div class="sm-field"><label for="f_public_base_url">Public base URL</label><input class="sm-input" id="f_public_base_url" name="public_base_url" value="{{ v.public_base_url }}" placeholder="https://crm.yourcompany.com">
+                <div class="sm-help">The address people and Meta use to reach this CRM over HTTPS. Used for OAuth callback URLs and Instagram media links. Currently: <code>{{ public_base or 'unknown' }}</code></div></div>
+            <div class="sm-field"><label for="f_public_media_hours">Instagram media link lifetime (hours)</label><input class="sm-input" type="number" min="1" max="168" id="f_public_media_hours" name="public_media_hours" value="{{ v.public_media_hours }}"></div>
+            <div class="sm-field"><label for="f_max_image_mb">Max image size (MB)</label><input class="sm-input" type="number" min="1" max="8" id="f_max_image_mb" name="max_image_mb" value="{{ v.max_image_mb }}"><div class="sm-help">Instagram's limit is 8 MB.</div></div>
+            <div class="sm-field"><label for="f_max_video_mb">Max video size (MB)</label><input class="sm-input" type="number" min="1" max="1024" id="f_max_video_mb" name="max_video_mb" value="{{ v.max_video_mb }}">
+                <div class="sm-help">The CRM's web server currently accepts uploads up to 16 MB per request (MAX_CONTENT_LENGTH), so larger videos are rejected at upload.</div></div>
+            <div class="sm-field"><label for="f_allowed_image_types">Allowed image types</label><input class="sm-input" id="f_allowed_image_types" name="allowed_image_types" value="{{ v.allowed_image_types }}"><div class="sm-help">Subset of image/jpeg, image/png. Files are checked by content, not by name.</div></div>
+            <div class="sm-field"><label for="f_allowed_video_types">Allowed video types</label><input class="sm-input" id="f_allowed_video_types" name="allowed_video_types" value="{{ v.allowed_video_types }}"><div class="sm-help">Subset of video/mp4, video/quicktime.</div></div>
+            <div class="sm-field"><label for="f_media_cleanup_days">Delete files of cancelled posts after (days)</label><input class="sm-input" type="number" min="0" max="3650" id="f_media_cleanup_days" name="media_cleanup_days" value="{{ v.media_cleanup_days }}"><div class="sm-help">0 = keep. Published posts' media are never deleted automatically.</div></div>
+        </div>
+    </div>
+    <div class="sm-actions-bar"><button class="sm-btn sm-btn-primary">Save</button></div>
+</form>
+<div class="sm-card"><div class="sm-card-head"><h2>Upload &amp; public URL check</h2></div><div class="sm-card-body">
+    <div class="sm-help mb-1">Requests this CRM's probe URL through the public base URL from the server, as Meta would.</div>{{ m.test_button('media', 'Test public media URL') }}</div></div>
+
+{% elif tab == 'scheduler' %}
+<div class="sm-card"><div class="sm-card-head"><h2>Scheduler</h2>{{ m.badge(health.status, health.status|replace('_', ' ')) }}</div>
+<div class="sm-card-body">
+    <dl class="sm-kv">
+        <dt>Last run</dt><dd>{{ health.last_tick|sm_dt if health.last_tick else 'never' }} ({{ health.last_tick|sm_ago }})</dd>
+        <dt>Last result</dt><dd>{{ health.error or 'OK' }}</dd>
+        <dt>Next scheduled post</dt><dd>{% if health.next %}<a href="{{ url_for('social_media.post_detail', post_id=health.next.post_id) }}">{{ health.next.post.display_title }}</a> · {{ health.next.scheduled_at|sm_dt }} ({{ health.next.scheduled_at|sm_ago }}){% else %}none{% endif %}</dd>
+        <dt>Runs in this web process</dt><dd>{{ 'yes (every minute)' if health.in_process else 'no' }}{% if health.disabled_env %} — disabled by SOCIAL_MEDIA_SCHEDULER_DISABLED=1; run <code>flask --app run social-media-tick</code> from cron every minute.{% endif %}</dd>
+    </dl>
+    {% if health.status in ('stale', 'never_run') %}<div class="sm-alert sm-alert-warn mt-2">The scheduler has not run in the last 5 minutes. Scheduled posts will not go out until it runs. Check that the web app is running (or the cron job, if you disabled the in-process scheduler).</div>{% endif %}
+    <div class="sm-help mt-2">Scheduled jobs are stored in the database, so they survive restarts. Each post destination is claimed atomically before publishing, so running the scheduler in several processes cannot publish twice. Temporary errors are retried with exponential backoff; if the outcome of a request is unknown (e.g. a timeout after sending), the post is marked <em>needs review</em> instead of being retried automatically.</div>
+    <div class="mt-2">{{ m.test_button('scheduler', 'Run one scheduler pass now') }}</div>
+</div></div>
+
+{% elif tab == 'notifications' %}
+<form method="post" action="{{ url_for('social_media.settings_save', section='notifications') }}" class="sm-card">{{ m.csrf() }}
+    <div class="sm-card-head"><h2>Notifications</h2></div>
+    <div class="sm-card-body">
+        <div class="sm-help mb-2">Shown on the Overview and under the bell icon. Lost authorizations, missing permissions, retries and ad status changes are always recorded.</div>
+        <label class="d-block"><input type="checkbox" name="notify_success" value="1" {{ 'checked' if v.notify_success == '1' }}> Notify when a post publishes successfully</label>
+        <label class="d-block"><input type="checkbox" name="notify_failure" value="1" {{ 'checked' if v.notify_failure == '1' }}> Notify when publishing fails or needs review</label>
+        <label class="d-block mt-2"><input type="checkbox" name="notify_email_failures" value="1" {{ 'checked' if v.notify_email_failures == '1' }}> Also email failures and lost authorizations (uses the CRM's SMTP settings)</label>
+        <div class="sm-field mt-2"><label for="f_notify_email_to">Email to (comma-separated)</label><input class="sm-input w-100" id="f_notify_email_to" name="notify_email_to" value="{{ v.notify_email_to }}"></div>
+    </div>
+    <div class="sm-actions-bar"><button class="sm-btn sm-btn-primary">Save</button></div>
+</form>
+
+{% elif tab == 'security' %}
+<div class="sm-card"><div class="sm-card-head"><h2>Security</h2>{{ m.badge('ok' if enc[0] == 'ok' else 'error', 'encryption ' ~ enc[0]) }}</div>
+<div class="sm-card-body">
+    <p>{{ enc[1] }}</p>
+    {% if enc[0] != 'ok' %}
+    <ol class="sm-steps">
+        <li>On the server, generate a key: <div class="mt-1">{{ m.copy('python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"') }}</div></li>
+        <li>Set it as the environment variable <code>SOCIAL_MEDIA_ENCRYPTION_KEY</code> for the CRM process (hosting dashboard, systemd unit or service manager). Keep a secure backup — without it, saved credentials cannot be decrypted.</li>
+        <li>Restart the CRM.</li>
+    </ol>
+    {% endif %}
+    <ul class="sm-small">
+        <li>App secrets and access tokens are encrypted with Fernet (AES + HMAC) using a key kept outside the database; they are never sent to the browser or written to logs.</li>
+        <li>OAuth uses a random, single-use, 10-minute <code>state</code> bound to your CRM session; callbacks must arrive on the configured redirect URI.</li>
+        <li>Every page and action checks Social Media permissions on the server. Accounts can be restricted to specific users.</li>
+        <li>All account, publishing, settings and advertising actions are written to the <a href="{{ url_for('social_media.logs') }}">activity log</a> with user, time and result; tokens are redacted.</li>
+    </ul>
+</div></div>
+<div class="sm-card"><div class="sm-card-head"><h2>Stored credentials</h2></div><div class="sm-card-body">
+    <dl class="sm-kv">
+        <dt>Meta App Secret</dt><dd>{{ 'saved (encrypted)' if secrets_set.meta_app_secret else 'not set' }}</dd>
+        <dt>LinkedIn Secret</dt><dd>{{ 'saved (encrypted)' if secrets_set.linkedin_client_secret else 'not set' }}</dd>
+        <dt>Meta login</dt><dd>{{ meta_cred.external_user_name ~ ' · ' ~ meta_cred.status if meta_cred else 'none' }}</dd>
+        <dt>LinkedIn login</dt><dd>{{ li_cred.external_user_name ~ ' · ' ~ li_cred.status if li_cred else 'none' }}</dd>
+    </dl></div></div>
+
+{% elif tab == 'permissions' %}
+<form method="post" action="{{ url_for('social_media.settings_save', section='permissions') }}" class="sm-card">{{ m.csrf() }}
+    <div class="sm-card-head"><h2>Permissions</h2><span class="sm-small sm-muted">CRM admins always have every permission</span></div>
+    <div class="sm-card-body">
+        <div class="sm-label">By role</div>
+        <div class="sm-table-wrap"><table class="sm-table sm-perm-table"><thead><tr><th>Role</th>{% for f, l in flags %}<th title="{{ l }}">{{ l }}</th>{% endfor %}</tr></thead><tbody>
+            {% for r in roles %}<tr><td><input type="hidden" name="roles" value="{{ r }}"><strong>{{ r }}</strong></td>
+                {% for f, l in flags %}<td><input type="checkbox" name="role_{{ r }}_{{ f }}" value="1" {{ 'checked' if role_perms.get(r) and role_perms[r][f] }} aria-label="{{ r }}: {{ l }}"></td>{% endfor %}</tr>{% endfor %}
+        </tbody></table></div>
+        <div class="sm-label mt-3">Extra permissions for individual users</div>
+        <div class="sm-table-wrap" style="max-height:420px"><table class="sm-table sm-perm-table"><thead><tr><th>User</th>{% for f, l in flags %}<th title="{{ l }}">{{ l }}</th>{% endfor %}</tr></thead><tbody>
+            {% for u in users if u.role != 'admin' %}<tr><td>{{ u.username }} <span class="sm-muted sm-small">({{ u.role }})</span></td>
+                {% for f, l in flags %}<td><input type="checkbox" name="user_{{ u.id }}_{{ f }}" value="1" {{ 'checked' if user_perms.get(u.id) and user_perms[u.id][f] }} aria-label="{{ u.username }}: {{ l }}"></td>{% endfor %}</tr>
+            {% else %}<tr><td colspan="{{ flags|length + 1 }}" class="sm-muted">No non-admin users.</td></tr>{% endfor %}
+        </tbody></table></div>
+        <div class="sm-help">A user's permissions are their role's plus their own. “Approve ad spend” allows activating campaigns and raising budgets — grant it sparingly.</div>
+    </div>
+    <div class="sm-actions-bar"><button class="sm-btn sm-btn-primary">Save permissions</button></div>
+</form>
+{% endif %}
+    </div>
+</div>
+{% endblock %}

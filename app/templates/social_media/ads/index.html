@@ -1,0 +1,70 @@
+{% extends "social_media/_base.html" %}
+{% import "social_media/_macros.html" as m with context %}
+{% block title %}Facebook Ads · Social Media{% endblock %}
+
+{% block sm_content %}
+{% call m.head('Facebook Ads', 'Paid campaigns on Facebook and Instagram via the Meta Marketing API — ' ~ range_label, 'fas fa-rectangle-ad') %}
+    <form method="post" action="{{ url_for('social_media.ads_sync') }}">{{ m.csrf() }}
+        <input type="hidden" name="range" value="{{ preset }}"><input type="hidden" name="start" value="{{ start }}"><input type="hidden" name="end" value="{{ end }}">
+        <button class="sm-btn" {{ 'disabled' if not cred }}><i class="fas fa-rotate"></i> Refresh from Meta</button></form>
+    {% if sm_perms.can_manage_ads and acc %}<a class="sm-btn sm-btn-primary" href="{{ url_for('social_media.ads_wizard') }}"><i class="fas fa-plus"></i> Create campaign</a>{% endif %}
+{% endcall %}
+
+<div class="sm-alert sm-alert-info"><strong>Paid results only.</strong> Organic post performance is in <a href="{{ url_for('social_media.analytics') }}">Analytics</a>. Ad charges are billed by Meta to your ad account's payment method and are separate from the CRM. Amounts are in each ad account's own currency.</div>
+
+{% if not cred %}
+<div class="sm-alert sm-alert-warn"><strong>Not connected for advertising.</strong>
+    {% if not ads_enabled %}Facebook Ads is disabled. {% if sm_perms.can_manage_settings %}<a href="{{ url_for('social_media.settings', tab='ads') }}">Enable it in API Settings › Facebook Ads</a>, then reconnect Facebook so you can grant <code>ads_read</code>/<code>ads_management</code>.{% endif %}
+    {% else %}No connected Facebook login has granted <code>ads_read</code> or <code>ads_management</code>. {% if sm_perms.can_manage_accounts %}<a href="{{ url_for('social_media.accounts') }}">Reconnect Facebook</a> and allow the ads permissions.{% endif %}{% endif %}</div>
+{% elif not can_manage_api %}
+<div class="sm-alert sm-alert-warn">Reporting only: <code>ads_management</code> is not granted, so campaigns cannot be created or changed from the CRM.</div>
+{% endif %}
+
+<div class="sm-filters mb-3 justify-content-between">
+    {{ m.range_filter('social_media.ads_overview', preset, start, end, presets) }}
+    {% if ad_accounts|length > 1 %}
+    <form method="post" action="{{ url_for('social_media.ads_select_account') }}" class="sm-filters">{{ m.csrf() }}
+        <select class="sm-select" name="ad_account_id" aria-label="Ad account" onchange="this.form.submit()">{% for a in ad_accounts %}<option value="{{ a.id }}" {{ 'selected' if acc and a.id == acc.id }}>{{ a.name }} ({{ a.currency }})</option>{% endfor %}</select>
+        <noscript><button class="sm-btn">Switch</button></noscript></form>
+    {% endif %}
+</div>
+
+{% if acc %}
+<div class="sm-section-title">{{ acc.name }} · {{ acc.remote_id }} · {{ acc.currency }} · {{ acc.timezone_name or '' }} · synced {{ acc.synced_at|sm_ago }}</div>
+<div class="sm-stats">
+    {% if summary %}
+    <div class="sm-stat"><div class="sm-stat-label">Amount spent</div><div class="sm-stat-value">{{ summary.spend|sm_money(acc.currency) }}</div></div>
+    {{ m.stat('Impressions', summary.impressions) }}{{ m.stat('Reach', summary.reach, 'summed across campaigns') }}{{ m.stat('Link clicks', summary.link_clicks) }}
+    <div class="sm-stat"><div class="sm-stat-label">CTR (link)</div><div class="sm-stat-value {{ 'sm-na' if summary.ctr is none }}">{{ summary.ctr|sm_pct }}</div></div>
+    <div class="sm-stat"><div class="sm-stat-label">CPC</div><div class="sm-stat-value {{ 'sm-na' if summary.cpc is none }}">{{ summary.cpc|sm_money(acc.currency) }}</div></div>
+    <div class="sm-stat"><div class="sm-stat-label">CPM</div><div class="sm-stat-value {{ 'sm-na' if summary.cpm is none }}">{{ summary.cpm|sm_money(acc.currency) }}</div></div>
+    {{ m.stat('Leads / conversions', summary.conversions) }}
+    {% else %}
+    <div class="sm-stat" style="grid-column:1/-1"><div class="sm-stat-label">Results for {{ start }} – {{ end }}</div><div class="sm-stat-value sm-na">Not available — click “Refresh from Meta” to load insights for this range.</div></div>
+    {% endif %}
+</div>
+
+<div class="sm-card">
+    <div class="sm-card-head"><h2>Campaigns</h2><a class="sm-small" href="{{ ads_manager }}" target="_blank" rel="noopener">Open in Ads Manager <i class="fas fa-arrow-up-right-from-square"></i></a></div>
+    {% if campaigns %}
+    <div class="sm-table-wrap"><table class="sm-table sm-table-stack">
+        <thead><tr><th>Campaign</th><th>Status</th><th>Objective</th><th>Budget</th><th>Spent</th><th>Impr.</th><th>Reach</th><th>Link clicks</th><th>CTR</th><th>CPC</th><th>CPM</th><th>Cost / result</th></tr></thead>
+        <tbody>{% for c in campaigns %}{% set i = insights.get(c.id) %}
+        <tr><td class="sm-td-main"><a href="{{ url_for('social_media.ads_campaign', campaign_id=c.id) }}" style="font-weight:600">{{ c.name }}</a>{% if c.created_via_crm %} <span class="sm-chip">created in CRM</span>{% endif %}</td>
+            <td data-label="Status">{{ m.badge(c.effective_status or c.status) }}</td>
+            <td data-label="Objective" class="sm-small">{{ (c.objective or '—')|replace('OUTCOME_', '')|lower }}</td>
+            <td data-label="Budget" class="sm-small">{% if c.daily_budget %}{{ money(c.daily_budget, acc.currency) }}/day{% elif c.lifetime_budget %}{{ money(c.lifetime_budget, acc.currency) }} lifetime{% else %}ad set level{% endif %}</td>
+            {% if i %}
+            <td data-label="Spent">{{ i.spend|sm_money(acc.currency) }}</td><td data-label="Impressions">{{ i.impressions|sm_num }}</td><td data-label="Reach">{{ i.reach|sm_num }}</td>
+            <td data-label="Link clicks">{{ i.link_clicks|sm_num }}</td><td data-label="CTR">{{ i.ctr|sm_pct if i.ctr else 'Not available' }}</td>
+            <td data-label="CPC">{{ i.cpc|sm_money(acc.currency) }}</td><td data-label="CPM">{{ i.cpm|sm_money(acc.currency) }}</td>
+            <td data-label="Cost / result" class="sm-small">{% set cpa = i.results_data.get('cost_per_action_type', []) %}{% for a in cpa[:2] %}{{ a.action_type|replace('_', ' ') }}: {{ a.value|sm_money(acc.currency) }}<br>{% else %}Not available{% endfor %}</td>
+            {% else %}<td colspan="8" class="sm-small sm-muted" data-label="Results">No data for this range</td>{% endif %}
+        </tr>{% endfor %}</tbody></table></div>
+    {% else %}<div class="sm-empty"><i class="fas fa-rectangle-ad"></i>No campaigns synced. Click “Refresh from Meta”.</div>{% endif %}
+</div>
+<p class="sm-small sm-muted">CTR, CPC and CPM per campaign are Meta's values; totals above are calculated from link clicks. “Not available” means Meta returned no value for the range.</p>
+{% else %}
+<div class="sm-card"><div class="sm-empty"><i class="fas fa-building-columns"></i>No ad accounts yet. {% if cred %}Click “Refresh from Meta” to load the ad accounts your login can access.{% endif %}</div></div>
+{% endif %}
+{% endblock %}

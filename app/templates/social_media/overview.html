@@ -1,0 +1,166 @@
+{% extends "social_media/_base.html" %}
+{% import "social_media/_macros.html" as m with context %}
+{% block title %}Social Media Overview{% endblock %}
+
+{% block sm_content %}
+{% call m.head('Social Media', 'Publishing, engagement and advertising — ' ~ range_label) %}
+    {% if sm_perms.can_create_posts %}<a class="sm-btn sm-btn-primary" href="{{ url_for('social_media.post_new') }}"><i class="fas fa-pen-to-square"></i> Create post</a>{% endif %}
+{% endcall %}
+
+{% for p in problems %}<div class="sm-alert sm-alert-danger"><strong>Setup required:</strong> {{ p }}</div>{% endfor %}
+{% if data.accounts == 0 %}
+<div class="sm-alert sm-alert-info"><strong>No social accounts connected yet.</strong>
+    {% if sm_perms.can_manage_accounts %}<a href="{{ url_for('social_media.accounts') }}">Connect Facebook, Instagram or LinkedIn</a> to start publishing.
+    {% else %}Ask an administrator to connect your company's accounts.{% endif %}</div>
+{% endif %}
+
+<div class="sm-filters mb-3">{{ m.range_filter('social_media.overview', preset, start, end, presets) }}</div>
+
+<div class="sm-section-title">Organic publishing</div>
+<div class="sm-stats">
+    {{ m.stat('Connected accounts', data.accounts, (data.accounts_attention ~ ' need attention') if data.accounts_attention else 'all healthy') }}
+    {{ m.stat('Published this month', data.published_month, data.published_range ~ ' in selected range') }}
+    {{ m.stat('Scheduled', data.scheduled, 'posts waiting') }}
+    {{ m.stat('Drafts', data.drafts) }}
+    {{ m.stat('Failed / partial', data.failed, data.needs_review ~ ' destinations need attention') }}
+    {{ m.stat('Impressions', data.impressions, 'posts published in range') }}
+    {{ m.stat('Reach', data.reach, 'where the platform reports it') }}
+    {{ m.stat('Engagements', data.engagements, 'reactions, comments, shares…') }}
+    <div class="sm-stat"><div class="sm-stat-label">Engagement rate</div>
+        {% if data.engagement_rate is none %}<div class="sm-stat-value sm-na">Not available</div>
+        {% else %}<div class="sm-stat-value">{{ data.engagement_rate|sm_pct }}</div>{% endif %}
+        <div class="sm-stat-sub">engagements ÷ reach</div></div>
+</div>
+
+{% if sm_perms.can_view_ads %}
+<div class="sm-section-title">Paid advertising {% if ad_acc %}· {{ ad_acc.name }} ({{ ad_acc.currency }}){% endif %}</div>
+<div class="sm-stats">
+    {{ m.stat('Active campaigns', data.active_campaigns, 'as of last sync') }}
+    {% if ad_summary %}
+    <div class="sm-stat"><div class="sm-stat-label">Ad spend</div><div class="sm-stat-value">{{ ad_summary.spend|sm_money(ad_summary.currency) }}</div><div class="sm-stat-sub">selected range</div></div>
+    {{ m.stat('Ad impressions', ad_summary.impressions) }}
+    {{ m.stat('Link clicks', ad_summary.link_clicks) }}
+    {{ m.stat('Conversions', ad_summary.conversions, 'leads, purchases, registrations') }}
+    {% else %}
+    <div class="sm-stat" style="grid-column: span 2"><div class="sm-stat-label">Ad spend &amp; results</div><div class="sm-stat-value sm-na">Not available</div>
+        <div class="sm-stat-sub">{% if ad_acc %}No insights synced for this exact range. <a href="{{ url_for('social_media.ads_overview', range=preset, start=start, end=end) }}">Open Facebook Ads</a> and refresh.{% else %}No ad account connected.{% endif %}</div></div>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="row g-3">
+    <div class="col-xl-8">
+        <div class="sm-card">
+            <div class="sm-card-head"><h2>Publishing &amp; engagement trend</h2>
+                <div class="sm-legend"><span><i class="sm-c1"></i>Posts published</span><span><i class="sm-c2"></i>Engagements</span></div></div>
+            <div class="sm-card-body">
+                {% set peak_p = series|map(attribute='published')|max %}
+                {% set peak_e = series|map(attribute='engagements')|max %}
+                {% if not peak_p %}
+                <div class="sm-empty"><i class="fas fa-chart-column"></i>Nothing was published in this period.</div>
+                {% else %}
+                <div class="sm-bars" role="img" aria-label="Posts published and engagements per day">
+                    {% for d in series %}
+                    <div class="sm-bar" title="{{ d.date }}: {{ d.published }} published{% if d.has_eng %}, {{ d.engagements }} engagements{% endif %}">
+                        <span class="sm-c1" style="height:{{ (d.published / peak_p * 60)|round(1) }}px"></span>
+                        {% if peak_e %}<span class="sm-c2" style="height:{{ (d.engagements / peak_e * 60)|round(1) }}px"></span>{% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="d-flex justify-content-between sm-small sm-muted mt-1"><span>{{ series[0].date }}</span><span>{{ series[-1].date }}</span></div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="sm-card">
+            <div class="sm-card-head"><h2>Platform performance</h2><span class="sm-small sm-muted">Organic only · {{ range_label }}</span></div>
+            <div class="sm-table-wrap"><table class="sm-table sm-table-stack">
+                <thead><tr><th>Platform</th><th>Posts</th><th>Impressions</th><th>Reach</th><th>Engagements</th><th>Rate</th></tr></thead>
+                <tbody>
+                {% set maxp = by_platform|map(attribute='posts')|max or 1 %}
+                {% for r in by_platform %}
+                <tr><td class="sm-td-main"><span class="d-inline-flex align-items-center gap-2">{{ m.plat(r.platform) }} {{ sm_platform_labels[r.platform] }}</span>
+                        <div class="sm-hbar mt-1" style="max-width:160px"><span class="sm-c1" style="width:{{ (r.posts / maxp * 100)|round }}%"></span></div></td>
+                    <td data-label="Posts">{{ r.posts }}</td><td data-label="Impressions">{{ r.impressions|sm_num }}</td>
+                    <td data-label="Reach">{{ r.reach|sm_num }}</td><td data-label="Engagements">{{ r.engagements|sm_num }}</td>
+                    <td data-label="Rate">{{ r.rate|sm_pct }}</td></tr>
+                {% endfor %}
+                </tbody></table></div>
+        </div>
+
+        <div class="sm-card">
+            <div class="sm-card-head"><h2>Recent publishing activity</h2>{% if sm_perms.can_view_logs %}<a class="sm-small" href="{{ url_for('social_media.logs', view='attempts') }}">All attempts</a>{% endif %}</div>
+            <div class="sm-card-body">
+                {% for a in recent %}{% set d = a.destination %}
+                <div class="sm-list-row">{{ m.plat(d.platform) }}
+                    <div class="sm-grow"><a href="{{ url_for('social_media.post_detail', post_id=d.post_id) }}" class="sm-clip">{{ d.post.display_title }}</a>
+                        <div class="sm-small sm-muted">{{ d.account.name if d.account else 'removed account' }} · {{ a.started_at|sm_ago }} · {{ a.triggered_by }}{% if a.error_message %} · {{ a.error_message[:90] }}{% endif %}</div></div>
+                    {{ m.badge(a.outcome) }}</div>
+                {% else %}<div class="sm-empty"><i class="fas fa-paper-plane"></i>No publishing attempts yet.</div>{% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-4">
+        {% if failed %}
+        <div class="sm-card" style="border-color:#f2c5c5">
+            <div class="sm-card-head"><h2 style="color:var(--sm-red)"><i class="fas fa-triangle-exclamation"></i> Needs attention</h2>
+                <a class="sm-small" href="{{ url_for('social_media.posts', tab='failed') }}">View all</a></div>
+            <div class="sm-card-body">
+                {% for d in failed %}
+                <div class="sm-list-row">{{ m.plat(d.platform) }}<div class="sm-grow">
+                    <a href="{{ url_for('social_media.post_detail', post_id=d.post_id) }}" class="sm-clip">{{ d.post.display_title }}</a>
+                    <div class="sm-small sm-muted sm-clip">{{ d.error_message or '' }}</div></div>{{ m.badge(d.status) }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="sm-card">
+            <div class="sm-card-head"><h2>Upcoming scheduled</h2><a class="sm-small" href="{{ url_for('social_media.calendar') }}">Calendar</a></div>
+            <div class="sm-card-body">
+                {% for d in upcoming %}
+                <div class="sm-list-row">{{ m.plat(d.platform) }}<div class="sm-grow">
+                    <a href="{{ url_for('social_media.post_detail', post_id=d.post_id) }}" class="sm-clip">{{ d.post.display_title }}</a>
+                    <div class="sm-small sm-muted">{{ d.scheduled_at|sm_dt }} · {{ d.scheduled_at|sm_ago }}</div></div></div>
+                {% else %}<div class="sm-empty"><i class="fas fa-calendar"></i>Nothing scheduled.</div>{% endfor %}
+            </div>
+        </div>
+
+        <div class="sm-card">
+            <div class="sm-card-head"><h2>Connected accounts</h2>{% if sm_perms.can_view_accounts %}<a class="sm-small" href="{{ url_for('social_media.accounts') }}">Manage</a>{% endif %}</div>
+            <div class="sm-card-body">
+                {% for a in accounts %}
+                <div class="sm-list-row">{{ m.plat(a.platform) }}<div class="sm-grow"><div class="sm-clip">{{ a.name }}</div>
+                    <div class="sm-small sm-muted">last sync {{ a.last_sync_at|sm_ago }}</div></div>{{ m.badge(a.status) }}</div>
+                {% else %}<div class="sm-empty"><i class="fas fa-link-slash"></i>No accounts.</div>{% endfor %}
+            </div>
+        </div>
+
+        {% if sm_perms.can_view_ads %}
+        <div class="sm-card">
+            <div class="sm-card-head"><h2>Active ad campaigns</h2><a class="sm-small" href="{{ url_for('social_media.ads_overview') }}">Facebook Ads</a></div>
+            <div class="sm-card-body">
+                {% for c in campaigns %}
+                <div class="sm-list-row"><i class="fas fa-rectangle-ad sm-muted"></i><div class="sm-grow">
+                    <a href="{{ url_for('social_media.ads_campaign', campaign_id=c.id) }}" class="sm-clip">{{ c.name }}</a>
+                    <div class="sm-small sm-muted">{{ (c.objective or '')|replace('OUTCOME_', '')|lower }} · synced {{ c.synced_at|sm_ago }}</div></div>{{ m.badge(c.effective_status) }}</div>
+                {% else %}<div class="sm-empty"><i class="fas fa-rectangle-ad"></i>No active campaigns (as of the last sync).</div>{% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="sm-card">
+            <div class="sm-card-head"><h2>Notifications</h2>
+                {% if sm_unread %}<form method="post" action="{{ url_for('social_media.notifications_read') }}">{{ m.csrf() }}<button class="sm-btn-link sm-small">Mark all read</button></form>{% endif %}</div>
+            <div class="sm-card-body">
+                {% for n in notes %}
+                <div class="sm-list-row"><span class="sm-badge sm-st-{{ n.level }}">{{ n.level }}</span><div class="sm-grow sm-small">
+                    {% if n.link %}<a href="{{ n.link }}">{{ n.message }}</a>{% else %}{{ n.message }}{% endif %}
+                    <div class="sm-muted">{{ n.created_at|sm_ago }}</div></div></div>
+                {% else %}<div class="sm-empty"><i class="fas fa-bell-slash"></i>No notifications.</div>{% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

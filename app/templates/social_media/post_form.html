@@ -1,0 +1,170 @@
+{% extends "social_media/_base.html" %}
+{% import "social_media/_macros.html" as m with context %}
+{% block title %}{{ 'Edit Post' if post else 'Create Post' }} · Social Media{% endblock %}
+
+{% set f = request.form %}
+{% block sm_content %}
+{% call m.head('Edit post' if post else 'Create post', 'Write once, adjust per platform, then save, schedule or publish.', 'fas fa-pen-to-square') %}
+    {% if post %}<a class="sm-btn" href="{{ url_for('social_media.post_detail', post_id=post.id) }}"><i class="fas fa-eye"></i> Details</a>{% endif %}
+{% endcall %}
+
+{% if not accounts %}
+<div class="sm-alert sm-alert-warn"><strong>No connected accounts available to you.</strong>
+    You can still write and save a draft. {% if sm_perms.can_manage_accounts %}<a href="{{ url_for('social_media.accounts') }}">Connect an account</a>.{% else %}Ask an administrator to connect an account or give you access.{% endif %}</div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" id="smComposer" novalidate
+      data-max-image-mb="{{ max_image_mb }}" data-max-video-mb="{{ max_video_mb }}">
+    {{ m.csrf() }}
+    <input type="hidden" name="action" value="draft" id="smAction">
+    <input type="hidden" name="confirmed" value="0" id="smConfirmed">
+
+    <div class="sm-compose">
+        <div>
+            <div class="sm-card">
+                <div class="sm-card-head"><h2>1. Content</h2></div>
+                <div class="sm-card-body">
+                    <div class="sm-field">
+                        <label for="smTitle">Internal label <span class="sm-muted sm-small">(optional, only shown in the CRM)</span></label>
+                        <input class="sm-input w-100" id="smTitle" name="title" maxlength="200" value="{{ f.get('title', post.title if post and post.title else '') }}" placeholder="e.g. Eid offer – week 1">
+                    </div>
+                    <div class="sm-field">
+                        <label for="smBody">Caption / post text</label>
+                        <textarea class="sm-textarea" id="smBody" name="body" rows="7" placeholder="What would you like to share?">{{ f.get('body', post.body if post else '') }}</textarea>
+                        <div class="sm-counter" id="smCounter" aria-live="polite"></div>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-6 sm-field">
+                            <label for="smTags">Hashtags</label>
+                            <input class="sm-input w-100" id="smTags" name="hashtags" maxlength="1000" value="{{ f.get('hashtags', post.hashtags if post and post.hashtags else '') }}" placeholder="#offer #newarrivals">
+                            <div class="sm-help">Added after the text. Instagram allows up to 30.</div>
+                        </div>
+                        <div class="col-md-6 sm-field">
+                            <label for="smLink">Link <span class="sm-muted sm-small">(optional)</span></label>
+                            <input class="sm-input w-100" id="smLink" name="link_url" type="url" maxlength="1000" value="{{ f.get('link_url', post.link_url if post and post.link_url else '') }}" placeholder="https://">
+                            <div class="sm-help">Facebook/LinkedIn show a link card when there is no media. Instagram captions cannot contain clickable links.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sm-card">
+                <div class="sm-card-head"><h2>2. Media</h2><span class="sm-small sm-muted">Images up to {{ max_image_mb }} MB · videos up to {{ max_video_mb }} MB</span></div>
+                <div class="sm-card-body">
+                    <label class="sm-drop" id="smDrop" for="smFiles">
+                        <i class="fas fa-cloud-arrow-up fa-lg" aria-hidden="true"></i>
+                        <div><strong>Drag &amp; drop</strong> images or a video here, or <span style="color:var(--sm-brand-600)">browse</span></div>
+                        <div class="sm-small">JPEG works everywhere; PNG is not accepted by Instagram. One video per post.</div>
+                    </label>
+                    <input type="file" id="smFiles" name="media" multiple accept="{{ accept }}" class="visually-hidden">
+                    <div class="sm-media-list" id="smMediaList">
+                        {% if post %}{% for med in post.media %}
+                        <div class="sm-media-item" data-existing="{{ med.id }}" data-kind="{{ med.kind }}" data-mime="{{ med.mime_type }}"
+                             data-src="{{ url_for('social_media.media_file', media_id=med.id) }}">
+                            {% if med.kind == 'image' %}<img src="{{ url_for('social_media.media_file', media_id=med.id) }}" alt="{{ med.original_name }}">
+                            {% else %}<video src="{{ url_for('social_media.media_file', media_id=med.id) }}" muted preload="metadata"></video>{% endif %}
+                            <input type="hidden" name="media_order_{{ med.id }}" value="{{ med.position }}">
+                            <input type="checkbox" class="visually-hidden" name="remove_media" value="{{ med.id }}">
+                            <div class="sm-media-tools">
+                                <button type="button" class="sm-btn sm-btn-sm" data-move="-1" aria-label="Move left">‹</button>
+                                <button type="button" class="sm-btn sm-btn-sm sm-btn-danger" data-remove aria-label="Remove {{ med.original_name }}"><i class="fas fa-trash"></i></button>
+                                <button type="button" class="sm-btn sm-btn-sm" data-move="1" aria-label="Move right">›</button>
+                            </div>
+                        </div>
+                        {% endfor %}{% endif %}
+                    </div>
+                    <div id="smMediaErrors" class="sm-problems" role="alert"></div>
+                </div>
+            </div>
+
+            <div class="sm-card">
+                <div class="sm-card-head"><h2>3. Destinations</h2><span class="sm-small sm-muted">Only the accounts you tick receive the post</span></div>
+                <div class="sm-card-body">
+                    {% if accounts %}
+                    <div class="sm-dest-grid" role="group" aria-label="Destination accounts">
+                        {% set chosen = f.getlist('account_ids')|map('int')|list if f else selected %}
+                        {% for a in accounts %}
+                        <label class="sm-dest">
+                            <input type="checkbox" name="account_ids" value="{{ a.id }}" {{ 'checked' if a.id in chosen }}
+                                   data-platform="{{ a.platform }}" data-name="{{ a.name }}" data-picture="{{ a.picture_url or '' }}"
+                                   data-type="{{ a.account_type }}">
+                            {{ m.plat(a.platform) }}
+                            <span class="sm-grow" style="min-width:0"><span class="d-block sm-clip" style="font-weight:650;font-size:.86rem">{{ a.name }}</span>
+                                <span class="sm-small sm-muted">{{ sm_platform_labels[a.platform] }} {{ a.account_type }}</span></span>
+                            <i class="fas fa-circle-check sm-check" aria-hidden="true"></i>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <div class="sm-per-platform mt-3" id="smPerPlatform">
+                        <div class="sm-label">Per-account text <span class="sm-muted sm-small">(optional — replaces the caption and hashtags for that account)</span></div>
+                        {% for a in accounts %}
+                        <details data-for="{{ a.id }}" hidden>
+                            <summary>{{ m.plat(a.platform) }} {{ a.name }} <span class="sm-small sm-muted ms-auto" data-problem-count></span></summary>
+                            <textarea class="sm-textarea mt-2" name="custom_text_{{ a.id }}" rows="3" data-platform="{{ a.platform }}"
+                                      placeholder="Leave empty to use the main caption">{{ f.get('custom_text_' ~ a.id, custom.get(a.id, '')) }}</textarea>
+                            <ul class="sm-problems" data-problems></ul>
+                        </details>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="sm-empty"><i class="fas fa-link-slash"></i>No accounts to choose from.</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="sm-card">
+                <div class="sm-card-head"><h2>4. When</h2></div>
+                <div class="sm-card-body">
+                    <div class="sm-field mb-0">
+                        <label for="smWhen">Schedule for <span class="sm-muted sm-small">({{ tz_name }})</span></label>
+                        <input type="datetime-local" class="sm-input" id="smWhen" name="scheduled_at"
+                               value="{{ f.get('scheduled_at', post.scheduled_at|sm_input_dt if post and post.scheduled_at else '') }}">
+                        <div class="sm-help">Used by “Schedule”. Times are shown and entered in {{ tz_name }} and stored in UTC. The server publishes at that time even if this page is closed.</div>
+                    </div>
+                </div>
+                <div class="sm-actions-bar">
+                    <a class="sm-btn" href="{{ url_for('social_media.post_detail', post_id=post.id) if post else url_for('social_media.posts') }}">Cancel</a>
+                    <button type="button" class="sm-btn d-xl-none" data-sm-scroll="#smPreviewCard"><i class="fas fa-eye"></i> Preview</button>
+                    <button type="submit" class="sm-btn" data-action="draft"><i class="fas fa-floppy-disk"></i> Save draft</button>
+                    {% if sm_perms.can_schedule %}<button type="button" class="sm-btn" data-confirm-action="schedule"><i class="fas fa-clock"></i> Schedule…</button>{% endif %}
+                    {% if sm_perms.can_publish %}<button type="button" class="sm-btn sm-btn-primary" data-confirm-action="publish"><i class="fas fa-paper-plane"></i> Publish now…</button>{% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="sm-sticky">
+            <div class="sm-card" id="smPreviewCard">
+                <div class="sm-card-head"><h2>Preview</h2><span class="sm-preview-label">Preview — not published</span></div>
+                <div class="sm-card-body">
+                    <div class="sm-seg mb-3" role="tablist" aria-label="Preview platform">
+                        <button type="button" role="tab" data-pv="facebook" class="sm-active"><i class="fab fa-facebook-f"></i> Facebook</button>
+                        <button type="button" role="tab" data-pv="instagram"><i class="fab fa-instagram"></i> Instagram</button>
+                        <button type="button" role="tab" data-pv="linkedin"><i class="fab fa-linkedin-in"></i> LinkedIn</button>
+                    </div>
+                    <div id="smPreview" aria-live="polite"></div>
+                    <ul class="sm-problems" id="smPreviewProblems"></ul>
+                    <div class="sm-help mt-2">Approximate layout. Each platform renders posts in its own way (fonts, cropping, “see more”).</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="smConfirmModal" tabindex="-1" aria-labelledby="smConfirmTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-scrollable modal-lg modal-fullscreen-sm-down">
+            <div class="modal-content sm-page" style="padding:0">
+                <div class="modal-header"><h5 class="modal-title" id="smConfirmTitle">Confirm</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+                <div class="modal-body" id="smConfirmBody"></div>
+                <div class="modal-footer">
+                    <button type="button" class="sm-btn" data-bs-dismiss="modal">Back to editing</button>
+                    <button type="submit" class="sm-btn sm-btn-primary" id="smConfirmGo">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block sm_js %}
+<script>SocialMedia.composer(document.getElementById('smComposer'));</script>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Social Media{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='social_media/social_media.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid sm-page">
+    {% if not sm_enabled %}
+    <div class="sm-alert sm-alert-warn"><strong>Publishing is disabled.</strong> Scheduled posts wait until it is enabled again
+        {% if sm_perms.can_manage_settings %}in <a href="{{ url_for('social_media.settings', tab='general') }}">API Settings › General</a>{% endif %}.
+        The rest of the CRM is not affected.</div>
+    {% endif %}
+    {% block sm_content %}{% endblock %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>window.SM_CSRF = "{{ sm_csrf_token() }}";</script>
+<script src="{{ url_for('static', filename='social_media/social_media.js') }}"></script>
+{% block sm_js %}{% endblock %}
+{% endblock %}

@@ -278,6 +278,42 @@
     </div>
     {% endif %}
 
+    {# ── Social Media (own module; each link only for users with that permission) #}
+    {% if sm_can('can_view') %}
+    <a class="nav-link nav-group-toggle collapsed" data-bs-toggle="collapse" href="#{{ nav_ns }}NavSocial"
+        role="button" aria-expanded="false" aria-controls="{{ nav_ns }}NavSocial">
+        <i class="fas fa-share-nodes nav-ico"></i> <span>Social Media</span>
+        <i class="fas fa-chevron-down nav-caret"></i>
+    </a>
+    <div class="collapse" id="{{ nav_ns }}NavSocial">
+        <a class="nav-link" href="{{ url_for('social_media.overview') }}"><i class="fas fa-gauge nav-sub-ico"></i><span>Overview</span></a>
+        {% if sm_can('can_create_posts') %}
+        <a class="nav-link" href="{{ url_for('social_media.post_new') }}"><i class="fas fa-pen-to-square nav-sub-ico"></i><span>Create Post</span></a>
+        {% endif %}
+        <a class="nav-link" href="{{ url_for('social_media.calendar') }}"><i class="fas fa-calendar-days nav-sub-ico"></i><span>Content Calendar</span></a>
+        <a class="nav-link" href="{{ url_for('social_media.posts') }}"><i class="fas fa-layer-group nav-sub-ico"></i><span>All Posts</span></a>
+        <a class="nav-link" href="{{ url_for('social_media.posts', tab='published') }}"><i class="fas fa-circle-check nav-sub-ico"></i><span>Published Posts</span></a>
+        <a class="nav-link" href="{{ url_for('social_media.posts', tab='scheduled') }}"><i class="fas fa-clock nav-sub-ico"></i><span>Scheduled Posts</span></a>
+        <a class="nav-link" href="{{ url_for('social_media.posts', tab='drafts') }}"><i class="fas fa-file-pen nav-sub-ico"></i><span>Drafts</span></a>
+        <a class="nav-link" href="{{ url_for('social_media.posts', tab='failed') }}"><i class="fas fa-triangle-exclamation nav-sub-ico"></i><span>Failed Posts</span></a>
+        {% if sm_can('can_view_analytics') %}
+        <a class="nav-link" href="{{ url_for('social_media.analytics') }}"><i class="fas fa-chart-line nav-sub-ico"></i><span>Analytics</span></a>
+        {% endif %}
+        {% if sm_can('can_view_ads') %}
+        <a class="nav-link" href="{{ url_for('social_media.ads_overview') }}"><i class="fas fa-rectangle-ad nav-sub-ico"></i><span>Facebook Ads</span></a>
+        {% endif %}
+        {% if sm_can('can_view_accounts') %}
+        <a class="nav-link" href="{{ url_for('social_media.accounts') }}"><i class="fas fa-link nav-sub-ico"></i><span>Connected Accounts</span></a>
+        {% endif %}
+        {% if sm_can('can_manage_settings') %}
+        <a class="nav-link" href="{{ url_for('social_media.settings') }}"><i class="fas fa-sliders nav-sub-ico"></i><span>API Settings</span></a>
+        {% endif %}
+        {% if sm_can('can_view_logs') %}
+        <a class="nav-link" href="{{ url_for('social_media.logs') }}"><i class="fas fa-clock-rotate-left nav-sub-ico"></i><span>Activity Logs</span></a>
+        {% endif %}
+    </div>
+    {% endif %}
+
     {# ── Media library (its own top-level module, like Spreadsheet) #}
     {% if adm or u.can_view_media %}
     <a class="nav-link" href="{{ url_for('media.index') }}">

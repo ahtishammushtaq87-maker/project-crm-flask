@@ -1,0 +1,79 @@
+{% extends "social_media/_base.html" %}
+{% import "social_media/_macros.html" as m with context %}
+{% block title %}Content Calendar · Social Media{% endblock %}
+
+{% macro ev(d) -%}
+<a class="sm-ev sm-st-{{ d.status }}" href="{{ url_for('social_media.post_detail', post_id=d.post_id) }}"
+   title="{{ d.post.display_title }} — {{ d.account.name if d.account else d.platform }} — {{ d.status|replace('_', ' ') }} — {{ (d.published_at or d.scheduled_at or d.created_at)|sm_dt('%I:%M %p') }}">
+    {{ m.plat(d.platform) }}<span class="sm-ev-t">{{ (d.published_at or d.scheduled_at or d.created_at)|sm_dt('%H:%M') }} {{ d.post.display_title }}</span></a>
+{%- endmacro %}
+
+{% block sm_content %}
+{% call m.head('Content calendar', 'Drafts, scheduled and published posts by date (' ~ sm_tz_name ~ ').', 'fas fa-calendar-days') %}
+    {% if sm_perms.can_create_posts %}<a class="sm-btn sm-btn-primary" href="{{ url_for('social_media.post_new') }}"><i class="fas fa-plus"></i> Create post</a>{% endif %}
+{% endcall %}
+
+{% set keep = {'platform': args.get('platform', ''), 'account': args.get('account', ''), 'status': args.get('status', ''), 'origin': args.get('origin', '')} %}
+<div class="sm-filters mb-3 justify-content-between">
+    <div class="sm-filters">
+        <a class="sm-btn" href="{{ url_for('social_media.calendar', view=view, date=prev_d.isoformat(), **keep) }}" aria-label="Previous">‹</a>
+        <a class="sm-btn" href="{{ url_for('social_media.calendar', view=view, date=today.isoformat(), **keep) }}">Today</a>
+        <a class="sm-btn" href="{{ url_for('social_media.calendar', view=view, date=next_d.isoformat(), **keep) }}" aria-label="Next">›</a>
+        <strong style="font-size:1.05rem">{{ title }}</strong>
+    </div>
+    <div class="sm-seg" role="group" aria-label="Calendar view">
+        {% for k, l in [('month', 'Month'), ('week', 'Week'), ('day', 'Day'), ('list', 'List')] %}
+        <a href="{{ url_for('social_media.calendar', view=k, date=anchor.isoformat(), **keep) }}" class="{{ 'sm-active' if view == k }}">{{ l }}</a>{% endfor %}
+    </div>
+</div>
+<form class="sm-filters mb-3" method="get">
+    <input type="hidden" name="view" value="{{ view }}">
+    <input class="sm-input" type="date" name="date" value="{{ anchor.isoformat() }}" aria-label="Go to date">
+    <select class="sm-select" name="platform" aria-label="Platform"><option value="">All platforms</option>
+        {% for p, l in sm_platform_labels.items() %}<option value="{{ p }}" {{ 'selected' if args.get('platform') == p }}>{{ l }}</option>{% endfor %}</select>
+    <select class="sm-select" name="account" aria-label="Account"><option value="">All accounts</option>
+        {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if args.get('account') == a.id|string }}>{{ a.label }}</option>{% endfor %}</select>
+    <select class="sm-select" name="status" aria-label="Status"><option value="">Any status</option>
+        {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if args.get('status') == s }}>{{ s|replace('_', ' ')|capitalize }}</option>{% endfor %}</select>
+    <label class="sm-small"><input type="checkbox" name="origin" value="all" {{ 'checked' if args.get('origin') == 'all' }}> Include synced posts</label>
+    <button class="sm-btn sm-btn-primary">Apply</button>
+</form>
+
+{% if view in ('month', 'week') %}
+<div class="sm-cal {{ 'sm-cal-week' if view == 'week' }}">
+    {% for wd in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] %}<div class="sm-cal-h">{{ wd }}</div>{% endfor %}
+    {% for day in days %}
+    {% set evs = items.get(day, []) %}
+    <div class="sm-cal-d {{ 'sm-out' if view == 'month' and day.month != anchor.month }} {{ 'sm-today' if day == today }} {{ 'sm-empty-day' if not evs }}">
+        <a class="sm-cal-num" href="{{ url_for('social_media.calendar', view='day', date=day.isoformat(), **keep) }}" aria-label="{{ day.strftime('%A %d %B') }}">{{ day.day }}</a>
+        <span class="d-sm-none sm-small sm-muted">{{ day.strftime('%a, %d %b') }}</span>
+        {% for d in evs[:(4 if view == 'month' else 30)] %}{{ ev(d) }}{% endfor %}
+        {% if view == 'month' and evs|length > 4 %}<a class="sm-small" href="{{ url_for('social_media.calendar', view='day', date=day.isoformat(), **keep) }}">+{{ evs|length - 4 }} more</a>{% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="sm-card"><div class="sm-card-body">
+    {% set ns = namespace(any=false) %}
+    {% for day in days %}{% set evs = items.get(day, []) %}{% if evs %}{% set ns.any = true %}
+    <div class="sm-section-title mt-2">{{ day.strftime('%A, %d %B %Y') }}{% if day == today %} · today{% endif %}</div>
+    {% for d in evs %}
+    <div class="sm-list-row">{{ m.plat(d.platform) }}
+        <div class="sm-grow"><a href="{{ url_for('social_media.post_detail', post_id=d.post_id) }}" class="sm-clip" style="font-weight:600">{{ d.post.display_title }}</a>
+            <div class="sm-small sm-muted">{{ (d.published_at or d.scheduled_at or d.created_at)|sm_dt('%I:%M %p') }} · {{ d.account.name if d.account else '—' }}</div></div>
+        {{ m.badge(d.status) }}
+        {% if d.status == 'scheduled' and sm_perms.can_schedule %}
+        <details><summary class="sm-small" style="cursor:pointer">Reschedule</summary>
+            <form method="post" action="{{ url_for('social_media.post_reschedule', post_id=d.post_id) }}" class="sm-filters mt-1">{{ m.csrf() }}
+                <input type="datetime-local" class="sm-input" name="scheduled_at" value="{{ d.scheduled_at|sm_input_dt }}" required aria-label="New time">
+                <button class="sm-btn sm-btn-sm sm-btn-primary">Save</button></form></details>{% endif %}
+    </div>
+    {% endfor %}{% endif %}{% endfor %}
+    {% if not ns.any %}<div class="sm-empty"><i class="fas fa-calendar"></i>Nothing in this period.</div>{% endif %}
+</div></div>
+{% endif %}
+
+<div class="sm-cal-legend" aria-label="Status legend">
+    {% for s in ['draft', 'scheduled', 'publishing', 'published', 'partially_published', 'failed', 'cancelled'] %}{{ m.badge(s) }}{% endfor %}
+</div>
+{% endblock %}

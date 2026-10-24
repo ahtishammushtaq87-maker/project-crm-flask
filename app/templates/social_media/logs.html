@@ -1,0 +1,43 @@
+{% extends "social_media/_base.html" %}
+{% import "social_media/_macros.html" as m with context %}
+{% block title %}Activity Logs · Social Media{% endblock %}
+
+{% block sm_content %}
+{% call m.head('Activity logs', 'Who did what, every publishing attempt, synchronisations and notifications. Secrets are never logged.', 'fas fa-clock-rotate-left') %}
+    {% if view == 'notifications' and sm_unread %}<form method="post" action="{{ url_for('social_media.notifications_read') }}">{{ m.csrf() }}<button class="sm-btn">Mark all read</button></form>{% endif %}
+{% endcall %}
+
+<nav class="sm-tabs" aria-label="Log type">
+    {% for k, l in [('activity', 'Activity'), ('attempts', 'Publishing attempts'), ('syncs', 'Syncs & tests'), ('notifications', 'Notifications')] %}
+    <a href="{{ url_for('social_media.logs', view=k) }}" class="{{ 'sm-active' if view == k }}">{{ l }}</a>{% endfor %}
+</nav>
+
+<div class="sm-card">
+{% if page.items %}
+<div class="sm-table-wrap"><table class="sm-table sm-table-stack">
+{% if view == 'activity' %}
+    <thead><tr><th>When</th><th>User</th><th>Action</th><th>Target</th><th>Result</th><th>Details</th></tr></thead><tbody>
+    {% for r in page.items %}<tr><td data-label="When" class="sm-small">{{ r.created_at|sm_dt }}</td><td data-label="User">{{ r.user.username if r.user else 'system' }}</td>
+        <td data-label="Action"><code>{{ r.action }}</code></td><td data-label="Target" class="sm-small">{{ r.target or '—' }}</td>
+        <td data-label="Result">{{ m.badge('success' if r.success else 'failed') }}</td><td data-label="Details" class="sm-small" style="max-width:420px;overflow-wrap:anywhere">{{ r.detail or '' }}{% if r.ip %}<div class="sm-muted">IP {{ r.ip }}</div>{% endif %}</td></tr>{% endfor %}
+{% elif view == 'attempts' %}
+    <thead><tr><th>Started</th><th>Post</th><th>Account</th><th>By</th><th>Outcome</th><th>Platform ID / error</th></tr></thead><tbody>
+    {% for a in page.items %}{% set d = a.destination %}<tr><td data-label="Started" class="sm-small">{{ a.started_at|sm_dt }}</td>
+        <td data-label="Post"><a href="{{ url_for('social_media.post_detail', post_id=d.post_id) }}" class="sm-clip">{{ d.post.display_title }}</a></td>
+        <td data-label="Account"><span class="d-inline-flex gap-1 align-items-center">{{ m.plat(d.platform) }} {{ d.account.name if d.account else '—' }}</span></td>
+        <td data-label="By" class="sm-small">{{ a.triggered_by }}</td><td data-label="Outcome">{{ m.badge(a.outcome) }}</td>
+        <td data-label="Detail" class="sm-small" style="max-width:380px;overflow-wrap:anywhere">{% if a.remote_id %}<span class="sm-mono">{{ a.remote_id }}</span>{% endif %}{% if a.error_message %}{{ a.error_message }}{% if a.http_status %} (HTTP {{ a.http_status }}){% endif %}{% endif %}</td></tr>{% endfor %}
+{% elif view == 'syncs' %}
+    <thead><tr><th>Started</th><th>Account</th><th>Kind</th><th>Result</th><th>Items</th><th>Message</th></tr></thead><tbody>
+    {% for s in page.items %}<tr><td data-label="Started" class="sm-small">{{ s.started_at|sm_dt }}</td><td data-label="Account">#{{ s.account_id }}</td><td data-label="Kind">{{ s.kind }}</td>
+        <td data-label="Result">{{ m.badge(s.status) }}</td><td data-label="Items">{{ s.items }}</td><td data-label="Message" class="sm-small">{{ s.message or '' }}</td></tr>{% endfor %}
+{% else %}
+    <thead><tr><th>When</th><th>Level</th><th>Message</th><th>Read</th></tr></thead><tbody>
+    {% for n in page.items %}<tr><td data-label="When" class="sm-small">{{ n.created_at|sm_dt }}</td><td data-label="Level">{{ m.badge(n.level) }}</td>
+        <td data-label="Message">{% if n.link %}<a href="{{ n.link }}">{{ n.message }}</a>{% else %}{{ n.message }}{% endif %}</td><td data-label="Read" class="sm-small">{{ n.read_at|sm_ago if n.read_at else 'unread' }}</td></tr>{% endfor %}
+{% endif %}
+</tbody></table></div>
+{{ m.pager(page, 'social_media.logs', view=view) }}
+{% else %}<div class="sm-empty"><i class="fas fa-list"></i>Nothing logged yet.</div>{% endif %}
+</div>
+{% endblock %}

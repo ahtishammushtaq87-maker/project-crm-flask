@@ -1,0 +1,80 @@
+{% extends "social_media/_base.html" %}
+{% import "social_media/_macros.html" as m with context %}
+{% block title %}Analytics · Social Media{% endblock %}
+
+{% block sm_content %}
+{% call m.head('Analytics', 'Organic post performance as reported by each platform — ' ~ range_label, 'fas fa-chart-line') %}
+    <form method="post" action="{{ url_for('social_media.analytics_sync') }}">{{ m.csrf() }}<input type="hidden" name="kind" value="insights">
+        <button class="sm-btn"><i class="fas fa-rotate"></i> Refresh metrics now</button></form>
+{% endcall %}
+
+<div class="sm-alert sm-alert-info">Organic results only. Paid results are in <a href="{{ url_for('social_media.ads_overview') }}">Facebook Ads</a>. Metrics refresh automatically every 6 hours for posts published in the last 60 days. “Not available” means the platform did not report that metric for these posts.</div>
+
+<div class="sm-filters mb-3">{{ m.range_filter('social_media.analytics', preset, start, end, presets) }}</div>
+
+<div class="sm-stats">
+    {{ m.stat('Posts published', data.published_range, 'by the CRM in range') }}
+    {{ m.stat('Impressions', data.impressions) }}
+    {{ m.stat('Reach', data.reach) }}
+    {{ m.stat('Engagements', data.engagements) }}
+    <div class="sm-stat"><div class="sm-stat-label">Engagement rate</div>
+        {% if data.engagement_rate is none %}<div class="sm-stat-value sm-na">Not available</div>{% else %}<div class="sm-stat-value">{{ data.engagement_rate|sm_pct }}</div>{% endif %}
+        <div class="sm-stat-sub">engagements ÷ reach</div></div>
+</div>
+
+<div class="row g-3">
+    <div class="col-xl-7">
+        <div class="sm-card">
+            <div class="sm-card-head"><h2>Engagement trend</h2><div class="sm-legend"><span><i class="sm-c2"></i>Engagements on posts published that day</span></div></div>
+            <div class="sm-card-body">
+                {% set peak = series|map(attribute='engagements')|max %}
+                {% if not (series|selectattr('has_eng')|list) %}
+                <div class="sm-empty"><i class="fas fa-chart-area"></i>No engagement data for this period.</div>
+                {% else %}
+                <div class="sm-bars" role="img" aria-label="Engagements per day">
+                    {% for d in series %}<div class="sm-bar" title="{{ d.date }}: {{ d.engagements if d.has_eng else 'Not available' }}"><span class="sm-c2" style="height:{{ ((d.engagements / peak * 120) if peak else 0)|round(1) }}px"></span></div>{% endfor %}
+                </div>
+                <div class="d-flex justify-content-between sm-small sm-muted mt-1"><span>{{ series[0].date }}</span><span>{{ series[-1].date }}</span></div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-5">
+        <div class="sm-card">
+            <div class="sm-card-head"><h2>By platform</h2></div>
+            <div class="sm-card-body">
+                {% for r in by_platform %}
+                <div class="sm-list-row">{{ m.plat(r.platform) }}<div class="sm-grow"><strong>{{ sm_platform_labels[r.platform] }}</strong>
+                    <div class="sm-small sm-muted">{{ r.posts }} posts · reach {{ r.reach|sm_num }} · engagements {{ r.engagements|sm_num }} · rate {{ r.rate|sm_pct }}</div></div></div>
+                {% endfor %}
+                <div class="sm-help mt-2">LinkedIn statistics are only available for company pages with Community Management API access.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="sm-card">
+    <div class="sm-card-head"><h2>Top posts</h2><span class="sm-small sm-muted">by engagements</span></div>
+    {% if top %}
+    <div class="sm-table-wrap"><table class="sm-table sm-table-stack">
+        <thead><tr><th>Post</th><th>Account</th><th>Published</th><th>Impressions</th><th>Reach</th><th>Engagements</th><th>Updated</th></tr></thead>
+        <tbody>{% for d in top %}
+        <tr><td class="sm-td-main"><div class="d-flex gap-2 align-items-center">{{ m.plat(d.platform) }}<a class="sm-clip" href="{{ url_for('social_media.post_detail', post_id=d.post_id) }}">{{ d.post.display_title }}</a>
+                {% if d.post.origin == 'synced' %}<span class="sm-badge sm-st-synced">synced</span>{% endif %}</div></td>
+            <td data-label="Account">{{ d.account.name if d.account else '—' }}</td>
+            <td data-label="Published" class="sm-small">{{ d.published_at|sm_dt }}</td>
+            <td data-label="Impressions">{{ d.impressions|sm_num }}</td><td data-label="Reach">{{ d.reach|sm_num }}</td>
+            <td data-label="Engagements">{{ d.engagements|sm_num }}</td><td data-label="Updated" class="sm-small">{{ d.insights_synced_at|sm_ago }}</td></tr>
+        {% endfor %}</tbody></table></div>
+    {% else %}<div class="sm-empty"><i class="fas fa-ranking-star"></i>No published posts in this period.</div>{% endif %}
+</div>
+
+<div class="sm-card">
+    <div class="sm-card-head"><h2>Recent synchronisations</h2></div>
+    <div class="sm-card-body">
+        {% for s in syncs %}
+        <div class="sm-list-row">{{ m.badge(s.status) }}<div class="sm-grow sm-small"><strong>{{ s.kind|title }}</strong> · account #{{ s.account_id }} · {{ s.started_at|sm_dt }}<div class="sm-muted">{{ s.message }}</div></div></div>
+        {% else %}<div class="sm-empty"><i class="fas fa-rotate"></i>No synchronisation has run yet.</div>{% endfor %}
+    </div>
+</div>
+{% endblock %}

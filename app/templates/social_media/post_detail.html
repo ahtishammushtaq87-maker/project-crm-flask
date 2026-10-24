@@ -1,0 +1,123 @@
+{% extends "social_media/_base.html" %}
+{% import "social_media/_macros.html" as m with context %}
+{% block title %}{{ post.display_title }} · Social Media{% endblock %}
+
+{% block sm_content %}
+{% call m.head(post.display_title, ('Synced from the platform' if post.origin == 'synced' else 'Created in the CRM') ~ ' · ' ~ post.status|replace('_', ' '), 'fas fa-file-lines') %}
+    {% if editable and (sm_perms.can_edit_posts or post.created_by == current_user.id) %}<a class="sm-btn sm-btn-primary" href="{{ url_for('social_media.post_edit', post_id=post.id) }}"><i class="fas fa-pen"></i> Edit</a>{% endif %}
+    {% if sm_perms.can_create_posts %}<form method="post" action="{{ url_for('social_media.post_duplicate', post_id=post.id) }}">{{ m.csrf() }}<button class="sm-btn"><i class="fas fa-copy"></i> Duplicate</button></form>{% endif %}
+{% endcall %}
+
+{% set st = post.status %}
+{% if st == 'partially_published' %}<div class="sm-alert sm-alert-warn"><strong>Partially published.</strong> Some destinations succeeded and others did not — see each destination below.</div>
+{% elif st == 'failed' %}<div class="sm-alert sm-alert-danger"><strong>Not published.</strong> Every destination failed. Check the errors below, fix the cause and retry.</div>
+{% elif st == 'publishing' %}<div class="sm-alert sm-alert-info"><strong>Publishing in progress.</strong> The background scheduler is handling it (media processing can take a few minutes). Reload to see the result.</div>{% endif %}
+
+<div class="row g-3">
+    <div class="col-xl-7">
+        <div class="sm-card">
+            <div class="sm-card-head"><h2>Destinations</h2><span class="sm-small sm-muted">Each account is published and tracked separately</span></div>
+            <div class="sm-card-body">
+                {% for d in post.destinations %}
+                <div class="sm-dest-card">
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        {{ m.plat(d.platform) }}
+                        <strong class="sm-clip" style="flex:1;min-width:120px">{{ d.account.name if d.account else 'Removed account' }}</strong>
+                        {{ m.badge(d.status) }}
+                    </div>
+                    <dl class="sm-kv mt-2">
+                        {% if d.scheduled_at and post.origin == 'crm' %}<dt>Scheduled</dt><dd>{{ d.scheduled_at|sm_dt }}</dd>{% endif %}
+                        {% if d.published_at %}<dt>Published</dt><dd>{{ d.published_at|sm_dt }}</dd>{% endif %}
+                        {% if d.next_attempt_at and d.status == 'retry_wait' %}<dt>Next attempt</dt><dd>{{ d.next_attempt_at|sm_dt }} ({{ d.next_attempt_at|sm_ago }})</dd>{% endif %}
+                        {% if d.remote_id %}<dt>Platform ID</dt><dd class="sm-mono">{{ d.remote_id }}</dd>{% endif %}
+                        {% if d.remote_url %}<dt>Link</dt><dd><a href="{{ d.remote_url }}" target="_blank" rel="noopener">Open on {{ sm_platform_labels[d.platform] }} <i class="fas fa-arrow-up-right-from-square"></i></a></dd>{% endif %}
+                        {% if d.custom_text %}<dt>Custom text</dt><dd style="white-space:pre-wrap">{{ d.custom_text }}</dd>{% endif %}
+                    </dl>
+                    {% if d.error_message and d.status != 'published' %}
+                    <div class="sm-alert {{ 'sm-alert-warn' if d.status in ('needs_review', 'retry_wait') else 'sm-alert-danger' }} mt-2 mb-2">
+                        <strong>{{ err_label(d.error_kind) }}{% if d.error_code %} (code {{ d.error_code }}){% endif %}:</strong> {{ d.error_message }}
+                        <div class="mt-1"><strong>Next step:</strong> {{ next_step(d.error_kind) }}</div></div>
+                    {% endif %}
+                    {% if d.status == 'published' %}
+                    <div class="sm-metrics">
+                        {% for k, l in [('impressions', 'Impressions'), ('reach', 'Reach'), ('engagements', 'Engagements')] %}
+                        <div><span class="sm-muted">{{ l }}</span><b>{{ d[k]|sm_num }}</b></div>{% endfor %}
+                        <div><span class="sm-muted">Updated</span><b class="sm-small" style="font-size:.8rem">{{ d.insights_synced_at|sm_ago }}</b></div>
+                    </div>
+                    {% if d.platform == 'linkedin' and d.account and d.account.account_type == 'member' %}<div class="sm-help">LinkedIn does not provide analytics for member posts to standard apps.</div>{% endif %}
+                    {% endif %}
+                    <div class="d-flex flex-wrap gap-2 mt-2">
+                        {% if d.status == 'published' and sm_perms.can_view_analytics and d.account %}
+                        <form method="post" action="{{ url_for('social_media.destination_metrics', dest_id=d.id) }}">{{ m.csrf() }}<button class="sm-btn sm-btn-sm"><i class="fas fa-chart-simple"></i> Refresh metrics</button></form>{% endif %}
+                        {% if d.status == 'failed' and sm_perms.can_publish %}
+                        <form method="post" action="{{ url_for('social_media.destination_retry', dest_id=d.id) }}" data-sm-confirm="Retry publishing to {{ d.account.name if d.account else 'this account' }} now?">{{ m.csrf() }}<button class="sm-btn sm-btn-sm sm-btn-primary"><i class="fas fa-rotate-right"></i> Retry now</button></form>{% endif %}
+                        {% if d.status == 'needs_review' and sm_perms.can_publish %}
+                        <form method="post" action="{{ url_for('social_media.destination_retry', dest_id=d.id) }}" class="d-flex flex-wrap gap-2 align-items-center">{{ m.csrf() }}
+                            <label class="sm-small"><input type="checkbox" name="confirm_checked" value="1" required> I checked {{ sm_platform_labels[d.platform] }} and this post is <strong>not</strong> live</label>
+                            <button class="sm-btn sm-btn-sm sm-btn-primary"><i class="fas fa-rotate-right"></i> Retry</button></form>{% endif %}
+                        {% if d.remote_id and d.platform != 'instagram' and d.status == 'published' and sm_perms.can_delete_posts and sm_perms.can_publish %}
+                        <details class="w-100"><summary class="sm-small" style="color:var(--sm-red);cursor:pointer">Delete from {{ sm_platform_labels[d.platform] }}…</summary>
+                            <form method="post" action="{{ url_for('social_media.destination_delete_remote', dest_id=d.id) }}" class="d-flex flex-wrap gap-2 mt-2 align-items-center">{{ m.csrf() }}
+                                <label class="sm-small" for="del{{ d.id }}">This removes the live post from {{ sm_platform_labels[d.platform] }}. Type DELETE:</label>
+                                <input class="sm-input" id="del{{ d.id }}" name="confirm_text" autocomplete="off" style="width:110px" required>
+                                <button class="sm-btn sm-btn-sm sm-btn-danger">Delete on platform</button></form></details>
+                        {% elif d.platform == 'instagram' and d.status == 'published' %}<span class="sm-small sm-muted">Instagram posts can only be deleted in the Instagram app.</span>{% endif %}
+                    </div>
+                    {% if d.attempts %}
+                    <details class="mt-2"><summary class="sm-small">Attempt history ({{ d.attempts|length }})</summary>
+                        <ul class="sm-timeline">{% for a in d.attempts|reverse %}
+                            <li>{{ a.started_at|sm_dt }} · {{ a.triggered_by }} · {{ m.badge(a.outcome) }}{% if a.http_status %} · HTTP {{ a.http_status }}{% endif %}{% if a.error_message %}<div class="sm-muted">{{ a.error_message }}</div>{% endif %}</li>
+                        {% endfor %}</ul></details>
+                    {% endif %}
+                </div>
+                {% else %}<div class="sm-empty"><i class="fas fa-bullseye"></i>No destinations selected yet.</div>{% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-5">
+        <div class="sm-card">
+            <div class="sm-card-head"><h2>Content</h2></div>
+            <div class="sm-card-body">
+                <div style="white-space:pre-wrap;overflow-wrap:anywhere">{{ post.full_text() or '(no text)' }}</div>
+                {% if post.link_url %}<div class="sm-small mt-2"><i class="fas fa-link"></i> <a href="{{ post.link_url }}" target="_blank" rel="noopener">{{ post.link_url }}</a></div>{% endif %}
+                {% if post.media %}<div class="sm-media-list">{% for med in post.media %}
+                    <div class="sm-media-item">{% if med.kind == 'image' %}<img src="{{ url_for('social_media.media_file', media_id=med.id) }}" alt="{{ med.original_name }}">{% else %}<video src="{{ url_for('social_media.media_file', media_id=med.id) }}" controls muted preload="metadata"></video>{% endif %}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </div>
+        <div class="sm-card">
+            <div class="sm-card-head"><h2>Details</h2></div>
+            <div class="sm-card-body"><dl class="sm-kv">
+                <dt>Status</dt><dd>{{ m.badge(post.status) }}</dd>
+                <dt>Source</dt><dd>{{ 'Synced from platform (not published by the CRM)' if post.origin == 'synced' else 'Created in the CRM' }}</dd>
+                {% if post.creator %}<dt>Created by</dt><dd>{{ post.creator.username }}</dd>{% endif %}
+                <dt>Created</dt><dd>{{ post.created_at|sm_dt }}</dd>
+                {% if post.scheduled_at and post.origin == 'crm' %}<dt>Scheduled</dt><dd>{{ post.scheduled_at|sm_dt }}</dd>{% endif %}
+                {% if post.published_at %}<dt>First published</dt><dd>{{ post.published_at|sm_dt }}</dd>{% endif %}
+            </dl></div>
+        </div>
+        {% if post.origin == 'crm' and sm_perms.can_schedule and post.status in ('scheduled', 'draft', 'cancelled', 'failed') %}
+        <div class="sm-card">
+            <div class="sm-card-head"><h2>{{ 'Reschedule' if post.status == 'scheduled' else 'Schedule' }}</h2></div>
+            <div class="sm-card-body">
+                <form method="post" action="{{ url_for('social_media.post_reschedule', post_id=post.id) }}" class="sm-filters">{{ m.csrf() }}
+                    <input type="datetime-local" name="scheduled_at" class="sm-input" required value="{{ post.scheduled_at|sm_input_dt if post.scheduled_at else '' }}" aria-label="New date and time">
+                    <button class="sm-btn sm-btn-primary">Save time</button></form>
+                <div class="sm-help">Unpublished destinations on connected accounts will be published at this time.</div>
+            </div>
+        </div>
+        {% endif %}
+        {% if sm_perms.can_delete_posts %}
+        <div class="sm-card">
+            <div class="sm-card-head"><h2>Cancel or remove</h2></div>
+            <div class="sm-card-body d-flex flex-wrap gap-2">
+                {% if post.status in ('scheduled', 'publishing') %}
+                <form method="post" action="{{ url_for('social_media.post_cancel', post_id=post.id) }}" data-sm-confirm="Cancel all destinations that have not been published yet?">{{ m.csrf() }}<button class="sm-btn sm-btn-danger"><i class="fas fa-ban"></i> Cancel scheduled</button></form>{% endif %}
+                <form method="post" action="{{ url_for('social_media.post_delete', post_id=post.id) }}" data-sm-confirm="Remove this post from the CRM? Posts already on Facebook, Instagram or LinkedIn are NOT deleted.">{{ m.csrf() }}<button class="sm-btn sm-btn-danger"><i class="fas fa-trash"></i> Remove from CRM</button></form>
+                <div class="sm-help w-100">Removing the CRM record never deletes anything on the platforms.</div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

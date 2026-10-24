@@ -1,0 +1,47 @@
+{% extends "social_media/_base.html" %}
+{% import "social_media/_macros.html" as m with context %}
+{% block title %}Choose accounts · Social Media{% endblock %}
+
+{% block sm_content %}
+{% call m.head('Choose accounts to connect', 'Signed in as ' ~ cred.external_user_name ~ '. Only the accounts you tick will be used by the CRM.', 'fas fa-list-check') %}{% endcall %}
+
+<form method="post" class="sm-card">{{ m.csrf() }}
+    <div class="sm-card-body">
+    {% if provider == 'meta' %}
+        {% if missing %}<div class="sm-alert sm-alert-warn">Permissions not granted: {% for p in missing %}<code>{{ p }}</code> {% endfor %}— publishing to Pages will fail until you reconnect and allow them.</div>{% endif %}
+        <div class="sm-small sm-muted mb-2">Granted: {% for p in cred.scope_list %}<span class="sm-chip sm-chip-ok">{{ p }}</span>{% endfor %}</div>
+        {% for p in pages %}
+        <div class="sm-dest-card">
+            <label class="d-flex align-items-center gap-2" style="cursor:pointer">
+                <input type="checkbox" name="page_ids" value="{{ p.id }}" checked>
+                {% if p.picture %}<img class="sm-avatar" src="{{ p.picture }}" alt="" referrerpolicy="no-referrer">{% endif %}
+                <span><strong>{{ p.name }}</strong> {{ m.plat('facebook') }}<span class="d-block sm-small sm-muted">{{ p.category or 'Page' }} · ID {{ p.id }}{% if not p.can_post %} · <span style="color:var(--sm-red)">your Page role cannot create content</span>{% endif %}</span></span>
+            </label>
+            {% if p.instagram %}
+            <label class="d-flex align-items-center gap-2 mt-2 ms-4" style="cursor:pointer">
+                <input type="checkbox" name="instagram_ids" value="{{ p.instagram.id }}" checked>
+                {% if p.instagram.picture %}<img class="sm-avatar" src="{{ p.instagram.picture }}" alt="" referrerpolicy="no-referrer">{% endif %}
+                <span>{{ m.plat('instagram') }} <strong>@{{ p.instagram.username }}</strong><span class="d-block sm-small sm-muted">Instagram professional account linked to this Page</span></span>
+            </label>
+            {% else %}<div class="sm-small sm-muted ms-4 mt-1">No Instagram professional account is linked to this Page (or <code>instagram_basic</code> was not granted).</div>{% endif %}
+        </div>
+        {% else %}
+        <div class="sm-empty"><i class="fas fa-flag"></i>No Facebook Pages were shared with this app. Reconnect and make sure you select your Pages on Facebook's permission screen (needs <code>pages_show_list</code>; Business-owned Pages may need <code>business_management</code>).</div>
+        {% endfor %}
+    {% else %}
+        <div class="sm-small sm-muted mb-2">Granted scopes: {% for p in cred.scope_list %}<span class="sm-chip sm-chip-ok">{{ p }}</span>{% endfor %}</div>
+        <div class="sm-dest-card"><label class="d-flex align-items-center gap-2" style="cursor:pointer">
+            <input type="checkbox" name="member" value="1" {{ 'checked' if member.can_post }}>
+            {{ m.plat('linkedin') }}<span><strong>{{ member.name }}</strong> <span class="d-block sm-small sm-muted">Personal profile{% if not member.can_post %} · <span style="color:var(--sm-red)">w_member_social not granted — posting will fail</span>{% endif %}</span></span></label></div>
+        {% for o in orgs %}
+        <div class="sm-dest-card"><label class="d-flex align-items-center gap-2" style="cursor:pointer">
+            <input type="checkbox" name="org_urns" value="{{ o.urn }}" {{ 'checked' if o.can_post }}>
+            {{ m.plat('linkedin') }}<span><strong>{{ o.name }}</strong><span class="d-block sm-small sm-muted">Company page (administrator){% if not o.can_post %} · <span style="color:var(--sm-red)">w_organization_social not granted</span>{% endif %}</span></span></label></div>
+        {% endfor %}
+        {% if org_error %}<div class="sm-alert sm-alert-info mt-2">Company pages: {{ org_error }}</div>
+        {% elif not orgs %}<div class="sm-small sm-muted mt-2">You are not an approved administrator of any LinkedIn company page.</div>{% endif %}
+    {% endif %}
+    </div>
+    <div class="sm-actions-bar"><a class="sm-btn" href="{{ url_for('social_media.accounts') }}">Cancel</a><button class="sm-btn sm-btn-primary">Connect selected</button></div>
+</form>
+{% endblock %}

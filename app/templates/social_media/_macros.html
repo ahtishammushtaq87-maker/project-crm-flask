@@ -1,0 +1,84 @@
+{% macro head(title, subtitle, icon='fas fa-share-nodes') -%}
+<div class="sm-head">
+    <div class="sm-head-title">
+        <div class="sm-head-icon"><i class="{{ icon }}" aria-hidden="true"></i></div>
+        <div>
+            <h1>{{ title }}</h1>
+            <p>{{ subtitle }}</p>
+        </div>
+    </div>
+    <div class="sm-head-actions">
+        {{ caller() if caller }}
+        {% if sm_perms.can_view %}
+        <a class="sm-btn sm-bell" href="{{ url_for('social_media.logs', view='notifications') if sm_perms.can_view_logs else url_for('social_media.overview') }}"
+           aria-label="Notifications{{ ' (' ~ sm_unread ~ ' unread)' if sm_unread }}" title="Notifications">
+            <i class="fas fa-bell" aria-hidden="true"></i>{% if sm_unread %}<span class="sm-dot">{{ sm_unread }}</span>{% endif %}
+        </a>
+        {% endif %}
+    </div>
+</div>
+{%- endmacro %}
+
+{% macro csrf() -%}
+<input type="hidden" name="csrf_token" value="{{ sm_csrf_token() }}">
+{%- endmacro %}
+
+{% macro badge(status, text=None) -%}
+<span class="sm-badge sm-st-{{ status }}">{{ (text or status or 'unknown')|replace('_', ' ') }}</span>
+{%- endmacro %}
+
+{% macro plat(platform, size='') -%}
+{%- set icons = {'facebook': 'fab fa-facebook-f', 'instagram': 'fab fa-instagram', 'linkedin': 'fab fa-linkedin-in'} -%}
+<span class="sm-plat sm-plat-{{ platform }} {{ size }}" title="{{ sm_platform_labels.get(platform, platform) }}"><i class="{{ icons.get(platform, 'fas fa-globe') }}" aria-hidden="true"></i><span class="visually-hidden">{{ sm_platform_labels.get(platform, platform) }}</span></span>
+{%- endmacro %}
+
+{% macro range_filter(endpoint, preset, start, end, presets) -%}
+<form class="sm-filters" method="get" action="{{ url_for(endpoint) }}">
+    <div class="sm-seg" role="group" aria-label="Date range">
+        {% for key, label in presets %}
+        <a href="{{ url_for(endpoint, range=key) }}" class="{{ 'sm-active' if preset == key }}">{{ label|replace('Last ', '') }}</a>
+        {% endfor %}
+    </div>
+    <input type="hidden" name="range" value="custom">
+    <input type="date" name="start" value="{{ start }}" class="sm-input" aria-label="From date">
+    <input type="date" name="end" value="{{ end }}" class="sm-input" aria-label="To date">
+    <button class="sm-btn {{ 'sm-btn-primary' if preset == 'custom' }}" type="submit">Apply</button>
+</form>
+{%- endmacro %}
+
+{% macro pager(p, endpoint) -%}
+{% if p.pages > 1 %}
+<div class="sm-pager">
+    <span>Page {{ p.page }} of {{ p.pages }} · {{ p.total }} total</span>
+    <span>
+        {% if p.has_prev %}<a class="sm-btn sm-btn-sm" href="{{ url_for(endpoint, page=p.prev_num, **kwargs) }}">‹ Previous</a>{% endif %}
+        {% if p.has_next %}<a class="sm-btn sm-btn-sm" href="{{ url_for(endpoint, page=p.next_num, **kwargs) }}">Next ›</a>{% endif %}
+    </span>
+</div>
+{% endif %}
+{%- endmacro %}
+
+{% macro thumb(post) -%}
+{%- set m = post.media[0] if post.media else None -%}
+{% if m and m.kind == 'image' %}<img class="sm-thumb" src="{{ url_for('social_media.media_file', media_id=m.id) }}" alt="" loading="lazy">
+{% elif m %}<span class="sm-thumb"><i class="fas fa-film" aria-hidden="true"></i></span>
+{% else %}<span class="sm-thumb"><i class="fas fa-align-left" aria-hidden="true"></i></span>{% endif %}
+{%- endmacro %}
+
+{% macro stat(label, value, sub='', is_num=True) -%}
+<div class="sm-stat"><div class="sm-stat-label">{{ label }}</div>
+    {% if value is none %}<div class="sm-stat-value sm-na">Not available</div>
+    {% else %}<div class="sm-stat-value">{{ value|sm_num if is_num else value }}</div>{% endif %}
+    {% if sub %}<div class="sm-stat-sub">{{ sub }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro test_button(what, label='Test') -%}
+<button type="button" class="sm-btn sm-btn-sm" data-sm-test="{{ url_for('social_media.settings_test', what=what) }}"><i class="fas fa-plug-circle-check" aria-hidden="true"></i> {{ label }}</button>
+<div class="sm-test-result" aria-live="polite"></div>
+{%- endmacro %}
+
+{% macro copy(value) -%}
+<div class="sm-copy"><code>{{ value or 'Not available - set the Public base URL' }}</code>
+{% if value %}<button type="button" class="sm-btn sm-btn-sm" data-sm-copy="{{ value }}" aria-label="Copy"><i class="fas fa-copy" aria-hidden="true"></i></button>{% endif %}</div>
+{%- endmacro %}

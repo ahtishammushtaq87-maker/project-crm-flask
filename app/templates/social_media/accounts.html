@@ -1,0 +1,83 @@
+{% extends "social_media/_base.html" %}
+{% import "social_media/_macros.html" as m with context %}
+{% block title %}Connected Accounts · Social Media{% endblock %}
+
+{% macro account_card(a) -%}
+{% set cred = a.credential %}
+<div class="sm-acc">
+    <div class="sm-acc-top">
+        {% if a.picture_url %}<img class="sm-avatar" src="{{ a.picture_url }}" alt="" referrerpolicy="no-referrer">{% else %}<span class="sm-avatar">{{ m.plat(a.platform) }}</span>{% endif %}
+        <div style="min-width:0;flex:1"><div class="sm-clip" style="font-weight:700">{{ a.name }}</div>
+            <div class="sm-small sm-muted">{{ sm_platform_labels[a.platform] }} {{ a.account_type }}{% if a.username %} · @{{ a.username }}{% endif %}</div></div>
+        {{ m.badge(a.status, {'reauth_required': 'reconnect needed'}.get(a.status, a.status)) }}
+    </div>
+    <dl>
+        <dt>Last sync</dt><dd>{{ a.last_sync_at|sm_ago }}</dd>
+        <dt>Last test</dt><dd>{{ a.last_test_at|sm_ago }}</dd>
+        <dt>Token</dt><dd>
+            {% if not cred %}<span style="color:var(--sm-red)">none stored</span>
+            {% elif cred.expires_at %}{{ 'expired' if cred.is_expired else 'expires' }} {{ cred.expires_at|sm_dt('%d %b %Y') }}
+            {% elif cred.expiry_known %}no expiry reported by {{ 'Meta' if cred.provider == 'meta' else 'LinkedIn' }}
+            {% else %}expiry unknown{% endif %}</dd>
+        {% if cred and cred.data_access_expires_at %}<dt>Data access</dt><dd>until {{ cred.data_access_expires_at|sm_dt('%d %b %Y') }}</dd>{% endif %}
+        {% if a.parent %}<dt>Linked Page</dt><dd>{{ a.parent.name }}</dd>{% endif %}
+        <dt>Permissions</dt><dd>{% for p in a.permission_list %}<span class="sm-chip">{{ p }}</span>{% else %}<span class="sm-muted">unknown</span>{% endfor %}</dd>
+        {% if a.id in access %}<dt>Access</dt><dd>restricted to {{ access[a.id]|length }} user(s)</dd>{% endif %}
+    </dl>
+    {% if a.last_error %}<div class="sm-alert sm-alert-danger sm-small mb-0">{{ a.last_error }}</div>{% endif %}
+    <div class="sm-acc-actions">
+        {% if a.status != 'disconnected' %}
+        <form method="post" action="{{ url_for('social_media.account_test', account_id=a.id) }}">{{ m.csrf() }}<button class="sm-btn sm-btn-sm"><i class="fas fa-plug-circle-check"></i> Test</button></form>
+        <form method="post" action="{{ url_for('social_media.account_refresh', account_id=a.id) }}">{{ m.csrf() }}<button class="sm-btn sm-btn-sm" title="Import latest posts and refresh metrics"><i class="fas fa-rotate"></i> Refresh</button></form>
+        {% endif %}
+        {% if sm_perms.can_manage_accounts %}
+        {% if a.status in ('reauth_required', 'error', 'disconnected') %}
+        <form method="post" action="{{ url_for('social_media.oauth_connect', provider='linkedin' if a.platform == 'linkedin' else 'meta') }}">{{ m.csrf() }}<button class="sm-btn sm-btn-sm sm-btn-primary"><i class="fas fa-link"></i> {{ 'Reconnect' if a.status != 'disconnected' else 'Connect again' }}</button></form>
+        {% endif %}
+        {% if a.status != 'disconnected' %}
+        <form method="post" action="{{ url_for('social_media.account_disconnect', account_id=a.id) }}" data-sm-confirm="Disconnect {{ a.name }}? Scheduled posts for this account will be cancelled. Posts already on {{ sm_platform_labels[a.platform] }} are not changed.">{{ m.csrf() }}<button class="sm-btn sm-btn-sm sm-btn-danger">Disconnect</button></form>
+        {% endif %}
+        <details class="w-100"><summary class="sm-small" style="cursor:pointer">Who can use this account</summary>
+            <form method="post" action="{{ url_for('social_media.account_access', account_id=a.id) }}" class="mt-2">{{ m.csrf() }}
+                <div class="sm-help mb-1">Leave all unticked to allow every user with Social Media permissions. Admins always have access.</div>
+                <div style="max-height:150px;overflow:auto">{% for u in users if u.role != 'admin' %}
+                    <label class="d-block sm-small"><input type="checkbox" name="user_ids" value="{{ u.id }}" {{ 'checked' if u.id in access.get(a.id, []) }}> {{ u.username }} <span class="sm-muted">({{ u.role }})</span></label>{% endfor %}</div>
+                <button class="sm-btn sm-btn-sm mt-1">Save access</button></form></details>
+        {% endif %}
+    </div>
+</div>
+{%- endmacro %}
+
+{% block sm_content %}
+{% call m.head('Connected accounts', 'Facebook Pages, Instagram professional accounts and LinkedIn profiles/pages this CRM can publish to.', 'fas fa-link') %}{% endcall %}
+
+{% if not enc_ok %}<div class="sm-alert sm-alert-danger"><strong>Encryption key missing.</strong> Accounts cannot be connected until <code>SOCIAL_MEDIA_ENCRYPTION_KEY</code> is configured on the server. {% if sm_perms.can_manage_settings %}<a href="{{ url_for('social_media.settings', tab='security') }}">How to set it up</a>.{% endif %}</div>{% endif %}
+
+{% for platform, title, desc in [
+    ('facebook', 'Facebook Pages', 'Connect with Facebook Login, then choose which Pages to manage. You must have a Page role that allows creating content.'),
+    ('instagram', 'Instagram', 'Instagram Business or Creator accounts linked to one of your Facebook Pages. Personal Instagram accounts cannot be used.'),
+    ('linkedin', 'LinkedIn', 'Your LinkedIn profile and company pages you administer (company pages need Community Management API approval).')] %}
+<div class="sm-card">
+    <div class="sm-card-head">
+        <div class="d-flex align-items-center gap-2">{{ m.plat(platform, 'sm-plat-lg') }}<div><h2>{{ title }}</h2><div class="sm-small sm-muted">{{ desc }}</div></div></div>
+        {% if sm_perms.can_manage_accounts %}
+        {% set ready = li_ready if platform == 'linkedin' else meta_ready %}
+        {% if ready and enc_ok %}
+        <form method="post" action="{{ url_for('social_media.oauth_connect', provider='linkedin' if platform == 'linkedin' else 'meta') }}">{{ m.csrf() }}
+            <button class="sm-btn sm-btn-primary"><i class="fas fa-plus"></i> {{ 'Connect LinkedIn' if platform == 'linkedin' else ('Connect Facebook & Instagram' if platform == 'facebook' else 'Add via Facebook Login') }}</button></form>
+            {% if platform != 'linkedin' and meta_user %}<a class="sm-btn" href="{{ url_for('social_media.oauth_select', provider='meta', cred=meta_user.id) }}">Choose Pages</a>{% endif %}
+        {% else %}
+        <span class="sm-small sm-muted">{% if not ready %}Not configured — {% if sm_perms.can_manage_settings %}<a href="{{ url_for('social_media.settings', tab='linkedin' if platform == 'linkedin' else 'meta') }}">add the app credentials</a>{% else %}ask an administrator{% endif %}{% endif %}</span>
+        {% endif %}
+        {% endif %}
+    </div>
+    <div class="sm-card-body">
+        {% set rows = by_platform[platform] %}
+        {% if rows %}<div class="sm-acc-grid">{% for a in rows %}{{ account_card(a) }}{% endfor %}</div>
+        {% else %}<div class="sm-empty"><i class="fas fa-link-slash"></i>No {{ title }} connected.
+            {% if platform == 'instagram' %}<div class="sm-small mt-1">Connect Facebook first; Instagram accounts linked to your Pages are offered on the next screen.</div>{% endif %}</div>{% endif %}
+    </div>
+</div>
+{% endfor %}
+<p class="sm-small sm-muted">This CRM never asks for your Facebook, Instagram or LinkedIn password. Connections use each platform's official authorization page, and tokens are stored encrypted on the server only.</p>
+{% endblock %}

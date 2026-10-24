@@ -425,6 +425,10 @@ def create_app(config_class=Config):
     from app import whatsapp
     whatsapp.init_app(app)
 
+    # Social Media module (self-contained: app/social_media/, its own social_* tables).
+    from app import social_media
+    social_media.init_app(app)
+
     # Admin "Login as user" for permission testing (app/impersonation/).
     from app import impersonation
     impersonation.init_app(app)

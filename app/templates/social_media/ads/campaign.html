@@ -1,0 +1,86 @@
+{% extends "social_media/_base.html" %}
+{% import "social_media/_macros.html" as m with context %}
+{% block title %}{{ c.name }} · Facebook Ads{% endblock %}
+
+{% set cur = c.ad_account.currency %}
+{% set budget_minor = c.daily_budget or c.lifetime_budget %}
+{% set budget_kind = 'lifetime' if c.lifetime_budget else 'daily' %}
+{% block sm_content %}
+{% call m.head(c.name, 'Campaign · ' ~ c.ad_account.name ~ ' · ' ~ cur, 'fas fa-rectangle-ad') %}
+    <a class="sm-btn" href="{{ url_for('social_media.ads_overview') }}">‹ All campaigns</a>
+    <form method="post" action="{{ url_for('social_media.ads_campaign_sync', campaign_id=c.id) }}">{{ m.csrf() }}<button class="sm-btn"><i class="fas fa-rotate"></i> Refresh</button></form>
+    <a class="sm-btn" href="{{ ads_manager }}" target="_blank" rel="noopener">Ads Manager <i class="fas fa-arrow-up-right-from-square"></i></a>
+{% endcall %}
+
+<div class="row g-3">
+    <div class="col-xl-7">
+        <div class="sm-card"><div class="sm-card-head"><h2>Campaign</h2>{{ m.badge(c.effective_status or c.status) }}</div>
+            <div class="sm-card-body"><dl class="sm-kv">
+                <dt>Meta ID</dt><dd class="sm-mono">{{ c.remote_id }}</dd>
+                <dt>Objective</dt><dd>{{ (c.objective or '—')|replace('OUTCOME_', '')|lower|capitalize }}</dd>
+                <dt>Configured status</dt><dd>{{ c.status }}</dd>
+                <dt>Budget</dt><dd>{% if budget_minor %}<span class="sm-money">{{ money(budget_minor, cur) }}</span> {{ budget_kind }}{% else %}Set on ad sets{% endif %}</dd>
+                <dt>Schedule</dt><dd>{{ c.start_time or '—' }} → {{ c.stop_time or 'no end' }}</dd>
+                <dt>Created via CRM</dt><dd>{{ 'yes' if c.created_via_crm else 'no' }}</dd>
+                <dt>Last synced</dt><dd>{{ c.synced_at|sm_ago }}</dd>
+            </dl></div></div>
+
+        <div class="sm-card"><div class="sm-card-head"><h2>Ad sets &amp; ads</h2></div>
+            <div class="sm-card-body">
+                {% for s in c.adsets %}
+                <div class="sm-dest-card"><div class="d-flex flex-wrap gap-2 align-items-center"><strong style="flex:1">{{ s.name }}</strong>{{ m.badge(s.effective_status or s.status) }}</div>
+                    <div class="sm-small sm-muted">Optimisation: {{ s.optimization_goal or '—' }} · billing: {{ s.billing_event or '—' }}{% if s.daily_budget %} · {{ money(s.daily_budget, cur) }}/day{% endif %}</div>
+                    {% for a in s.ads %}<div class="sm-list-row"><i class="fas fa-image sm-muted"></i><div class="sm-grow sm-small">{{ a.name }} <span class="sm-mono sm-muted">{{ a.remote_id }}</span></div>{{ m.badge(a.effective_status or a.status) }}</div>{% endfor %}
+                </div>
+                {% else %}<div class="sm-empty"><i class="fas fa-layer-group"></i>No ad sets loaded. Click Refresh.</div>{% endfor %}
+            </div></div>
+
+        <div class="sm-card"><div class="sm-card-head"><h2>Insights</h2></div>
+            {% if c.insights %}<div class="sm-table-wrap"><table class="sm-table sm-table-stack"><thead><tr><th>Range</th><th>Spent</th><th>Impr.</th><th>Reach</th><th>Link clicks</th><th>CTR</th><th>CPC</th><th>CPM</th></tr></thead><tbody>
+                {% for i in c.insights|sort(attribute='date_start', reverse=true) %}<tr><td class="sm-td-main sm-small">{{ i.date_start }} – {{ i.date_stop }}</td><td data-label="Spent">{{ i.spend|sm_money(cur) }}</td><td data-label="Impressions">{{ i.impressions|sm_num }}</td><td data-label="Reach">{{ i.reach|sm_num }}</td><td data-label="Link clicks">{{ i.link_clicks|sm_num }}</td><td data-label="CTR">{{ i.ctr|sm_pct if i.ctr else 'Not available' }}</td><td data-label="CPC">{{ i.cpc|sm_money(cur) }}</td><td data-label="CPM">{{ i.cpm|sm_money(cur) }}</td></tr>{% endfor %}
+            </tbody></table></div>{% else %}<div class="sm-empty"><i class="fas fa-chart-simple"></i>No insights synced yet (use Refresh on the Facebook Ads page).</div>{% endif %}
+        </div>
+    </div>
+
+    <div class="col-xl-5">
+        {% if sm_perms.can_manage_ads %}
+        <div class="sm-card"><div class="sm-card-head"><h2>Delivery</h2></div><div class="sm-card-body">
+            {% if c.status == 'ACTIVE' %}
+            <form method="post" action="{{ url_for('social_media.ads_campaign_status', campaign_id=c.id) }}" data-sm-confirm="Pause this campaign? Delivery stops shortly after.">{{ m.csrf() }}
+                <input type="hidden" name="action" value="pause"><button class="sm-btn sm-btn-warn"><i class="fas fa-pause"></i> Pause campaign</button></form>
+            {% elif c.status == 'PAUSED' %}
+                {% if sm_perms.can_approve_ad_spend %}
+                <form method="post" action="{{ url_for('social_media.ads_campaign_status', campaign_id=c.id) }}">{{ m.csrf() }}
+                    <input type="hidden" name="action" value="activate">
+                    <input type="hidden" name="confirm_budget" value="{{ budget_minor }}"><input type="hidden" name="confirm_currency" value="{{ cur }}">
+                    <div class="sm-alert sm-alert-warn">Activating starts delivery and spending. Budget: <span class="sm-money">{% if budget_minor %}{{ money(budget_minor, cur) }} {{ budget_kind }}{% else %}set on ad sets — check in Ads Manager{% endif %}</span>.
+                        Meta charges your ad account's payment method; this is separate from the CRM.</div>
+                    <label class="sm-small d-block mb-2"><input type="checkbox" name="ack_billing" value="1" required> I approve this spend and understand Meta bills it separately.</label>
+                    <button class="sm-btn sm-btn-primary"><i class="fas fa-play"></i> Activate campaign</button></form>
+                {% else %}<div class="sm-alert sm-alert-info mb-0">This campaign is paused. Activating requires the “Approve ad spend” permission.</div>{% endif %}
+            {% else %}<div class="sm-small sm-muted">Status {{ c.status }} — manage it in Ads Manager.</div>{% endif %}
+        </div></div>
+
+        {% if budget_minor %}
+        <div class="sm-card"><div class="sm-card-head"><h2>Budget</h2></div><div class="sm-card-body">
+            <form method="post" action="{{ url_for('social_media.ads_campaign_budget', campaign_id=c.id) }}">{{ m.csrf() }}
+                <label class="sm-label" for="smBudget">New {{ budget_kind }} budget ({{ cur }})</label>
+                <input class="sm-input" id="smBudget" name="amount" type="number" step="0.01" min="0.01" value="{{ budget_major }}" required>
+                <div class="sm-help">Current: {{ money(budget_minor, cur) }}. Reductions need “Manage ads”; increases also need “Approve ad spend”.</div>
+                {% if sm_perms.can_approve_ad_spend %}
+                <label class="sm-small d-block mt-2"><input type="checkbox" name="ack_increase" value="1"> If this is an increase, I approve the higher spend.</label>
+                <label class="sm-small d-block"><input type="checkbox" name="ack_large_increase" value="1"> I confirm an increase of more than {{ pct }}%.</label>
+                {% endif %}
+                <button class="sm-btn mt-2">Update budget</button></form>
+        </div></div>
+        {% endif %}
+
+        <div class="sm-card"><div class="sm-card-head"><h2>Rename</h2></div><div class="sm-card-body">
+            <form method="post" action="{{ url_for('social_media.ads_campaign_rename', campaign_id=c.id) }}" class="sm-filters">{{ m.csrf() }}
+                <input class="sm-input" name="name" value="{{ c.name }}" maxlength="200" required aria-label="Campaign name" style="flex:1">
+                <button class="sm-btn">Save</button></form></div></div>
+        {% endif %}
+        <div class="sm-alert sm-alert-info">Targeting, creatives and other settings can be reviewed and edited in <a href="{{ ads_manager }}" target="_blank" rel="noopener">Ads Manager</a>.</div>
+    </div>
+</div>
+{% endblock %}

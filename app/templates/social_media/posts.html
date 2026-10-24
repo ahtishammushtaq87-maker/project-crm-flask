@@ -1,0 +1,88 @@
+{% extends "social_media/_base.html" %}
+{% import "social_media/_macros.html" as m with context %}
+{% set tab_titles = {'all': 'All posts', 'published': 'Published posts', 'scheduled': 'Scheduled posts', 'drafts': 'Drafts', 'failed': 'Failed posts', 'cancelled': 'Cancelled posts'} %}
+{% block title %}{{ tab_titles[tab] }} · Social Media{% endblock %}
+
+{% block sm_content %}
+{% call m.head(tab_titles[tab], 'Posts created in the CRM and posts synchronised from your accounts.', 'fas fa-layer-group') %}
+    {% if sm_perms.can_view_analytics %}
+    <form method="post" action="{{ url_for('social_media.analytics_sync') }}">{{ m.csrf() }}<input type="hidden" name="kind" value="posts">
+        <button class="sm-btn" title="Import the latest posts the platforms let this app read"><i class="fas fa-rotate"></i> Sync platform posts</button></form>
+    {% endif %}
+    {% if sm_perms.can_create_posts %}<a class="sm-btn sm-btn-primary" href="{{ url_for('social_media.post_new') }}"><i class="fas fa-plus"></i> Create post</a>{% endif %}
+{% endcall %}
+
+<nav class="sm-tabs" aria-label="Post status">
+    {% for key, label in tabs %}
+    {% set n = counts.get('draft') if key == 'drafts' else (counts.get('scheduled', 0) + counts.get('publishing', 0) if key == 'scheduled' else (counts.get('failed', 0) + counts.get('partially_published', 0) if key == 'failed' else (counts.get('cancelled') if key == 'cancelled' else None))) %}
+    <a href="{{ url_for('social_media.posts', tab=key) }}" class="{{ 'sm-active' if tab == key }}" {% if tab == key %}aria-current="page"{% endif %}>{{ label }}{% if n %}<span class="sm-count">{{ n }}</span>{% endif %}</a>
+    {% endfor %}
+</nav>
+
+<form class="sm-filters mb-3" method="get">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <input class="sm-input" type="search" name="q" value="{{ args.get('q', '') }}" placeholder="Search caption or label" aria-label="Search" style="flex:1 1 200px">
+    <select class="sm-select" name="platform" aria-label="Platform"><option value="">All platforms</option>
+        {% for p, l in sm_platform_labels.items() %}<option value="{{ p }}" {{ 'selected' if args.get('platform') == p }}>{{ l }}</option>{% endfor %}</select>
+    <select class="sm-select" name="account" aria-label="Account"><option value="">All accounts</option>
+        {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if args.get('account') == a.id|string }}>{{ a.label }}</option>{% endfor %}</select>
+    {% if tab in ('all', 'published') %}
+    <select class="sm-select" name="origin" aria-label="Source"><option value="">CRM &amp; synced</option>
+        <option value="crm" {{ 'selected' if args.get('origin') == 'crm' }}>Created in CRM</option>
+        <option value="synced" {{ 'selected' if args.get('origin') == 'synced' }}>Synced from platform</option></select>
+    {% endif %}
+    {% if tab == 'all' %}
+    <select class="sm-select" name="status" aria-label="Status"><option value="">Any status</option>
+        {% for s in ['draft', 'scheduled', 'publishing', 'published', 'partially_published', 'failed', 'cancelled'] %}<option value="{{ s }}" {{ 'selected' if args.get('status') == s }}>{{ s|replace('_', ' ')|capitalize }}</option>{% endfor %}</select>
+    {% endif %}
+    <select class="sm-select" name="created_by" aria-label="Created by"><option value="">Anyone</option>
+        {% for u in creators %}<option value="{{ u.id }}" {{ 'selected' if args.get('created_by') == u.id|string }}>{{ u.username }}</option>{% endfor %}</select>
+    <input class="sm-input" type="date" name="start" value="{{ args.get('start', '') }}" aria-label="From">
+    <input class="sm-input" type="date" name="end" value="{{ args.get('end', '') }}" aria-label="To">
+    <button class="sm-btn sm-btn-primary" type="submit"><i class="fas fa-filter"></i> Filter</button>
+    {% if args|length > 1 %}<a class="sm-btn" href="{{ url_for('social_media.posts', tab=tab) }}">Reset</a>{% endif %}
+</form>
+
+<div class="sm-card">
+    {% if page.items %}
+    <div class="sm-table-wrap"><table class="sm-table sm-table-stack">
+        <thead><tr><th>Post</th><th>Destinations</th><th>Published</th><th>Scheduled</th><th>Status</th><th>Reach</th><th>Engagement</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+        <tbody>
+        {% for p in page.items %}
+        {% set reach = p.destinations|selectattr('reach', 'ne', none)|map(attribute='reach')|list %}
+        {% set eng = p.destinations|selectattr('engagements', 'ne', none)|map(attribute='engagements')|list %}
+        <tr>
+            <td class="sm-td-main"><div class="d-flex gap-2 align-items-center" style="min-width:220px">{{ m.thumb(p) }}
+                <div style="min-width:0"><a href="{{ url_for('social_media.post_detail', post_id=p.id) }}" class="sm-clip" style="font-weight:650">{{ p.display_title }}</a>
+                    <div class="sm-small sm-muted sm-clip">{% if p.origin == 'synced' %}<span class="sm-badge sm-st-synced">synced from platform</span>{% elif p.creator %}by {{ p.creator.username }}{% endif %}</div></div></div></td>
+            <td data-label="Destinations"><span class="d-inline-flex flex-wrap gap-1">{% for d in p.destinations %}<span title="{{ d.account.label if d.account else d.platform }}: {{ d.status|replace('_', ' ') }}">{{ m.plat(d.platform) }}</span>{% endfor %}</span>
+                <div class="sm-small sm-muted sm-clip">{{ p.destinations|map(attribute='account')|select|map(attribute='name')|join(', ') }}</div></td>
+            <td data-label="Published" class="sm-small">{{ p.published_at|sm_dt if p.published_at else '—' }}</td>
+            <td data-label="Scheduled" class="sm-small">{{ p.scheduled_at|sm_dt if p.scheduled_at and p.origin == 'crm' else '—' }}</td>
+            <td data-label="Status">{{ m.badge(p.status) }}</td>
+            <td data-label="Reach">{{ (reach|sum)|sm_num if reach else ('Not available' if p.status in ('published', 'partially_published') else '—') }}</td>
+            <td data-label="Engagement">{{ (eng|sum)|sm_num if eng else ('Not available' if p.status in ('published', 'partially_published') else '—') }}</td>
+            <td><div class="d-flex gap-1 justify-content-end flex-wrap">
+                <a class="sm-btn sm-btn-sm" href="{{ url_for('social_media.post_detail', post_id=p.id) }}">View</a>
+                {% if p.origin == 'crm' and p.status in ('draft', 'scheduled', 'failed', 'cancelled') and (sm_perms.can_edit_posts or p.created_by == current_user.id) %}
+                <a class="sm-btn sm-btn-sm" href="{{ url_for('social_media.post_edit', post_id=p.id) }}">Edit</a>{% endif %}
+                {% if sm_perms.can_create_posts %}
+                <form method="post" action="{{ url_for('social_media.post_duplicate', post_id=p.id) }}">{{ m.csrf() }}<button class="sm-btn sm-btn-sm" title="Duplicate"><i class="fas fa-copy"></i><span class="visually-hidden">Duplicate</span></button></form>{% endif %}
+                {% for d in p.destinations if d.remote_url %}{% if loop.first %}<a class="sm-btn sm-btn-sm" href="{{ d.remote_url }}" target="_blank" rel="noopener" title="Open on platform"><i class="fas fa-arrow-up-right-from-square"></i></a>{% endif %}{% endfor %}
+            </div></td>
+        </tr>
+        {% endfor %}
+        </tbody></table></div>
+    {{ m.pager(page, 'social_media.posts', tab=tab, q=args.get('q', ''), platform=args.get('platform', ''), account=args.get('account', ''), origin=args.get('origin', ''), status=args.get('status', ''), created_by=args.get('created_by', ''), start=args.get('start', ''), end=args.get('end', '')) }}
+    {% else %}
+    <div class="sm-empty"><i class="fas fa-inbox"></i>
+        {% if tab == 'drafts' %}No drafts. Save a post as a draft to finish it later.
+        {% elif tab == 'scheduled' %}Nothing is scheduled. Use “Schedule…” when creating a post.
+        {% elif tab == 'failed' %}No failed posts — everything went through.
+        {% else %}No posts match these filters.{% endif %}
+        {% if sm_perms.can_create_posts and tab != 'failed' %}<div class="mt-2"><a class="sm-btn sm-btn-primary" href="{{ url_for('social_media.post_new') }}">Create a post</a></div>{% endif %}
+    </div>
+    {% endif %}
+</div>
+<p class="sm-small sm-muted">Synced posts are the latest posts each platform lets this app read (Facebook/Instagram: up to the 100 most recent per account per sync; LinkedIn: company pages only, with approved access). They are not a complete history.</p>
+{% endblock %}
