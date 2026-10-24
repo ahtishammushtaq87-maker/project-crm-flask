@@ -133,11 +133,17 @@
     </div>
     {% endif %}
 
-    {# ── Product Development ───────────────────────────────── #}
+    {# ── Development ───────────────────────────────────────── #}
     {% if adm or u.can_view_product_dev %}
-    <a class="nav-link" href="{{ url_for('product_development.index') }}">
-        <i class="fas fa-flask nav-ico"></i> <span>Product Development</span>
+    <a class="nav-link nav-group-toggle collapsed" data-bs-toggle="collapse" href="#{{ nav_ns }}NavDev" role="button"
+        aria-expanded="false" aria-controls="{{ nav_ns }}NavDev">
+        <i class="fas fa-flask nav-ico"></i> <span>Development</span>
+        <i class="fas fa-chevron-down nav-caret"></i>
     </a>
+    <div class="collapse" id="{{ nav_ns }}NavDev">
+        <a class="nav-link" href="{{ url_for('pd_funnel.index') }}"><i class="fas fa-filter nav-sub-ico"></i><span>Product Funnel</span></a>
+        <a class="nav-link" href="{{ url_for('product_development.index') }}"><i class="fas fa-flask-vial nav-sub-ico"></i><span>Product Development</span></a>
+    </div>
     {% endif %}
 
     {# ── Finance ───────────────────────────────────────────── #}

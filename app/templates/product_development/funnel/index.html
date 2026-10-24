@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Product Funnel{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <h2><i class="fas fa-filter me-2"></i>Product Funnel</h2>
+    {% if current_user.has_permission('product_dev', 'add') %}
+    <a href="{{ url_for('pd_funnel.create') }}" class="btn btn-primary">
+        <i class="fas fa-plus me-1"></i> New Candidate
+    </a>
+    {% endif %}
+</div>
+<p class="text-muted mb-4">
+    OEM funnel &rarr; Technical, Financial &amp; Market review &rarr; G1 gate &rarr; development project.
+    One candidate per OEM reference and saleable configuration; no SKU at intake.
+</p>
+
+<div class="row mb-4 g-3">
+    {% set cards = [
+        ('Total Candidates', stats.total, 'fa-list', ''),
+        ('Intake', stats.intake, 'fa-inbox', 'background: linear-gradient(135deg, #868f96 0%, #596164 100%);'),
+        ('In Review', stats.review, 'fa-magnifying-glass', 'background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);'),
+        ('Ready for G1', stats.ready, 'fa-flag-checkered', 'background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);'),
+        ('G1 Approved', stats.approved, 'fa-check-circle', 'background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);'),
+        ('Rejected / Hold', stats.rejected, 'fa-ban', 'background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);'),
+    ] %}
+    {% for label, value, icon, style in cards %}
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card-stats" style="{{ style }}">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <h5 class="mb-0">{{ value }}</h5>
+                    <small>{{ label }}</small>
+                </div>
+                <i class="fas {{ icon }} stats-icon"></i>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <form class="row g-2 align-items-center" method="GET">
+            <div class="col-md-5">
+                <input type="text" name="q" value="{{ q }}" class="form-control form-control-sm"
+                    placeholder="Search candidate ID, OEM part no. or product">
+            </div>
+            <div class="col-md-3">
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All statuses</option>
+                    {% for s in statuses %}
+                    <option value="{{ s }}" {{ 'selected' if s == status else '' }}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-sm btn-primary"><i class="fas fa-search"></i> Filter</button>
+                <a href="{{ url_for('pd_funnel.index') }}" class="btn btn-sm btn-outline-secondary">Reset</a>
+            </div>
+        </form>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Candidate ID</th>
+                        <th>OEM Part No.</th>
+                        <th>Product</th>
+                        <th>Application</th>
+                        <th class="text-end">Annual Demand</th>
+                        <th class="text-end">Target Price</th>
+                        <th class="text-end">Margin</th>
+                        <th>Technical</th>
+                        <th>Financial</th>
+                        <th>Market</th>
+                        <th>Owner</th>
+                        <th>G1 / Status</th>
+                        <th>Project</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in candidates %}
+                    <tr>
+                        <td><a href="{{ url_for('pd_funnel.view', candidate_id=c.id) }}"><strong>{{ c.candidate_code }}</strong></a></td>
+                        <td>{{ c.oem_part_number }}</td>
+                        <td>{{ c.product_name }}</td>
+                        <td>{{ c.application or '-' }}</td>
+                        <td class="text-end">{{ "{:,.0f}".format(c.annual_demand or 0) }}</td>
+                        <td class="text-end">{{ "{:,.0f}".format(c.target_price or 0) }}</td>
+                        <td class="text-end {{ 'text-danger' if c.indicative_margin < 0 else '' }}">{{ c.margin_percent }}%</td>
+                        {% for d in ['Technical', 'Financial', 'Market'] %}
+                        {% set v = c.discipline_verdict(d) %}
+                        <td><span class="badge {{ 'bg-success' if v == 'Go' else 'bg-info text-dark' if v == 'Conditional Go' else 'bg-danger' if v == 'No-Go' else 'bg-light text-dark border' }}">{{ v }}</span></td>
+                        {% endfor %}
+                        <td>{{ c.owner.name if c.owner else '-' }}</td>
+                        <td>
+                            <span class="badge {{ 'bg-success' if c.status == 'G1 Approved' else 'bg-danger' if c.status == 'Rejected' else 'bg-warning text-dark' if c.status == 'On Hold' else 'bg-primary' if c.status == 'In Review' else 'bg-secondary' }}">{{ c.status }}</span>
+                        </td>
+                        <td>
+                            {% if c.project %}
+                            <a href="{{ url_for('product_development.view', project_id=c.project.id) }}">{{ c.project.pdv_code }}</a>
+                            {% else %}-{% endif %}
+                        </td>
+                        <td>
+                            <a href="{{ url_for('pd_funnel.view', candidate_id=c.id) }}" class="btn btn-sm btn-info"><i class="fas fa-eye"></i></a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="14" class="text-center text-muted">No candidates yet. Start with an OEM part number.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -4754,6 +4754,222 @@ class ProductAttachment(db.Model):
     def __repr__(self):
         return f'<ProductAttachment {self.project_id} - {self.attachment_type}>'
 
+
+# ==================== PRODUCT DEVELOPMENT FUNNEL (F0 / G1) ====================
+
+PD_FEASIBILITY_DISCIPLINES = ('Technical', 'Financial', 'Market')
+
+
+class PDCandidate(db.Model):
+    """OEM funnel candidate - one per OEM reference and saleable configuration.
+    No SKU and no project exist at intake; an effective G1 approval creates the PDV project."""
+    __tablename__ = 'pd_candidates'
+
+    id = db.Column(db.Integer, primary_key=True)
+    candidate_code = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    oem_part_number = db.Column(db.String(100), nullable=False, index=True)
+    product_name = db.Column(db.String(200), nullable=False)
+    application = db.Column(db.String(255), nullable=True)
+    product_category_id = db.Column(db.Integer, db.ForeignKey('product_categories.id'), nullable=True, index=True)
+    annual_demand = db.Column(db.Float, default=0)
+    target_price = db.Column(db.Float, default=0)
+    est_unit_cost = db.Column(db.Float, default=0)
+    owner_staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=True, index=True)
+    g1_lead_staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=True, index=True)
+    g1_target_date = db.Column(db.Date, nullable=True)
+    next_evidence = db.Column(db.String(255), nullable=True)
+    notes = db.Column(db.Text)
+    # Intake, In Review, G1 Approved, Rejected, On Hold
+    status = db.Column(db.String(30), default='Intake', index=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=True, index=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    owner = db.relationship('Staff', foreign_keys=[owner_staff_id], lazy=True)
+    g1_lead = db.relationship('Staff', foreign_keys=[g1_lead_staff_id], lazy=True)
+    product_category = db.relationship('ProductCategory', lazy=True)
+    project = db.relationship('PDProject', backref=db.backref('source_candidate', uselist=False), lazy=True)
+    creator = db.relationship('User', foreign_keys=[created_by], lazy=True)
+    reviews = db.relationship('PDFeasibilityReview', backref='candidate', lazy=True,
+                              cascade='all, delete-orphan', order_by='PDFeasibilityReview.id.desc()')
+    tasks = db.relationship('PDStageTask', backref='candidate', lazy=True,
+                            cascade='all, delete-orphan', order_by='PDStageTask.id')
+    gate_reviews = db.relationship('PDGateReview', backref='candidate', lazy=True,
+                                   cascade='all, delete-orphan', order_by='PDGateReview.id.desc()')
+
+    @property
+    def indicative_margin(self):
+        return (self.target_price or 0) - (self.est_unit_cost or 0)
+
+    @property
+    def margin_percent(self):
+        if self.target_price:
+            return round(self.indicative_margin / self.target_price * 100, 1)
+        return 0
+
+    def current_review(self, discipline):
+        """Latest current review for a discipline (one current, signed review per discipline)."""
+        for r in self.reviews:
+            if r.discipline == discipline and r.is_current:
+                return r
+        return None
+
+    def discipline_verdict(self, discipline):
+        r = self.current_review(discipline)
+        if not r:
+            return 'Pending'
+        if not r.is_complete:
+            return 'Incomplete'
+        if r.is_expired:
+            return 'Expired'
+        return r.verdict
+
+    @property
+    def g1_tasks(self):
+        return [t for t in self.tasks if t.stage == 'G1']
+
+    @property
+    def effective_g1(self):
+        for g in self.gate_reviews:
+            if g.gate == 'G1' and g.decision == 'Approved':
+                return g
+        return None
+
+    def g1_missing_items(self):
+        """Everything still blocking a G1 approval (empty list = ready)."""
+        missing = []
+        for d in PD_FEASIBILITY_DISCIPLINES:
+            v = self.discipline_verdict(d)
+            if v in ('Pending', 'Incomplete', 'Expired'):
+                missing.append(f'{d} review {v.lower()}')
+            elif v == 'No-Go':
+                missing.append(f'{d} review verdict is No-Go')
+        if not self.g1_lead_staff_id:
+            missing.append('G1 stage lead not assigned')
+        tasks = self.g1_tasks
+        if not tasks:
+            missing.append('No G1 review task assigned')
+        for t in tasks:
+            if t.assignment_problem:
+                missing.append(f'Task {t.task_code}: {t.assignment_problem}')
+        if self.project_id:
+            missing.append('Project already created')
+        return missing
+
+    def __repr__(self):
+        return f'<PDCandidate {self.candidate_code} - {self.oem_part_number}>'
+
+
+class PDFeasibilityReview(db.Model):
+    """Technical / Financial / Market review for a funnel candidate."""
+    __tablename__ = 'pd_feasibility_reviews'
+
+    id = db.Column(db.Integer, primary_key=True)
+    candidate_id = db.Column(db.Integer, db.ForeignKey('pd_candidates.id'), nullable=False, index=True)
+    discipline = db.Column(db.String(20), nullable=False, index=True)
+    reviewer_staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=True, index=True)
+    evidence_reference = db.Column(db.String(255), nullable=True)
+    finding = db.Column(db.Text)
+    verdict = db.Column(db.String(20), default='Go')  # Go, Conditional Go, No-Go
+    is_current = db.Column(db.Boolean, default=True)
+    review_date = db.Column(db.Date, nullable=True)
+    valid_until = db.Column(db.Date, nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    reviewer = db.relationship('Staff', lazy=True)
+
+    @property
+    def is_complete(self):
+        return bool(self.reviewer_staff_id and (self.evidence_reference or '').strip()
+                    and (self.finding or '').strip() and self.verdict and self.review_date)
+
+    @property
+    def is_expired(self):
+        return bool(self.valid_until and self.valid_until < datetime.utcnow().date())
+
+    def __repr__(self):
+        return f'<PDFeasibilityReview {self.candidate_id} - {self.discipline}>'
+
+
+class PDStageTask(db.Model):
+    """Assigned stage work: one primary assignee, any number of contributors."""
+    __tablename__ = 'pd_stage_tasks'
+
+    id = db.Column(db.Integer, primary_key=True)
+    candidate_id = db.Column(db.Integer, db.ForeignKey('pd_candidates.id'), nullable=True, index=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=True, index=True)
+    stage = db.Column(db.String(10), default='G1', index=True)  # G1, D1-D6, G2
+    deliverable = db.Column(db.String(255), nullable=False)
+    primary_staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=True, index=True)
+    due_date = db.Column(db.Date, nullable=True)
+    status = db.Column(db.String(20), default='Open')  # Open, In Progress, Done
+    accepted = db.Column(db.Boolean, default=False)
+    evidence_reference = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    primary_staff = db.relationship('Staff', lazy=True)
+    members = db.relationship('PDTaskMember', backref='task', lazy=True, cascade='all, delete-orphan')
+
+    @property
+    def task_code(self):
+        return f'TSK-{self.id:05d}' if self.id else 'TSK-new'
+
+    @property
+    def assignment_problem(self):
+        if not self.primary_staff_id:
+            return 'no primary assignee'
+        if self.primary_staff and not self.primary_staff.is_active:
+            return 'primary assignee is inactive'
+        if self.status != 'Done':
+            return 'not done'
+        if not self.accepted:
+            return 'not accepted'
+        if not (self.evidence_reference or '').strip():
+            return 'no evidence'
+        return None
+
+    def __repr__(self):
+        return f'<PDStageTask {self.stage} - {self.deliverable}>'
+
+
+class PDTaskMember(db.Model):
+    """Contributor on a stage task (Task Team)."""
+    __tablename__ = 'pd_task_members'
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey('pd_stage_tasks.id'), nullable=False, index=True)
+    staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=False, index=True)
+    role = db.Column(db.String(100), nullable=True)
+
+    staff = db.relationship('Staff', lazy=True)
+
+
+class PDGateReview(db.Model):
+    """Evidence-based gate decision. G1 uses the candidate; D1-D6 and G2 use the project."""
+    __tablename__ = 'pd_gate_reviews'
+
+    id = db.Column(db.Integer, primary_key=True)
+    gate = db.Column(db.String(10), nullable=False, index=True)
+    candidate_id = db.Column(db.Integer, db.ForeignKey('pd_candidates.id'), nullable=True, index=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=True, index=True)
+    decision = db.Column(db.String(20), nullable=False)  # Approved, Rejected, On Hold
+    approver_staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=True, index=True)
+    decision_date = db.Column(db.Date, nullable=True)
+    evidence_reference = db.Column(db.String(255), nullable=True)
+    approved_cap = db.Column(db.Float, default=0)
+    remarks = db.Column(db.Text)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    approver = db.relationship('Staff', lazy=True)
+    creator = db.relationship('User', lazy=True)
+
+    def __repr__(self):
+        return f'<PDGateReview {self.gate} - {self.decision}>'
+
 class ToolReceiving(db.Model):
     __tablename__ = 'tool_receiving'
     id = db.Column(db.Integer, primary_key=True)

@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit ' ~ candidate.candidate_code if candidate else 'New Funnel Candidate' }}{% endblock %}
+
+{% macro val(field) -%}
+{%- if form and form.get(field) -%}{{ form.get(field) }}
+{%- elif candidate and candidate[field] is not none -%}{{ candidate[field] }}
+{%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-9 mx-auto">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="mb-0"><i class="fas fa-filter me-2"></i>{{ 'Edit Candidate ' ~ candidate.candidate_code if candidate else 'New Funnel Candidate' }}</h4>
+                <a href="{{ url_for('pd_funnel.view', candidate_id=candidate.id) if candidate else url_for('pd_funnel.index') }}" class="btn btn-secondary btn-sm">
+                    <i class="fas fa-arrow-left"></i> Back
+                </a>
+            </div>
+            <div class="card-body">
+                {% if not candidate %}
+                <div class="alert alert-info py-2 small">
+                    F0 intake: record the OEM reference, demand and rough economics. No SKU and no project are created
+                    here. A project is created automatically once G1 is approved.
+                </div>
+                {% endif %}
+                {% if duplicate %}
+                <div class="alert alert-warning">
+                    OEM part <strong>{{ duplicate.oem_part_number }}</strong> already exists as
+                    <a href="{{ url_for('pd_funnel.view', candidate_id=duplicate.id) }}">{{ duplicate.candidate_code }}</a>
+                    ({{ duplicate.status }}).
+                </div>
+                {% endif %}
+                <form method="POST">
+                    <h6 class="text-uppercase text-muted small mb-2">Identity</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">OEM Part No. <span class="text-danger">*</span></label>
+                            <input type="text" name="oem_part_number" class="form-control" required value="{{ val('oem_part_number') }}">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Candidate Product <span class="text-danger">*</span></label>
+                            <input type="text" name="product_name" class="form-control" required value="{{ val('product_name') }}">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-8">
+                            <label class="form-label">Application / Fitment</label>
+                            <input type="text" name="application" class="form-control" value="{{ val('application') }}" placeholder="Vehicle / engine / machine fitment">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Product Category</label>
+                            {% set cur_cat = (form.get('product_category_id') if form else '') or (candidate.product_category_id|string if candidate and candidate.product_category_id else '') %}
+                            <select name="product_category_id" class="form-select">
+                                <option value="">-- None --</option>
+                                {% for cat in categories %}
+                                <option value="{{ cat.id }}" {{ 'selected' if cat.id|string == cur_cat else '' }}>{{ cat.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <h6 class="text-uppercase text-muted small mb-2 mt-4">Demand &amp; economics</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Annual Demand (units)</label>
+                            <input type="number" step="1" min="0" name="annual_demand" class="form-control" value="{{ val('annual_demand') }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Target Price (PKR)</label>
+                            <input type="number" step="0.01" min="0" name="target_price" id="targetPrice" class="form-control" value="{{ val('target_price') }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Est. Unit Cost (PKR)</label>
+                            <input type="number" step="0.01" min="0" name="est_unit_cost" id="estCost" class="form-control" value="{{ val('est_unit_cost') }}">
+                            <small class="text-muted">Indicative margin: <strong id="marginOut">-</strong></small>
+                        </div>
+                    </div>
+
+                    <h6 class="text-uppercase text-muted small mb-2 mt-4">People &amp; next step</h6>
+                    {% set cur_owner = (form.get('owner_staff_id') if form else '') or (candidate.owner_staff_id|string if candidate and candidate.owner_staff_id else '') %}
+                    {% set cur_lead = (form.get('g1_lead_staff_id') if form else '') or (candidate.g1_lead_staff_id|string if candidate and candidate.g1_lead_staff_id else '') %}
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Owner (Staff)</label>
+                            <select name="owner_staff_id" class="form-select">
+                                <option value="">-- Select --</option>
+                                {% for s in staff %}
+                                <option value="{{ s.id }}" {{ 'selected' if s.id|string == cur_owner else '' }}>{{ s.name }}{{ ' - ' ~ s.designation if s.designation else '' }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">G1 Stage Lead (Staff)</label>
+                            <select name="g1_lead_staff_id" class="form-select">
+                                <option value="">-- Select --</option>
+                                {% for s in staff %}
+                                <option value="{{ s.id }}" {{ 'selected' if s.id|string == cur_lead else '' }}>{{ s.name }}{{ ' - ' ~ s.designation if s.designation else '' }}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">One accountable lead is required for G1.</small>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">G1 Target Date</label>
+                            <input type="date" name="g1_target_date" class="form-control" value="{{ form.get('g1_target_date', '') if form and form.get('g1_target_date') else (candidate.g1_target_date.strftime('%Y-%m-%d') if candidate and candidate.g1_target_date else '') }}">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Next Evidence</label>
+                        <input type="text" name="next_evidence" class="form-control" value="{{ val('next_evidence') }}" placeholder="e.g. Customer demand confirmation, supplier quote">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea name="notes" rows="3" class="form-control">{{ val('notes') }}</textarea>
+                    </div>
+
+                    {% if duplicate %}
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="confirm_duplicate" value="1" id="confirmDup">
+                        <label class="form-check-label" for="confirmDup">This is a different saleable configuration; create anyway</label>
+                    </div>
+                    {% endif %}
+
+                    <div class="d-flex justify-content-end">
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i> {{ 'Save Changes' if candidate else 'Create Candidate' }}</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (function () {
+        var price = document.getElementById('targetPrice'), cost = document.getElementById('estCost'),
+            out = document.getElementById('marginOut');
+        function calc() {
+            var p = parseFloat(price.value) || 0, c = parseFloat(cost.value) || 0;
+            if (!p) { out.textContent = '-'; return; }
+            var m = p - c;
+            out.textContent = 'PKR ' + m.toLocaleString(undefined, {maximumFractionDigits: 0}) + ' (' + (m / p * 100).toFixed(1) + '%)';
+            out.className = m < 0 ? 'text-danger' : 'text-success';
+        }
+        price.addEventListener('input', calc); cost.addEventListener('input', calc); calc();
+    })();
+</script>
+{% endblock %}

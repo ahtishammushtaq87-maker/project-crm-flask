@@ -26,6 +26,11 @@
     <a href="{{ url_for('product_development.index') }}" class="btn btn-secondary btn-sm">
         <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
     </a>
+    {% if project.source_candidate %}
+    <a href="{{ url_for('pd_funnel.view', candidate_id=project.source_candidate.id) }}" class="btn btn-outline-success btn-sm">
+        <i class="fas fa-filter me-1"></i> From funnel {{ project.source_candidate.candidate_code }} (G1 approved)
+    </a>
+    {% endif %}
 </div>
 
 <div class="row mb-4">

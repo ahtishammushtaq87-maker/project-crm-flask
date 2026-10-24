@@ -44,6 +44,7 @@ def create_app(config_class=Config):
             ProductSample, ProductReverseEngineering, ProductDrawing, ProductToolingTrial,
             ProductPrototypeBatch, ProductDevelopmentExpense, ProductBOMVersion,
             ProductRelease, ProductRevisionHistory, SharedCostAllocation, ProductAttachment,
+            PDCandidate, PDFeasibilityReview, PDStageTask, PDTaskMember, PDGateReview,
             PurchaseReturn, PurchaseReturnItem, Unit, ActivityLog,
             ToolReceiving, ToolReceivingItem, ToolDelivering, ToolDeliveringItem, ToolSettings,
             ProductWarehouseStock, Media,
@@ -121,6 +122,11 @@ def create_app(config_class=Config):
             'product_revision_history': ProductRevisionHistory,
             'shared_cost_allocations': SharedCostAllocation,
             'product_attachments': ProductAttachment,
+            'pd_candidates': PDCandidate,
+            'pd_feasibility_reviews': PDFeasibilityReview,
+            'pd_stage_tasks': PDStageTask,
+            'pd_task_members': PDTaskMember,
+            'pd_gate_reviews': PDGateReview,
             'purchase_returns': PurchaseReturn,
             'purchase_return_items': PurchaseReturnItem,
             'saved_filters': SavedFilter,
@@ -358,6 +364,7 @@ def create_app(config_class=Config):
     from app.routes.targets import bp as targets_bp
     from app.routes.production import bp as production_bp
     from app.routes.product_development import bp as pd_bp
+    from app.routes.pd_funnel import bp as pd_funnel_bp
     from app.routes.categories import bp as categories_bp
     from app.routes.filters import bp as filters_bp
     from app.routes.api import bp as api_bp
@@ -390,6 +397,7 @@ def create_app(config_class=Config):
     app.register_blueprint(targets_bp, url_prefix='/targets')
     app.register_blueprint(production_bp, url_prefix='/production')
     app.register_blueprint(pd_bp, url_prefix='/product-development')
+    app.register_blueprint(pd_funnel_bp, url_prefix='/product-development/funnel')
     app.register_blueprint(categories_bp, url_prefix='/categories')
     app.register_blueprint(filters_bp, url_prefix='/api/filters')
     app.register_blueprint(api_bp, url_prefix='/api')

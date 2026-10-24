@@ -1,0 +1,388 @@
+{% extends "base.html" %}
+
+{% block title %}{{ candidate.candidate_code }} - Funnel{% endblock %}
+
+{% macro staff_options(selected=None) -%}
+<option value="">-- Select --</option>
+{% for s in staff %}
+<option value="{{ s.id }}" {{ 'selected' if selected and s.id == selected else '' }}>{{ s.name }}{{ ' - ' ~ s.designation if s.designation else '' }}</option>
+{% endfor %}
+{%- endmacro %}
+
+{% macro verdict_badge(v) -%}
+<span class="badge {{ 'bg-success' if v == 'Go' else 'bg-info text-dark' if v == 'Conditional Go' else 'bg-danger' if v == 'No-Go' else 'bg-warning text-dark' if v in ('Incomplete', 'Expired') else 'bg-light text-dark border' }}">{{ v }}</span>
+{%- endmacro %}
+
+{% macro member_rows(task=None) -%}
+<div class="member-rows">
+    {% if task %}
+    {% for m in task.members %}
+    <div class="row g-2 mb-2 member-row">
+        <div class="col-7"><select name="member_staff_id" class="form-select form-select-sm">{{ staff_options(m.staff_id) }}</select></div>
+        <div class="col-4"><input name="member_role" class="form-control form-control-sm" placeholder="Role" value="{{ m.role or '' }}"></div>
+        <div class="col-1"><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.member-row').remove()">&times;</button></div>
+    </div>
+    {% endfor %}
+    {% endif %}
+</div>
+<button type="button" class="btn btn-sm btn-outline-secondary" onclick="addMemberRow(this)"><i class="fas fa-user-plus me-1"></i>Add contributor</button>
+{%- endmacro %}
+
+{% block content %}
+{% set locked = candidate.project_id is not none %}
+{% set can_edit = current_user.has_permission('product_dev', 'edit') and not locked %}
+{% set can_delete = current_user.has_permission('product_dev', 'delete') and not locked %}
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+    <div>
+        <h2 class="mb-1"><i class="fas fa-filter me-2"></i>{{ candidate.candidate_code }}
+            <span class="badge fs-6 {{ 'bg-success' if candidate.status == 'G1 Approved' else 'bg-danger' if candidate.status == 'Rejected' else 'bg-warning text-dark' if candidate.status == 'On Hold' else 'bg-primary' if candidate.status == 'In Review' else 'bg-secondary' }}">{{ candidate.status }}</span>
+        </h2>
+        <div class="text-muted">{{ candidate.product_name }} &middot; OEM {{ candidate.oem_part_number }}{{ ' · ' ~ candidate.application if candidate.application else '' }}</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('pd_funnel.index') }}" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Funnel</a>
+        {% if can_edit %}
+        <a href="{{ url_for('pd_funnel.edit', candidate_id=candidate.id) }}" class="btn btn-warning btn-sm"><i class="fas fa-edit"></i> Edit</a>
+        {% endif %}
+        {% if candidate.status in ('Rejected', 'On Hold') and current_user.has_permission('product_dev', 'edit') and not locked %}
+        <form method="POST" action="{{ url_for('pd_funnel.reopen', candidate_id=candidate.id) }}" class="d-inline">
+            <button class="btn btn-outline-primary btn-sm"><i class="fas fa-rotate-left"></i> Reopen</button>
+        </form>
+        {% endif %}
+        {% if can_delete %}
+        <form method="POST" action="{{ url_for('pd_funnel.delete', candidate_id=candidate.id) }}" class="d-inline" onsubmit="return confirm('Delete this candidate and all its reviews, tasks and gate records?');">
+            <button class="btn btn-danger btn-sm"><i class="fas fa-trash"></i></button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+{% if candidate.project %}
+<div class="alert alert-success d-flex justify-content-between align-items-center">
+    <div><i class="fas fa-circle-check me-2"></i>G1 approved. Development project
+        <strong>{{ candidate.project.pdv_code }}</strong> was created from this candidate. The funnel record is now read-only.</div>
+    <a href="{{ url_for('product_development.view', project_id=candidate.project.id) }}" class="btn btn-success btn-sm">Open Project</a>
+</div>
+{% endif %}
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-8">
+        <div class="card h-100">
+            <div class="card-header"><h5 class="mb-0">Candidate summary</h5></div>
+            <div class="card-body">
+                <div class="row small g-3">
+                    <div class="col-6 col-md-3"><div class="text-muted">Annual demand</div><strong>{{ "{:,.0f}".format(candidate.annual_demand or 0) }} units</strong></div>
+                    <div class="col-6 col-md-3"><div class="text-muted">Target price</div><strong>PKR {{ "{:,.0f}".format(candidate.target_price or 0) }}</strong></div>
+                    <div class="col-6 col-md-3"><div class="text-muted">Est. unit cost</div><strong>PKR {{ "{:,.0f}".format(candidate.est_unit_cost or 0) }}</strong></div>
+                    <div class="col-6 col-md-3"><div class="text-muted">Indicative margin</div><strong class="{{ 'text-danger' if candidate.indicative_margin < 0 else 'text-success' }}">PKR {{ "{:,.0f}".format(candidate.indicative_margin) }} ({{ candidate.margin_percent }}%)</strong></div>
+                    <div class="col-6 col-md-3"><div class="text-muted">Owner</div><strong>{{ candidate.owner.name if candidate.owner else '-' }}</strong></div>
+                    <div class="col-6 col-md-3"><div class="text-muted">G1 stage lead</div><strong>{{ candidate.g1_lead.name if candidate.g1_lead else '-' }}</strong></div>
+                    <div class="col-6 col-md-3"><div class="text-muted">G1 target</div><strong>{{ candidate.g1_target_date.strftime('%Y-%m-%d') if candidate.g1_target_date else '-' }}</strong></div>
+                    <div class="col-6 col-md-3"><div class="text-muted">Category</div><strong>{{ candidate.product_category.name if candidate.product_category else '-' }}</strong></div>
+                    <div class="col-12"><div class="text-muted">Next evidence</div>{{ candidate.next_evidence or '-' }}</div>
+                    {% if candidate.notes %}<div class="col-12"><div class="text-muted">Notes</div>{{ candidate.notes }}</div>{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card h-100 border-{{ 'success' if not missing or locked else 'warning' }}">
+            <div class="card-header"><h5 class="mb-0"><i class="fas fa-list-check me-2"></i>G1 readiness</h5></div>
+            <div class="card-body">
+                {% if locked %}
+                <p class="text-success mb-0"><i class="fas fa-check me-1"></i>Approved and converted to a project.</p>
+                {% elif not missing %}
+                <p class="text-success mb-0"><i class="fas fa-check me-1"></i>All evidence complete. Ready for a G1 decision below.</p>
+                {% else %}
+                <ul class="small mb-0 ps-3">
+                    {% for m in missing %}<li class="text-danger">{{ m }}</li>{% endfor %}
+                </ul>
+                {% endif %}
+                <hr>
+                {% for d in disciplines %}
+                <div class="d-flex justify-content-between small mb-1"><span>{{ d }} review</span>{{ verdict_badge(candidate.discipline_verdict(d)) }}</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ── Feasibility reviews ── #}
+<div class="card mb-4" id="reviews">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-scale-balanced me-2"></i>Feasibility reviews</h5>
+        {% if can_edit %}
+        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#reviewModal"><i class="fas fa-plus me-1"></i> Add Review</button>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <p class="small text-muted">Each discipline needs one current, signed review: reviewer, evidence, finding, verdict and date. A new review for the same discipline supersedes the previous one, which is kept as history.</p>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead><tr><th>Discipline</th><th>Reviewer</th><th>Evidence</th><th>Finding / risk</th><th>Verdict</th><th>Date</th><th>Valid until</th><th>Current</th><th></th></tr></thead>
+                <tbody>
+                    {% for r in candidate.reviews %}
+                    <tr class="{{ '' if r.is_current else 'text-muted' }}">
+                        <td><strong>{{ r.discipline }}</strong></td>
+                        <td>{{ r.reviewer.name if r.reviewer else '-' }}</td>
+                        <td>{{ r.evidence_reference or '-' }}</td>
+                        <td style="max-width:320px">{{ r.finding or '-' }}</td>
+                        <td>{{ verdict_badge(r.verdict) }}{% if r.is_current and not r.is_complete %} <span class="badge bg-warning text-dark">Incomplete</span>{% endif %}{% if r.is_current and r.is_expired %} <span class="badge bg-warning text-dark">Expired</span>{% endif %}</td>
+                        <td>{{ r.review_date.strftime('%Y-%m-%d') if r.review_date else '-' }}</td>
+                        <td>{{ r.valid_until.strftime('%Y-%m-%d') if r.valid_until else '-' }}</td>
+                        <td>{{ 'Yes' if r.is_current else 'Superseded' }}</td>
+                        <td>
+                            {% if can_delete %}
+                            <form method="POST" action="{{ url_for('pd_funnel.delete_review', review_id=r.id) }}" onsubmit="return confirm('Delete this review?');">
+                                <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="9" class="text-center text-muted">No reviews yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{# ── G1 tasks ── #}
+<div class="card mb-4" id="tasks">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-users-gear me-2"></i>G1 tasks &amp; team</h5>
+        {% if can_edit %}
+        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#taskModal"><i class="fas fa-plus me-1"></i> Add Task</button>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <p class="small text-muted">One primary assignee per task, plus any number of contributors. Every task must be Done, Accepted and have evidence before G1 can be approved.</p>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead><tr><th>Task</th><th>Deliverable</th><th>Primary</th><th>Contributors</th><th>Due</th><th>Status</th><th>Accepted</th><th>Evidence</th><th>Check</th><th></th></tr></thead>
+                <tbody>
+                    {% for t in candidate.g1_tasks %}
+                    <tr>
+                        <td>{{ t.task_code }}</td>
+                        <td>{{ t.deliverable }}</td>
+                        <td>{{ t.primary_staff.name if t.primary_staff else '-' }}</td>
+                        <td class="small">{% for m in t.members %}{{ m.staff.name }}{{ ' (' ~ m.role ~ ')' if m.role else '' }}{{ ', ' if not loop.last }}{% else %}-{% endfor %}</td>
+                        <td>{{ t.due_date.strftime('%Y-%m-%d') if t.due_date else '-' }}</td>
+                        <td><span class="badge {{ 'bg-success' if t.status == 'Done' else 'bg-primary' if t.status == 'In Progress' else 'bg-secondary' }}">{{ t.status }}</span></td>
+                        <td>{{ 'Yes' if t.accepted else 'No' }}</td>
+                        <td>{{ t.evidence_reference or '-' }}</td>
+                        <td>{% if t.assignment_problem %}<span class="text-danger small">{{ t.assignment_problem }}</span>{% else %}<span class="text-success small"><i class="fas fa-check"></i> OK</span>{% endif %}</td>
+                        <td class="text-nowrap">
+                            {% if can_edit %}
+                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#taskEdit{{ t.id }}"><i class="fas fa-pen"></i></button>
+                            {% endif %}
+                            {% if can_delete %}
+                            <form method="POST" action="{{ url_for('pd_funnel.delete_task', task_id=t.id) }}" class="d-inline" onsubmit="return confirm('Delete this task?');">
+                                <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="10" class="text-center text-muted">No tasks assigned.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{# ── G1 gate ── #}
+<div class="card mb-4" id="gate">
+    <div class="card-header"><h5 class="mb-0"><i class="fas fa-flag-checkered me-2"></i>G1 gate decision</h5></div>
+    <div class="card-body">
+        {% if can_edit and candidate.status not in ('Rejected', 'On Hold') %}
+        <form method="POST" action="{{ url_for('pd_funnel.gate_decision', candidate_id=candidate.id) }}" class="row g-3 mb-4"
+            onsubmit="return this.decision.value !== 'Approved' || confirm('Approve G1? This creates the development project automatically.');">
+            <div class="col-md-3">
+                <label class="form-label">Decision <span class="text-danger">*</span></label>
+                <select name="decision" class="form-select" required>
+                    {% for d in decisions %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Approver (Staff) <span class="text-danger">*</span></label>
+                <select name="approver_staff_id" class="form-select" required>{{ staff_options() }}</select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Decision Date <span class="text-danger">*</span></label>
+                <input type="date" name="decision_date" class="form-control" value="{{ today }}" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Sample Purchase Cap (PKR)</label>
+                <input type="number" step="0.01" min="0" name="approved_cap" class="form-control" placeholder="Required to approve">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Evidence Reference</label>
+                <input type="text" name="evidence_reference" class="form-control" placeholder="Signed minutes / document ref (required to approve)">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Remarks</label>
+                <input type="text" name="remarks" class="form-control">
+            </div>
+            <div class="col-12 d-flex justify-content-between align-items-center">
+                <small class="text-muted">Approval is blocked until the readiness list is clear. Do not assign an operator as approver just to clear a gate.</small>
+                <button class="btn btn-success"><i class="fas fa-stamp me-1"></i> Record Decision</button>
+            </div>
+        </form>
+        {% endif %}
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead><tr><th>Gate</th><th>Decision</th><th>Approver</th><th>Date</th><th>Evidence</th><th class="text-end">Approved Cap</th><th>Remarks</th><th>Entered by</th></tr></thead>
+                <tbody>
+                    {% for g in candidate.gate_reviews %}
+                    <tr>
+                        <td>{{ g.gate }}</td>
+                        <td><span class="badge {{ 'bg-success' if g.decision == 'Approved' else 'bg-danger' if g.decision == 'Rejected' else 'bg-warning text-dark' }}">{{ g.decision }}</span></td>
+                        <td>{{ g.approver.name if g.approver else '-' }}</td>
+                        <td>{{ g.decision_date.strftime('%Y-%m-%d') if g.decision_date else '-' }}</td>
+                        <td>{{ g.evidence_reference or '-' }}</td>
+                        <td class="text-end">{{ "{:,.0f}".format(g.approved_cap or 0) }}</td>
+                        <td>{{ g.remarks or '' }}</td>
+                        <td class="small">{{ g.creator.username if g.creator else '-' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="8" class="text-center text-muted">No gate decisions yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if can_edit %}
+<!-- Add review modal -->
+<div class="modal fade" id="reviewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form class="modal-content" method="POST" action="{{ url_for('pd_funnel.add_review', candidate_id=candidate.id) }}">
+            <div class="modal-header"><h5 class="modal-title">Add Feasibility Review</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Discipline *</label>
+                    <select name="discipline" class="form-select" required>{% for d in disciplines %}<option>{{ d }}</option>{% endfor %}</select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Reviewer (Staff) *</label>
+                    <select name="reviewer_staff_id" class="form-select" required>{{ staff_options() }}</select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Verdict *</label>
+                    <select name="verdict" class="form-select" required>{% for v in verdicts %}<option>{{ v }}</option>{% endfor %}</select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Evidence Reference *</label>
+                    <input type="text" name="evidence_reference" class="form-control" required placeholder="Drawing, quote, market study, file link...">
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Finding / risk and basis *</label>
+                    <textarea name="finding" rows="3" class="form-control" required></textarea>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Review Date *</label>
+                    <input type="date" name="review_date" class="form-control" value="{{ today }}" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Valid Until</label>
+                    <input type="date" name="valid_until" class="form-control">
+                </div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary">Save Review</button></div>
+        </form>
+    </div>
+</div>
+
+<!-- Add task modal -->
+<div class="modal fade" id="taskModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form class="modal-content" method="POST" action="{{ url_for('pd_funnel.add_task', candidate_id=candidate.id) }}">
+            <div class="modal-header"><h5 class="modal-title">Add G1 Task</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body row g-3">
+                <div class="col-12">
+                    <label class="form-label">Deliverable / action *</label>
+                    <input type="text" name="deliverable" class="form-control" required placeholder="e.g. Prepare G1 review pack">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Primary assignee *</label>
+                    <select name="primary_staff_id" class="form-select" required>{{ staff_options() }}</select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Due date</label>
+                    <input type="date" name="due_date" class="form-control">
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Contributors</label>
+                    {{ member_rows() }}
+                </div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary">Add Task</button></div>
+        </form>
+    </div>
+</div>
+
+{% for t in candidate.g1_tasks %}
+<div class="modal fade" id="taskEdit{{ t.id }}" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form class="modal-content" method="POST" action="{{ url_for('pd_funnel.update_task', task_id=t.id) }}">
+            <div class="modal-header"><h5 class="modal-title">Update {{ t.task_code }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body row g-3">
+                <div class="col-12">
+                    <label class="form-label">Deliverable / action</label>
+                    <input type="text" name="deliverable" class="form-control" value="{{ t.deliverable }}" required>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Primary assignee</label>
+                    <select name="primary_staff_id" class="form-select" required>{{ staff_options(t.primary_staff_id) }}</select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Due date</label>
+                    <input type="date" name="due_date" class="form-control" value="{{ t.due_date.strftime('%Y-%m-%d') if t.due_date else '' }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Status</label>
+                    <select name="status" class="form-select">{% for s in task_statuses %}<option {{ 'selected' if s == t.status else '' }}>{{ s }}</option>{% endfor %}</select>
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label">Evidence reference</label>
+                    <input type="text" name="evidence_reference" class="form-control" value="{{ t.evidence_reference or '' }}">
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="accepted" value="1" id="acc{{ t.id }}" {{ 'checked' if t.accepted else '' }}>
+                        <label class="form-check-label" for="acc{{ t.id }}">Accepted (needs evidence; sets status to Done)</label>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Contributors</label>
+                    {{ member_rows(t) }}
+                </div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary">Save</button></div>
+        </form>
+    </div>
+</div>
+{% endfor %}
+
+<template id="memberRowTpl">
+    <div class="row g-2 mb-2 member-row">
+        <div class="col-7"><select name="member_staff_id" class="form-select form-select-sm">{{ staff_options() }}</select></div>
+        <div class="col-4"><input name="member_role" class="form-control form-control-sm" placeholder="Role"></div>
+        <div class="col-1"><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.member-row').remove()">&times;</button></div>
+    </div>
+</template>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function addMemberRow(btn) {
+        var tpl = document.getElementById('memberRowTpl');
+        btn.previousElementSibling.appendChild(tpl.content.cloneNode(true));
+    }
+</script>
+{% endblock %}
