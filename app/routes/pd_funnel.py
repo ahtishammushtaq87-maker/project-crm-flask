@@ -115,9 +115,10 @@ def index():
         query = query.filter(db.or_(PDCandidate.candidate_code.ilike(like),
                                     PDCandidate.oem_part_number.ilike(like),
                                     PDCandidate.product_name.ilike(like)))
-    candidates = query.order_by(PDCandidate.created_at.desc()).all()
+    # Rows with a NULL primary key come back as None; skip them instead of crashing
+    candidates = [c for c in query.order_by(PDCandidate.created_at.desc()).all() if c is not None]
 
-    all_candidates = PDCandidate.query.all()
+    all_candidates = [c for c in PDCandidate.query.all() if c is not None]
     stats = {
         'total': len(all_candidates),
         'intake': sum(1 for c in all_candidates if c.status == 'Intake'),
