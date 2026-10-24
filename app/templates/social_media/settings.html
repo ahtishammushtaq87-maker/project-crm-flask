@@ -9,6 +9,7 @@
 <div class="sm-field"><label for="f_{{ name }}">{{ label }}</label>
     <input class="sm-input" type="password" id="f_{{ name }}" name="{{ name }}" autocomplete="new-password"
            placeholder="{{ '•••••••• saved — leave empty to keep' if secrets_set[name] else 'Not set' }}" {{ 'disabled' if enc[0] != 'ok' }}>
+    {% if enc[0] != 'ok' %}<div class="sm-help" style="color:var(--sm-red)">Locked: set SOCIAL_MEDIA_ENCRYPTION_KEY on the server and restart the CRM to enter this value (see Security &amp; Logs tab).</div>{% endif %}
     <div class="sm-help">{{ help }} {% if secrets_set[name] %}<label><input type="checkbox" name="clear_{{ name }}" value="1"> Remove saved value</label>{% endif %}</div></div>
 {%- endmacro %}
 {% macro links(items) -%}
