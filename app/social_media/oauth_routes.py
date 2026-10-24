@@ -130,6 +130,13 @@ def oauth_select(provider):
                                                   set(request.form.getlist('org_urns')), current_user.id)
             core.audit('accounts_connected', provider, ', '.join(a.label for a in chosen) or 'none selected')
             core.commit_with_retry()
+            # Import the posts that already exist on the new accounts straight away.
+            from app.social_media.services import sync
+            for acc in chosen:
+                log = sync.sync_posts(acc)
+                if log.status == 'error':
+                    flash(f'{acc.label}: could not import existing posts - {log.message}', 'warning')
+                core.commit_with_retry()
             session.pop('social_media_select', None)
             flash(f'{len(chosen)} account(s) connected.' if chosen else 'No accounts were selected.',
                   'success' if chosen else 'warning')
