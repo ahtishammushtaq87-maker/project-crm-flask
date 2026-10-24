@@ -65,12 +65,17 @@ def sync_insights(account, days=60):
     return log
 
 
-def _store_remote(account, remote_id, text, created, url):
+def _store_remote(account, remote_id, text, created, url, image=None):
     """Create the synced post unless this remote id is already known (also
-    covers posts the CRM itself published)."""
-    if SocialPostDestination.query.filter_by(account_id=account.id, remote_id=str(remote_id)).first():
+    covers posts the CRM itself published). Known synced posts get their
+    preview image refreshed (platform image URLs expire)."""
+    known = SocialPostDestination.query.filter_by(account_id=account.id, remote_id=str(remote_id)).first()
+    if known:
+        if image and known.post.origin == 'synced':
+            known.post.preview_image_url = image[:2000]
         return False
-    post = SocialPost(title=None, body=text or '', status='published', origin='synced', published_at=created)
+    post = SocialPost(title=None, body=text or '', status='published', origin='synced', published_at=created,
+                      preview_image_url=(image or '')[:2000] or None)
     db.session.add(post)
     db.session.flush()
     db.session.add(SocialPostDestination(post_id=post.id, account_id=account.id, platform=account.platform,
@@ -88,10 +93,12 @@ def sync_posts(account):
         if account.platform == 'facebook':
             for p in meta.facebook_recent_posts(account.remote_id, token, SYNC_POST_LIMIT):
                 n += _store_remote(account, p['id'], p.get('message'), _utc(p.get('created_time')),
-                                   p.get('permalink_url'))
+                                   p.get('permalink_url'), p.get('full_picture'))
         elif account.platform == 'instagram':
             for p in meta.instagram_recent_media(account.remote_id, token, SYNC_POST_LIMIT):
-                n += _store_remote(account, p['id'], p.get('caption'), _utc(p.get('timestamp')), p.get('permalink'))
+                img = p.get('thumbnail_url') if p.get('media_type') == 'VIDEO' else p.get('media_url')
+                n += _store_remote(account, p['id'], p.get('caption'), _utc(p.get('timestamp')), p.get('permalink'),
+                                   img)
         else:
             for p in linkedin.recent_posts(account.remote_id, token, SYNC_POST_LIMIT):
                 created = p.get('publishedAt') or p.get('createdAt')

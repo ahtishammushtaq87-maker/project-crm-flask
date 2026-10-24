@@ -83,6 +83,12 @@ def init_app(app):
                 model.__table__.create(db.engine, checkfirst=True)
                 for index in model.__table__.indexes:
                     index.create(db.engine, checkfirst=True)
+            # Columns added after the first release (additive only).
+            from sqlalchemy import inspect, text
+            cols = {c['name'] for c in inspect(db.engine).get_columns('social_posts')}
+            if 'preview_image_url' not in cols:
+                with db.engine.begin() as conn:
+                    conn.execute(text('ALTER TABLE social_posts ADD COLUMN preview_image_url VARCHAR(2000)'))
         except Exception as e:  # never block the CRM from starting
             app.logger.error('Social Media module: could not create tables: %s', e)
 

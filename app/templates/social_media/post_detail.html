@@ -81,6 +81,7 @@
             <div class="sm-card-body">
                 <div style="white-space:pre-wrap;overflow-wrap:anywhere">{{ post.full_text() or '(no text)' }}</div>
                 {% if post.link_url %}<div class="sm-small mt-2"><i class="fas fa-link"></i> <a href="{{ post.link_url }}" target="_blank" rel="noopener">{{ post.link_url }}</a></div>{% endif %}
+                {% if not post.media and post.preview_image_url %}<img src="{{ post.preview_image_url }}" alt="Post image" referrerpolicy="no-referrer" style="max-width:100%;max-height:420px;border-radius:10px;margin-top:10px">{% endif %}
                 {% if post.media %}<div class="sm-media-list">{% for med in post.media %}
                     <div class="sm-media-item">{% if med.kind == 'image' %}<img src="{{ url_for('social_media.media_file', media_id=med.id) }}" alt="{{ med.original_name }}">{% else %}<video src="{{ url_for('social_media.media_file', media_id=med.id) }}" controls muted preload="metadata"></video>{% endif %}</div>{% endfor %}</div>{% endif %}
             </div>

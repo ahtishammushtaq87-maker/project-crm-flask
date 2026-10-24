@@ -193,6 +193,7 @@ class SocialPost(db.Model):
     body = db.Column(db.Text, nullable=False, default='')
     hashtags = db.Column(db.String(1000))
     link_url = db.Column(db.String(1000))
+    preview_image_url = db.Column(db.String(2000))                # synced posts: image URL from the platform
     status = db.Column(db.String(30), nullable=False, default='draft')
     origin = db.Column(db.String(10), nullable=False, default='crm')  # crm | synced
     scheduled_at = db.Column(db.DateTime)
