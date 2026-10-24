@@ -2291,10 +2291,10 @@
                     dom: '<"d-flex justify-content-between align-items-center mb-3"Blf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
                     stateSave: true,
                     stateLoadParams: function (settings, data) {
-                        // Always default to "All" entries, even if an older
+                        // Always default to 20 entries, even if an older
                         // saved state (from before this default changed) has
                         // a smaller page length cached in localStorage.
-                        data.length = -1;
+                        data.length = 20;
                     },
                     buttons: [
                         {
@@ -2335,8 +2335,8 @@
                         }
                     ],
                     paging: true,
-                    lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
-                    pageLength: -1,
+                    lengthMenu: [[10, 20, 25, 50, 100, -1], [10, 20, 25, 50, 100, "All"]],
+                    pageLength: 20,
                     language: {
                         search: "_INPUT_",
                         searchPlaceholder: "Search records...",
@@ -2465,10 +2465,10 @@
                             dom: '<"d-flex justify-content-between align-items-center mb-3"Blf>rt<"d-flex justify-content-between align-items-center mt-3"ip>',
                             stateSave: true,
                             stateLoadParams: function (settings, data) {
-                                // Always default to "All" entries, even if an older
+                                // Always default to 20 entries, even if an older
                                 // saved state (from before this default changed) has
                                 // a smaller page length cached in localStorage.
-                                data.length = -1;
+                                data.length = 20;
                             },
                             buttons: [
                                 {
@@ -2500,8 +2500,8 @@
                                 }
                             ],
                             paging: true,
-                            lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
-                            pageLength: -1,
+                            lengthMenu: [[10, 20, 25, 50, 100, -1], [10, 20, 25, 50, 100, "All"]],
+                            pageLength: 20,
                             language: {
                                 search: "_INPUT_",
                                 searchPlaceholder: "Search...",
