@@ -2,6 +2,13 @@
 
 {% block title %}{{ project.pdv_code }} - {{ project.product_name }}{% endblock %}
 
+{% macro product_img_url(prod) -%}
+{%- if prod and prod.image_path -%}
+{%- set ip = prod.image_path.replace('\\', '/') -%}
+{{ url_for('static', filename=ip.replace('app/static/', '') if 'app/static/' in ip else ip) }}
+{%- endif -%}
+{%- endmacro %}
+
 {% macro mc_row(idx, name, kind, prod, qty, unit_cost, total, vendor_name, delete_url) -%}
 <tr>
     <td><span class="mc-idx">{{ idx }}</span></td>
@@ -9,8 +16,9 @@
         <div class="mc-item">
             <div class="mc-thumb">
                 {% if prod and prod.image_path %}
-                {% set ip = prod.image_path.replace('\\', '/') %}
-                <img src="{{ url_for('static', filename=ip.replace('app/static/', '') if 'app/static/' in ip else ip) }}" alt="{{ name }}"
+                {% set img = product_img_url(prod) %}
+                <img src="{{ img }}" alt="{{ name }}" class="mc-img-preview" data-img-src="{{ img }}" data-name="{{ name }}"
+                    title="Click to enlarge"
                     onerror="this.parentNode.innerHTML='<i class=&quot;fas fa-box-open&quot;></i>'">
                 {% else %}<i class="fas fa-box-open"></i>{% endif %}
             </div>
@@ -74,7 +82,11 @@
     .mc-item { display: flex; align-items: center; gap: .6rem; min-width: 240px; }
     .mc-thumb { width: 40px; height: 40px; border-radius: 8px; background: #f4f6fb; flex-shrink: 0;
         display: flex; align-items: center; justify-content: center; overflow: hidden; color: #a3acc5; font-size: 1rem; }
-    .mc-thumb img { width: 100%; height: 100%; object-fit: contain; }
+    .mc-thumb img { width: 100%; height: 100%; object-fit: contain; cursor: zoom-in; }
+    .mc-comp-preview { display: flex; align-items: center; gap: .75rem; padding: .5rem; border-radius: 10px; background: #f4f6fb; }
+    .mc-comp-preview .mc-comp-img { width: 90px; height: 90px; border-radius: 8px; background: #fff; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center; overflow: hidden; color: #a3acc5; font-size: 1.4rem; }
+    .mc-comp-preview img { width: 100%; height: 100%; object-fit: contain; }
     .mc-name { font-weight: 600; color: #111b3c; line-height: 1.3; }
     .mc-desc { color: #6b7591; font-size: .75rem; margin-top: .15rem; }
     .mc-type { display: inline-flex; align-items: center; gap: .3rem; padding: .2rem .5rem; border-radius: 6px;
@@ -793,10 +805,14 @@
                          <select name="product_id" class="form-select searchable-select" required>
                              <option value="">-- Search inventory item --</option>
                              {% for p in products %}
-                             <option value="{{ p.id }}" data-cost="{{ p.cost_price or 0 }}" data-sku="{{ p.sku }}"
+                             <option value="{{ p.id }}" data-cost="{{ p.cost_price or 0 }}" data-sku="{{ p.sku }}" data-img="{{ product_img_url(p) }}"
                                  data-category="{{ (p.category.name if p.category else p.category_name) or '' }}">{{ p.sku }} - {{ p.name }}</option>
                              {% endfor %}
                          </select>
+                     </div>
+                     <div id="componentImgPreview" class="mc-comp-preview mb-2 d-none">
+                         <div class="mc-comp-img"></div>
+                         <div class="small text-muted" id="componentImgName"></div>
                      </div>
                      <div class="row g-2 mb-2">
                          <div class="col-6">
@@ -1006,6 +1022,21 @@
         </div>
     </div>
 </div>
+<!-- Component image popup -->
+<div class="modal fade" id="mcImageModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title" id="mcImageTitle"></h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center bg-light">
+                <img id="mcImageFull" src="" alt="" style="max-width: 100%; max-height: 70vh; object-fit: contain;">
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Phase 4: Production Expense Modal -->
 <div class="modal fade" id="addPDExpenseModal" tabindex="-1" aria-labelledby="addPDExpenseModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -1017,23 +1048,20 @@
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label">Category</label>
-                        <select name="expense_category" class="form-select searchable-select" required>
-                            <option value="Raw Material">Raw Material</option>
-                            <option value="Purchased Components">Purchased Components</option>
-                            <option value="Machining">Machining</option>
-                            <option value="Casting">Casting</option>
-                            <option value="Electricity">Electricity</option>
-                            <option value="Maintenance">Maintenance</option>
-                            <option value="Factory Wages">Factory Wages</option>
-                            <option value="Office Rent">Office Rent</option>
-                            <option value="Salaries">Salaries</option>
-                            <option value="Marketing">Marketing</option>
-                            <option value="Travel">Travel</option>
-                            <option value="Scrap">Scrap</option>
-                            <option value="Prototype Failure">Prototype Failure</option>
-                            <option value="Warranty">Warranty</option>
+                        <label class="form-label d-flex justify-content-between">
+                            <span>Category</span>
+                            <a href="#" class="small text-decoration-none" onclick="togglePDNewCategory(); return false;"><i class="fas fa-plus"></i> New category</a>
+                        </label>
+                        <select name="expense_category" id="pdExpenseCategory" class="form-select searchable-select" required>
+                            {% for cat in expense_categories %}
+                            <option value="{{ cat }}" {{ 'selected' if cat == 'Raw Material' else '' }}>{{ cat }}</option>
+                            {% endfor %}
                         </select>
+                        <div id="pdNewCategoryBox" class="input-group input-group-sm mt-2 d-none">
+                            <input type="text" id="pdNewCategoryName" class="form-control" maxlength="100" placeholder="New category name">
+                            <button type="button" class="btn btn-success" onclick="savePDNewCategory()"><i class="fas fa-check"></i> Add</button>
+                        </div>
+                        <div id="pdNewCategoryMsg" class="small text-danger mt-1"></div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Amount</label>
@@ -1062,6 +1090,43 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
+$(document).on('click', '.mc-img-preview', function () {
+    $('#mcImageFull').attr('src', $(this).data('img-src'));
+    $('#mcImageTitle').text($(this).data('name'));
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('mcImageModal')).show();
+});
+
+function togglePDNewCategory() {
+    var box = document.getElementById('pdNewCategoryBox');
+    box.classList.toggle('d-none');
+    if (!box.classList.contains('d-none')) document.getElementById('pdNewCategoryName').focus();
+}
+
+function savePDNewCategory() {
+    var input = document.getElementById('pdNewCategoryName');
+    var msg = document.getElementById('pdNewCategoryMsg');
+    var name = input.value.trim();
+    msg.textContent = '';
+    if (!name) { msg.textContent = 'Enter a category name.'; return; }
+    var body = new URLSearchParams({ name: name });
+    fetch('{{ url_for('product_development.add_expense_category') }}', { method: 'POST', body: body })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (!data.success) { msg.textContent = data.message || 'Could not add category.'; return; }
+            var $sel = $('#pdExpenseCategory');
+            if (!$sel.find('option').filter(function () { return this.value === data.name; }).length) {
+                $sel.append(new Option(data.name, data.name));
+            }
+            $sel.val(data.name).trigger('change');
+            input.value = '';
+            document.getElementById('pdNewCategoryBox').classList.add('d-none');
+        })
+        .catch(function () { msg.textContent = 'Could not add category.'; });
+}
+
+document.getElementById('pdNewCategoryName') && document.getElementById('pdNewCategoryName')
+    .addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); savePDNewCategory(); } });
+
 document.addEventListener('DOMContentLoaded', function() {
     var triggerTab = document.querySelector('#phase{{ project.current_phase }}-tab');
     if (triggerTab) {
@@ -1131,6 +1196,12 @@ document.addEventListener('DOMContentLoaded', function() {
             $materialSelect.on('select2:select.autofill', function(e) {
                 var $opt = $(e.params.data.element);
             $('#componentSku').val($opt.attr('data-sku') || '');
+            var img = $opt.attr('data-img');
+            var $box = $('#componentImgPreview').removeClass('d-none');
+            $('#componentImgName').text($opt.text());
+            $box.find('.mc-comp-img').html(img
+                ? $('<img>', { src: img, alt: '' }).on('error', function () { $(this).replaceWith('<span class="small">No image</span>'); })
+                : '<span class="small">No image</span>');
             $('#componentCategory').val($opt.attr('data-category') || '-');
             var cost = $opt.attr('data-cost');
                 if (cost !== null && cost !== '') {

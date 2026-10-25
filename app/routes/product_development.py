@@ -95,6 +95,14 @@ LOSS_EXPENSE_CATEGORIES = {
     'Scrap', 'Prototype Failure', 'Warranty'
 }
 
+# Offered in the Phase 4 (production expense) modal, in display order
+PHASE4_EXPENSE_CATEGORIES = [
+    'Raw Material', 'Purchased Components', 'Machining', 'Casting',
+    'Electricity', 'Maintenance', 'Factory Wages',
+    'Office Rent', 'Salaries', 'Marketing', 'Travel',
+    'Scrap', 'Prototype Failure', 'Warranty'
+]
+
 
 def validate_pd_expense(project_id, tooling_id, category, item_code, work_order_id, cost_center, amortization_selected, expected_recovery_quantity):
     if category in DEVELOPMENT_EXPENSE_CATEGORIES and not project_id:
@@ -256,8 +264,13 @@ def view(project_id):
     vendors = Vendor.query.filter_by(is_active=True).all()
     users = User.query.filter_by(is_active=True).all()
     today = datetime.now().date().strftime('%Y-%m-%d')
+    # Phase 4 modal: production/overhead/admin/loss categories plus user-added ones
+    from app.models import PD_DEFAULT_EXPENSE_CATEGORIES, pd_expense_category_names
+    expense_categories = PHASE4_EXPENSE_CATEGORIES + [c for c in pd_expense_category_names()
+                                                      if c not in PD_DEFAULT_EXPENSE_CATEGORIES]
     
-    return render_template('product_development/view.html', project=project, products=all_products, finished_goods=finished_goods, vendors=vendors, users=users, today=today)
+    return render_template('product_development/view.html', project=project, products=all_products, finished_goods=finished_goods, vendors=vendors, users=users, today=today,
+                           expense_categories=expense_categories)
 
 
 @bp.route('/edit/<int:project_id>', methods=['GET', 'POST'])
@@ -858,6 +871,29 @@ def add_prototype(project_id):
     return redirect(url_for('product_development.view', project_id=project_id, phase=4))
 
 
+@bp.route('/expense-category/add', methods=['POST'])
+@login_required
+@permission_required('product_dev', action='add')
+def add_expense_category():
+    """Add a PD expense category from the expense modal (JSON)."""
+    from flask import jsonify
+    from app.models import PDExpenseCategory, pd_expense_category_names
+    name = ' '.join((request.form.get('name') or '').split())
+    if not name or len(name) > 100:
+        return jsonify(success=False, message='Enter a category name (max 100 characters).'), 400
+    existing = next((n for n in pd_expense_category_names() if n.lower() == name.lower()), None)
+    if existing:
+        return jsonify(success=True, name=existing, existed=True)
+    row = PDExpenseCategory.query.filter(db.func.lower(PDExpenseCategory.name) == name.lower()).first()
+    if row:
+        row.is_active = True
+    else:
+        row = PDExpenseCategory(name=name, created_by=current_user.id)
+        db.session.add(row)
+    db.session.commit()
+    return jsonify(success=True, name=row.name, existed=False)
+
+
 @bp.route('/expense/add/<int:project_id>', methods=['POST'])
 @login_required
 @permission_required('product_dev', action='add')
@@ -869,6 +905,10 @@ def add_expense(project_id):
     amortization_selected = bool(request.form.get('amortization_selected'))
     expected_recovery_quantity = float(request.form.get('expected_recovery_quantity') or 0)
     category = request.form.get('expense_category')
+    from app.models import pd_expense_category_names
+    if category not in pd_expense_category_names():
+        flash('Choose a valid expense category.', 'error')
+        return redirect(url_for('product_development.view', project_id=project_id, phase=4))
     validation_error = validate_pd_expense(
         project_id,
         tooling_id,

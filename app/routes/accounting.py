@@ -1588,7 +1588,7 @@ def expenses():
     inventory_items = Product.query.filter_by(is_active=True, is_obsolete=False).order_by(Product.name).all()
     
     # Get PD expense categories for the shift modal
-    pd_expense_categories = PD_EXPENSE_CATEGORIES
+    pd_expense_categories = pd_expense_category_names()
 
     # Get date format from company settings
     from app.models import Company
@@ -3027,7 +3027,7 @@ def add_expense():
                                     inventory_items=inventory_items, category_options=category_options,
                                     category_tree=_expense_category_tree(),
                                     active_pd_projects=_active_pd_projects(),
-                                    pd_expense_categories=PD_EXPENSE_CATEGORIES,
+                                    pd_expense_categories=pd_expense_category_names(),
                                     initial_category_id=request.form.get('category_id', type=int))
 
         # Get selected targets
@@ -3405,7 +3405,7 @@ def add_expense():
     return render_template('accounting/add_expense.html', form=form, expense_accounts=expense_accounts,
                            expense_sources=expense_sources, inventory_items=inventory_items,
                            category_options=category_options, category_tree=_expense_category_tree(),
-                           active_pd_projects=_active_pd_projects(), pd_expense_categories=PD_EXPENSE_CATEGORIES,
+                           active_pd_projects=_active_pd_projects(), pd_expense_categories=pd_expense_category_names(),
                            initial_category_id=None)
 
 
@@ -4588,7 +4588,7 @@ def edit_expense(id):
                            expense_accounts=expense_accounts, existing_account_id=existing_account_id,
                            existing_payment_transfer=existing_payment_transfer, inventory_items=inventory_items,
                            category_options=category_options, category_tree=_expense_category_tree(),
-                           active_pd_projects=_active_pd_projects(), pd_expense_categories=PD_EXPENSE_CATEGORIES,
+                           active_pd_projects=_active_pd_projects(), pd_expense_categories=pd_expense_category_names(),
                            initial_category_id=expense.category_id)
 
 def _ordered_expense_categories():
@@ -4631,15 +4631,11 @@ def _expense_category_choices(active_only=True):
 
 
 # Project Expense Categories offered when shifting an expense to a PD
-# Project (Expenses list modal and the inline option on Add/Edit Expense).
-PD_EXPENSE_CATEGORIES = [
-    'Sample Purchase', 'Reverse Engineering', 'Measurement', 'CAD', 'Prototype', 'Testing',
-    'Mold', 'Die', 'Fixture', 'Pattern', 'Jig', 'Gauge',
-    'Raw Material', 'Purchased Components', 'Machining', 'Casting',
-    'Electricity', 'Maintenance', 'Factory Wages',
-    'Office Rent', 'Salaries', 'Marketing', 'Travel',
-    'Scrap', 'Prototype Failure', 'Warranty'
-]
+# Project (Expenses list modal and the inline option on Add/Edit Expense):
+# the built-in list plus categories added from the PD expense modal.
+def pd_expense_category_names():
+    from app.models import pd_expense_category_names as _names
+    return _names()
 
 
 def _active_pd_projects():
@@ -4657,7 +4653,7 @@ def _apply_pd_shift(expense, project_id, pd_category):
     from app.models import PDProject, ProductDevelopmentExpense
     if not project_id:
         raise ValueError('select a PD Project to shift this expense to.')
-    if not pd_category or pd_category not in PD_EXPENSE_CATEGORIES:
+    if not pd_category or pd_category not in pd_expense_category_names():
         raise ValueError('select a Project Expense Category for the PD shift.')
     project = PDProject.query.get(project_id)
     if not project:

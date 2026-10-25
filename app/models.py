@@ -4652,13 +4652,8 @@ class ProductDevelopmentExpense(db.Model):
     prototype_batch_id = db.Column(db.Integer, db.ForeignKey('product_prototypes.id'), nullable=True, index=True)
     item_code = db.Column(db.String(100), nullable=True, index=True)
     work_order_id = db.Column(db.Integer, db.ForeignKey('manufacturing_orders.id'), nullable=True, index=True)
-    expense_category = db.Column(db.Enum(
-        'Sample Purchase', 'Reverse Engineering', 'Measurement', 'CAD', 'Prototype', 'Testing',
-        'Mold', 'Die', 'Fixture', 'Pattern', 'Jig', 'Gauge',
-        'Raw Material', 'Purchased Components', 'Machining', 'Casting',
-        'Electricity', 'Maintenance', 'Factory Wages',
-        'Office Rent', 'Salaries', 'Marketing', 'Travel',
-        'Scrap', 'Prototype Failure', 'Warranty', name='pd_expense_category'), nullable=False, index=True)
+    # Built-in names (PD_DEFAULT_EXPENSE_CATEGORIES) or a user-added PDExpenseCategory
+    expense_category = db.Column(db.String(100), nullable=False, index=True)
     amount = db.Column(db.Float, default=0)
     cost_center = db.Column(db.String(100), nullable=True)
     description = db.Column(db.Text)
@@ -4674,6 +4669,37 @@ class ProductDevelopmentExpense(db.Model):
 
     def __repr__(self):
         return f'<ProductDevelopmentExpense {self.project_id} - {self.expense_category}>'
+
+
+PD_DEFAULT_EXPENSE_CATEGORIES = [
+    'Sample Purchase', 'Reverse Engineering', 'Measurement', 'CAD', 'Prototype', 'Testing',
+    'Mold', 'Die', 'Fixture', 'Pattern', 'Jig', 'Gauge',
+    'Raw Material', 'Purchased Components', 'Machining', 'Casting',
+    'Electricity', 'Maintenance', 'Factory Wages',
+    'Office Rent', 'Salaries', 'Marketing', 'Travel',
+    'Scrap', 'Prototype Failure', 'Warranty'
+]
+
+
+class PDExpenseCategory(db.Model):
+    """User-added PD expense categories, offered next to the built-in ones"""
+    __tablename__ = 'pd_expense_categories'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<PDExpenseCategory {self.name}>'
+
+
+def pd_expense_category_names():
+    """Built-in categories followed by active user-added ones."""
+    custom = [c.name for c in PDExpenseCategory.query.filter_by(is_active=True).order_by(PDExpenseCategory.name).all()
+              if c.name not in PD_DEFAULT_EXPENSE_CATEGORIES]
+    return PD_DEFAULT_EXPENSE_CATEGORIES + custom
 
 
 class ProductBOMVersion(db.Model):
