@@ -43,12 +43,8 @@
 <div class="card">
     <div class="card-header">
         <form class="row g-2 align-items-center" method="GET">
-            <div class="col-md-5">
-                <input type="text" name="q" value="{{ q }}" class="form-control form-control-sm"
-                    placeholder="Search candidate ID, OEM part no. or product">
-            </div>
             <div class="col-md-3">
-                <select name="status" class="form-select form-select-sm">
+                <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
                     <option value="">All statuses</option>
                     {% for s in statuses %}
                     <option value="{{ s }}" {{ 'selected' if s == status else '' }}>{{ s }}</option>
@@ -56,14 +52,14 @@
                 </select>
             </div>
             <div class="col-auto">
-                <button class="btn btn-sm btn-primary"><i class="fas fa-search"></i> Filter</button>
                 <a href="{{ url_for('pd_funnel.index') }}" class="btn btn-sm btn-outline-secondary">Reset</a>
             </div>
+            <div class="col text-muted small">Use the search box below to filter by any keyword as you type.</div>
         </form>
     </div>
     <div class="card-body">
         <div class="table-responsive">
-            <table class="table table-hover align-middle">
+            <table class="table table-hover align-middle" id="funnelTable">
                 <thead>
                     <tr>
                         <th>Candidate ID</th>
@@ -79,7 +75,7 @@
                         <th>Owner</th>
                         <th>G1 / Status</th>
                         <th>Project</th>
-                        <th></th>
+                        <th class="no-export text-center">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -89,8 +85,8 @@
                         <td>{{ c.oem_part_number }}</td>
                         <td>{{ c.product_name }}</td>
                         <td>{{ c.application or '-' }}</td>
-                        <td class="text-end">{{ "{:,.0f}".format(c.annual_demand or 0) }}</td>
-                        <td class="text-end">{{ "{:,.0f}".format(c.target_price or 0) }}</td>
+                        <td class="text-end" data-search="{{ '{:,.0f}'.format(c.annual_demand or 0) }} {{ '%.0f'|format(c.annual_demand or 0) }} {{ c.annual_demand or 0 }}">{{ "{:,.0f}".format(c.annual_demand or 0) }}</td>
+                        <td class="text-end" data-search="{{ '{:,.0f}'.format(c.target_price or 0) }} {{ '%.0f'|format(c.target_price or 0) }} {{ c.target_price or 0 }}">{{ "{:,.0f}".format(c.target_price or 0) }}</td>
                         <td class="text-end {{ 'text-danger' if c.indicative_margin < 0 else '' }}">{{ c.margin_percent }}%</td>
                         {% for d in ['Technical', 'Financial', 'Market'] %}
                         {% set v = c.discipline_verdict(d) %}
@@ -105,13 +101,27 @@
                             <a href="{{ url_for('product_development.view', project_id=c.project.id) }}">{{ c.project.pdv_code }}</a>
                             {% else %}-{% endif %}
                         </td>
-                        <td>
-                            <a href="{{ url_for('pd_funnel.view', candidate_id=c.id) }}" class="btn btn-sm btn-info"><i class="fas fa-eye"></i></a>
+                        <td class="text-center">
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-link text-muted funnel-actions-toggle" type="button" data-bs-toggle="dropdown"
+                                    aria-expanded="false" title="Actions"><i class="fas fa-ellipsis-v"></i></button>
+                                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                    <li><a class="dropdown-item" href="{{ url_for('pd_funnel.view', candidate_id=c.id) }}"><i class="fas fa-eye me-2 text-primary"></i>View</a></li>
+                                    {% if current_user.is_admin %}
+                                    <li><a class="dropdown-item" href="{{ url_for('pd_funnel.edit', candidate_id=c.id) }}"><i class="fas fa-edit me-2 text-warning"></i>Edit</a></li>
+                                    {% if not c.project_id %}
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li>
+                                        <form method="POST" action="{{ url_for('pd_funnel.delete', candidate_id=c.id) }}"
+                                            onsubmit="return confirm('Delete {{ c.candidate_code }} and all its reviews, tasks and gate records?');">
+                                            <button class="dropdown-item text-danger"><i class="fas fa-trash me-2"></i>Delete</button>
+                                        </form>
+                                    </li>
+                                    {% endif %}
+                                    {% endif %}
+                                </ul>
+                            </div>
                         </td>
-                    </tr>
-                    {% else %}
-                    <tr>
-                        <td colspan="14" class="text-center text-muted">No candidates yet. Start with an OEM part number.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -119,4 +129,19 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(function () {
+        initExportDataTable('#funnelTable', 'Product Funnel');
+
+        // Fixed positioning so the menu is not clipped by the scrolling table.
+        // Bootstrap 5.1 cannot read popperConfig from a data attribute, so create
+        // the instance here just before Bootstrap's own click handler runs.
+        $(document).on('mousedown keydown', '.funnel-actions-toggle', function () {
+            bootstrap.Dropdown.getOrCreateInstance(this, { popperConfig: { strategy: 'fixed' } });
+        });
+    });
+</script>
 {% endblock %}

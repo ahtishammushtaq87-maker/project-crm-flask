@@ -4400,6 +4400,8 @@ class PDComponent(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=False, index=True)
     component_name = db.Column(db.String(200), nullable=False)
+    # Inventory item the component was picked from (gives SKU and category)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True, index=True)
     component_type = db.Column(db.Enum('MAKE', 'BUY', 'OUTSOURCE', name='pd_component_type'), nullable=False, default='BUY')
     quantity = db.Column(db.Float, default=1)
     vendor_id = db.Column(db.Integer, db.ForeignKey('vendors.id'), nullable=True)
@@ -4410,12 +4412,19 @@ class PDComponent(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     vendor = db.relationship('Vendor', backref='pd_components', lazy=True)
+    product = db.relationship('Product', lazy=True)
     purchase_order = db.relationship('PurchaseOrder', backref='pd_components', lazy=True)
     manufacturing_order = db.relationship('ManufacturingOrder', backref='pd_components', lazy=True)
     
     @property
     def cost(self):
         return (self.estimated_cost or 0) * (self.quantity or 0)
+
+    @property
+    def category_label(self):
+        if not self.product:
+            return None
+        return self.product.category.name if self.product.category else self.product.category_name
     
     def __repr__(self):
         return f'<PDComponent {self.project_id} - {self.component_name}>'

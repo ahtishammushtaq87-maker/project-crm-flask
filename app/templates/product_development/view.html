@@ -2,6 +2,44 @@
 
 {% block title %}{{ project.pdv_code }} - {{ project.product_name }}{% endblock %}
 
+{% macro mc_row(idx, name, kind, prod, qty, unit_cost, total, vendor_name, delete_url) -%}
+<tr>
+    <td><span class="mc-idx">{{ idx }}</span></td>
+    <td>
+        <div class="mc-item">
+            <div class="mc-thumb">
+                {% if prod and prod.image_path %}
+                {% set ip = prod.image_path.replace('\\', '/') %}
+                <img src="{{ url_for('static', filename=ip.replace('app/static/', '') if 'app/static/' in ip else ip) }}" alt="{{ name }}"
+                    onerror="this.parentNode.innerHTML='<i class=&quot;fas fa-box-open&quot;></i>'">
+                {% else %}<i class="fas fa-box-open"></i>{% endif %}
+            </div>
+            <div class="mc-text">
+                <div class="mc-name">{{ name }}</div>
+                {% if prod and prod.description %}<div class="mc-desc">{{ prod.description|truncate(70) }}</div>{% endif %}
+            </div>
+        </div>
+    </td>
+    <td>
+        {% if kind == 'BUY' %}<span class="mc-type mc-buy"><i class="fas fa-shopping-cart"></i> BUY</span>
+        {% elif kind == 'MAKE' %}<span class="mc-type mc-make"><i class="fas fa-industry"></i> MAKE</span>
+        {% elif kind == 'OUTSOURCE' %}<span class="mc-type mc-out"><i class="fas fa-truck"></i> OUTSOURCE</span>
+        {% else %}<span class="mc-type mc-mat"><i class="fas fa-cube"></i> MATERIAL</span>{% endif %}
+    </td>
+    <td>{% if prod %}<span class="mc-sku">{{ sku_link(prod.sku, prod.id) }}</span>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+    <td>{{ ((prod.category.name if prod.category else prod.category_name) if prod else None) or '-' }}</td>
+    <td>{{ qty }}</td>
+    <td class="text-nowrap">PKR {{ "{:,.0f}".format(unit_cost or 0) }}</td>
+    <td><span class="mc-total">PKR {{ "{:,.0f}".format(total or 0) }}</span></td>
+    <td>{% if vendor_name %}<span class="mc-vendor"><i class="fas fa-building"></i><span>{{ vendor_name }}</span></span>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+    <td class="text-center">
+        {% if current_user.has_permission('product_dev', 'delete') %}
+        <a href="{{ delete_url }}" class="mc-del" title="Delete" onclick="return confirm('Delete this item?')"><i class="fas fa-trash"></i></a>
+        {% endif %}
+    </td>
+</tr>
+{%- endmacro %}
+
 {% block extra_css %}
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <style>
@@ -19,6 +57,51 @@
     .select2-container {
         z-index: 9999 !important;
     }
+    /* Materials & Components card (compact) */
+    .mc-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(30, 41, 89, .06); padding: 1rem; font-size: .85rem; }
+    .mc-head { display: flex; align-items: center; gap: .65rem; margin-bottom: .75rem; }
+    .mc-head-icon { width: 36px; height: 36px; border-radius: 10px; background: #e6ecfd; color: #3460e6;
+        display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
+    .mc-head h5 { margin: 0; font-size: 1rem; font-weight: 600; color: #111b3c; }
+    .mc-head small { color: #6b7591; font-size: .75rem; }
+    .mc-table-wrap { border: 1px solid #edf0f7; border-radius: 10px; overflow-x: auto; }
+    .mc-table { width: 100%; margin: 0; border-collapse: separate; border-spacing: 0; }
+    .mc-table thead th { background: #f4f6fb; color: #3b4563; font-weight: 600; padding: .5rem .6rem; white-space: nowrap; border: 0; font-size: .8rem; }
+    .mc-table tbody td { padding: .5rem .6rem; vertical-align: middle; border-top: 1px solid #edf0f7; color: #1f2740; }
+    .mc-table tbody tr:first-child td { border-top: 0; }
+    .mc-idx { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px;
+        border-radius: 6px; background: #f1f3f8; font-weight: 600; font-size: .75rem; }
+    .mc-item { display: flex; align-items: center; gap: .6rem; min-width: 240px; }
+    .mc-thumb { width: 40px; height: 40px; border-radius: 8px; background: #f4f6fb; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center; overflow: hidden; color: #a3acc5; font-size: 1rem; }
+    .mc-thumb img { width: 100%; height: 100%; object-fit: contain; }
+    .mc-name { font-weight: 600; color: #111b3c; line-height: 1.3; }
+    .mc-desc { color: #6b7591; font-size: .75rem; margin-top: .15rem; }
+    .mc-type { display: inline-flex; align-items: center; gap: .3rem; padding: .2rem .5rem; border-radius: 6px;
+        font-size: .72rem; font-weight: 600; white-space: nowrap; }
+    .mc-buy { background: #dcf7e7; color: #16a34a; }
+    .mc-make { background: #e0e9ff; color: #3460e6; }
+    .mc-out { background: #fff1d6; color: #c47a00; }
+    .mc-mat { background: #eef0f4; color: #5b6478; }
+    .mc-sku { display: inline-block; padding: .2rem .5rem; border-radius: 6px; background: #e3f0ff; font-size: .8rem; }
+    .mc-sku, .mc-sku a { color: #1a73e8; text-decoration: none; }
+    .mc-total { display: inline-block; padding: .25rem .55rem; border-radius: 6px; background: #ebf0fd;
+        color: #1b3fa8; font-weight: 700; white-space: nowrap; }
+    .mc-vendor { display: inline-flex; align-items: flex-start; gap: .35rem; padding: .25rem .5rem; border-radius: 6px;
+        background: #efeafd; color: #5b3fd1; font-size: .75rem; max-width: 160px; }
+    .mc-vendor i { margin-top: .1rem; }
+    .mc-del { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+        border-radius: 6px; background: #fde4e6; color: #e5484d; text-decoration: none; font-size: .8rem; }
+    .mc-del:hover { background: #e5484d; color: #fff; }
+    .mc-summary { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap;
+        margin-top: .75rem; padding: .5rem .5rem .5rem .75rem; border-radius: 10px; background: #f1f5fe; }
+    .mc-summary-left { display: flex; align-items: center; gap: .6rem; }
+    .mc-summary-icon { width: 32px; height: 32px; border-radius: 8px; background: #4f6ef7; color: #fff;
+        display: flex; align-items: center; justify-content: center; font-size: .85rem; }
+    .mc-summary-title { font-weight: 700; color: #111b3c; font-size: .9rem; }
+    .mc-summary small { color: #6b7591; font-size: .72rem; }
+    .mc-summary-amount { background: #e4ebfd; color: #1b3fa8; font-weight: 800; font-size: 1.1rem;
+        padding: .4rem 1rem; border-radius: 8px; }
 </style>
 {% endblock %}
 {% block content %}
@@ -129,7 +212,14 @@
         <div class="tab-content p-3 border border-top-0 bg-white" id="phaseTabsContent">
             <!-- Phase 1: Materials & Components -->
             <div class="tab-pane fade {{ 'show active' if project.current_phase == 1 else '' }}" id="phase1" role="tabpanel">
-                <h5><i class="fas fa-layer-group me-2"></i>Materials & Components</h5>
+                <div class="mc-card">
+                <div class="mc-head">
+                    <div class="mc-head-icon"><i class="fas fa-shopping-cart"></i></div>
+                    <div>
+                        <h5>Materials &amp; Components</h5>
+                        <small>Item details, cost and vendor information</small>
+                    </div>
+                </div>
                 <div class="mb-3 d-flex justify-content-between align-items-center">
                     <div class="btn-group" role="group">
                        <!-- <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addBOMModal">
@@ -147,78 +237,51 @@
                     </form>
                     {% endif %}
                 </div>
-                <table class="table table-sm">
+                <div class="mc-table-wrap">
+                <table class="mc-table">
                     <thead>
                         <tr>
-                            <th>Name</th>
+                            <th>#</th>
+                            <th>Name &amp; Description</th>
                             <th>Type</th>
-                            <th>SKU/Ref</th>
+                            <th>SKU / Ref</th>
+                            <th>Category</th>
                             <th>Qty</th>
                             <th>Cost/Unit</th>
                             <th>Total</th>
                             <th>Vendor</th>
-                            <th>Actions</th>
+                            <th class="text-center">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <!-- BOM Items -->
+                        {% set bom_count = project.bom_items|length %}
                         {% for item in project.bom_items %}
-                        <tr>
-                            <td>{{ item.material_name }}</td>
-                            <td><span class="badge bg-secondary">Material</span></td>
-                            <td>{{ sku_link(item.material.sku, item.material.id) if item.material else '-' }}</td>
-                            <td>{{ item.quantity_per_unit }}</td>
-                            <td>PKR {{ "{:,.0f}".format(item.estimated_cost) }}</td>
-                            <td>PKR {{ "{:,.0f}".format(item.total_cost) }}</td>
-                            <td>-</td>
-                            <td>
-                                {% if current_user.has_permission('product_dev', 'delete') %}
-<a href="{{ url_for('product_development.delete_bom', bom_id=item.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete this item?')">
-                                    <i class="fas fa-trash"></i>
-                                </a>
-{% endif %}                                
-                            </td>
-                        </tr>
+                        {{ mc_row(loop.index, item.material_name, 'MATERIAL', item.material, item.quantity_per_unit,
+                                  item.estimated_cost, item.total_cost, None,
+                                  url_for('product_development.delete_bom', bom_id=item.id)) }}
                         {% endfor %}
-                        <!-- Components -->
                         {% for comp in project.components %}
-                        <tr>
-                            <td>{{ comp.component_name }}</td>
-                            <td>
-                                {% if comp.component_type == 'BUY' %}
-                                <span class="badge bg-info">BUY</span>
-                                {% elif comp.component_type == 'MAKE' %}
-                                <span class="badge bg-primary">MAKE</span>
-                                {% else %}
-                                <span class="badge bg-warning">OUTSOURCE</span>
-                                {% endif %}
-                            </td>
-                            <td>-</td>
-                            <td>{{ comp.quantity }}</td>
-                            <td>PKR {{ "{:,.0f}".format(comp.estimated_cost) }}</td>
-                            <td>PKR {{ "{:,.0f}".format(comp.cost) }}</td>
-                            <td>{{ comp.vendor.name if comp.vendor else '-' }}</td>
-                            <td>
-                                {% if current_user.has_permission('product_dev', 'delete') %}
-<a href="{{ url_for('product_development.delete_component', comp_id=comp.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')">
-                                    <i class="fas fa-trash"></i>
-                                </a>
-{% endif %}                                
-                            </td>
-                        </tr>
+                        {{ mc_row(bom_count + loop.index, comp.component_name, comp.component_type, comp.product, comp.quantity,
+                                  comp.estimated_cost, comp.cost, comp.vendor.name if comp.vendor else None,
+                                  url_for('product_development.delete_component', comp_id=comp.id)) }}
                         {% endfor %}
                         {% if not project.bom_items and not project.components %}
-                        <tr><td colspan="8" class="text-muted">No materials or components added</td></tr>
+                        <tr><td colspan="10" class="text-center text-muted py-4">No materials or components added</td></tr>
                         {% endif %}
                     </tbody>
-                    <tfoot>
-                        <tr class="fw-bold">
-                            <td colspan="5">Total M&C Cost</td>
-                            <td>PKR {{ "{:,.0f}".format(project.total_bom_cost + project.total_component_cost) }}</td>
-                            <td colspan="2"></td>
-                        </tr>
-                    </tfoot>
                 </table>
+                </div>
+                <div class="mc-summary">
+                    <div class="mc-summary-left">
+                        <div class="mc-summary-icon"><i class="fas fa-calculator"></i></div>
+                        <div>
+                            <div class="mc-summary-title">Total M&amp;C Cost</div>
+                            <small>Sum of all item costs</small>
+                        </div>
+                    </div>
+                    <div class="mc-summary-amount">PKR {{ "{:,.0f}".format(project.total_bom_cost + project.total_component_cost) }}</div>
+                </div>
+                </div>
             </div>
             
             <!-- Phase 2: Tooling -->
@@ -727,12 +790,23 @@
                 <div class="modal-body">
                      <div class="mb-2">
                          <label class="form-label">Component Name</label>
-                         <select name="component_name" class="form-select searchable-select" required>
+                         <select name="product_id" class="form-select searchable-select" required>
                              <option value="">-- Search inventory item --</option>
                              {% for p in products %}
-                             <option value="{{ p.name }}" data-cost="{{ p.cost_price or 0 }}">{{ p.sku }} - {{ p.name }}</option>
+                             <option value="{{ p.id }}" data-cost="{{ p.cost_price or 0 }}" data-sku="{{ p.sku }}"
+                                 data-category="{{ (p.category.name if p.category else p.category_name) or '' }}">{{ p.sku }} - {{ p.name }}</option>
                              {% endfor %}
                          </select>
+                     </div>
+                     <div class="row g-2 mb-2">
+                         <div class="col-6">
+                             <label class="form-label">SKU Code</label>
+                             <input type="text" id="componentSku" class="form-control bg-light" readonly placeholder="Auto from item">
+                         </div>
+                         <div class="col-6">
+                             <label class="form-label">Item Category</label>
+                             <input type="text" id="componentCategory" class="form-control bg-light" readonly placeholder="Auto from item">
+                         </div>
                      </div>
                     <div class="mb-2">
                         <label class="form-label">Type</label>
@@ -1055,7 +1129,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Add Select2 select event (fires when user selects from dropdown)
             $materialSelect.on('select2:select.autofill', function(e) {
-                var cost = $(e.params.data.element).attr('data-cost');
+                var $opt = $(e.params.data.element);
+            $('#componentSku').val($opt.attr('data-sku') || '');
+            $('#componentCategory').val($opt.attr('data-category') || '-');
+            var cost = $opt.attr('data-cost');
                 if (cost !== null && cost !== '') {
                     $estimatedCostInput.val(parseFloat(cost).toFixed(2));
                 } else {
@@ -1097,7 +1174,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Component auto-fill functionality (for Add Component modal)
     $('#addComponentModal').on('shown.bs.modal', function () {
-        var $componentSelect = $('#addComponentModal select[name="component_name"]');
+        var $componentSelect = $('#addComponentModal select[name="product_id"]');
         var $costInput = $('#addComponentModal input[name="estimated_cost"]');
         
         if (!$componentSelect.length || !$costInput.length) {

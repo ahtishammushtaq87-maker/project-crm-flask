@@ -376,10 +376,16 @@ def delete_bom(bom_id):
 def add_component(project_id):
     """Add component"""
     project = PDProject.query.get_or_404(project_id)
+    product_id = request.form.get('product_id', type=int)
+    product = Product.query.get(product_id) if product_id else None
+    if not product:
+        flash('Select an inventory item for the component.', 'danger')
+        return redirect(url_for('product_development.view', project_id=project_id, phase=2))
     
     component = PDComponent(
         project_id=project_id,
-        component_name=request.form.get('component_name'),
+        product_id=product.id,
+        component_name=product.name,
         component_type=request.form.get('component_type'),
         quantity=float(request.form.get('quantity') or 1),
         vendor_id=request.form.get('vendor_id') or None,

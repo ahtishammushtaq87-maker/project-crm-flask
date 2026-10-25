@@ -41,7 +41,7 @@
     </div>
     <div class="d-flex gap-2">
         <a href="{{ url_for('pd_funnel.index') }}" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Funnel</a>
-        {% if can_edit %}
+        {% if can_edit and current_user.is_admin %}
         <a href="{{ url_for('pd_funnel.edit', candidate_id=candidate.id) }}" class="btn btn-warning btn-sm"><i class="fas fa-edit"></i> Edit</a>
         {% endif %}
         {% if candidate.status in ('Rejected', 'On Hold') and current_user.has_permission('product_dev', 'edit') and not locked %}
@@ -49,7 +49,7 @@
             <button class="btn btn-outline-primary btn-sm"><i class="fas fa-rotate-left"></i> Reopen</button>
         </form>
         {% endif %}
-        {% if can_delete %}
+        {% if can_delete and current_user.is_admin %}
         <form method="POST" action="{{ url_for('pd_funnel.delete', candidate_id=candidate.id) }}" class="d-inline" onsubmit="return confirm('Delete this candidate and all its reviews, tasks and gate records?');">
             <button class="btn btn-danger btn-sm"><i class="fas fa-trash"></i></button>
         </form>
@@ -263,17 +263,27 @@
         <form class="modal-content" method="POST" action="{{ url_for('pd_funnel.add_review', candidate_id=candidate.id) }}">
             <div class="modal-header"><h5 class="modal-title">Add Feasibility Review</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
             <div class="modal-body row g-3">
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <label class="form-label">Discipline *</label>
                     <select name="discipline" class="form-select" required>{% for d in disciplines %}<option>{{ d }}</option>{% endfor %}</select>
                 </div>
-                <div class="col-md-4">
-                    <label class="form-label">Reviewer (Staff) *</label>
-                    <select name="reviewer_staff_id" class="form-select" required>{{ staff_options() }}</select>
-                </div>
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <label class="form-label">Verdict *</label>
                     <select name="verdict" class="form-select" required>{% for v in verdicts %}<option>{{ v }}</option>{% endfor %}</select>
+                </div>
+                <div class="col-12 reviewer-wrap">
+                    <label class="form-label reviewer-label">
+                        <span class="reviewer-icon"><i class="fas fa-user-group"></i></span>
+                        <span class="reviewer-title">Reviewer (Staff) <span class="text-danger">*</span></span>
+                        <span class="reviewer-actions">
+                            <a href="#" onclick="setAllReviewers(true); return false;">Select all</a>
+                            <span class="text-muted">|</span>
+                            <a href="#" onclick="setAllReviewers(false); return false;">Clear all</a>
+                        </span>
+                    </label>
+                    <select name="reviewer_staff_id" id="reviewerSelect" class="form-select" multiple required>
+                        {% for s in staff %}<option value="{{ s.id }}">{{ s.name }}{{ ' - ' ~ s.designation if s.designation else '' }}</option>{% endfor %}
+                    </select>
                 </div>
                 <div class="col-12">
                     <label class="form-label">Evidence Reference *</label>
@@ -379,10 +389,59 @@
 {% endblock %}
 
 {% block extra_js %}
+<style>
+    .reviewer-label { display: flex; align-items: center; gap: .5rem; width: 100%; }
+    .reviewer-icon {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 30px; height: 30px; border-radius: 8px;
+        background: #e8eefc; color: #3b6fd8; font-size: .85rem;
+    }
+    .reviewer-title { font-weight: 600; }
+    .reviewer-actions { margin-left: auto; font-size: .85rem; white-space: nowrap; }
+    .reviewer-actions a { text-decoration: none; }
+    /* Box grows with the chips instead of the global fixed select2 height */
+    #reviewModal .reviewer-wrap .select2-selection--multiple {
+        height: auto !important; min-height: 46px; padding: .35rem .5rem;
+        border: 1px solid #a9c1f0; border-radius: 10px;
+    }
+    #reviewModal .reviewer-wrap .select2-selection__rendered {
+        display: flex !important; flex-wrap: wrap; gap: .35rem;
+        margin: 0; padding: 0 1.5rem 0 0; list-style: none; white-space: normal;
+    }
+    #reviewModal .reviewer-wrap .select2-selection__choice {
+        display: inline-flex !important; flex-direction: row-reverse; align-items: center;
+        background: #e8eefc; border: 0; border-radius: 999px;
+        padding: .3rem .5rem .3rem .8rem; margin: 0 !important;
+        color: #1f2937; font-weight: 500; max-width: 100%;
+    }
+    #reviewModal .reviewer-wrap .select2-selection__choice__remove {
+        position: static !important; display: inline-flex; align-items: center; justify-content: center;
+        width: 1.2rem; height: 1.2rem; margin: 0 0 0 .45rem !important; padding: 0;
+        border: 0 !important; background: none !important; text-indent: 0 !important;
+        color: #6b7280; font-size: 1.15rem; line-height: 1; cursor: pointer;
+    }
+    #reviewModal .reviewer-wrap .select2-selection__choice__remove span { display: inline !important; }
+    #reviewModal .reviewer-wrap .select2-selection__choice__remove:hover { color: #dc3545; }
+    #reviewModal .reviewer-wrap .select2-search--inline { flex: 1 0 120px; }
+    #reviewModal .reviewer-wrap .select2-search__field { margin: .3rem 0 0 .25rem !important; }
+</style>
 <script>
     function addMemberRow(btn) {
         var tpl = document.getElementById('memberRowTpl');
         btn.previousElementSibling.appendChild(tpl.content.cloneNode(true));
+    }
+
+    $(function () {
+        $('#reviewerSelect').select2({
+            theme: 'bootstrap-5', width: '100%', closeOnSelect: false,
+            placeholder: '-- Select reviewers --', dropdownParent: $('#reviewModal')
+        });
+    });
+
+    function setAllReviewers(all) {
+        var $sel = $('#reviewerSelect');
+        $sel.find('option').prop('selected', all);
+        $sel.trigger('change');
     }
 </script>
 {% endblock %}

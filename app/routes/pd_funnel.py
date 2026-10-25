@@ -183,6 +183,9 @@ def _fill_candidate(c):
 @permission_required('product_dev', action='edit')
 def edit(candidate_id):
     candidate = PDCandidate.query.get_or_404(candidate_id)
+    if not current_user.is_admin:
+        flash('Only an admin can edit a candidate.', 'danger')
+        return _redirect_view(candidate.id)
     if _locked(candidate):
         return _redirect_view(candidate.id)
     if request.method == 'POST':
@@ -204,6 +207,9 @@ def edit(candidate_id):
 @permission_required('product_dev', action='delete')
 def delete(candidate_id):
     candidate = PDCandidate.query.get_or_404(candidate_id)
+    if not current_user.is_admin:
+        flash('Only an admin can delete a candidate.', 'danger')
+        return _redirect_view(candidate.id)
     if candidate.project_id:
         flash('Cannot delete a candidate that already created a project.', 'danger')
         return _redirect_view(candidate.id)
@@ -246,24 +252,33 @@ def add_review(candidate_id):
     if review_date and valid_until and valid_until < review_date:
         flash('Validity date cannot be before the review date.', 'danger')
         return _redirect_view(candidate.id, 'reviews')
-    # One current review per discipline: supersede the previous one, keep it as history
+    # Bulk select: one review row per reviewer, all sharing the same verdict and evidence
+    reviewer_ids = list(dict.fromkeys(int(v) for v in request.form.getlist('reviewer_staff_id') if v.isdigit()))
+    if not reviewer_ids:
+        flash('Select at least one reviewer.', 'danger')
+        return _redirect_view(candidate.id, 'reviews')
+    # Current reviews per discipline: supersede the previous ones, keep them as history
     for r in candidate.reviews:
         if r.discipline == discipline and r.is_current:
             r.is_current = False
-    review = PDFeasibilityReview(
-        candidate_id=candidate.id, discipline=discipline,
-        reviewer_staff_id=_int('reviewer_staff_id'),
-        evidence_reference=request.form.get('evidence_reference'),
-        finding=request.form.get('finding'), verdict=verdict, is_current=True,
-        review_date=review_date, valid_until=valid_until, created_by=current_user.id)
-    db.session.add(review)
+    reviews = []
+    for staff_id in reviewer_ids:
+        review = PDFeasibilityReview(
+            candidate_id=candidate.id, discipline=discipline,
+            reviewer_staff_id=staff_id,
+            evidence_reference=request.form.get('evidence_reference'),
+            finding=request.form.get('finding'), verdict=verdict, is_current=True,
+            review_date=review_date, valid_until=valid_until, created_by=current_user.id)
+        db.session.add(review)
+        reviews.append(review)
     db.session.flush()
     _refresh_status(candidate)
     db.session.commit()
-    log_activity('Product Development', f'{discipline} review ({verdict}) on {candidate.candidate_code}')
-    flash(f'{discipline} review recorded.' + ('' if review.is_complete else
+    log_activity('Product Development', f'{discipline} review ({verdict}) by {len(reviews)} reviewer(s) on {candidate.candidate_code}')
+    complete = all(r.is_complete for r in reviews)
+    flash(f'{discipline} review recorded for {len(reviews)} reviewer(s).' + ('' if complete else
           ' It is incomplete (needs reviewer, evidence, finding and date) and will not count toward G1.'),
-          'success' if review.is_complete else 'warning')
+          'success' if complete else 'warning')
     return _redirect_view(candidate.id, 'reviews')
 
 
@@ -278,7 +293,9 @@ def delete_review(review_id):
     was_current, discipline = review.is_current, review.discipline
     db.session.delete(review)
     db.session.flush()
-    if was_current:
+    still_current = PDFeasibilityReview.query.filter_by(
+        candidate_id=candidate.id, discipline=discipline, is_current=True).first()
+    if was_current and not still_current:
         # Promote the most recent superseded review back to current
         prev = PDFeasibilityReview.query.filter_by(candidate_id=candidate.id, discipline=discipline) \
             .order_by(PDFeasibilityReview.id.desc()).first()
