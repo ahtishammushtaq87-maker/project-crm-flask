@@ -75,11 +75,11 @@
                     <div class="col-6 col-md-3"><div class="text-muted">Target price</div><strong>PKR {{ "{:,.0f}".format(candidate.target_price or 0) }}</strong></div>
                     <div class="col-6 col-md-3"><div class="text-muted">Est. unit cost</div><strong>PKR {{ "{:,.0f}".format(candidate.est_unit_cost or 0) }}</strong></div>
                     <div class="col-6 col-md-3"><div class="text-muted">Indicative margin</div><strong class="{{ 'text-danger' if candidate.indicative_margin < 0 else 'text-success' }}">PKR {{ "{:,.0f}".format(candidate.indicative_margin) }} ({{ candidate.margin_percent }}%)</strong></div>
-                    <div class="col-6 col-md-3"><div class="text-muted">Owner</div><strong>{{ candidate.owner.name if candidate.owner else '-' }}</strong></div>
-                    <div class="col-6 col-md-3"><div class="text-muted">G1 stage lead</div><strong>{{ candidate.g1_lead.name if candidate.g1_lead else '-' }}</strong></div>
+                    <div class="col-6 col-md-3"><div class="text-muted">Owner</div><strong>{{ candidate.owner.name if candidate.owner else (candidate.owner_user.username if candidate.owner_user else '-') }}</strong></div>
+                    <div class="col-6 col-md-3"><div class="text-muted">G1 stage lead</div><strong>{{ candidate.g1_lead.name if candidate.g1_lead else (candidate.g1_lead_user.username if candidate.g1_lead_user else '-') }}</strong></div>
                     <div class="col-6 col-md-3"><div class="text-muted">G1 target</div><strong>{{ candidate.g1_target_date.strftime('%Y-%m-%d') if candidate.g1_target_date else '-' }}</strong></div>
                     <div class="col-6 col-md-3"><div class="text-muted">Category</div><strong>{{ candidate.product_category.name if candidate.product_category else '-' }}</strong></div>
-                    <div class="col-12"><div class="text-muted">Next evidence</div>{{ candidate.next_evidence or '-' }}</div>
+                    <div class="col-12"><div class="text-muted">Voice of Customer</div>{{ candidate.voc_reviews|length ~ ' review(s)' if candidate.voc_reviews else '-' }} <a href="#voc" class="small ms-1">view ↓</a></div>
                     {% if candidate.notes %}<div class="col-12"><div class="text-muted">Notes</div>{{ candidate.notes }}</div>{% endif %}
                 </div>
             </div>
@@ -107,7 +107,7 @@
     </div>
 </div>
 
-{# ── Feasibility reviews ── #}
+{# Feasibility reviews #}
 <div class="card mb-4" id="reviews">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="fas fa-scale-balanced me-2"></i>Feasibility reviews</h5>
@@ -148,7 +148,7 @@
     </div>
 </div>
 
-{# ── G1 tasks ── #}
+{# G1 tasks #}
 <div class="card mb-4" id="tasks">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="fas fa-users-gear me-2"></i>G1 tasks &amp; team</h5>
@@ -193,7 +193,103 @@
     </div>
 </div>
 
-{# ── G1 gate ── #}
+{# Funnel components #}
+<div class="card mb-4" id="components">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-boxes me-2"></i>Components
+            {% if candidate.funnel_components %}
+            <span class="badge bg-secondary ms-1">{{ candidate.funnel_components|length }}</span>
+            <small class="ms-2 text-muted fw-normal">Total: PKR {{ "{:,.0f}".format(candidate.total_funnel_component_cost) }}</small>
+            {% endif %}
+        </h5>
+        {% if can_edit %}
+        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#funnelCompModal"><i class="fas fa-plus me-1"></i> Add Component</button>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <p class="small text-muted">Add components you expect to buy/make. The total auto-fills the Sample Purchase Cap in the G1 gate below, and all components transfer to the project on G1 approval.</p>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead><tr><th>#</th><th>Name</th><th>Type</th><th>Qty</th><th>Cost/Unit (PKR)</th><th>Total (PKR)</th><th>Vendor</th><th></th></tr></thead>
+                <tbody>
+                    {% for fc in candidate.funnel_components %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ fc.component_name }}</td>
+                        <td>{% if fc.component_type == 'BUY' %}<span class="badge bg-success">BUY</span>{% elif fc.component_type == 'MAKE' %}<span class="badge bg-primary">MAKE</span>{% else %}<span class="badge bg-warning text-dark">OUTSOURCE</span>{% endif %}</td>
+                        <td>{{ fc.quantity }}</td>
+                        <td>{{ "{:,.0f}".format(fc.estimated_cost or 0) }}</td>
+                        <td><strong>{{ "{:,.0f}".format(fc.cost) }}</strong></td>
+                        <td>{{ fc.vendor.name if fc.vendor else '-' }}</td>
+                        <td>
+                            {% if can_delete %}
+                            <form method="POST" action="{{ url_for('pd_funnel.delete_funnel_component', comp_id=fc.id) }}" onsubmit="return confirm('Remove this component?');">
+                                <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="8" class="text-center text-muted">No components added yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+                {% if candidate.funnel_components %}
+                <tfoot>
+                    <tr class="table-secondary fw-bold">
+                        <td colspan="5" class="text-end">Total</td>
+                        <td>PKR {{ "{:,.0f}".format(candidate.total_funnel_component_cost) }}</td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+</div>
+
+{# Voice of Customer reviews #}
+<div class="card mb-4" id="voc">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-comments me-2"></i>Voice of Customer Reviews
+            {% if candidate.voc_reviews %}
+            <span class="badge bg-secondary ms-1">{{ candidate.voc_reviews|length }}</span>
+            {% endif %}
+        </h5>
+        {% if can_edit %}
+        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#vocModal"><i class="fas fa-plus me-1"></i> Add Review</button>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        {% if candidate.voc_reviews %}
+        <div class="row g-3">
+            {% for v in candidate.voc_reviews %}
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100 border">
+                    {% if v.image_path %}
+                    <img src="{{ url_for('static', filename=v.image_path) }}" class="card-img-top" style="max-height:200px;object-fit:cover;" alt="VOC image">
+                    {% endif %}
+                    <div class="card-body py-2 px-3">
+                        <p class="mb-1 small">{{ v.review_text }}</p>
+                        <div class="text-muted" style="font-size:.75rem">{{ v.created_at.strftime('%Y-%m-%d') }}</div>
+                    </div>
+                    {% if can_delete %}
+                    <div class="card-footer py-1 text-end">
+                        <form method="POST" action="{{ url_for('pd_funnel.delete_voc', voc_id=v.id) }}" onsubmit="return confirm('Remove this review?');">
+                            <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                        </form>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted small mb-0">No customer reviews yet. Add evidence from customer conversations, surveys, or screenshots.</p>
+        {% endif %}
+    </div>
+</div>
+
+{# G1 gate #}
 <div class="card mb-4" id="gate">
     <div class="card-header"><h5 class="mb-0"><i class="fas fa-flag-checkered me-2"></i>G1 gate decision</h5></div>
     <div class="card-body">
@@ -216,7 +312,12 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label">Sample Purchase Cap (PKR)</label>
-                <input type="number" step="0.01" min="0" name="approved_cap" class="form-control" placeholder="Required to approve">
+                <input type="number" step="0.01" min="0" name="approved_cap" id="approvedCapInput"
+                    class="form-control" placeholder="Required to approve"
+                    value="{{ "{:.0f}".format(candidate.total_funnel_component_cost) if candidate.funnel_components else '' }}">
+                {% if candidate.funnel_components %}
+                <div class="form-text text-success"><i class="fas fa-calculator me-1"></i>Auto-filled from {{ candidate.funnel_components|length }} component(s)</div>
+                {% endif %}
             </div>
             <div class="col-md-6">
                 <label class="form-label">Evidence Reference</label>
@@ -378,6 +479,85 @@
 </div>
 {% endfor %}
 
+<!-- Add Funnel Component modal -->
+<div class="modal fade" id="funnelCompModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST" action="{{ url_for('pd_funnel.add_funnel_component', candidate_id=candidate.id) }}">
+            <div class="modal-header"><h5 class="modal-title"><i class="fas fa-box me-2"></i>Add Component</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body row g-3">
+                <div class="col-12">
+                    <label class="form-label">Inventory Item *</label>
+                    <select name="product_id" id="funnelCompProduct" class="form-select" required>
+                        <option value="">-- Search item --</option>
+                        {% for p in products %}
+                        <option value="{{ p.id }}" data-cost="{{ p.cost_price or 0 }}">{{ p.sku }} - {{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Type *</label>
+                    <select name="component_type" class="form-select" required>
+                        <option value="BUY">BUY</option>
+                        <option value="MAKE">MAKE</option>
+                        <option value="OUTSOURCE">OUTSOURCE</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Quantity</label>
+                    <input type="number" name="quantity" class="form-control" value="1" step="0.01" min="0.01">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Estimated Cost / Unit (PKR)</label>
+                    <input type="number" name="estimated_cost" id="funnelCompCost" class="form-control" step="0.01" value="0">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Vendor</label>
+                    <select name="vendor_id" class="form-select">
+                        <option value="">-- None --</option>
+                        {% for v in vendors %}
+                        <option value="{{ v.id }}">{{ v.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Notes</label>
+                    <input type="text" name="notes" class="form-control">
+                </div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary">Add Component</button></div>
+        </form>
+    </div>
+</div>
+
+<!-- Voice of Customer modal -->
+<div class="modal fade" id="vocModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form class="modal-content" method="POST" action="{{ url_for('pd_funnel.add_voc', candidate_id=candidate.id) }}">
+            <div class="modal-header"><h5 class="modal-title"><i class="fas fa-comments me-2"></i>Add Voice of Customer Review</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Review / Customer Feedback <span class="text-danger">*</span></label>
+                    <textarea name="review_text" rows="3" class="form-control" required placeholder="e.g. Customer confirmed demand at 500 units/year, willing to pay PKR 1,200..."></textarea>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Screenshot / Image <span class="text-muted small">(paste from clipboard or click to upload)</span></label>
+                    <div id="vocPasteZone" style="border:2px dashed #adb5bd;border-radius:8px;min-height:120px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;background:#f8f9fa;" tabindex="0">
+                        <div id="vocPasteHint" class="text-muted text-center p-3">
+                            <i class="fas fa-clipboard fa-2x mb-2 d-block"></i>
+                            Paste image here (Ctrl+V) or click to select a file
+                        </div>
+                        <img id="vocPreview" src="" alt="" style="max-width:100%;max-height:300px;display:none;border-radius:6px;">
+                        <button type="button" id="vocClearImg" style="display:none;position:absolute;top:6px;right:8px;" class="btn btn-sm btn-outline-danger"><i class="fas fa-times"></i></button>
+                    </div>
+                    <input type="file" id="vocFileInput" accept="image/*" style="display:none">
+                    <input type="hidden" name="voc_image_data" id="vocImageData">
+                </div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary"><i class="fas fa-save me-1"></i>Save Review</button></div>
+        </form>
+    </div>
+</div>
+
 <template id="memberRowTpl">
     <div class="row g-2 mb-2 member-row">
         <div class="col-7"><select name="member_staff_id" class="form-select form-select-sm">{{ staff_options() }}</select></div>
@@ -386,6 +566,11 @@
     </div>
 </template>
 {% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
 {% endblock %}
 
 {% block extra_js %}
@@ -399,7 +584,6 @@
     .reviewer-title { font-weight: 600; }
     .reviewer-actions { margin-left: auto; font-size: .85rem; white-space: nowrap; }
     .reviewer-actions a { text-decoration: none; }
-    /* Box grows with the chips instead of the global fixed select2 height */
     #reviewModal .reviewer-wrap .select2-selection--multiple {
         height: auto !important; min-height: 46px; padding: .35rem .5rem;
         border: 1px solid #a9c1f0; border-radius: 10px;
@@ -425,18 +609,127 @@
     #reviewModal .reviewer-wrap .select2-search--inline { flex: 1 0 120px; }
     #reviewModal .reviewer-wrap .select2-search__field { margin: .3rem 0 0 .25rem !important; }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
     function addMemberRow(btn) {
         var tpl = document.getElementById('memberRowTpl');
         btn.previousElementSibling.appendChild(tpl.content.cloneNode(true));
     }
 
+    function s2(sel, parent, opts) {
+        var defaults = { theme: 'bootstrap-5', width: '100%', allowClear: true, placeholder: '-- Select --' };
+        if (parent) defaults.dropdownParent = $(parent);
+        $(sel).select2($.extend(defaults, opts || {}));
+    }
+
     $(function () {
+        // Gate form selects (inline, no modal parent)
+        s2('#gate select[name="decision"]', null, { placeholder: '-- Decision --', minimumResultsForSearch: Infinity });
+        s2('#gate select[name="approver_staff_id"]', null, { placeholder: '-- Select approver --' });
+
+        // Review modal
+        $('#reviewModal').on('shown.bs.modal', function () {
+            s2('#reviewModal select[name="discipline"]', '#reviewModal', { minimumResultsForSearch: Infinity });
+            s2('#reviewModal select[name="verdict"]', '#reviewModal', { minimumResultsForSearch: Infinity });
+        });
+
         $('#reviewerSelect').select2({
             theme: 'bootstrap-5', width: '100%', closeOnSelect: false,
             placeholder: '-- Select reviewers --', dropdownParent: $('#reviewModal')
         });
+
+        // Task add modal
+        $('#taskModal').on('shown.bs.modal', function () {
+            s2('#taskModal select[name="primary_staff_id"]', '#taskModal', { placeholder: '-- Select staff --' });
+        });
+
+        // Task edit modals
+        $('[id^="taskEdit"]').on('shown.bs.modal', function () {
+            var id = '#' + this.id;
+            s2(id + ' select[name="primary_staff_id"]', id, { placeholder: '-- Select staff --' });
+            s2(id + ' select[name="status"]', id, { minimumResultsForSearch: Infinity });
+        });
+
+        // Funnel component modal
+        $('#funnelCompModal').on('shown.bs.modal', function () {
+            if (!$('#funnelCompProduct').data('select2')) {
+                s2('#funnelCompProduct', '#funnelCompModal', { placeholder: '-- Search item --' });
+            }
+            s2('#funnelCompModal select[name="component_type"]', '#funnelCompModal', { minimumResultsForSearch: Infinity });
+            s2('#funnelCompModal select[name="vendor_id"]', '#funnelCompModal', { placeholder: '-- None --' });
+
+            $('#funnelCompProduct').off('select2:select.funnelComp').on('select2:select.funnelComp', function (e) {
+                var cost = $(e.params.data.element).attr('data-cost');
+                if (cost !== undefined && cost !== '') {
+                    $('#funnelCompCost').val(parseFloat(cost).toFixed(2));
+                }
+            });
+        });
     });
+
+    // Voice of Customer paste-image zone
+    (function () {
+        var zone    = document.getElementById('vocPasteZone');
+        var hint    = document.getElementById('vocPasteHint');
+        var preview = document.getElementById('vocPreview');
+        var clearBtn= document.getElementById('vocClearBtn');
+        var fileIn  = document.getElementById('vocFileInput');
+        var hidden  = document.getElementById('vocImageData');
+        var clearEl = document.getElementById('vocClearImg');
+        if (!zone) return;
+
+        function setImage(dataUrl) {
+            hidden.value = dataUrl;
+            preview.src = dataUrl;
+            preview.style.display = 'block';
+            hint.style.display = 'none';
+            clearEl.style.display = 'block';
+        }
+        function clearImage() {
+            hidden.value = '';
+            preview.src = '';
+            preview.style.display = 'none';
+            hint.style.display = '';
+            clearEl.style.display = 'none';
+        }
+        clearEl.addEventListener('click', function (e) { e.stopPropagation(); clearImage(); });
+
+        // Click to open file picker
+        zone.addEventListener('click', function (e) {
+            if (e.target === clearEl || clearEl.contains(e.target)) return;
+            fileIn.click();
+        });
+        fileIn.addEventListener('change', function () {
+            var f = fileIn.files[0];
+            if (!f) return;
+            var reader = new FileReader();
+            reader.onload = function (ev) { setImage(ev.target.result); };
+            reader.readAsDataURL(f);
+        });
+
+        // Paste from clipboard (works on zone focus or document)
+        document.addEventListener('paste', function (e) {
+            var modal = document.getElementById('vocModal');
+            if (!modal || !modal.classList.contains('show')) return;
+            var items = (e.clipboardData || window.clipboardData).items;
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    var blob = items[i].getAsFile();
+                    var reader = new FileReader();
+                    reader.onload = function (ev) { setImage(ev.target.result); };
+                    reader.readAsDataURL(blob);
+                    e.preventDefault();
+                    return;
+                }
+            }
+        });
+
+        // Reset on modal close
+        var vocModal = document.getElementById('vocModal');
+        if (vocModal) {
+            vocModal.addEventListener('hidden.bs.modal', function () { clearImage(); });
+        }
+    }());
 
     function setAllReviewers(all) {
         var $sel = $('#reviewerSelect');

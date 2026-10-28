@@ -570,9 +570,19 @@ def add_tooling(project_id):
     """Add tooling"""
     project = PDProject.query.get_or_404(project_id)
     
+    product_id = request.form.get('product_id') or None
+    tool_name = (request.form.get('tool_name') or '').strip()
+    # If linked to inventory product, derive name from it
+    if product_id and not tool_name:
+        from app.models import Product as _Prod
+        p = _Prod.query.get(int(product_id))
+        if p:
+            tool_name = p.name
     tooling = PDTooling(
         project_id=project_id,
-        tool_name=request.form.get('tool_name'),
+        tool_name=tool_name or 'Tool',
+        product_id=int(product_id) if product_id else None,
+        acquisition_type=request.form.get('acquisition_type') or 'BUY',
         tool_type=request.form.get('tool_type'),
         quantity=float(request.form.get('quantity') or 1),
         vendor_id=request.form.get('vendor_id') or None,

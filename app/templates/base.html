@@ -43,166 +43,11 @@
             transition: all 0.2s ease-in-out !important;
         }
 
-        .sidebar a {
-            color: rgba(255, 255, 255, 0.8);
-            text-decoration: none;
-            padding: 10px 15px;
-            display: block;
-            transition: all 0.3s;
-        }
+        /* Sidebar base link reset — sidebar.css handles all styling */
+        .sidebar a, .mobile-sidebar a { text-decoration: none; }
+        .sidebar-nav .nav-link[aria-expanded="true"] .nav-caret { transform: rotate(180deg); }
 
-        .sidebar a:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            padding-left: 25px;
-        }
-
-        .sidebar .nav-link.active {
-            background: rgba(255, 255, 255, 0.2);
-            color: white;
-        }
-
-        /* Sidebar sub-menus (Vouchers, Manufacturing, Expenses, Reports, ...) —
-           a distinct panel so they read as a grouped drawer, not plain links. */
-        .sidebar .collapse,
-        .mobile-sidebar .collapse {
-            background: rgba(0, 0, 0, 0.18);
-            border-left: 3px solid rgba(255, 255, 255, 0.4);
-            border-radius: 0 8px 8px 0;
-            margin: 2px 10px 8px 10px;
-            padding: 4px 0;
-        }
-
-        .sidebar .collapse .nav-link,
-        .mobile-sidebar .collapse .nav-link {
-            font-size: 0.88rem;
-            color: rgba(255, 255, 255, 0.75);
-            padding-top: 8px;
-            padding-bottom: 8px;
-        }
-
-        .sidebar .collapse .nav-link:hover,
-        .mobile-sidebar .collapse .nav-link:hover {
-            background: rgba(255, 255, 255, 0.15);
-            color: #fff;
-            padding-left: 30px;
-        }
-
-        .sidebar .collapse .nav-link.active,
-        .mobile-sidebar .collapse .nav-link.active {
-            background: rgba(255, 255, 255, 0.22);
-            color: #fff;
-            font-weight: 600;
-        }
-
-        /* Parent toggle rows get a subtle marker while open */
-        .sidebar .nav-link[aria-expanded="true"],
-        .mobile-sidebar .nav-link[aria-expanded="true"] {
-            background: rgba(255, 255, 255, 0.08);
-            color: #fff;
-        }
-
-        /* ── Grouped sidebar navigation (components/sidebar_nav.html) ──
-           One markup source renders both the desktop rail and the mobile
-           drawer, so every rule below is written against .sidebar-nav and
-           applies identically in each. */
-        .sidebar-nav .nav-link {
-            display: flex;
-            align-items: center;
-            min-height: 44px;
-            /* comfortable touch target on phones */
-            line-height: 1.25;
-            padding: 10px 15px;
-        }
-
-        /* Current page — accent rail on the left edge, both sidebars */
-        .sidebar-nav .nav-link.active {
-            background: rgba(255, 255, 255, 0.22) !important;
-            color: #fff !important;
-            font-weight: 600;
-            box-shadow: inset 3px 0 0 #ffc107;
-        }
-
-        .sidebar-nav .nav-ico {
-            width: 1.35rem;
-            margin-right: 0.6rem;
-            text-align: center;
-            flex: 0 0 auto;
-            opacity: 0.9;
-        }
-
-        .sidebar-nav .nav-group-toggle {
-            font-weight: 600;
-            letter-spacing: 0.2px;
-        }
-
-        .sidebar-nav .nav-caret {
-            margin-left: auto;
-            padding-left: 8px;
-            font-size: 0.7rem;
-            opacity: 0.65;
-            transition: transform 0.25s ease;
-        }
-
-        .sidebar-nav .nav-link[aria-expanded="true"] .nav-caret {
-            transform: rotate(180deg);
-            opacity: 1;
-        }
-
-        /* Toggles shift their label, not the whole row, so the caret stays put */
-        .sidebar-nav .nav-group-toggle:hover {
-            padding-left: 15px;
-            background: rgba(255, 255, 255, 0.12);
-        }
-
-        .sidebar-nav .nav-group-toggle:hover span {
-            transform: translateX(6px);
-        }
-
-        .sidebar-nav .nav-group-toggle span {
-            transition: transform 0.25s ease;
-        }
-
-        /* Child links carry no icon — indent instead */
-        .sidebar-nav .collapse .nav-link {
-            padding-left: 2.6rem;
-        }
-
-        .sidebar-nav .collapse .nav-link:hover {
-            padding-left: 2.9rem;
-        }
-
-        /* Second level (Finance ▸ Vouchers) */
-        .sidebar-nav .collapse .collapse {
-            margin: 2px 0 6px 0;
-            border-left-width: 2px;
-            border-radius: 0;
-        }
-
-        .sidebar-nav .collapse .nav-group-toggle {
-            font-weight: 500;
-        }
-
-        .sidebar-nav .collapse .nav-group-toggle:hover {
-            padding-left: 2.6rem;
-        }
-
-        .sidebar-nav .collapse .collapse .nav-link {
-            padding-left: 3.4rem;
-            font-size: 0.84rem;
-        }
-
-        .sidebar-nav .collapse .collapse .nav-link:hover {
-            padding-left: 3.7rem;
-        }
-
-        .sidebar-nav .sidebar-divider {
-            margin: 12px 15px;
-            opacity: 0.25;
-        }
-
-        /* Desktop rail: stays put and scrolls on its own when the menu is
-           taller than the viewport, instead of scrolling the page away. */
+        /* Desktop rail scrolling */
         @media (min-width: 768px) {
             .sidebar {
                 position: sticky;
@@ -213,64 +58,14 @@
                 scrollbar-width: thin;
                 scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
             }
-
-            .sidebar::-webkit-scrollbar {
-                width: 6px;
-            }
-
-            .sidebar::-webkit-scrollbar-thumb {
-                background: rgba(255, 255, 255, 0.3);
-                border-radius: 3px;
-            }
-
-            .sidebar::-webkit-scrollbar-thumb:hover {
-                background: rgba(255, 255, 255, 0.5);
-            }
-
-            .sidebar::-webkit-scrollbar-track {
-                background: transparent;
-            }
+            .sidebar::-webkit-scrollbar { width: 4px; }
+            .sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
         }
 
-        /* Site-wide page scrollbar: hidden everywhere (long tables like
-           Products included) - the page and any scrollable panel remain
-           fully scrollable by wheel/trackpad/touch/drag, just with no
-           visible bar. The sidebar is deliberately excluded below (kept
-           visible - it's a nav rail people need to see is scrollable), and
-           wins there via selector specificity regardless of rule order. */
-        html {
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-        }
-
-        ::-webkit-scrollbar {
-            width: 0;
-            height: 0;
-            display: none;
-        }
-
-        .sidebar {
-            scrollbar-width: thin;
-            scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
-        }
-
-        /* Narrow laptops / tablets: tighten the rail so labels still fit */
-        @media (min-width: 768px) and (max-width: 1199.98px) {
-            .sidebar-nav .nav-link {
-                font-size: 0.9rem;
-                padding-left: 12px;
-                padding-right: 10px;
-            }
-
-            .sidebar-nav .collapse .nav-link {
-                padding-left: 2.1rem;
-                font-size: 0.83rem;
-            }
-
-            .sidebar-nav .nav-ico {
-                margin-right: 0.45rem;
-            }
-        }
+        /* Hide page scrollbar globally */
+        html { scrollbar-width: none; -ms-overflow-style: none; }
+        ::-webkit-scrollbar { width: 0; height: 0; display: none; }
+        .sidebar { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.25) transparent; }
 
         .main-content {
             padding: 20px;
@@ -1101,7 +896,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/entity_modal.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/sidebar.css') }}">
     <script>
-        /* Apply the remembered collapsed-sidebar state before first paint. */
+        /* Sidebar state — default expanded, restore only if user explicitly collapsed */
         try { if (localStorage.getItem('sidebarCollapsed') === '1') document.documentElement.classList.add('sidebar-collapsed'); } catch (e) {}
     </script>
     {% block extra_css %}{% endblock %}
@@ -1135,11 +930,17 @@
     </div>
     {%- endmacro %}
     {% macro sidebar_status() -%}
+    {% set uname = current_user.username if current_user.is_authenticated else 'Guest' %}
+    {% set urole = current_user.role|title if current_user.is_authenticated else '' %}
+    {% set initials = (uname[:2]|upper) %}
     <div class="sidebar-status">
-        <span class="sidebar-status-dot" aria-hidden="true"></span>
-        <span class="sidebar-status-text">System Online</span>
+        <span class="sidebar-status-dot" aria-hidden="true">{{ initials }}</span>
+        <span class="sidebar-status-text sidebar-brand-text">
+            <strong>{{ uname }}</strong>
+            <small>{{ urole }}</small>
+        </span>
         {% if current_user.is_authenticated and (current_user.is_admin or current_user.can_view_settings) %}
-        <a href="{{ url_for('sales.company_settings') }}" class="sidebar-status-gear" title="Settings" aria-label="Settings"><i class="fas fa-gear"></i></a>
+        <a href="{{ url_for('sales.company_settings') }}" class="sidebar-status-gear" title="Settings" aria-label="Settings"><i class="fas fa-chevron-up"></i></a>
         {% endif %}
     </div>
     {%- endmacro %}
@@ -1154,22 +955,19 @@
         </div>
     </div>
 
-    <div class="container-fluid">
-        <div class="row">
-            <!-- Desktop Sidebar -->
-            <div class="col-md-2 p-0 sidebar d-none d-md-block" id="desktopSidebar">
-                <div class="sidebar-inner">
-                    {{ sidebar_brand('sidebarCollapseBtn', 'fa-chevron-right', 'Collapse sidebar') }}
-                    {% set nav_ns = "d" %}
-                    {% include 'components/sidebar_nav.html' %}
-                    {{ sidebar_status() }}
-                </div>
+    <div class="app-shell">
+        <!-- Desktop Sidebar -->
+        <div class="sidebar d-none d-md-flex flex-column" id="desktopSidebar">
+            <div class="sidebar-inner">
+                {{ sidebar_brand('sidebarCollapseBtn', 'fa-chevron-right', 'Collapse sidebar') }}
+                {% set nav_ns = "d" %}
+                {% include 'components/sidebar_nav.html' %}
+                {{ sidebar_status() }}
             </div>
+        </div>
 
-
-
-            <!-- Main Content -->
-            <div class="col-md-10 col-12 main-content p-0">
+        <!-- Main Content -->
+        <div class="main-content" id="mainContent">
                 {% include 'impersonation/_banner.html' %}
                 <!-- Global Alerts Container -->
                 <div class="global-alert-container">
@@ -1265,7 +1063,7 @@
                     {% block content %}{% endblock %}
                 </div>
             </div>
-        </div>
+    </div><!-- /.app-shell -->
 
         <!-- Universal Filter Trigger Button (fixed position, outside layout grid) -->
         {% if active_module %}
@@ -1420,8 +1218,41 @@
             document.addEventListener('DOMContentLoaded', function () {
                 var root = document.documentElement;
                 var btn = document.getElementById('sidebarCollapseBtn');
-                function setCollapsed(on) {
-                    root.classList.toggle('sidebar-collapsed', on);
+
+                function clearSidebarInline(sidebar) {
+                    if (sidebar) { sidebar.style.transition = ''; sidebar.style.flex = ''; sidebar.style.width = ''; }
+                }
+
+                function setCollapsed(on, animate) {
+                    var sidebar = document.getElementById('desktopSidebar');
+
+                    if (animate && sidebar) {
+                        var fromW = sidebar.offsetWidth;
+                        var toW = on ? 68 : 240;
+                        var ease = '0.3s cubic-bezier(0.4,0,0.2,1)';
+
+                        // Pin start width, remove transition
+                        sidebar.style.transition = 'none';
+                        sidebar.style.flex = '0 0 ' + fromW + 'px';
+                        sidebar.style.width = fromW + 'px';
+
+                        // Toggle class so end-state CSS is ready
+                        root.classList.toggle('sidebar-collapsed', on);
+
+                        // Reflow so browser registers start value
+                        void sidebar.offsetWidth;
+
+                        // Animate to target
+                        sidebar.style.transition = 'flex ' + ease + ', width ' + ease;
+                        sidebar.style.flex = '0 0 ' + toW + 'px';
+                        sidebar.style.width = toW + 'px';
+
+                        setTimeout(function () { clearSidebarInline(sidebar); }, 340);
+                    } else {
+                        clearSidebarInline(sidebar);
+                        root.classList.toggle('sidebar-collapsed', on);
+                    }
+
                     if (btn) {
                         btn.setAttribute('aria-label', on ? 'Expand sidebar' : 'Collapse sidebar');
                         btn.setAttribute('title', on ? 'Expand sidebar' : 'Collapse sidebar');
@@ -1429,9 +1260,8 @@
                     try { localStorage.setItem('sidebarCollapsed', on ? '1' : '0'); } catch (err) {}
                 }
                 if (btn) {
-                    setCollapsed(root.classList.contains('sidebar-collapsed'));
                     btn.addEventListener('click', function () {
-                        setCollapsed(!root.classList.contains('sidebar-collapsed'));
+                        setCollapsed(!root.classList.contains('sidebar-collapsed'), true);
                     });
                 }
                 var rail = document.getElementById('desktopSidebar');

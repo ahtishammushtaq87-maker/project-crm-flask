@@ -8,6 +8,24 @@
 {%- endif -%}
 {%- endmacro %}
 
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
+<style>
+    .funnel-no-badge {
+        display: inline-flex; align-items: center; gap: .5rem;
+        background: #e8f0fe; border: 1.5px dashed #4a7cf7; border-radius: 8px;
+        padding: .45rem .85rem; font-size: 1.05rem; font-weight: 700;
+        color: #1a3fa0; letter-spacing: .03em; min-width: 200px;
+    }
+    .funnel-no-badge .spin { animation: spin 1s linear infinite; display: none; }
+    .funnel-no-badge.loading .spin { display: inline; }
+    .funnel-no-badge.loading .fn-text { opacity: .4; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .select2-container--bootstrap-5 .select2-selection { min-height: 38px; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="row">
     <div class="col-lg-9 mx-auto">
@@ -21,27 +39,36 @@
             <div class="card-body">
                 {% if not candidate %}
                 <div class="alert alert-info py-2 small">
-                    F0 intake: record the OEM reference, demand and rough economics. No SKU and no project are created
-                    here. A project is created automatically once G1 is approved.
+                    F0 intake: the Funnel No. is auto-generated from the selected category prefix. Fill in demand and rough economics. A project is created automatically once G1 is approved.
                 </div>
                 {% endif %}
                 {% if duplicate %}
                 <div class="alert alert-warning">
-                    OEM part <strong>{{ duplicate.oem_part_number }}</strong> already exists as
+                    Funnel No. <strong>{{ duplicate.oem_part_number }}</strong> already exists as
                     <a href="{{ url_for('pd_funnel.view', candidate_id=duplicate.id) }}">{{ duplicate.candidate_code }}</a>
                     ({{ duplicate.status }}).
                 </div>
                 {% endif %}
-                <form method="POST">
+                <form method="POST" id="funnelForm">
+                    {# Hidden field carries the auto-generated funnel number #}
+                    <input type="hidden" name="oem_part_number" id="funnelNoHidden" value="{{ initial_funnel_no or '' }}">
+
                     <h6 class="text-uppercase text-muted small mb-2">Identity</h6>
-                    <div class="row mb-3">
+                    <div class="row mb-3 align-items-end">
                         <div class="col-md-4">
-                            <label class="form-label">OEM Part No. <span class="text-danger">*</span></label>
-                            <input type="text" name="oem_part_number" class="form-control" required value="{{ val('oem_part_number') }}">
+                            <label class="form-label">Funnel No.</label>
+                            <div>
+                                <span class="funnel-no-badge" id="funnelNoBadge">
+                                    <i class="fas fa-hashtag" style="font-size:.85em;opacity:.6"></i>
+                                    <span class="fn-text" id="funnelNoDisplay">{{ initial_funnel_no or '—' }}</span>
+                                    <i class="fas fa-sync-alt spin" id="funnelNoSpinner"></i>
+                                </span>
+                                <div class="form-text">Auto-generated from category</div>
+                            </div>
                         </div>
                         <div class="col-md-8">
                             <label class="form-label">Candidate Product <span class="text-danger">*</span></label>
-                            <input type="text" name="product_name" class="form-control" required value="{{ val('product_name') }}">
+                            <input type="text" name="product_name" class="form-control" required value="{{ val('product_name') }}" placeholder="Product description">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -52,7 +79,7 @@
                         <div class="col-md-4">
                             <label class="form-label">Product Category</label>
                             {% set cur_cat = (form.get('product_category_id') if form else '') or (candidate.product_category_id|string if candidate and candidate.product_category_id else '') %}
-                            <select name="product_category_id" class="form-select">
+                            <select name="product_category_id" id="categorySelect" class="form-select">
                                 <option value="">-- None --</option>
                                 {% for cat in categories %}
                                 <option value="{{ cat.id }}" {{ 'selected' if cat.id|string == cur_cat else '' }}>{{ cat.name }}</option>
@@ -79,25 +106,64 @@
                     </div>
 
                     <h6 class="text-uppercase text-muted small mb-2 mt-4">People &amp; next step</h6>
-                    {% set cur_owner = (form.get('owner_staff_id') if form else '') or (candidate.owner_staff_id|string if candidate and candidate.owner_staff_id else '') %}
-                    {% set cur_lead = (form.get('g1_lead_staff_id') if form else '') or (candidate.g1_lead_staff_id|string if candidate and candidate.g1_lead_staff_id else '') %}
+                    {# owner: staff value = "123", admin value = "u_123" #}
+                    {% if form and form.get('owner_staff_id') %}
+                        {% set cur_owner = form.get('owner_staff_id') %}
+                    {% elif candidate and candidate.owner_user_id %}
+                        {% set cur_owner = 'u_' ~ candidate.owner_user_id %}
+                    {% elif candidate and candidate.owner_staff_id %}
+                        {% set cur_owner = candidate.owner_staff_id|string %}
+                    {% else %}
+                        {% set cur_owner = '' %}
+                    {% endif %}
+                    {% if form and form.get('g1_lead_staff_id') %}
+                        {% set cur_lead = form.get('g1_lead_staff_id') %}
+                    {% elif candidate and candidate.g1_lead_user_id %}
+                        {% set cur_lead = 'u_' ~ candidate.g1_lead_user_id %}
+                    {% elif candidate and candidate.g1_lead_staff_id %}
+                        {% set cur_lead = candidate.g1_lead_staff_id|string %}
+                    {% else %}
+                        {% set cur_lead = '' %}
+                    {% endif %}
                     <div class="row mb-3">
                         <div class="col-md-4">
-                            <label class="form-label">Owner (Staff)</label>
-                            <select name="owner_staff_id" class="form-select">
+                            <label class="form-label">Owner</label>
+                            <select name="owner_staff_id" class="form-select select2-field">
                                 <option value="">-- Select --</option>
+                                {% if staff %}
+                                <optgroup label="Staff">
                                 {% for s in staff %}
                                 <option value="{{ s.id }}" {{ 'selected' if s.id|string == cur_owner else '' }}>{{ s.name }}{{ ' - ' ~ s.designation if s.designation else '' }}</option>
                                 {% endfor %}
+                                </optgroup>
+                                {% endif %}
+                                {% if admins %}
+                                <optgroup label="Admin">
+                                {% for u in admins %}
+                                <option value="u_{{ u.id }}" {{ 'selected' if 'u_' ~ u.id|string == cur_owner else '' }}>{{ u.username }}</option>
+                                {% endfor %}
+                                </optgroup>
+                                {% endif %}
                             </select>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">G1 Stage Lead (Staff)</label>
-                            <select name="g1_lead_staff_id" class="form-select">
+                            <label class="form-label">G1 Stage Lead</label>
+                            <select name="g1_lead_staff_id" class="form-select select2-field">
                                 <option value="">-- Select --</option>
+                                {% if staff %}
+                                <optgroup label="Staff">
                                 {% for s in staff %}
                                 <option value="{{ s.id }}" {{ 'selected' if s.id|string == cur_lead else '' }}>{{ s.name }}{{ ' - ' ~ s.designation if s.designation else '' }}</option>
                                 {% endfor %}
+                                </optgroup>
+                                {% endif %}
+                                {% if admins %}
+                                <optgroup label="Admin">
+                                {% for u in admins %}
+                                <option value="u_{{ u.id }}" {{ 'selected' if 'u_' ~ u.id|string == cur_lead else '' }}>{{ u.username }}</option>
+                                {% endfor %}
+                                </optgroup>
+                                {% endif %}
                             </select>
                             <small class="text-muted">One accountable lead is required for G1.</small>
                         </div>
@@ -107,13 +173,29 @@
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Next Evidence</label>
-                        <input type="text" name="next_evidence" class="form-control" value="{{ val('next_evidence') }}" placeholder="e.g. Customer demand confirmation, supplier quote">
-                    </div>
-                    <div class="mb-3">
                         <label class="form-label">Notes</label>
                         <textarea name="notes" rows="3" class="form-control">{{ val('notes') }}</textarea>
                     </div>
+
+                    <h6 class="text-uppercase text-muted small mb-2 mt-4">Voice of Customer Reviews</h6>
+                    <p class="small text-muted mb-2">Add customer evidence entries — text feedback, screenshots, survey results. Paste an image with Ctrl+V inside the image box.</p>
+                    {# Show existing VOC entries in edit mode #}
+                    {% if candidate and candidate.voc_reviews %}
+                    <div class="mb-3">
+                        <div class="text-muted small mb-1">Existing reviews (manage these from the <a href="{{ url_for('pd_funnel.view', candidate_id=candidate.id) }}#voc">detail page</a>):</div>
+                        <div class="d-flex flex-wrap gap-2">
+                        {% for v in candidate.voc_reviews %}
+                        <div class="border rounded p-2 small" style="max-width:260px">
+                            {% if v.image_path %}<img src="{{ url_for('static', filename=v.image_path) }}" style="max-width:100%;max-height:80px;border-radius:4px;display:block;margin-bottom:4px;" alt="VOC">{% endif %}
+                            <span>{{ v.review_text[:80] }}{% if v.review_text|length > 80 %}…{% endif %}</span>
+                        </div>
+                        {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    <div id="vocRows"></div>
+                    <input type="hidden" name="voc_entries_json" id="vocEntriesJson" value="[]">
+                    <button type="button" class="btn btn-outline-secondary btn-sm mb-3" id="addVocBtn"><i class="fas fa-plus me-1"></i>Add Review Entry</button>
 
                     {% if duplicate %}
                     <div class="form-check mb-3">
@@ -133,18 +215,185 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
-    (function () {
-        var price = document.getElementById('targetPrice'), cost = document.getElementById('estCost'),
-            out = document.getElementById('marginOut');
-        function calc() {
-            var p = parseFloat(price.value) || 0, c = parseFloat(cost.value) || 0;
-            if (!p) { out.textContent = '-'; return; }
-            var m = p - c;
-            out.textContent = 'PKR ' + m.toLocaleString(undefined, {maximumFractionDigits: 0}) + ' (' + (m / p * 100).toFixed(1) + '%)';
-            out.className = m < 0 ? 'text-danger' : 'text-success';
+$(function () {
+    // Searchable dropdowns on all selects
+    $('.select2-field, #categorySelect').select2({
+        theme: 'bootstrap-5',
+        width: '100%',
+        placeholder: '-- Select --',
+        allowClear: true
+    });
+
+    // Margin calculator
+    var price = document.getElementById('targetPrice'),
+        cost  = document.getElementById('estCost'),
+        out   = document.getElementById('marginOut');
+    function calcMargin() {
+        var p = parseFloat(price.value) || 0, c = parseFloat(cost.value) || 0;
+        if (!p) { out.textContent = '-'; return; }
+        var m = p - c;
+        out.textContent = 'PKR ' + m.toLocaleString(undefined, {maximumFractionDigits: 0}) +
+                          ' (' + (m / p * 100).toFixed(1) + '%)';
+        out.className = m < 0 ? 'text-danger' : 'text-success';
+    }
+    price.addEventListener('input', calcMargin);
+    cost.addEventListener('input', calcMargin);
+    calcMargin();
+
+    {% if not candidate %}
+    // Auto-generate Funnel No. when category changes
+    var apiUrl = '{{ url_for("pd_funnel.api_funnel_number") }}';
+    var badge  = document.getElementById('funnelNoBadge');
+    var display = document.getElementById('funnelNoDisplay');
+    var hidden  = document.getElementById('funnelNoHidden');
+    var debounceTimer;
+
+    function fetchFunnelNo(catId) {
+        badge.classList.add('loading');
+        var url = apiUrl + (catId ? '?category_id=' + catId : '');
+        fetch(url)
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                display.textContent = d.funnel_number;
+                hidden.value = d.funnel_number;
+            })
+            .catch(function() {})
+            .finally(function() { badge.classList.remove('loading'); });
+    }
+
+    $('#categorySelect').on('change', function () {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () {
+            fetchFunnelNo($('#categorySelect').val());
+        }, 300);
+    });
+    {% endif %}
+
+    // ---- Voice of Customer inline rows ----
+    var vocEntries = [];  // [{text, imageData}]
+    var vocRows = document.getElementById('vocRows');
+    var vocJson = document.getElementById('vocEntriesJson');
+
+    function syncJson() {
+        vocJson.value = JSON.stringify(vocEntries);
+    }
+
+    function buildRow(idx) {
+        var row = document.createElement('div');
+        row.className = 'border rounded p-3 mb-3 position-relative';
+        row.dataset.vocIdx = idx;
+        row.innerHTML =
+            '<button type="button" class="btn-close position-absolute" style="top:8px;right:8px" onclick="removeVocRow(' + idx + ')"></button>' +
+            '<div class="mb-2"><label class="form-label small fw-semibold">Customer feedback / evidence *</label>' +
+            '<textarea class="form-control form-control-sm voc-text" rows="2" placeholder="e.g. Customer confirmed 500 units/year demand..."></textarea></div>' +
+            '<div><label class="form-label small fw-semibold">Screenshot <span class="text-muted fw-normal">(paste Ctrl+V or click)</span></label>' +
+            '<div class="voc-paste-zone border rounded d-flex align-items-center justify-content-center" style="min-height:80px;cursor:pointer;background:#f8f9fa;position:relative;" tabindex="0">' +
+            '<span class="voc-hint text-muted small"><i class="fas fa-clipboard me-1"></i>Paste or click to add image</span>' +
+            '<img class="voc-preview" src="" style="max-width:100%;max-height:180px;display:none;border-radius:4px;">' +
+            '<button type="button" class="btn btn-sm btn-outline-danger voc-clear-img" style="display:none;position:absolute;top:4px;right:4px"><i class="fas fa-times"></i></button>' +
+            '</div>' +
+            '<input type="file" class="voc-file-input" accept="image/*" style="display:none">' +
+            '</div>';
+
+        var textarea = row.querySelector('.voc-text');
+        var zone     = row.querySelector('.voc-paste-zone');
+        var hint     = row.querySelector('.voc-hint');
+        var preview  = row.querySelector('.voc-preview');
+        var clearImg = row.querySelector('.voc-clear-img');
+        var fileIn   = row.querySelector('.voc-file-input');
+
+        function setImg(dataUrl) {
+            vocEntries[idx].imageData = dataUrl;
+            preview.src = dataUrl;
+            preview.style.display = 'block';
+            hint.style.display = 'none';
+            clearImg.style.display = 'block';
+            syncJson();
         }
-        price.addEventListener('input', calc); cost.addEventListener('input', calc); calc();
-    })();
+        function clearImgFn() {
+            vocEntries[idx].imageData = '';
+            preview.src = '';
+            preview.style.display = 'none';
+            hint.style.display = '';
+            clearImg.style.display = 'none';
+            syncJson();
+        }
+
+        textarea.addEventListener('input', function () {
+            vocEntries[idx].text = textarea.value;
+            syncJson();
+        });
+        clearImg.addEventListener('click', function (e) { e.stopPropagation(); clearImgFn(); });
+        zone.addEventListener('click', function (e) {
+            if (e.target === clearImg || clearImg.contains(e.target)) return;
+            fileIn.click();
+        });
+        fileIn.addEventListener('change', function () {
+            var f = fileIn.files[0]; if (!f) return;
+            var r = new FileReader();
+            r.onload = function (ev) { setImg(ev.target.result); };
+            r.readAsDataURL(f);
+        });
+
+        // Store reference so paste handler can find the last-focused zone
+        zone.addEventListener('focus', function () { window._activeVocIdx = idx; });
+        zone.addEventListener('click', function () { window._activeVocIdx = idx; });
+
+        vocRows.appendChild(row);
+    }
+
+    document.getElementById('addVocBtn').addEventListener('click', function () {
+        var idx = vocEntries.length;
+        vocEntries.push({ text: '', imageData: '' });
+        buildRow(idx);
+        syncJson();
+    });
+
+    window.removeVocRow = function (idx) {
+        var row = vocRows.querySelector('[data-voc-idx="' + idx + '"]');
+        if (row) row.remove();
+        vocEntries[idx] = null;
+        syncJson();
+    };
+
+    // Global paste: if a VOC zone is active (focused/clicked), capture image
+    document.addEventListener('paste', function (e) {
+        var idx = window._activeVocIdx;
+        if (idx === undefined || idx === null || !vocEntries[idx]) return;
+        var zone = vocRows.querySelector('[data-voc-idx="' + idx + '"] .voc-paste-zone');
+        if (!zone) return;
+        var items = (e.clipboardData || window.clipboardData).items;
+        for (var i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                var blob = items[i].getAsFile();
+                var reader = new FileReader();
+                (function(capturedIdx) {
+                    reader.onload = function (ev) {
+                        var row2 = vocRows.querySelector('[data-voc-idx="' + capturedIdx + '"]');
+                        if (!row2) return;
+                        var prev = row2.querySelector('.voc-preview');
+                        var hint2 = row2.querySelector('.voc-hint');
+                        var clr = row2.querySelector('.voc-clear-img');
+                        vocEntries[capturedIdx].imageData = ev.target.result;
+                        prev.src = ev.target.result; prev.style.display = 'block';
+                        hint2.style.display = 'none'; clr.style.display = 'block';
+                        syncJson();
+                    };
+                }(idx));
+                reader.readAsDataURL(blob);
+                e.preventDefault();
+                return;
+            }
+        }
+    });
+
+    // On form submit, validate VOC entries have text
+    document.getElementById('funnelForm').addEventListener('submit', function () {
+        var clean = vocEntries.filter(function (e) { return e && e.text && e.text.trim(); });
+        vocJson.value = JSON.stringify(clean);
+    });
+});
 </script>
 {% endblock %}

@@ -80,26 +80,44 @@
     </div>
     <div class="col-md-6">
         <div class="card">
-            <div class="card-header bg-warning text-dark">
-                <h5 class="mb-0"><i class="fas fa-clock me-2"></i>Near Deadline</h5>
+            <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center"
+                 style="cursor:pointer;" id="nearDeadlineToggle"
+                 data-bs-toggle="collapse" data-bs-target="#nearDeadlineBody" aria-expanded="false" aria-controls="nearDeadlineBody">
+                <h5 class="mb-0"><i class="fas fa-clock me-2"></i>Near Deadline
+                    {% if near_deadline %}<span class="badge bg-dark ms-2">{{ near_deadline|length }}</span>{% endif %}
+                </h5>
+                <i class="fas fa-chevron-down" id="nearDeadlineChevron"></i>
             </div>
-            <div class="card-body">
-                {% if near_deadline %}
-                <ul class="list-group list-group-flush">
-                    {% for p in near_deadline %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        <a href="{{ url_for('product_development.view', project_id=p.id) }}">{{ p.pdv_code }}</a>
-                        <span class="badge bg-danger">{{ ((p.promise_date - today).days) }} days</span>
-                    </li>
-                    {% endfor %}
-                </ul>
-                {% else %}
-                <p class="text-muted mb-0">No projects near deadline</p>
-                {% endif %}
+            <div class="collapse" id="nearDeadlineBody">
+                <div class="card-body">
+                    {% if near_deadline %}
+                    <ul class="list-group list-group-flush">
+                        {% for p in near_deadline %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="{{ url_for('product_development.view', project_id=p.id) }}">{{ p.pdv_code }}</a>
+                            <span class="badge bg-danger">{{ ((p.promise_date - today).days) }} days</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="text-muted mb-0">No projects near deadline</p>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </div>
 </div>
+<script>
+(function () {
+    var el = document.getElementById('nearDeadlineBody');
+    var chev = document.getElementById('nearDeadlineChevron');
+    // Rotate chevron on show/hide
+    el.addEventListener('show.bs.collapse', function () { chev.style.transform = 'rotate(180deg)'; try { localStorage.setItem('ndOpen','1'); } catch(e){} });
+    el.addEventListener('hide.bs.collapse', function () { chev.style.transform = ''; try { localStorage.setItem('ndOpen','0'); } catch(e){} });
+    // Restore saved state — default closed
+    try { if (localStorage.getItem('ndOpen') === '1') { new bootstrap.Collapse(el, {toggle:false}).show(); } } catch(e) {}
+}());
+</script>
 
 <div class="card">
     <div class="card-header">

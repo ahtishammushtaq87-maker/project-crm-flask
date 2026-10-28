@@ -24,6 +24,7 @@
             </div>
             <div class="mc-text">
                 <div class="mc-name">{{ name }}</div>
+                {% if prod %}<div class="mc-sku-inline">{{ sku_link(prod.sku, prod.id) }}</div>{% endif %}
                 {% if prod and prod.description %}<div class="mc-desc">{{ prod.description|truncate(70) }}</div>{% endif %}
             </div>
         </div>
@@ -34,7 +35,6 @@
         {% elif kind == 'OUTSOURCE' %}<span class="mc-type mc-out"><i class="fas fa-truck"></i> OUTSOURCE</span>
         {% else %}<span class="mc-type mc-mat"><i class="fas fa-cube"></i> MATERIAL</span>{% endif %}
     </td>
-    <td>{% if prod %}<span class="mc-sku">{{ sku_link(prod.sku, prod.id) }}</span>{% else %}<span class="text-muted">-</span>{% endif %}</td>
     <td>{{ ((prod.category.name if prod.category else prod.category_name) if prod else None) or '-' }}</td>
     <td>{{ qty }}</td>
     <td class="text-nowrap">PKR {{ "{:,.0f}".format(unit_cost or 0) }}</td>
@@ -97,6 +97,9 @@
     .mc-mat { background: #eef0f4; color: #5b6478; }
     .mc-sku { display: inline-block; padding: .2rem .5rem; border-radius: 6px; background: #e3f0ff; font-size: .8rem; }
     .mc-sku, .mc-sku a { color: #1a73e8; text-decoration: none; }
+    .mc-sku-inline { margin-top: 2px; }
+    .mc-sku-inline a, .mc-sku-inline span { display: inline-block; padding: .1rem .4rem; border-radius: 5px;
+        background: #e3f0ff; color: #1a73e8; font-size: .75rem; font-weight: 600; text-decoration: none; }
     .mc-total { display: inline-block; padding: .25rem .55rem; border-radius: 6px; background: #ebf0fd;
         color: #1b3fa8; font-weight: 700; white-space: nowrap; }
     .mc-vendor { display: inline-flex; align-items: flex-start; gap: .35rem; padding: .25rem .5rem; border-radius: 6px;
@@ -256,7 +259,6 @@
                             <th>#</th>
                             <th>Name &amp; Description</th>
                             <th>Type</th>
-                            <th>SKU / Ref</th>
                             <th>Category</th>
                             <th>Qty</th>
                             <th>Cost/Unit</th>
@@ -278,7 +280,7 @@
                                   url_for('product_development.delete_component', comp_id=comp.id)) }}
                         {% endfor %}
                         {% if not project.bom_items and not project.components %}
-                        <tr><td colspan="10" class="text-center text-muted py-4">No materials or components added</td></tr>
+                        <tr><td colspan="9" class="text-center text-muted py-4">No materials or components added</td></tr>
                         {% endif %}
                     </tbody>
                 </table>
@@ -311,68 +313,99 @@
                     </form>
                     {% endif %}
                 </div>
-                <table class="table table-sm">
+                <div class="mc-table-wrap">
+                <table class="mc-table">
                     <thead>
                         <tr>
-                            <th>Tool Name</th>
+                            <th>#</th>
+                            <th>Tool Name &amp; Description</th>
                             <th>Type</th>
+                            <th>Category</th>
                             <th>Qty</th>
+                            <th>Cost (PKR)</th>
                             <th>Vendor</th>
-                            <th>Cost</th>
                             <th>Status</th>
                             <th>Expected</th>
-                            <th>Actions</th>
+                            <th class="text-center">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for tool in project.tooling %}
                         <tr>
-                            <td>{{ tool.tool_name }}</td>
-                            <td>{{ tool.tool_type }}</td>
-                            <td>{{ tool.quantity }}</td>
-                            <td>{{ tool.vendor.name if tool.vendor else '-' }}</td>
-                            <td>PKR {{ "{:,.0f}".format(tool.cost) }}</td>
+                            <td><span class="mc-idx">{{ loop.index }}</span></td>
                             <td>
-                                {% if tool.status == 'Planned' %}
-                                <span class="badge bg-secondary">Planned</span>
-                                {% elif tool.status == 'In Progress' %}
-                                <span class="badge bg-warning">In Progress</span>
-                                {% else %}
-                                <span class="badge bg-success">Completed</span>
-                                {% endif %}
+                                <div class="mc-item">
+                                    <div class="mc-thumb">
+                                        {% if tool.product and tool.product.image_path %}
+                                        {% set timg = product_img_url(tool.product) %}
+                                        <img src="{{ timg }}" alt="{{ tool.tool_name }}"
+                                             onerror="this.parentNode.innerHTML='<i class=&quot;fas fa-tools&quot;></i>'">
+                                        {% else %}<i class="fas fa-tools"></i>{% endif %}
+                                    </div>
+                                    <div class="mc-text">
+                                        <div class="mc-name">{{ tool.tool_name }}</div>
+                                        {% if tool.product %}<div class="mc-sku-inline">{{ sku_link(tool.product.sku, tool.product.id) }}</div>{% endif %}
+                                        {% if tool.notes %}<div class="mc-desc">{{ tool.notes|truncate(60) }}</div>{% endif %}
+                                    </div>
+                                </div>
                             </td>
-                            <td>{{ tool.expected_completion.strftime('%Y-%m-%d') if tool.expected_completion else '-' }}</td>
                             <td>
-                                {% if tool.status != 'Completed' %}
-                                                                {% if current_user.has_permission('product_dev', 'edit') %}
-<form method="POST" action="{{ url_for('product_development.update_tooling_status', tool_id=tool.id) }}" class="d-inline">
-                                    <select name="status" class="form-select form-select-sm d-inline-block searchable-select" style="width:auto;" onchange="this.form.submit()">
+                                {% set at = tool.acquisition_type or 'BUY' %}
+                                {% if at == 'BUY' %}<span class="mc-type mc-buy"><i class="fas fa-shopping-cart"></i> BUY</span>
+                                {% elif at == 'MAKE' %}<span class="mc-type mc-make"><i class="fas fa-industry"></i> MAKE</span>
+                                {% else %}<span class="mc-type mc-out"><i class="fas fa-truck"></i> OUTSOURCE</span>{% endif %}
+                                <br>
+                                {% set tt = tool.tool_type %}
+                                {% if tt == 'mold' %}<span class="badge bg-light text-dark border mt-1">Mold</span>
+                                {% elif tt == 'die' %}<span class="badge bg-light text-dark border mt-1">Die</span>
+                                {% elif tt == 'injection' %}<span class="badge bg-light text-dark border mt-1">Injection</span>
+                                {% elif tt == 'forging' %}<span class="badge bg-light text-dark border mt-1">Forging</span>
+                                {% elif tt == 'jig' %}<span class="badge bg-light text-dark border mt-1">Jig</span>
+                                {% elif tt == 'fixture' %}<span class="badge bg-light text-dark border mt-1">Fixture</span>
+                                {% else %}<span class="badge bg-light text-dark border mt-1">Other</span>{% endif %}
+                            </td>
+                            <td>{{ ((tool.product.category.name if tool.product.category else tool.product.category_name) if tool.product else None) or '-' }}</td>
+                            <td>{{ tool.quantity }}</td>
+                            <td class="text-nowrap"><span class="mc-total">PKR {{ "{:,.0f}".format(tool.cost or 0) }}</span></td>
+                            <td>{% if tool.vendor %}<span class="mc-vendor"><i class="fas fa-building"></i><span>{{ tool.vendor.name }}</span></span>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                            <td>
+                                {% if tool.status == 'Planned' %}<span class="badge bg-secondary">Planned</span>
+                                {% elif tool.status == 'In Progress' %}<span class="badge bg-warning text-dark">In Progress</span>
+                                {% elif tool.status == 'Completed' %}<span class="badge bg-success">Completed</span>
+                                {% else %}<span class="badge bg-danger">Cancelled</span>{% endif %}
+                            </td>
+                            <td class="text-nowrap">{{ tool.expected_completion.strftime('%Y-%m-%d') if tool.expected_completion else '-' }}</td>
+                            <td class="text-center text-nowrap">
+                                {% if tool.status != 'Completed' and current_user.has_permission('product_dev', 'edit') %}
+                                <form method="POST" action="{{ url_for('product_development.update_tooling_status', tool_id=tool.id) }}" class="d-inline">
+                                    <select name="status" class="form-select form-select-sm d-inline-block" style="width:110px;" onchange="this.form.submit()">
                                         <option value="Planned" {{ 'selected' if tool.status == 'Planned' else '' }}>Planned</option>
                                         <option value="In Progress" {{ 'selected' if tool.status == 'In Progress' else '' }}>In Progress</option>
                                         <option value="Completed" {{ 'selected' if tool.status == 'Completed' else '' }}>Completed</option>
                                     </select>
                                 </form>
-{% endif %}                                
                                 {% endif %}
-                                                                {% if current_user.has_permission('product_dev', 'delete') %}
-<a href="{{ url_for('product_development.delete_tooling', tool_id=tool.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')">
-                                    <i class="fas fa-trash"></i>
-                                </a>
-{% endif %}                                
+                                {% if current_user.has_permission('product_dev', 'delete') %}
+                                <a href="{{ url_for('product_development.delete_tooling', tool_id=tool.id) }}" class="mc-del ms-1" title="Delete" onclick="return confirm('Delete this tool?')"><i class="fas fa-trash"></i></a>
+                                {% endif %}
                             </td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="8" class="text-muted">No tooling added</td></tr>
+                        <tr><td colspan="10" class="text-center text-muted py-4">No tooling added yet.</td></tr>
                         {% endfor %}
                     </tbody>
-                    <tfoot>
-                        <tr class="fw-bold">
-                            <td colspan="4">Total Tooling Cost</td>
-                            <td>PKR {{ "{:,.0f}".format(project.total_tooling_cost) }}</td>
-                            <td colspan="3"></td>
-                        </tr>
-                    </tfoot>
                 </table>
+                </div>
+                <div class="mc-summary">
+                    <div class="mc-summary-left">
+                        <div class="mc-summary-icon"><i class="fas fa-tools"></i></div>
+                        <div>
+                            <div class="mc-summary-title">Total Tooling Cost</div>
+                            <small>Sum of all tool costs</small>
+                        </div>
+                    </div>
+                    <div class="mc-summary-amount">PKR {{ "{:,.0f}".format(project.total_tooling_cost) }}</div>
+                </div>
             </div>
             
             <!-- Phase 3: Testing -->
@@ -636,55 +669,111 @@
             <!-- Phase 6: Production -->
             <div class="tab-pane fade {{ 'show active' if project.current_phase == 6 else '' }}" id="phase6" role="tabpanel">
                 <h5><i class="fas fa-rocket me-2"></i>Production Activation</h5>
-                
+
                 <div class="row">
                     <div class="col-md-6">
+
+                        {# --- Components & Materials summary --- #}
+                        {% set all_items = project.bom_items|list + project.components|list %}
+                        {% if all_items %}
                         <div class="card mb-3">
-                            <div class="card-header bg-info text-white">
-                                <h6 class="mb-0">Assets Created</h6>
+                            <div class="card-header d-flex justify-content-between align-items-center py-2">
+                                <span class="fw-semibold"><i class="fas fa-boxes me-1 text-primary"></i>Materials &amp; Components <span class="badge bg-secondary ms-1">{{ all_items|length }}</span></span>
+                                <span class="text-muted small">PKR {{ "{:,.0f}".format(project.total_bom_cost + project.total_component_cost) }}</span>
                             </div>
-                            <div class="card-body">
-                            {% if project.current_phase == 5 %}
-                            <form method="POST" action="{{ url_for('product_development.complete_phase', project_id=project.id, phase=5) }}" class="d-inline">
-                                <button type="submit" class="btn btn-sm btn-success mb-3">
-                                    <i class="fas fa-check me-1"></i> Phase Complete
-                                </button>
-                            </form>
-                            {% endif %}
-                            <button class="btn btn-sm btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#addAssetModal">
-                                <i class="fas fa-plus me-1"></i> Add Asset
-                            </button>
-                            <table class="table table-sm">
-                                    <thead>
-                                        <tr>
-                                            <th>Asset Name</th>
-                                            <th>Tag</th>
-                                            <th>Value</th>
-                                            <th>Status</th>
-                                        </tr>
-                                    </thead>
+                            <div class="card-body p-0">
+                                <table class="table table-sm mb-0">
+                                    <thead class="table-light"><tr><th>#</th><th>Name</th><th>SKU</th><th>Type</th><th class="text-end">Cost</th></tr></thead>
                                     <tbody>
-                                        {% for asset in project.assets %}
+                                        {% for item in project.bom_items %}
                                         <tr>
-                                            <td>{{ asset.asset_name }}</td>
-                                            <td>{{ asset.asset_tag }}</td>
-                                            <td>PKR {{ "{:,.0f}".format(asset.value) }}</td>
-                                            <td>
-                                                {% if asset.is_activated %}
-                                                <span class="badge bg-success">Active</span>
-                                                {% else %}
-                                                <span class="badge bg-secondary">Inactive</span>
-                                                <a href="{{ url_for('product_development.activate_asset', asset_id=asset.id) }}" class="btn btn-sm btn-success">Activate</a>
-                                                {% endif %}
-                                            </td>
+                                            <td class="text-muted small">{{ loop.index }}</td>
+                                            <td>{{ item.material_name }}</td>
+                                            <td>{% if item.material %}{{ sku_link(item.material.sku, item.material.id) }}{% else %}-{% endif %}</td>
+                                            <td><span class="badge bg-light text-dark border">Material</span></td>
+                                            <td class="text-end text-nowrap">PKR {{ "{:,.0f}".format(item.total_cost or 0) }}</td>
                                         </tr>
-                                        {% else %}
-                                        <tr><td colspan="4" class="text-muted">No assets created</td></tr>
+                                        {% endfor %}
+                                        {% for comp in project.components %}
+                                        <tr>
+                                            <td class="text-muted small">{{ project.bom_items|length + loop.index }}</td>
+                                            <td>{{ comp.component_name }}</td>
+                                            <td>{% if comp.product %}{{ sku_link(comp.product.sku, comp.product.id) }}{% else %}-{% endif %}</td>
+                                            <td>
+                                                {% if comp.component_type == 'BUY' %}<span class="badge bg-success">BUY</span>
+                                                {% elif comp.component_type == 'MAKE' %}<span class="badge bg-primary">MAKE</span>
+                                                {% else %}<span class="badge bg-warning text-dark">OUTSOURCE</span>{% endif %}
+                                            </td>
+                                            <td class="text-end text-nowrap">PKR {{ "{:,.0f}".format(comp.cost or 0) }}</td>
+                                        </tr>
                                         {% endfor %}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
+                        {% endif %}
+
+                        {# --- Tooling summary --- #}
+                        {% if project.tooling %}
+                        <div class="card mb-3">
+                            <div class="card-header d-flex justify-content-between align-items-center py-2">
+                                <span class="fw-semibold"><i class="fas fa-tools me-1 text-warning"></i>Tooling <span class="badge bg-secondary ms-1">{{ project.tooling|length }}</span></span>
+                                <span class="text-muted small">PKR {{ "{:,.0f}".format(project.total_tooling_cost) }}</span>
+                            </div>
+                            <div class="card-body p-0">
+                                <table class="table table-sm mb-0">
+                                    <thead class="table-light"><tr><th>#</th><th>Tool Name</th><th>SKU</th><th>Type</th><th class="text-end">Cost</th></tr></thead>
+                                    <tbody>
+                                        {% for tool in project.tooling %}
+                                        <tr>
+                                            <td class="text-muted small">{{ loop.index }}</td>
+                                            <td>{{ tool.tool_name }}</td>
+                                            <td>{% if tool.product %}{{ sku_link(tool.product.sku, tool.product.id) }}{% else %}-{% endif %}</td>
+                                            <td>
+                                                {% set at = tool.acquisition_type or 'BUY' %}
+                                                {% if at == 'BUY' %}<span class="badge bg-success">BUY</span>
+                                                {% elif at == 'MAKE' %}<span class="badge bg-primary">MAKE</span>
+                                                {% else %}<span class="badge bg-warning text-dark">OUTSOURCE</span>{% endif %}
+                                                <span class="badge bg-light text-dark border text-capitalize ms-1">{{ tool.tool_type }}</span>
+                                            </td>
+                                            <td class="text-end text-nowrap">PKR {{ "{:,.0f}".format(tool.cost or 0) }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {# --- Expenses summary --- #}
+                        {% if project.expenses %}
+                        <div class="card mb-3">
+                            <div class="card-header d-flex justify-content-between align-items-center py-2">
+                                <span class="fw-semibold"><i class="fas fa-receipt me-1 text-danger"></i>Production Expenses <span class="badge bg-secondary ms-1">{{ project.expenses|length }}</span></span>
+                                <span class="text-muted small">PKR {{ "{:,.0f}".format(project.total_expense_cost) }}</span>
+                            </div>
+                            <div class="card-body p-0">
+                                <table class="table table-sm mb-0">
+                                    <thead class="table-light"><tr><th>#</th><th>Description</th><th>Category</th><th class="text-end">Amount</th></tr></thead>
+                                    <tbody>
+                                        {% for exp in project.expenses %}
+                                        <tr>
+                                            <td class="text-muted small">{{ loop.index }}</td>
+                                            <td>{{ exp.description or '-' }}</td>
+                                            <td><span class="badge bg-light text-dark border">{{ exp.category or '-' }}</span></td>
+                                            <td class="text-end text-nowrap">PKR {{ "{:,.0f}".format(exp.amount or 0) }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% if not all_items and not project.tooling and not project.expenses %}
+                        <div class="alert alert-light border text-muted">No components, tooling or expenses added yet.</div>
+                        {% endif %}
+
                     </div>
                     
                     <div class="col-md-6">
@@ -875,8 +964,38 @@
                 </div>
                 <div class="modal-body">
                     <div class="mb-2">
-                        <label class="form-label">Tool Name</label>
-                        <input type="text" name="tool_name" class="form-control" required>
+                        <label class="form-label">Inventory Item <span class="text-muted small">(search by SKU or name)</span></label>
+                        <select name="product_id" id="toolingProductSelect" class="form-select searchable-select">
+                            <option value="">-- Search inventory item --</option>
+                            {% for p in products %}
+                            <option value="{{ p.id }}"
+                                data-cost="{{ p.cost_price or 0 }}"
+                                data-sku="{{ p.sku }}"
+                                data-name="{{ p.name }}"
+                                data-img="{{ product_img_url(p) }}"
+                                data-category="{{ (p.category.name if p.category else p.category_name) or '' }}">{{ p.sku }} – {{ p.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {# Image + info preview #}
+                    <div id="toolingItemPreview" class="d-none mb-2 p-2 border rounded bg-light d-flex align-items-center gap-3">
+                        <img id="toolingItemImg" src="" alt="" style="width:56px;height:56px;object-fit:contain;border-radius:4px;background:#fff;border:1px solid #dee2e6;">
+                        <div class="small">
+                            <div><span class="text-muted">SKU:</span> <strong id="toolingItemSku"></strong></div>
+                            <div><span class="text-muted">Category:</span> <strong id="toolingItemCat"></strong></div>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Tool Name <span class="text-muted small">(auto-filled from item, editable)</span></label>
+                        <input type="text" name="tool_name" id="toolingToolName" class="form-control" placeholder="Auto-filled from inventory item">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Type</label>
+                        <select name="acquisition_type" class="form-select searchable-select">
+                            <option value="BUY">BUY (Purchase)</option>
+                            <option value="MAKE">MAKE (In-house)</option>
+                            <option value="OUTSOURCE">OUTSOURCE (Vendor)</option>
+                        </select>
                     </div>
                     <div class="mb-2">
                         <label class="form-label">Tool Type</label>
@@ -890,9 +1009,15 @@
                             <option value="other">Other</option>
                         </select>
                     </div>
-                    <div class="mb-2">
-                        <label class="form-label">Quantity</label>
-                        <input type="number" name="quantity" class="form-control" value="1" step="0.01">
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label">Quantity</label>
+                            <input type="number" name="quantity" class="form-control" value="1" step="0.01" min="0.01">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Cost (PKR)</label>
+                            <input type="number" name="cost" id="toolingCost" class="form-control" step="0.01" value="0">
+                        </div>
                     </div>
                     <div class="mb-2">
                         <label class="form-label">Vendor</label>
@@ -904,10 +1029,6 @@
                         </select>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label">Cost (PKR)</label>
-                        <input type="number" name="cost" class="form-control" step="0.01" value="0">
-                    </div>
-                    <div class="mb-2">
                         <label class="form-label">Expected Completion</label>
                         <input type="date" name="expected_completion" class="form-control">
                     </div>
@@ -917,7 +1038,8 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="submit" class="btn btn-primary">Add</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-plus me-1"></i>Add Tooling</button>
                 </div>
             </form>
 {% endif %}            
@@ -1241,6 +1363,47 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
         }
+    });
+
+    // Tooling modal: inventory product auto-fill
+    $('#addToolingModal').on('shown.bs.modal', function () {
+        var $sel  = $('#toolingProductSelect');
+        var $name = $('#toolingToolName');
+        var $cost = $('#toolingCost');
+        var $prev = $('#toolingItemPreview');
+        var $img  = $('#toolingItemImg');
+        var $sku  = $('#toolingItemSku');
+        var $cat  = $('#toolingItemCat');
+
+        if (!$sel.data('select2')) {
+            $sel.select2({ theme: 'bootstrap-5', width: '100%', dropdownParent: $('#addToolingModal'),
+                           placeholder: '-- Search by SKU or name --', allowClear: true });
+        }
+
+        $sel.off('select2:select.toolingFill').on('select2:select.toolingFill', function (e) {
+            var $opt = $(e.params.data.element);
+            var pName = $opt.attr('data-name') || '';
+            var cost  = parseFloat($opt.attr('data-cost') || 0);
+            var sku   = $opt.attr('data-sku') || '';
+            var cat   = $opt.attr('data-category') || '';
+            var img   = $opt.attr('data-img') || '';
+
+            if (pName && !$name.val()) $name.val(pName);
+            $cost.val(cost.toFixed(2));
+            $sku.text(sku);
+            $cat.text(cat || '—');
+            if (img) {
+                $img.attr('src', img).show();
+            } else {
+                $img.hide();
+            }
+            $prev.removeClass('d-none');
+        });
+
+        $sel.off('select2:clear.toolingFill').on('select2:clear.toolingFill', function () {
+            $prev.addClass('d-none');
+            $img.attr('src', '');
+        });
     });
 
     // Component auto-fill functionality (for Add Component modal)

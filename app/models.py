@@ -4437,6 +4437,8 @@ class PDTooling(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey('pd_projects.id'), nullable=False, index=True)
     tool_name = db.Column(db.String(200), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True, index=True)
+    acquisition_type = db.Column(db.String(20), nullable=False, default='BUY')  # BUY, MAKE, OUTSOURCE
     tool_type = db.Column(db.Enum('mold', 'die', 'injection', 'forging', 'jig', 'fixture', 'other', name='pd_tool_type'), nullable=False)
     quantity = db.Column(db.Float, default=1)
     vendor_id = db.Column(db.Integer, db.ForeignKey('vendors.id'), nullable=True)
@@ -4450,6 +4452,7 @@ class PDTooling(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     vendor = db.relationship('Vendor', backref='pd_tooling', lazy=True)
+    product = db.relationship('Product', lazy=True)
     purchase_order = db.relationship('PurchaseOrder', backref='pd_tooling', lazy=True)
     
     def __repr__(self):
@@ -4795,6 +4798,43 @@ class ProductAttachment(db.Model):
 PD_FEASIBILITY_DISCIPLINES = ('Technical', 'Financial', 'Market')
 
 
+class PDVoiceOfCustomer(db.Model):
+    """Voice of Customer review entry for a funnel candidate. Supports text + optional pasted image."""
+    __tablename__ = 'pd_voc_reviews'
+
+    id = db.Column(db.Integer, primary_key=True)
+    candidate_id = db.Column(db.Integer, db.ForeignKey('pd_candidates.id'), nullable=False, index=True)
+    review_text = db.Column(db.Text, nullable=False)
+    image_path = db.Column(db.String(300), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class PDFunnelComponent(db.Model):
+    """Components scoped to a funnel candidate (pre-project). Transferred to PDComponent on G1 approval."""
+    __tablename__ = 'pd_funnel_components'
+
+    id = db.Column(db.Integer, primary_key=True)
+    candidate_id = db.Column(db.Integer, db.ForeignKey('pd_candidates.id'), nullable=False, index=True)
+    component_name = db.Column(db.String(200), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True, index=True)
+    component_type = db.Column(db.Enum('MAKE', 'BUY', 'OUTSOURCE', name='pd_funnel_comp_type'), nullable=False, default='BUY')
+    quantity = db.Column(db.Float, default=1)
+    vendor_id = db.Column(db.Integer, db.ForeignKey('vendors.id'), nullable=True)
+    estimated_cost = db.Column(db.Float, default=0)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    product = db.relationship('Product', lazy=True)
+    vendor = db.relationship('Vendor', backref='pd_funnel_components', lazy=True)
+
+    @property
+    def cost(self):
+        return (self.estimated_cost or 0) * (self.quantity or 0)
+
+    def __repr__(self):
+        return f'<PDFunnelComponent {self.candidate_id} - {self.component_name}>'
+
+
 class PDCandidate(db.Model):
     """OEM funnel candidate - one per OEM reference and saleable configuration.
     No SKU and no project exist at intake; an effective G1 approval creates the PDV project."""
@@ -4810,7 +4850,9 @@ class PDCandidate(db.Model):
     target_price = db.Column(db.Float, default=0)
     est_unit_cost = db.Column(db.Float, default=0)
     owner_staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=True, index=True)
+    owner_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     g1_lead_staff_id = db.Column(db.Integer, db.ForeignKey('staff.id'), nullable=True, index=True)
+    g1_lead_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     g1_target_date = db.Column(db.Date, nullable=True)
     next_evidence = db.Column(db.String(255), nullable=True)
     notes = db.Column(db.Text)
@@ -4822,7 +4864,9 @@ class PDCandidate(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     owner = db.relationship('Staff', foreign_keys=[owner_staff_id], lazy=True)
+    owner_user = db.relationship('User', foreign_keys=[owner_user_id], lazy=True)
     g1_lead = db.relationship('Staff', foreign_keys=[g1_lead_staff_id], lazy=True)
+    g1_lead_user = db.relationship('User', foreign_keys=[g1_lead_user_id], lazy=True)
     product_category = db.relationship('ProductCategory', lazy=True)
     project = db.relationship('PDProject', backref=db.backref('source_candidate', uselist=False), lazy=True)
     creator = db.relationship('User', foreign_keys=[created_by], lazy=True)
@@ -4832,10 +4876,19 @@ class PDCandidate(db.Model):
                             cascade='all, delete-orphan', order_by='PDStageTask.id')
     gate_reviews = db.relationship('PDGateReview', backref='candidate', lazy=True,
                                    cascade='all, delete-orphan', order_by='PDGateReview.id.desc()')
+    funnel_components = db.relationship('PDFunnelComponent', backref='candidate', lazy=True,
+                                        cascade='all, delete-orphan', order_by='PDFunnelComponent.id')
+    voc_reviews = db.relationship('PDVoiceOfCustomer', backref='candidate', lazy=True,
+                                   cascade='all, delete-orphan', order_by='PDVoiceOfCustomer.id')
+
+    @property
+    def total_funnel_component_cost(self):
+        return sum(fc.cost for fc in self.funnel_components)
 
     @property
     def indicative_margin(self):
         return (self.target_price or 0) - (self.est_unit_cost or 0)
+
 
     @property
     def margin_percent(self):
@@ -4880,7 +4933,7 @@ class PDCandidate(db.Model):
                 missing.append(f'{d} review {v.lower()}')
             elif v == 'No-Go':
                 missing.append(f'{d} review verdict is No-Go')
-        if not self.g1_lead_staff_id:
+        if not self.g1_lead_staff_id and not self.g1_lead_user_id:
             missing.append('G1 stage lead not assigned')
         tasks = self.g1_tasks
         if not tasks:
