@@ -69,6 +69,11 @@
                     </a></li>
                 </ul>
             </div>
+            {% if current_user.has_permission('purchases', 'add') %}
+            <button type="button" class="btn btn-success" onclick="openVendorUniversalPay({{ vendor.id }})">
+                <i class="fas fa-money-bill-wave me-1"></i> Universal Pay
+            </button>
+            {% endif %}
             <button type="button" class="btn btn-primary" onclick="window.print()">
                 <i class="fas fa-print me-1"></i> Print Ledger
             </button>
@@ -78,4 +83,5 @@
     {% include 'purchase/_vendor_ledger_body.html' %}
 
 </div>
+{% if current_user.has_permission('purchases', 'add') %}{% include 'purchase/_universal_pay_modal.html' %}{% endif %}
 {% endblock %}

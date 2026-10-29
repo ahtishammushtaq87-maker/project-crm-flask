@@ -80,6 +80,11 @@
                     </a></li>
                 </ul>
             </div>
+            {% if current_user.has_permission('purchases', 'add') %}
+            <button type="button" class="btn btn-success" onclick="openVendorUniversalPay({{ vendor.id }})">
+                <i class="fas fa-money-bill-wave me-1"></i> Universal Pay
+            </button>
+            {% endif %}
             {% if current_user.has_permission('vendors', 'add') %}
             <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#advanceModal">
                 <i class="fas fa-hand-holding-usd me-1"></i> Give Advance
@@ -633,4 +638,5 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
+{% if current_user.has_permission('purchases', 'add') %}{% include 'purchase/_universal_pay_modal.html' %}{% endif %}
 {% endblock %}

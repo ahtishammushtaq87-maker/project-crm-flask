@@ -253,6 +253,93 @@
                             </table>
                         </div>
 
+                        {# ── Read-only Shipping & Payments, so the receiver can check
+                           delivery/payment proof without leaving this popup ── #}
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-5">
+                                <div class="border rounded p-2 h-100 bg-light">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <span class="fw-semibold text-info"><i class="fas fa-truck me-1"></i>Shipping</span>
+                                        <button type="button" class="btn btn-sm btn-outline-info"
+                                            onclick="switchFromReceiveModal('editShippingModal')">
+                                            <i class="fas fa-{{ 'edit' if bill.shipping_charge else 'plus' }} me-1"></i>{{ 'Edit' if bill.shipping_charge else 'Add' }} Shipping
+                                        </button>
+                                    </div>
+                                    <div class="small mb-2">Charge:
+                                        <strong>PKR {{ "{:,.2f}".format(bill.shipping_charge or 0) }}</strong>
+                                        {% if bill.shipping_charge and bill.shipping_due > 0 %}
+                                        <span class="badge bg-warning text-dark ms-1">Due PKR {{ "{:,.2f}".format(bill.shipping_due) }}</span>
+                                        {% elif bill.shipping_charge %}
+                                        <span class="badge bg-success ms-1">Paid</span>
+                                        {% endif %}
+                                    </div>
+                                    {% if bill.shipping_image_path %}
+                                    {% set rcv_ship_ext = bill.shipping_image_path.rsplit('.', 1)[1].lower() if '.' in bill.shipping_image_path else '' %}
+                                    {% if rcv_ship_ext == 'pdf' %}
+                                    <a href="{{ url_for('static', filename=bill.shipping_image_path) }}" target="_blank" rel="noopener"
+                                        class="btn btn-sm btn-outline-danger"><i class="fas fa-file-pdf me-1"></i>View Shipping PDF</a>
+                                    {% else %}
+                                    <a href="{{ url_for('static', filename=bill.shipping_image_path) }}" target="_blank" rel="noopener">
+                                        <img src="{{ url_for('static', filename=bill.shipping_image_path) }}" alt="Shipping Receipt"
+                                            class="img-thumbnail" style="max-height:110px; cursor:pointer;" title="Click to view full size">
+                                    </a>
+                                    {% endif %}
+                                    {% else %}
+                                    <span class="text-muted small">No shipping receipt uploaded.</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-md-7">
+                                <div class="border rounded p-2 h-100 bg-light">
+                                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                        <div class="fw-semibold text-success"><i class="fas fa-money-bill-wave me-1"></i>Payments
+                                            <span class="small text-muted fw-normal">— Paid PKR {{ "{:,.2f}".format(bill.paid_amount or 0) }},
+                                                Balance PKR {{ "{:,.2f}".format(bill.balance_due) }}</span>
+                                        </div>
+                                        {% if bill.paid_amount < bill.total %}
+                                        <button type="button" class="btn btn-sm btn-success text-nowrap"
+                                            onclick="switchFromReceiveModal('payModal')">
+                                            <i class="fas fa-plus me-1"></i>Add Payment
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                    {% if bill.bill_payments %}
+                                    <div style="max-height:180px; overflow-y:auto;">
+                                        {% for pay in bill.bill_payments|sort(attribute='date') %}
+                                        <div class="d-flex align-items-center gap-2 py-1 border-bottom small">
+                                            {% if pay.image_path %}
+                                            {% set rcv_pay_ext = pay.image_path.rsplit('.', 1)[1].lower() if '.' in pay.image_path else '' %}
+                                            <a href="{{ url_for('purchase.bill_payment_image', pay_id=pay.id) }}" target="_blank" rel="noopener"
+                                                title="Click to view full size">
+                                                {% if rcv_pay_ext == 'pdf' %}
+                                                <span class="d-inline-flex align-items-center justify-content-center border rounded bg-white"
+                                                    style="width:48px; height:40px;"><i class="fas fa-file-pdf text-danger fa-lg"></i></span>
+                                                {% else %}
+                                                <img src="{{ url_for('purchase.bill_payment_image', pay_id=pay.id) }}" alt="Proof"
+                                                    class="img-thumbnail" style="width:48px; height:40px; object-fit:cover;">
+                                                {% endif %}
+                                            </a>
+                                            {% else %}
+                                            <span class="d-inline-flex align-items-center justify-content-center border rounded text-muted"
+                                                style="width:48px; height:40px;">—</span>
+                                            {% endif %}
+                                            <div class="flex-grow-1">
+                                                {{ pay.date.strftime(date_format) if pay.date else '' }} · {{ pay.payment_method or 'Cash' }}
+                                                {% if pay.reference_number %}<span class="text-muted">· {{ pay.reference_number }}</span>{% endif %}
+                                                {% if pay.is_rejected %}<span class="badge bg-danger ms-1">Rejected</span>
+                                                {% elif not pay.is_approved %}<span class="badge bg-warning text-dark ms-1">Pending</span>{% endif %}
+                                            </div>
+                                            <strong class="text-success text-nowrap">PKR {{ "{:,.2f}".format(pay.amount) }}</strong>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                    {% else %}
+                                    <span class="text-muted small">No payments recorded yet.</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="mb-3">
                             <label class="form-label fw-semibold">Notes (Optional)</label>
                             <textarea name="receive_notes" rows="2" class="form-control"
@@ -1524,6 +1611,7 @@
                                         <th>Date</th>
                                         <th>Description</th>
                                         <th class="text-end">Amount</th>
+                                        <th class="text-center">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1532,6 +1620,25 @@
                                         <td>{{ adv.date.strftime(date_format) }}</td>
                                         <td>{{ adv.description or '—' }}</td>
                                         <td class="text-end text-success fw-bold">PKR {{ "{:,.2f}".format(adv.amount) }}
+                                            {% if (adv.applied_amount or 0) != adv.amount %}<div class="small text-muted fw-normal">Applied: PKR {{ "{:,.2f}".format(adv.applied_amount or 0) }}</div>{% endif %}
+                                        </td>
+                                        <td class="text-center text-nowrap">
+                                            {% if current_user.has_permission('vendors', 'edit') %}
+                                            <button type="button" class="btn btn-sm btn-outline-primary me-1"
+                                                data-bs-toggle="modal" data-bs-target="#editAdvanceModal{{ adv.id }}" title="Edit">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            {% endif %}
+                                            {% if current_user.has_permission('vendors', 'delete') %}
+                                            <form method="POST" class="d-inline"
+                                                action="{{ url_for('purchase.vendor_delete_advance', id=adv.vendor_id, adv_id=adv.id) }}">
+                                                <input type="hidden" name="return_bill_id" value="{{ bill.id }}">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"
+                                                    onclick="return confirm('Delete this advance? Everything it paid on bills (PKR {{ '{:,.2f}'.format(adv.applied_amount or 0) }}) is reversed and the money goes back to its bank / cash account.')">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </form>
+                                            {% endif %}
                                         </td>
                                     </tr>
                                     {% endfor %}
@@ -1542,10 +1649,65 @@
                                         <th class="text-end text-success">PKR {{ "{:,.2f}".format(bill.adjusted_advances
                                             |
                                             sum(attribute='amount')) }}</th>
+                                        <th></th>
                                     </tr>
                                 </tfoot>
                             </table>
                         </div><!-- end advances-scroll -->
+
+                        <!-- Edit Advance Modals -->
+                        {% if current_user.has_permission('vendors', 'edit') %}
+                        {% for adv in bill.adjusted_advances %}
+                        <div class="modal fade" id="editAdvanceModal{{ adv.id }}" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <form method="POST"
+                                        action="{{ url_for('purchase.vendor_edit_advance', id=adv.vendor_id, adv_id=adv.id) }}">
+                                        <input type="hidden" name="return_bill_id" value="{{ bill.id }}">
+                                        <div class="modal-header bg-info text-white">
+                                            <h5 class="modal-title">Edit Advance #{{ adv.id }}</h5>
+                                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <div class="mb-3">
+                                                <label class="form-label fw-bold">Amount (PKR)</label>
+                                                <input type="number" name="amount" step="0.01"
+                                                    min="{{ '%.2f'|format(adv.applied_amount or 0) }}"
+                                                    value="{{ '%.2f'|format(adv.amount) }}" class="form-control" required>
+                                                <small class="text-muted">PKR {{ "{:,.2f}".format(adv.applied_amount or 0) }} is already
+                                                    applied to bills, so the amount can't go below that. Delete the advance to reverse it.</small>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label fw-bold">Date</label>
+                                                <input type="date" name="advance_date" value="{{ adv.date.strftime('%Y-%m-%d') }}" class="form-control">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label fw-bold">Description</label>
+                                                <input type="text" name="description" value="{{ adv.description or '' }}" class="form-control">
+                                            </div>
+                                            <div class="mb-1">
+                                                <label class="form-label fw-bold">Pay from Account (Bank / Cash)</label>
+                                                <select name="expense_account_id" class="form-select">
+                                                    <option value="">— Not linked to an account —</option>
+                                                    {% for a in pay_accounts %}
+                                                    <option value="{{ a.id }}" {{ 'selected' if adv.expense_account_id == a.id }}>{{ a.name }}{% if a.account_type %} ({{ a.account_type }}){% endif %} — Balance: PKR {{ "{:,.2f}".format(a.balance) }}</option>
+                                                    {% endfor %}
+                                                    {% if adv.expense_account and not adv.expense_account.is_active %}
+                                                    <option value="{{ adv.expense_account.id }}" selected>{{ adv.expense_account.name }} (inactive)</option>
+                                                    {% endif %}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                            <button type="submit" class="btn btn-primary">Update Advance</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% endif %}
                     </div>
                 </div>
                 {% endif %}
@@ -1695,6 +1857,25 @@
                 });
             });
         });
+
+        // From the Receive popup, open the Shipping / Pay popup. Wait for the
+        // Receive popup to finish hiding first — Bootstrap breaks the backdrop
+        // if two modals overlap.
+        function switchFromReceiveModal(targetId) {
+            const fromEl = document.getElementById('receiveModal');
+            const targetEl = document.getElementById(targetId);
+            if (!targetEl) return;
+            const inst = bootstrap.Modal.getInstance(fromEl);
+            if (!inst || !fromEl.classList.contains('show')) {
+                bootstrap.Modal.getOrCreateInstance(targetEl).show();
+                return;
+            }
+            fromEl.addEventListener('hidden.bs.modal', function onHidden() {
+                fromEl.removeEventListener('hidden.bs.modal', onHidden);
+                bootstrap.Modal.getOrCreateInstance(targetEl).show();
+            });
+            inst.hide();
+        }
 
         // Open a payment receipt PDF inline in a same-page modal instead of a new tab.
         function showPdfPreview(url) {

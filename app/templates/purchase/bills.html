@@ -91,6 +91,9 @@
                 <i class="fas fa-cog me-1"></i> Settings
             </a>
             {% if current_user.has_permission('purchases', 'add') %}
+            <button type="button" class="btn btn-success" onclick="openVendorUniversalPay()">
+                <i class="fas fa-money-bill-wave me-1"></i> Universal Pay
+            </button>
             <a href="{{ url_for('purchase.create_bill') }}" class="btn btn-primary">
                 <i class="fas fa-plus me-1"></i> Create New PO
             </a>
@@ -438,4 +441,5 @@
     </div>
 </div>
 </div>
+{% if current_user.has_permission('purchases', 'add') %}{% include 'purchase/_universal_pay_modal.html' %}{% endif %}
 {% endblock %}

@@ -1404,6 +1404,232 @@ def pay_bill(id):
     return redirect(request.referrer or url_for('purchase.bill_detail', id=bill.id))
 
 
+def _vendor_open_bills(vendor_id):
+    """Vendor's bills that still owe money, oldest first, each paired with
+    what is still open on it — the same cap pay_bill uses (total - paid -
+    cancelled) minus any staff payment still waiting for approval, so a
+    pending payment is never allocated twice."""
+    bills = PurchaseBill.query.filter(
+        PurchaseBill.vendor_id == vendor_id,
+        PurchaseBill.is_rejected == False,
+        PurchaseBill.status.notin_(['paid', 'cancelled'])
+    ).order_by(PurchaseBill.date.asc(), PurchaseBill.id.asc()).all()
+
+    result = []
+    for bill in bills:
+        pending = sum(float(p.amount or 0) for p in bill.bill_payments
+                      if not p.is_approved and not p.is_rejected)
+        open_amount = round(float(bill.total or 0) - float(bill.paid_amount or 0)
+                            - float(bill.cancelled_amount or 0) - pending, 2)
+        if open_amount > 0.009:
+            result.append((bill, open_amount))
+    return result
+
+
+@bp.route('/vendors/list-json')
+@login_required
+def vendors_list_json():
+    """Lightweight active-vendor list for the Universal Pay vendor picker.
+    Optional ?q= filters by name/phone/company."""
+    q = request.args.get('q', '').strip()
+    query = Vendor.query.filter_by(is_active=True)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(Vendor.name.ilike(like), Vendor.phone.ilike(like),
+                                 Vendor.company_name.ilike(like)))
+    vendors = query.order_by(Vendor.name).limit(200).all()
+    return jsonify({
+        'vendors': [{'id': v.id, 'name': v.name, 'phone': v.phone or ''} for v in vendors]
+    })
+
+
+@bp.route('/pay-accounts-json')
+@login_required
+def pay_accounts_json():
+    """Active bank / cash accounts for the 'Pay from Account' dropdown of the
+    purchase Universal Pay modal, loaded when the modal opens."""
+    from app.utils import bill_payment_account_choices
+    return jsonify({'accounts': [{'id': a.id, 'name': a.name, 'type': a.account_type or '',
+                                  'balance': float(a.balance or 0)}
+                                 for a in bill_payment_account_choices()]})
+
+
+@bp.route('/vendor/<int:id>/pay-summary-json')
+@login_required
+def vendor_pay_summary_json(id):
+    """Balance-due / advance snapshot shown in the Universal Pay modal."""
+    vendor = Vendor.query.get_or_404(id)
+    open_bills = _vendor_open_bills(vendor.id)
+    return jsonify({
+        'vendor_id': vendor.id,
+        'vendor_name': vendor.name,
+        'outstanding_balance': float(sum(a for _, a in open_bills)),
+        'remaining_advance_balance': float(vendor.remaining_advance_balance or 0),
+        'unpaid_bill_count': len(open_bills),
+        'oldest_bill_number': open_bills[0][0].bill_number if open_bills else None
+    })
+
+
+@bp.route('/vendor/<int:id>/universal-pay', methods=['POST'])
+@login_required
+@permission_required('purchases', action='add')
+def vendor_universal_pay(id):
+    """
+    Universal Pay — one payment to a vendor, auto-distributed across their
+    unpaid bills oldest-first (FIFO); any leftover becomes a VendorAdvance.
+    Mirrors sales.universal_pay.
+
+    Each portion is a normal BillPayment on the bill it settled, built the
+    same way pay_bill builds a cash/direct payment, so the vendor ledger
+    (build_vendor_ledger) shows it as a credit under that bill and the
+    approval flow is unchanged: an admin's payment updates the bill at once,
+    a staff payment waits for approval (_post_approve_bill_payment adds it).
+
+    The leftover advance is a plain (not "Auto-credit: overpayment") advance:
+    no BillPayment holds that money, so the ledger credits it once — when it
+    is later applied to a bill — exactly like vendor_give_advance.
+
+    Existing advance balance is NOT consumed here; only the money entered is
+    distributed.
+    """
+    vendor = Vendor.query.get_or_404(id)
+    back = request.referrer or url_for('purchase.vendor_profile', id=vendor.id)
+
+    try:
+        amount = round(float(request.form.get('amount', 0) or 0), 2)
+    except ValueError:
+        amount = 0
+    if amount <= 0:
+        flash('Payment amount must be greater than zero.', 'danger')
+        return redirect(back)
+
+    pay_account_id = request.form.get('expense_account_id', type=int)
+    pay_account = None
+    if pay_account_id:
+        from app.models import ExpenseAccount
+        pay_account = ExpenseAccount.query.get(pay_account_id)
+        if not pay_account or not pay_account.is_active:
+            flash('The selected account is not available any more. Choose another account.', 'danger')
+            return redirect(back)
+
+    is_admin = (current_user.role == 'admin')
+    payment_method = request.form.get('payment_method', 'Cash').strip() or 'Cash'
+    reference_number = request.form.get('reference_number', '').strip() or None
+    pay_notes = request.form.get('pay_notes', '').strip()
+    payment_date_str = request.form.get('payment_date', '')
+    try:
+        payment_date = datetime.strptime(payment_date_str, '%Y-%m-%d') if payment_date_str else datetime.utcnow()
+    except ValueError:
+        payment_date = datetime.utcnow()
+
+    import time, uuid
+
+    try:
+        image_path = None
+        pay_file = request.files.get('pay_image')
+        if pay_file and pay_file.filename:
+            ext = pay_file.filename.rsplit('.', 1)[1].lower() if '.' in pay_file.filename else ''
+            if ext in {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'webp'}:
+                upload_dir = os.path.join(current_app.root_path, 'static', 'uploads', 'payments')
+                os.makedirs(upload_dir, exist_ok=True)
+                filename = secure_filename(f"upay_vendor{vendor.id}_{int(time.time())}_{uuid.uuid4().hex[:8]}.{ext}")
+                pay_file.save(os.path.join(upload_dir, filename))
+                image_path = os.path.join('uploads', 'payments', filename).replace('\\', '/')
+
+        remaining = amount
+        bills_paid = []  # (bill, portion, BillPayment)
+        for bill, open_amount in _vendor_open_bills(vendor.id):
+            if remaining <= 0.009:
+                break
+            portion = round(min(remaining, open_amount), 2)
+
+            bp_record = BillPayment(
+                bill_id=bill.id,
+                date=payment_date,
+                amount=portion,
+                payment_method=payment_method,
+                reference_number=reference_number,
+                notes=(f"{pay_notes} " if pay_notes else '') + f"[Universal Pay for {vendor.name}]",
+                image_path=image_path,
+                created_by=current_user.id,
+                is_approved=is_admin,
+                approved_by=current_user.id if is_admin else None,
+                approved_at=datetime.utcnow() if is_admin else None,
+            )
+            db.session.add(bp_record)
+            if is_admin:
+                bill.paid_amount = (bill.paid_amount or 0) + portion
+                bill.update_status()
+
+            bills_paid.append((bill, portion, bp_record))
+            remaining = round(remaining - portion, 2)
+
+        advance = None
+        if remaining > 0.009:
+            advance = VendorAdvance(
+                vendor_id=vendor.id,
+                amount=remaining,
+                date=payment_date.date(),
+                description='Universal Pay: excess after settling unpaid bills',
+                created_by=current_user.id,
+                is_approved=is_admin,
+                approved_by=current_user.id if is_admin else None,
+                approved_at=datetime.utcnow() if is_admin else None,
+            )
+            db.session.add(advance)
+
+        db.session.flush()  # ids for receipts and account rows
+
+        # Cash: auto-generate a receipt per bill, same as pay_bill.
+        if payment_method.lower() == 'cash' and not image_path and bills_paid:
+            from app.pdf_utils import generate_bill_payment_receipt_pdf
+            company = Company.query.first()
+            for bill, _portion, bp_record in bills_paid:
+                try:
+                    pdf_buffer = generate_bill_payment_receipt_pdf(bp_record, bill, company)
+                    unique_prefix = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+                    filename = secure_filename(f"pay_{bill.bill_number}_{unique_prefix}_receipt.pdf")
+                    upload_dir = os.path.join(current_app.root_path, 'static', 'uploads', 'payments')
+                    os.makedirs(upload_dir, exist_ok=True)
+                    with open(os.path.join(upload_dir, filename), 'wb') as f:
+                        f.write(pdf_buffer.getvalue())
+                    bp_record.image_path = os.path.join('uploads', 'payments', filename).replace('\\', '/')
+                except Exception as e:
+                    current_app.logger.warning(f"Auto-receipt generation failed for universal payment on {bill.bill_number}: {e}")
+
+        if pay_account:
+            from app.utils import sync_bill_payment_account_txn, sync_vendor_advance_account_txn
+            for _bill, portion, bp_record in bills_paid:
+                sync_bill_payment_account_txn(bp_record, pay_account.id, portion, current_user.id)
+            if advance is not None:
+                sync_vendor_advance_account_txn(advance, pay_account.id, current_user.id, approved=is_admin)
+
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error processing payment: {str(e)}', 'danger')
+        return redirect(back)
+
+    advance_created = advance.amount if advance is not None else 0.0
+    log_activity('Purchase', f'Universal Payment to {vendor.name}',
+                 f'Amount: PKR {amount:,.2f}, Method: {payment_method}, '
+                 + (f'Paid from account: {pay_account.name}, ' if pay_account else '') +
+                 f'Applied to {len(bills_paid)} bill(s), Advance: PKR {advance_created:,.2f}, '
+                 f'Pending admin approval: {not is_admin}')
+
+    msg = f'Payment of PKR {amount:,.2f} recorded for {vendor.name}.'
+    if bills_paid:
+        msg += ' Applied to: ' + ', '.join(f"{b.bill_number} (PKR {p:,.2f})" for b, p, _ in bills_paid) + '.'
+    if advance_created > 0:
+        msg += f' PKR {advance_created:,.2f} credited to the vendor as a remaining advance.'
+    if pay_account:
+        msg += f' Paid from {pay_account.name}' + ('.' if is_admin else ' (deducted once approved).')
+    if not is_admin:
+        msg += ' Waiting for admin approval before the bills are updated.'
+    flash(msg, 'success' if is_admin else 'info')
+    return redirect(back)
+
+
 @bp.route('/bill/<int:id>/payment/<int:pay_id>/edit', methods=['GET', 'POST'])
 @login_required
 @permission_required('purchases', action='edit')
@@ -1456,19 +1682,29 @@ def edit_bill_payment(id, pay_id):
         new_account_id = request.form.get('expense_account_id', type=int)
         sync_bill_payment_account_txn(payment, new_account_id, max(0.0, new_amount - advance_part), current_user.id)
 
-        # Safe paid_amount update: adjust bill's paid_amount by the difference
-        delta = new_amount - old_amount
-        bill.paid_amount += delta
-        if bill.paid_amount < 0:
-            bill.paid_amount = 0
-        if bill.paid_amount > bill.total:
-            bill.paid_amount = bill.total
-        bill.update_status()
+        # Only an approved payment has reached bill.paid_amount — a pending
+        # (staff) one is added on approval with its then-current amount, so
+        # editing it must not touch the bill now.
+        overpayment_credit = 0
+        if payment.is_approved:
+            delta = round(new_amount - old_amount, 2)
+            if delta > 0:
+                # Same cap as pay_bill: any excess over the bill balance
+                # becomes an "Auto-credit" vendor advance (the ledger already
+                # counts it inside this payment, so it isn't counted twice).
+                from app.utils import apply_bill_payment_with_credit
+                overpayment_credit = apply_bill_payment_with_credit(bill, delta, current_user.id)
+            else:
+                bill.paid_amount = max(0, (bill.paid_amount or 0) + delta)
+                bill.update_status()
 
         db.session.commit()
         log_activity('Purchase', f'Updated Payment on Bill #{bill.bill_number}',
                     f'Old: PKR {old_amount:,.2f}, New: PKR {new_amount:,.2f}')
-        flash(f'Payment updated: PKR{new_amount:,.2f} ({payment.payment_method})', 'success')
+        msg = f'Payment updated: PKR{new_amount:,.2f} ({payment.payment_method})'
+        if overpayment_credit > 0:
+            msg += f'. PKR {overpayment_credit:,.2f} exceeded the balance due and has been credited to the vendor as a remaining advance.'
+        flash(msg, 'success')
         return redirect(url_for('purchase.bill_detail', id=bill.id))
 
     # GET: render edit form (modal embedded in page)
@@ -1516,11 +1752,13 @@ def delete_bill_payment(id, pay_id):
     bill = PurchaseBill.query.get_or_404(id)
     payment = BillPayment.query.filter_by(id=pay_id, bill_id=bill.id).first_or_404()
     
-    # Reverse from bill
-    bill.paid_amount -= payment.amount
-    if bill.paid_amount < 0:
-        bill.paid_amount = 0
-    bill.update_status()
+    # Reverse from bill — only an approved payment was ever added to it (a
+    # pending staff payment, e.g. from Universal Pay, never touched paid_amount).
+    if payment.is_approved:
+        bill.paid_amount -= payment.amount
+        if bill.paid_amount < 0:
+            bill.paid_amount = 0
+        bill.update_status()
     
     # Delete linked accounting transactions
     from app.models import Transaction
@@ -2750,7 +2988,65 @@ def vendor_delete_advance(id, adv_id):
         flash(f'Advance deleted. PKR {applied_amount:,.2f} applied from it was reversed from Bill(s) {bill_numbers}.', 'success')
     else:
         flash('Advance deleted.', 'success')
-    return redirect(url_for('purchase.vendor_profile', id=id))
+    return _advance_redirect(id)
+
+
+def _advance_redirect(vendor_id):
+    """Back to the bill the advance was edited from (Bill Detail passes
+    return_bill_id), otherwise the vendor profile."""
+    bill_id = request.form.get('return_bill_id', type=int)
+    if bill_id:
+        return redirect(url_for('purchase.bill_detail', id=bill_id))
+    return redirect(url_for('purchase.vendor_profile', id=vendor_id))
+
+
+@bp.route('/vendor/<int:id>/advance/<int:adv_id>/edit', methods=['POST'])
+@login_required
+@permission_required('vendors', action='edit')
+def vendor_edit_advance(id, adv_id):
+    """Edit a vendor advance's date, description, amount and paid-from
+    account. The amount can't go below what has already been applied to
+    bills — the bills and ledger already count that part (delete the advance
+    instead to reverse it). The account row is resynced to the new amount."""
+    advance = VendorAdvance.query.get_or_404(adv_id)
+    if advance.vendor_id != id:
+        flash('Invalid advance.', 'danger')
+        return _advance_redirect(id)
+
+    try:
+        new_amount = round(float(request.form.get('amount', 0) or 0), 2)
+    except ValueError:
+        new_amount = 0
+    applied = round(float(advance.applied_amount or 0), 2)
+    if new_amount <= 0:
+        flash('Advance amount must be greater than zero.', 'danger')
+        return _advance_redirect(id)
+    if new_amount < applied:
+        flash(f'Amount can\'t be less than PKR {applied:,.2f} already applied to bills. '
+              'Delete the advance to reverse it instead.', 'danger')
+        return _advance_redirect(id)
+
+    old_amount = advance.amount
+    date_str = request.form.get('advance_date', '')
+    if date_str:
+        try:
+            advance.date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            pass
+    if 'description' in request.form:
+        advance.description = request.form.get('description', '').strip() or advance.description
+    advance.amount = new_amount
+    advance.is_adjusted = advance.applied_amount >= advance.amount
+
+    from app.utils import sync_vendor_advance_account_txn
+    sync_vendor_advance_account_txn(advance, request.form.get('expense_account_id', type=int),
+                                    current_user.id, approved=bool(advance.is_approved))
+
+    db.session.commit()
+    log_activity('Vendors', f'Edited Vendor Advance #{advance.id}',
+                 f'Old: PKR {old_amount:,.2f}, New: PKR {new_amount:,.2f}')
+    flash(f'Advance updated: PKR {new_amount:,.2f}.', 'success')
+    return _advance_redirect(id)
 
 @bp.route('/vendor/<int:id>/edit', methods=['GET', 'POST'])
 @login_required

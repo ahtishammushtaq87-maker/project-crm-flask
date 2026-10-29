@@ -1,0 +1,273 @@
+{# Purchase Universal Pay — one payment to a vendor, auto-distributed across
+   their unpaid bills oldest-first; leftover becomes a vendor advance.
+   Open with openVendorUniversalPay() (vendor picker) or
+   openVendorUniversalPay(vendorId) (straight to the payment form). #}
+<div class="modal fade" id="vendorUpSelectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0">
+            <div class="modal-header bg-success text-white py-3">
+                <h5 class="modal-title"><i class="fas fa-money-bill-wave me-2"></i>Universal Pay — Select Vendor</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label fw-semibold">Vendor</label>
+                <div class="position-relative">
+                    <input type="text" id="vendorUpSearch" class="form-control"
+                        placeholder="Search vendor by name or phone..." autocomplete="off">
+                    <input type="hidden" id="vendorUpVendorId">
+                    <div id="vendorUpResults" class="list-group shadow-sm"
+                        style="display:none; position:absolute; width:100%; max-height:240px; overflow-y:auto; z-index:1060;"></div>
+                </div>
+                <small class="text-muted d-block mt-2">Pick the vendor you are paying — the amount you enter next is
+                    applied to their unpaid bills automatically, oldest first.</small>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success fw-bold" onclick="vendorUpContinue()">
+                    Continue <i class="fas fa-arrow-right ms-1"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="vendorUpModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0">
+            <form id="vendorUpForm" method="POST" enctype="multipart/form-data">
+                <div class="modal-header bg-success text-white py-3">
+                    <h5 class="modal-title"><i class="fas fa-money-bill-wave me-2"></i>Universal Pay — <span id="vendorUpName"></span></h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-light static-alert border small mb-3">
+                        <div class="d-flex justify-content-between">
+                            <span>Unpaid Bills:</span><strong id="vendorUpCount">-</strong>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span>Total Outstanding Balance:</span>
+                            <strong class="text-danger" id="vendorUpOutstanding">PKR 0.00</strong>
+                        </div>
+                        <div class="d-flex justify-content-between" id="vendorUpAdvanceRow" style="display:none !important;">
+                            <span>Existing Advance Available:</span>
+                            <strong class="text-info" id="vendorUpAdvance">PKR 0.00</strong>
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Payment Method</label>
+                            <select name="payment_method" id="vendorUpMethod" class="form-select">
+                                <option value="Cash">Cash Payment</option>
+                                <option value="Bank Transfer">Bank Transfer</option>
+                                <option value="Cheque">Cheque</option>
+                                <option value="Online">Online</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Payment Date</label>
+                            <input type="date" name="payment_date" id="vendorUpDate" class="form-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold" for="vendorUpAccount">
+                                <i class="fas fa-university me-1 text-muted"></i>Pay from Account (Bank / Cash)
+                            </label>
+                            <select name="expense_account_id" id="vendorUpAccount" class="form-select">
+                                <option value="">— Not linked to an account —</option>
+                            </select>
+                            <small class="text-muted">The amount is credited (deducted) from this account: one entry
+                                per bill it settles, plus one for any leftover advance{% if current_user.role != 'admin' %}
+                                — once an admin approves them{% endif %}.</small>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Amount (PKR)</label>
+                            <div class="input-group">
+                                <span class="input-group-text">PKR</span>
+                                <input type="number" step="0.01" min="0.01" name="amount" id="vendorUpAmount"
+                                    class="form-control" placeholder="0.00" required>
+                            </div>
+                            <small class="text-muted">Applied to the vendor's oldest unpaid bill first, then the next,
+                                and so on. Anything left over is credited to the vendor as a remaining advance.</small>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Reference # (Optional)</label>
+                            <input type="text" name="reference_number" class="form-control" placeholder="Cheque / transaction no.">
+                        </div>
+                        <div class="col-12" id="vendorUpProofWrap">
+                            <label class="form-label fw-semibold"><i class="fas fa-image me-1 text-danger"></i>Payment Proof / Receipt</label>
+                            <input type="file" name="pay_image" id="vendorUpImage" class="form-control" accept="image/*,.pdf">
+                            <small class="text-muted">Cheque scan, bank receipt screenshot or any payment document.</small>
+                        </div>
+                        <div class="col-12" id="vendorUpCashNotice" style="display:none;">
+                            <div class="alert alert-success static-alert py-2 mb-0 small">
+                                <i class="fas fa-receipt me-1"></i>No upload needed for cash — a receipt is generated
+                                automatically for each bill this payment settles.
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Payment Notes (Optional)</label>
+                            <textarea name="pay_notes" rows="2" class="form-control" placeholder="Any notes about this payment..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" id="vendorUpBackBtn" onclick="vendorUpBack()">
+                        <i class="fas fa-arrow-left me-1"></i>Back
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success fw-bold" id="vendorUpSubmit">
+                        <i class="fas fa-check me-1"></i>Record Payment
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const fmt = n => 'PKR ' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const $ = id => document.getElementById(id);
+
+    function today() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    // Wait for one modal to finish hiding before showing the next (Bootstrap
+    // loses the backdrop state otherwise).
+    function switchModal(fromEl, openNext) {
+        const inst = bootstrap.Modal.getInstance(fromEl);
+        if (!inst || !fromEl.classList.contains('show')) { openNext(); return; }
+        fromEl.addEventListener('hidden.bs.modal', function h() {
+            fromEl.removeEventListener('hidden.bs.modal', h);
+            openNext();
+        });
+        inst.hide();
+    }
+
+    function updateProof() {
+        const isCash = $('vendorUpMethod').value === 'Cash';
+        $('vendorUpProofWrap').style.display = isCash ? 'none' : '';
+        $('vendorUpCashNotice').style.display = isCash ? '' : 'none';
+        if (isCash) $('vendorUpImage').value = '';
+    }
+
+    function loadAccounts() {
+        const sel = $('vendorUpAccount');
+        fetch("{{ url_for('purchase.pay_accounts_json') }}")
+            .then(r => r.json())
+            .then(data => {
+                sel.length = 1;
+                (data.accounts || []).forEach(a => {
+                    const o = document.createElement('option');
+                    o.value = a.id;
+                    o.textContent = `${a.name}${a.type ? ' (' + a.type + ')' : ''} — Balance: ${fmt(a.balance)}`;
+                    sel.appendChild(o);
+                });
+            })
+            .catch(() => {});
+    }
+
+    function openPayForm(vendorId, cameFromSelect) {
+        const form = $('vendorUpForm');
+        form.reset();
+        form.action = `/purchase/vendor/${vendorId}/universal-pay`;
+        $('vendorUpDate').value = today();
+        $('vendorUpName').textContent = '...';
+        $('vendorUpCount').textContent = '-';
+        $('vendorUpOutstanding').textContent = fmt(0);
+        $('vendorUpAdvanceRow').style.setProperty('display', 'none', 'important');
+        $('vendorUpBackBtn').style.display = cameFromSelect ? '' : 'none';
+        $('vendorUpSubmit').disabled = false;
+        updateProof();
+        loadAccounts();
+        bootstrap.Modal.getOrCreateInstance($('vendorUpModal')).show();
+
+        fetch(`/purchase/vendor/${vendorId}/pay-summary-json`)
+            .then(r => r.json())
+            .then(d => {
+                $('vendorUpName').textContent = d.vendor_name;
+                $('vendorUpCount').textContent = d.unpaid_bill_count;
+                $('vendorUpOutstanding').textContent = fmt(d.outstanding_balance);
+                if (d.remaining_advance_balance > 0) {
+                    $('vendorUpAdvanceRow').style.setProperty('display', 'flex', 'important');
+                    $('vendorUpAdvance').textContent = fmt(d.remaining_advance_balance);
+                }
+            })
+            .catch(() => { $('vendorUpName').textContent = 'Vendor'; });
+    }
+
+    window.openVendorUniversalPay = function (vendorId) {
+        if (vendorId) { openPayForm(vendorId, false); return; }
+        $('vendorUpVendorId').value = '';
+        $('vendorUpSearch').value = '';
+        $('vendorUpResults').style.display = 'none';
+        const el = $('vendorUpSelectModal');
+        bootstrap.Modal.getOrCreateInstance(el).show();
+        el.addEventListener('shown.bs.modal', function s() {
+            $('vendorUpSearch').focus();
+            el.removeEventListener('shown.bs.modal', s);
+        });
+    };
+
+    window.vendorUpContinue = function () {
+        const id = $('vendorUpVendorId').value;
+        if (!id) { alert('Please select a vendor from the search results first.'); return; }
+        switchModal($('vendorUpSelectModal'), () => openPayForm(id, true));
+    };
+
+    window.vendorUpBack = function () {
+        switchModal($('vendorUpModal'), () => window.openVendorUniversalPay());
+    };
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const input = $('vendorUpSearch'), results = $('vendorUpResults');
+        let timer = null;
+        input.addEventListener('input', function () {
+            $('vendorUpVendorId').value = '';
+            clearTimeout(timer);
+            timer = setTimeout(function () {
+                fetch(`{{ url_for('purchase.vendors_list_json') }}?q=${encodeURIComponent(input.value.trim())}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        results.innerHTML = '';
+                        if (!data.vendors || !data.vendors.length) {
+                            results.innerHTML = '<div class="list-group-item text-muted small">No vendors found</div>';
+                        }
+                        (data.vendors || []).forEach(v => {
+                            const b = document.createElement('button');
+                            b.type = 'button';
+                            b.className = 'list-group-item list-group-item-action py-2';
+                            const name = document.createElement('span');
+                            name.className = 'fw-semibold';
+                            name.textContent = v.name;
+                            b.appendChild(name);
+                            if (v.phone) {
+                                const ph = document.createElement('span');
+                                ph.className = 'text-muted small';
+                                ph.textContent = ' — ' + v.phone;
+                                b.appendChild(ph);
+                            }
+                            b.onclick = function () {
+                                $('vendorUpVendorId').value = v.id;
+                                input.value = v.name;
+                                results.style.display = 'none';
+                            };
+                            results.appendChild(b);
+                        });
+                        results.style.display = 'block';
+                    })
+                    .catch(() => { results.style.display = 'none'; });
+            }, 250);
+        });
+        document.addEventListener('click', function (e) {
+            if (!results.contains(e.target) && e.target !== input) results.style.display = 'none';
+        });
+
+        $('vendorUpMethod').addEventListener('change', updateProof);
+        $('vendorUpForm').addEventListener('submit', function () {
+            $('vendorUpSubmit').disabled = true;  // no double submit = no double payment
+        });
+    });
+})();
+</script>
