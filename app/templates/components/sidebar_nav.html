@@ -48,6 +48,8 @@
         {% endif %}
         {% if adm or u.can_view_returns %}
         <a class="nav-link" href="{{ url_for('returns.return_list') }}"><i class="fas fa-rotate-left nav-sub-ico"></i><span>Sales Returns</span></a>
+        <a class="nav-link" href="{{ url_for('returns.repair_list') }}"><i class="fas fa-screwdriver-wrench nav-sub-ico"></i><span>Repair Section</span></a>
+        <a class="nav-link" href="{{ url_for('returns.scrap_list') }}"><i class="fas fa-recycle nav-sub-ico"></i><span>Scrap Section</span></a>
         {% endif %}
         {% if adm or u.can_view_recovery %}
         <a class="nav-link" href="{{ url_for('recovery.dashboard') }}"><i class="fas fa-hand-holding-dollar nav-sub-ico"></i><span>Sales Recovery</span></a>

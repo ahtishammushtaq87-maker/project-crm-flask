@@ -11,6 +11,11 @@
             {{ approval_widget(module='sale_return', entity=sale_return) }}
         </div>
         <div>
+            {% if not sale_return.is_processed and sale_return.status != 'rejected' and not sale_return.is_rejected %}
+            <a href="{{ url_for('returns.verify_return', id=sale_return.id) }}" class="btn btn-success me-1">
+                <i class="fas fa-clipboard-check"></i> Verify Return
+            </a>
+            {% endif %}
             <a href="{{ url_for('returns.return_list') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Returns
             </a>
@@ -52,26 +57,40 @@
                                 <span class="badge bg-success">Completed</span>
                                 {% elif sale_return.status == 'approved' %}
                                 <span class="badge bg-info">Approved</span>
+                                {% elif sale_return.status == 'rejected' %}
+                                <span class="badge bg-danger">Rejected</span>
                                 {% else %}
                                 <span class="badge bg-warning">Pending</span>
                                 {% endif %}
                             </td>
                         </tr>
                         <tr>
-                            <td><strong>Inventory Status:</strong></td>
+                            <td><strong>Verification:</strong></td>
                             <td>
-                                {% if sale_return.returned_to_inventory %}
+                                {% if sale_return.is_verified %}
+                                <span class="badge bg-success"><i class="fas fa-clipboard-check"></i> Verified</span>
+                                <small class="text-muted ms-1">
+                                    {{ sale_return.verified_at.strftime('%d-%b-%Y %H:%M') if sale_return.verified_at }}
+                                    {% if sale_return.verifier %}by {{ sale_return.verifier.username }}{% endif %}
+                                </small>
+                                {% elif sale_return.returned_to_inventory %}
                                 <span class="badge bg-success"><i class="fas fa-check-circle"></i> Returned to Inventory</span>
+                                {% elif sale_return.status == 'rejected' or sale_return.is_rejected %}
+                                <span class="badge bg-secondary">N/A</span>
                                 {% else %}
-                                <span class="badge bg-warning"><i class="fas fa-exclamation-triangle"></i> Not Returned</span>
-                                <form action="{{ url_for('returns.return_to_inventory', id=sale_return.id) }}" method="POST" style="display: inline;">
-                                    <button type="submit" class="btn btn-sm btn-primary ms-2">
-                                        <i class="fas fa-plus"></i> Return to Inventory
-                                    </button>
-                                </form>
+                                <span class="badge bg-warning text-dark"><i class="fas fa-hourglass-half"></i> Awaiting Verification</span>
+                                <a href="{{ url_for('returns.verify_return', id=sale_return.id) }}" class="btn btn-sm btn-success ms-2">
+                                    <i class="fas fa-clipboard-check"></i> Verify
+                                </a>
                                 {% endif %}
                             </td>
                         </tr>
+                        {% if sale_return.verification_notes %}
+                        <tr>
+                            <td><strong>Verification Notes:</strong></td>
+                            <td>{{ sale_return.verification_notes }}</td>
+                        </tr>
+                        {% endif %}
                         {% if sale_return.reason %}
                         <tr>
                             <td><strong>Reason:</strong></td>
@@ -127,9 +146,11 @@
                             <th>Unit Price</th>
                             <th class="text-success">Discount</th>
                             <th>Total</th>
+                            <th>Inspection Result</th>
                         </tr>
                     </thead>
                     <tbody>
+                        {% set disp_badge = {'customer_issue': 'success', 'item_issue': 'warning text-dark', 'packaging_issue': 'info text-dark', 'scrap': 'danger'} %}
                         {% for item in sale_return.items %}
                         <tr>
                             <td class="{% if item.product and item.product.margin_color %}text-{{ item.product.margin_color }} fw-bold{% endif %}">{{ item.product.name if item.product else 'Unknown' }}</td>
@@ -139,6 +160,12 @@
                             <td>PKR{{ "%.2f"|format(item.unit_price) }}</td>
                             <td class="text-success">{% if item.discount %}-PKR{{ "%.2f"|format(item.discount) }}{% else %}-{% endif %}</td>
                             <td>PKR{{ "%.2f"|format(item.total) }}</td>
+                            <td>
+                                {% if item.disposition %}
+                                <span class="badge bg-{{ disp_badge.get(item.disposition, 'secondary') }}">{{ item.disposition_label }}</span>
+                                {% if item.inspection_notes %}<br><small class="text-muted">{{ item.inspection_notes }}</small>{% endif %}
+                                {% else %}-{% endif %}
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -146,6 +173,7 @@
                         <tr class="table-dark">
                             <th colspan="6" class="text-end">Total:</th>
                             <th>PKR{{ "%.2f"|format(sale_return.total) }}</th>
+                            <th></th>
                         </tr>
                     </tfoot>
                 </table>
@@ -183,8 +211,15 @@
                             <td>{{ item.product.name if item.product else 'Unknown' }}</td>
                             <td>{{ sku_link(item.product.sku, item.product.id) if item.product and item.product.sku else '-' }}</td>
                             <td>{{ item.warehouse.name if item.warehouse else '-' }}</td>
+                            {% if item.disposition and item.disposition != 'customer_issue' %}
+                            <td class="text-center text-muted">0</td>
+                            <td colspan="2" class="text-center text-muted fst-italic">Not restocked</td>
+                            <td><span class="badge bg-{{ disp_badge.get(item.disposition, 'secondary') }}">{{ 'Sent to Scrap' if item.disposition == 'scrap' else 'Sent to Repair' }}</span></td>
+                            {% else %}
                             <td class="text-center fw-semibold text-success">+{{ item.quantity }}</td>
-                            {% if mv %}
+                            {% endif %}
+                            {% if item.disposition and item.disposition != 'customer_issue' %}
+                            {% elif mv %}
                             <td class="text-center">{{ mv.previous_quantity }}</td>
                             <td class="text-center fw-bold text-dark">{{ mv.new_quantity }}</td>
                             <td><small class="text-muted">{{ mv.created_at.strftime('%d-%b-%Y %H:%M') }}</small></td>
@@ -224,5 +259,62 @@
             </p>
         </div>
     </div>
+
+    {% if sale_return.repair_orders %}
+    <div class="card mt-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-screwdriver-wrench me-2"></i>Repair Orders</h5>
+            <a href="{{ url_for('returns.repair_list') }}" class="btn btn-sm btn-outline-secondary">Repair Section</a>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Repair #</th><th>Product</th><th>Issue</th><th class="text-center">Qty</th><th class="text-center">Repaired</th><th class="text-center">Scrapped</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                    {% for r in sale_return.repair_orders %}
+                    <tr>
+                        <td><a href="{{ url_for('returns.repair_detail', id=r.id) }}">{{ r.repair_number }}</a></td>
+                        <td>{{ r.product.name if r.product else '-' }}</td>
+                        <td>{{ r.issue_label }}</td>
+                        <td class="text-center">{{ r.quantity|round(2) }}</td>
+                        <td class="text-center text-success">{{ r.repaired_qty|round(2) if r.status == 'completed' else '-' }}</td>
+                        <td class="text-center text-danger">{{ r.scrapped_qty|round(2) if r.status == 'completed' else '-' }}</td>
+                        <td>{% include 'sales/_repair_status_badge.html' %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if sale_return.scrap_records %}
+    <div class="card mt-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-recycle me-2"></i>Scrap Records</h5>
+            <a href="{{ url_for('returns.scrap_list') }}" class="btn btn-sm btn-outline-secondary">Scrap Section</a>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Scrap #</th><th>Product</th><th>Source</th><th class="text-center">Qty</th><th class="text-end">Cost Value</th><th>Reason</th></tr>
+                </thead>
+                <tbody>
+                    {% for s in sale_return.scrap_records %}
+                    <tr>
+                        <td>{{ s.scrap_number }}</td>
+                        <td>{{ s.product.name if s.product else '-' }}</td>
+                        <td>{{ 'Direct from return' if s.source_type == 'sale_return' else 'Repair ' ~ (s.repair_order.repair_number if s.repair_order else '') }}</td>
+                        <td class="text-center">{{ s.quantity|round(2) }}</td>
+                        <td class="text-end">PKR{{ "%.2f"|format(s.total_cost or 0) }}</td>
+                        <td><small>{{ s.reason or '-' }}</small></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

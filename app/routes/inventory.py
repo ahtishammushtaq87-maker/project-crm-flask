@@ -1247,7 +1247,12 @@ def recalculate_stock(id):
     
     # + Sale Returns (Only if returned to inventory)
     sale_returns_qty = db.session.query(func.sum(SaleReturnItem.quantity))\
-        .join(SaleReturn).filter(SaleReturnItem.product_id == id, SaleReturn.returned_to_inventory == True).scalar() or 0
+        .join(SaleReturn).filter(SaleReturnItem.product_id == id, SaleReturn.returned_to_inventory == True,
+                                 db.or_(SaleReturnItem.disposition == None, SaleReturnItem.disposition == 'customer_issue')).scalar() or 0
+    # + Repaired return goods put back into stock
+    from app.models import RepairOrder
+    sale_returns_qty += db.session.query(func.sum(RepairOrder.repaired_qty))\
+        .filter(RepairOrder.product_id == id, RepairOrder.status == 'completed').scalar() or 0
     if sale_returns_qty > 0: has_history = True
     history_qty += sale_returns_qty
     

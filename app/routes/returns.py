@@ -4,7 +4,7 @@ from flask_login import login_required, current_user
 from app import db
 from app.models import (Sale, SaleItem, SaleReturn, SaleReturnItem, Product, ProductWarehouseStock, Warehouse,
                         Customer, SaleReturnSettings, CustomerGroup, Salesman, CustomerAdvance, StockMovement,
-                        SaleReturnReason)
+                        SaleReturnReason, RepairOrder, ScrapRecord)
 from app.forms import SaleReturnSettingsForm
 from datetime import datetime
 from app.routes.filters import apply_saved_filter_to_query
@@ -491,63 +491,269 @@ def reject_return(id):
     return redirect(url_for('returns.return_detail', id=id))
 
 
-@bp.route('/<int:id>/return-to-inventory', methods=['POST'])
+def _adjust_stock(product, warehouse_id, qty, reference_type, reference_id, reason):
+    """Add (qty > 0) or remove (qty < 0) stock globally and in the given
+    warehouse (falling back to the product's default warehouse), logging a
+    StockMovement with before/after quantities for the audit trail."""
+    qty_before = product.quantity
+    product.update_quantity(qty)
+    db.session.add(StockMovement(
+        product_id=product.id,
+        movement_type='in' if qty > 0 else 'out',
+        reference_type=reference_type,
+        reference_id=reference_id,
+        quantity=abs(qty),
+        previous_quantity=qty_before,
+        new_quantity=product.quantity,
+        reason=reason,
+        created_by=current_user.id,
+    ))
+
+    wh_id = warehouse_id or product.warehouse_id
+    if wh_id:
+        wh_stock = ProductWarehouseStock.query.filter_by(product_id=product.id, warehouse_id=wh_id).first()
+        if not wh_stock:
+            wh_stock = ProductWarehouseStock(product_id=product.id, warehouse_id=wh_id, quantity=0)
+            db.session.add(wh_stock)
+        wh_stock.quantity += qty
+
+
+def _next_doc_number(model, column, prefix):
+    """Sequential document number like RPR-00001, based on the highest id."""
+    last = model.query.order_by(model.id.desc()).first()
+    n = (last.id + 1) if last else 1
+    while model.query.filter(column == f'{prefix}{n:05d}').first():
+        n += 1
+    return f'{prefix}{n:05d}'
+
+
+def _create_scrap(product, warehouse_id, qty, reason, source_type, sale_return_id=None,
+                  sale_return_item_id=None, repair_order_id=None):
+    unit_cost = float(product.cost_price or 0)
+    scrap = ScrapRecord(
+        scrap_number=_next_doc_number(ScrapRecord, ScrapRecord.scrap_number, 'SCR-'),
+        source_type=source_type,
+        sale_return_id=sale_return_id,
+        sale_return_item_id=sale_return_item_id,
+        repair_order_id=repair_order_id,
+        product_id=product.id,
+        warehouse_id=warehouse_id,
+        quantity=qty,
+        unit_cost=unit_cost,
+        total_cost=round(unit_cost * qty, 2),
+        reason=reason,
+        created_by=current_user.id,
+    )
+    db.session.add(scrap)
+    db.session.flush()
+    return scrap
+
+
+@bp.route('/<int:id>/verify', methods=['GET', 'POST'])
 @login_required
 @permission_required('returns', action='edit')
-def return_to_inventory(id):
+def verify_return(id):
+    """Inspect returned goods and route every item:
+    customer_issue -> back to inventory, item_issue / packaging_issue ->
+    Repair section, scrap -> Scrap section."""
     sale_return = SaleReturn.query.get_or_404(id)
-    
-    if sale_return.returned_to_inventory:
-        flash('This return has already been added back to inventory.', 'warning')
+
+    if sale_return.is_processed:
+        flash('This return has already been verified.', 'warning')
+        return redirect(url_for('returns.return_detail', id=id))
+    if sale_return.is_rejected or sale_return.status == 'rejected':
+        flash('A rejected return cannot be verified.', 'danger')
         return redirect(url_for('returns.return_detail', id=id))
 
-    # Update inventory for each item (rejected qty already logged at return creation)
+    warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
+
+    if request.method == 'GET':
+        return render_template('sales/return_verify.html', sale_return=sale_return, warehouses=warehouses,
+                               dispositions=SaleReturnItem.DISPOSITION_LABELS)
+
+    # Validate every line before touching stock
+    plan = []
     for item in sale_return.items:
+        disposition = request.form.get(f'disposition_{item.id}')
+        if disposition not in SaleReturnItem.DISPOSITION_LABELS:
+            flash(f'Select an inspection result for "{item.product.name if item.product else item.product_id}".', 'warning')
+            return render_template('sales/return_verify.html', sale_return=sale_return, warehouses=warehouses,
+                                   dispositions=SaleReturnItem.DISPOSITION_LABELS, form=request.form)
+        try:
+            wh_id = int(request.form.get(f'warehouse_{item.id}') or 0) or item.warehouse_id
+        except ValueError:
+            wh_id = item.warehouse_id
+        plan.append((item, disposition, wh_id))
+
+    summary = {'restocked': 0, 'repair': 0, 'scrap': 0}
+    for item, disposition, wh_id in plan:
         product = Product.query.get(item.product_id)
-        if product:
-            # update global product quantity — snapshot before/after for the
-            # audit trail shown on the return detail page and the product's
-            # full stock-movement history (same StockMovement convention used
-            # by sales/purchases/manufacturing, see product_full_history.html)
-            qty_before = product.quantity
-            product.update_quantity(item.quantity)
-            db.session.add(StockMovement(
+        if not product:
+            continue
+        g = lambda key: (request.form.get(f'{key}_{item.id}') or '').strip()
+
+        if disposition == 'customer_issue':
+            notes = '; '.join(p for p in [
+                f"Condition: {g('condition')}" if g('condition') else '',
+                f"Customer complaint: {g('complaint')}" if g('complaint') else '',
+                g('notes'),
+            ] if p)
+            item.warehouse_id = wh_id
+            _adjust_stock(product, wh_id, item.quantity, 'sale_return', sale_return.id,
+                          f'Verified & restocked (Customer Problem) — Return #{sale_return.return_number}')
+            summary['restocked'] += item.quantity
+
+        elif disposition in ('item_issue', 'packaging_issue'):
+            notes = g('notes')
+            repair = RepairOrder(
+                repair_number=_next_doc_number(RepairOrder, RepairOrder.repair_number, 'RPR-'),
+                sale_return_id=sale_return.id,
+                sale_return_item_id=item.id,
                 product_id=product.id,
-                movement_type='in',
-                reference_type='sale_return',
-                reference_id=sale_return.id,
+                warehouse_id=wh_id,
                 quantity=item.quantity,
-                previous_quantity=qty_before,
-                new_quantity=product.quantity,
-                reason=f'Returned to inventory — Return #{sale_return.return_number}',
+                issue_type=disposition,
+                issue_description=g('issue') or None,
+                status='pending',
                 created_by=current_user.id,
-            ))
+            )
+            db.session.add(repair)
+            db.session.flush()
+            notes = '; '.join(p for p in [f'Sent to repair {repair.repair_number}', g('issue'), notes] if p)
+            summary['repair'] += item.quantity
 
-            # update per-warehouse stock if recorded
-            try:
-                wh_id = getattr(item, 'warehouse_id', None)
-            except Exception:
-                wh_id = None
-            if wh_id:
-                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
-                if not wh_stock:
-                    wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=wh_id, quantity=0)
-                    db.session.add(wh_stock)
-                wh_stock.quantity += item.quantity
-            elif product.warehouse_id:
-                wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=product.warehouse_id).first()
-                if not wh_stock:
-                    wh_stock = ProductWarehouseStock(product_id=item.product_id, warehouse_id=product.warehouse_id, quantity=0)
-                    db.session.add(wh_stock)
-                wh_stock.quantity += item.quantity
+        else:  # scrap
+            scrap = _create_scrap(product, wh_id, item.quantity, g('scrap_reason') or g('notes') or None,
+                                  'sale_return', sale_return_id=sale_return.id, sale_return_item_id=item.id)
+            notes = '; '.join(p for p in [f'Scrapped {scrap.scrap_number}', g('scrap_reason'), g('notes')] if p)
+            summary['scrap'] += item.quantity
 
-    sale_return.returned_to_inventory = True
+        item.disposition = disposition
+        item.inspection_notes = notes or None
+
+    sale_return.is_verified = True
+    sale_return.verified_by = current_user.id
+    sale_return.verified_at = datetime.utcnow()
+    sale_return.verification_notes = (request.form.get('verification_notes') or '').strip() or None
+    sale_return.returned_to_inventory = summary['restocked'] > 0
     sale_return.status = 'completed'
     db.session.commit()
-    log_activity('Returns', f'Returned to Inventory #{sale_return.return_number}', f'Items restored to stock')
 
-    flash(f'Return {sale_return.return_number} items added back to inventory.', 'success')
+    detail = f"Restocked: {summary['restocked']:g}, Repair: {summary['repair']:g}, Scrap: {summary['scrap']:g}"
+    log_activity('Returns', f'Verified Sale Return #{sale_return.return_number}', detail)
+    flash(f'Return {sale_return.return_number} verified — {detail}.', 'success')
     return redirect(url_for('returns.return_detail', id=id))
+
+
+# ---------------------------------------------------------------- Repairs
+
+@bp.route('/repairs')
+@login_required
+def repair_list():
+    status = request.args.get('status', 'open')
+    query = RepairOrder.query
+    if status == 'open':
+        query = query.filter(RepairOrder.status.in_(['pending', 'in_progress']))
+    elif status != 'all':
+        query = query.filter(RepairOrder.status == status)
+    repairs = query.order_by(RepairOrder.created_at.desc()).all()
+    counts = {s: RepairOrder.query.filter_by(status=s).count() for s in ('pending', 'in_progress', 'completed')}
+    return render_template('sales/repair_list.html', repairs=repairs, current_status=status, counts=counts)
+
+
+@bp.route('/repairs/<int:id>', methods=['GET'])
+@login_required
+def repair_detail(id):
+    repair = RepairOrder.query.get_or_404(id)
+    warehouses = Warehouse.query.filter_by(is_active=True).order_by(Warehouse.name).all()
+    return render_template('sales/repair_detail.html', repair=repair, warehouses=warehouses)
+
+
+@bp.route('/repairs/<int:id>/start', methods=['POST'])
+@login_required
+@permission_required('returns', action='edit')
+def repair_start(id):
+    repair = RepairOrder.query.get_or_404(id)
+    if repair.status != 'pending':
+        flash('Only pending repairs can be started.', 'warning')
+        return redirect(url_for('returns.repair_detail', id=id))
+    repair.status = 'in_progress'
+    repair.started_at = datetime.utcnow()
+    db.session.commit()
+    log_activity('Returns', f'Started Repair {repair.repair_number}')
+    flash(f'Repair {repair.repair_number} is now in progress.', 'success')
+    return redirect(url_for('returns.repair_detail', id=id))
+
+
+@bp.route('/repairs/<int:id>/complete', methods=['POST'])
+@login_required
+@permission_required('returns', action='edit')
+def repair_complete(id):
+    """Close a repair: repaired qty goes back to inventory, the remainder
+    (if any) is written off to scrap."""
+    repair = RepairOrder.query.get_or_404(id)
+    if repair.status == 'completed':
+        flash('This repair is already completed.', 'warning')
+        return redirect(url_for('returns.repair_detail', id=id))
+
+    try:
+        repaired = float(request.form.get('repaired_qty') or 0)
+        repair_cost = float(request.form.get('repair_cost') or 0)
+        wh_id = int(request.form.get('warehouse_id') or 0) or repair.warehouse_id
+    except ValueError:
+        flash('Invalid numbers entered.', 'danger')
+        return redirect(url_for('returns.repair_detail', id=id))
+
+    if repaired < 0 or repaired > repair.quantity:
+        flash(f'Repaired quantity must be between 0 and {repair.quantity:g}.', 'warning')
+        return redirect(url_for('returns.repair_detail', id=id))
+
+    scrapped = round(repair.quantity - repaired, 4)
+    notes = (request.form.get('repair_notes') or '').strip() or None
+    product = repair.product
+    ref = f'Repair {repair.repair_number}' + (f' (Return #{repair.sale_return.return_number})' if repair.sale_return else '')
+
+    if repaired > 0:
+        _adjust_stock(product, wh_id, repaired, 'repair_order', repair.id, f'Repaired & restocked — {ref}')
+        if repair.sale_return:
+            repair.sale_return.returned_to_inventory = True
+    if scrapped > 0:
+        _create_scrap(product, wh_id, scrapped,
+                      (request.form.get('scrap_reason') or '').strip() or f'Not repairable — {ref}',
+                      'repair_order', sale_return_id=repair.sale_return_id,
+                      sale_return_item_id=repair.sale_return_item_id, repair_order_id=repair.id)
+
+    repair.repaired_qty = repaired
+    repair.scrapped_qty = scrapped
+    repair.repair_cost = repair_cost
+    repair.repair_notes = notes
+    repair.warehouse_id = wh_id
+    repair.status = 'completed'
+    repair.started_at = repair.started_at or datetime.utcnow()
+    repair.completed_at = datetime.utcnow()
+    repair.completed_by = current_user.id
+    db.session.commit()
+
+    log_activity('Returns', f'Completed Repair {repair.repair_number}', f'Repaired: {repaired:g}, Scrapped: {scrapped:g}')
+    flash(f'Repair {repair.repair_number} completed — {repaired:g} returned to inventory'
+          + (f', {scrapped:g} moved to scrap.' if scrapped else '.'), 'success')
+    return redirect(url_for('returns.repair_detail', id=id))
+
+
+# ---------------------------------------------------------------- Scrap
+
+@bp.route('/scrap')
+@login_required
+def scrap_list():
+    source = request.args.get('source', 'all')
+    query = ScrapRecord.query
+    if source != 'all':
+        query = query.filter(ScrapRecord.source_type == source)
+    records = query.order_by(ScrapRecord.created_at.desc()).all()
+    total_qty = sum(r.quantity for r in records)
+    total_cost = sum(r.total_cost or 0 for r in records)
+    return render_template('sales/scrap_list.html', records=records, current_source=source,
+                           total_qty=total_qty, total_cost=total_cost)
 
 
 @bp.route('/<int:id>/delete', methods=['POST'])
@@ -557,27 +763,30 @@ def delete_return(id):
     sale_return = SaleReturn.query.get_or_404(id)
     sale = sale_return.sale
 
-    # Reverse inventory changes only if it was already added back
-    if sale_return.returned_to_inventory:
-        for item in sale_return.items:
-            product = Product.query.get(item.product_id)
-            if product:
-                # reduce global product quantity
-                product.update_quantity(-item.quantity)
+    if any(r.status == 'completed' for r in sale_return.repair_orders):
+        flash('This return has completed repairs (stock already adjusted) and cannot be deleted.', 'danger')
+        return redirect(url_for('returns.return_detail', id=id))
 
-                # reduce per-warehouse stock if recorded
-                try:
-                    wh_id = getattr(item, 'warehouse_id', None)
-                except Exception:
-                    wh_id = None
-                if wh_id:
-                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=wh_id).first()
-                    if wh_stock:
-                        wh_stock.quantity -= item.quantity
-                elif product.warehouse_id:
-                    wh_stock = ProductWarehouseStock.query.filter_by(product_id=item.product_id, warehouse_id=product.warehouse_id).first()
-                    if wh_stock:
-                        wh_stock.quantity -= item.quantity
+    # Reverse inventory changes only for stock that was actually added back:
+    # verified returns restocked only their "Customer Problem" lines, legacy
+    # returns restocked everything.
+    if sale_return.is_verified:
+        restocked_items = [i for i in sale_return.items if i.disposition == 'customer_issue']
+    elif sale_return.returned_to_inventory:
+        restocked_items = list(sale_return.items)
+    else:
+        restocked_items = []
+    for item in restocked_items:
+        product = Product.query.get(item.product_id)
+        if product:
+            _adjust_stock(product, item.warehouse_id, -item.quantity, 'sale_return', sale_return.id,
+                          f'Return #{sale_return.return_number} deleted — stock reversed')
+
+    # Repair orders / scrap records created by verification go with the return
+    for scrap in list(sale_return.scrap_records):
+        db.session.delete(scrap)
+    for repair in list(sale_return.repair_orders):
+        db.session.delete(repair)
 
     # Delete production log entries for rejected quantities (created at return time)
     return_date = sale_return.date.date() if sale_return.date else None

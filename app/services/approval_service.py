@@ -924,43 +924,11 @@ class ApprovalService:
 
     @classmethod
     def _post_approve_sale_return(cls, sale_return):
-        """Mirrors returns.py return_to-inventory logic when a sale return is approved."""
-        from app import db
-        from app.models import Product, ProductWarehouseStock
-
-        if not sale_return.returned_to_inventory:
-            for item in sale_return.items:
-                product = Product.query.get(item.product_id)
-                if product:
-                    product.update_quantity(item.quantity)
-
-                try:
-                    wh_id = getattr(item, 'warehouse_id', None)
-                except Exception:
-                    wh_id = None
-                if wh_id:
-                    wh_stock = ProductWarehouseStock.query.filter_by(
-                        product_id=item.product_id, warehouse_id=wh_id
-                    ).first()
-                    if not wh_stock:
-                        wh_stock = ProductWarehouseStock(
-                            product_id=item.product_id, warehouse_id=wh_id, quantity=0
-                        )
-                        db.session.add(wh_stock)
-                    wh_stock.quantity += item.quantity
-                elif product and product.warehouse_id:
-                    wh_stock = ProductWarehouseStock.query.filter_by(
-                        product_id=item.product_id, warehouse_id=product.warehouse_id
-                    ).first()
-                    if not wh_stock:
-                        wh_stock = ProductWarehouseStock(
-                            product_id=item.product_id, warehouse_id=product.warehouse_id, quantity=0
-                        )
-                        db.session.add(wh_stock)
-                    wh_stock.quantity += item.quantity
-
-            sale_return.returned_to_inventory = True
-            sale_return.status = 'completed'
+        """Approval no longer touches stock: returned goods must go through
+        returns.verify_return, which routes each item to inventory, repair
+        or scrap based on inspection."""
+        if not sale_return.is_processed:
+            sale_return.status = 'approved'
 
     @classmethod
     def _post_approve_payment(cls, payment):

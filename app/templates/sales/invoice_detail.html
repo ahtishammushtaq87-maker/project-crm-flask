@@ -1550,7 +1550,10 @@
                                     <td>{{ ret.items|length }} item(s)</td>
                                     <td class="text-end text-danger">PKR{{ "{:,.2f}".format(ret.total) }}</td>
                                     <td class="text-center">
-                                        {% if ret.returned_to_inventory %}
+                                        {% if ret.is_verified %}
+                                        <span class="badge bg-success"><i class="fas fa-clipboard-check"></i>
+                                            Verified</span>
+                                        {% elif ret.returned_to_inventory %}
                                         <span class="badge bg-success"><i class="fas fa-check-circle"></i>
                                             Returned</span>
                                         {% else %}

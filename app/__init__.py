@@ -52,7 +52,7 @@ def create_app(config_class=Config):
             JournalAccount, JournalEntry, JournalLine, FixedExpense,
             Quotation, QuotationItem, DatabaseBackup, PackingSlip, PackingSlipSettings, SaleReturnReason,
             ExpenseAccount, ExpenseAccountTransaction, BillPayment, AccountDailyClose, FinanceJournalEntry,
-            WarehouseTransfer, WarehouseTransferItem, MediaFolder
+            WarehouseTransfer, WarehouseTransferItem, MediaFolder, RepairOrder, ScrapRecord
         )
         from app.filter_models import SavedFilter
         
@@ -162,6 +162,8 @@ def create_app(config_class=Config):
             'warehouse_transfers': WarehouseTransfer,
             'warehouse_transfer_items': WarehouseTransferItem,
             'media_folders': MediaFolder,
+            'repair_orders': RepairOrder,
+            'scrap_records': ScrapRecord,
         }
         
         try:

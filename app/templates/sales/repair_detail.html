@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Repair {{ repair.repair_number }}{% endblock %}
+
+{% block content %}
+{% set r = repair %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
+        <div class="d-flex align-items-center">
+            <h2 class="h3 mb-0 text-gray-800 me-3"><i class="fas fa-screwdriver-wrench text-warning me-2"></i>Repair {{ repair.repair_number }}</h2>
+            {% include 'sales/_repair_status_badge.html' %}
+        </div>
+        <div>
+            {% if repair.status == 'pending' and current_user.has_permission('returns', 'edit') %}
+            <form method="POST" action="{{ url_for('returns.repair_start', id=repair.id) }}" class="d-inline">
+                <button class="btn btn-primary"><i class="fas fa-play"></i> Start Repair</button>
+            </form>
+            {% endif %}
+            <a href="{{ url_for('returns.repair_list') }}" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Repair Section</a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-6">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header"><h5 class="mb-0">Repair Information</h5></div>
+                <div class="card-body">
+                    <table class="table table-borderless table-sm mb-0">
+                        <tr><td class="text-muted" style="width:40%">Product</td><td><strong>{{ repair.product.name if repair.product else '-' }}</strong>
+                            {% if repair.product and repair.product.sku %}<span class="text-muted ms-1">{{ repair.product.sku }}</span>{% endif %}</td></tr>
+                        <tr><td class="text-muted">Quantity</td><td>{{ repair.quantity|round(2) }}</td></tr>
+                        <tr><td class="text-muted">Issue Type</td><td>{{ repair.issue_label }}</td></tr>
+                        <tr><td class="text-muted">Issue Description</td><td>{{ repair.issue_description or '-' }}</td></tr>
+                        <tr><td class="text-muted">Held in Warehouse</td><td>{{ repair.warehouse.name if repair.warehouse else 'Default' }}</td></tr>
+                        <tr><td class="text-muted">Sales Return</td><td>
+                            {% if repair.sale_return %}<a href="{{ url_for('returns.return_detail', id=repair.sale_return_id) }}">{{ repair.sale_return.return_number }}</a>
+                            · {{ repair.sale_return.customer.name if repair.sale_return.customer else 'Walk-in' }}{% else %}-{% endif %}</td></tr>
+                        <tr><td class="text-muted">Created</td><td>{{ repair.created_at.strftime('%d-%b-%Y %H:%M') if repair.created_at }} {% if repair.creator %}by {{ repair.creator.username }}{% endif %}</td></tr>
+                        {% if repair.started_at %}<tr><td class="text-muted">Started</td><td>{{ repair.started_at.strftime('%d-%b-%Y %H:%M') }}</td></tr>{% endif %}
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            {% if repair.status == 'completed' %}
+            <div class="card shadow-sm mb-3 border-success">
+                <div class="card-header bg-success text-white"><h5 class="mb-0"><i class="fas fa-check-circle me-1"></i>Repair Outcome</h5></div>
+                <div class="card-body">
+                    <div class="row text-center mb-3">
+                        <div class="col"><div class="text-muted small">Restocked</div><div class="h4 text-success mb-0">{{ repair.repaired_qty|round(2) }}</div></div>
+                        <div class="col"><div class="text-muted small">Scrapped</div><div class="h4 text-danger mb-0">{{ repair.scrapped_qty|round(2) }}</div></div>
+                        <div class="col"><div class="text-muted small">Repair Cost</div><div class="h4 mb-0">PKR{{ "%.2f"|format(repair.repair_cost or 0) }}</div></div>
+                    </div>
+                    <table class="table table-borderless table-sm mb-0">
+                        <tr><td class="text-muted" style="width:40%">Completed</td><td>{{ repair.completed_at.strftime('%d-%b-%Y %H:%M') if repair.completed_at }} {% if repair.completer %}by {{ repair.completer.username }}{% endif %}</td></tr>
+                        <tr><td class="text-muted">Notes</td><td>{{ repair.repair_notes or '-' }}</td></tr>
+                        {% for s in repair.scrap_records %}
+                        <tr><td class="text-muted">Scrap Record</td><td><a href="{{ url_for('returns.scrap_list') }}">{{ s.scrap_number }}</a> — {{ s.reason or '' }}</td></tr>
+                        {% endfor %}
+                    </table>
+                </div>
+            </div>
+            {% elif current_user.has_permission('returns', 'edit') %}
+            <div class="card shadow-sm mb-3">
+                <div class="card-header"><h5 class="mb-0"><i class="fas fa-flag-checkered me-1"></i>Complete Repair</h5></div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('returns.repair_complete', id=repair.id) }}"
+                          onsubmit="return confirm('Complete this repair? Repaired qty will be added to inventory and the rest moved to scrap.');">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label small fw-semibold">Repaired Qty (to inventory)</label>
+                                <input type="number" step="any" min="0" max="{{ repair.quantity }}" name="repaired_qty" id="repairedQty"
+                                       class="form-control" value="{{ repair.quantity }}" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-semibold">Unrepairable (to scrap)</label>
+                                <input type="text" class="form-control bg-light" id="scrapQty" readonly value="0">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-semibold">Restock to Warehouse</label>
+                                <select name="warehouse_id" class="form-select">
+                                    <option value="">{{ repair.warehouse.name ~ ' (current)' if repair.warehouse else 'Default warehouse' }}</option>
+                                    {% for w in warehouses %}<option value="{{ w.id }}">{{ w.name }}</option>{% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-semibold">Repair Cost (PKR)</label>
+                                <input type="number" step="any" min="0" name="repair_cost" class="form-control" value="0">
+                            </div>
+                            <div class="col-12" id="scrapReasonWrap" style="display:none;">
+                                <label class="form-label small fw-semibold">Scrap Reason</label>
+                                <input type="text" name="scrap_reason" class="form-control" placeholder="Why could these not be repaired?">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small fw-semibold">Repair Notes</label>
+                                <textarea name="repair_notes" class="form-control" rows="2" placeholder="Work done, parts replaced, repacked, etc."></textarea>
+                            </div>
+                            <div class="col-12">
+                                <button class="btn btn-success w-100"><i class="fas fa-check"></i> Complete Repair</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <script>
+            (function () {
+                const total = {{ repair.quantity }};
+                const inp = document.getElementById('repairedQty');
+                function upd() {
+                    const s = Math.max(0, +(total - (parseFloat(inp.value) || 0)).toFixed(4));
+                    document.getElementById('scrapQty').value = s;
+                    document.getElementById('scrapReasonWrap').style.display = s > 0 ? '' : 'none';
+                }
+                inp.addEventListener('input', upd); upd();
+            })();
+            </script>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

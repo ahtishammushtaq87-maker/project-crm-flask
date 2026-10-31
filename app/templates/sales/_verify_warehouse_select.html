@@ -1,0 +1,6 @@
+<select name="warehouse_{{ item.id }}" class="form-select form-select-sm">
+    <option value="">{{ item.warehouse.name ~ ' (original)' if item.warehouse else 'Default warehouse' }}</option>
+    {% for w in warehouses %}
+    <option value="{{ w.id }}" {% if f.get('warehouse_' ~ item.id) == w.id|string %}selected{% endif %}>{{ w.name }}</option>
+    {% endfor %}
+</select>

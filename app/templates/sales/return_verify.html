@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}Verify Return {{ sale_return.return_number }}{% endblock %}
+
+{% block content %}
+{% set f = form or {} %}
+<style>
+    .disp-option { cursor: pointer; border: 2px solid #e3e6f0; border-radius: .6rem; padding: .85rem .75rem; height: 100%; transition: all .15s; background: #fff; }
+    .disp-option:hover { border-color: #b7bdd1; transform: translateY(-1px); }
+    .disp-option i { font-size: 1.5rem; }
+    .disp-option .disp-title { font-weight: 600; margin-top: .35rem; }
+    .disp-option .disp-sub { font-size: .75rem; color: #6c757d; }
+    .btn-check:checked + .disp-option.opt-customer_issue { border-color: #198754; background: #e9f7ef; }
+    .btn-check:checked + .disp-option.opt-item_issue { border-color: #fd7e14; background: #fff4e6; }
+    .btn-check:checked + .disp-option.opt-packaging_issue { border-color: #0dcaf0; background: #e7f9fd; }
+    .btn-check:checked + .disp-option.opt-scrap { border-color: #dc3545; background: #fdecee; }
+    .disp-panel { display: none; }
+    .disp-panel.active { display: block; }
+</style>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
+        <div>
+            <h2 class="h3 mb-0 text-gray-800"><i class="fas fa-clipboard-check text-success me-2"></i>Verify Return {{ sale_return.return_number }}</h2>
+            <small class="text-muted">
+                Invoice {{ sale_return.sale.invoice_number if sale_return.sale else '-' }} ·
+                {{ sale_return.customer.name if sale_return.customer else 'Walk-in Customer' }} ·
+                Reason: {{ sale_return.reason or '-' }}
+            </small>
+        </div>
+        <a href="{{ url_for('returns.return_detail', id=sale_return.id) }}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back
+        </a>
+    </div>
+
+    <div class="alert alert-light border small">
+        <i class="fas fa-info-circle me-1"></i>
+        Inspect each returned item and choose where it goes:
+        <span class="badge bg-success">Customer Problem</span> goes back to inventory ·
+        <span class="badge bg-warning text-dark">Item Issue</span> and <span class="badge bg-info text-dark">Packaging Issue</span> go to the Repair section (restocked after repair) ·
+        <span class="badge bg-danger">Scrap</span> is written off to the Scrap section and never enters inventory.
+    </div>
+
+    <form method="POST" id="verifyForm">
+
+        {% for item in sale_return.items %}
+        {% set chosen = f.get('disposition_' ~ item.id) %}
+        <div class="card shadow-sm mb-3 verify-item" data-item="{{ item.id }}">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>{{ item.product.name if item.product else 'Unknown' }}</strong>
+                    {% if item.product and item.product.sku %}<span class="text-muted ms-2">{{ item.product.sku }}</span>{% endif %}
+                </div>
+                <div>
+                    <span class="badge bg-dark">Qty {{ item.quantity|round(2) }}</span>
+                    <span class="badge bg-light text-dark border">PKR{{ "%.2f"|format(item.total) }}</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row g-2 mb-3">
+                    {% set opts = [
+                        ('customer_issue', 'fa-user-check text-success', 'Customer Problem', 'Item is fine — back to inventory'),
+                        ('item_issue', 'fa-screwdriver-wrench text-warning', 'Item Issue', 'Defect — send to repair'),
+                        ('packaging_issue', 'fa-box-open text-info', 'Packaging Issue', 'Repack — send to repair'),
+                        ('scrap', 'fa-recycle text-danger', 'Scrap', 'Unusable — write off'),
+                    ] %}
+                    {% for key, icon, title, sub in opts %}
+                    <div class="col-6 col-lg-3">
+                        <input type="radio" class="btn-check disp-radio" name="disposition_{{ item.id }}"
+                               id="d_{{ item.id }}_{{ key }}" value="{{ key }}" {% if chosen == key %}checked{% endif %} required>
+                        <label class="disp-option opt-{{ key }} w-100 text-center" for="d_{{ item.id }}_{{ key }}">
+                            <i class="fas {{ icon }}"></i>
+                            <div class="disp-title">{{ title }}</div>
+                            <div class="disp-sub">{{ sub }}</div>
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Customer Problem: restock form -->
+                <div class="disp-panel" data-for="customer_issue">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Item Condition</label>
+                            <select name="condition_{{ item.id }}" class="form-select form-select-sm">
+                                {% for c in ['New / Unused', 'Like New (Opened)', 'Good — Minor Handling Marks'] %}
+                                <option value="{{ c }}" {% if f.get('condition_' ~ item.id) == c %}selected{% endif %}>{{ c }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Customer Complaint</label>
+                            <select name="complaint_{{ item.id }}" class="form-select form-select-sm">
+                                {% for c in ['Ordered by mistake', 'Wrong item / size ordered', 'No longer needed', 'Excess quantity', 'Price / payment issue', 'Other'] %}
+                                <option value="{{ c }}" {% if f.get('complaint_' ~ item.id) == c %}selected{% endif %}>{{ c }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Restock to Warehouse</label>
+                            {% include 'sales/_verify_warehouse_select.html' %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Item / Packaging issue: repair form -->
+                <div class="disp-panel" data-for="item_issue packaging_issue">
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label class="form-label small fw-semibold">Issue Description <span class="text-danger">*</span></label>
+                            <input type="text" name="issue_{{ item.id }}" class="form-control form-control-sm repair-required"
+                                   value="{{ f.get('issue_' ~ item.id, '') }}" placeholder="e.g. Cracked handle, torn carton, missing screws">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Hold in Warehouse</label>
+                            {% include 'sales/_verify_warehouse_select.html' %}
+                        </div>
+                    </div>
+                    <small class="text-muted"><i class="fas fa-arrow-right me-1"></i>A repair order will be created. Stock is added back only after the repair is completed.</small>
+                </div>
+
+                <!-- Scrap form -->
+                <div class="disp-panel" data-for="scrap">
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label class="form-label small fw-semibold">Scrap Reason <span class="text-danger">*</span></label>
+                            <input type="text" name="scrap_reason_{{ item.id }}" class="form-control form-control-sm scrap-required"
+                                   value="{{ f.get('scrap_reason_' ~ item.id, '') }}" placeholder="e.g. Broken beyond repair, water damaged">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Write-off Value</label>
+                            <div class="form-control form-control-sm bg-light">
+                                PKR{{ "%.2f"|format((item.product.cost_price or 0) * item.quantity if item.product else 0) }}
+                                <small class="text-muted">at cost</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-3 disp-notes" style="display:none;">
+                    <label class="form-label small fw-semibold">Inspector Notes</label>
+                    <input type="text" name="notes_{{ item.id }}" class="form-control form-control-sm" value="{{ f.get('notes_' ~ item.id, '') }}" placeholder="Optional">
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-8">
+                        <label class="form-label fw-semibold">Verification Notes</label>
+                        <textarea name="verification_notes" class="form-control" rows="2" placeholder="Overall remarks (optional)">{{ f.get('verification_notes', '') }}</textarea>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="small mb-2" id="verifySummary"></div>
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="fas fa-check-double me-1"></i> Submit Verification
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+(function () {
+    const labels = {customer_issue: 'to inventory', item_issue: 'to repair', packaging_issue: 'to repair', scrap: 'to scrap'};
+
+    function refresh(card) {
+        const checked = card.querySelector('.disp-radio:checked');
+        const val = checked ? checked.value : null;
+        card.querySelectorAll('.disp-panel').forEach(p => {
+            const on = val && p.dataset.for.split(' ').includes(val);
+            p.classList.toggle('active', !!on);
+            // only the visible panel's warehouse select is submitted
+            p.querySelectorAll('select, input').forEach(el => el.disabled = !on);
+            p.querySelectorAll('.repair-required, .scrap-required').forEach(el => el.required = !!on);
+        });
+        card.querySelector('.disp-notes').style.display = val ? '' : 'none';
+    }
+
+    function summary() {
+        const counts = {};
+        document.querySelectorAll('.verify-item').forEach(card => {
+            const c = card.querySelector('.disp-radio:checked');
+            if (c) counts[labels[c.value]] = (counts[labels[c.value]] || 0) + 1;
+        });
+        const total = document.querySelectorAll('.verify-item').length;
+        const done = Object.values(counts).reduce((a, b) => a + b, 0);
+        document.getElementById('verifySummary').innerHTML =
+            `<span class="text-muted">${done}/${total} items inspected</span>` +
+            Object.entries(counts).map(([k, v]) => ` · <strong>${v}</strong> ${k}`).join('');
+    }
+
+    document.querySelectorAll('.verify-item').forEach(card => {
+        card.querySelectorAll('.disp-radio').forEach(r => r.addEventListener('change', () => { refresh(card); summary(); }));
+        refresh(card);
+    });
+    summary();
+
+    document.getElementById('verifyForm').addEventListener('submit', e => {
+        if (!confirm('Submit verification? Stock, repair orders and scrap records will be created and this cannot be redone.')) e.preventDefault();
+    });
+})();
+</script>
+{% endblock %}

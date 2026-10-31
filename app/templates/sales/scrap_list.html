@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Scrap Section{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
+        <h2 class="h3 mb-0 text-gray-800"><i class="fas fa-recycle text-danger me-2"></i>Scrap Section</h2>
+        <div>
+            <a href="{{ url_for('returns.repair_list') }}" class="btn btn-outline-warning"><i class="fas fa-screwdriver-wrench"></i> Repair Section</a>
+            <a href="{{ url_for('returns.return_list') }}" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Sales Returns</a>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-4"><div class="card border-start border-danger border-4 shadow-sm"><div class="card-body py-3">
+            <div class="text-muted small text-uppercase">Records</div><div class="h4 mb-0">{{ records|length }}</div></div></div></div>
+        <div class="col-md-4"><div class="card border-start border-danger border-4 shadow-sm"><div class="card-body py-3">
+            <div class="text-muted small text-uppercase">Total Qty Scrapped</div><div class="h4 mb-0">{{ total_qty|round(2) }}</div></div></div></div>
+        <div class="col-md-4"><div class="card border-start border-danger border-4 shadow-sm"><div class="card-body py-3">
+            <div class="text-muted small text-uppercase">Write-off Value (at cost)</div><div class="h4 mb-0">PKR{{ "{:,.2f}".format(total_cost) }}</div></div></div></div>
+    </div>
+
+    <div class="card shadow mb-4">
+        <div class="card-header border-bottom-0 pb-0">
+            <ul class="nav nav-tabs card-header-tabs">
+                {% for key, label in [('all', 'All'), ('sale_return', 'From Returns'), ('repair_order', 'From Repairs')] %}
+                <li class="nav-item">
+                    <a class="nav-link {% if current_source == key %}active{% endif %}" href="{{ url_for('returns.scrap_list', source=key) }}">{{ label }}</a>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 datatable-export" data-export-title="Scrap Records">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Scrap #</th>
+                            <th>Date</th>
+                            <th>Product</th>
+                            <th>Source</th>
+                            <th>Return #</th>
+                            <th class="text-center">Qty</th>
+                            <th class="text-end">Unit Cost</th>
+                            <th class="text-end">Total Value</th>
+                            <th>Reason</th>
+                            <th>By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in records %}
+                        <tr>
+                            <td class="fw-semibold">{{ s.scrap_number }}</td>
+                            <td>{{ s.created_at.strftime('%Y-%m-%d') if s.created_at }}</td>
+                            <td>{{ s.product.name if s.product else '-' }}</td>
+                            <td>
+                                {% if s.source_type == 'repair_order' and s.repair_order %}
+                                <a href="{{ url_for('returns.repair_detail', id=s.repair_order_id) }}" class="badge bg-warning text-dark text-decoration-none">Repair {{ s.repair_order.repair_number }}</a>
+                                {% else %}
+                                <span class="badge bg-danger">Direct Scrap</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if s.sale_return %}<a href="{{ url_for('returns.return_detail', id=s.sale_return_id) }}">{{ s.sale_return.return_number }}</a>{% else %}-{% endif %}
+                            </td>
+                            <td class="text-center">{{ s.quantity|round(2) }}</td>
+                            <td class="text-end">PKR{{ "%.2f"|format(s.unit_cost or 0) }}</td>
+                            <td class="text-end fw-semibold">PKR{{ "%.2f"|format(s.total_cost or 0) }}</td>
+                            <td><small>{{ s.reason or '-' }}</small></td>
+                            <td><small>{{ s.creator.username if s.creator else '-' }}</small></td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="10" class="text-center py-4 text-muted">No scrap records found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

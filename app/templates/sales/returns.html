@@ -186,10 +186,16 @@
                                 {{ approval_widget(module='sale_return', entity=ret) }}
                             </td>
                             <td>
-                                {% if ret.returned_to_inventory %}
+                                {% if ret.is_verified %}
+                                <span class="text-success"><i class="fas fa-clipboard-check"></i> Verified</span>
+                                {% elif ret.returned_to_inventory %}
                                 <span class="text-success"><i class="fas fa-check-circle"></i> Yes</span>
+                                {% elif ret.status == 'rejected' or ret.is_rejected %}
+                                <span class="text-muted">-</span>
                                 {% else %}
-                                <span class="text-warning"><i class="fas fa-clock"></i> No</span>
+                                <a href="{{ url_for('returns.verify_return', id=ret.id) }}" class="btn btn-sm btn-success py-0">
+                                    <i class="fas fa-clipboard-check"></i> Verify
+                                </a>
                                 {% endif %}
                             </td>
                             <td class="text-center no-export">

@@ -1593,9 +1593,25 @@ class SaleReturnItem(db.Model):
     unit_price = db.Column(db.Float, nullable=False)
     discount = db.Column(db.Float, default=0)
     total = db.Column(db.Float, nullable=False)
+    # Set when the return is verified (see returns.verify_return):
+    # customer_issue -> restocked, item_issue / packaging_issue -> RepairOrder,
+    # scrap -> ScrapRecord.
+    disposition = db.Column(db.String(30), nullable=True)
+    inspection_notes = db.Column(db.Text, nullable=True)
 
     product = db.relationship('Product', backref='return_items', lazy=True)
     warehouse = db.relationship('Warehouse', foreign_keys=[warehouse_id], lazy=True)
+
+    DISPOSITION_LABELS = {
+        'customer_issue': 'Customer Problem',
+        'item_issue': 'Item Issue',
+        'packaging_issue': 'Packaging Issue',
+        'scrap': 'Scrap',
+    }
+
+    @property
+    def disposition_label(self):
+        return self.DISPOSITION_LABELS.get(self.disposition, '-')
 
     @property
     def net_total(self):
@@ -2702,12 +2718,23 @@ class SaleReturn(db.Model):
     rejection_reason = db.Column(db.Text, nullable=True)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
+    is_verified = db.Column(db.Boolean, default=False)
+    verified_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    verified_at = db.Column(db.DateTime, nullable=True)
+    verification_notes = db.Column(db.Text, nullable=True)
 
     # Relationships
     # Relationship moved to Sale model for cascade deletion
     # sale = db.relationship('Sale', backref='returns', lazy=True)
     customer = db.relationship('Customer', backref='sale_returns', lazy=True)
     items = db.relationship('SaleReturnItem', backref='sale_return', lazy=True, cascade='all, delete-orphan')
+    verifier = db.relationship('User', foreign_keys=[verified_by], lazy=True)
+
+    @property
+    def is_processed(self):
+        """Verified through the inspection flow, or restocked by the legacy
+        one-click "Return to Inventory" before verification existed."""
+        return bool(self.is_verified or self.returned_to_inventory)
 
     def calculate_totals(self):
         """Calculate return totals"""
@@ -2719,6 +2746,78 @@ class SaleReturn(db.Model):
 
     def __repr__(self):
         return f'<SaleReturn {self.return_number}>'
+
+
+class RepairOrder(db.Model):
+    """Returned goods sent for repair (item / packaging issues) during sale
+    return verification. Once completed, the repaired qty goes back to
+    inventory and any unrepairable qty is moved to scrap."""
+    __tablename__ = 'repair_orders'
+
+    id = db.Column(db.Integer, primary_key=True)
+    repair_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    sale_return_id = db.Column(db.Integer, db.ForeignKey('sale_returns.id'), nullable=True, index=True)
+    sale_return_item_id = db.Column(db.Integer, db.ForeignKey('sale_return_items.id'), nullable=True, index=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True)
+    quantity = db.Column(db.Float, nullable=False)
+    issue_type = db.Column(db.String(30), nullable=False)  # item_issue / packaging_issue
+    issue_description = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(20), default='pending', index=True)  # pending / in_progress / completed
+    repaired_qty = db.Column(db.Float, default=0)
+    scrapped_qty = db.Column(db.Float, default=0)
+    repair_cost = db.Column(db.Float, default=0)
+    repair_notes = db.Column(db.Text, nullable=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    completed_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    product = db.relationship('Product', lazy=True)
+    warehouse = db.relationship('Warehouse', lazy=True)
+    sale_return = db.relationship('SaleReturn', backref=db.backref('repair_orders', lazy=True), lazy=True)
+    sale_return_item = db.relationship('SaleReturnItem', lazy=True)
+    creator = db.relationship('User', foreign_keys=[created_by], lazy=True)
+    completer = db.relationship('User', foreign_keys=[completed_by], lazy=True)
+
+    @property
+    def issue_label(self):
+        return SaleReturnItem.DISPOSITION_LABELS.get(self.issue_type, self.issue_type)
+
+    def __repr__(self):
+        return f'<RepairOrder {self.repair_number}>'
+
+
+class ScrapRecord(db.Model):
+    """Stock written off as scrap — straight from a sale return verification
+    or as the unrepairable remainder of a repair order. Scrap never enters
+    sellable inventory."""
+    __tablename__ = 'scrap_records'
+
+    id = db.Column(db.Integer, primary_key=True)
+    scrap_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    source_type = db.Column(db.String(30), nullable=False, index=True)  # sale_return / repair_order
+    sale_return_id = db.Column(db.Integer, db.ForeignKey('sale_returns.id'), nullable=True, index=True)
+    sale_return_item_id = db.Column(db.Integer, db.ForeignKey('sale_return_items.id'), nullable=True)
+    repair_order_id = db.Column(db.Integer, db.ForeignKey('repair_orders.id'), nullable=True, index=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False, index=True)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=True)
+    quantity = db.Column(db.Float, nullable=False)
+    unit_cost = db.Column(db.Float, default=0)
+    total_cost = db.Column(db.Float, default=0)
+    reason = db.Column(db.Text, nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    product = db.relationship('Product', lazy=True)
+    warehouse = db.relationship('Warehouse', lazy=True)
+    sale_return = db.relationship('SaleReturn', backref=db.backref('scrap_records', lazy=True), lazy=True)
+    repair_order = db.relationship('RepairOrder', backref=db.backref('scrap_records', lazy=True), lazy=True)
+    creator = db.relationship('User', foreign_keys=[created_by], lazy=True)
+
+    def __repr__(self):
+        return f'<ScrapRecord {self.scrap_number}>'
 
 
 
