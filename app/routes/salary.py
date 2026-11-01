@@ -788,11 +788,13 @@ def pay_salary(staff_id):
     # allowances are included every period (never marked is_applied); a
     # one-time adjustment targeting a specific payroll_month/year only
     # counts toward that period.
+    from app.services.attendance_bonus import is_blocked_auto_bonus
     this_month = form.month.data or datetime.utcnow().month
     this_year = form.year.data or datetime.utcnow().year
     approved_adjustments = [
         a for a in SalaryAdjustment.query.filter_by(staff_id=staff.id, status='approved', is_applied=False).all()
-        if a.is_recurring or not a.payroll_month or (a.payroll_month == this_month and a.payroll_year == this_year)
+        if not is_blocked_auto_bonus(a, staff)
+        and (a.is_recurring or not a.payroll_month or (a.payroll_month == this_month and a.payroll_year == this_year))
     ]
     pending_bonus_adjustments = sum(a.amount for a in approved_adjustments if a.adjustment_type in ('bonus', 'allowance'))
     pending_deduction_adjustments = sum(a.amount for a in approved_adjustments if a.adjustment_type == 'deduction')
@@ -1461,6 +1463,8 @@ def add_staff_review(staff_id):
 def get_attendance_salary(staff_id, month, year):
     from calendar import monthrange
     from datetime import date
+    from app.services.attendance_bonus import (
+        AUTO_BONUS_SALARY_LIMIT, is_auto_bonus_eligible, is_blocked_auto_bonus)
     staff = Staff.query.get_or_404(staff_id)
     _, last_day = monthrange(year, month)
     start_date = date(year, month, 1)
@@ -1469,6 +1473,13 @@ def get_attendance_salary(staff_id, month, year):
     earnings = staff.get_attendance_earnings(start_date, end_date)
     overtime_hours = staff.get_overtime_hours(start_date, end_date)
     overtime_pay = staff.get_overtime_amount(start_date, end_date)
+
+    # Above the auto-bonus limit there is no overtime pay, so earnings stop at
+    # the base salary. A shortfall from absences is left as it is.
+    if not is_auto_bonus_eligible(staff):
+        earnings = min(earnings, staff.monthly_salary or 0)
+        overtime_hours = 0
+        overtime_pay = 0
 
     # Approved, not-yet-applied HR Bonuses & Adjustments for THIS month -
     # same filter pay_salary() uses. Returned per-month so the pay form can
@@ -1479,8 +1490,9 @@ def get_attendance_salary(staff_id, month, year):
     approved_adjustments = [
         a for a in SalaryAdjustment.query.filter_by(
             staff_id=staff.id, status='approved', is_applied=False).all()
-        if a.is_recurring or not a.payroll_month
-        or (a.payroll_month == month and a.payroll_year == year)
+        if not is_blocked_auto_bonus(a, staff)
+        and (a.is_recurring or not a.payroll_month
+             or (a.payroll_month == month and a.payroll_year == year))
     ]
     pending_bonus = sum(a.amount for a in approved_adjustments
                         if a.adjustment_type in ('bonus', 'allowance'))
@@ -1495,6 +1507,8 @@ def get_attendance_salary(staff_id, month, year):
             staff_id=staff.id, status='approved', is_applied=False).all():
         if a.adjustment_type not in ('bonus', 'allowance') or a.is_recurring:
             continue
+        if is_blocked_auto_bonus(a, staff):
+            continue
         if not a.payroll_month or (a.payroll_month == month and a.payroll_year == year):
             continue
         key = f"{a.payroll_month:02d}/{a.payroll_year}"
@@ -1505,6 +1519,8 @@ def get_attendance_salary(staff_id, month, year):
         'base_salary': staff.monthly_salary,
         'overtime_hours': overtime_hours,
         'overtime_pay': overtime_pay,
+        'auto_bonus_eligible': is_auto_bonus_eligible(staff),
+        'auto_bonus_salary_limit': AUTO_BONUS_SALARY_LIMIT,
         'pending_bonus_adjustments': pending_bonus,
         'pending_deduction_adjustments': pending_deduction,
         'pending_bonus_other_months': [

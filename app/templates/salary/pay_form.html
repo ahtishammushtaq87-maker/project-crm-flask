@@ -223,6 +223,12 @@
                         $('#other_deductions').val((diff + pendingDeductionAdjustments).toFixed(2));
                         $('#bonus').val(pendingBonusAdjustments.toFixed(2));
                         helpText = 'No extra attendance earnings this month.';
+                    } else if (!data.auto_bonus_eligible) {
+                        // Salary above the auto-bonus limit - the surplus is not credited
+                        // automatically. Approved HR bonuses/allowances still apply.
+                        $('#other_deductions').val(pendingDeductionAdjustments.toFixed(2));
+                        $('#bonus').val(pendingBonusAdjustments.toFixed(2));
+                        helpText = 'No automatic bonus: salary is above PKR ' + data.auto_bonus_salary_limit + '.';
                     } else {
                         // Earned at least the full base salary from attendance (e.g. overtime) —
                         // credit the surplus as Bonus so it actually reaches Net Salary, instead

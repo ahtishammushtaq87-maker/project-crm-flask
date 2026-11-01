@@ -28,6 +28,21 @@ from app.utils import get_required_hours_in_range, get_working_days_in_month
 # artifact - treat anything inside this window as an exact match.
 HOURS_TOLERANCE = 0.01
 
+# Staff whose monthly salary is above this get no automatic bonus: neither the
+# perfect-attendance award nor the payroll form's attendance/overtime auto-fill.
+AUTO_BONUS_SALARY_LIMIT = 74000
+
+
+def is_auto_bonus_eligible(staff):
+    return (staff.monthly_salary or 0) <= AUTO_BONUS_SALARY_LIMIT
+
+
+def is_blocked_auto_bonus(adjustment, staff):
+    """An auto row created for staff who are now above the salary limit, so
+    payroll must not pick it up. Manually added HR bonuses are never blocked.
+    """
+    return bool(adjustment.is_auto_attendance_bonus) and not is_auto_bonus_eligible(staff)
+
 
 def _month_bounds(month, year):
     return date(year, month, 1), date(year, month, monthrange(year, month)[1])
@@ -68,7 +83,8 @@ def evaluate_staff_month(staff, month, year):
     overtime = _logged_overtime_hours(staff, month_start, month_end)
 
     eligible = (
-        required > 0
+        is_auto_bonus_eligible(staff)
+        and required > 0
         and abs(earned - required) <= HOURS_TOLERANCE
         and overtime <= HOURS_TOLERANCE
     )
