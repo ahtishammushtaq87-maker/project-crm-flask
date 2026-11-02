@@ -1288,6 +1288,16 @@ def compute_mo_cost_breakdown(month, year, product_id=None):
 
         total = material_total + labor_total + overhead_total + other_total
         qty = mo.quantity_to_produce or 0
+
+        # Only the produced part of the order counts as used salary and as
+        # profit, the same produced/planned split the staff labor table uses.
+        produced_qty = mo.produced_qty or 0
+        ratio_produced = min(produced_qty / qty, 1) if qty > 0 else 0
+        product = mo.bom.product if mo.bom else None
+        selling_price = (product.finished_good_price or product.unit_price or 0) if product else 0
+        produced_sales = selling_price * produced_qty
+        produced_cost = total * ratio_produced
+
         rows.append({
             'order': mo,
             'product': mo.bom.product if mo.bom else None,
@@ -1298,6 +1308,9 @@ def compute_mo_cost_breakdown(month, year, product_id=None):
             'labor': labor,
             'bom_labor_estimate': bom_labor_estimate,
             'labor_total': labor_total,
+            'produced_labor': labor_total * ratio_produced,
+            'produced_sales': produced_sales,
+            'produced_cost': produced_cost,
             'overheads': overheads,
             'overhead_total': overhead_total,
             'other_costs': other_costs,
@@ -1310,6 +1323,9 @@ def compute_mo_cost_breakdown(month, year, product_id=None):
     totals = {
         'material': sum(r['material_total'] for r in rows),
         'labor': sum(r['labor_total'] for r in rows),
+        'produced_labor': sum(r['produced_labor'] for r in rows),
+        'produced_sales': sum(r['produced_sales'] for r in rows),
+        'produced_cost': sum(r['produced_cost'] for r in rows),
         'overhead': sum(r['overhead_total'] for r in rows),
         'other': sum(r['other_total'] for r in rows),
         'total': sum(r['total'] for r in rows),
@@ -1317,6 +1333,7 @@ def compute_mo_cost_breakdown(month, year, product_id=None):
         'produced_qty': sum(r['produced_qty'] for r in rows),
     }
     totals['cost_per_unit'] = (totals['total'] / totals['qty']) if totals['qty'] > 0 else 0
+    totals['profit'] = totals['produced_sales'] - totals['produced_cost']
 
     return {'rows': rows, 'totals': totals}
 

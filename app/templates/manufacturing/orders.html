@@ -80,17 +80,42 @@
     <ul class="nav nav-tabs mb-3">
         <li class="nav-item">
             <a class="nav-link {% if view == 'active' %}active{% endif %}"
-                href="{{ url_for('manufacturing.orders', view='active') }}">
+                href="{{ url_for('manufacturing.orders', view='active', month=filter_month, year=filter_year) }}">
                 <i class="fas fa-stopwatch"></i> Active Orders
             </a>
         </li>
         <li class="nav-item">
             <a class="nav-link {% if view == 'previous' %}active{% endif %}"
-                href="{{ url_for('manufacturing.orders', view='previous') }}">
+                href="{{ url_for('manufacturing.orders', view='previous', month=filter_month, year=filter_year) }}">
                 <i class="fas fa-history"></i> Previous Orders
             </a>
         </li>
     </ul>
+
+    {# Month/Year filter - auto-submits on change, same as the Manufacturing Report #}
+    <form method="GET" class="row g-2 align-items-end mb-3" id="moMonthFilterForm">
+        <input type="hidden" name="view" value="{{ view }}">
+        <div class="col-6 col-md-3 col-xl-2">
+            <label class="form-label small fw-bold mb-1">Month</label>
+            <select name="month" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="">All Months</option>
+                {% for m in range(1, 13) %}
+                <option value="{{ m }}" {% if m == filter_month %}selected{% endif %}>{{ ['', 'January','February','March','April','May','June','July','August','September','October','November','December'][m] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-6 col-md-3 col-xl-2">
+            <label class="form-label small fw-bold mb-1">Year</label>
+            <input type="number" name="year" class="form-control form-control-sm" min="1" max="9999" placeholder="All Years" value="{{ filter_year or '' }}" onchange="this.form.submit()">
+        </div>
+        {% if filter_month or filter_year %}
+        <div class="col-auto">
+            <a href="{{ url_for('manufacturing.orders', view=view) }}" class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-times fa-sm"></i> Clear
+            </a>
+        </div>
+        {% endif %}
+    </form>
 
     {# ── Totals across every order in this list ─────────────────────── #}
     {% set t = namespace(qty=0, produced=0, remaining=0, mo_cost=0, salary=0, new_cost=0, in_progress=0) %}

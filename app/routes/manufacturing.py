@@ -523,6 +523,31 @@ def orders():
         query = query.filter(ManufacturingOrder.timer_stopped == True)
     else:
         query = query.filter(ManufacturingOrder.timer_stopped == False)
+
+    # Month/Year filter - same month rule as the Manufacturing Report: start
+    # date, end date, or (with no start date) creation date inside the period.
+    # A month with no year means this year; a year alone means the whole year.
+    filter_month = request.args.get('month', type=int)
+    filter_year = request.args.get('year', type=int)
+    if filter_month not in range(1, 13):
+        filter_month = None
+    if filter_year is not None and filter_year not in range(1, 10000):
+        filter_year = None
+    if filter_month and not filter_year:
+        filter_year = datetime.utcnow().year
+    if filter_year:
+        from calendar import monthrange
+        period_start = datetime(filter_year, filter_month or 1, 1)
+        period_end_month = filter_month or 12
+        period_end = datetime(filter_year, period_end_month, monthrange(filter_year, period_end_month)[1], 23, 59, 59)
+        query = query.filter(db.or_(
+            db.and_(ManufacturingOrder.start_date >= period_start.date(), ManufacturingOrder.start_date <= period_end.date()),
+            db.and_(ManufacturingOrder.end_date >= period_start.date(), ManufacturingOrder.end_date <= period_end.date()),
+            db.and_(ManufacturingOrder.start_date == None,
+                    ManufacturingOrder.created_at >= period_start,
+                    ManufacturingOrder.created_at <= period_end),
+        ))
+
     # Keep every active order's salary allocation fresh (HR salaries or
     # each other's material/overhead cost may have changed since the last
     # write) before reading actual_labor_cost/total_cost back out below -
@@ -570,7 +595,8 @@ def orders():
             }
 
     return render_template('manufacturing/orders.html', orders=orders, active_module='manufacturing_order',
-                           view=view, salary_breakdown=salary_breakdown)
+                           view=view, salary_breakdown=salary_breakdown,
+                           filter_month=filter_month, filter_year=filter_year)
 
 @bp.route('/orders/components-summary')
 @login_required
