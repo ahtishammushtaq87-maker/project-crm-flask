@@ -9,11 +9,19 @@
     {{ pending_approval_alert('sale_return') }}
     <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
         <h2 class="h3 mb-0 text-gray-800">Sales Returns</h2>
-                {% if current_user.has_permission('returns', 'add') %}
-<a href="{{ url_for('returns.create_return') }}" class="btn btn-primary">
-            <i class="fas fa-plus me-1"></i> Create Return
-        </a>
-{% endif %}        
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('returns.repair_list') }}" class="btn btn-outline-warning">
+                <i class="fas fa-screwdriver-wrench me-1"></i> Repair Section
+            </a>
+            <a href="{{ url_for('returns.scrap_list') }}" class="btn btn-outline-danger">
+                <i class="fas fa-recycle me-1"></i> Scrap Section
+            </a>
+            {% if current_user.has_permission('returns', 'add') %}
+            <a href="{{ url_for('returns.create_return') }}" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i> Create Return
+            </a>
+            {% endif %}
+        </div>
     </div>
 
     <div class="card shadow">
