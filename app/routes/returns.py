@@ -637,6 +637,8 @@ def verify_return(id):
     sale_return.verification_notes = (request.form.get('verification_notes') or '').strip() or None
     sale_return.returned_to_inventory = summary['restocked'] > 0
     sale_return.status = 'completed'
+    sale_return.sale.calculate_totals()
+    sale_return.sale.update_status()
     db.session.commit()
 
     detail = f"Restocked: {summary['restocked']:g}, Repair: {summary['repair']:g}, Scrap: {summary['scrap']:g}"

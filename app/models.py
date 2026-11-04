@@ -1196,84 +1196,42 @@ class Sale(db.Model):
                 rtask.recovery_status = 'PARTIAL_RECOVERY'
 
     def calculate_totals(self):
-        """Calculate invoice totals including delivery, returns and discounts"""
-        # Calculate base from items
+        """Calculate invoice totals including delivery, returns and discounts.
+
+        Grand Total = (items_subtotal + items_tax + delivery - invoice_discount) - approved_returns_total
+        """
+        # Base from line items
         items_subtotal = sum(item.total for item in self.items)
         items_tax = items_subtotal * (self.tax_rate / 100)
 
-        # Only count active (non-rejected, non-pending) returns against the invoice total
+        # Only count active (non-rejected, non-pending) returns
         approved_returns = [ret for ret in self.returns
                             if not ret.is_rejected and ret.status in ('approved', 'completed')]
-
-        # Deduct returns (using ret.total which accounts for subtotal + tax - return_discount)
         returns_total = sum(ret.total for ret in approved_returns)
 
+        # Store net subtotal/tax for display purposes
         self.subtotal = items_subtotal - sum(ret.subtotal for ret in approved_returns)
         self.tax = items_tax - sum(ret.tax for ret in approved_returns)
-        # Total will be calculated later including delivery and discount, 
-        # but we need to ensure returns_total is subtracted at the end.
-        
-        # Check if overdue rule applies to this customer's group
+
+        # Invoice-level discount (suspended when overdue and rule applies)
         rule_applies = False
         settings = InvoiceSettings.query.first()
         if settings:
-            from app.models import CustomerGroup # Ensure available or use relationship
             restricted_groups = settings.restricted_group_ids
             if self.customer and self.customer.group_id in restricted_groups:
                 rule_applies = True
-        
-        # Calculate discount - suspended if overdue unless forced AND rule applies
-        # Important: discount is usually on original price, but we should be careful 
-        # not to let total go negative if returns are large.
+
         if self.is_overdue and not self.ignore_overdue_discount and rule_applies:
-            discount_amount = 0
+            applied_discount = 0
         else:
             if self.discount_type == 'percentage':
-                # Apply percentage discount to ORIGINAL subtotal or net? 
-                # Usually original, but here we'll use items_subtotal to be safe.
-                discount_amount = items_subtotal * (self.discount / 100)
+                applied_discount = items_subtotal * (self.discount / 100)
             else:
-                discount_amount = self.discount
-                
-        # The discount applies as soon as it is entered — a staff-created
-        # invoice sitting in Pending still shows and charges the discounted
-        # total. Approval is a review step, not a gate on the discount (the
-        # invoice itself still waits for admin approval before counting as an
-        # approved sale). The overdue suspension above is a separate rule and
-        # still stands.
-        applied_discount = discount_amount
+                applied_discount = self.discount
 
-
-        # Calculate total = subtotal + tax + delivery - applied_discount - returns_total
-        # Note: self.subtotal and self.tax already had returns deducted, 
-        # but we use returns_total to ensure return-specific discounts are also handled.
-        # Actually, if we use ret.total, we are subtracting (subtotal + tax - disc).
-        # Since self.subtotal and self.tax ALREADY subtracted ret.subtotal and ret.tax,
-        # subtracting ret.total would be double counting subtotal/tax.
-        
-        # CORRECT LOGIC:
-        # Grand Total = (ItemsSubtotal + ItemsTax + Delivery - ItemsDiscount) - (ReturnsTotal)
-        # However, self.subtotal/tax are already returns-deducted.
-        
-        self.total = self.subtotal + self.tax + self.delivery_charge - applied_discount
-        # Add back any return discounts that were subtracted twice if using self.subtotal
-        # Actually, let's keep it simple:
-        # Total = Subtotal + Tax + Delivery - Discount
-        # Since Subtotal and Tax are already net-of-returns, this is correct.
-        # BUT we must also SUBTRACT the return discounts to the customer (they get back less).
-        # Wait, if they get back LESS, the invoice total should go down by LESS.
-        # So we should actually ADD the return discounts to the total.
-        
-        return_discounts = sum(ret.discount for ret in approved_returns)
-        self.total += return_discounts
-        
-        # Ensure total is not negative
-        if self.total < 0:
-            self.total = 0
-        
-        # Ensure total is not negative
-        if self.total < 0:
-            self.total = 0
+        # Grand Total: start from gross (pre-return) then subtract approved returns
+        gross = items_subtotal + items_tax + self.delivery_charge - applied_discount
+        self.total = max(gross - returns_total, 0)
 
         # Check Product Discount Conditions: each item's OWN discount is validated
         # against that item's product-specific min/max rule (mirrors the same

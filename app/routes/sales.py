@@ -621,6 +621,8 @@ def invoice_detail(id):
     date_format = company.date_format if company and company.date_format else '%Y-%m-%d'
     returns = SaleReturn.query.filter_by(sale_id=sale.id).order_by(SaleReturn.date.desc()).all()
     approved_returns = [r for r in returns if not r.is_rejected and r.status in ('approved', 'completed')]
+    # sale.subtotal is stored net of returns; the page lists returns as their own deduction
+    gross_subtotal = (sale.subtotal or 0) + sum(r.subtotal or 0 for r in approved_returns)
     # Get payment methods for dropdown and existing payments for display
     payment_methods = PaymentMethod.query.filter_by(is_active=True).order_by(PaymentMethod.name).all()
     payments = Payment.query.filter_by(invoice_id=sale.id).order_by(Payment.date.desc()).all()
@@ -675,6 +677,7 @@ def invoice_detail(id):
                            default_receipt_account_id=_default_acct.id if _default_acct else None,
                            returns=returns,
                            approved_returns=approved_returns,
+                           gross_subtotal=gross_subtotal,
                            date_format=date_format,
                            payment_methods=payment_methods,
                            payments=payments,

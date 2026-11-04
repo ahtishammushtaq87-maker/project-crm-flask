@@ -1065,7 +1065,7 @@
                     <table class="table table-sm table-borderless mb-0">
                         <tr>
                             <td class="text-muted">Subtotal</td>
-                            <td class="text-end">PKR {{ "{:,.2f}".format(sale.subtotal) }}</td>
+                            <td class="text-end">PKR {{ "{:,.2f}".format(gross_subtotal) }}</td>
                         </tr>
                         {% if sale.delivery_charge > 0 %}
                         <tr>
@@ -1326,7 +1326,7 @@
                                 <tr>
                                     <th colspan="{{ label_colspan }}" class="text-end">Subtotal ({{ total_qty }} items)
                                     </th>
-                                    <th class="text-end">PKR {{ "{:,.2f}".format(sale.subtotal) }}</th>
+                                    <th class="text-end">PKR {{ "{:,.2f}".format(gross_subtotal) }}</th>
                                 </tr>
                                 {% if sale.delivery_charge > 0 %}
                                 <tr>

@@ -1524,9 +1524,11 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             # Returns reconciles exactly to Total Due instead of double-counting
             # the return (which is what net Subtotal + a separate Returns line
             # would do).
-            returns_subtotal = sum(ret.subtotal for ret in obj.returns) if hasattr(obj, 'returns') else 0
-            returns_tax = sum(ret.tax for ret in obj.returns) if hasattr(obj, 'returns') else 0
-            returns_total = sum(ret.total for ret in obj.returns) if hasattr(obj, 'returns') else 0
+            counted_returns = [ret for ret in getattr(obj, 'returns', [])
+                               if not ret.is_rejected and ret.status in ('approved', 'completed')]
+            returns_subtotal = sum(ret.subtotal for ret in counted_returns)
+            returns_tax = sum(ret.tax for ret in counted_returns)
+            returns_total = sum(ret.total for ret in counted_returns)
             gross_subtotal = obj.subtotal + returns_subtotal
             gross_tax = obj.tax + returns_tax
 
