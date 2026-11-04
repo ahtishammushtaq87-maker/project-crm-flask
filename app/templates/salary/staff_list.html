@@ -107,11 +107,10 @@
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <div class="text-uppercase small fw-bold mb-1 opacity-75">Total Advance Deducted</div>
-                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members |
-                            sum(attribute='total_paid_advance')) }}</h3>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(period_regular_deducted + period_joining_deducted) }}</h3>
                         <div class="mt-2 small opacity-75">
-                            Regular: {{ "%.2f"|format(staff_members | sum(attribute='total_paid_regular_advance')) }} |
-                            J.A: {{ "%.2f"|format(staff_members | sum(attribute='joining_advance_paid')) }}
+                            Regular: {{ "%.2f"|format(period_regular_deducted) }} |
+                            J.A: {{ "%.2f"|format(period_joining_deducted) }}
                         </div>
                     </div>
                     <div class="opacity-50">
@@ -160,8 +159,7 @@
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <div class="text-uppercase small fw-bold mb-1 opacity-75">Total Bonus Paid</div>
-                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | sum(attribute='total_bonus_paid'))
-                            }}</h3>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(period_bonus_paid) }}</h3>
                     </div>
                     <div class="opacity-50">
                         <i class="fas fa-gift fa-3x"></i>
@@ -178,8 +176,7 @@
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <div class="text-uppercase small fw-bold mb-1 opacity-75">Total Net Salary Paid</div>
-                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(staff_members | map(attribute='salary_payments') |
-                            map('sum', attribute='net_salary') | sum) }}</h3>
+                        <h3 class="mb-0 fw-bold">PKR {{ "%.2f"|format(period_net_paid) }}</h3>
                     </div>
                     <div class="opacity-50">
                         <i class="fas fa-wallet fa-3x"></i>
@@ -236,15 +233,23 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-3">
-                <label for="start_date" class="form-label small text-muted text-uppercase fw-bold">Joined From</label>
-                <input type="date" name="start_date" id="start_date" class="form-control"
-                    value="{{ selected_start_date or '' }}">
+            <div class="col-md-2">
+                <label for="month" class="form-label small text-muted text-uppercase fw-bold">Month</label>
+                <input type="month" name="month" id="month" class="form-control"
+                    value="{{ selected_month or '' }}"
+                    onchange="if (this.value) { document.getElementById('start_date').value = ''; document.getElementById('end_date').value = ''; }">
             </div>
-            <div class="col-md-3">
-                <label for="end_date" class="form-label small text-muted text-uppercase fw-bold">Joined To</label>
+            <div class="col-md-2">
+                <label for="start_date" class="form-label small text-muted text-uppercase fw-bold">From</label>
+                <input type="date" name="start_date" id="start_date" class="form-control"
+                    value="{{ selected_start_date or '' }}"
+                    onchange="if (this.value) document.getElementById('month').value = '';">
+            </div>
+            <div class="col-md-2">
+                <label for="end_date" class="form-label small text-muted text-uppercase fw-bold">To</label>
                 <input type="date" name="end_date" id="end_date" class="form-control"
-                    value="{{ selected_end_date or '' }}">
+                    value="{{ selected_end_date or '' }}"
+                    onchange="if (this.value) document.getElementById('month').value = '';">
             </div>
             <div class="col-12 d-flex justify-content-end align-items-center mt-3">
                 <a href="{{ url_for('salary.staff_list', status=selected_status) }}" class="btn btn-light rounded-pill px-4 me-2">

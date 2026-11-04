@@ -6,6 +6,7 @@ from app.models import Staff, SalaryAdvance, SalaryPayment, Attendance, ExpenseA
 from app.forms import StaffForm, SalaryAdvanceForm, SalaryPaymentForm
 from datetime import datetime
 from sqlalchemy import extract
+import calendar
 import io
 import os
 import re
@@ -65,6 +66,22 @@ def staff_list():
             end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
         except ValueError: pass
 
+    # A selected month takes priority over the From/To dates
+    month = request.args.get('month')
+    if month:
+        try:
+            month_start = datetime.strptime(month, '%Y-%m').date()
+            start_date_obj = month_start
+            end_date_obj = month_start.replace(day=calendar.monthrange(month_start.year, month_start.month)[1])
+        except ValueError:
+            month = None
+
+    # Period totals for the summary boxes; same date range as the table columns
+    period_regular_deducted = sum(s.get_regular_adv_deducted(start_date_obj, end_date_obj) for s in staff_members)
+    period_joining_deducted = sum(s.get_joining_adv_paid(start_date_obj, end_date_obj) for s in staff_members)
+    period_bonus_paid = sum(s.get_bonus_paid(start_date_obj, end_date_obj) for s in staff_members)
+    period_net_paid = sum(s.get_net_paid(start_date_obj, end_date_obj) for s in staff_members)
+
     # For selection dropdowns
     all_staff = Staff.query.with_entities(Staff.id, Staff.name).order_by(Staff.name).all()
     designations = db.session.query(Staff.designation).distinct().filter(Staff.designation != None).all()
@@ -79,6 +96,11 @@ def staff_list():
                            selected_status=status,
                            selected_start_date=start_date,
                            selected_end_date=end_date,
+                           selected_month=month,
+                           period_regular_deducted=period_regular_deducted,
+                           period_joining_deducted=period_joining_deducted,
+                           period_bonus_paid=period_bonus_paid,
+                           period_net_paid=period_net_paid,
                            start_date_obj=start_date_obj,
                            end_date_obj=end_date_obj,
                            active_count=active_count,
