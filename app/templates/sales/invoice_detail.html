@@ -1103,11 +1103,11 @@
                             <td class="text-end text-warning">-Rs {{ "{:,.2f}".format(sale.advance_applied) }}</td>
                         </tr>
                         {% endif %}
-                        {% if sale.returns|length > 0 %}
+                        {% if approved_returns|length > 0 %}
                         <tr>
                             <td class="text-danger"><i class="fas fa-undo me-1"></i>Returns</td>
                             <td class="text-end text-danger">-Rs {{
-                                "{:,.2f}".format(sale.returns|sum(attribute='total')) }}</td>
+                                "{:,.2f}".format(approved_returns|sum(attribute='total')) }}</td>
                         </tr>
                         {% endif %}
                         <tr class="border-top">
@@ -1368,12 +1368,12 @@
                                     </th>
                                 </tr>
                                 {% endif %}
-                                {% if returns|length > 0 %}
+                                {% if approved_returns|length > 0 %}
                                 <tr>
                                     <th colspan="{{ label_colspan }}" class="text-end text-danger"><i
                                             class="fas fa-undo me-1"></i>Returns</th>
                                     <th class="text-end text-danger">-Rs {{
-                                        "{:,.2f}".format(returns|sum(attribute='total'))
+                                        "{:,.2f}".format(approved_returns|sum(attribute='total'))
                                         }}</th>
                                 </tr>
                                 {% endif %}
@@ -1516,7 +1516,7 @@
                 <div class="card-header py-3 d-flex justify-content-between align-items-center">
                     <h6 class="m-0 font-weight-bold text-danger"><i class="fas fa-undo me-2"></i>Returns on this Invoice
                     </h6>
-                    <span class="badge bg-danger">-Rs {{ "{:,.2f}".format(returns|sum(attribute='total')) }}</span>
+                    <span class="badge bg-danger">-Rs {{ "{:,.2f}".format(approved_returns|sum(attribute='total')) }}</span>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive returns-scroll">

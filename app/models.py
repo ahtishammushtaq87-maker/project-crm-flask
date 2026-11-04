@@ -1200,12 +1200,16 @@ class Sale(db.Model):
         # Calculate base from items
         items_subtotal = sum(item.total for item in self.items)
         items_tax = items_subtotal * (self.tax_rate / 100)
-        
+
+        # Only count active (non-rejected, non-pending) returns against the invoice total
+        approved_returns = [ret for ret in self.returns
+                            if not ret.is_rejected and ret.status in ('approved', 'completed')]
+
         # Deduct returns (using ret.total which accounts for subtotal + tax - return_discount)
-        returns_total = sum(ret.total for ret in self.returns)
-        
-        self.subtotal = items_subtotal - sum(ret.subtotal for ret in self.returns)
-        self.tax = items_tax - sum(ret.tax for ret in self.returns)
+        returns_total = sum(ret.total for ret in approved_returns)
+
+        self.subtotal = items_subtotal - sum(ret.subtotal for ret in approved_returns)
+        self.tax = items_tax - sum(ret.tax for ret in approved_returns)
         # Total will be calculated later including delivery and discount, 
         # but we need to ensure returns_total is subtracted at the end.
         
@@ -1260,7 +1264,7 @@ class Sale(db.Model):
         # Wait, if they get back LESS, the invoice total should go down by LESS.
         # So we should actually ADD the return discounts to the total.
         
-        return_discounts = sum(ret.discount for ret in self.returns)
+        return_discounts = sum(ret.discount for ret in approved_returns)
         self.total += return_discounts
         
         # Ensure total is not negative
