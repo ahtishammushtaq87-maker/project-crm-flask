@@ -80,7 +80,7 @@ def staff_list():
     period_regular_deducted = sum(s.get_regular_adv_deducted(start_date_obj, end_date_obj) for s in staff_members)
     period_joining_deducted = sum(s.get_joining_adv_paid(start_date_obj, end_date_obj) for s in staff_members)
     period_bonus_paid = sum(s.get_bonus_paid(start_date_obj, end_date_obj) for s in staff_members)
-    period_net_paid = sum(s.get_net_paid(start_date_obj, end_date_obj) for s in staff_members)
+    period_net_paid = sum(max(s.get_net_paid(start_date_obj, end_date_obj), 0) for s in staff_members)
 
     # For selection dropdowns
     all_staff = Staff.query.with_entities(Staff.id, Staff.name).order_by(Staff.name).all()
