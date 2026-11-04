@@ -623,6 +623,18 @@ def invoice_detail(id):
     approved_returns = [r for r in returns if not r.is_rejected and r.status in ('approved', 'completed')]
     # sale.subtotal is stored net of returns; the page lists returns as their own deduction
     gross_subtotal = (sale.subtotal or 0) + sum(r.subtotal or 0 for r in approved_returns)
+
+    # Display split only: a return's discount share reduces the invoice Discount row and
+    # Returns shows the gross value, so Grand Total is unchanged. A suspended discount has
+    # nothing to reduce, so Returns stays net in that case.
+    if sale.is_discount_restricted:
+        discount_shown = 0
+        returns_shown = sum(r.total or 0 for r in approved_returns)
+    else:
+        original_discount = (gross_subtotal * (sale.discount or 0) / 100
+                             if sale.discount_type == 'percentage' else (sale.discount or 0))
+        discount_shown = max(original_discount - sum(r.discount or 0 for r in approved_returns), 0)
+        returns_shown = sum(r.gross_total for r in approved_returns)
     # Get payment methods for dropdown and existing payments for display
     payment_methods = PaymentMethod.query.filter_by(is_active=True).order_by(PaymentMethod.name).all()
     payments = Payment.query.filter_by(invoice_id=sale.id).order_by(Payment.date.desc()).all()
@@ -678,6 +690,8 @@ def invoice_detail(id):
                            returns=returns,
                            approved_returns=approved_returns,
                            gross_subtotal=gross_subtotal,
+                           discount_shown=discount_shown,
+                           returns_shown=returns_shown,
                            date_format=date_format,
                            payment_methods=payment_methods,
                            payments=payments,

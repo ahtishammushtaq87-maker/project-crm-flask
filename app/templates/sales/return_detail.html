@@ -116,14 +116,16 @@
                             <td><strong>Tax ({{ sale_return.tax_rate }}%):</strong></td>
                             <td>PKR{{ "%.2f"|format(sale_return.tax) }}</td>
                         </tr>
-                        <tr>
-                            <td><strong>Discount:</strong></td>
-                            <td>PKR{{ "%.2f"|format(sale_return.discount) }}</td>
-                        </tr>
                         <tr class="table-active">
                             <td><strong>Total Return:</strong></td>
-                            <td><strong>PKR{{ "%.2f"|format(sale_return.total) }}</strong></td>
+                            <td><strong>PKR{{ "%.2f"|format(sale_return.gross_total) }}</strong></td>
                         </tr>
+                        {% if sale_return.discount %}
+                        <tr>
+                            <td class="text-success">Reduces invoice discount by:</td>
+                            <td class="text-success">PKR{{ "%.2f"|format(sale_return.discount) }}</td>
+                        </tr>
+                        {% endif %}
                     </table>
                 </div>
             </div>
@@ -144,7 +146,7 @@
                             <th>Warehouse</th>
                             <th>Quantity</th>
                             <th>Unit Price</th>
-                            <th class="text-success">Discount</th>
+                            <th class="text-success">Invoice Discount Reduced</th>
                             <th>Total</th>
                             <th>Inspection Result</th>
                         </tr>
@@ -158,7 +160,7 @@
                             <td>{{ item.warehouse.name if item.warehouse else '-' }}</td>
                             <td>{{ item.quantity }}</td>
                             <td>PKR{{ "%.2f"|format(item.unit_price) }}</td>
-                            <td class="text-success">{% if item.discount %}-PKR{{ "%.2f"|format(item.discount) }}{% else %}-{% endif %}</td>
+                            <td class="text-success">{% if item.discount %}PKR{{ "%.2f"|format(item.discount) }}{% else %}-{% endif %}</td>
                             <td>PKR{{ "%.2f"|format(item.total) }}</td>
                             <td>
                                 {% if item.disposition %}
@@ -172,7 +174,7 @@
                     <tfoot>
                         <tr class="table-dark">
                             <th colspan="6" class="text-end">Total:</th>
-                            <th>PKR{{ "%.2f"|format(sale_return.total) }}</th>
+                            <th>PKR{{ "%.2f"|format(sale_return.gross_total) }}</th>
                             <th></th>
                         </tr>
                     </tfoot>

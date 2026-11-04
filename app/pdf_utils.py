@@ -1529,6 +1529,12 @@ def generate_professional_pdf(doc_type, obj, company, settings=None):
             returns_subtotal = sum(ret.subtotal for ret in counted_returns)
             returns_tax = sum(ret.tax for ret in counted_returns)
             returns_total = sum(ret.total for ret in counted_returns)
+            # Same split as the invoice page: the return's discount share reduces the
+            # Discount line and Returns shows gross; Total Due is unchanged.
+            if not is_restricted:
+                returns_total = sum(ret.gross_total for ret in counted_returns)
+                remaining_discount = max(effective_discount - sum(ret.discount or 0 for ret in counted_returns), 0)
+                discount_display = f"{currency}{remaining_discount:,.2f}"
             gross_subtotal = obj.subtotal + returns_subtotal
             gross_tax = obj.tax + returns_tax
 

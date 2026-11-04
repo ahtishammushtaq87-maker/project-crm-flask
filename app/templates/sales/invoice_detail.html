@@ -1094,7 +1094,7 @@
                                 {% endif %}
                                 {% endif %}
                             </td>
-                            <td class="text-end text-success">-Rs {{ "{:,.2f}".format(effective_discount) }}</td>
+                            <td class="text-end text-success">-Rs {{ "{:,.2f}".format(discount_shown) }}</td>
                         </tr>
                         {% endif %}
                         {% if sale.advance_applied > 0 %}
@@ -1107,7 +1107,7 @@
                         <tr>
                             <td class="text-danger"><i class="fas fa-undo me-1"></i>Returns</td>
                             <td class="text-end text-danger">-Rs {{
-                                "{:,.2f}".format(approved_returns|sum(attribute='total')) }}</td>
+                                "{:,.2f}".format(returns_shown) }}</td>
                         </tr>
                         {% endif %}
                         <tr class="border-top">
@@ -1282,7 +1282,7 @@
                                     {% set item_discount_pct = (item_discount / item_subtotal * 100) if item_subtotal > 0 else 0 %}
                                     {# Per-unit figure is derived from the discount actually applied to this line,
                                        so it stays truthful after returns or an overdue restriction. #}
-                                    {% set unit_discount_shown = (item_discount / item.quantity) if item.quantity else 0 %}
+                                    {% set unit_discount_shown = (0 if sale.is_discount_restricted else item.unit_discount_after_returns) if items_discount_sum > 0 else ((item_discount / item.quantity) if item.quantity else 0) %}
                                     <td class="text-end text-success">
                                         {% if unit_discount_shown > 0 %}
                                         -Rs {{ "{:,.2f}".format(unit_discount_shown) }}
@@ -1353,7 +1353,7 @@
                                         {% endif %}
                                     </th>
                                     <th class="text-end text-success">
-                                        -Rs {{ "{:,.2f}".format(effective_discount) }}
+                                        -Rs {{ "{:,.2f}".format(discount_shown) }}
                                         {% if not sale.is_approved %}
                                         <div class="small fw-normal text-muted" style="font-size: 0.7rem;">Applied —
                                             invoice awaiting admin approval</div>
@@ -1373,7 +1373,7 @@
                                     <th colspan="{{ label_colspan }}" class="text-end text-danger"><i
                                             class="fas fa-undo me-1"></i>Returns</th>
                                     <th class="text-end text-danger">-Rs {{
-                                        "{:,.2f}".format(approved_returns|sum(attribute='total'))
+                                        "{:,.2f}".format(returns_shown)
                                         }}</th>
                                 </tr>
                                 {% endif %}
@@ -1516,7 +1516,7 @@
                 <div class="card-header py-3 d-flex justify-content-between align-items-center">
                     <h6 class="m-0 font-weight-bold text-danger"><i class="fas fa-undo me-2"></i>Returns on this Invoice
                     </h6>
-                    <span class="badge bg-danger">-Rs {{ "{:,.2f}".format(approved_returns|sum(attribute='total')) }}</span>
+                    <span class="badge bg-danger">-Rs {{ "{:,.2f}".format(returns_shown) }}</span>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive returns-scroll">
@@ -1548,7 +1548,7 @@
                                         {% endif %}
                                     </td>
                                     <td>{{ ret.items|length }} item(s)</td>
-                                    <td class="text-end text-danger">PKR{{ "{:,.2f}".format(ret.total) }}</td>
+                                    <td class="text-end text-danger">PKR{{ "{:,.2f}".format(ret.total if sale.is_discount_restricted else ret.gross_total) }}</td>
                                     <td class="text-center">
                                         {% if ret.is_verified %}
                                         <span class="badge bg-success"><i class="fas fa-clipboard-check"></i>

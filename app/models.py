@@ -1362,10 +1362,24 @@ class SaleItem(db.Model):
         total_returned = 0
         if self.sale and self.sale.returns:
             for ret in self.sale.returns:
+                if ret.is_rejected or ret.status not in ('approved', 'completed'):
+                    continue
                 for item in ret.items:
                     if item.product_id == self.product_id:
                         total_returned += item.discount or 0
         return total_returned
+
+    @property
+    def unit_discount_after_returns(self):
+        """Remaining discount / (quantity - returned quantity), counting only approved returns"""
+        returned = 0
+        if self.sale and self.sale.returns:
+            for ret in self.sale.returns:
+                if ret.is_rejected or ret.status not in ('approved', 'completed'):
+                    continue
+                returned += sum(i.quantity for i in ret.items if i.product_id == self.product_id)
+        remaining_qty = (self.quantity or 0) - returned
+        return self.remaining_discount / remaining_qty if remaining_qty > 0 else 0
 
     @property
     def remaining_discount(self):
@@ -2697,6 +2711,11 @@ class SaleReturn(db.Model):
         """Verified through the inspection flow, or restocked by the legacy
         one-click "Return to Inventory" before verification existed."""
         return bool(self.is_verified or self.returned_to_inventory)
+
+    @property
+    def gross_total(self):
+        """Return value before its discount share, which is shown as a reduction of the invoice discount"""
+        return (self.subtotal or 0) + (self.tax or 0)
 
     def calculate_totals(self):
         """Calculate return totals"""

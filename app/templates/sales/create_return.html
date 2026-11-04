@@ -174,11 +174,11 @@
                             <strong>Tax:</strong> <span id="tax">PKR0.00</span>
                         </div>
                         <div class="mb-2">
-                            <strong>Discount:</strong> <span id="discountDisplay">PKR0.00</span>
+                            <h4>Total: <span id="total">PKR0.00</span></h4>
                         </div>
                         <hr>
-                        <div class="mb-2">
-                            <h4>Total: <span id="total">PKR0.00</span></h4>
+                        <div class="mb-2 text-success">
+                            Reduces invoice discount by: <span id="discountDisplay">PKR0.00</span>
                         </div>
                     </div>
                 </div>
@@ -412,7 +412,7 @@
 
         const taxRate = parseFloat(document.querySelector('input[name="tax_rate"]').value) || 0;
         const tax = subtotal * (taxRate / 100);
-        const total = subtotal + tax - discount;
+        const total = subtotal + tax;
 
         // Header discount is always the sum of the per-item prorated discounts (read-only field)
         const discountInput = document.querySelector('input[name="discount"]');

@@ -75,7 +75,7 @@ def return_list():
 
     returns = query.order_by(SaleReturn.date.desc()).all()
 
-    total_returns = sum(r.total for r in returns)
+    total_returns = sum(r.gross_total for r in returns)
     total_count = len(returns)
 
     # Load data for searchable dropdowns
