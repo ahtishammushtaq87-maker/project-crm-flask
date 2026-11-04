@@ -351,7 +351,7 @@
                     <td class="text-danger">-{{ "%.2f" % staff.get_regular_adv_deducted(start_date_obj, end_date_obj) }}
                     </td>
                     <td>
-                        {% set outstanding = staff.get_outstanding_advance(start_date_obj, end_date_obj) %}
+                        {% set outstanding = staff.get_outstanding_advance() %}
                         <span
                             class="badge {% if outstanding > 0 %}bg-warning text-dark{% else %}bg-light text-muted{% endif %} px-2 py-1">
                             {{ "%.2f" % outstanding }}
