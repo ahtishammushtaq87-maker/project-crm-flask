@@ -32,14 +32,10 @@
                             {{ form.description(class="form-control", rows=3, placeholder="Optional description for this category") }}
                         </div>
 
-                        <hr class="my-4">
-                        <div class="alert alert-info small mb-3" id="optionsInheritedNote" style="display:none;">
-                            <i class="bi bi-info-circle me-1"></i> As a sub-category, this one always gets its
-                            <strong>parent's</strong> options, plus any you check below.
-                        </div>
                         <div id="optionsSection">
+                        <hr class="my-4">
                         <h6 class="fw-bold mb-2"><i class="bi bi-toggles me-1"></i> Allowed Options on Add/Edit Expense</h6>
-                        <p class="text-muted small mb-3">When this category is picked on an expense, only the options checked here are offered. A parent's options also apply to all of its sub-categories. Leave all unchecked for a plain expense with no special options.</p>
+                        <p class="text-muted small mb-3">When this parent category or any of its sub-categories is picked on an expense, only the options checked here are offered. Leave all unchecked for a plain expense with no special options.</p>
                         <div class="row g-2 mb-3">
                             <div class="col-md-6">
                                 <div class="form-check border rounded p-2">
@@ -95,15 +91,14 @@
     </div>
 </div>
 <script>
-    // Show the "gets its parent's options" note while this category is set
-    // to be a sub-category; its own options stay editable either way.
+    // Options are assigned on parent categories only, so hide them while this is set to be a sub-category.
     (function () {
         const parentSelect = document.getElementById('parent_id');
-        const note = document.getElementById('optionsInheritedNote');
+        const section = document.getElementById('optionsSection');
         if (!parentSelect) return;
         function toggle() {
             const isSub = !!parentSelect.value && parentSelect.value !== '0';
-            note.style.display = isSub ? '' : 'none';
+            section.style.display = isSub ? 'none' : '';
         }
         // jQuery's .on also catches select2-triggered changes.
         if (window.jQuery) $(parentSelect).on('change', toggle);

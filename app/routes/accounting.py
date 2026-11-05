@@ -4826,19 +4826,18 @@ def add_expense_category():
             return render_template('accounting/add_expense_category.html', form=form,
                                    category_type=category_type, main_categories=main_categories)
 
-        # A sub-category gets its parent's options plus any ticked here
-        # (see ExpenseCategory.option_flags).
+        # Options belong to parent categories only (see ExpenseCategory.option_flags).
         is_sub = category_type == 'sub'
         category = ExpenseCategory(
             name=form.name.data,
             description=form.description.data,
             parent_id=form.parent_id.data if (is_sub and form.parent_id.data) else None,
-            allow_invoice_payment=form.allow_invoice_payment.data,
-            allow_purchase_payment=form.allow_purchase_payment.data,
-            allow_inventory_shift=form.allow_inventory_shift.data,
-            allow_bom_overhead=form.allow_bom_overhead.data,
-            allow_monthly_divided=form.allow_monthly_divided.data,
-            allow_pd_shift=form.allow_pd_shift.data,
+            allow_invoice_payment=not is_sub and form.allow_invoice_payment.data,
+            allow_purchase_payment=not is_sub and form.allow_purchase_payment.data,
+            allow_inventory_shift=not is_sub and form.allow_inventory_shift.data,
+            allow_bom_overhead=not is_sub and form.allow_bom_overhead.data,
+            allow_monthly_divided=not is_sub and form.allow_monthly_divided.data,
+            allow_pd_shift=not is_sub and form.allow_pd_shift.data,
         )
         db.session.add(category)
         db.session.commit()
@@ -4982,13 +4981,14 @@ def edit_expense_category(id):
         category.name = form.name.data
         category.description = form.description.data
         category.parent_id = new_parent_id
-        # A sub-category gets its parent's options plus any ticked here.
-        category.allow_invoice_payment = form.allow_invoice_payment.data
-        category.allow_purchase_payment = form.allow_purchase_payment.data
-        category.allow_inventory_shift = form.allow_inventory_shift.data
-        category.allow_bom_overhead = form.allow_bom_overhead.data
-        category.allow_monthly_divided = form.allow_monthly_divided.data
-        category.allow_pd_shift = form.allow_pd_shift.data
+        # Options belong to parent categories only; the section is hidden for sub-categories.
+        if not new_parent_id:
+            category.allow_invoice_payment = form.allow_invoice_payment.data
+            category.allow_purchase_payment = form.allow_purchase_payment.data
+            category.allow_inventory_shift = form.allow_inventory_shift.data
+            category.allow_bom_overhead = form.allow_bom_overhead.data
+            category.allow_monthly_divided = form.allow_monthly_divided.data
+            category.allow_pd_shift = form.allow_pd_shift.data
         db.session.commit()
         log_activity('Accounting', f'Updated Expense Category: {category.name}', f'ID: {category.id}')
         flash('Expense category updated successfully', 'success')
@@ -5113,9 +5113,10 @@ def bulk_upload_expense_categories():
                 without e.g. allow_pd_shift never wipes that setting."""
                 if 'description' in headers:
                     category.description = clean(row_dict.get('description')) or None
-                for col in option_cols:
-                    if col in headers:
-                        setattr(category, col, parse_yes_no(row_dict.get(col)))
+                if category.parent_id is None:
+                    for col in option_cols:
+                        if col in headers:
+                            setattr(category, col, parse_yes_no(row_dict.get(col)))
                 if undraft and category.is_draft:
                     category.is_draft = False
                     undrafted.append(category.name)
@@ -5274,19 +5275,18 @@ def download_expense_category_sample():
         cell.font = header_font
         cell.fill = header_fill
 
-    # Same layout as the master category sheet: each parent row (blank
-    # parent_name, options all "No") followed by its sub-categories, each
-    # carrying its own Yes/No options.
+    # Each parent row carries the Yes/No options; sub-category rows leave them blank
+    # and use their parent's options.
     sample_rows = [
-        ['Direct Materials & Components', '', 'Parent only. Materials and purchased components used in finished products. Select a subcategory; do not post directly to this parent.', 'No', 'No', 'No', 'No', 'No', 'No'],
-        ['Castings', 'Direct Materials & Components', 'Castings purchased for finished products. Receive to inventory and issue to a manufacturing order when consumed.', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No'],
-        ['Bearings', 'Direct Materials & Components', 'Bearings purchased for finished products.', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No'],
-        ['Fixed Factory Overhead', '', 'Parent only. Fixed monthly factory running costs. Select a subcategory; do not post directly to this parent.', 'No', 'No', 'No', 'No', 'No', 'No'],
-        ['Factory Rent', 'Fixed Factory Overhead', 'Monthly factory rent.', 'No', 'No', 'No', 'Yes', 'Yes', 'No'],
-        ['Factory Electricity', 'Fixed Factory Overhead', 'Monthly factory electricity bill.', 'No', 'No', 'No', 'Yes', 'Yes', 'No'],
-        ['Logistics & Freight', '', 'Parent only. Freight and courier costs. Select a subcategory; do not post directly to this parent.', 'No', 'No', 'No', 'No', 'No', 'No'],
-        ['Sales Shipment Freight', 'Logistics & Freight', 'Outbound freight for finished goods delivered to customers.', 'Yes', 'No', 'No', 'No', 'No', 'No'],
-        ['Inbound Component Freight', 'Logistics & Freight', 'Freight paid on purchased materials and components.', 'No', 'Yes', 'Yes', 'No', 'No', 'No'],
+        ['Direct Materials & Components', '', 'Parent only. Materials and purchased components used in finished products. Select a subcategory; do not post directly to this parent.', 'No', 'Yes', 'Yes', 'Yes', 'No', 'No'],
+        ['Castings', 'Direct Materials & Components', 'Castings purchased for finished products. Receive to inventory and issue to a manufacturing order when consumed.', '', '', '', '', '', ''],
+        ['Bearings', 'Direct Materials & Components', 'Bearings purchased for finished products.', '', '', '', '', '', ''],
+        ['Fixed Factory Overhead', '', 'Parent only. Fixed monthly factory running costs. Select a subcategory; do not post directly to this parent.', 'No', 'No', 'No', 'Yes', 'Yes', 'No'],
+        ['Factory Rent', 'Fixed Factory Overhead', 'Monthly factory rent.', '', '', '', '', '', ''],
+        ['Factory Electricity', 'Fixed Factory Overhead', 'Monthly factory electricity bill.', '', '', '', '', '', ''],
+        ['Logistics & Freight', '', 'Parent only. Freight and courier costs. Select a subcategory; do not post directly to this parent.', 'Yes', 'Yes', 'Yes', 'No', 'No', 'No'],
+        ['Sales Shipment Freight', 'Logistics & Freight', 'Outbound freight for finished goods delivered to customers.', '', '', '', '', '', ''],
+        ['Inbound Component Freight', 'Logistics & Freight', 'Freight paid on purchased materials and components.', '', '', '', '', '', ''],
     ]
     for row in sample_rows:
         ws.append(row)
@@ -5310,12 +5310,12 @@ def download_expense_category_sample():
                          '(add the main category as its own row too). For a category that already '
                          'exists, it is moved under the parent given here.'),
         ('description', 'Optional. Free text.'),
-        ('allow_invoice_payment', 'Yes or No - allow "Add to Invoice Payment" on Add/Edit Expense. A sub-category gets its parent category options plus any set to Yes on its own row.'),
-        ('allow_purchase_payment', 'Yes or No - allow "Add to Purchase Payment" on Add/Edit Expense. A sub-category gets its parent category options plus any set to Yes on its own row.'),
-        ('allow_inventory_shift', 'Yes or No - allow "Shift Directly to Inventory Cost". A sub-category gets its parent category options plus any set to Yes on its own row.'),
-        ('allow_bom_overhead', 'Yes or No - allow "BOM Overhead Expense". A sub-category gets its parent category options plus any set to Yes on its own row.'),
-        ('allow_monthly_divided', 'Yes or No - allow "Divide Expense Across Entire Month". A sub-category gets its parent category options plus any set to Yes on its own row.'),
-        ('allow_pd_shift', 'Yes or No - allow "Shift Expense to PD Project". A sub-category gets its parent category options plus any set to Yes on its own row.'),
+        ('allow_invoice_payment', 'Yes or No - allow "Add to Invoice Payment" on Add/Edit Expense. Set on parent rows only; sub-categories use the options of their parent.'),
+        ('allow_purchase_payment', 'Yes or No - allow "Add to Purchase Payment" on Add/Edit Expense. Set on parent rows only; sub-categories use the options of their parent.'),
+        ('allow_inventory_shift', 'Yes or No - allow "Shift Directly to Inventory Cost". Set on parent rows only; sub-categories use the options of their parent.'),
+        ('allow_bom_overhead', 'Yes or No - allow "BOM Overhead Expense". Set on parent rows only; sub-categories use the options of their parent.'),
+        ('allow_monthly_divided', 'Yes or No - allow "Divide Expense Across Entire Month". Set on parent rows only; sub-categories use the options of their parent.'),
+        ('allow_pd_shift', 'Yes or No - allow "Shift Expense to PD Project". Set on parent rows only; sub-categories use the options of their parent.'),
     ]
     for col, meaning in notes:
         notes_ws.append([col, meaning])

@@ -1974,11 +1974,11 @@ class ExpenseCategory(db.Model):
         category with every flag off) means a plain expense with none of
         these special options shown.
 
-        A sub-category gets its parent's options PLUS any it enables
-        itself - so options can be set once on the parent for the whole
-        group, or per sub-category (e.g. a bulk-upload sheet whose parents
-        are all "No" and each sub-category carries its own flags)."""
-        own = {
+        Options are assigned on parent categories only: a sub-category uses
+        exactly its parent's options, and any value stored on it is ignored."""
+        if self.parent_id and self.parent is not None:
+            return self.parent.option_flags
+        return {
             'invoice': bool(self.allow_invoice_payment),
             'purchase': bool(self.allow_purchase_payment),
             'shift': bool(self.allow_inventory_shift),
@@ -1986,10 +1986,6 @@ class ExpenseCategory(db.Model):
             'monthly': bool(self.allow_monthly_divided),
             'pd': bool(self.allow_pd_shift),
         }
-        if self.parent_id and self.parent is not None:
-            parent_flags = self.parent.option_flags
-            return {k: own[k] or parent_flags[k] for k in own}
-        return own
 
     def __repr__(self):
         return f'<ExpenseCategory {self.name}>'

@@ -38,9 +38,9 @@
                         put its parent's exact name in <strong>parent_name</strong> and add the parent as its own row
                         too (row order doesn't matter). A parent that's only referenced, never given its own row, is
                         auto-created (name only) and listed on the result page.</li>
-                    <li>The <code>allow_*</code> columns take <strong>Yes</strong> or <strong>No</strong>. They can be
-                        set on the parent (applies to all its sub-categories) and/or on each sub-category - a
-                        sub-category gets its parent's options <strong>plus</strong> its own.</li>
+                    <li>The <code>allow_*</code> columns take <strong>Yes</strong> or <strong>No</strong> and are read on
+                        <strong>parent rows only</strong>. Sub-categories use their parent's options, so these columns
+                        are ignored on sub-category rows.</li>
                     <li><strong>No duplicates:</strong> names are matched ignoring upper/lower case and extra spaces.
                         A name that already exists <strong>updates</strong> that category (description, options, and
                         it is moved under the <strong>parent_name</strong> in the sheet) instead of being added
