@@ -5026,30 +5026,62 @@ def bulk_upload_expense_categories():
             def _header_of(sheet):
                 first = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), ())
                 return [str(h).strip().lower() if h is not None else '' for h in first]
-            ws = None
-            for sheet in wb.worksheets:
-                if sheet.title.strip().lower() == 'bulk upload' and 'name' in _header_of(sheet):
-                    ws = sheet
-                    break
-            if ws is None:
-                ws = next((sh for sh in wb.worksheets if 'name' in _header_of(sh)), wb.active)
+            def _sheet_rows(sheet):
+                """(sheet row number, {header: value}) for each non-blank data row."""
+                rows = list(sheet.iter_rows(values_only=True))
+                if not rows:
+                    return []
+                sheet_headers = [str(h).strip().lower() if h is not None else '' for h in rows[0]]
+                return [
+                    (idx, {sheet_headers[i]: val for i, val in enumerate(row) if i < len(sheet_headers)})
+                    for idx, row in enumerate(rows[1:], start=2)
+                    if any(v not in (None, '') for v in row)
+                ]
 
-            rows = list(ws.values)
-            if not rows:
-                flash('File is empty', 'error')
-                return redirect(url_for('accounting.bulk_upload_expense_categories'))
+            tree_sheet = next((sh for sh in wb.worksheets
+                               if {'main category', 'sub category'} <= set(_header_of(sh))), None)
+            mains_sheet = next((sh for sh in wb.worksheets
+                                if 'main category' in _header_of(sh) and 'sub category' not in _header_of(sh)), None)
 
-            headers = [str(h).strip().lower() if h is not None else '' for h in rows[0]]
-            if 'name' not in headers:
-                flash('Missing required column: name', 'error')
-                return redirect(url_for('accounting.bulk_upload_expense_categories'))
+            if tree_sheet is not None or mains_sheet is not None:
+                # "Main Category / Sub Category / Description" layout, converted to name + parent_name.
+                # The main-category tab also supplies parents that have no sub-categories.
+                ws = tree_sheet or mains_sheet
+                headers = ['name', 'parent_name', 'description']
+                data_rows = []
+                tree_mains = set()
+                for idx, row in (_sheet_rows(tree_sheet) if tree_sheet is not None else []):
+                    main = ' '.join(str(row.get('main category') or '').split())
+                    sub = ' '.join(str(row.get('sub category') or '').split())
+                    tree_mains.add(main.lower())
+                    data_rows.append((idx, {'name': sub or main, 'parent_name': main if sub else '',
+                                            'description': row.get('description')}))
+                for idx, row in (_sheet_rows(mains_sheet) if mains_sheet is not None else []):
+                    main = ' '.join(str(row.get('main category') or '').split())
+                    if main.lower() == 'total' or main.lower() in tree_mains:
+                        continue
+                    data_rows.append((idx, {'name': main, 'parent_name': '', 'description': row.get('description')}))
+                if not data_rows:
+                    flash('File is empty', 'error')
+                    return redirect(url_for('accounting.bulk_upload_expense_categories'))
+            else:
+                ws = None
+                for sheet in wb.worksheets:
+                    if sheet.title.strip().lower() == 'bulk upload' and 'name' in _header_of(sheet):
+                        ws = sheet
+                        break
+                if ws is None:
+                    ws = next((sh for sh in wb.worksheets if 'name' in _header_of(sh)), wb.active)
 
-            # (sheet row number, row dict) - row numbers match what Excel shows
-            data_rows = [
-                (idx, {headers[i]: val for i, val in enumerate(row) if i < len(headers)})
-                for idx, row in enumerate(rows[1:], start=2)
-                if any(v not in (None, '') for v in row)
-            ]
+                headers = _header_of(ws)
+                if not headers:
+                    flash('File is empty', 'error')
+                    return redirect(url_for('accounting.bulk_upload_expense_categories'))
+                if 'name' not in headers:
+                    flash('Missing required column: name (or Main Category + Sub Category)', 'error')
+                    return redirect(url_for('accounting.bulk_upload_expense_categories'))
+
+                data_rows = _sheet_rows(ws)
 
             undraft = request.form.get('undraft') == '1'
             # An admin's upload approves every category in the sheet - new
