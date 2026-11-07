@@ -619,6 +619,9 @@ def create_app(config_class=Config):
     from app.utils import sku_link
     app.jinja_env.globals['sku_link'] = sku_link
 
+    from app.utils import cash_receipt_account
+    app.jinja_env.globals['cash_receipt_account'] = cash_receipt_account
+
     # Per-warehouse item cost (see app/services/warehouse_cost.py)
     from app.services import warehouse_cost
     app.jinja_env.globals['warehouse_cost_map'] = warehouse_cost.cost_map

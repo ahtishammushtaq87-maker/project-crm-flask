@@ -3531,6 +3531,8 @@ class SalaryPayment(db.Model):
     payment_method = db.Column(db.String(50), default='Cash')
     status = db.Column(Enum('paid', 'pending', name='salary_payment_status'), default='paid', index=True)
     notes = db.Column(db.Text)
+    # Payment proof (bank slip / signed receipt); uploading it marks the run Paid
+    proof_image_path = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     def __init__(self,staff_id,month,year,base_salary,advance_deduction,joining_advance_deduction,bonus,other_deductions,net_salary,payment_date,payment_method,status,notes):
         self.staff_id=staff_id

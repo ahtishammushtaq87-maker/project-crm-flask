@@ -109,6 +109,54 @@
     </div>
     <div id="mxUploadErrors"></div>
 
+    {% if can_add %}
+    <!-- Drop zone: click to browse, drop files, or click then Ctrl+V to paste -->
+    <div id="mxDropzone" class="mx-dropzone mb-3" tabindex="0" role="button"
+         aria-label="Upload files to {{ folder.name if folder else 'Media Library' }}">
+        <div class="mx-dz-icon"><i class="fas fa-folder-open"></i></div>
+        <div class="mx-dz-text">
+            <div class="mx-dz-title">Drag &amp; drop files here</div>
+            <div class="mx-dz-sub">or click to browse · click here then Ctrl+V to paste copied files</div>
+            <div class="mx-dz-hint">Any file type — PDF, images, Excel, Word, CAD, ZIP… Multiple files allowed.
+                Uploads to <strong>{{ folder.name if folder else 'Media Library' }}</strong>.</div>
+        </div>
+        <button type="button" class="btn btn-outline-info mx-dz-camera" id="mxCameraBtn">
+            <i class="fas fa-camera me-1"></i>Camera Capture
+        </button>
+    </div>
+    <input type="file" id="mxCameraInput" accept="image/*" capture="environment" data-enhanced="true" style="display:none !important;">
+
+    <div class="modal fade" id="mxCameraModal" tabindex="-1" aria-labelledby="mxCameraModalLabel" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="mxCameraModalLabel">Capture Photo from Camera</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <div id="mxCamStream">
+                        <video id="mxCamVideo" autoplay playsinline class="w-100 rounded border bg-dark" style="max-height:400px;"></video>
+                        <canvas id="mxCamCanvas" style="display:none;"></canvas>
+                        <div class="mt-3">
+                            <button type="button" class="btn btn-primary btn-lg" id="mxCamSnap"><i class="fas fa-camera"></i> Take Photo</button>
+                        </div>
+                    </div>
+                    <div id="mxCamResult" style="display:none;">
+                        <img id="mxCamPreview" class="img-fluid rounded border mb-3" alt="Captured photo">
+                        <div class="d-flex justify-content-center gap-2">
+                            <button type="button" class="btn btn-warning" id="mxCamRetake"><i class="fas fa-redo"></i> Retake</button>
+                            <button type="button" class="btn btn-success" id="mxCamUse"><i class="fas fa-cloud-upload-alt"></i> Upload Photo</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Explorer -->
     <div id="mxArea" class="mx-area" data-folder-id="{{ folder.id if folder else '' }}">
         <div class="mx-drop-overlay"><div><i class="fas fa-cloud-upload-alt fa-3x mb-2"></i><br>Drop files to upload to <strong>{{ folder.name if folder else 'Media Library' }}</strong></div></div>
@@ -352,6 +400,17 @@
     .mx-preview-dialog { max-width: min(1200px, 96vw); }
     .mx-missing { font-size: .68rem; font-weight: 600; background: #fdecec; color: #b02a37; border: 1px solid #f5c2c7; }
     #mxPreviewFrame { display: block; width: 100%; height: 78vh; border: 0; border-radius: 0 0 .3rem .3rem; background: #eef1f6; }
+.mx-dropzone { display:flex; align-items:center; justify-content:center; gap:28px; flex-wrap:wrap;
+    padding:28px 20px; border:2px dashed #c9b6f0; border-radius:12px; background:#faf7ff; cursor:pointer;
+    transition:background .15s, border-color .15s; outline:none; }
+.mx-dropzone:hover, .mx-dropzone:focus, .mx-dropzone.dz-over { background:#f1eaff; border-color:#7c4dcc; }
+.mx-dropzone:focus { box-shadow:0 0 0 3px rgba(124,77,204,.2); }
+.mx-dz-icon { width:96px; height:96px; border-radius:50%; background:#e6dcfb; color:#6f42c1;
+    display:flex; align-items:center; justify-content:center; font-size:2.2rem; flex-shrink:0; }
+.mx-dz-title { font-size:1.2rem; font-weight:700; color:#1f2340; }
+.mx-dz-sub { color:#5b6178; }
+.mx-dz-hint { color:#8a90a6; font-size:.85rem; margin-top:6px; }
+@media (max-width: 576px) { .mx-dropzone { gap:14px; text-align:center; } .mx-dz-icon { width:64px; height:64px; font-size:1.5rem; } }
 </style>
 
 <script>
@@ -604,6 +663,74 @@
             if (items.length) postMove(items, folderId);
         });
     });
+
+    // ── Drop zone: click / drop / paste / camera ──
+    const dz = document.getElementById('mxDropzone');
+    if (dz) {
+        dz.addEventListener('click', e => { if (!e.target.closest('#mxCameraBtn')) { dz.focus(); fileInput.click(); } });
+        dz.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } });
+        dz.addEventListener('dragover', e => { if (isFiles(e)) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; dz.classList.add('dz-over'); } });
+        dz.addEventListener('dragleave', e => { if (!dz.contains(e.relatedTarget)) dz.classList.remove('dz-over'); });
+        dz.addEventListener('drop', e => {
+            dz.classList.remove('dz-over');
+            if (!isFiles(e)) return;
+            e.preventDefault(); e.stopPropagation();
+            if (e.dataTransfer.files.length) upload(e.dataTransfer.files, CURRENT_FOLDER);
+        });
+        // Paste works while the drop zone is focused, or anywhere outside a text field
+        document.addEventListener('paste', e => {
+            const t = e.target;
+            const typing = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+            if (typing && t !== dz) return;
+            const files = Array.from((e.clipboardData && e.clipboardData.files) || []);
+            if (!files.length) return;
+            e.preventDefault();
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            upload(files.map((f, i) => (f.name && f.name !== 'image.png') ? f
+                : new File([f], 'pasted-' + stamp + (files.length > 1 ? '-' + (i + 1) : '') + '.' + ((f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')), { type: f.type })),
+                CURRENT_FOLDER);
+        });
+
+        const camBtn = document.getElementById('mxCameraBtn');
+        const camInput = document.getElementById('mxCameraInput');
+        const camModalEl = document.getElementById('mxCameraModal');
+        const video = document.getElementById('mxCamVideo'), canvas = document.getElementById('mxCamCanvas');
+        const streamBox = document.getElementById('mxCamStream'), resultBox = document.getElementById('mxCamResult');
+        let stream = null;
+        const stopCam = () => { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } };
+        const showStream = () => { streamBox.style.display = ''; resultBox.style.display = 'none'; };
+
+        camBtn.addEventListener('click', async e => {
+            e.stopPropagation();
+            // No live camera API (or not HTTPS): fall back to the phone's own camera app
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { camInput.click(); return; }
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } });
+                video.srcObject = stream;
+                showStream();
+                bootstrap.Modal.getOrCreateInstance(camModalEl).show();
+            } catch (err) {
+                camInput.click();
+            }
+        });
+        camInput.addEventListener('change', () => { if (camInput.files.length) upload(camInput.files, CURRENT_FOLDER); });
+        camModalEl.addEventListener('hidden.bs.modal', stopCam);
+        document.getElementById('mxCamSnap').addEventListener('click', () => {
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+            document.getElementById('mxCamPreview').src = canvas.toDataURL('image/jpeg', 0.9);
+            streamBox.style.display = 'none'; resultBox.style.display = '';
+        });
+        document.getElementById('mxCamRetake').addEventListener('click', showStream);
+        document.getElementById('mxCamUse').addEventListener('click', () => {
+            canvas.toBlob(blob => {
+                if (!blob) return;
+                const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                bootstrap.Modal.getOrCreateInstance(camModalEl).hide();
+                upload([new File([blob], 'camera-' + stamp + '.jpg', { type: 'image/jpeg' })], CURRENT_FOLDER);
+            }, 'image/jpeg', 0.9);
+        });
+    }
 
     // whole explorer area = upload into the current folder
     let depth = 0;

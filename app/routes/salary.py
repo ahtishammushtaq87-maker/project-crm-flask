@@ -82,6 +82,15 @@ def staff_list():
     period_bonus_paid = sum(s.get_bonus_paid(start_date_obj, end_date_obj) for s in staff_members)
     period_net_paid = sum(max(s.get_net_paid(start_date_obj, end_date_obj), 0) for s in staff_members)
 
+    # Payroll run each row's proof upload attaches to: the selected month's run, else the latest
+    latest_payroll = {}
+    for s in staff_members:
+        runs = s.salary_payments
+        if month and start_date_obj:
+            runs = [p for p in runs if p.month == start_date_obj.month and p.year == start_date_obj.year]
+        if runs:
+            latest_payroll[s.id] = max(runs, key=lambda p: (p.year or 0, p.month or 0, p.id))
+
     # For selection dropdowns
     all_staff = Staff.query.with_entities(Staff.id, Staff.name).order_by(Staff.name).all()
     designations = db.session.query(Staff.designation).distinct().filter(Staff.designation != None).all()
@@ -97,6 +106,7 @@ def staff_list():
                            selected_start_date=start_date,
                            selected_end_date=end_date,
                            selected_month=month,
+                           latest_payroll=latest_payroll,
                            period_regular_deducted=period_regular_deducted,
                            period_joining_deducted=period_joining_deducted,
                            period_bonus_paid=period_bonus_paid,
@@ -668,6 +678,70 @@ def _save_advance_image(file_storage):
     return f"app/static/uploads/advances/{filename}"
 
 
+PAYROLL_PROOF_EXTENSIONS = ADVANCE_IMAGE_EXTENSIONS | {'pdf'}
+
+
+@bp.route('/payments/<int:id>/proof', methods=['POST'])
+@login_required
+@permission_required('salary', action='edit')
+def upload_payroll_proof(id):
+    """Attach the payment proof image to a payroll run and mark it Paid."""
+    payment = SalaryPayment.query.get_or_404(id)
+    file = request.files.get('file')
+    if not file or not file.filename:
+        return jsonify(success=False, message='No file received.'), 400
+    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+    if ext not in PAYROLL_PROOF_EXTENSIONS:
+        return jsonify(success=False, message='Upload an image (JPG, PNG, GIF, WEBP) or a PDF.'), 400
+
+    import time
+    import uuid
+    filename = f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{secure_filename(file.filename)}"
+    full_path = os.path.join('app', 'static', 'uploads', 'payroll_proofs', filename)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    file.save(full_path)
+
+    old_path = payment.proof_image_path
+    old_status = payment.status
+    payment.proof_image_path = f"app/static/uploads/payroll_proofs/{filename}"
+    payment.status = 'paid'
+    db.session.commit()
+    if old_path and old_path != payment.proof_image_path and os.path.isfile(old_path):
+        try:
+            os.remove(old_path)
+        except OSError:
+            pass
+
+    log_activity('Salary', f'Uploaded payroll proof for {payment.staff.name if payment.staff else payment.staff_id} '
+                 f'{payment.month}/{payment.year}', f'Status: {old_status} -> paid')
+    return jsonify(success=True, status='paid',
+                   url=url_for('static', filename=payment.proof_image_path.replace('app/static/', '')),
+                   is_pdf=ext == 'pdf')
+
+
+@bp.route('/payments/<int:id>/proof/delete', methods=['POST'])
+@login_required
+def delete_payroll_proof(id):
+    """Admin only: remove a payroll run's proof image and set it back to Pending."""
+    if not getattr(current_user, 'is_admin', False):
+        return jsonify(success=False, message='Only an admin can delete a payroll proof.'), 403
+    payment = SalaryPayment.query.get_or_404(id)
+    old_path = payment.proof_image_path
+    if not old_path:
+        return jsonify(success=False, message='This payroll run has no proof to delete.'), 400
+    payment.proof_image_path = None
+    payment.status = 'pending'
+    db.session.commit()
+    if os.path.isfile(old_path):
+        try:
+            os.remove(old_path)
+        except OSError:
+            pass
+    log_activity('Salary', f'Deleted payroll proof for {payment.staff.name if payment.staff else payment.staff_id} '
+                 f'{payment.month}/{payment.year}', 'Status: paid -> pending')
+    return jsonify(success=True, status='pending')
+
+
 def _delete_advance_image(advance):
     if advance.image_path and os.path.isfile(advance.image_path):
         try:
@@ -695,9 +769,9 @@ def add_advance():
         db.session.flush()  # need advance.id for the account transaction
 
         account_id = form.expense_account_id.data or 0
-        # Admin-created movements post approved (so the balance moves now);
-        # anyone else's wait for approval, same rule as an Add Money debit.
-        _sync_advance_account_transaction(advance, account_id, is_confirmed=current_user.role == 'admin')
+        # The advance money has already left the custodian account, so its entry
+        # posts approved and moves the balance straight away, whoever records it.
+        _sync_advance_account_transaction(advance, account_id, is_confirmed=True)
 
         db.session.commit()
         log_activity('Salary', f'Added Advance for: {advance.staff.name}', f'Amount: {advance.amount}')

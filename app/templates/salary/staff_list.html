@@ -272,6 +272,7 @@
                             onclick="document.querySelectorAll('.staff-checkbox').forEach(cb => cb.checked = this.checked)">
                     </th>
                     <th class="px-4 border-0">Staff Name</th>
+                    <th class="no-export">Payroll Proof</th>
                     <th>Designation</th>
                     <th>Base Salary</th>
                     <th>Att. Salary</th>
@@ -319,6 +320,35 @@
                                 <small class="text-muted">Joined: {{ staff.joining_date }}</small>
                             </div>
                         </div>
+                    </td>
+                    <td class="no-export">
+                        {% set pr = latest_payroll.get(staff.id) %}
+                        {% if pr %}
+                        {% set can_upload = current_user.has_permission('salary', 'edit') %}
+                        <div class="payroll-proof {{ 'pp-paid' if pr.status == 'paid' else 'pp-pending' }} {% if can_upload %}payroll-proof-drop{% endif %}" data-payment-id="{{ pr.id }}"
+                             {% if can_upload %}tabindex="0" title="Click to upload, drop a file, or click then Ctrl+V to paste"{% endif %}>
+                            <div class="small text-muted mb-1">{{ '%02d'|format(pr.month) }}/{{ pr.year }}</div>
+                            <span class="badge pp-status {{ 'bg-success' if pr.status == 'paid' else 'bg-warning text-dark' }}">{{ 'Paid' if pr.status == 'paid' else 'Pending' }}</span>
+                            <div class="pp-preview mt-1">
+                                {% if pr.proof_image_path %}
+                                {% set pp_url = url_for('static', filename=pr.proof_image_path.replace('app/static/', '')) %}
+                                {% if pr.proof_image_path.lower().endswith('.pdf') %}
+                                <a href="{{ pp_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-danger py-0"><i class="fas fa-file-pdf"></i> PDF</a>
+                                {% else %}
+                                <a href="{{ pp_url }}" target="_blank" rel="noopener"><img src="{{ pp_url }}" alt="Payroll proof" class="pp-thumb" loading="lazy"></a>
+                                {% endif %}
+                                {% if current_user.is_admin %}
+                                <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 ms-1 pp-delete" title="Delete proof"><i class="fas fa-trash"></i></button>
+                                {% endif %}
+                                {% endif %}
+                            </div>
+                            {% if can_upload %}
+                            <div class="pp-hint small text-primary mt-1"><i class="fas fa-cloud-upload-alt me-1"></i>{{ 'Replace' if pr.proof_image_path else 'Upload / paste' }}</div>
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        <span class="text-muted small">No payroll</span>
+                        {% endif %}
                     </td>
                     <td>{{ staff.designation or '---' }}</td>
                     <td>{{ "%.2f" % staff.monthly_salary }}</td>
@@ -753,6 +783,152 @@
     });
 </script>
 {% endif %}
+<style>
+    .payroll-proof { min-width: 120px; border-radius: 8px; padding: 6px 8px; border: 2px solid #dee2e6; outline: none; }
+    .payroll-proof.pp-pending { border: 2px dashed #f0ad4e; background: #fff8ec; }
+    .payroll-proof.pp-paid { border-color: transparent; background: transparent; }
+    .payroll-proof-drop { cursor: pointer; }
+    .payroll-proof-drop:hover, .payroll-proof-drop:focus, .payroll-proof-drop.pp-over { border-color: #7c4dcc; border-style: solid; background: #f6f1ff; }
+    .pp-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 4px; border: 1px solid #dee2e6; }
+</style>
+<div class="modal fade" id="ppDeleteModal" tabindex="-1" aria-labelledby="ppDeleteTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="ppDeleteTitle"><i class="fas fa-trash-alt me-2"></i>Delete Payroll Proof</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex align-items-start gap-3">
+                    <div class="text-danger fs-2"><i class="fas fa-exclamation-triangle"></i></div>
+                    <div>
+                        <p class="mb-1 fw-semibold">Delete the payroll proof for <span id="ppDeleteWho"></span>?</p>
+                        <p class="mb-0 text-muted small">The uploaded file is removed and this payroll goes back to
+                            <span class="badge bg-warning text-dark">Pending</span>. This cannot be undone.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="ppDeleteConfirm"><i class="fas fa-trash-alt me-1"></i>Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+<input type="file" id="ppFileInput" accept="image/*,application/pdf" style="display:none !important;" data-enhanced="true">
+<script>
+(function () {
+    const URL_TMPL = "{{ url_for('salary.upload_payroll_proof', id=0) }}";
+    const DELETE_TMPL = "{{ url_for('salary.delete_payroll_proof', id=0) }}";
+    const IS_ADMIN = {{ 'true' if current_user.is_admin else 'false' }};
+    const input = document.getElementById('ppFileInput');
+    let target = null;
+
+    function render(box, data) {
+        const badge = box.querySelector('.pp-status');
+        badge.className = 'badge pp-status bg-success';
+        badge.textContent = 'Paid';
+        box.classList.remove('pp-pending'); box.classList.add('pp-paid');
+        const prev = box.querySelector('.pp-preview');
+        prev.innerHTML = '';
+        const a = document.createElement('a');
+        a.href = data.url; a.target = '_blank'; a.rel = 'noopener';
+        if (data.is_pdf) { a.className = 'btn btn-sm btn-outline-danger py-0'; a.innerHTML = '<i class="fas fa-file-pdf"></i> PDF'; }
+        else { const img = document.createElement('img'); img.src = data.url; img.className = 'pp-thumb'; img.alt = 'Payroll proof'; a.appendChild(img); }
+        prev.appendChild(a);
+        if (IS_ADMIN) {
+            const del = document.createElement('button');
+            del.type = 'button'; del.className = 'btn btn-sm btn-outline-danger py-0 px-1 ms-1 pp-delete';
+            del.title = 'Delete proof'; del.innerHTML = '<i class="fas fa-trash"></i>';
+            prev.appendChild(del);
+        }
+        const hint = box.querySelector('.pp-hint');
+        if (hint) hint.innerHTML = '<i class="fas fa-cloud-upload-alt me-1"></i>Replace';
+    }
+
+    const delModalEl = document.getElementById('ppDeleteModal');
+    const delConfirmBtn = document.getElementById('ppDeleteConfirm');
+    let delBox = null;
+
+    function removeProof(box) {
+        const label = box.querySelector('.small.text-muted');
+        const name = box.closest('tr') && box.closest('tr').querySelector('h6');
+        document.getElementById('ppDeleteWho').textContent =
+            (name ? name.textContent.trim() + ' — ' : '') + (label ? label.textContent.trim() : 'this payroll');
+        delBox = box;
+        delConfirmBtn.disabled = false;
+        bootstrap.Modal.getOrCreateInstance(delModalEl).show();
+    }
+
+    delConfirmBtn.addEventListener('click', () => {
+        if (!delBox) return;
+        delConfirmBtn.disabled = true;
+        const box = delBox;
+        bootstrap.Modal.getOrCreateInstance(delModalEl).hide();
+        doRemoveProof(box);
+    });
+
+    function doRemoveProof(box) {
+        fetch(DELETE_TMPL.replace('/0/proof', '/' + box.dataset.paymentId + '/proof'), { method: 'POST', credentials: 'same-origin' })
+            .then(r => r.json().catch(() => ({ success: false, message: 'Delete failed (' + r.status + ').' })))
+            .then(data => {
+                if (!data.success) { alert(data.message || 'Delete failed.'); return; }
+                const badge = box.querySelector('.pp-status');
+                badge.className = 'badge pp-status bg-warning text-dark';
+                badge.textContent = 'Pending';
+                box.classList.remove('pp-paid'); box.classList.add('pp-pending');
+                box.querySelector('.pp-preview').innerHTML = '';
+                const hint = box.querySelector('.pp-hint');
+                if (hint) hint.innerHTML = '<i class="fas fa-cloud-upload-alt me-1"></i>Upload / paste';
+            })
+            .catch(() => alert('Network error - the proof was not deleted.'));
+    }
+
+    function send(box, file) {
+        if (!file) return;
+        const hint = box.querySelector('.pp-hint');
+        const before = hint ? hint.innerHTML : '';
+        if (hint) hint.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Uploading…';
+        const fd = new FormData();
+        fd.append('file', file);
+        fetch(URL_TMPL.replace('/0/proof', '/' + box.dataset.paymentId + '/proof'), { method: 'POST', body: fd, credentials: 'same-origin' })
+            .then(r => r.json().catch(() => ({ success: false, message: 'Upload failed (' + r.status + ').' })))
+            .then(data => {
+                if (!data.success) { if (hint) hint.innerHTML = before; alert(data.message || 'Upload failed.'); return; }
+                render(box, data);
+            })
+            .catch(() => { if (hint) hint.innerHTML = before; alert('Network error - the proof was not uploaded.'); });
+    }
+
+    function named(file) {
+        if (file.name && file.name !== 'image.png') return file;
+        const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+        return new File([file], 'payroll-proof-' + Date.now() + '.' + ext, { type: file.type });
+    }
+
+    document.querySelectorAll('.payroll-proof-drop').forEach(box => {
+        box.addEventListener('click', e => {
+            if (e.target.closest('.pp-delete')) { e.stopPropagation(); removeProof(box); return; }
+            if (e.target.closest('a')) return;
+            target = box; box.focus(); input.value = ''; input.click();
+        });
+        box.addEventListener('keydown', e => { if (e.key === 'Enter') { target = box; input.click(); } });
+        box.addEventListener('dragover', e => { e.preventDefault(); box.classList.add('pp-over'); });
+        box.addEventListener('dragleave', () => box.classList.remove('pp-over'));
+        box.addEventListener('drop', e => {
+            e.preventDefault(); box.classList.remove('pp-over');
+            if (e.dataTransfer.files.length) send(box, e.dataTransfer.files[0]);
+        });
+        box.addEventListener('paste', e => {
+            const files = Array.from((e.clipboardData && e.clipboardData.files) || []);
+            if (!files.length) return;
+            e.preventDefault();
+            send(box, named(files[0]));
+        });
+    });
+    input.addEventListener('change', () => { if (target && input.files.length) send(target, input.files[0]); });
+})();
+</script>
 {% endblock %}
 
 <script>

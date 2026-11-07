@@ -275,15 +275,104 @@
                                         <td></td>
                                     </tr>
                                     <tr>
-                                        <td class="ps-4">Labor Cost (Staff Salary Allocation)</td>
+                                        <td class="ps-4">
+                                            Labor Cost (Staff Salary Allocation)
+                                            {% if mt.labor_staff or mt.bom_labor_estimate %}
+                                            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 ms-2 no-print"
+                                                    data-bs-toggle="collapse" data-bs-target="#laborByStaff" aria-expanded="false">
+                                                <i class="fas fa-users me-1"></i>By staff <i class="fas fa-chevron-down ms-1"></i>
+                                            </button>
+                                            {% endif %}
+                                        </td>
                                         <td class="text-end">{{ "{:,.2f}".format(mt.labor) }}</td>
                                         <td></td>
                                     </tr>
+                                    {% if mt.labor_staff or mt.bom_labor_estimate %}
+                                    <tr class="collapse" id="laborByStaff">
+                                        <td colspan="3" class="ps-5 bg-light">
+                                            <table class="table table-sm table-bordered mb-0 bg-white small">
+                                                <thead class="table-light">
+                                                    <tr><th>Staff</th><th>Designation</th><th>Orders</th><th class="text-end">Days</th><th class="text-end">Amount (PKR)</th></tr>
+                                                </thead>
+                                                <tbody>
+                                                    {% for s in mt.labor_staff %}
+                                                    <tr>
+                                                        <td class="fw-semibold">{{ s.name }}</td>
+                                                        <td>{{ s.designation or '-' }}</td>
+                                                        <td>{{ s.orders|join(', ') }}</td>
+                                                        <td class="text-end">{{ "{:,.2f}".format(s.days) }}</td>
+                                                        <td class="text-end">{{ "{:,.2f}".format(s.amount) }}</td>
+                                                    </tr>
+                                                    {% endfor %}
+                                                    {% if mt.bom_labor_estimate %}
+                                                    <tr class="text-muted">
+                                                        <td colspan="4">BOM labor estimate (not allocated to a staff member)</td>
+                                                        <td class="text-end">{{ "{:,.2f}".format(mt.bom_labor_estimate) }}</td>
+                                                    </tr>
+                                                    {% endif %}
+                                                </tbody>
+                                                <tfoot>
+                                                    <tr class="fw-bold"><td colspan="4" class="text-end">Total</td><td class="text-end">{{ "{:,.2f}".format(mt.labor) }}</td></tr>
+                                                </tfoot>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                    {% endif %}
                                     <tr>
-                                        <td class="ps-4">Factory Overhead Expenses</td>
+                                        <td class="ps-4">
+                                            Factory Overhead Expenses
+                                            {% if mt.overhead_expenses %}
+                                            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 ms-2 no-print"
+                                                    data-bs-toggle="collapse" data-bs-target="#overheadExpenses" aria-expanded="false">
+                                                <i class="fas fa-receipt me-1"></i>Expenses ({{ mt.overhead_expenses|length }}) <i class="fas fa-chevron-down ms-1"></i>
+                                            </button>
+                                            {% endif %}
+                                        </td>
                                         <td class="text-end">{{ "{:,.2f}".format(mt.overhead) }}</td>
                                         <td></td>
                                     </tr>
+                                    {% if mt.overhead_expenses %}
+                                    <tr class="collapse" id="overheadExpenses">
+                                        <td colspan="3" class="ps-5 bg-light">
+                                            <table class="table table-sm table-bordered mb-0 bg-white small align-middle">
+                                                <thead class="table-light">
+                                                    <tr><th>Expense #</th><th>Date</th><th>Order</th><th>Category</th><th>Description</th><th>Status</th><th>Bill</th><th class="text-end">Amount (PKR)</th></tr>
+                                                </thead>
+                                                <tbody>
+                                                    {% for o in mt.overhead_expenses %}
+                                                    <tr>
+                                                        <td>{{ o.number or '-' }}</td>
+                                                        <td class="text-nowrap">{{ o.date.strftime('%d-%m-%Y') if o.date else '-' }}</td>
+                                                        <td>{{ o.order_number }}</td>
+                                                        <td>{{ o.category }}</td>
+                                                        <td>{{ o.description or '-' }}</td>
+                                                        <td>{{ o.status|capitalize }}</td>
+                                                        <td>
+                                                            {% if o.bill_image_path %}
+                                                            {% set bill_url = url_for('static', filename=o.bill_image_path.replace('app/static/', '')) %}
+                                                            {% if o.bill_image_path.lower().endswith('.pdf') %}
+                                                            <a href="{{ bill_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-danger py-0"><i class="fas fa-file-pdf"></i> PDF</a>
+                                                            {% else %}
+                                                            <a href="{{ bill_url }}" target="_blank" rel="noopener" title="Open bill">
+                                                                <img src="{{ bill_url }}" alt="Bill {{ o.number }}" loading="lazy"
+                                                                     style="width:48px;height:48px;object-fit:cover;border-radius:4px;border:1px solid #dee2e6;">
+                                                            </a>
+                                                            {% endif %}
+                                                            {% else %}
+                                                            <span class="text-muted">No bill</span>
+                                                            {% endif %}
+                                                        </td>
+                                                        <td class="text-end">{{ "{:,.2f}".format(o.amount) }}</td>
+                                                    </tr>
+                                                    {% endfor %}
+                                                </tbody>
+                                                <tfoot>
+                                                    <tr class="fw-bold"><td colspan="7" class="text-end">Total</td><td class="text-end">{{ "{:,.2f}".format(mt.overhead) }}</td></tr>
+                                                </tfoot>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                    {% endif %}
                                     <tr>
                                         <td class="ps-4">Other Linked Costs</td>
                                         <td class="text-end">{{ "{:,.2f}".format(mt.other) }}</td>

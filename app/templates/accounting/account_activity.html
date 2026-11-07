@@ -214,6 +214,7 @@
                                 {% elif t.transaction_type == 'vendor_advance' %}{{ t.reference }}
                                 {% elif t.transaction_type == 'sale_payment' and t.sale_payment and t.sale_payment.invoice %}{{ t.sale_payment.invoice.invoice_number }}
                                 {% elif t.transaction_type == 'customer_advance' %}ADV-{{ '%04d'|format(t.customer_advance_id or t.id) }}
+                                {% elif t.salary_advance_id %}{{ t.reference or 'ADV-%06d'|format(t.salary_advance_id) }}
                                 {% elif r.expense %}{{ r.expense.expense_number }}
                                 {% else %}ADD-{{ '%04d'|format(t.id) }}
                                 {% endif %}
@@ -226,6 +227,7 @@
                                 {% elif t.transaction_type == 'vendor_advance' %}Vendor Advance
                                 {% elif t.transaction_type == 'sale_payment' %}Invoice Payment
                                 {% elif t.transaction_type == 'customer_advance' %}Customer Advance
+                                {% elif t.salary_advance_id %}Salary Advance
                                 {% elif r.expense %}Expense Paid
                                 {% else %}Add Money
                                 {% endif %}
@@ -267,6 +269,10 @@
                                 {% elif t.transaction_type == 'vendor_advance' and t.vendor_advance %}
                                 <a href="{{ url_for('purchase.vendor_profile', id=t.vendor_advance.vendor_id) }}" class="text-decoration-none">
                                     <i class="fas fa-hand-holding-usd me-1"></i>{{ t.payee or 'Vendor' }}
+                                </a>
+                                {% elif t.salary_advance_id %}
+                                <a href="{{ url_for('salary.advance_list') }}" class="text-decoration-none">
+                                    <i class="fas fa-hand-holding-usd me-1"></i>{{ t.payee or 'Salary Advance' }}
                                 </a>
                                 {% else %}
                                 <span class="text-muted"><i class="fas fa-money-bill-wave me-1"></i>Add Money</span>

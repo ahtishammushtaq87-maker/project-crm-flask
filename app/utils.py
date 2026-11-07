@@ -635,14 +635,31 @@ def default_receipt_account():
             .order_by(ExpenseAccount.id).first())
 
 
+CASH_RECEIPT_ACCOUNT_HINT = 'usama'  # Cash payments always go into this person's account
+
+
+def cash_receipt_account():
+    """The fixed account Cash customer payments are received into, or None if
+    no active account name contains CASH_RECEIPT_ACCOUNT_HINT."""
+    from app.models import ExpenseAccount
+    return (ExpenseAccount.query.filter(ExpenseAccount.is_active == True,  # noqa: E712
+                                        ExpenseAccount.name.ilike(f'%{CASH_RECEIPT_ACCOUNT_HINT}%'))
+            .order_by(ExpenseAccount.id).first())
+
+
 def parse_receipt_account(form, required=True):
     """(account_or_None, error_or_None) for the posted 'account_id'. Money
     received must name the account it went into (required); pass
     required=False where no money moves (e.g. a lump-sum discount on its
     own). An unknown or inactive account is always an error, so a stale page
-    can never post money into a closed account."""
+    can never post money into a closed account. A Cash payment always goes to
+    cash_receipt_account(), whatever account was posted."""
     from app.models import ExpenseAccount
     raw = (form.get('account_id') or '').strip()
+    if (form.get('payment_method') or 'Cash') == 'Cash' and (raw or required):
+        cash_account = cash_receipt_account()
+        if cash_account:
+            return cash_account, None
     if not raw:
         if required:
             return None, 'Select the account this payment was received into.'

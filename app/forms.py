@@ -486,7 +486,8 @@ class SalaryPaymentForm(FlaskForm):
     other_deductions = FloatField('Other Deductions', default=0)
     payment_date = DateField('Payment Date', validators=[DataRequired()])
     payment_method = StringField('Payment Method', default='Cash')
-    status = SelectField('Status', choices=[('paid', 'Paid'), ('pending', 'Pending')], default='paid')
+    # Pending until the payment proof is uploaded on the Staff page
+    status = SelectField('Status', choices=[('paid', 'Paid'), ('pending', 'Pending')], default='pending')
     notes = TextAreaField('Notes')
 
 class AttendanceForm(FlaskForm):

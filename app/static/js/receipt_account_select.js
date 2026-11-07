@@ -53,6 +53,60 @@
         if (keep) sel.value = keep;
         else if (defaultId != null) sel.value = String(defaultId);
         if (hasSelect2()) jQuery(sel).trigger('change');
+        applyCashLock(sel);
+    }
+
+    // Cash payments always go into one fixed account (data-cash-account-id, the
+    // server enforces the same): pick it and lock the dropdown while Cash is selected.
+    function methodOf(sel) { return sel.form ? sel.form.querySelector('[name=payment_method]') : null; }
+
+    function cashNote(sel) {
+        var note = sel.parentNode.querySelector('.cash-account-note');
+        if (!note) {
+            note = document.createElement('div');
+            note.className = 'cash-account-note small text-success mt-1';
+            sel.parentNode.appendChild(note);
+        }
+        return note;
+    }
+
+    function applyCashLock(sel) {
+        var method = methodOf(sel), cashId = sel.dataset.cashAccountId;
+        if (!method || !cashId) return;
+        var isCash = method.value === 'Cash';
+        if (isCash && sel.value !== cashId) {
+            if (!sel.dataset.nonCashValue) sel.dataset.nonCashValue = sel.value;
+            sel.value = cashId;
+        } else if (!isCash && sel.dataset.cashLocked === '1' && sel.dataset.nonCashValue !== undefined) {
+            sel.value = sel.dataset.nonCashValue;
+            delete sel.dataset.nonCashValue;
+        }
+        sel.dataset.cashLocked = isCash ? '1' : '';
+        // Not `disabled`: a disabled select is left out of the submitted form.
+        sel.style.pointerEvents = isCash ? 'none' : '';
+        sel.tabIndex = isCash ? -1 : 0;
+        if (hasSelect2() && sel.dataset.receiptAccountReady === '1') {
+            jQuery(sel).trigger('change.select2');
+            var s2 = sel.nextElementSibling;
+            if (s2 && s2.classList.contains('select2')) {
+                s2.style.pointerEvents = isCash ? 'none' : '';
+                s2.style.opacity = isCash ? '0.75' : '';
+            }
+        }
+        var note = cashNote(sel);
+        note.innerHTML = isCash ? '<i class="fas fa-lock me-1"></i>Cash payments are always received into <strong></strong>.' : '';
+        if (isCash) note.querySelector('strong').textContent = sel.dataset.cashAccountName || 'the cash account';
+        note.style.display = isCash ? '' : 'none';
+        if (isCash) markInvalid(sel, false);
+    }
+
+    function bindCashLock(sel) {
+        var method = methodOf(sel);
+        if (!method || sel.dataset.cashBound === '1') return;
+        sel.dataset.cashBound = '1';
+        method.addEventListener('change', function () { applyCashLock(sel); });
+        if (window.jQuery) jQuery(method).on('change', function () { applyCashLock(sel); });
+        applyCashLock(sel);
     }
 
     function load(sel) {
@@ -61,7 +115,13 @@
         sel.dataset.receiptAccountLoaded = '1';
         fetch(url, { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
-            .then(function (data) { fill(sel, data.accounts || [], data.default_id); })
+            .then(function (data) {
+                if (data.cash_id != null) {
+                    sel.dataset.cashAccountId = String(data.cash_id);
+                    sel.dataset.cashAccountName = data.cash_name || '';
+                }
+                fill(sel, data.accounts || [], data.default_id);
+            })
             .catch(function () { sel.dataset.receiptAccountLoaded = ''; });
     }
 
@@ -70,10 +130,11 @@
             var modal = sel.closest('.modal');
             if (modal) {
                 // Enhance once the modal is visible, so Select2 measures its width.
-                modal.addEventListener('shown.bs.modal', function () { load(sel); enhance(sel); });
+                modal.addEventListener('shown.bs.modal', function () { load(sel); enhance(sel); bindCashLock(sel); applyCashLock(sel); });
             } else {
                 load(sel);
                 enhance(sel);
+                bindCashLock(sel);
             }
         });
     }
@@ -144,8 +205,11 @@
         var form = e.target;
         setTimeout(function () {
             form.querySelectorAll('select[data-receipt-account]').forEach(function (sel) {
+                delete sel.dataset.nonCashValue;
+                sel.dataset.cashLocked = '';
                 if (sel.dataset.receiptAccountReady === '1') jQuery(sel).trigger('change');
                 if (sel.hasAttribute('data-required')) markInvalid(sel, false);
+                applyCashLock(sel);
             });
         }, 0);
     }, true);

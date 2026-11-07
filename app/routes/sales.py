@@ -1221,11 +1221,14 @@ def customers_list_json():
 def receipt_accounts_json():
     """Active bank / cash accounts for the 'Received into Account' dropdown
     of the Universal Pay modal (base.html), loaded when the modal opens."""
-    from app.utils import receipt_account_choices, default_receipt_account
+    from app.utils import receipt_account_choices, default_receipt_account, cash_receipt_account
     default = default_receipt_account()
+    cash = cash_receipt_account()
     return jsonify({'accounts': [{'id': a.id, 'name': a.name, 'type': a.account_type or ''}
                                  for a in receipt_account_choices()],
-                    'default_id': default.id if default else None})
+                    'default_id': default.id if default else None,
+                    'cash_id': cash.id if cash else None,
+                    'cash_name': cash.name if cash else None})
 
 
 @bp.route('/customer/<int:id>/pay-summary-json')

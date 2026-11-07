@@ -1281,6 +1281,8 @@ def compute_mo_cost_breakdown(month, year, product_id=None):
                 'description': e.description or '',
                 'status': e.status or 'pending',
                 'amount': e.amount or 0,
+                'bill_image_path': e.bill_image_path,
+                'order_number': mo.order_number,
             }
             (overheads if e.is_bom_overhead else other_costs).append(entry)
         overhead_total = sum(o['amount'] for o in overheads)
@@ -1334,6 +1336,22 @@ def compute_mo_cost_breakdown(month, year, product_id=None):
     }
     totals['cost_per_unit'] = (totals['total'] / totals['qty']) if totals['qty'] > 0 else 0
     totals['profit'] = totals['produced_sales'] - totals['produced_cost']
+
+    # Summary drill-downs: labor per staff member (plus the BOM labor estimate so it
+    # adds up to totals['labor']) and every overhead expense across the orders.
+    labor_by_staff = {}
+    for r in rows:
+        for l in r['labor']:
+            s = labor_by_staff.setdefault(l['name'], {'name': l['name'], 'designation': l['designation'],
+                                                      'days': 0, 'amount': 0, 'orders': []})
+            s['days'] += l['days']
+            s['amount'] += l['amount']
+            if r['order'].order_number not in s['orders']:
+                s['orders'].append(r['order'].order_number)
+    totals['labor_staff'] = sorted(labor_by_staff.values(), key=lambda s: -s['amount'])
+    totals['bom_labor_estimate'] = sum(r['bom_labor_estimate'] for r in rows)
+    totals['overhead_expenses'] = sorted((o for r in rows for o in r['overheads']),
+                                         key=lambda o: o['date'] or date.min)
 
     return {'rows': rows, 'totals': totals}
 
